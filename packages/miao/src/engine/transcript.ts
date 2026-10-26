@@ -3,6 +3,7 @@ import { OpenCodeEvent } from "@miao/protocol/groups/event"
 import { SessionMessage } from "@miao/schema/session-message"
 import { Prompt } from "@miao/schema/prompt"
 import { SessionTranscript } from "@miao/core/session/transcript"
+import { EngineError } from "./client"
 import { messageID } from "./identity"
 import { replayJournal } from "./journal"
 
@@ -64,6 +65,27 @@ async function readTranscriptWithSeq(
     after: 0,
     request: (method, params) => (method === "snapshot" ? Promise.resolve(raw) : input.request(method, params)),
   })
+  // Engines released before 0.3.8 cut the snapshot projection at SQL
+  // `LIMIT 1001`, so a long Session's snapshot ends mid-history while its
+  // journal keeps the rest. Rendering that read would silently drop every
+  // message past the cut — the operator's own prompts included, which then
+  // look like the Session swallowed them. A snapshot that lands on the cut
+  // while the journal holds later commits is incomplete by construction.
+  const projectionCut = 1001
+  const lastVisible = snapshot.messages[projectionCut - 1]?.seq
+  if (
+    snapshot.messages.length >= projectionCut &&
+    lastVisible !== undefined &&
+    page.events.some(
+      (event) =>
+        (event.type === "session.next.assistant.identity" || event.type === "session.next.prompt.admitted") &&
+        sequence(event) > lastVisible,
+    )
+  )
+    throw new EngineError(
+      "engine_snapshot_truncated",
+      `native snapshot stops at message ${lastVisible} of ${snapshot.cursor}; the installed engine truncates long Session snapshots, update miao to 0.3.8 or newer`,
+    )
   const active = new Set(
     snapshot.messages
       .filter((row) => !input.selected || !snapshot.selection || row.seq > snapshot.selection.through_seq)

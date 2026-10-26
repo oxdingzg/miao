@@ -1,0 +1,31 @@
+{
+  "scenario": "apply-patch",
+  "engine": "ts",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e8c3afc80ffecQ5fkW4unQ",
+  "cost": 0.00227,
+  "tokensIn": 2726,
+  "tokensOut": 92,
+  "stepFinishes": 4,
+  "tools": [
+    {
+      "tool": "read",
+      "status": "completed",
+      "background": false
+    },
+    {
+      "tool": "apply_patch",
+      "status": "completed",
+      "background": false
+    },
+    {
+      "tool": "read",
+      "status": "completed",
+      "background": false
+    }
+  ],
+  "errors": []
+}

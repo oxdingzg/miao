@@ -1,4 +1,21 @@
 export const dict = {
+  "context.history.title": "Очакван входен състав във времето",
+  "context.history.point": "{{time}} · {{tokens}} отчетени означения за подкана",
+  "context.history.note":
+    "Въз основа на до 80 заредени асистентски хода. Оценките на категорията използват зареден текст, мащабиран до докладваните токени за подкана. Контролните точки рестартират оценката; незареденото или некласифицирано съдържание е включено в Други. Това не са запазени моментни снимки на заявка.",
+  "context.timeline.title": "Контекст и история на кеша",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} токена за подкана · {{read}} четене на кеша · {{write}} запис на кеша",
+  "context.timeline.requestWindow": "{{value}} прозорец на токена по време на заявка",
+  "context.timeline.catalogWindow": "{{value}} прозорец на токена в текущия каталог",
+  "context.timeline.unknownWindow": "Контекстният прозорец е неизвестен",
+  "context.timeline.empty": "Все още не е регистрирано уредено използване на доставчика.",
+  "context.timeline.retry": "Опитайте отново хронологията на употребата",
+  "context.timeline.compaction": "Контекстът е уплътнен",
+  "context.timeline.cacheRead": "Четене на кеша",
+  "context.timeline.cacheWrite": "Писане в кеша",
+  "context.timeline.ttft": "{{value}} ms до първия токен",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Файл",
   "desktop.menu.edit": "Редактиране",
@@ -607,7 +624,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Автоматичното приемане на разрешения е спряно",
   "toast.permissions.autoaccept.off.description": "Исканията за разрешение ще изискват одобрение",
   "settings.permissions.autoaccept.project.title": "Автоматично приемане на разрешения за този проект",
-  "settings.permissions.autoaccept.project.description": "Отговаряне на нови заявки за разрешения от всяка сесия в този проект без питане. Изборът на ниво сесия и директория има предимство.",
+  "settings.permissions.autoaccept.project.description":
+    "Отговаряне на нови заявки за разрешения от всяка сесия в този проект без питане. Изборът на ниво сесия и директория има предимство.",
   "toast.model.none.title": "Няма избран модел",
   "toast.model.none.description": "Свържете доставчик, за да обобщите тази сесия",
   "toast.file.loadFailed.title": "Неуспешно зареждане на файла",
@@ -975,8 +993,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Показване на обобщения на разсъжденията",
   "settings.general.row.reasoningSummaries.description":
     "Показване на обобщения на разсъжденията на модела във времевата линия",
-    "settings.general.row.turnDiffs.title": "Show changed files per turn",
-    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Разгънете shell части на инструмента",
   "settings.general.row.shellToolPartsExpanded.description":
     "Показване на shell части от инструмента, разширени по подразбиране във времевата линия",

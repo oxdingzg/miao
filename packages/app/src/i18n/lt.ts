@@ -94,6 +94,23 @@ const desktop = [
 ]
 
 export const dict = {
+  "context.history.title": "Apskaičiuota įvesties sudėtis laikui bėgant",
+  "context.history.point": "{{time}} · {{tokens}} pranešė apie raginimo žetonus",
+  "context.history.note":
+    "Remiantis iki 80 pakrautų asistento apsisukimų. Kategorijų įvertinimuose naudojamas įkeltas tekstas, pakeistas pagal praneštus raginimo prieigos raktus. Kontroliniai taškai iš naujo paleidžia sąmatą; neįkeltas arba neįslaptintas turinys įtrauktas į Kita. Tai nėra išsaugotos užklausos momentinės nuotraukos.",
+  "context.timeline.title": "Kontekstas ir talpyklos istorija",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} raginimo prieigos raktai · {{read}} talpyklos skaitymas · {{write}} rašymas talpykloje",
+  "context.timeline.requestWindow": "{{value}} prieigos rakto langas užklausos metu",
+  "context.timeline.catalogWindow": "{{value}} prieigos rakto langas dabartiniame kataloge",
+  "context.timeline.unknownWindow": "Kontekstinis langas nežinomas",
+  "context.timeline.empty": "Dar neužfiksuotas joks nustatytas paslaugų teikėjo naudojimas.",
+  "context.timeline.retry": "Bandyti dar kartą naudojimo istoriją",
+  "context.timeline.compaction": "Kontekstas suglaudintas",
+  "context.timeline.cacheRead": "Talpyklos skaitymas",
+  "context.timeline.cacheWrite": "Rašymas talpykloje",
+  "context.timeline.ttft": "{{value}} ms iki pirmojo prieigos rakto",
+
   ...Object.fromEntries(DESKTOP_NATIVE_KEYS.map((key, index) => [key, desktop[index]])),
   "command.category.suggested": "Siūloma",
   "command.category.view": "Rodinys",
@@ -608,7 +625,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Sustabdė automatinį leidimų priėmimą",
   "toast.permissions.autoaccept.off.description": "Reikės patvirtinti leidimo prašymus",
   "settings.permissions.autoaccept.project.title": "Automatiškai priimti šio projekto teises",
-  "settings.permissions.autoaccept.project.description": "Atsakyti į naujus teisių prašymus iš bet kurio šio projekto seanso neklausiant. Seanso ir katalogo lygio pasirinkimai išlieka prioritetiniai.",
+  "settings.permissions.autoaccept.project.description":
+    "Atsakyti į naujus teisių prašymus iš bet kurio šio projekto seanso neklausiant. Seanso ir katalogo lygio pasirinkimai išlieka prioritetiniai.",
   "toast.model.none.title": "Nepasirinktas joks modelis",
   "toast.model.none.description": "Prisijunkite prie teikėjo, kad apibendrintumėte šią sesiją",
   "toast.file.loadFailed.title": "Nepavyko įkelti failo",
@@ -669,8 +687,7 @@ export const dict = {
   "error.chain.didYouMean": "Ar turėjote omenyje: {{suggestions}}",
   "error.chain.modelNotFound": "Modelis nerastas: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Patikrinkite konfigūracijos (miao.json) teikėjo / modelio pavadinimus",
-  "error.chain.mcpFailed":
-    "MCP serveris „{{name}}“ nepavyko. Atminkite, kad miao dar nepalaiko MCP autentifikavimo.",
+  "error.chain.mcpFailed": "MCP serveris „{{name}}“ nepavyko. Atminkite, kad miao dar nepalaiko MCP autentifikavimo.",
   "error.chain.providerAuthFailed": "Teikėjo autentifikavimas nepavyko ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     "Nepavyko inicijuoti teikėjo „{{provider}}“. Patikrinkite kredencialus ir konfigūraciją.",
@@ -981,7 +998,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Rodyti samprotavimų santraukas",
   "settings.general.row.reasoningSummaries.description": "Rodyti modelio motyvų santraukas laiko juostoje",
   "settings.general.row.turnDiffs.title": "Rodyti pakeistus failus kiekvienam etapui",
-  "settings.general.row.turnDiffs.description": "Laiko juostoje išvardija kiekvieno užbaigto etapo pakeistus failus su eilučių skaičiumi ir išskleidžiamaisiais skirtumais.",
+  "settings.general.row.turnDiffs.description":
+    "Laiko juostoje išvardija kiekvieno užbaigto etapo pakeistus failus su eilučių skaičiumi ir išskleidžiamaisiais skirtumais.",
   "settings.general.row.shellToolPartsExpanded.title": "Išskleiskite apvalkalo įrankių dalis",
   "settings.general.row.shellToolPartsExpanded.description":
     "Rodyti pagal numatytuosius nustatymus išplėstas apvalkalo įrankio dalis laiko juostoje",

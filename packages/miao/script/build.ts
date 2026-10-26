@@ -2,7 +2,8 @@
 
 import { $ } from "bun"
 import { existsSync } from "fs"
-import { copyFile, mkdir, rename } from "fs/promises"
+import { chmod, copyFile, mkdir, mkdtemp, rename } from "fs/promises"
+import os from "os"
 import path from "path"
 import { fileURLToPath } from "url"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
@@ -30,6 +31,21 @@ const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
+
+const createEmbeddedEngineModule = (enginePath: string) => {
+  if (!existsSync(enginePath)) throw new Error(`--engine: no such file: ${enginePath}`)
+  const spec = path.relative(dir, enginePath).replaceAll("\\", "/")
+  return [
+    `import engine from ${JSON.stringify(spec.startsWith(".") ? spec : `./${spec}`)} with { type: "file" };`,
+    `export default engine;`,
+  ].join("\n")
+}
+
+const engineFlagIndex = process.argv.indexOf("--engine")
+const engineFlag = engineFlagIndex !== -1 ? process.argv[engineFlagIndex + 1] : undefined
+if (engineFlagIndex !== -1 && (!engineFlag || engineFlag.startsWith("--"))) throw new Error("--engine requires a path")
+if (Script.release && engineFlag) throw new Error("release builds must embed engines built from this checkout")
+const embedEngineFlag = process.argv.includes("--embed-engine") || Boolean(Script.release)
 
 const createEmbeddedWebUIBundle = async () => {
   console.log(`Building Web UI to embed in the binary`)
@@ -124,25 +140,30 @@ const allTargets: {
 const targets = darwinFlag
   ? allTargets.filter((item) => item.os === "darwin" && item.abi === undefined)
   : singleFlag
-  ? allTargets.filter((item) => {
-      if (item.os !== process.platform || item.arch !== process.arch) {
-        return false
-      }
+    ? allTargets.filter((item) => {
+        if (item.os !== process.platform || item.arch !== process.arch) {
+          return false
+        }
 
-      // When building for the current platform, prefer a single native binary by default.
-      // Baseline binaries require additional Bun artifacts and can be flaky to download.
-      if (item.avx2 === false) {
-        return baselineFlag
-      }
+        // When building for the current platform, prefer a single native binary by default.
+        // Baseline binaries require additional Bun artifacts and can be flaky to download.
+        if (item.avx2 === false) {
+          return baselineFlag
+        }
 
-      // also skip abi-specific builds for the same reason
-      if (item.abi !== undefined) {
-        return false
-      }
+        // also skip abi-specific builds for the same reason
+        if (item.abi !== undefined) {
+          return false
+        }
 
-      return true
-    })
-  : allTargets
+        return true
+      })
+    : allTargets
+
+if (engineFlag && new Set(targets.map((item) => `${item.os}-${item.arch}`)).size > 1)
+  throw new Error("--engine requires a single platform and architecture")
+if (embedEngineFlag && targets.some((item) => item.os !== process.platform))
+  throw new Error("--embed-engine requires --single or --darwin on the matching build host")
 
 await $`rm -rf dist`
 
@@ -162,7 +183,11 @@ try {
 } catch (error) {
   console.warn("miao-native addon build failed; native paths will fall back to TS", error)
 }
+const engineBuild = embedEngineFlag && !engineFlag ? await buildEngineArchive() : undefined
 for (const item of targets) {
+  const engine = engineFlag ?? engineBuild?.engines[`${item.os}-${item.arch}`]
+  if (embedEngineFlag && !engine) throw new Error(`missing paired engine for ${item.os}-${item.arch}`)
+  const embeddedEngineModule = engine ? createEmbeddedEngineModule(engine) : null
   const name = [
     pkg.name,
     // changing to win32 flags npm for some reason
@@ -208,8 +233,14 @@ for (const item of targets) {
     files: {
       [treeSitterWorkerPath]: treeSitterWorker,
       ...(embeddedFileMap ? { "miao-web-ui.gen.ts": embeddedFileMap } : {}),
+      ...(embeddedEngineModule ? { "miao-engine.gen.ts": embeddedEngineModule } : {}),
     },
-    entrypoints: ["./src/index.ts", treeSitterWorkerPath, ...(embeddedFileMap ? ["miao-web-ui.gen.ts"] : [])],
+    entrypoints: [
+      "./src/index.ts",
+      treeSitterWorkerPath,
+      ...(embeddedFileMap ? ["miao-web-ui.gen.ts"] : []),
+      ...(embeddedEngineModule ? ["miao-engine.gen.ts"] : []),
+    ],
     define: {
       FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
       MIAO_VERSION: `'${Script.version}'`,
@@ -233,7 +264,17 @@ for (const item of targets) {
   if (item.os === "darwin" && process.platform === "darwin") {
     const identity = await developerIdIdentity()
     if (identity) {
-      await codesign(["--force", "--options", "runtime", "--timestamp", "--entitlements", entitlements, "--sign", identity, `dist/${name}/bin/miao`])
+      await codesign([
+        "--force",
+        "--options",
+        "runtime",
+        "--timestamp",
+        "--entitlements",
+        entitlements,
+        "--sign",
+        identity,
+        `dist/${name}/bin/miao`,
+      ])
     } else {
       await codesign(["--force", "--sign", "-", `dist/${name}/bin/miao`])
     }
@@ -244,10 +285,18 @@ for (const item of targets) {
   if (generated.modelsData) {
     await Bun.write(`dist/${name}/bin/models.json`, generated.modelsData)
   }
+  if (embeddedEngineModule) {
+    const crate = path.resolve(dir, "../../crates/miao-engine")
+    await Promise.all([
+      copyFile(path.resolve(dir, "../../LICENSE"), `dist/${name}/bin/LICENSE`),
+      copyFile(path.join(crate, "LICENSE-APACHE-2.0"), `dist/${name}/bin/LICENSE-APACHE-2.0`),
+      copyFile(path.join(crate, "NOTICE"), `dist/${name}/bin/NOTICE`),
+    ])
+  }
 
   // Smoke test: only run if binary is for current platform
-  if (item.os === process.platform && item.arch === process.arch && !item.abi) {
-    const binaryPath = `dist/${name}/bin/miao`
+  const binaryPath = `dist/${name}/bin/miao${item.os === "win32" ? ".exe" : ""}`
+  if (!embeddedEngineModule && item.os === process.platform && item.arch === process.arch && !item.abi) {
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
       const versionOutput = await $`${binaryPath} --version`.text()
@@ -255,6 +304,34 @@ for (const item of targets) {
     } catch (e) {
       console.error(`Smoke test failed for ${name}:`, e)
       process.exit(1)
+    }
+  }
+
+  if (embeddedEngineModule && item.os === process.platform && item.arch === process.arch && !item.abi) {
+    const home = await mkdtemp(path.join(os.tmpdir(), "miao-engine-embed-"))
+    try {
+      const suffix = item.os === "win32" ? ".exe" : ""
+      // Run a copy: extraction during a smoke test must not add a second engine
+      // executable or ownership marker to the CLI release archive.
+      const probeBinary = path.join(home, `miao${suffix}`)
+      await copyFile(binaryPath, probeBinary)
+      if (item.os !== "win32") await chmod(probeBinary, 0o755)
+      const version = await $`${probeBinary} --version`
+        .env({ ...process.env, HOME: home, USERPROFILE: home, MIAO_ENGINE_BIN: "" })
+        .text()
+      if (version.trim() !== Script.version) throw new Error(`host version mismatch: ${version.trim()}`)
+      const beside = path.join(home, `miao-engine${suffix}`)
+      const inHome = path.join(home, `.local/share/miao-engine/bin/miao-engine${suffix}`)
+      const extracted = existsSync(beside) ? beside : inHome
+      const caps = JSON.parse(await $`${extracted} --capabilities`.text())
+      if (caps.name !== "miao-engine" || caps.version !== Script.version || caps.protocol < 2)
+        throw new Error(`embedded engine does not match host ${Script.version}`)
+      console.log(`Embedded engine smoke passed: ${extracted} (protocol ${caps.protocol})`)
+    } catch (e) {
+      console.error(`Embedded engine smoke failed for ${name}:`, e)
+      process.exit(1)
+    } finally {
+      await $`rm -rf ${home}`
     }
   }
 
@@ -281,9 +358,11 @@ for (const item of targets) {
  * root next to the CLI archives. Build failures fail the release rather than
  * uploading a stale binary or silently omitting an advertised platform asset.
  */
-async function buildEngineArchive(): Promise<string[]> {
-  const os = ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string | undefined>)[process.platform]
-  if (!os) return []
+async function buildEngineArchive(): Promise<{ archives: string[]; engines: Record<string, string> }> {
+  const os = ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string | undefined>)[
+    process.platform
+  ]
+  if (!os) return { archives: [], engines: {} }
   // Ship a static Linux engine. The CLI archive can rely on the runner's glibc
   // because it is a Bun executable, but a native engine linked against a newer
   // runner glibc refuses to start on the LTS distributions many users run.
@@ -300,14 +379,15 @@ async function buildEngineArchive(): Promise<string[]> {
   // platform builds its host target as before.
   const wanted = darwinFlag
     ? [
-        { target: "aarch64-apple-darwin" as string | undefined, arch: "arm64" },
-        { target: "x86_64-apple-darwin" as string | undefined, arch: "x64" },
+        { target: process.arch === "arm64" ? undefined : "aarch64-apple-darwin", arch: "arm64" },
+        { target: process.arch === "x64" ? undefined : "x86_64-apple-darwin", arch: "x64" },
       ]
     : [{ target: linuxTarget as string | undefined, arch: process.arch === "arm64" ? "arm64" : "x64" }]
   const crate = path.resolve(dir, "../../crates/miao-engine")
   const archives: string[] = []
+  const engines: Record<string, string> = {}
   for (const { target, arch } of wanted) {
-    const musl = target === linuxTarget
+    const musl = process.platform === "linux" && target === linuxTarget
     const muslEnv =
       musl && target
         ? {
@@ -322,7 +402,12 @@ async function buildEngineArchive(): Promise<string[]> {
       // with "not found". Merge over the inherited environment instead.
       .env({ ...process.env, ...muslEnv })
     const suffix = process.platform === "win32" ? ".exe" : ""
-    const bin = path.join(crate, "target", ...(target ? [target] : []), "release", `miao-engine${suffix}`)
+    const bin = path.join(
+      path.resolve(crate, process.env.CARGO_TARGET_DIR ?? "target"),
+      ...(target ? [target] : []),
+      "release",
+      `miao-engine${suffix}`,
+    )
     // A cross-built binary cannot run here, so only the host target asserts its
     // version; the same crate produced both.
     if (!target || musl) {
@@ -338,6 +423,7 @@ async function buildEngineArchive(): Promise<string[]> {
         await codesign(["--force", "--sign", "-", bin])
       }
     }
+    engines[`${process.platform}-${arch}`] = bin
     const name = `miao-engine-${os}-${arch}`
     const staging = `dist/${name}`
     await mkdir(staging, { recursive: true })
@@ -361,7 +447,7 @@ async function buildEngineArchive(): Promise<string[]> {
     await $`tar -czf ../${name}.tar.gz ${files}`.cwd(staging)
     archives.push(`./dist/${name}.tar.gz`)
   }
-  return archives
+  return { archives, engines }
 }
 
 if (Script.release) {
@@ -380,7 +466,7 @@ if (Script.release) {
   }
   // The engine binary rides the same release channel (B5): one archive per
   // platform, built from this commit alongside the CLI.
-  archives.push(...(await buildEngineArchive()))
+  archives.push(...(engineBuild ?? (await buildEngineArchive())).archives)
 
   // Bare executables cannot carry a staple ticket; submitting the zip registers
   // the binary's cdhash and Gatekeeper checks it online at first launch.

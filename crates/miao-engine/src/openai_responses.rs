@@ -34,6 +34,10 @@ pub struct OpenAIResponses {
     cache_contract: Option<crate::responses_cache::Contract>,
     websocket_contract: Option<crate::responses_websocket::Contract>,
     websocket_pool: std::sync::Arc<crate::responses_websocket::Pool>,
+    /// Azure is the only host that authenticates this wire with `api-key`
+    /// instead of a bearer, and the only one that needs a route query.
+    api_key_auth: bool,
+    query: Option<String>,
 }
 impl OpenAIResponses {
     pub fn new(endpoint: String, key: String, model: String) -> Result<Self, reqwest::Error> {
@@ -65,6 +69,8 @@ impl OpenAIResponses {
             cache_contract: None,
             websocket_contract: None,
             websocket_pool: std::sync::Arc::new(crate::responses_websocket::Pool::default()),
+            api_key_auth: false,
+            query: None,
         })
     }
     pub fn with_cache_contract(
@@ -109,14 +115,21 @@ impl Provider for OpenAIResponses {
         auth: &crate::model_routes::Auth,
     ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
         auth.validate()?;
-        if !auth.query.is_empty()
-            || !matches!(auth.style.as_deref(), None | Some("bearer" | "copilot"))
-        {
+        if !matches!(
+            auth.style.as_deref(),
+            None | Some("bearer" | "copilot" | "api-key")
+        ) {
             return Err(ProviderError::Stream(
                 "unsupported OpenAIResponses host authentication".into(),
             ));
         }
         let mut selected = self.clone();
+        if auth.style.as_deref() == Some("api-key") {
+            selected.api_key_auth = true;
+        }
+        if let Some(query) = auth.query_string()? {
+            selected.query = Some(query);
+        }
         if auth.style.as_deref() == Some("copilot") {
             if self.cache_contract.is_some() || self.websocket_contract.is_some() {
                 return Err(ProviderError::Stream(
@@ -256,11 +269,21 @@ impl OpenAIResponses {
         if let Some(key) = &cache_key {
             body["prompt_cache_key"] = json!(key);
         }
-        let mut builder = self
-            .client
-            .post(&self.endpoint)
-            .bearer_auth(credential.secret())
-            .json(&body);
+        let endpoint = match self.query.as_deref() {
+            None => reqwest::Url::parse(&self.endpoint).map_err(|_| ProviderError::Transport)?,
+            Some(query) => {
+                let mut endpoint =
+                    reqwest::Url::parse(&self.endpoint).map_err(|_| ProviderError::Transport)?;
+                endpoint.set_query(Some(query));
+                endpoint
+            }
+        };
+        let mut builder = self.client.post(endpoint).json(&body);
+        builder = if self.api_key_auth {
+            builder.header("api-key", credential.header()?)
+        } else {
+            builder.bearer_auth(credential.secret())
+        };
         if matches!(self.profile, Profile::Subscription) {
             // The subscription backend routes its prefix cache by this header;
             // a body key alone does not keep successive requests cache-affine.

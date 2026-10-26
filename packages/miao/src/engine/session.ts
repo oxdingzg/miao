@@ -10,7 +10,7 @@ import { SessionMessage } from "@miao/schema/session-message"
 import { SessionID } from "@miao/schema/session-id"
 import type { ModelV2 } from "@miao/core/model"
 import { EngineError, type EngineEvent, type EngineProgress, type EngineTransport } from "./client"
-import { adoptSession, messageID } from "./identity"
+import { adoptSession, messageID, promotedInputMessageID } from "./identity"
 import { decodeAttachments, encodeAttachments, type NativeAttachment } from "./prompt-attachments"
 import {
   type BufferedUsage,
@@ -132,9 +132,11 @@ export class EngineTranslator {
         const common = {
           sessionID: adoptSession(event.session_id),
           timestamp: DateTime.makeUnsafe(event.recorded_at_ms),
-          messageID: command.value.input_id.startsWith("msg_")
-            ? SessionMessage.ID.make(command.value.input_id)
-            : messageID(event.session_id, command.value.message_seq),
+          // The command lifecycle belongs to the same input the promotion
+          // projects, so both must publish one public identity. A submitted
+          // prompt keeps its own id; a generated input derives it from the
+          // engine input id rather than from this event's message seq.
+          messageID: promotedInputMessageID(command.value.input_id),
         }
         if (event.kind === "command.started") publish({ type: "session.next.command.started", data: common })
         if (event.kind === "command.completed" && command.value.prompt !== undefined)
@@ -642,7 +644,7 @@ export class EngineSession {
   }
 
   async #restore(sessionID: string): Promise<unknown> {
-    const snapshot = await this.#client.request("snapshot", { session_id: sessionID })
+    const snapshot = await this.#client.request("snapshot", { session_id: sessionID, metadata_only: true })
     if (
       typeof snapshot !== "object" ||
       snapshot === null ||

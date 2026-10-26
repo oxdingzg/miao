@@ -57,6 +57,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "protocol": miao_engine::PROTOCOL,
                 "schema": miao_engine::store::SCHEMA_VERSION,
                 "routes_schema": miao_engine::model_routes::SCHEMA,
+                "catalog": 1,
             })
         );
         return Ok(());
@@ -71,6 +72,51 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             tokio::task::spawn_blocking(move || miao_engine::doctor::report(path.as_deref()))
                 .await??;
         println!("{}", serde_json::to_string(&report)?);
+        return Ok(());
+    }
+    if args.first().map(String::as_str) == Some("catalog") {
+        let (flags, remainder) = args[1..].as_chunks::<2>();
+        let mut options = HashMap::new();
+        for flag in flags {
+            if !["--db", "--sessions", "--usage"].contains(&flag[0].as_str())
+                || options.insert(flag[0].clone(), flag[1].clone()).is_some()
+            {
+                return Err("unknown or duplicate catalog option".into());
+            }
+        }
+        if !remainder.is_empty() {
+            return Err("missing catalog option value".into());
+        }
+        let db = options.remove("--db").ok_or("--db is required")?;
+        let sessions = options
+            .remove("--sessions")
+            .ok_or("--sessions is required")?;
+        let sessions: Vec<String> = if sessions == "-" {
+            use std::io::Read;
+            let mut input = Vec::new();
+            std::io::stdin()
+                .lock()
+                .take(1024 * 1024 + 1)
+                .read_to_end(&mut input)?;
+            if input.len() > 1024 * 1024 {
+                return Err("catalog input exceeds 1 MiB".into());
+            }
+            serde_json::from_slice(&input)?
+        } else {
+            serde_json::from_str(&sessions)?
+        };
+        let usage = match options.remove("--usage").as_deref() {
+            Some("true") => true,
+            Some("false") | None => false,
+            _ => return Err("--usage must be true or false".into()),
+        };
+        let entries = miao_engine::catalog::read(db, &sessions, usage).await?;
+        let output = serde_json::to_vec(&entries)?;
+        if output.len() > 8 * 1024 * 1024 {
+            return Err("catalog exceeds output bound".into());
+        }
+        use std::io::Write;
+        std::io::stdout().lock().write_all(&output)?;
         return Ok(());
     }
     if args.first().map(String::as_str) == Some("credentials") {
@@ -788,6 +834,17 @@ async fn serve(
     let mut bytes = Vec::new();
     let mut progress = runtime.progress();
     let mut poll = tokio::time::interval(Duration::from_millis(100));
+    // Host-death watchdog: stdin EOF is unreliable because grandchild
+    // processes (LSP servers, MCP workers) inherit the pipe write end, and
+    // idle reclaim must not fire while durable runs look live. Reparenting is
+    // the orphan signal that survives both: a dead host re-parents this
+    // process within seconds regardless of inherited descriptors.
+    #[cfg(unix)]
+    let initial_parent = Some(std::os::unix::process::parent_id());
+    #[cfg(not(unix))]
+    let initial_parent: Option<u32> = None;
+    let host_watch = initial_parent.is_some();
+    let mut host_watch_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     // Auto-reclaim: a stdio engine whose client died without a clean exit
     // would otherwise linger forever (its stdin pipe can stay open through
     // grandchild processes). Only client input counts as activity: internal
@@ -848,6 +905,13 @@ async fn serve(
                     Err(tokio::sync::broadcast::error::RecvError::Closed)=>break,
                 },
                 _=signal_exit()=>{ break; },
+                _ = tokio::time::sleep_until(host_watch_deadline), if host_watch => {
+                    #[cfg(unix)]
+                    if Some(std::os::unix::process::parent_id()) != initial_parent {
+                        break;
+                    }
+                    host_watch_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+                },
             }
         }
         Ok::<_,io::Error>(())

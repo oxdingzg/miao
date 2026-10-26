@@ -1,4 +1,21 @@
 export const dict = {
+  "context.history.title": "Ocenjena vhodna sestava skozi čas",
+  "context.history.point": "{{time}} · {{tokens}} je prijavilo žetone poziva",
+  "context.history.note":
+    "Na podlagi do 80 naloženih asistenčnih obratov. Ocene kategorij uporabljajo naloženo besedilo, prilagojeno prijavljenim pozivnim žetonom. Kontrolne točke znova zaženejo oceno; nenaložena ali nerazvrščena vsebina je vključena v Drugo. To niso shranjeni posnetki zahtev.",
+  "context.timeline.title": "Kontekst in zgodovina predpomnilnika",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} pozivnih žetonov · {{read}} branje predpomnilnika · {{write}} pisanje predpomnilnika",
+  "context.timeline.requestWindow": "{{value}} okno žetona ob času zahteve",
+  "context.timeline.catalogWindow": "{{value}} okno žetona v trenutnem katalogu",
+  "context.timeline.unknownWindow": "Kontekstno okno neznano",
+  "context.timeline.empty": "Zabeležene še niso bile poravnane porabe ponudnika.",
+  "context.timeline.retry": "Poskusi znova z zgodovino uporabe",
+  "context.timeline.compaction": "Kontekst je strnjen",
+  "context.timeline.cacheRead": "Branje predpomnilnika",
+  "context.timeline.cacheWrite": "Pisanje predpomnilnika",
+  "context.timeline.ttft": "{{value}} ms do prvega žetona",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Datoteka",
   "desktop.menu.edit": "Uredi",
@@ -603,7 +620,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Ustavljeno samodejno sprejemanje dovoljenj",
   "toast.permissions.autoaccept.off.description": "Zahteve za dovoljenje bodo zahtevale odobritev",
   "settings.permissions.autoaccept.project.title": "Samodejno sprejmi dovoljenja za ta projekt",
-  "settings.permissions.autoaccept.project.description": "Odgovori na nove zahtevke za dovoljenja iz katere koli seje tega projekta brez vprašanja. Izbire na ravni seje in imenika imajo prednost.",
+  "settings.permissions.autoaccept.project.description":
+    "Odgovori na nove zahtevke za dovoljenja iz katere koli seje tega projekta brez vprašanja. Izbire na ravni seje in imenika imajo prednost.",
   "toast.model.none.title": "Noben model ni izbran",
   "toast.model.none.description": "Povežite ponudnika, da povzamete to sejo",
   "toast.file.loadFailed.title": "Datoteke ni bilo mogoče naložiti",
@@ -971,7 +989,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Prikažite povzetke sklepanja",
   "settings.general.row.reasoningSummaries.description": "Prikažite povzetke sklepanja modela na časovnici",
   "settings.general.row.turnDiffs.title": "Prikaži spremenjene datoteke na krog",
-  "settings.general.row.turnDiffs.description": "Na časovni premici navaja spremenjene datoteke vsakega zaključenega kroga s številom vrstic in razprtljivimi razlikami.",
+  "settings.general.row.turnDiffs.description":
+    "Na časovni premici navaja spremenjene datoteke vsakega zaključenega kroga s številom vrstic in razprtljivimi razlikami.",
   "settings.general.row.shellToolPartsExpanded.title": "Razširite dele orodja lupine",
   "settings.general.row.shellToolPartsExpanded.description":
     "Pokaži privzeto razširjene dele orodja lupine na časovnici",

@@ -4,7 +4,7 @@ use crate::{
     openai_chat::OpenAIChat,
     openai_responses::{OpenAIResponses, Profile},
     protocol::ModelRequest,
-    provider::{scoped, Anthropic, Budget, Identity, Provider, ProviderError, Reply},
+    provider::{scoped_shared, Anthropic, Budget, Identity, Provider, ProviderError, Reply},
 };
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -142,7 +142,7 @@ pub fn build_with_responses(
                 )
             })?;
             Ok(Arc::new(
-                Anthropic::with_bearer_source(endpoint.into(), source, model)
+                Anthropic::with_vertex_source(endpoint.into(), source, model)
                     .map_err(|_| ProviderError::Transport)?,
             ))
         }
@@ -352,7 +352,7 @@ impl Provider for Fallback {
         };
         let budget = Budget::new();
         if secondary {
-            let result = scoped(
+            let result = scoped_shared(
                 budget.clone(),
                 3,
                 self.secondary.stream(request, progress, cancel),
@@ -369,7 +369,7 @@ impl Provider for Fallback {
             );
         }
         let can_switch = !pinned || self.first == self.second;
-        let result = scoped(
+        let result = scoped_shared(
             budget.clone(),
             if can_switch { 1 } else { 3 },
             self.primary
@@ -379,7 +379,7 @@ impl Provider for Fallback {
         match result {
             Err(error) if can_switch && error.can_fallback() && !cancel.is_cancelled() => {
                 let reason = error.to_string();
-                let result = scoped(
+                let result = scoped_shared(
                     budget.clone(),
                     2,
                     self.secondary.stream(request, progress, cancel),

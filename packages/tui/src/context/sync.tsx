@@ -61,6 +61,7 @@ import { batch, onCleanup, onMount } from "solid-js"
 import path from "path"
 import { useKV } from "./kv"
 import { usePermission } from "./permission"
+import { sessionListScope } from "./session-list-scope"
 
 function permissionRequest(request: Extract<TuiEvent, { type: "permission.v2.asked" }>["properties"]) {
   return {
@@ -384,9 +385,32 @@ export const {
     function listSessions() {
       const query = sessionListQuery()
       const promise = sdk.api.sessions
-        .list({ limit: 200, ...(query.path ? { subpath: query.path } : {}) })
+        .list({
+          limit: 200,
+          ...sessionListScope({
+            scope: query.scope,
+            projectID: project.data.project.id,
+            directory: project.data.instance.path.directory,
+          }),
+        })
         .then((x) => ({ data: (x.data ?? []) as Session[] }))
       return promise.then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
+    }
+
+    function updateSessionList(sessions: Session[]) {
+      const listed = new Set(sessions.map((session) => session.id))
+      // Listings are paged and may omit an unreadable native placement. The
+      // mounted route owns its identity until an explicit Session read says
+      // otherwise; dropping it here hides both transcript and prompt.
+      setStore(
+        "session",
+        reconcile(
+          [
+            ...sessions,
+            ...store.session.filter((session) => pinnedSessions.has(session.id) && !listed.has(session.id)),
+          ].toSorted((a, b) => a.id.localeCompare(b.id)),
+        ),
+      )
     }
 
     // V2 renders from hydrated context. A trailing-only debounce starves the
@@ -1216,7 +1240,7 @@ export const {
               setStore("capabilities", "pendingSessionInputs", capabilities?.pendingSessionInputs === true)
               setStore("agent", reconcile(agents))
               setStore("config", reconcile(config))
-              if (sessions !== undefined) setStore("session", reconcile(sessions))
+              if (sessions !== undefined) updateSessionList(sessions)
             })
           })
         })
@@ -1228,7 +1252,7 @@ export const {
             Promise.all([
               ...(args.continue
                 ? []
-                : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions as Session[])))]),
+                : [sessionListPromise.then((sessions) => updateSessionList(sessions as Session[]))]),
               // The palette only shows names and descriptions; executing a command
               // resolves its template on the server.
               sdk.api.commands
@@ -1442,7 +1466,7 @@ export const {
         },
         async refresh() {
           const list = await listSessions()
-          setStore("session", reconcile(list))
+          updateSessionList(list)
         },
         async syncStatus(sessionID: string, signal?: AbortSignal) {
           // The pending-input read is independent of the status response, so
@@ -1475,7 +1499,10 @@ export const {
           // start time and its slice progress instead of flattening the line
           // back to a bare "Preparing request" on every poll.
           const live =
-            response.type === "busy" && previousType === "busy" && previous.phase !== undefined && response.phase === undefined
+            response.type === "busy" &&
+            previousType === "busy" &&
+            previous.phase !== undefined &&
+            response.phase === undefined
               ? {
                   type: "busy" as const,
                   phase: previous.phase,

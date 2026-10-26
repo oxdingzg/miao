@@ -1,4 +1,20 @@
 export const dict = {
+  "context.history.title": "ویلے دے نال نال ان پٹ کمپوزیشن دا اندازہ لایا گیا",
+  "context.history.point": "{{time}} · {{tokens}} نے پرامپٹ ٹوکن دی اطلاع دتی",
+  "context.history.note":
+    "تک بھرے ہوئے اسسٹنٹ موڑاں دی بنیاد تے۔ کیٹیگری دے تخمینے لوڈ شدہ متن دا استعمال کردے نیں، جہنوں رپورٹ کیتے گئے پرامپٹ ٹوکن تک پیمانے تے بنایا جاندا اے۔ چوکیاں تخمینے نو دوبارہ شروع کردیاں نیں; غیر لوڈ شدہ یا غیر درجہ بندی شدہ مواد دوجیاں چ شامل اے۔ ایہ محفوظ کیتیاں گئیاں درخواستاں دے سنیپ شاٹ نئیں ہن۔",
+  "context.timeline.title": "سیاق و سباق تے کیشے دی تاریخ",
+  "context.timeline.step": "{{model}} · {{time}} · {{input}} پرامپٹ ٹوکن · {{read}} کیش ریڈ · {{write}} کیش لکھو",
+  "context.timeline.requestWindow": "درخواست دے ویلے تے {{value}} ٹوکن ونڈو",
+  "context.timeline.catalogWindow": "موجودہ کیٹلاگ چ {{value}} ٹوکن ونڈو",
+  "context.timeline.unknownWindow": "سیاق و سباق دی ونڈو نامعلوم",
+  "context.timeline.empty": "ہلے تیکر کوئی طے شدہ فراہم کرن آلے دا استعمال ریکارڈ نئیں کیتا گیا۔",
+  "context.timeline.retry": "ورتن دی تاریخ دوبارہ آزماؤ",
+  "context.timeline.compaction": "سیاق و سباق کمپیکٹ کیتا گیا",
+  "context.timeline.cacheRead": "کیش ریڈ",
+  "context.timeline.cacheWrite": "کیش لکھنا",
+  "context.timeline.ttft": "{{value}} پہلے ٹوکن نوں ایم ایس",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "فائل",
   "desktop.menu.edit": "ترمیم",
@@ -233,8 +249,7 @@ export const dict = {
   "provider.connect.apiKey.required": "API کلید دی لوڑ اے",
   "provider.connect.miaoZen.line1":
     "زین تہانوں کوڈنگ ایجنٹاں لئی قابل اعتماد مرضی دے ماڈلاں دے اک کیوریٹڈ سیٹ تک رسائی فراہم کردا اے۔",
-  "provider.connect.miaoZen.line2":
-    "اک API کلید دے نال تہانوں Claude، GPT، Gemini، GLM تے ہور ماڈلاں تک رسائی ملے گی۔",
+  "provider.connect.miaoZen.line2": "اک API کلید دے نال تہانوں Claude، GPT، Gemini، GLM تے ہور ماڈلاں تک رسائی ملے گی۔",
   "provider.connect.miaoZen.visit.prefix": "ویکھو ",
   "provider.connect.miaoZen.visit.link": "opencode.ai/zen",
   "provider.connect.miaoZen.visit.suffix": " اپنی API کلید حاصل کرن لئی۔",
@@ -612,7 +627,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "اجازتاں نوں خودکار قبول کرنا بند کر دتا گیا",
   "toast.permissions.autoaccept.off.description": "اجازت دی درخواستاں لئی منظوری دی لوڑ ہووے گی",
   "settings.permissions.autoaccept.project.title": "ਇਸ ਪ੍ਰੋਜੈਕਟ ਲਈ ਇਜਾਜ਼ਤਾਂ ਆਟੋ-ਸਵੀਕਾਰ ਕਰੋ",
-  "settings.permissions.autoaccept.project.description": "ਇਸ ਪ੍ਰੋਜੈਕਟ ਦੇ ਕਿਸੇ ਵੀ ਸੈਸ਼ਨ ਤੋਂ ਨਵੀਆਂ ਇਜਾਜ਼ਤ ਬੇਨਤੀਆਂ ਦਾ ਬਿਨਾਂ ਪੁੱਛੇ ਜਵਾਬ ਦਿਓ। ਸੈਸ਼ਨ ਅਤੇ ਡਾਇਰੈਕਟਰੀ ਪੱਧਰ ਦੀਆਂ ਚੋਣਾਂ ਨੂੰ ਤਰਜੀਹ ਮਿਲਦੀ ਹੈ।",
+  "settings.permissions.autoaccept.project.description":
+    "ਇਸ ਪ੍ਰੋਜੈਕਟ ਦੇ ਕਿਸੇ ਵੀ ਸੈਸ਼ਨ ਤੋਂ ਨਵੀਆਂ ਇਜਾਜ਼ਤ ਬੇਨਤੀਆਂ ਦਾ ਬਿਨਾਂ ਪੁੱਛੇ ਜਵਾਬ ਦਿਓ। ਸੈਸ਼ਨ ਅਤੇ ਡਾਇਰੈਕਟਰੀ ਪੱਧਰ ਦੀਆਂ ਚੋਣਾਂ ਨੂੰ ਤਰਜੀਹ ਮਿਲਦੀ ਹੈ।",
   "toast.model.none.title": "کوئی ماڈل نئیں چنیا گیا",
   "toast.model.none.description": "اس سیشن دا خلاصہ کرن لئی کسے پرووائیڈر نال جڑو",
   "toast.file.loadFailed.title": "فائل لوڈ کرن چ ناکامی ہوئی",
@@ -971,7 +987,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "استدلال دے خلاصے وکھاؤ",
   "settings.general.row.reasoningSummaries.description": "ٹائم لائن وچ ماڈل دی استدلال دے خلاصے وکھاؤ",
   "settings.general.row.turnDiffs.title": "ਹਰ ਵਾਰ ਲਈ ਬਦਲੀਆਂ ਫ਼ਾਈਲਾਂ ਵਿਖਾਓ",
-  "settings.general.row.turnDiffs.description": "ਟਾਈਮਲਾਈਨ ਵਿੱਚ ਹਰ ਪੂਰੇ ਹੋਏ ਵਾਰ ਦੀਆਂ ਬਦਲੀਆਂ ਫ਼ਾਈਲਾਂ ਨੂੰ ਲਾਈਨ ਗਿਣਤੀ ਅਤੇ ਖੁੱਲ੍ਹਣ ਵਾਲੇ ਫ਼ਰਕਾਂ ਨਾਲ ਸੂਚੀਬੱਧ ਕਰਦਾ ਹੈ।",
+  "settings.general.row.turnDiffs.description":
+    "ਟਾਈਮਲਾਈਨ ਵਿੱਚ ਹਰ ਪੂਰੇ ਹੋਏ ਵਾਰ ਦੀਆਂ ਬਦਲੀਆਂ ਫ਼ਾਈਲਾਂ ਨੂੰ ਲਾਈਨ ਗਿਣਤੀ ਅਤੇ ਖੁੱਲ੍ਹਣ ਵਾਲੇ ਫ਼ਰਕਾਂ ਨਾਲ ਸੂਚੀਬੱਧ ਕਰਦਾ ਹੈ।",
   "settings.general.row.shellToolPartsExpanded.title": "شیل ٹول دے حصیاں نو ودھاؤ",
   "settings.general.row.shellToolPartsExpanded.description":
     "ٹائم لائن وچ ڈیفالٹ دے طور تے ودھائے گئے شیل ٹول دے حصے وکھاؤ",

@@ -1,0 +1,15 @@
+{
+  "scenario": "usage-priced",
+  "engine": "rust",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e8cea9a70ffeAnWLAI15CD",
+  "cost": 0.0005,
+  "tokensIn": 13976,
+  "tokensOut": 41,
+  "stepFinishes": 1,
+  "tools": [],
+  "errors": []
+}

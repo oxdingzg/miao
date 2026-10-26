@@ -33,14 +33,6 @@ export type InvalidCursorError = { readonly _tag: "InvalidCursorError"; readonly
 export const isInvalidCursorError = (value: unknown): value is InvalidCursorError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "InvalidCursorError"
 
-export type ConflictError = {
-  readonly _tag: "ConflictError"
-  readonly message: string
-  readonly resource?: string | undefined
-}
-export const isConflictError = (value: unknown): value is ConflictError =>
-  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ConflictError"
-
 export type SessionNotFoundError = {
   readonly _tag: "SessionNotFoundError"
   readonly sessionID: string
@@ -48,6 +40,14 @@ export type SessionNotFoundError = {
 }
 export const isSessionNotFoundError = (value: unknown): value is SessionNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "SessionNotFoundError"
+
+export type ConflictError = {
+  readonly _tag: "ConflictError"
+  readonly message: string
+  readonly resource?: string | undefined
+}
+export const isConflictError = (value: unknown): value is ConflictError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ConflictError"
 
 export type SessionLocationMissingError = {
   readonly _tag: "SessionLocationMissingError"
@@ -433,6 +433,33 @@ export type AgentsListOutput = {
     readonly permission_mode?: "default" | "auto"
   }>
 }
+
+export type SessionsUsageHistoryInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly before?: { readonly before?: string | undefined; readonly limit?: number | undefined }["before"]
+  readonly limit?: { readonly before?: string | undefined; readonly limit?: number | undefined }["limit"]
+}
+
+export type SessionsUsageHistoryOutput = {
+  readonly data: {
+    readonly items: ReadonlyArray<{
+      readonly id: string
+      readonly messageID: string
+      readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly time: number
+      readonly finish: string
+      readonly cost: number
+      readonly tokens: {
+        readonly input: number
+        readonly output: number
+        readonly reasoning: number
+        readonly cache: { readonly read: number; readonly write: number }
+      }
+      readonly ttftMs?: number
+    }>
+    readonly next?: string
+  }
+}["data"]
 
 export type SessionsListInput = {
   readonly workspace?: {

@@ -1,0 +1,26 @@
+{
+  "scenario": "apply-patch",
+  "engine": "rust",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e8cf0afdfffeYKGkkLIuhD",
+  "cost": 0.00153,
+  "tokensIn": 42325,
+  "tokensOut": 105,
+  "stepFinishes": 3,
+  "tools": [
+    {
+      "tool": "read",
+      "status": "completed",
+      "background": false
+    },
+    {
+      "tool": "apply_patch",
+      "status": "completed",
+      "background": false
+    }
+  ],
+  "errors": []
+}

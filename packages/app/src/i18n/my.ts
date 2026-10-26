@@ -1,4 +1,21 @@
 export const dict = {
+  "context.history.title": "အချိန်နှင့်အမျှ ခန့်မှန်းထည့်သွင်းဖွဲ့စည်းမှု",
+  "context.history.point": "{{time}} · {{tokens}} သည် အချက်ပြတိုကင်များကို အစီရင်ခံခဲ့သည်။",
+  "context.history.note":
+    "တင်ထားသော assistant အလှည့်အပြောင်း 80 အထိကို အခြေခံထားသည်။ အမျိုးအစား ခန့်မှန်းချက်များသည် တင်ထားသော စာသားကို အသုံးပြု၍ အစီရင်ခံထားသော အချက်ပြတိုကင်များအဖြစ် အဆင့်သတ်မှတ်ထားသည်။ စစ်ဆေးရေးဂိတ်များသည် ခန့်မှန်းချက်ကို ပြန်လည်စတင်သည်။ မတင်ရသေးသော သို့မဟုတ် အမျိုးအစားခွဲမထားသော အကြောင်းအရာကို Other တွင် ပါဝင်သည်။ ၎င်းတို့သည် သိမ်းဆည်းထားသော တောင်းဆိုချက် လျှပ်တစ်ပြက်ပုံများ မဟုတ်ပါ။",
+  "context.timeline.title": "အကြောင်းအရာနှင့် ကက်ရှ်မှတ်တမ်း",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} ထည့်သွင်း တိုကင်များ · {{read}} ကက်ရှ်ဖတ်သည်။ · {{write}} Cache ရေးပါ။",
+  "context.timeline.requestWindow": "တောင်းဆိုချိန်၌ {{value}} တိုကင်ဝင်းဒိုး",
+  "context.timeline.catalogWindow": "လက်ရှိကတ်တလောက်တွင် {{value}} တိုကင်ဝင်းဒိုး",
+  "context.timeline.unknownWindow": "ဆက်စပ်ဝင်းဒိုး မသိပါ။",
+  "context.timeline.empty": "ဝန်ဆောင်မှုပေးသူ အသုံးပြုမှုကို အတည်မပြုရသေးပါ။",
+  "context.timeline.retry": "အသုံးပြုမှုမှတ်တမ်းကို ထပ်စမ်းကြည့်ပါ။",
+  "context.timeline.compaction": "အကြောင်းအရာကို စုစည်းထားသည်။",
+  "context.timeline.cacheRead": "ကက်ရှ်ဖတ်သည်။",
+  "context.timeline.cacheWrite": "Cache ရေးပါ။",
+  "context.timeline.ttft": "ပထမဆုံး တိုကင်အတွက် {{value}} ms",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "ဖိုင်",
   "desktop.menu.edit": "တည်းဖြတ်ပါ။",
@@ -608,7 +625,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "ခွင့်ပြုချက်များကို အလိုအလျောက်လက်ခံခြင်းကို ရပ်ထားသည်။",
   "toast.permissions.autoaccept.off.description": "ခွင့်ပြုချက်တောင်းခံမှုများသည် အတည်ပြုချက် လိုအပ်မည်ဖြစ်သည်။",
   "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
-  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
+  "settings.permissions.autoaccept.project.description":
+    "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "မော်ဒယ်ကို ရွေးထားခြင်းမရှိပါ။",
   "toast.model.none.description": "ဤစက်ရှင်ကို အကျဉ်းချုပ်ရန် ဝန်ဆောင်မှုပေးသူကို ချိတ်ဆက်ပါ။",
   "toast.file.loadFailed.title": "ဖိုင်ကို တင်ရန် မအောင်မြင်ပါ။",
@@ -981,8 +999,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "ကျိုးကြောင်းဆင်ခြင်ခြင်း အနှစ်ချုပ်များကို ပြပါ။",
   "settings.general.row.reasoningSummaries.description":
     "အချိန်ဇယားတွင် မော်ဒယ် ကျိုးကြောင်းဆင်ခြင်ခြင်း အနှစ်ချုပ်များကို ပြသပါ။",
-    "settings.general.row.turnDiffs.title": "Show changed files per turn",
-    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "shell tool အစိတ်အပိုင်းများကို ချဲ့ပါ။",
   "settings.general.row.shellToolPartsExpanded.description":
     "အချိန်ဇယားတွင် ပုံသေဖြင့် ချဲ့ထားသော shell tool အစိတ်အပိုင်းများကို ပြပါ။",

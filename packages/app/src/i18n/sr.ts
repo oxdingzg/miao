@@ -1,4 +1,21 @@
 export const dict = {
+  "context.history.title": "Процењена композиција улаза током времена",
+  "context.history.point": "{{time}} · {{tokens}} пријавили токени упита",
+  "context.history.note":
+    "На основу до 80 напуњених окрета помоћника. Процене категорија користе учитани текст, скалиран на пријављене токене упита. Контролне тачке поново покрећу процену; неучитани или некласификовани садржаји су укључени у Остало. Ово нису сачувани снимци захтева.",
+  "context.timeline.title": "Историја контекста и кеша",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} промпт токенс · {{read}} кеш читање · {{write}} кеш уписивање",
+  "context.timeline.requestWindow": "{{value}} прозор токена у време захтева",
+  "context.timeline.catalogWindow": "{{value}} прозор токена у тренутном каталогу",
+  "context.timeline.unknownWindow": "Прозор контекста непознат",
+  "context.timeline.empty": "Још увек није забележена стабилна употреба провајдера.",
+  "context.timeline.retry": "Поновите историју коришћења",
+  "context.timeline.compaction": "Контекст је збијен",
+  "context.timeline.cacheRead": "Кеш читање",
+  "context.timeline.cacheWrite": "Запис у кеш меморију",
+  "context.timeline.ttft": "{{value}} мс до првог токена",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "датотека",
   "desktop.menu.edit": "Уреди",
@@ -603,7 +620,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Заустављено аутоматско прихватање дозвола",
   "toast.permissions.autoaccept.off.description": "Захтеви за дозволу ће захтевати одобрење",
   "settings.permissions.autoaccept.project.title": "Аутоматски прихвати дозволе за овај пројекат",
-  "settings.permissions.autoaccept.project.description": "Одговарај на нове захтеве за дозволе из било које сесије овог пројекта без питања. Избори на нивоу сесије и директоријума имају предност.",
+  "settings.permissions.autoaccept.project.description":
+    "Одговарај на нове захтеве за дозволе из било које сесије овог пројекта без питања. Избори на нивоу сесије и директоријума имају предност.",
   "toast.model.none.title": "Није изабран ниједан модел",
   "toast.model.none.description": "Повежите провајдера да бисте резимирали ову сесију",
   "toast.file.loadFailed.title": "Учитавање датотеке није успело",
@@ -664,8 +682,7 @@ export const dict = {
   "error.chain.didYouMean": "Да ли сте мислили: {{suggestions}}",
   "error.chain.modelNotFound": "Модел није пронађен: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Проверите имена добављача/модела конфигурације (miao.json).",
-  "error.chain.mcpFailed":
-    "MCP сервер „{{name}}“ није успео. Напомена, miao још увек не подржава MCP аутентификацију.",
+  "error.chain.mcpFailed": "MCP сервер „{{name}}“ није успео. Напомена, miao још увек не подржава MCP аутентификацију.",
   "error.chain.providerAuthFailed": "аутентификација добављача није успела ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     "Иницијализација добављача „{{provider}}“ није успела. Проверите акредитиве и конфигурацију.",
@@ -970,7 +987,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Прикажи резимее образложења",
   "settings.general.row.reasoningSummaries.description": "Приказ резимеа образложења модела на временској линији",
   "settings.general.row.turnDiffs.title": "Прикажи промењене датотеке по кругу",
-  "settings.general.row.turnDiffs.description": "На временској линији наводи промењене датотеке сваког завршеног круга са бројем линија и расклопљивим разликама.",
+  "settings.general.row.turnDiffs.description":
+    "На временској линији наводи промењене датотеке сваког завршеног круга са бројем линија и расклопљивим разликама.",
   "settings.general.row.shellToolPartsExpanded.title": "Проширите shell делова алата",
   "settings.general.row.shellToolPartsExpanded.description":
     "Прикажи shell делове алата проширене подразумевано на временској линији",

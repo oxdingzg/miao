@@ -89,22 +89,21 @@ fn input(session: &str, prompt: &str) -> Input {
     }
 }
 async fn terminal(store: &Store, session: &str) -> String {
+    let mut after = 0;
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
-            if let Some(event) = store
-                .events(session, 0, 2000)
-                .await
-                .unwrap()
-                .iter()
-                .find(|e| e.kind == "run.finished")
-            {
+            let events = store.events(session, after, 2000).await.unwrap();
+            if let Some(event) = events.iter().find(|event| event.kind == "run.finished") {
                 return event.data["reason"].as_str().unwrap().to_owned();
+            }
+            if let Some(event) = events.last() {
+                after = event.seq;
             }
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
     })
     .await
-    .unwrap()
+    .unwrap_or_else(|_| panic!("run.finished was not observed after journal cursor {after}"))
 }
 
 #[tokio::test]
@@ -124,9 +123,11 @@ async fn repeated_identical_calls_are_refused_with_a_corrective_error() {
     runtime.admit(input("s", "loop"), true).await.unwrap();
     assert_eq!(terminal(&store, "s").await, "completed");
     let events = store.events("s", 0, 2000).await.unwrap();
+    // The last allowed provider turn closes the prompt instead of running the
+    // tool it asks for, so 25 allowed turns leave 24 tool rounds.
     assert_eq!(
         events.iter().filter(|e| e.kind == "tool.completed").count(),
-        25
+        24
     );
     assert!(events.iter().any(|e| e.kind == "tool.completed"
         && e.data["result"]["error"]

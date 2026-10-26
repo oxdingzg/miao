@@ -94,6 +94,23 @@ const desktop = [
 ]
 
 export const dict = {
+  "context.history.title": "Becsült bemeneti összetétel az idő függvényében",
+  "context.history.point": "{{time}} · {{tokens}} prompt tokeneket jelentett",
+  "context.history.note":
+    "Akár 80 betöltött asszisztens fordulat alapján. A kategóriabecslések betöltött szöveget használnak, amelyet a jelentett prompt tokenekre méreteznek. Az ellenőrzőpontok újraindítják a becslést; a kirakott vagy besorolatlan tartalom szerepel az Egyéb. Ezek nem mentett kérés pillanatképek.",
+  "context.timeline.title": "Kontextus és gyorsítótár előzmények",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} prompt tokenek · {{read}} gyorsítótár olvasása · {{write}} gyorsítótár írása",
+  "context.timeline.requestWindow": "{{value}} token ablak a kérés időpontjában",
+  "context.timeline.catalogWindow": "{{value}} token ablak az aktuális katalógusban",
+  "context.timeline.unknownWindow": "Ismeretlen kontextusablak",
+  "context.timeline.empty": "Még nem rögzítették a rendezett szolgáltatói használatot.",
+  "context.timeline.retry": "Próbálja újra a használati előzményeket",
+  "context.timeline.compaction": "Kontextus tömörítve",
+  "context.timeline.cacheRead": "Gyorsítótár beolvasása",
+  "context.timeline.cacheWrite": "Gyorsítótár írása",
+  "context.timeline.ttft": "{{value}} ms az első tokenig",
+
   ...Object.fromEntries(DESKTOP_NATIVE_KEYS.map((key, index) => [key, desktop[index]])),
   "command.category.suggested": "Javasolt",
   "command.category.view": "Nézet",
@@ -607,7 +624,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Az engedélyek automatikus elfogadása leállítva",
   "toast.permissions.autoaccept.off.description": "Az engedélykérésekhez jóváhagyás szükséges",
   "settings.permissions.autoaccept.project.title": "Engedélyek automatikus elfogadása ehhez a projekthez",
-  "settings.permissions.autoaccept.project.description": "Új engedélykérelmek megválaszolása kérdés nélkül a projekt bármely munkamenetéből. A munkamenet- és könyvtárszintű választások elsőbbséget élveznek.",
+  "settings.permissions.autoaccept.project.description":
+    "Új engedélykérelmek megválaszolása kérdés nélkül a projekt bármely munkamenetéből. A munkamenet- és könyvtárszintű választások elsőbbséget élveznek.",
   "toast.model.none.title": "Nincs kiválasztott modell",
   "toast.model.none.description": "Csatlakozzon egy szolgáltatóhoz a munkamenet összefoglalásához",
   "toast.file.loadFailed.title": "Nem sikerült betölteni a fájlt",
@@ -976,7 +994,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Mutasson érvelési összefoglalókat",
   "settings.general.row.reasoningSummaries.description": "Modell indoklási összefoglalók megjelenítése az idővonalon",
   "settings.general.row.turnDiffs.title": "Módosított fájlok megjelenítése körönként",
-  "settings.general.row.turnDiffs.description": "Felsorolja az idővonalon minden befejezett kör módosított fájljait sorszámokkal és kinyitható diff-ekkel.",
+  "settings.general.row.turnDiffs.description":
+    "Felsorolja az idővonalon minden befejezett kör módosított fájljait sorszámokkal és kinyitható diff-ekkel.",
   "settings.general.row.shellToolPartsExpanded.title": "Shelleszköz részeinek kibontása",
   "settings.general.row.shellToolPartsExpanded.description":
     "Alapértelmezés szerint kibontott shell eszközrészek megjelenítése az idővonalon",
@@ -1103,7 +1122,8 @@ export const dict = {
   "settings.providers.accounts.activated.title": "Fiók átváltva",
   "settings.providers.accounts.activated.description": "A {{provider}} mostantól a(z) {{account}} fiókot használja.",
   "settings.providers.accounts.removed.title": "Fiók eltávolítva",
-  "settings.providers.accounts.removed.description": "A(z) {{account}} fiók el lett távolítva a következőből: {{provider}}.",
+  "settings.providers.accounts.removed.description":
+    "A(z) {{account}} fiók el lett távolítva a következőből: {{provider}}.",
   "settings.models.title": "Modellek",
   "settings.models.description": "A modellbeállítások itt konfigurálhatók.",
   "settings.agents.title": "Ügynökök",

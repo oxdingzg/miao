@@ -2,6 +2,23 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "context.history.title": "Estimert inputsammensetning over tid",
+  "context.history.point": "{{time}} · {{tokens}} rapporterte prompt-tokens",
+  "context.history.note":
+    "Basert på opptil 80 belastede assistentsvinger. Kategoriberegninger bruker innlastet tekst, skalert til rapporterte ledetekst-tokens. Sjekkpunkter starter estimatet på nytt; ulastet eller uklassifisert innhold er inkludert i Annet. Dette er ikke lagrede øyeblikksbilder av forespørselen.",
+  "context.timeline.title": "Kontekst- og hurtigbufferhistorikk",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} prompt tokens · {{read}} cache les · {{write}} cache skrive",
+  "context.timeline.requestWindow": "{{value}} tokenvindu på forespørselstidspunkt",
+  "context.timeline.catalogWindow": "{{value}} tokenvindu i gjeldende katalog",
+  "context.timeline.unknownWindow": "Kontekstvindu ukjent",
+  "context.timeline.empty": "Ingen avgjort leverandørbruk er registrert ennå.",
+  "context.timeline.retry": "Prøv bruksloggen på nytt",
+  "context.timeline.compaction": "Kontekst komprimert",
+  "context.timeline.cacheRead": "Cache lest",
+  "context.timeline.cacheWrite": "Cache skriv",
+  "context.timeline.ttft": "{{value}} ms til første token",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Arkiv",
   "desktop.menu.edit": "Rediger",
@@ -546,7 +563,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Stoppet automatisk akseptering av tillatelser",
   "toast.permissions.autoaccept.off.description": "Forespørsler om tillatelse vil kreve godkjenning",
   "settings.permissions.autoaccept.project.title": "Godta tillatelser automatisk for dette prosjektet",
-  "settings.permissions.autoaccept.project.description": "Besvar nye tilatelsesforespørsler fra økter i dette prosjektet uten å spørre. Valg per økt og mappe går foran.",
+  "settings.permissions.autoaccept.project.description":
+    "Besvar nye tilatelsesforespørsler fra økter i dette prosjektet uten å spørre. Valg per økt og mappe går foran.",
 
   "toast.model.none.title": "Ingen modell valgt",
   "toast.model.none.description": "Koble til en leverandør for å oppsummere denne sesjonen",
@@ -796,7 +814,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Vis resonneringssammendrag",
   "settings.general.row.reasoningSummaries.description": "Vis sammendrag av modellresonnering i tidslinjen",
   "settings.general.row.turnDiffs.title": "Vis endrede filer per runde",
-  "settings.general.row.turnDiffs.description": "Lister opp i tidslinjen de endrede filene for hver fullførte runde, med linjetall og utfbare diff-er.",
+  "settings.general.row.turnDiffs.description":
+    "Lister opp i tidslinjen de endrede filene for hver fullførte runde, med linjetall og utfbare diff-er.",
   "settings.general.row.shellToolPartsExpanded.title": "Utvid shell-verktøydeler",
   "settings.general.row.shellToolPartsExpanded.description": "Vis shell-verktøydeler utvidet som standard i tidslinjen",
   "settings.general.row.editToolPartsExpanded.title": "Utvid edit-verktøydeler",

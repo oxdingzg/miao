@@ -20,7 +20,9 @@ async fn copilot_three_wires_load_device_token_and_derive_turn_headers() {
         let send = send.clone();
         async move {
             send.send((headers, body)).await.unwrap();
-            (StatusCode::BAD_REQUEST, "fixture")
+            // A sentinel only: 422 is never retried or replayed, so the
+            // capture below pairs one request with one stream.
+            (StatusCode::UNPROCESSABLE_ENTITY, "fixture")
         }
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -61,7 +63,7 @@ async fn copilot_three_wires_load_device_token_and_derive_turn_headers() {
                 )
                 .await;
             assert!(
-                matches!(result, Err(ProviderError::Http(400))),
+                matches!(result, Err(ProviderError::Http(422))),
                 "{wire} did not reach fixture"
             );
             let (headers, _body) = seen.recv().await.unwrap();

@@ -1,0 +1,18 @@
+{
+  "spent": 0.00049110346,
+  "rows": [
+    {
+      "scenario": "session-title",
+      "engine": "rust",
+      "model": "zhipuai-coding-plan/glm-5.3-flash",
+      "status": "pass",
+      "note": "title: Conformance title check",
+      "seconds": 15.171,
+      "cost": 0.00049110346,
+      "tokensIn": 13973,
+      "tokensOut": 22,
+      "turns": 1,
+      "archived": "runs/r14-title/raw/session-title.rust.zhipuai-coding-plan-glm-5.3-flash"
+    }
+  ]
+}

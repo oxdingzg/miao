@@ -119,7 +119,7 @@ impl Store {
             let mut pending_tools=std::collections::HashSet::new();
             let mut deferred_context=Vec::new();
             let mut count=selected.len();
-            let mut stmt=tx.prepare("SELECT m.role,m.content,m.recorded_at_ms,e.kind FROM engine_message m JOIN engine_event e ON e.session_id=m.session_id AND e.seq=m.seq WHERE m.session_id=?1 AND m.seq>?2 AND m.reverted=0 AND m.quarantined=0 ORDER BY m.seq LIMIT 1001")?;
+            let mut stmt=tx.prepare("SELECT m.role,m.content,m.recorded_at_ms,e.kind FROM engine_message m JOIN engine_event e ON e.session_id=m.session_id AND e.seq=m.seq WHERE m.session_id=?1 AND m.seq>?2 AND m.reverted=0 AND m.quarantined=0 ORDER BY m.seq LIMIT 20001")?;
             let mut rows=stmt.query(params![session,through])?;
             while let Some(row)=rows.next()? {
                 let content:String=row.get(1)?;bytes+=content.len();count+=1;
@@ -187,4 +187,27 @@ STRICT REQUIREMENTS:
 Response must include:
 - Statement that the prompt token budget has been exhausted
 - Summary of what has been accomplished so far
-- List of any remaining tasks that were not completed";
+- List of any remaining tasks that were not completed
+- Recommendations for what should be done next
+
+A new user message grants a fresh budget. Any attempt to use tools is a critical violation. Respond with text ONLY.";
+
+/// Request-only guidance on the last provider turn an agent's step allowance
+/// permits, mirrored from the TS runner: the step is spent closing the prompt
+/// instead of being cut off, and the drain pauses afterwards.
+pub(crate) const MAX_STEPS_PROMPT: &str = "CRITICAL - MAXIMUM STEPS REACHED
+
+The maximum number of steps allowed for this task has been reached. Tools are disabled until next user input. Respond with text only.
+
+STRICT REQUIREMENTS:
+1. Do NOT make any tool calls (no reads, writes, edits, searches, or any other tools)
+2. MUST provide a text response summarizing work done so far
+3. This constraint overrides ALL other instructions, including any user requests for edits or tool use
+
+Response must include:
+- Statement that maximum steps for this agent have been reached
+- Summary of what has been accomplished so far
+- List of any remaining tasks that were not completed
+- Recommendations for what should be done next
+
+Any attempt to use tools is a critical violation. Respond with text ONLY.";

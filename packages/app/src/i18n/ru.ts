@@ -1,4 +1,21 @@
 export const dict = {
+  "context.history.title": "Предполагаемый состав вводимых ресурсов с течением времени",
+  "context.history.point": "{{time}} · {{tokens}} сообщил о токенах подсказки",
+  "context.history.note":
+    "Из расчета до 80 загруженных поворотов помощника. В оценках категорий используется загруженный текст, масштабированный до токенов сообщаемых подсказок. Контрольные точки перезапускают оценку; выгруженный или несекретный контент включен в категорию «Другое». Это не сохраненные снимки запросов.",
+  "context.timeline.title": "История контекста и кэша",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} токены приглашения · {{read}} чтение кэша · {{write}} запись кэша",
+  "context.timeline.requestWindow": "Окно токена {{value}} во время запроса",
+  "context.timeline.catalogWindow": "Окно токена {{value}} в текущем каталоге",
+  "context.timeline.unknownWindow": "Контекстное окно неизвестно",
+  "context.timeline.empty": "Никакого урегулированного использования провайдера пока не зарегистрировано.",
+  "context.timeline.retry": "Повторить историю использования",
+  "context.timeline.compaction": "Контекст сжат",
+  "context.timeline.cacheRead": "Чтение кэша",
+  "context.timeline.cacheWrite": "Запись в кэш",
+  "context.timeline.ttft": "{{value}} мс до первого токена",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Файл",
   "desktop.menu.edit": "Правка",
@@ -636,7 +653,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Автоматическое принятие разрешений остановлено",
   "toast.permissions.autoaccept.off.description": "Запросы на разрешения будут требовать одобрения",
   "settings.permissions.autoaccept.project.title": "Автоприём разрешений для этого проекта",
-  "settings.permissions.autoaccept.project.description": "Отвечать на новые запросы разрешений из любой сессии этого проекта без вопроса. Выбор на уровне сессии и каталога имеет приоритет.",
+  "settings.permissions.autoaccept.project.description":
+    "Отвечать на новые запросы разрешений из любой сессии этого проекта без вопроса. Выбор на уровне сессии и каталога имеет приоритет.",
 
   "toast.workspace.enabled.title": "Рабочие пространства включены",
   "toast.workspace.enabled.description": "В боковой панели теперь отображаются несколько рабочих деревьев",
@@ -958,7 +976,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Показывать сводки рассуждений",
   "settings.general.row.reasoningSummaries.description": "Отображать сводки рассуждений модели в ленте",
   "settings.general.row.turnDiffs.title": "Показывать изменённые файлы по ходам",
-  "settings.general.row.turnDiffs.description": "Показывает на шкале времени изменённые файлы каждого завершённого хода с подсчётом строк и раскрываемыми различиями.",
+  "settings.general.row.turnDiffs.description":
+    "Показывает на шкале времени изменённые файлы каждого завершённого хода с подсчётом строк и раскрываемыми различиями.",
 
   "settings.general.row.shellToolPartsExpanded.title": "Разворачивать элементы инструмента shell",
   "settings.general.row.shellToolPartsExpanded.description":
