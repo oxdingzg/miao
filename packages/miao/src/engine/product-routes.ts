@@ -631,6 +631,38 @@ function profile(model: ModelV2.Info, account: Account, integration: string): Tr
     const url = endpoint(base ?? "https://api.anthropic.com/v1", "messages")
     return url ? { provider: "anthropic", endpoint: url } : undefined
   }
+  if (model.api.package === "@ai-sdk/google-vertex") {
+    // Vertex serves Gemini under a publisher path. A key authenticates with
+    // `x-goog-api-key`, and without a project it reaches the global express
+    // endpoint; otherwise the account's Google Cloud token is a bearer.
+    const project = vertexSetting(model, "project", VERTEX_PROJECT_ENV)
+    const location = vertexSetting(model, "location", VERTEX_LOCATION_ENV) ?? "us-central1"
+    const host =
+      location === "global"
+        ? "aiplatform.googleapis.com"
+        : location === "eu" || location === "us"
+          ? `aiplatform.${location}.rep.googleapis.com`
+          : `${location}-aiplatform.googleapis.com`
+    const declared = model.api.url
+      ?.replaceAll("${GOOGLE_VERTEX_PROJECT}", project ?? "${GOOGLE_VERTEX_PROJECT}")
+      .replaceAll("${GOOGLE_VERTEX_LOCATION}", location)
+      .replaceAll("${GOOGLE_VERTEX_ENDPOINT}", host)
+    const express = account.value?.type === "key" && project === undefined && declared === undefined
+    const base = express
+      ? "https://aiplatform.googleapis.com/v1/publishers/google"
+      : (declared ??
+        (project === undefined
+          ? undefined
+          : `https://${host}/v1/projects/${project}/locations/${location}/publishers/google`))
+    if (base === undefined) return undefined
+    const url = endpoint(base, `models/${model.api.id.trim()}:streamGenerateContent`)
+    if (!url) return undefined
+    if (account.value?.type === "key") return { provider: "gemini", endpoint: url }
+    // The bearer route needs a token the engine can resolve; Application
+    // Default Credentials live outside its credential sources.
+    if (account.value?.type === "oauth") return { provider: "vertex-gemini", endpoint: url }
+    return undefined
+  }
   if (model.api.package === "@ai-sdk/google") {
     const url = endpoint(
       base ?? "https://generativelanguage.googleapis.com/v1beta",
