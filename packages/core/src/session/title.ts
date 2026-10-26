@@ -51,6 +51,17 @@ export const prompt = (messages: ReadonlyArray<SessionMessage.Message>) => {
   return `User request: ${text || "[Image attached]"}\nFirst assistant response:\n${answer.slice(0, 4000)}`
 }
 
+const UNKNOWN_MODEL_RE = /model.*(?:not supported|not found|not available|does not exist)|unsupported.*model/i
+const PLAN_EXCLUDED_RE = /套餐|订阅|权限|entitlement|(?:your |the )?plan (?:does not|is not)|not included|upgrade your plan/i
+
+/** True when a title-model rejection cannot improve on a later attempt: the
+ * provider does not know the model, or the caller's plan excludes it. Aux
+ * callers cache these so a retry only spends attempts on models that can
+ * actually answer. Generic rate limits stay retryable. */
+export const permanentRejection = (error: LLMError) =>
+  (error.reason._tag === "InvalidRequest" && UNKNOWN_MODEL_RE.test(error.reason.message)) ||
+  (error.reason._tag === "RateLimit" && PLAN_EXCLUDED_RE.test(error.reason.message))
+
 /** Asks the title model for a title of the first user prompt; undefined when it fails or answers nothing usable. */
 export const generate = (input: {
   readonly llm: { readonly stream: (request: LLMRequest) => Stream.Stream<LLMEvent, LLMError> }
