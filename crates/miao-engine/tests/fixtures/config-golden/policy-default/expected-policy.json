@@ -1,0 +1,15 @@
+{
+  "mode": "workspace",
+  "allow_process": true,
+  "allow_background": true,
+  "allow_subagents": true,
+  "allow_mcp": true,
+  "allow_web": true,
+  "allow_wakeup": true,
+  "allow_cron": true,
+  "process_network": true,
+  "sandbox": true,
+  "rules": [],
+  "approval_timeout_ms": 60000,
+  "max_provider_turns": null
+}

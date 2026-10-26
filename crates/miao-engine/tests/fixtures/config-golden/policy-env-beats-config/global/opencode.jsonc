@@ -1,0 +1,4 @@
+{
+  // The operator's explicit switch wins over the config document.
+  "sandbox": { "mode": "off" },
+}
