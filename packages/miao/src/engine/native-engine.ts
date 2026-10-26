@@ -103,6 +103,21 @@ import { readTranscript } from "./transcript"
  * keep the explicit refusal. The model identity is required from the operator
  * because the engine cannot invent provider credentials or catalog facts.
  */
+/**
+ * Refusals that mean the assembled request no longer fits, so the turn
+ * boundary has to close before a compaction pass can run. The Session-state
+ * variant rises when durable progress would be injected into an oversized
+ * prompt; matching only the first message left that case with no recovery at
+ * all, so a Session with todos or a goal could never compact out of it.
+ */
+const OVERFLOW = [
+  "selected history exceeds budget",
+  "selected input including Session state exceeds budget",
+]
+
+export const overflows = (error: unknown) =>
+  error instanceof Error && OVERFLOW.some((message) => error.message.includes(message))
+
 export const nativeEngineOptions = (
   environment: Record<string, string | undefined> = process.env,
   settings: Omit<EngineOptions, "db" | "workspace"> | undefined = undefined,
@@ -506,7 +521,7 @@ export const fromOwners = (
           // durable-input reconciliation makes the retry idempotent.
           Effect.catch((error) =>
             Effect.tryPromise(async () => {
-              if (!(error instanceof Error) || !error.message.includes("selected history exceeds budget")) throw error
+              if (!overflows(error)) throw error
               const seen = await Effect.runPromise(
                 Effect.tryPromise({
                   try: () =>
