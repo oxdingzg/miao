@@ -142,7 +142,7 @@ pub fn build_with_responses(
                 )
             })?;
             Ok(Arc::new(
-                Anthropic::with_bearer_source(endpoint.into(), source, model)
+                Anthropic::with_vertex_source(endpoint.into(), source, model)
                     .map_err(|_| ProviderError::Transport)?,
             ))
         }

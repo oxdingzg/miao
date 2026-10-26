@@ -1,4 +1,5 @@
 import { expect } from "bun:test"
+import { Database } from "bun:sqlite"
 import { Catalog } from "@miao/core/catalog"
 import { Credential } from "@miao/core/credential"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
@@ -12,6 +13,7 @@ import { AbsolutePath } from "@miao/core/schema"
 import { Effect, Layer } from "effect"
 import { ProductRoutes } from "../../src/engine/product-routes"
 import { testEffect } from "../lib/effect"
+import { tmpdir } from "../fixture/fixture"
 
 const it = testEffect(Layer.empty)
 const location = Location.Ref.make({ directory: AbsolutePath.make("/route-parity-workspace") })
@@ -193,6 +195,96 @@ it.live("azure deployments carry the deployment in the path, not the version seg
     const routes = yield* azureManifest({ deployment: true })
     expect(routes.find((route) => route.id === `azure/${AZURE_MODEL}`)?.endpoint).toBe(
       `https://contoso.openai.azure.com/openai/deployments/${AZURE_DEPLOYMENT}/chat/completions`,
+    )
+  }),
+)
+
+const VERTEX_MODEL = "claude-sonnet-4-5"
+const VERTEX_INTEGRATION = "google-vertex"
+
+/**
+ * Vertex Anthropic in the product catalog: the plugin keeps the publisher path
+ * on the provider and authenticates with a Google Cloud access token, which the
+ * engine can only send when the token is a stored credential.
+ */
+const vertexCatalog = (region: string) =>
+  Effect.gen(function* () {
+    const services = yield* Catalog.Service
+    const integrations = yield* Integration.Service
+    yield* integrations.transform((draft) => {
+      draft.update(Integration.ID.make(VERTEX_INTEGRATION), () => {})
+    })
+    yield* services.transform((draft) => {
+      draft.provider.update(ProviderV2.ID.googleVertex, (provider) => {
+        provider.integrationID = Integration.ID.make(VERTEX_INTEGRATION)
+        provider.api = {
+          type: "aisdk",
+          package: "@ai-sdk/google-vertex/anthropic",
+          settings: { project: "proj-alpha", location: region },
+        }
+      })
+      draft.model.update(ProviderV2.ID.googleVertex, ModelV2.ID.make(VERTEX_MODEL), (model) => {
+        model.api.id = ModelV2.ID.make(VERTEX_MODEL)
+        model.capabilities.tools = true
+        model.capabilities.output = ["text"]
+      })
+      draft.model.default.set(ProviderV2.ID.googleVertex, ModelV2.ID.make(VERTEX_MODEL))
+    })
+  })
+
+/** A shared credential store holding one Google OAuth row for Vertex. */
+const vertexManifest = (region: string) =>
+  Effect.acquireUseRelease(
+    Effect.promise(() => tmpdir()),
+    (tmp) => {
+      const shared = `${tmp.path}/credentials.db`
+      const db = new Database(shared)
+      db.exec(
+        "CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, label TEXT, value TEXT, time_created INTEGER)",
+      )
+      db.query("INSERT INTO credential VALUES (?,?,?,?,?)").run(
+        "cred_vertex",
+        VERTEX_INTEGRATION,
+        "vertex",
+        JSON.stringify({
+          type: "oauth",
+          methodID: "fixture",
+          access: "GOOGLE_ACCESS",
+          refresh: "GOOGLE_REFRESH",
+          expires: Date.now() + 3_600_000,
+        }),
+        0,
+      )
+      db.close()
+      return Effect.scoped(
+        Effect.gen(function* () {
+          yield* vertexCatalog(region)
+          const prepared = yield* ProductRoutes.prepare(location, { binary: "fixture", model: "" })
+          const file = prepared.modelRoutesConfigFile
+          if (!file) throw new Error("missing product routes manifest")
+          return (yield* Effect.promise(() => Bun.file(file).json())) as Route[]
+        }),
+      ).pipe(Effect.provide(layer), Effect.provideService(Credential.SharedDatabasePath, shared))
+    },
+    (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+  )
+
+it.live("vertex anthropic keeps the global publisher path the plugin builds", () =>
+  Effect.gen(function* () {
+    const routes = yield* vertexManifest("global")
+    expect(routes.find((route) => route.id === `google-vertex/${VERTEX_MODEL}`)).toMatchObject({
+      provider: "vertex-anthropic",
+      endpoint: `https://aiplatform.googleapis.com/v1/projects/proj-alpha/locations/global/publishers/anthropic/models/${VERTEX_MODEL}:streamRawPredict`,
+      credential: { id: "cred_vertex", integration: VERTEX_INTEGRATION },
+    })
+  }),
+)
+
+it.live("vertex anthropic resolves a plain region to its own host", () =>
+  Effect.gen(function* () {
+    const routes = yield* vertexManifest("europe-west4")
+    expect(routes.find((route) => route.id === `google-vertex/${VERTEX_MODEL}`)?.endpoint).toBe(
+      `https://europe-west4-aiplatform.googleapis.com/v1/projects/proj-alpha/locations/europe-west4/publishers/anthropic/models/${VERTEX_MODEL}:streamRawPredict`,
     )
   }),
 )
