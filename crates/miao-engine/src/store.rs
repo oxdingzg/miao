@@ -2083,6 +2083,12 @@ impl Store {
             if changed!=1 { return Err(Error::Invalid("tool is not dispatched".into())); }
             let name: String = tx.query_row("SELECT name FROM engine_tool WHERE id=?1",params![key],|row| row.get(0))?;
             let mut result = result;
+            // A file mutation's display diffs ride beside the model-facing
+            // result: the host renders them from the event, and the model never
+            // pays for a patch that repeats text it already wrote.
+            let display = result
+                .as_object_mut()
+                .and_then(|result| result.remove("_display"));
             let mut attachments = Vec::new();
             if name == "read_image" && !is_error {
                 let image = result.as_object_mut().and_then(|result| result.remove("image"))
@@ -2106,7 +2112,11 @@ impl Store {
                     }
                 }
             }
-            append(&tx,&session,"tool.completed",json!({"call_id":key,"result":result,"result_json":serde_json::to_string(&result)?,"is_error":is_error}))?;
+            let mut completed = json!({"call_id":key,"result":result,"result_json":serde_json::to_string(&result)?,"is_error":is_error});
+            if let Some(display) = display {
+                completed["display"] = display;
+            }
+            append(&tx,&session,"tool.completed",completed)?;
             let mut content = vec![json!({"type":"tool_result","tool_use_id":id,"content":serde_json::to_string(&result)?,"is_error":is_error})];
             content.extend(attachments);
             let event=project_message(&tx,&session,"user",json!(content),None,None)?;
