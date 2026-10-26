@@ -199,6 +199,9 @@ const INHERITED_ENVIRONMENT = [
   "AWS_SDK_LOAD_CONFIG",
   "EXA_API_KEY",
   "PARALLEL_API_KEY",
+  // The retained product knob selects the search provider; the engine reads its
+  // own variable name, which `engineEnvironment` fills in from this one.
+  "MIAO_WEBSEARCH_PROVIDER",
   "MIAO_WEB_SEARCH_PROVIDER",
   "MIAO_WEB_SEARCH_ENDPOINT",
   // Engine deployment knobs.
@@ -227,13 +230,20 @@ export function engineEnvironment(
   for (const key of INHERITED_ENVIRONMENT) {
     if (inherited[key] !== undefined) environment[key] = inherited[key]
   }
-  return { ...environment, ...explicit }
+  const merged = { ...environment, ...explicit }
+  // Both provider keys can be present, so the choice has to travel: a product
+  // environment that only sets the retained `MIAO_WEBSEARCH_PROVIDER` knob would
+  // otherwise leave the engine to pick whichever key it found first.
+  if (merged.MIAO_WEB_SEARCH_PROVIDER === undefined && merged.MIAO_WEBSEARCH_PROVIDER !== undefined) {
+    merged.MIAO_WEB_SEARCH_PROVIDER = merged.MIAO_WEBSEARCH_PROVIDER
+  }
+  delete merged.MIAO_WEBSEARCH_PROVIDER
+  return merged
 }
 
 /** The argv the child engine is spawned with; pure so tests can assert it. */
 export function engineArgs(options: EngineOptions): string[] {
   const args = ["serve", "--db", options.db, "--workspace", options.workspace, "--model", options.model]
-  if (options.workerConfigFile) console.log("[worker-host] engine argv includes --worker-config")
   if (options.workerConfigFile) args.push("--worker-config", options.workerConfigFile)
   if (options.provider) args.push("--provider", options.provider)
   if (options.endpoint) args.push("--endpoint", options.endpoint)

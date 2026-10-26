@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { Schema } from "effect"
 import { Model } from "@miao/schema/model"
 import { EngineTranslator, LIVE_ORDINAL_BASE, type EngineSessionEvent } from "@/engine/session"
-import { messageID } from "@/engine/identity"
+import { generatedInputMessageID, messageID } from "@/engine/identity"
 
 const collect = () => {
   const outputs: EngineSessionEvent[] = []
@@ -67,6 +67,19 @@ test("assistant identity resolves the product model through pricing and keeps th
     agent: "explore",
     model: { providerID: "catalog", id: "actual" },
   })
+})
+
+test("a command lifecycle publishes the same identity its promotion does", () => {
+  const { outputs, translator } = collect()
+  translator.dispatch({
+    session_id: "ses_replay",
+    seq: 12,
+    kind: "command.started",
+    data: { input_id: "monitor:job:u", message_seq: 9 },
+    recorded_at_ms: 600,
+  })
+  expect(outputs.map((event) => event.type)).toEqual(["session.next.command.started"])
+  expect((outputs[0].data as { messageID?: unknown }).messageID).toBe(generatedInputMessageID("monitor:job:u"))
 })
 
 test("unrelated journal kinds produce no product events and engine vocabulary stays engine-side", () => {

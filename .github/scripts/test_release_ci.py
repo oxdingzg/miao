@@ -16,7 +16,14 @@ class ReleaseCITest(unittest.TestCase):
         workflow = Path(__file__).resolve().parents[1].joinpath("workflows/release.yml").read_text()
         self.assertIn("ref: ${{ inputs.commit || github.sha }}", workflow)
         self.assertIn("commit: ${{ steps.commit.outputs.sha }}", workflow)
-        self.assertEqual(workflow.count("ref: ${{ needs.version.outputs.commit }}"), 2)
+        # Every job that builds or publishes checks out the verified commit; only
+        # the `version` job reads the dispatch commit, because it is the job that
+        # resolves it. Counting pairs this way keeps the invariant true when a
+        # job is added, instead of hard-coding how many jobs exist today.
+        checkouts = workflow.count("uses: actions/checkout")
+        verified = workflow.count("ref: ${{ needs.version.outputs.commit }}")
+        self.assertEqual(checkouts, verified + 1)
+        self.assertGreaterEqual(verified, 2)
         self.assertNotIn("ref: main", workflow)
 
     def test_tag_target_uses_the_verified_checkout(self):

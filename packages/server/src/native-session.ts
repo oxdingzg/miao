@@ -8,7 +8,7 @@ import { SessionInfo } from "@miao/schema/session-info"
 import { SessionID } from "@miao/schema/session-id"
 import { ModelV2 } from "@miao/core/model"
 import { SessionRunnerCost } from "@miao/core/session/runner/cost"
-import { Cause, DateTime, Effect, Option, Schema } from "effect"
+import { Cause, DateTime, Deferred, Effect, Option, Schema } from "effect"
 import { Database } from "@miao/core/database/database"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { NativeEngine } from "./native-engine"
@@ -250,9 +250,7 @@ export function nativeSessionUsage(input: {
         turns: group.turns,
         cost: group.cost,
         tokens: group.tokens,
-        ...(group.ttft.turns > 0
-          ? { ttftMs: Math.round(group.ttft.sum / group.ttft.turns) }
-          : {}),
+        ...(group.ttft.turns > 0 ? { ttftMs: Math.round(group.ttft.sum / group.ttft.turns) } : {}),
         lastTurnAt: DateTime.makeUnsafe(group.lastTurnMs),
       }))
       .toSorted((left, right) => DateTime.toEpochMillis(right.lastTurnAt) - DateTime.toEpochMillis(left.lastTurnAt)),
@@ -334,7 +332,7 @@ export function mergeListingPage(input: {
  * merged page continues seamlessly across sources in both directions.
  */
 export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(function* (input: {
-  native: Pick<NativeEngine.Interface, "snapshot" | "usage">
+  native: Pick<NativeEngine.Interface, "snapshot" | "usage" | "catalog">
   db: Database.Interface["db"]
   sessions: readonly SessionInfo.Info[]
   limit: number
@@ -367,18 +365,52 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
     const groupEntries = yield* Effect.gen(function* () {
       const project = (yield* input.projects.resolve(group.location.directory)).id
       if (input.project && project !== input.project) return []
+      const catalog = input.native.catalog
+        ? new Map(
+            (yield* input.native.catalog({
+              storage: group.storage,
+              location: group.location,
+              sessions: group.sessions.map((id) => Schema.decodeUnknownSync(SessionID)(id)),
+              usage: input.models !== undefined,
+            })).map((entry) => [entry.sessionID, entry]),
+          )
+        : undefined
       const entries: SessionInfo.Info[] = []
       for (const raw of group.sessions) {
         const sessionID = Schema.decodeUnknownSync(SessionID)(raw)
-        const snapshot = yield* input.native.snapshot({ sessionID, storage: group.storage, location: group.location, metadataOnly: true })
-        const usage = input.models
-          ? nativeSessionUsage({
-              report: yield* input.native.usage({ sessionID, storage: group.storage, location: group.location }),
-              models: input.models,
-              snapshot,
-            })
-          : undefined
-        entries.push(nativeSessionInfo({ sessionID, projectID: project, location: group.location, snapshot, usage }))
+        const stored = catalog?.get(sessionID)
+        if (catalog && !stored) continue
+        const entry = yield* Effect.gen(function* () {
+          const snapshot =
+            stored?.snapshot ??
+            (yield* input.native.snapshot({
+              sessionID,
+              storage: group.storage,
+              location: group.location,
+              metadataOnly: true,
+            }))
+          const usage = input.models
+            ? nativeSessionUsage({
+                report: stored
+                  ? (stored.usage ?? {})
+                  : yield* input.native.usage({ sessionID, storage: group.storage, location: group.location }),
+                models: input.models,
+                snapshot,
+              })
+            : undefined
+          return nativeSessionInfo({ sessionID, projectID: project, location: group.location, snapshot, usage })
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterrupts(cause)
+              ? Effect.failCause(cause)
+              : Effect.logWarning("skipping unreadable native Session", {
+                  sessionID,
+                  directory: group.location.directory,
+                  cause,
+                }).pipe(Effect.as(undefined)),
+          ),
+        )
+        if (entry) entries.push(entry)
       }
       return entries
     }).pipe(
@@ -430,6 +462,7 @@ export const waitNative = Effect.fn("NativeSession.wait")(function* (input: {
       sessionID: input.sessionID,
       storage: input.storage,
       location: input.location,
+      metadataOnly: true,
     })
     if (nativeIdle(snapshot)) return
     yield* Effect.sleep("250 millis")
@@ -453,6 +486,9 @@ export const nativeTitlePrompt = (events: readonly { type: string; data: unknown
   return typeof answer.text === "string" && answer.text ? answer.text : undefined
 }
 
+// Completion only: model work remains in the caller's Location scope.
+const nativeTitleSettlements = new Map<string, Deferred.Deferred<void>>()
+
 /**
  * Best-effort product title for a native Session whose first run just settled:
  * read the durable wire page, derive the title prompt from it, and hand both to
@@ -462,39 +498,64 @@ export const nativeTitlePrompt = (events: readonly { type: string; data: unknown
  * cannot resurrect the placeholder. Callers wrap this in their own error
  * boundary — a missing title must never fail a wait or an idle transition.
  */
-export const generateNativeTitle = Effect.fn("NativeSession.generateTitle")(function* (input: {
-  native: Pick<NativeEngine.Interface, "history" | "title" | "rename">
-  sessionID: SessionID
-  storage: AbsolutePath
-  location: Location.Ref
-}) {
-  const events: Array<{ type: string; data: unknown }> = []
-  const readPrompt = Effect.gen(function* () {
-    let after = 0
-    // Image-only requests may not have a readable assistant answer until
-    // several tool batches later. Follow bounded pages, not just page one.
-    for (let pageIndex = 0; pageIndex < 20; pageIndex++) {
-      const page = yield* input.native.history({
-        sessionID: input.sessionID, storage: input.storage, location: input.location,
-        after, limit: 100,
-      })
-      events.push(...page.events)
-      const prompt = nativeTitlePrompt(events)
-      if (prompt !== undefined) return prompt
-      if (!page.hasMore || page.cursor <= after) return
-      after = page.cursor
-    }
-  })
-  const prompt = yield* readPrompt
-  if (prompt === undefined) return
-  const title = yield* input.native.title({
-    sessionID: input.sessionID,
-    storage: input.storage,
-    location: input.location,
-    prompt,
-  })
-  if (title !== undefined)
-    yield* input.native
-      .rename({ sessionID: input.sessionID, storage: input.storage, location: input.location, title })
-      .pipe(Effect.catch(() => Effect.void))
-})
+export const generateNativeTitle = Effect.fn("NativeSession.generateTitle")(
+  function* (input: {
+    native: Pick<NativeEngine.Interface, "history" | "title" | "rename">
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) {
+    const events: Array<{ type: string; data: unknown }> = []
+    const readPrompt = Effect.gen(function* () {
+      let after = 0
+      // Image-only requests may not have a readable assistant answer until
+      // several tool batches later. Follow bounded pages, not just page one.
+      for (let pageIndex = 0; pageIndex < 20; pageIndex++) {
+        const page = yield* input.native.history({
+          sessionID: input.sessionID,
+          storage: input.storage,
+          location: input.location,
+          after,
+          limit: 100,
+        })
+        events.push(...page.events)
+        const prompt = nativeTitlePrompt(events)
+        if (prompt !== undefined) return prompt
+        if (!page.hasMore || page.cursor <= after) return
+        after = page.cursor
+      }
+    })
+    const prompt = yield* readPrompt
+    if (prompt === undefined) return
+    const title = yield* input.native.title({
+      sessionID: input.sessionID,
+      storage: input.storage,
+      location: input.location,
+      prompt,
+    })
+    if (title !== undefined)
+      yield* input.native
+        .rename({ sessionID: input.sessionID, storage: input.storage, location: input.location, title })
+        .pipe(Effect.catch(() => Effect.void))
+  },
+  (effect, input) =>
+    Effect.uninterruptibleMask((restore) =>
+      Effect.suspend(() => {
+        const key = JSON.stringify([input.storage, input.sessionID])
+        const pending = nativeTitleSettlements.get(key)
+        // An idle listener may already be generating the title. A headless waiter
+        // must join it through the engine rename, or teardown cancels that work.
+        if (pending) return restore(Deferred.await(pending))
+        const settled = Deferred.makeUnsafe<void>()
+        nativeTitleSettlements.set(key, settled)
+        return restore(effect).pipe(
+          Effect.ensuring(
+            Effect.gen(function* () {
+              yield* Deferred.succeed(settled, undefined)
+              if (nativeTitleSettlements.get(key) === settled) nativeTitleSettlements.delete(key)
+            }),
+          ),
+        )
+      }),
+    ),
+)

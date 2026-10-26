@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Kontext a historie mezipaměti",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} tokeny výzvy · {{read}} čtení z mezipaměti · {{write}} zápis do mezipaměti",
+  "context.timeline.requestWindow": "Okno tokenu {{value}} v době požadavku",
+  "context.timeline.catalogWindow": "Okno tokenu {{value}} v aktuálním katalogu",
+  "context.timeline.unknownWindow": "Kontextové okno neznámé",
+  "context.timeline.empty": "Dosud nebylo zaznamenáno žádné vypořádané využití poskytovatele.",
+  "context.timeline.retry": "Opakovat historii použití",
+  "context.timeline.compaction": "Kontext zhutněn",
+  "context.timeline.cacheRead": "Čtení mezipaměti",
+  "context.timeline.cacheWrite": "Zápis do mezipaměti",
+  "context.timeline.ttft": "{{value}} ms do prvního tokenu",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Soubor",
   "desktop.menu.edit": "Upravit",
@@ -603,7 +616,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Zastaveno automatické přijímání oprávnění",
   "toast.permissions.autoaccept.off.description": "Žádosti o povolení budou vyžadovat schválení",
   "settings.permissions.autoaccept.project.title": "Automaticky přijímat oprávnění pro tento projekt",
-  "settings.permissions.autoaccept.project.description": "Odpovídat na nové žádosti o oprávnění z jakékoli relace tohoto projektu bez dotazu. Volby pro relaci a adresář mají přednost.",
+  "settings.permissions.autoaccept.project.description":
+    "Odpovídat na nové žádosti o oprávnění z jakékoli relace tohoto projektu bez dotazu. Volby pro relaci a adresář mají přednost.",
   "toast.model.none.title": "Není vybrán žádný model",
   "toast.model.none.description": "Chcete-li tuto relaci shrnout, připojte poskytovatele",
   "toast.file.loadFailed.title": "Soubor se nepodařilo načíst",
@@ -939,8 +953,7 @@ export const dict = {
   "settings.general.row.appearance.title": "Vzhled",
   "settings.general.row.appearance.description": "Přizpůsobte si vzhled miao na vašem zařízení",
   "settings.general.row.colorScheme.title": "Barevné schéma",
-  "settings.general.row.colorScheme.description":
-    "Zvolte, zda bude miao následovat systémové, světlé nebo tmavé téma",
+  "settings.general.row.colorScheme.description": "Zvolte, zda bude miao následovat systémové, světlé nebo tmavé téma",
   "settings.general.row.theme.title": "téma",
   "settings.general.row.theme.description": "Přizpůsobte, jak je téma Miao.",
   "settings.general.row.font.title": "Písmo kódu",
@@ -972,7 +985,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Ukažte shrnutí odůvodnění",
   "settings.general.row.reasoningSummaries.description": "Zobrazte souhrny zdůvodnění modelu na časové ose",
   "settings.general.row.turnDiffs.title": "Zobrazit změněné soubory pro každé kolo",
-  "settings.general.row.turnDiffs.description": "Vypisuje na časové ose změněné soubory každého dokončeného kola s počty řádků a rozbalitelnými rozdíly.",
+  "settings.general.row.turnDiffs.description":
+    "Vypisuje na časové ose změněné soubory každého dokončeného kola s počty řádků a rozbalitelnými rozdíly.",
   "settings.general.row.shellToolPartsExpanded.title": "Rozbalte části nástroje shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Ve výchozím nastavení zobrazit na časové ose rozbalené části nástroje shell",

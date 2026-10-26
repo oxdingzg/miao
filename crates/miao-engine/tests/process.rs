@@ -370,3 +370,16 @@ async fn run_command_emits_started_and_progress_events() {
     );
     runtime.shutdown().await;
 }
+
+#[test]
+fn foreground_timeout_matches_the_product_ceiling() {
+    use miao_engine::process::{BashInput, Input};
+    let bash = BashInput::parse(json!({"command":"true"})).unwrap();
+    assert_eq!(bash.timeout_ms, 120_000);
+    // A remote build that runs for minutes must be accepted; an over-limit
+    // value used to surface only as an opaque "invalid tool input".
+    assert!(Input::parse(json!({"argv":["true"],"timeout_ms":600_000})).is_ok());
+    assert!(BashInput::parse(json!({"command":"true","timeout_ms":600_000})).is_ok());
+    assert!(Input::parse(json!({"argv":["true"],"timeout_ms":600_001})).is_err());
+    assert!(BashInput::parse(json!({"command":"true","timeout_ms":600_001})).is_err());
+}
