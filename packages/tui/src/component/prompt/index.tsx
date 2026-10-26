@@ -20,7 +20,7 @@ import { createInputLatency } from "../../context/input-latency"
 import { tint, useTheme } from "../../context/theme"
 import { ProviderRetryStatus } from "../../routes/session/provider-failure"
 import { SessionActivity } from "../../routes/session/activity"
-import { EmptyBorder, SplitBorder } from "../../ui/border"
+import { EmptyBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
 import { ScannerSpinner, Spinner } from "../spinner"
@@ -1435,11 +1435,11 @@ export function Prompt(props: PromptProps) {
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
         <box
           width="100%"
-          border={["left"]}
+          border={["top", "bottom"]}
           borderColor={borderHighlight()}
           customBorderChars={{
-            ...SplitBorder.customBorderChars,
-            bottomLeft: "╹",
+            ...EmptyBorder,
+            horizontal: "─",
           }}
         >
           <box
@@ -1636,34 +1636,6 @@ export function Prompt(props: PromptProps) {
             </Show>
           </box>
         </box>
-        <Show when={!props.compactFooter}>
-          <box
-            height={1}
-            border={["left"]}
-            borderColor={borderHighlight()}
-            customBorderChars={{
-              ...EmptyBorder,
-              vertical: theme.backgroundElement.a !== 0 ? "╹" : " ",
-            }}
-          >
-            <box
-              height={1}
-              border={["bottom"]}
-              borderColor={theme.backgroundElement}
-              customBorderChars={
-                theme.backgroundElement.a !== 0
-                  ? {
-                      ...EmptyBorder,
-                      horizontal: "▀",
-                    }
-                  : {
-                      ...EmptyBorder,
-                      horizontal: " ",
-                    }
-              }
-            />
-          </box>
-        </Show>
         <Show
           when={
             !props.compactFooter ||
