@@ -143,6 +143,28 @@ export function create() {
           metadata: event.properties.metadata,
           time: { created: event.properties.timestamp },
         })
+      case "session.next.context.pruned":
+        return append(event.properties.sessionID, {
+          id: event.properties.messageID,
+          type: "synthetic",
+          sessionID: event.properties.sessionID,
+          text: "Tool output pruned",
+          metadata: { contextPruned: event.properties.pruning },
+          time: { created: event.properties.timestamp },
+        })
+      case "session.next.compaction.ended":
+        return append(event.properties.sessionID, {
+          id: event.properties.messageID,
+          type: "compaction",
+          reason: event.properties.reason,
+          summary: event.properties.text,
+          recent: event.properties.recent,
+          metadata:
+            event.properties.throughMessageSeq === undefined
+              ? undefined
+              : { throughMessageSeq: event.properties.throughMessageSeq },
+          time: { created: event.properties.timestamp },
+        })
       case "session.next.context.updated":
         return append(event.properties.sessionID, {
           id: event.properties.messageID,
@@ -561,7 +583,6 @@ export function create() {
       case "session.next.info.updated":
       case "session.next.compaction.started":
       case "session.next.compaction.delta":
-      case "session.next.compaction.ended":
       case "session.next.revert.staged":
       case "session.next.revert.cleared":
       case "session.next.revert.committed":
