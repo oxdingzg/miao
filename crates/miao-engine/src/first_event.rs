@@ -23,7 +23,7 @@ fn seconds(key: &str, fallback: f64) -> Duration {
 /// `header` bounds dispatch through response headers and is widened by the
 /// encoded request size; `byte_idle` bounds silence between body bytes, with
 /// protocol keep-alives counting as bytes; `event` bounds the wait for a
-/// canonical event and is not extended by keep-alive traffic. Setting
+/// canonical event and is re-armed by semantic events, never keep-alive traffic. Setting
 /// `MIAO_LLM_FIRST_BYTE_TIMEOUT_MS=0` disables the whole watchdog, as it did
 /// when the phases shared one deadline.
 #[derive(Clone, Copy)]
@@ -31,6 +31,7 @@ pub(crate) struct Watchdogs {
     header: Option<Instant>,
     pub(crate) byte_idle: Duration,
     pub(crate) event: Option<Instant>,
+    pub(crate) event_idle: Duration,
 }
 
 impl Watchdogs {
@@ -44,6 +45,7 @@ impl Watchdogs {
                 header: None,
                 byte_idle: Duration::ZERO,
                 event: None,
+                event_idle: Duration::ZERO,
             };
         }
         let allowance = Duration::try_from_secs_f64(
@@ -51,16 +53,30 @@ impl Watchdogs {
         )
         .unwrap_or(Duration::ZERO)
         .min(MAX_REQUEST_ALLOWANCE);
+        let event_idle = seconds("MIAO_LLM_EVENT_IDLE_TIMEOUT_MS", 300_000.0);
         Self {
             header: Some(
                 started_at + seconds("MIAO_LLM_FIRST_BYTE_TIMEOUT_MS", 180_000.0) + allowance,
             ),
             byte_idle: seconds("MIAO_LLM_STREAM_IDLE_TIMEOUT_MS", 180_000.0),
-            event: {
-                let event = seconds("MIAO_LLM_EVENT_IDLE_TIMEOUT_MS", 300_000.0);
-                (event > Duration::ZERO).then(|| started_at + event)
-            },
+            event: (event_idle > Duration::ZERO).then(|| started_at + event_idle),
+            event_idle,
         }
+    }
+
+    /// Only a semantic event extends the rolling event-idle bound.
+    pub(crate) fn next_event_deadline(&self) -> Option<Instant> {
+        (self.event_idle > Duration::ZERO).then(|| Instant::now() + self.event_idle)
+    }
+
+    pub(crate) fn event_timeout(&self, received: bool) -> crate::provider::ProviderError {
+        if !received {
+            return crate::provider::ProviderError::Transport;
+        }
+        crate::provider::ProviderError::Stream(format!(
+            "provider produced no stream event for {}ms (set MIAO_LLM_EVENT_IDLE_TIMEOUT_MS to adjust, 0 disables)",
+            self.event_idle.as_millis(),
+        ))
     }
 
     /// Deadline for response headers, before any body byte arrives.
@@ -76,6 +92,7 @@ impl Default for Watchdogs {
             header: None,
             byte_idle: Duration::ZERO,
             event: None,
+            event_idle: Duration::ZERO,
         }
     }
 }

@@ -51,6 +51,31 @@ miao 今天不是"一个内核 + 一层壳"，而是**按 Session 分派的两�
 | G0-5 | 插件 `aisdk` provider 钩子在原生路由上不执行；缺每轮 session-affinity 头 | `plugin/host.ts:46`；`openai_responses.rs:268` | 钩子按家族在原生路由上"语义适用"（工具钩子已实现，`aisdk` 钩子书面接受）；头与实际 session 一致，见 `specs/g0-5-plugin-hooks.md` |
 | G0-6 | 行为差：max-steps 是"暂停"而非 TS 的收尾提示；历史里的 `@file` 引用 Rust 不内联；websearch 端点不同 | `runtime.rs:1430`；`materialize-files.ts:310`；`web.rs:24` | 逐项定调（对齐或书面接受差异），不允许默认沉默 |
 
+S1 进度（2026-10-26）：G0-3 已完成。守卫在 `crates/miao-engine/src/output_guard.rs`，
+对 SSE 归一化 delta（`provider.rs`）与 Bedrock 通知（`bedrock.rs`）共用同一份状态机；
+回合停止时保留已流出的文本、记录 `output.repetition`、不重试、不派发迟到的工具调用，
+历史里的打转输出只在 provider 请求副本中被替换。回归测试
+`crates/miao-engine/tests/output_guard.rs` 用真实 SSE 重放同一段打转输出。
+
+### G0-6 的 web search 差异（书面接受）
+
+引擎侧 web search 与保留的 TS 工具（`packages/core/src/tool/websearch.ts`）**不是同一条后端**：
+
+- 后端协议不同。TS 走 MCP 端点（`https://mcp.exa.ai/mcp`、`https://search.parallel.ai/mcp`），
+  引擎走 REST（`https://api.exa.ai/search`、`https://api.parallel.ai/v1/search`，`x-api-key`）。
+  接受理由：引擎不能依赖 JS MCP 客户端；REST 的请求/响应面由引擎自己约束（大小上限、截断、
+  权限判定），且 `MIAO_WEB_SEARCH_ENDPOINT` 可指向自建代理。
+- 参数与结果面不同。输入基本一致（`query`/`numResults`/`type`/`contextMaxCharacters`），但 TS
+  多一个 MCP 后端的 `livecrawl`，而输出不同：TS 返回供应商拼好的单个 `{provider, text}` 文本块，
+  引擎返回结构化 `{provider, results:[{url,title,text,truncated}]}` 并自己做逐结果截断与总量上限。
+  接受理由：`livecrawl` 是 MCP 后端的 crawl 旋钮，REST 后端没有等价物；结构化结果让权限与截断可
+  在引擎侧判定，模型也能只读需要的片段。
+- 启用条件不同。TS 需要 `MIAO_ENABLE_EXA`/`MIAO_ENABLE_PARALLEL`（或实验开关）**并且**
+  有 key；引擎以"存在所选 provider 的 key"为启用信号。接受理由：显式配置 key 就是显式选择，
+  工具仍走权限判定；少一个开关就少一处配置漂移。
+- provider 选择保持一致：`MIAO_WEBSEARCH_PROVIDER` 由产品侧映射到引擎的
+  `MIAO_WEB_SEARCH_PROVIDER`（`engineEnvironment`），两个 key 同时存在时不会选错。
+
 ## 4. 切片
 
 顺序按"先补能力、再删路径"，每片单独可发布、可回滚。

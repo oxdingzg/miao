@@ -1250,15 +1250,14 @@ async fn drain(
     // Message tail before this drain promotes its inputs: a terminal
     // first-turn provider rejection quarantines exactly what it promoted.
     let history_base = inner.store.max_message_seq(&session).await?;
-    let promoted = inner.store.promote_fenced(&session, true, &lease).await?;
-    if promoted.is_empty() && !force {
-        return Ok(());
-    }
-    if inner.store.history(&session).await?.is_empty() {
-        return Err(Error::Invalid("Session has no admitted history".into()));
-    }
     let run = uuid::Uuid::new_v4().to_string();
-    inner.store.start_run_fenced(&session, &run, &lease).await?;
+    let Some(promoted) = inner
+        .store
+        .start_run_with_inputs_fenced(&session, &run, force, &lease)
+        .await?
+    else {
+        return Ok(());
+    };
     let _keepalive = LeaseKeepalive(tokio::spawn(keep_lease(
         inner.store.clone(),
         lease.clone(),
@@ -1581,6 +1580,10 @@ async fn execute(
             .await?;
         let (mut history, state) = inner.store.selected_input(session).await?;
         crate::session_model::validate_history(&history, binding.as_ref(), provider.identity())?;
+        // A loop that survived in the transcript is replaced in this request
+        // only: the model imitates its own prior output, so leaving it in the
+        // prompt reseeds the same refrain. Durable rows are untouched.
+        crate::output_guard::neutralize(&mut history);
         let state_allowed = policy.evaluate(
             "session_state",
             "@session/state/session_state",
@@ -1616,16 +1619,26 @@ async fn execute(
         // before.
         if let Some(limits) = &*inner.context.lock().await {
             if let Some(budget) = limits.prune_chars {
-                let (elided, dropped) = crate::context_trigger::prune_history(
+                let stats = crate::context_trigger::prune_history_with_stats(
                     &mut history,
                     budget,
                     limits.protect_turns,
                     limits.prune_total_chars,
                 );
-                if elided > 0 {
+                if stats.payloads > 0 {
+                    let saved = stats.before_bytes - stats.after_bytes;
+                    inner.store.record_fenced(session, "context.pruned", json!({
+                        "run_id": run, "step": step, "context_epoch": context_epoch,
+                        "reason": "tool_output_budget", "scope": "tool_result_payloads",
+                        "unit": "utf8_bytes", "payloads": stats.payloads, "messages": stats.messages,
+                        "before_bytes": stats.before_bytes, "after_bytes": stats.after_bytes,
+                        "saved_bytes": saved,
+                    }), lease).await?;
                     let _ = inner.progress.send(json!({
                         "session_id": session, "run_id": run, "step": step,
-                        "kind": "context.pruned", "payloads": elided, "characters": dropped,
+                        "kind": "context.pruned", "payloads": stats.payloads, "characters": saved,
+                        "unit": "utf8_bytes", "before_bytes": stats.before_bytes,
+                        "after_bytes": stats.after_bytes, "saved_bytes": saved,
                     }));
                 }
             }
@@ -1874,6 +1887,43 @@ async fn execute(
                     .await?;
                 if cancel.is_cancelled() {
                     return Ok(());
+                }
+                // A stopped loop is a non-retryable failure, not a transport
+                // problem: the same request would loop again. Keep what the
+                // user already saw durable, but dispatch no tool call from it.
+                if let Some((channel, partial)) = error.repetition() {
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "usage",
+                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"model":binding.as_ref().map(|binding|binding.model.as_str()),"cache":crate::usage::cache_lineage(&partial.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
+                        )
+                        .await?;
+                    if partial
+                        .content
+                        .as_array()
+                        .is_some_and(|content| !content.is_empty())
+                    {
+                        inner
+                            .store
+                            .assistant_reply_fenced(
+                                session,
+                                run,
+                                Some(started.seq),
+                                partial.content.clone(),
+                                lease,
+                            )
+                            .await?;
+                    }
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "output.repetition",
+                            json!({"run_id":run,"step":step,"channel":channel,"window_lines":64}),
+                        )
+                        .await?;
                 }
                 if let Some((partial, unexecuted_calls)) = error.continuation() {
                     inner
