@@ -271,12 +271,13 @@ async fn actual_native_process_bounds_headers_silence_and_pings_without_refillin
             },
             "{events}"
         );
-        // A stalled stream is retried until the turn's retry window closes, so
-        // the exact attempt count is the window divided by the backoff rather
-        // than a fixed number. What the bound still promises: the turn fails
-        // after retrying, and the runaway guard keeps the attempts finite.
+        // A stream that stalls before its first event is retried until the
+        // turn's retry window closes, so the exact attempt count is the window
+        // divided by the backoff rather than a fixed number; the runaway guard
+        // keeps the attempts finite. Once an event has arrived the turn never
+        // replays, so every post-header mode makes exactly one attempt.
         let calls = calls.load(Ordering::SeqCst);
-        if mode == 3 || mode == 5 {
+        if mode >= 3 {
             assert_eq!(calls, 1, "{events}");
         } else {
             assert!(calls >= 3, "the turn gave up too early: {calls} attempts");
