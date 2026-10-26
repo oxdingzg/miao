@@ -75,6 +75,7 @@ const layer = Layer.effectDiscard(
               "Write content to one file. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
             input: Input,
             output: Output,
+            aliases: { path: ["filePath", "file_path"] },
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) =>
               Effect.gen(function* () {
