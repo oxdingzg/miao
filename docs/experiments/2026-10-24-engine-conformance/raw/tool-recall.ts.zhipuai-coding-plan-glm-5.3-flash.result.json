@@ -5,9 +5,9 @@
   "outcome": {
     "status": "pass"
   },
-  "sessionID": "ses_gfe5e94be9e7bffeUt0w9DxATh",
-  "cost": 0.00117,
-  "tokensIn": 2336,
+  "sessionID": "ses_gfe5e87dac566ffeNcfZME7i6n",
+  "cost": 0.00219,
+  "tokensIn": 14070,
   "tokensOut": 33,
   "stepFinishes": 2,
   "tools": [

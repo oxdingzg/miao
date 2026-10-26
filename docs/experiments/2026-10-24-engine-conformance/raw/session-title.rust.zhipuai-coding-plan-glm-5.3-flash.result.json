@@ -6,10 +6,10 @@
     "status": "pass",
     "note": "title: Conformance title check"
   },
-  "sessionID": "ses_gfe5e94a03dafffeo9E1mj30PW",
-  "cost": 0.0004,
-  "tokensIn": 11179,
-  "tokensOut": 29,
+  "sessionID": "ses_gfe5e87d116d7ffeEyeU5P2zHn",
+  "cost": 0.00167,
+  "tokensIn": 13973,
+  "tokensOut": 6,
   "stepFinishes": 1,
   "tools": [],
   "errors": []

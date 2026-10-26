@@ -5,15 +5,16 @@
   "outcome": {
     "status": "pass"
   },
-  "sessionID": "ses_gfe5e94afdc2bffeOiw5X7cOb6",
-  "cost": 0.00344,
-  "tokensIn": 16495,
-  "tokensOut": 93,
+  "sessionID": "ses_gfe5e87d95a62ffeMYQKa8Gx4k",
+  "cost": 0.00352,
+  "tokensIn": 16715,
+  "tokensOut": 87,
   "stepFinishes": 4,
   "tools": [
     {
-      "tool": "read",
+      "tool": "bash",
       "status": "completed",
+      "command": "cat notes.md",
       "background": false
     },
     {
@@ -22,8 +23,9 @@
       "background": false
     },
     {
-      "tool": "read",
+      "tool": "bash",
       "status": "completed",
+      "command": "cat notes.md",
       "background": false
     }
   ],

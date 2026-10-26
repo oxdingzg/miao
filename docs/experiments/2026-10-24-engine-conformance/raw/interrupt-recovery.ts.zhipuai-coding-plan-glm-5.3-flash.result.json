@@ -5,28 +5,28 @@
   "outcome": {
     "status": "pass"
   },
-  "sessionID": "ses_gfe5e94bb23daffeb8tRj6q8q1",
-  "cost": 0.00234,
-  "tokensIn": 1159,
-  "tokensOut": 131,
+  "sessionID": "ses_gfe5e87d61442ffeKkTjYruXBb",
+  "cost": 0.00365,
+  "tokensIn": 17150,
+  "tokensOut": 161,
   "stepFinishes": 4,
   "tools": [
     {
       "tool": "bash",
       "status": "completed",
-      "command": "cat marker.txt 2>/dev/null || echo \"__ABSENT__\"",
+      "command": "cat marker.txt 2>/dev/null || echo \"NO_FILE\"",
       "background": false
     },
     {
       "tool": "bash",
       "status": "completed",
-      "command": "for i in $(seq 1 20); do if grep -q INTERRUPT-RECOVERY-7391 marker.txt 2>/dev/null; then echo FOUND; exit 0; fi; sleep 2; done; echo NOT_FOUND",
+      "command": "for i in $(seq 1 20); do if grep -q 'INTERRUPT-RECOVERY-7391' marker.txt 2>/dev/null; then echo FOUND; exit 0; fi; sleep 2; done; echo NOT_FOUND",
       "background": false
     },
     {
       "tool": "bash",
       "status": "completed",
-      "command": "cat marker.txt",
+      "command": "echo INTERRUPT-RECOVERY-7391 >> marker.txt && cat marker.txt",
       "background": false
     }
   ],
