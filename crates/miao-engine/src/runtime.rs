@@ -1580,6 +1580,10 @@ async fn execute(
             .await?;
         let (mut history, state) = inner.store.selected_input(session).await?;
         crate::session_model::validate_history(&history, binding.as_ref(), provider.identity())?;
+        // A loop that survived in the transcript is replaced in this request
+        // only: the model imitates its own prior output, so leaving it in the
+        // prompt reseeds the same refrain. Durable rows are untouched.
+        crate::output_guard::neutralize(&mut history);
         let state_allowed = policy.evaluate(
             "session_state",
             "@session/state/session_state",
@@ -1871,6 +1875,43 @@ async fn execute(
                     .await?;
                 if cancel.is_cancelled() {
                     return Ok(());
+                }
+                // A stopped loop is a non-retryable failure, not a transport
+                // problem: the same request would loop again. Keep what the
+                // user already saw durable, but dispatch no tool call from it.
+                if let Some((channel, partial)) = error.repetition() {
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "usage",
+                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"model":binding.as_ref().map(|binding|binding.model.as_str()),"cache":crate::usage::cache_lineage(&partial.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
+                        )
+                        .await?;
+                    if partial
+                        .content
+                        .as_array()
+                        .is_some_and(|content| !content.is_empty())
+                    {
+                        inner
+                            .store
+                            .assistant_reply_fenced(
+                                session,
+                                run,
+                                Some(started.seq),
+                                partial.content.clone(),
+                                lease,
+                            )
+                            .await?;
+                    }
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "output.repetition",
+                            json!({"run_id":run,"step":step,"channel":channel,"window_lines":64}),
+                        )
+                        .await?;
                 }
                 if let Some((partial, unexecuted_calls)) = error.continuation() {
                     inner
