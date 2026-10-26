@@ -5,6 +5,8 @@ import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { memoMap } from "@miao/core/effect/memo-map"
 import { Observability } from "@miao/core/observability"
 import { Logging } from "@miao/core/observability/logging"
+import { SessionExecution } from "@miao/core/session/execution"
+import { SessionExecutionLocal } from "@miao/core/session/execution/local"
 import { ConfigProvider, Context, Effect, Exit, Layer, Logger, References, Scope } from "effect"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
 import { OpenApi } from "effect/unstable/httpapi"
@@ -139,7 +141,13 @@ function listenerLayer(opts: ListenOptions, port: number) {
   // The native transport composes only when an engine binary is configured;
   // otherwise native-owned Sessions keep the explicit refusal.
   const native = NativeEngineNode.configured()
-    ? base.pipe(Layer.provideMerge(Layer.fresh(AppNodeBuilder.build(NativeEngineNode.node))))
+    ? base.pipe(
+        Layer.provideMerge(
+          Layer.fresh(
+            AppNodeBuilder.build(NativeEngineNode.node, [[SessionExecution.node, SessionExecutionLocal.node]]),
+          ),
+        ),
+      )
     : base
   // Native background fibers capture their logger during construction. Keep
   // this outside their layer so diagnostics cannot corrupt ACP/TUI stdout.

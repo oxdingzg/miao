@@ -9,8 +9,8 @@ import { Location } from "../location"
 import { ProjectV2 } from "../project"
 import { ProjectTable } from "../project/sql"
 import { AbsolutePath } from "../schema"
+import type { SessionAdmission } from "./admission"
 import { SessionEvent } from "./event"
-import { SessionInput } from "./input"
 import { SessionMessage } from "./message"
 import { Prompt } from "./prompt"
 import { SessionSchema } from "./schema"
@@ -22,6 +22,7 @@ export interface Input {
   readonly db: DB
   readonly events: EventV2.Interface
   readonly fs: FSUtil.Interface
+  readonly admission: SessionAdmission.Interface
   readonly sessionID: SessionSchema.ID
   readonly directory: AbsolutePath
   readonly projectID: ProjectV2.ID
@@ -70,7 +71,7 @@ export const relocateOrphan = Effect.fn("SessionHeal.relocateOrphan")(function* 
   })
   // Without a model-visible notice the Session keeps addressing the vanished
   // directory and every path-based call fails until it stumbles onto the move.
-  yield* SessionInput.admit(input.db, input.events, {
+  yield* input.admission.admit({
     id: SessionMessage.ID.create(),
     sessionID: input.sessionID,
     prompt: Prompt.make({

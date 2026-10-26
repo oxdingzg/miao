@@ -44,6 +44,7 @@ import { LocationServiceMap } from "./location-service-map"
 import { LegacyNotMigratedError, MessageDecodeError } from "./session/error"
 import { SessionEvent } from "./session/event"
 import { SessionInput } from "./session/input"
+import { SessionAdmission } from "./session/admission"
 import { Snapshot } from "./snapshot"
 import { SessionRevert } from "./session/revert"
 import { Revert } from "@miao/schema/revert"
@@ -283,6 +284,7 @@ const layer = Layer.effect(
     const db = database.db
     const events = yield* EventV2.Service
     const execution = yield* SessionExecution.Service
+    const admission = yield* SessionAdmission.Service
     const titleSettlement = yield* SessionTitleSettlement.Service
     const ownership = yield* SessionOwnership.Service
     const store = yield* SessionStore.Service
@@ -695,7 +697,7 @@ const layer = Layer.effect(
       }),
       cancelInput: Effect.fn("V2Session.cancelInput")(function* (input) {
         yield* result.get(input.sessionID)
-        return yield* SessionInput.cancel(db, events, { sessionID: input.sessionID, id: input.messageID })
+        return yield* admission.cancel({ sessionID: input.sessionID, id: input.messageID })
       }),
       prompt: Effect.fn("V2Session.prompt")((input) =>
         Effect.uninterruptible(
@@ -710,7 +712,7 @@ const layer = Layer.effect(
             const messageID = input.id ?? SessionMessage.ID.create()
             const delivery = input.delivery ?? "steer"
             const expected = { sessionID: input.sessionID, messageID, prompt, delivery }
-            const admitted = yield* SessionInput.admit(db, events, {
+            const admitted = yield* admission.admit({
               id: messageID,
               sessionID: input.sessionID,
               prompt,
@@ -906,6 +908,7 @@ export const node = makeGlobalNode({
     AppProcess.node,
     LocationServiceMap.node,
     SessionProjector.node,
+    SessionAdmission.node,
     Blob.node,
   ],
 })

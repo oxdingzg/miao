@@ -3,7 +3,7 @@ import { Location } from "@miao/schema/location"
 import { DateTime, Deferred, Effect, Fiber, Queue } from "effect"
 import { Event } from "@miao/schema/event"
 import { SessionID } from "@miao/schema/session-id"
-import { EngineClient, type EngineOptions } from "./client"
+import { EngineClient, type EngineOptions, type EngineEvent } from "./client"
 import { clientEvent } from "./event"
 import { EngineSession, type CredentialExpiredTrigger, type EnginePricing, type EngineSessionEvent } from "./session"
 
@@ -12,6 +12,7 @@ export const connectEngine = Effect.fn("Engine.connect")(function* (
   options: EngineOptions & { engineID: string; location: Location.Ref },
   pricing?: EnginePricing,
   onCredentialExpired?: CredentialExpiredTrigger,
+  onEngineEvent?: (event: EngineEvent) => void,
 ) {
   const clients = yield* ClientEvents.Service
   const pending = yield* Queue.unbounded<
@@ -25,6 +26,7 @@ export const connectEngine = Effect.fn("Engine.connect")(function* (
     },
     pricing,
     onCredentialExpired,
+    onEngineEvent,
   )
   client.onFailure((failure) => Queue.offerUnsafe(pending, { failure }))
   const delivery = yield* Effect.gen(function* () {

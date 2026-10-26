@@ -10,6 +10,7 @@ import { SessionStore } from "../store"
 import { SessionExecution } from "../execution"
 import { Database } from "../../database/database"
 import { SessionOwnership } from "../ownership"
+import { SessionAdmission } from "../admission"
 import { SessionDelegation } from "../delegation"
 import { SessionEnginePlacement } from "../engine-placement"
 
@@ -111,6 +112,7 @@ const layer = Layer.effect(
       db,
       events,
       store,
+      admission: yield* SessionAdmission.Service,
       wake,
       wait: coordinator.awaitIdle,
       executions: coordinator.executions,
@@ -139,7 +141,14 @@ const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: SessionExecution.Service,
   layer,
-  deps: [SessionStore.node, LocationServiceMap.node, EventV2.node, Database.node, SessionOwnership.node],
+  deps: [
+    SessionStore.node,
+    LocationServiceMap.node,
+    EventV2.node,
+    Database.node,
+    SessionOwnership.node,
+    SessionAdmission.node,
+  ],
 })
 
 export * as SessionExecutionLocal from "./local"

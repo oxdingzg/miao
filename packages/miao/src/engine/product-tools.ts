@@ -12,6 +12,8 @@ import { ProjectV2 } from "@miao/core/project"
 import { ProjectWorktree } from "@miao/core/project/worktree"
 import { SessionMoveCoordinator } from "@miao/core/session/move-coordinator"
 import { PeerTools } from "@miao/core/session/peer-tools"
+import { SessionAdmission } from "@miao/core/session/admission"
+import { SessionInput } from "@miao/core/session/input"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionEvent } from "@miao/core/session/event"
@@ -128,7 +130,23 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
   const agents = Option.getOrUndefined(yield* Effect.serviceOption(AgentV2.Service))
   const worktrees = Option.getOrUndefined(yield* Effect.serviceOption(ProjectWorktree.Service))
   const projects = Option.getOrUndefined(yield* Effect.serviceOption(ProjectV2.Service))
-  const product = PeerTools.makePeers({ db, events, store, ownership, todos, execution, jobs, wake: execution?.wake })
+  const admission = Option.getOrUndefined(yield* Effect.serviceOption(SessionAdmission.Service))
+  const product = PeerTools.makePeers({
+    db,
+    events,
+    store,
+    ownership,
+    admission:
+      admission ??
+      {
+        admit: (input) => SessionInput.admit(db, events, input),
+        cancel: (input) => SessionInput.cancel(db, events, input),
+      },
+    todos,
+    execution,
+    jobs,
+    wake: execution?.wake,
+  })
 
   const placement = (sessionID: SessionSchema.ID) => SessionEnginePlacement.find(db, sessionID)
 

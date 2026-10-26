@@ -6,9 +6,9 @@ import { ToolFailure } from "@miao/llm"
 import type { Database } from "../database/database"
 import type { EventV2 } from "../event"
 import { Hash } from "../util/hash"
+import { SessionAdmission } from "./admission"
 import { SessionDelegationStore } from "./delegation-store"
 import { SessionEvent } from "./event"
-import { SessionInput } from "./input"
 import { SessionHistory } from "./history"
 import { SessionMessage } from "./message"
 import { Prompt } from "./prompt"
@@ -72,6 +72,7 @@ export const make = (input: {
   db: Database.Interface["db"]
   events: EventV2.Interface
   store: SessionStore.Interface
+  admission: SessionAdmission.Interface
   wake: (id: SessionSchema.ID) => Effect.Effect<void>
   wait: (id: SessionSchema.ID) => Effect.Effect<void>
   executions: Effect.Effect<ReadonlyMap<SessionSchema.ID, string>>
@@ -256,7 +257,7 @@ export const make = (input: {
                 owner,
                 timestamp: yield* DateTime.now,
               })
-              yield* SessionInput.admit(input.db, input.events, {
+              yield* input.admission.admit({
                 id: promptMessageID,
                 sessionID: child.id,
                 prompt: Prompt.make({ text: request.prompt }),

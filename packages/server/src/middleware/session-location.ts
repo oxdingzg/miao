@@ -6,6 +6,7 @@ import { Location } from "@miao/core/location"
 import { PermissionSaved } from "@miao/core/permission/saved"
 import { Project } from "@miao/core/project"
 import { AbsolutePath } from "@miao/core/schema"
+import { SessionAdmission } from "@miao/core/session/admission"
 import { SessionRouting } from "@miao/core/session/routing"
 import { SessionV2 } from "@miao/core/session"
 import { WorkspaceV2 } from "@miao/core/workspace"
@@ -40,6 +41,7 @@ export const sessionLocationLayer = Layer.effect(
     const permissions = yield* PermissionSaved.Service
     const fs = yield* FSUtil.Service
     const events = yield* EventV2.Service
+    const admission = yield* SessionAdmission.Service
     // Composition-root transport presence decides the native gate; the handler
     // branch reads the same service at request time.
     const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
@@ -56,7 +58,7 @@ export const sessionLocationLayer = Layer.effect(
               }),
           ),
         )
-        const resolution = yield* SessionRouting.resolve({ db, events, fs, sessionID })
+        const resolution = yield* SessionRouting.resolve({ db, events, fs, admission, sessionID })
         // A native Session is owned and stored by the engine. Serving it through
         // the TypeScript handlers would read and write metadata this server does
         // not own, so refuse unless a native transport is composed.

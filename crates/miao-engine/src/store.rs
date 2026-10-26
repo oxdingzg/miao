@@ -2656,7 +2656,10 @@ pub(crate) fn admit_input(
             pending: state == "pending",
         });
     }
-    let mut data = json!({"input_id":input.input_id,"delivery":delivery});
+    let mut data = json!({"input_id":input.input_id,"delivery":delivery,"prompt":input.prompt});
+    if !attachments.is_empty() {
+        data["attachments"] = serde_json::to_value(attachments)?;
+    }
     if let Some(command) = &input.command {
         data["command"] = serde_json::to_value(command)?;
     }

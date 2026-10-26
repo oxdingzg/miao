@@ -141,7 +141,12 @@ async function emit(session: string, inputID: string) {
   send({ method: "progress", params: { session_id: session, kind: "provider.delta", data: { text } } })
   send({
     method: "event",
-    params: { session_id: session, seq: 1, kind: "input.admitted", data: { input_id: inputID, delivery: "steer" } },
+    params: {
+      session_id: session,
+      seq: 1,
+      kind: "input.admitted",
+      data: { input_id: inputID, delivery: "steer", prompt: prompts.get(session) ?? "" },
+    },
   })
   send({
     method: "event",

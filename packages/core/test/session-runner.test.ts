@@ -28,6 +28,7 @@ import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNodePlatform } from "@miao/core/effect/app-node-platform"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { EventV2 } from "@miao/core/event"
+import { SessionAdmission } from "@miao/core/session/admission"
 import { PermissionV2 } from "@miao/core/permission"
 import { EventTable } from "@miao/core/event/sql"
 import { Project } from "@miao/core/project"
@@ -493,6 +494,10 @@ const makeExecution = (maxConcurrent?: number, directory = "/project") =>
         db,
         events,
         store,
+        admission: {
+          admit: (input) => SessionInput.admit(db, events, input),
+          cancel: (input) => SessionInput.cancel(db, events, input),
+        },
         wake: coordinator.wake,
         wait: coordinator.awaitIdle,
         executions: coordinator.executions,
@@ -1480,6 +1485,10 @@ describe("SessionRunnerLLM", () => {
           db,
           events,
           store,
+          admission: {
+            admit: (input) => SessionInput.admit(db, events, input),
+            cancel: (input) => SessionInput.cancel(db, events, input),
+          },
           maximum: 1,
           wake: (id) =>
             Effect.sync(() => {
