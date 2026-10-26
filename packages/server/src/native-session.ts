@@ -512,7 +512,7 @@ export const nativeTitlePrompt = (events: readonly { type: string; data: unknown
 }
 
 // Completion only: model work remains in the caller's Location scope.
-const nativeTitleSettlements = new Map<string, Deferred.Deferred<void>>()
+const nativeTitleSettlements = new Map<string, Deferred.Deferred<string | undefined>>()
 
 /**
  * Best-effort product title for a native Session whose first run just settled:
@@ -562,6 +562,7 @@ export const generateNativeTitle = Effect.fn("NativeSession.generateTitle")(
       yield* input.native
         .rename({ sessionID: input.sessionID, storage: input.storage, location: input.location, title })
         .pipe(Effect.catch(() => Effect.void))
+    return title
   },
   (effect, input) =>
     Effect.uninterruptibleMask((restore) =>
@@ -571,7 +572,7 @@ export const generateNativeTitle = Effect.fn("NativeSession.generateTitle")(
         // An idle listener may already be generating the title. A headless waiter
         // must join it through the engine rename, or teardown cancels that work.
         if (pending) return restore(Deferred.await(pending))
-        const settled = Deferred.makeUnsafe<void>()
+        const settled = Deferred.makeUnsafe<string | undefined>()
         nativeTitleSettlements.set(key, settled)
         return restore(effect).pipe(
           Effect.ensuring(
