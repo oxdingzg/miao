@@ -778,14 +778,16 @@ function App(props: {
           const workspace = currentWorktreeWorkspace()
           const location =
             workspace?.directory != null ? { directory: workspace.directory, workspaceID: workspace.id } : undefined
-          const model = local.model.current()
+          const model = Model.newSessionModel({
+            session: sync.session.get(route.data.sessionID),
+            selected: local.model.current(),
+            variant: local.model.variant.current(),
+          })
           void sdk.api.sessions
             .create(
               {
                 agent: local.agent.current()?.name,
-                model: model
-                  ? { id: model.modelID, providerID: model.providerID, variant: local.model.variant.current() }
-                  : undefined,
+                model,
                 location,
               },
               {},
