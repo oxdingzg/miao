@@ -58,7 +58,12 @@ S2 的验收（spec §4）：
 即：S2 不改 placement 路由（S3 才收口），改的是"谁写 inbox"。TS Session 的执行仍留在 TS，
 但它的输入先写进引擎的 `engine_input`，由 TS runner 通过投影读取待提升输入。
 
-**进入实现前必须定**：TS runner 目前从 `session_input` 读 pending（`input.ts:42`）。
+**已定（2026-10-26，S3/S4 落地后）**：选择 (2)。引擎发事件、产品投影进 `session_input`，
+TS runner 的读取路径不变；遗留在 TS 侧的会话用 `miao session migrate-all`（S4）迁到引擎后即走引擎 inbox。
+理由有两条，都是实现时验证过的：S3 之后新会话默认就是 native，`session_input` 对新会话本来就不再增长；
+而要把遗留 TS 会话的准入改到引擎，必须先有它的引擎存储，那正是 S4 的迁移，不能让 S2 先造一条影子路径。
+
+原选项（保留原文以便对照）：TS runner 目前从 `session_input` 读 pending（`input.ts:42`）。
 S2 有两个选择：
 
 1. TS runner 改读引擎 inbox（新增一个只读 RPC，把 `engine_input` 的 pending 投影出来）；
