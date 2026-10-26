@@ -676,6 +676,26 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         tools = tools
             .with_protected_resource(&path)
             .with_lsp(Arc::new(registry));
+    } else if let Some(directory) = options.get("--config-dir") {
+        // No explicit LSP manifest: derive the servers from the config
+        // directory the way the product used to before materializing one.
+        let source = miao_engine::config_derive::Source::Dir(directory.into());
+        let documents = miao_engine::config_derive::load(std::slice::from_ref(&source))?;
+        let configured = miao_engine::config_derive::lsp_configured(&documents);
+        let lookup = miao_engine::config_derive::system_lookup();
+        let configs = miao_engine::config_derive::lsp_entries(
+            configured.as_ref(),
+            &miao_engine::config_derive::BUILTIN_SERVERS,
+            &lookup,
+        )?;
+        if !configs.is_empty() {
+            let registry = miao_engine::lsp::Registry::connect(
+                configs,
+                std::path::Path::new(tools.location()),
+            )
+            .await?;
+            tools = tools.with_lsp(Arc::new(registry));
+        }
     }
     let replay = options
         .get("--tool-replay")
