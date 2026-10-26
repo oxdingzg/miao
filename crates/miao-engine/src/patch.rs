@@ -416,6 +416,7 @@ pub fn apply(root: &Dir, operations: &[Operation]) -> Result<Value, ToolError> {
     }
     let mut published: Vec<(String, Option<Vec<u8>>)> = Vec::new();
     let mut files = Vec::new();
+    let mut display = Vec::new();
     for (operation, staged, original, final_bytes) in &mut plan {
         if operation.action == Action::Delete {
             continue;
@@ -437,6 +438,14 @@ pub fn apply(root: &Dir, operations: &[Operation]) -> Result<Value, ToolError> {
         }
         published.push((operation.path.clone(), original.clone()));
         let bytes = final_bytes.clone().unwrap_or_default();
+        if let Some(entry) = changed(
+            original.as_deref(),
+            Some(&bytes),
+            &operation.path,
+            operation.action.name(),
+        ) {
+            display.push(entry);
+        }
         files.push(json!({
             "path": operation.path,
             "action": operation.action.name(),
@@ -444,19 +453,47 @@ pub fn apply(root: &Dir, operations: &[Operation]) -> Result<Value, ToolError> {
             "bytes": bytes.len(),
         }));
     }
-    for (operation, _, _, _) in plan
+    for (operation, _, original, _) in plan
         .iter()
         .filter(|(op, _, _, _)| op.action == Action::Delete)
     {
         match root.remove_file(&operation.path) {
-            Ok(()) => files.push(json!({"path": operation.path, "action": "delete"})),
+            Ok(()) => {
+                if let Some(entry) = changed(
+                    original.as_deref(),
+                    None,
+                    &operation.path,
+                    operation.action.name(),
+                ) {
+                    display.push(entry);
+                }
+                files.push(json!({"path": operation.path, "action": "delete"}))
+            }
             Err(error) => {
                 rollback(root, &published);
                 return Err(error.into());
             }
         }
     }
-    Ok(json!({"applied": true, "files": files, "count": files.len()}))
+    let mut result = json!({"applied": true, "files": files, "count": files.len()});
+    if !display.is_empty() {
+        result["_display"] = crate::display_diff::files(display);
+    }
+    Ok(result)
+}
+
+/// The display diff for one patch operation, read as text on both sides.
+fn changed(before: Option<&[u8]>, after: Option<&[u8]>, path: &str, action: &str) -> Option<Value> {
+    crate::display_diff::file(
+        before
+            .and_then(|bytes| std::str::from_utf8(bytes).ok())
+            .unwrap_or_default(),
+        after
+            .and_then(|bytes| std::str::from_utf8(bytes).ok())
+            .unwrap_or_default(),
+        path,
+        action,
+    )
 }
 
 fn publish_new(root: &Dir, path: &str, bytes: &[u8]) -> Result<(), ToolError> {

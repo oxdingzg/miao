@@ -1,10 +1,14 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
+import os from "node:os"
 import path from "path"
-import { Effect } from "effect"
+import { Effect, Layer, Logger } from "effect"
 import { LayerNode } from "@miao/core/effect/layer-node"
+import { FileSystemSearch } from "@miao/core/filesystem/search"
+import { Location } from "@miao/core/location"
 import { Ripgrep } from "@miao/core/ripgrep"
 import { AbsolutePath, RelativePath } from "@miao/core/schema"
+import { location } from "../fixture/location"
 import { tmpdir } from "../fixture/tmpdir"
 import { testEffect } from "../lib/effect"
 
@@ -41,4 +45,29 @@ describe("Ripgrep", () => {
       }),
     ),
   )
+})
+
+describe("fff", () => {
+  const layer = (directory: AbsolutePath) =>
+    FileSystemSearch.fffLayer.pipe(
+      Layer.provide(Layer.succeed(Location.Service, Location.Service.of(location({ directory })))),
+    )
+
+  test("a Location whose directory is gone searches nothing and does not warn", async () => {
+    const messages: string[] = []
+    const logger = Logger.make<unknown, void>((options) => {
+      messages.push(String(options.message))
+    })
+    const directory = AbsolutePath.make(path.join(os.tmpdir(), `miao-directory-gone-${crypto.randomUUID()}`))
+    const found = await Effect.gen(function* () {
+      const search = yield* FileSystemSearch.Service
+      return [yield* search.find({ query: "readme" }), yield* search.glob({ pattern: "*.ts" })]
+    }).pipe(
+      Effect.provide(layer(directory)),
+      Effect.provide(Logger.layer([logger])),
+      Effect.runPromise,
+    )
+    expect(found).toEqual([[], []])
+    expect(messages.filter((message) => message.includes("failed to initialize fff"))).toEqual([])
+  })
 })

@@ -1180,22 +1180,32 @@ const layer = Layer.effect(
     // repeat idle transitions of a titled Session cost one history read.
     const pendingTitles = yield* Queue.unbounded<NativeTitleRequest>()
     const scheduledTitles = new Set<string>()
-    const titleAttempts = new Map<string, number>()
+    const titleFailures = new Map<string, number>()
+    const titleNextAttempt = new Map<string, number>()
+    // A Session whose title keeps failing is retried with exponential backoff
+    // instead of once a minute: permanent rejections then cost one attempt per
+    // backoff step instead of one provider call per idle transition.
+    const titleRetryDelay = (key: string) => Math.min(60_000 * 2 ** ((titleFailures.get(key) ?? 1) - 1), 1_800_000)
     const scheduleTitle = (request: NativeTitleRequest) =>
       Effect.gen(function* () {
         const key = `${request.storage}:${request.sessionID}`
-        if (scheduledTitles.has(key) || Date.now() - (titleAttempts.get(key) ?? 0) < 60_000) return
+        if (scheduledTitles.has(key) || Date.now() < (titleNextAttempt.get(key) ?? 0)) return
         scheduledTitles.add(key)
-        titleAttempts.set(key, Date.now())
         yield* Queue.offer(pendingTitles, request)
       })
     yield* Effect.forever(
       Effect.gen(function* () {
         const request = yield* Queue.take(pendingTitles)
-        yield* generateNativeTitle({ native: engine, ...request }).pipe(
-          Effect.catchCause((cause) => Effect.logWarning("native title generation skipped", { cause })),
-          Effect.ensuring(Effect.sync(() => scheduledTitles.delete(`${request.storage}:${request.sessionID}`))),
+        const key = `${request.storage}:${request.sessionID}`
+        const title = yield* generateNativeTitle({ native: engine, ...request }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("native title generation skipped", { cause }).pipe(Effect.as(undefined)),
+          ),
         )
+        if (title) titleFailures.delete(key)
+        else titleFailures.set(key, (titleFailures.get(key) ?? 0) + 1)
+        titleNextAttempt.set(key, Date.now() + titleRetryDelay(key))
+        scheduledTitles.delete(key)
       }),
     ).pipe(Effect.forkScoped)
     const unsubscribeTitle = yield* clients.listen((event) => {
