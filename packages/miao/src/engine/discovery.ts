@@ -25,6 +25,8 @@ export type Capabilities = {
   schema: number
   /** Host route manifest version; absent on engines that predate it. */
   routesSchema?: number
+  /** Version of the short-lived read-only catalog command, when supported. */
+  catalog?: number
 }
 
 const EXE = process.platform === "win32" ? ".exe" : ""
@@ -61,12 +63,14 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (snake !== undefined && typeof snake !== "number") return undefined
     if (camel !== undefined && snake !== undefined && camel !== snake) return undefined
     const routesSchema = camel ?? snake
+    if (wire.catalog !== undefined && typeof wire.catalog !== "number") return undefined
     return {
       name: "miao-engine",
       version: wire.version,
       protocol: wire.protocol,
       schema: wire.schema,
       ...(typeof routesSchema === "number" ? { routesSchema } : {}),
+      ...(typeof wire.catalog === "number" ? { catalog: wire.catalog } : {}),
     }
   } catch {
     return undefined
@@ -80,12 +84,14 @@ export function capabilities(binary: string): Capabilities | undefined {
  * discovered engine that is too old is ignored, so an upgraded product keeps
  * running TypeScript Sessions instead of refusing to start.
  */
-export function resolveEngine(input: {
-  environment?: Record<string, string | undefined>
-  probe?: (binary: string) => Capabilities | undefined
-  exists?: (binary: string) => boolean
-  executable?: string
-} = {}): { binary: string; capabilities: Capabilities } | undefined {
+export function resolveEngine(
+  input: {
+    environment?: Record<string, string | undefined>
+    probe?: (binary: string) => Capabilities | undefined
+    exists?: (binary: string) => boolean
+    executable?: string
+  } = {},
+): { binary: string; capabilities: Capabilities } | undefined {
   const environment = input.environment ?? process.env
   const probe = input.probe ?? capabilities
   const exists = input.exists ?? existsSync
