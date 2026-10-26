@@ -990,7 +990,6 @@ const layer = Layer.effect(
     const fs = yield* FSUtil.Service
     const settings = yield* Effect.promise(() => engineSettings(global.config))
     const compaction = yield* Effect.promise(() => compactionSettings(global.config))
-    const sandbox = yield* Effect.promise(() => sandboxSettings(global.config))
     const configuration = nativeEngineOptions(process.env, settings)
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
     if (process.env.MIAO_ENGINE_WORKER === "1") {
@@ -1027,7 +1026,7 @@ const layer = Layer.effect(
         const hooks = yield* ProductHooks.prepare(location, { ...effective, ...context.options })
         const lsp = yield* ProductLsp.prepare(location, effective)
         const formatter = yield* ProductFormatter.prepare(location, effective)
-        const policy = yield* ProductPolicy.prepare(effective, sandbox)
+        const policy = yield* ProductPolicy.prepare(effective, global.config)
         const productTools = yield* ProductTools.prepare(configuration, creation, {
           get: (input) =>
             ownerRouter === undefined
