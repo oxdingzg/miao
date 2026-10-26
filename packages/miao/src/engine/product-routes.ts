@@ -355,6 +355,7 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
               : transport.provider === "anthropic" && account.oauth
                 ? { style: "bearer" }
                 : {}),
+            ...transport.auth,
             headers: {
               ...headers,
               ...(copilot ? { ...CopilotModels.headers(), "Openai-Intent": "conversation-edits" } : {}),
@@ -477,7 +478,14 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   return { ...options, prices }
 })
 
-function profile(model: ModelV2.Info, account: Account, integration: string) {
+/**
+ * Wire-level auth the native transport must reproduce exactly. Style defaults
+ * are decided per provider below; a route only states what differs.
+ */
+type RouteAuth = { style?: "bearer" | "api-key"; query?: Record<string, string> }
+type Transport = { provider: string; endpoint?: string; auth?: RouteAuth }
+
+function profile(model: ModelV2.Info, account: Account, integration: string): Transport | undefined {
   const oauth = account.oauth
   if (model.providerID === "commandcode")
     return { provider: "openai-chat", endpoint: "https://api.commandcode.ai/provider/v1/chat/completions" }
@@ -496,6 +504,62 @@ function profile(model: ModelV2.Info, account: Account, integration: string) {
     const url =
       model.api.url ?? (typeof model.request.body.endpoint === "string" ? model.request.body.endpoint : undefined)
     return { provider: "amazon-bedrock", ...(url === undefined ? {} : { endpoint: url }) }
+  }
+  if (model.api.package === "@ai-sdk/azure") {
+    // Azure OpenAI has two wires and the plugin picks between them: the SDK's
+    // `chat` model when the provider sets `useCompletionUrls`, otherwise its
+    // `responses` model. Only the chat wire has a native transport today, so a
+    // default (Responses) route keeps the gateway until G0-1.4 maps it.
+    if (setting(model, "useCompletionUrls") !== true) return undefined
+    // An Entra (or configured `Authorization`) account authenticates with a
+    // Google-free OAuth token the engine cannot mint; it keeps the gateway.
+    if (account.value?.type !== "key") return undefined
+    const resource = azureResource(model)
+    const declared = model.api.url
+    const base = declared ?? `https://${resource!.trim()}.openai.azure.com/openai`
+    // `useDeploymentBasedUrls` puts the deployment (the model ID) in the path
+    // and drops the version segment the resource base carries.
+    const baseURL =
+      setting(model, "useDeploymentBasedUrls") === true
+        ? `${base.replace(/\/v1\/?$/, "")}/deployments/${model.api.id}`
+        : (declared ?? `${base}/v1`)
+    const url = endpoint(baseURL, "chat/completions")
+    if (!url) return undefined
+    // The route defaults to `v1`, which is what the plugin sends when the model
+    // declares no version.
+    const version = setting(model, "apiVersion")
+    return {
+      provider: "azure",
+      endpoint: url,
+      auth: { query: { "api-version": typeof version === "string" && version !== "" ? version : "v1" } },
+    }
+  }
+  if (model.api.package === "@ai-sdk/amazon-bedrock/mantle") {
+    // Mantle speaks the OpenAI wire and authenticates with a Bedrock API key as
+    // a bearer token. An account holding only the AWS SigV4 chain has no bearer
+    // to send, so it keeps the gateway, which signs through the AWS SDK.
+    if (account.value?.type !== "key") return undefined
+    // Same precedence as the AI SDK's option bag, which spreads the provider
+    // settings first and the request body second.
+    const options = { ...model.api.settings, ...model.request.body }
+    const region =
+      (typeof options.region === "string" ? options.region : undefined) ??
+      process.env.AWS_REGION ??
+      "us-east-1"
+    // Mirrors the plugin's `selectMantleModel`: the gpt-oss safeguard models are
+    // the only Mantle models on the chat wire; everything else is Responses.
+    const wire =
+      model.api.id === "openai.gpt-oss-safeguard-20b" || model.api.id === "openai.gpt-oss-safeguard-120b"
+        ? "chat/completions"
+        : "responses"
+    // The SDK appends the wire path to the base URL it was given, so an
+    // explicit `endpoint` replaces the region default rather than the path.
+    const base =
+      (typeof options.endpoint === "string" ? options.endpoint : model.api.url) ??
+      `https://bedrock-mantle.${region}.api.aws/v1`
+    const url = endpoint(base, wire)
+    if (!url) return undefined
+    return { provider: wire === "responses" ? "openai-responses" : "openai-chat", endpoint: url }
   }
   if (integration === "github-copilot") {
     const enterprise = account.value?.type === "oauth" ? account.value.metadata?.enterpriseUrl : undefined
@@ -554,6 +618,15 @@ function profile(model: ModelV2.Info, account: Account, integration: string) {
     return url ? { provider: "openai-chat", endpoint: url } : undefined
   }
   return undefined
+}
+
+const setting = (model: ModelV2.Info, key: string) =>
+  (model.api.type === "aisdk" ? model.api.settings?.[key] : undefined) ?? model.request.body[key]
+
+const azureResource = (model: ModelV2.Info) => {
+  const value = setting(model, "resourceName")
+  if (typeof value === "string" && value.trim() !== "") return value
+  return process.env.AZURE_RESOURCE_NAME
 }
 
 function endpoint(base: string, suffix: string) {
