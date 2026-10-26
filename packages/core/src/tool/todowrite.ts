@@ -56,7 +56,31 @@ const layer = Layer.effectDiscard(
                 })
                 yield* service.update({ sessionID: context.sessionID, todos })
                 return { todos }
-              }).pipe(Effect.mapError(() => new ToolFailure({ message: "Unable to update todos" }))),
+              }).pipe(
+                // A blanket failure message discarded both the validation
+                // reason and the permission rule, leaving the model to resend
+                // the same rejected list.
+                Effect.catchTags({
+                  "PermissionV2.BlockedError": (error) =>
+                    Effect.fail(
+                      new ToolFailure({
+                        message: `The user has specified a rule which prevents you from updating todos. Here are some of the relevant rules ${JSON.stringify(error.rules)}`,
+                      }),
+                    ),
+                  "PermissionV2.CorrectedError": (error) =>
+                    Effect.fail(
+                      new ToolFailure({
+                        message: `The user rejected permission to update todos with the following feedback: ${error.feedback}`,
+                      }),
+                    ),
+                  "Session.NotFoundError": (error) =>
+                    Effect.fail(
+                      new ToolFailure({
+                        message: `Session ${error.sessionID} no longer exists, so the todo list was not updated`,
+                      }),
+                    ),
+                }),
+              ),
           }),
           "concurrent",
         ),
