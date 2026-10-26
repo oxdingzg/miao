@@ -164,6 +164,20 @@ async fn monitor_streams_pattern_matched_notices_and_cancel_stops_it() {
     let id = notice["job_id"].as_str().unwrap();
     assert!(runtime.cancel_job("s", id).await.unwrap());
     assert_eq!(settled(&store).await["state"], "cancelled");
+    let admissions: Vec<String> = store
+        .events("s", 0, 200)
+        .await
+        .unwrap()
+        .iter()
+        .filter(|event| event.kind == "input.admitted")
+        .filter_map(|event| event.data["input_id"].as_str().map(str::to_owned))
+        .collect();
+    assert!(
+        admissions
+            .iter()
+            .all(|id| !id.starts_with("job:") && !id.ends_with(":finished")),
+        "cancel must not wake the Session with a finished input: {admissions:?}"
+    );
     runtime.shutdown().await;
 }
 
@@ -206,6 +220,26 @@ async fn monitor_natural_exit_settles_the_durable_job() {
                         .is_some_and(|id| id.starts_with("monitor:"))
             }),
         "short-lived output must be durably admitted before settling"
+    );
+    let admissions: Vec<String> = store
+        .events("s", 0, 200)
+        .await
+        .unwrap()
+        .iter()
+        .filter(|event| event.kind == "input.admitted")
+        .filter_map(|event| event.data["input_id"].as_str().map(str::to_owned))
+        .collect();
+    assert_eq!(
+        admissions
+            .iter()
+            .filter(|id| id.ends_with(":finished"))
+            .count(),
+        1,
+        "exit must settle with exactly one durable input: {admissions:?}"
+    );
+    assert!(
+        admissions.iter().all(|id| !id.starts_with("job:")),
+        "monitor exit must not add the generic job-finished input: {admissions:?}"
     );
     runtime.shutdown().await;
 }

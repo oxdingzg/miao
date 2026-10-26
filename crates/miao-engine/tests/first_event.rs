@@ -181,11 +181,12 @@ async fn actual_native_process_bounds_headers_silence_and_pings_without_refillin
             ])
             .env("ANTHROPIC_API_KEY", "fixture-key")
             // Modes 0-2 exercise the bound itself, so they keep a budget tight
-            // enough to fire three times inside the event wait. Mode 3 is the
-            // healthy control uses generous post-header budgets so its 3s
-            // mid-stream gap never reuses the shorter response-header budget.
-            // Modes 4-5 verify that heartbeats do not extend event idleness,
-            // while real output re-arms it throughout a long response.
+            // enough to fire on every attempt within the retry window. Mode 3
+            // is the healthy control: its first event releases the deadline,
+            // and that must not depend on how fast a loaded runner accepts and
+            // reads the request. Modes 4-5 verify that heartbeats do not
+            // extend event idleness, while real output re-arms it throughout
+            // a long response.
             .env(
                 "MIAO_LLM_FIRST_BYTE_TIMEOUT_MS",
                 if mode >= 3 { "1000" } else { "100" },
@@ -224,7 +225,9 @@ async fn actual_native_process_bounds_headers_silence_and_pings_without_refillin
             json!({"input":{"session_id":"s","input_id":"human","prompt":"answer"},"resume":true}),
         )
         .await;
-        let events = tokio::time::timeout(Duration::from_secs(15), async {
+        // The failed modes retry until the turn's 60 s retry window closes, so
+        // the wait has to outlast the window itself.
+        let events = tokio::time::timeout(Duration::from_secs(90), async {
             loop {
                 let events = rpc(
                     &mut input,
@@ -268,11 +271,18 @@ async fn actual_native_process_bounds_headers_silence_and_pings_without_refillin
             },
             "{events}"
         );
-        assert_eq!(
-            calls.load(Ordering::SeqCst),
-            if mode >= 3 { 1 } else { 3 },
-            "{events}"
-        );
+        // A stream that stalls before its first event is retried until the
+        // turn's retry window closes, so the exact attempt count is the window
+        // divided by the backoff rather than a fixed number; the runaway guard
+        // keeps the attempts finite. Once an event has arrived the turn never
+        // replays, so every post-header mode makes exactly one attempt.
+        let calls = calls.load(Ordering::SeqCst);
+        if mode >= 3 {
+            assert_eq!(calls, 1, "{events}");
+        } else {
+            assert!(calls >= 3, "the turn gave up too early: {calls} attempts");
+            assert!(calls <= 25, "attempts escaped the retry cap: {calls}");
+        }
         if mode == 4 {
             assert!(events
                 .as_array()

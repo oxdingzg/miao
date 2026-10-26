@@ -58,7 +58,9 @@ async fn owner_default_inherits_manifest_auth_without_replacing_transport_identi
             let send = send.clone();
             async move {
                 send.send((uri.to_string(), headers, body)).await.unwrap();
-                (StatusCode::BAD_REQUEST, "fixture")
+                // A sentinel only: 422 is never retried or replayed, so the
+                // capture below pairs one request with one stream.
+                (StatusCode::UNPROCESSABLE_ENTITY, "fixture")
             }
         },
     );
@@ -125,7 +127,7 @@ async fn owner_default_inherits_manifest_auth_without_replacing_transport_identi
                 selected
                     .stream(request(), progress, CancellationToken::new())
                     .await,
-                Err(ProviderError::Http(400))
+                Err(ProviderError::Http(422))
             ));
             let (uri, headers, _body) = seen.recv().await.unwrap();
             assert!(uri.starts_with(path));
@@ -168,7 +170,9 @@ async fn default_auth_style_and_encoded_query_leave_fallback_endpoint_credential
                     if primary {
                         StatusCode::SERVICE_UNAVAILABLE
                     } else {
-                        StatusCode::BAD_REQUEST
+                        // A rejection sentinel: 400 would earn one replay and
+                        // desync this test's per-route capture.
+                        StatusCode::UNPROCESSABLE_ENTITY
                     },
                     "fixture",
                 )
