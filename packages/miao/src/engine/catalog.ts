@@ -20,6 +20,12 @@ export const readCatalog = Effect.fn("NativeCatalog.read")(function* (
   binary: string,
   input: Parameters<NonNullable<NativeEngine.Interface["catalog"]>>[0],
 ) {
+  // A placement can name a storage file that is already gone: a deleted temp
+  // checkout, or a release run that wrote its own storage root. A file that
+  // does not exist holds no facts, and asking the reader anyway exited
+  // non-zero, which the caller reported as a conflict on every listing
+  // refresh. The empty answer is the truth, so no reader is spawned.
+  if (!(yield* Effect.promise(() => Bun.file(input.storage).exists()))) return []
   const pages = Array.from({ length: Math.ceil(input.sessions.length / 200) }, (_, index) =>
     input.sessions.slice(index * 200, (index + 1) * 200),
   )
