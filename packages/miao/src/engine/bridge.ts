@@ -880,6 +880,19 @@ export function productToolInput(
     }
     return projected
   }
+  if (
+    (engineTool === "run_command" || engineTool === "bash") &&
+    typeof input.command !== "string" &&
+    Array.isArray(input.argv) &&
+    input.argv.length > 0 &&
+    input.argv.every((item): item is string => typeof item === "string")
+  ) {
+    // Display argv faithfully; joining raw arguments would hide spaces and shell metacharacters.
+    const command = input.argv
+      .map((item) => (/^[A-Za-z0-9_./:=+-]+$/.test(item) ? item : "'" + item.replaceAll("'", "'\\''") + "'"))
+      .join(" ")
+    return { ...input, command }
+  }
   if (engineTool !== "start_job") return input
   const argv = Array.isArray(input.argv) ? input.argv.filter((item): item is string => typeof item === "string") : []
   const command = argv.length > 2 && argv[0] === "bash" && argv[1] === "-c" ? argv.slice(2).join(" ") : argv.join(" ")
