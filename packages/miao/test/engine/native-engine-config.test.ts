@@ -209,3 +209,20 @@ test("reads engine.storage relative to the global config and lets the environmen
   expect(engineStorageRoot({}, undefined)).toBeUndefined()
   expect(engineStorageRoot({}, {})).toBeUndefined()
 })
+
+// S3 flips the default: with a composed engine, a new Session belongs to it even
+// when the operator configured nothing, and only the explicit opt-out keeps the
+// TypeScript placement.
+test("places natively by default and honours the explicit opt-out", () => {
+  const fallback = path.join("/data", "engines")
+  expect(engineStorageRoot({}, undefined, fallback)).toBe(fallback)
+  expect(engineStorageRoot({}, {}, fallback)).toBe(fallback)
+  // A configured root still wins over the default.
+  expect(engineStorageRoot({}, { storage: "/configured" }, fallback)).toBe("/configured")
+  // The environment wins over both.
+  expect(engineStorageRoot({ MIAO_ENGINE_STORAGE: "/elsewhere" }, { storage: "/configured" }, fallback)).toBe(
+    "/elsewhere",
+  )
+  // `--engine ts` sets the empty value: it must opt out of the default too.
+  expect(engineStorageRoot({ MIAO_ENGINE_STORAGE: "" }, undefined, fallback)).toBeUndefined()
+})

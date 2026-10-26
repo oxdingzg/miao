@@ -281,16 +281,23 @@ export const sandboxSettings = async (globalConfig: string): Promise<boolean> =>
 /**
  * Root of the product-side native databases. An explicit environment variable
  * wins over the global `engine.storage` key, mirroring every other engine
- * setting; an absent root keeps new Sessions TypeScript-owned.
+ * setting. Since S3 the engine owns new Sessions by default, so an operator
+ * who configured nothing gets `fallback` (beside the product database) instead
+ * of the previous TypeScript placement; the only way to opt out is the explicit
+ * empty value, which `--engine ts` sets.
  */
 export const engineStorageRoot = (
   environment: Record<string, string | undefined> = process.env,
   settings?: { storage?: string },
+  fallback?: string,
 ): string | undefined => {
-  // An explicit empty value is the `--engine ts` opt-out: it must beat a
-  // configured `engine.storage` rather than resolving to the working directory.
+  // An explicit empty value is the `--engine ts` opt-out: it must beat both a
+  // configured `engine.storage` and the default rather than resolving to the
+  // working directory.
   const root =
-    environment.MIAO_ENGINE_STORAGE !== undefined ? environment.MIAO_ENGINE_STORAGE || undefined : settings?.storage
+    environment.MIAO_ENGINE_STORAGE !== undefined
+      ? environment.MIAO_ENGINE_STORAGE || undefined
+      : (settings?.storage ?? fallback)
   return root ? path.resolve(root) : undefined
 }
 
@@ -1158,7 +1165,7 @@ const layer = Layer.effect(
             }).pipe(Effect.catch(() => Effect.succeed(undefined)))
           }),
       },
-      engineStorageRoot(process.env, settings),
+      engineStorageRoot(process.env, settings, path.join(global.data, "engines")),
       (model: string) => locationPricing?.(model),
     )
     // Native Sessions settle through the engine's own lifecycle events, and

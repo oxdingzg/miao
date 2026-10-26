@@ -36,8 +36,9 @@ export interface Interface {
   >
   /**
    * Root of the product-side native databases, resolved from the global
-   * `engine.storage` key or `MIAO_ENGINE_STORAGE`. Absent keeps new Sessions
-   * TypeScript-owned.
+   * `engine.storage` key, `MIAO_ENGINE_STORAGE`, or the default beside the
+   * product database. Absent only when the operator opted out with
+   * `--engine ts`, which keeps new Sessions TypeScript-owned.
    */
   readonly storageRoot?: string
 
