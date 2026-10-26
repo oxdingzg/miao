@@ -89,22 +89,21 @@ fn input(session: &str, prompt: &str) -> Input {
     }
 }
 async fn terminal(store: &Store, session: &str) -> String {
+    let mut after = 0;
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
-            if let Some(event) = store
-                .events(session, 0, 2000)
-                .await
-                .unwrap()
-                .iter()
-                .find(|e| e.kind == "run.finished")
-            {
+            let events = store.events(session, after, 2000).await.unwrap();
+            if let Some(event) = events.iter().find(|event| event.kind == "run.finished") {
                 return event.data["reason"].as_str().unwrap().to_owned();
+            }
+            if let Some(event) = events.last() {
+                after = event.seq;
             }
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
     })
     .await
-    .unwrap()
+    .unwrap_or_else(|_| panic!("run.finished was not observed after journal cursor {after}"))
 }
 
 #[tokio::test]

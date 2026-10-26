@@ -615,6 +615,11 @@ pub fn prune_history_with_stats(
                 &content[tail..]
             )
         };
+        // The marker and recall handle count too. Near-budget outputs and
+        // tiny budgets may otherwise grow the request and underflow savings.
+        if pruned.len() >= len {
+            continue;
+        }
         stats.before_bytes += len;
         stats.after_bytes += pruned.len();
         stats.messages += usize::from(previous_message != Some(index));
