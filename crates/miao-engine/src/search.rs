@@ -61,8 +61,8 @@ impl Query {
     pub fn parse(name: &str, input: Value) -> Result<Self, ToolError> {
         let query = match name {
             "glob" => {
-                let input: GlobInput =
-                    serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
+                let input: GlobInput = serde_json::from_value(input)
+                    .map_err(|error| ToolError::InvalidArgs(error.to_string()))?;
                 Self {
                     path: input.path,
                     matcher: Some(glob(&input.pattern)?),
@@ -72,16 +72,21 @@ impl Query {
                 }
             }
             "grep" => {
-                let input: GrepInput =
-                    serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
+                let input: GrepInput = serde_json::from_value(input)
+                    .map_err(|error| ToolError::InvalidArgs(error.to_string()))?;
                 if input.pattern.len() > 4096 {
-                    return Err(ToolError::InvalidInput);
+                    return Err(ToolError::InvalidArgs(format!(
+                        "pattern is {} bytes; at most 4096 are allowed",
+                        input.pattern.len()
+                    )));
                 }
                 let regex = RegexBuilder::new(&input.pattern)
                     .case_insensitive(!input.case_sensitive)
                     .size_limit(1024 * 1024)
                     .build()
-                    .map_err(|_| ToolError::InvalidInput)?;
+                    .map_err(|error| {
+                        ToolError::InvalidArgs(format!("pattern is not a valid regex: {error}"))
+                    })?;
                 Self {
                     path: input.path,
                     matcher: input.glob.map(|pattern| glob(&pattern)).transpose()?,
@@ -93,7 +98,10 @@ impl Query {
             _ => return Err(ToolError::Unsupported),
         };
         if !(1..=500).contains(&query.limit) {
-            return Err(ToolError::InvalidInput);
+            return Err(ToolError::InvalidArgs(format!(
+                "limit must be between 1 and 500; got {}",
+                query.limit
+            )));
         }
         Ok(query)
     }
@@ -104,13 +112,15 @@ fn glob(pattern: &str) -> Result<GlobMatcher, ToolError> {
         || pattern.starts_with('/')
         || pattern.split('/').any(|p| p == "..")
     {
-        return Err(ToolError::InvalidInput);
+        return Err(ToolError::InvalidArgs(format!(
+            "glob must be a non-empty workspace-relative pattern of at most 4096 bytes; got {pattern:?}"
+        )));
     }
     GlobBuilder::new(pattern)
         .literal_separator(true)
         .build()
         .map(|g| g.compile_matcher())
-        .map_err(|_| ToolError::InvalidInput)
+        .map_err(|error| ToolError::InvalidArgs(format!("glob is not a valid pattern: {error}")))
 }
 
 /// Scoped capability walking, not a shell. Each child is opened with nofollow

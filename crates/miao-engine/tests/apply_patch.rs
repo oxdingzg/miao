@@ -220,7 +220,10 @@ fn patch_parsing_is_strict_and_bounded() {
         "*** Begin Patch\n*** Add File: a//b.txt\n+hi\n*** End Patch",
         "*** Begin Patch\n*** Touch File: a.txt\n*** End Patch",
     ] {
-        assert!(matches!(parse(bad), Err(ToolError::InvalidInput)), "{bad}");
+        assert!(
+            matches!(parse(bad), Err(ToolError::InvalidArgs(_))),
+            "{bad}"
+        );
     }
     let good = parse(PATCH).unwrap();
     assert_eq!(good.len(), 3);
@@ -230,5 +233,13 @@ fn patch_parsing_is_strict_and_bounded() {
         "*** Begin Patch\n*** Add File: a.txt\n+{}\n*** End Patch",
         "x".repeat(300_000)
     );
-    assert!(matches!(parse(&big), Err(ToolError::InvalidInput)));
+    assert!(matches!(parse(&big), Err(ToolError::InvalidArgs(_))));
+    // The rejection has to say what to change; a bare "invalid tool input"
+    // left the model resending the same absolute path.
+    let Err(ToolError::InvalidArgs(message)) =
+        parse("*** Begin Patch\n*** Add File: /abs.txt\n+hi\n*** End Patch")
+    else {
+        panic!("absolute path must be rejected with a reason");
+    };
+    assert!(message.contains("workspace-relative"), "{message}");
 }

@@ -372,7 +372,7 @@ async fn run_command_emits_started_and_progress_events() {
 }
 
 #[test]
-fn foreground_timeout_matches_the_product_ceiling() {
+fn foreground_timeout_clamps_to_the_product_ceiling() {
     use miao_engine::process::{BashInput, Input};
     let bash = BashInput::parse(json!({"command":"true"})).unwrap();
     assert_eq!(bash.timeout_ms, 120_000);
@@ -380,6 +380,51 @@ fn foreground_timeout_matches_the_product_ceiling() {
     // value used to surface only as an opaque "invalid tool input".
     assert!(Input::parse(json!({"argv":["true"],"timeout_ms":600_000})).is_ok());
     assert!(BashInput::parse(json!({"command":"true","timeout_ms":600_000})).is_ok());
-    assert!(Input::parse(json!({"argv":["true"],"timeout_ms":600_001})).is_err());
-    assert!(BashInput::parse(json!({"command":"true","timeout_ms":600_001})).is_err());
+    // Asking for longer than the ceiling is a request for a longer run, not a
+    // malformed call: run it at the ceiling instead of refusing to run at all.
+    assert_eq!(
+        Input::parse(json!({"argv":["true"],"timeout_ms":900_000}))
+            .unwrap()
+            .timeout_ms,
+        600_000
+    );
+    assert_eq!(
+        BashInput::parse(json!({"command":"true","timeout_ms":900_000}))
+            .unwrap()
+            .timeout_ms,
+        600_000
+    );
+    // Zero is refused, and the reason reaches the model.
+    for message in [
+        Input::parse(json!({"argv":["true"],"timeout_ms":0}))
+            .err()
+            .map(|error| error.to_string()),
+        BashInput::parse(json!({"command":"true","timeout_ms":0}))
+            .err()
+            .map(|error| error.to_string()),
+    ] {
+        assert!(
+            message
+                .as_deref()
+                .is_some_and(|message| message.contains("timeout_ms must be between 1 and 600000")),
+            "{message:?}"
+        );
+    }
+}
+
+#[test]
+fn bash_accepts_the_names_other_shell_tools_use() {
+    use miao_engine::process::BashInput;
+    // `timeout` and `workdir` are what the product-side tool and most CLIs
+    // call these fields; an unknown field rejected the whole call.
+    let bash =
+        BashInput::parse(json!({"command":"true","timeout":30_000,"workdir":"src"})).unwrap();
+    assert_eq!(bash.timeout_ms, 30_000);
+    assert_eq!(bash.cwd, "src");
+    // The canonical names still win when both are present.
+    let bash = BashInput::parse(json!({"command":"true","cwd":"a","workdir":"b"})).unwrap();
+    assert_eq!(bash.cwd, "a");
+    let bash =
+        BashInput::parse(json!({"command":"true","timeout_ms":20_000,"timeout":30_000})).unwrap();
+    assert_eq!(bash.timeout_ms, 20_000);
 }

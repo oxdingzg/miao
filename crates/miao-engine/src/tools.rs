@@ -25,6 +25,11 @@ pub enum ToolError {
     Interrupted,
     #[error("invalid tool input")]
     InvalidInput,
+    /// The same rejection, carrying the reason. A bare "invalid tool input"
+    /// leaves the model nothing to correct, so it resends the same call; every
+    /// rejection that a caller can actually fix belongs here.
+    #[error("invalid tool input: {0}")]
+    InvalidArgs(String),
     #[error("tool is not available")]
     Unsupported,
     #[error("external tool: {0}")]
@@ -1168,7 +1173,10 @@ impl Tools {
             "run_command" | "bash" | "start_job" | "monitor" | "terminal_start" | "glob" | "grep"
         ) && !tokio::fs::metadata(&path).await?.is_dir()
         {
-            return Err(ToolError::InvalidInput);
+            return Err(ToolError::InvalidArgs(format!(
+                "{name} needs a directory to work in, but {:?} is not one",
+                path.display()
+            )));
         }
         let external = !path.starts_with(&self.root);
         let relative = path
