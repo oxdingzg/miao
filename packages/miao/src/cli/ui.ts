@@ -30,12 +30,24 @@ export const Style = {
 
 export function println(...message: string[]) {
   print(...message)
-  process.stderr.write(EOL)
+  write(EOL)
 }
 
 export function print(...message: string[]) {
   blank = false
-  process.stderr.write(message.join(" "))
+  write(message.join(" "))
+}
+
+/**
+ * A closed stderr is not a failure of the command: piping into `head` or
+ * losing the terminal leaves the message nowhere to go, and the exit code and
+ * finished work still matter. Bun raises EPIPE/EIO as an uncaught exception,
+ * which recorded a crash for what was otherwise a clean run.
+ */
+function write(text: string) {
+  try {
+    process.stderr.write(text)
+  } catch {}
 }
 
 let blank = false
