@@ -100,5 +100,43 @@ test("one missing native Session does not hide healthy siblings in the same stor
       projects: { resolve: () => Effect.succeed({ id: Project.ID.global }) },
     })
   }).pipe(Effect.provide(Database.layerFromPath(path.join(tmp.path, "product.db"))), Effect.runPromise)
-  expect(result.map((session) => session.id).sort()).toEqual([SessionID.make("ses_healthy"), SessionID.make("ses_later")])
+  expect(result.map((session) => session.id).sort()).toEqual([
+    SessionID.make("ses_healthy"),
+    SessionID.make("ses_later"),
+  ])
 })
+
+test("a catalog batch lists native Sessions without execution snapshot or usage RPCs", async () => {
+  await using tmp = await tmpdir()
+  const directory = AbsolutePath.make(tmp.path)
+  const storage = AbsolutePath.make(path.join(tmp.path, "native.db"))
+  const result = await Effect.gen(function* () {
+    const database = yield* Database.Service
+    for (const id of ["ses_kept", "ses_missing"]) {
+      yield* SessionEnginePlacement.claim(database.db, {
+        sessionID: SessionID.make(id),
+        placement: { engine: "rust", storage, location: { directory } },
+      })
+    }
+    return yield* mergeNativeSessions({
+      native: {
+        catalog: (input) => {
+          expect(input.storage).toBe(storage)
+          expect(input.sessions.toSorted()).toEqual([SessionID.make("ses_kept"), SessionID.make("ses_missing")])
+          expect(input.usage).toBe(true)
+          return Effect.succeed([
+            { sessionID: SessionID.make("ses_kept"), snapshot: { title: "read only", created_at_ms: 1 } },
+          ])
+        },
+        snapshot: () => Effect.die(new Error("catalog must not acquire an execution owner")),
+        usage: () => Effect.die(new Error("catalog must not acquire an execution owner")),
+      },
+      db: database.db,
+      sessions: [],
+      models: [],
+      limit: 10,
+      order: "desc",
+      projects: { resolve: () => Effect.succeed({ id: Project.ID.global }) },
+    })
+  }).pipe(Effect.provide(Database.layerFromPath(path.join(tmp.path, "product.db"))), Effect.runPromise)
+  expect(result.map((session) => session.title)).toEqual(["read only"])})
