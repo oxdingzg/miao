@@ -423,23 +423,27 @@ fn strip_trailing_commas(input: &str) -> String {
     out
 }
 
-fn rgb(hex: &str) -> Color {
-    let hex = hex.trim_start_matches('#');
-    let component = |chars: &[char]| {
-        u8::from_str_radix(&chars.iter().collect::<String>(), 16)
-            .expect("built-in palettes use valid hex")
-    };
-    let chars: Vec<char> = hex.chars().collect();
-    match chars.len() {
+const fn hex_digit(c: u8) -> u8 {
+    match c {
+        b'0'..=b'9' => c - b'0',
+        b'a'..=b'f' => c - b'a' + 10,
+        b'A'..=b'F' => c - b'A' + 10,
+        _ => panic!("built-in palettes use hex digits"),
+    }
+}
+
+const fn rgb(hex: &str) -> Color {
+    let bytes = hex.as_bytes();
+    match bytes.len() {
         3 => Color::Rgb(
-            component(&[chars[0], chars[0]]),
-            component(&[chars[1], chars[1]]),
-            component(&[chars[2], chars[2]]),
+            (hex_digit(bytes[0]) << 4) | hex_digit(bytes[0]),
+            (hex_digit(bytes[1]) << 4) | hex_digit(bytes[1]),
+            (hex_digit(bytes[2]) << 4) | hex_digit(bytes[2]),
         ),
         6 => Color::Rgb(
-            component(&chars[0..2]),
-            component(&chars[2..4]),
-            component(&chars[4..6]),
+            (hex_digit(bytes[0]) << 4) | hex_digit(bytes[1]),
+            (hex_digit(bytes[2]) << 4) | hex_digit(bytes[3]),
+            (hex_digit(bytes[4]) << 4) | hex_digit(bytes[5]),
         ),
         _ => panic!("built-in palettes use 3- or 6-digit hex"),
     }
