@@ -147,6 +147,11 @@ pub enum Error {
     Fenced,
     #[error("invalid request: {0}")]
     Invalid(String),
+    /// The provider endpoint refused, stalled, or exhausted its retries. This
+    /// is availability, not a malformed request; surfacing it as "invalid
+    /// request" sends operators debugging the wrong thing.
+    #[error("provider unavailable: {0}")]
+    Provider(String),
     #[error("storage: {0}")]
     Storage(#[from] rusqlite::Error),
     #[error("IO: {0}")]
