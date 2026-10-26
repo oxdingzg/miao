@@ -24,6 +24,9 @@ pub struct Gemini {
     request_options: crate::request_options::Options,
     input_modalities: Vec<String>,
     extra_headers: std::collections::BTreeMap<String, String>,
+    /// Vertex AI accepts a Google Cloud OAuth token as a bearer and names the
+    /// project and location in the path; the direct route takes an API key.
+    bearer: bool,
 }
 impl Gemini {
     pub fn new(endpoint: String, key: String, model: String) -> Result<Self, ProviderError> {
@@ -73,7 +76,19 @@ impl Gemini {
             request_options: Default::default(),
             input_modalities: vec![],
             extra_headers: Default::default(),
+            bearer: false,
         })
+    }
+    /// Vertex AI serves the same codec under `/projects/.../publishers/google`
+    /// with a Google Cloud OAuth bearer instead of an API key.
+    pub fn with_bearer_source(
+        endpoint: String,
+        source: Source,
+        model: String,
+    ) -> Result<Self, ProviderError> {
+        let mut provider = Self::with_source(endpoint, source, model)?;
+        provider.bearer = true;
+        Ok(provider)
     }
 }
 #[async_trait]
@@ -154,6 +169,8 @@ impl Provider for Gemini {
                 Ok(request) => request,
                 Err(_) => return CountTokens::Failed("unsupported Gemini media".into()),
             };
+        // Advisory only: counting is an API-key endpoint, so a Vertex bearer
+        // falls back to the local estimate.
         let credential = match self.source.load().await {
             Ok(credential) if credential.kind() == Kind::Key => credential,
             _ => return CountTokens::Failed("credential unavailable".into()),
@@ -240,7 +257,7 @@ impl Gemini {
     ) -> Result<Reply, ProviderError> {
         let request = crate::media::normalize(request, "gemini", &self.input_modalities)?;
         let credential = self.source.load().await?;
-        if credential.kind() != Kind::Key {
+        if !self.accepts(&credential) {
             return Err(ProviderError::AuthProfile);
         }
         let contents = lower(&request.messages, &self.model)?;
@@ -251,11 +268,16 @@ impl Gemini {
             body["tools"] = json!([{"functionDeclarations":declarations}]);
             body["toolConfig"] = json!({"functionCallingConfig":{"mode":if without_tools { "NONE" } else { "AUTO" }}});
         }
-        let builder = self
-            .client
-            .post(self.endpoint.clone())
-            .header("x-goog-api-key", credential.header()?)
-            .json(&body);
+        let builder = if self.bearer {
+            self.client
+                .post(self.endpoint.clone())
+                .header("Authorization", format!("Bearer {}", credential.secret()))
+        } else {
+            self.client
+                .post(self.endpoint.clone())
+                .header("x-goog-api-key", credential.header()?)
+        }
+        .json(&body);
         let builder = crate::provider::route_headers(builder, &self.extra_headers)?;
         let request = self
             .request_options
@@ -280,6 +302,17 @@ impl Gemini {
         .await
     }
 }
+impl Gemini {
+    /// A direct route sends an API key; a Vertex route sends the account's
+    /// Google Cloud token, which arrives as an OAuth credential.
+    fn accepts(&self, credential: &Credential) -> bool {
+        match self.bearer {
+            true => matches!(credential.kind(), Kind::Key | Kind::OAuth),
+            false => credential.kind() == Kind::Key,
+        }
+    }
+}
+
 fn invalid(message: &str) -> ProviderError {
     ProviderError::Stream(message.into())
 }

@@ -6,6 +6,7 @@ use axum::{
     Json, Router,
 };
 use miao_engine::{
+    gemini::Gemini,
     model_routes::load,
     openai_chat::OpenAIChat,
     openai_responses::OpenAIResponses,
@@ -313,5 +314,64 @@ async fn azure_responses_wire_matches_the_product_route() {
     assert_eq!(body["model"], "prod-chat");
     assert!(body.get("input").is_some());
     assert!(body.get("messages").is_none());
+    server.abort();
+}
+/// Gemini on Vertex AI: the publisher path names the project and location, the
+/// account's Google Cloud token is sent as a bearer, and SSE framing stays
+/// pinned in the URL.
+#[tokio::test]
+async fn vertex_gemini_wire_matches_the_product_route() {
+    let (send, mut seen) = mpsc::channel(8);
+    let router = Router::new().fallback(
+        move |uri: Uri, headers: HeaderMap, Json(body): Json<Value>| {
+            let send = send.clone();
+            async move {
+                send.send((uri.to_string(), headers, body)).await.unwrap();
+                (StatusCode::UNPROCESSABLE_ENTITY, "fixture")
+            }
+        },
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    std::env::set_var(VERTEX_KEY, "vertex-secret");
+    let root = tempfile::tempdir().unwrap();
+    let (file, workspace) = manifest(
+        root.path(),
+        json!([
+            {
+                "id": "google-vertex/gemini-2.5-pro",
+                "provider": "vertex-gemini",
+                "model": "gemini-2.5-pro",
+                "endpoint": format!(
+                    "{base}/v1/projects/proj-alpha/locations/global/publishers/google/models/gemini-2.5-pro:streamGenerateContent"
+                ),
+                "primary": true,
+                "auth": {},
+                "variants": [],
+                "credential": {"type": "environment", "key": VERTEX_KEY}
+            }
+        ]),
+    );
+    let owner =
+        Arc::new(Gemini::new(base.clone(), "owner-key".into(), "gemini-2.5-pro".into()).unwrap());
+    let catalog = load(&file, &workspace, owner).await.unwrap().0;
+    let (progress, _receive) = mpsc::channel(16);
+    assert!(matches!(
+        catalog
+            .for_route("google-vertex/gemini-2.5-pro")
+            .unwrap()
+            .stream(request(), progress, CancellationToken::new())
+            .await,
+        Err(ProviderError::Http(422))
+    ));
+    let (uri, headers, body) = seen.recv().await.unwrap();
+    assert_eq!(
+        uri,
+        "/v1/projects/proj-alpha/locations/global/publishers/google/models/gemini-2.5-pro:streamGenerateContent?alt=sse"
+    );
+    assert_eq!(headers["authorization"], "Bearer vertex-secret");
+    assert!(!headers.contains_key("x-goog-api-key"));
+    assert!(body.get("contents").is_some());
     server.abort();
 }
