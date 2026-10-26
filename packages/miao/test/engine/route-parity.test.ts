@@ -116,3 +116,83 @@ it.live("mantle follows the region the AI SDK would resolve", () =>
     )
   }),
 )
+
+const AZURE_MODEL = "gpt-4.1"
+const AZURE_DEPLOYMENT = "prod-chat"
+
+/**
+ * Azure OpenAI in the product catalog: the plugin keeps the deployment on the
+ * model, the resource on the provider, and picks the Chat wire through
+ * `useCompletionUrls`; without it the same model would ask for Responses.
+ */
+const azureCatalog = (options: { deployment?: boolean }) =>
+  Effect.gen(function* () {
+    const services = yield* Catalog.Service
+    const integrations = yield* Integration.Service
+    yield* integrations.transform((draft) => {
+      draft.method.update({
+        integrationID: Integration.ID.make("azure"),
+        method: { type: "env", names: ["AZURE_API_KEY"] },
+      })
+    })
+    yield* services.transform((draft) => {
+      draft.provider.update(ProviderV2.ID.azure, (provider) => {
+        provider.integrationID = Integration.ID.make("azure")
+        provider.api = { type: "aisdk", package: "@ai-sdk/azure", settings: { resourceName: "contoso" } }
+        provider.request.body.useCompletionUrls = true
+        if (options.deployment === true) provider.request.body.useDeploymentBasedUrls = true
+      })
+      draft.model.update(ProviderV2.ID.azure, ModelV2.ID.make(AZURE_MODEL), (model) => {
+        model.api.id = ModelV2.ID.make(AZURE_DEPLOYMENT)
+        model.capabilities.tools = true
+        model.capabilities.output = ["text"]
+      })
+      draft.model.default.set(ProviderV2.ID.azure, ModelV2.ID.make(AZURE_MODEL))
+    })
+  })
+
+/** The manifest `profile()` produced, with an Azure key in the environment. */
+const azureManifest = (options: { deployment?: boolean; version?: string } = {}) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous = process.env.AZURE_API_KEY
+      process.env.AZURE_API_KEY = "AZURE_SECRET"
+      return previous
+    }),
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* azureCatalog(options)
+          const prepared = yield* ProductRoutes.prepare(location, { binary: "fixture", model: "" })
+          const file = prepared.modelRoutesConfigFile
+          if (!file) throw new Error("missing product routes manifest")
+          return (yield* Effect.promise(() => Bun.file(file).json())) as Array<Route & { auth?: unknown }>
+        }),
+      ).pipe(Effect.provide(layer), Effect.provideService(Credential.SharedDatabasePath, SHARED)),
+    (previous) =>
+      Effect.sync(() => {
+        if (previous === undefined) delete process.env.AZURE_API_KEY
+        else process.env.AZURE_API_KEY = previous
+      }),
+  )
+
+it.live("azure chat keeps the plugin's resource URL and the v1 api-version default", () =>
+  Effect.gen(function* () {
+    const routes = yield* azureManifest()
+    expect(routes.find((route) => route.id === `azure/${AZURE_MODEL}`)).toMatchObject({
+      provider: "azure",
+      endpoint: "https://contoso.openai.azure.com/openai/v1/chat/completions",
+      auth: { query: { "api-version": "v1" } },
+      credential: { type: "environment", key: "AZURE_API_KEY" },
+    })
+  }),
+)
+
+it.live("azure deployments carry the deployment in the path, not the version segment", () =>
+  Effect.gen(function* () {
+    const routes = yield* azureManifest({ deployment: true })
+    expect(routes.find((route) => route.id === `azure/${AZURE_MODEL}`)?.endpoint).toBe(
+      `https://contoso.openai.azure.com/openai/deployments/${AZURE_DEPLOYMENT}/chat/completions`,
+    )
+  }),
+)
