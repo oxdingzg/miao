@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       engine: ${{ steps.paths.outputs.engine }}
+      tui: ${{ steps.paths.outputs.tui }}
       native: ${{ steps.paths.outputs.native }}
       blackbox: ${{ steps.paths.outputs.blackbox }}
       e2e: ${{ steps.paths.outputs.e2e }}
@@ -57,6 +58,10 @@ jobs:
     needs: policy
     if: needs.policy.outputs.engine == 'true'
     uses: ./.github/workflows/engine.yml
+  tui:
+    needs: policy
+    if: needs.policy.outputs.tui == 'true'
+    uses: ./.github/workflows/tui.yml
   native:
     needs: policy
     if: needs.policy.outputs.native == 'true'
@@ -92,7 +97,7 @@ jobs:
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [policy, unit, typecheck, engine, native, blackbox, e2e, remote, ios, storybook, install, nix]
+    needs: [policy, unit, typecheck, engine, tui, native, blackbox, e2e, remote, ios, storybook, install, nix]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
