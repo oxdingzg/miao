@@ -7,7 +7,7 @@ use axum::{
 };
 use miao_engine::{
     model_routes::load,
-    openai_chat::OpenAIChat,
+    openai_responses::OpenAIResponses,
     protocol::{Message, ModelRequest},
     provider::ProviderError,
 };
@@ -84,8 +84,18 @@ async fn bedrock_mantle_routes_send_the_wire_the_plugin_selects() {
             }
         ]),
     );
-    let owner =
-        Arc::new(OpenAIChat::new(base.clone(), "owner-key".into(), "owner".into()).unwrap());
+    // The engine's default provider is launched from the primary route
+    // (`product-routes.ts` copies its protocol, model and endpoint into the
+    // engine options), so the fixture mirrors that launch rather than inventing
+    // a different owner.
+    let owner = Arc::new(
+        OpenAIResponses::new(
+            base.clone(),
+            "owner-key".into(),
+            "openai.gpt-oss-120b".into(),
+        )
+        .unwrap(),
+    );
     let catalog = load(&file, &workspace, owner).await.unwrap().0;
     for (route, path, model, field) in [
         (
