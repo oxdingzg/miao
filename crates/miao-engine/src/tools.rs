@@ -794,6 +794,32 @@ impl Tools {
         }
         name
     }
+    pub(crate) fn mcp_identity(&self, name: &str) -> Option<mcp::Identity> {
+        self.mcp
+            .as_ref()
+            .and_then(|registry| registry.identity(name))
+    }
+
+    /// Stamp trusted catalog names before persistence, never model-supplied metadata.
+    pub(crate) fn stamp_tool_identities(&self, content: &mut Value) {
+        let Some(blocks) = content.as_array_mut() else {
+            return;
+        };
+        for block in blocks {
+            if block["type"] != "tool_use" {
+                continue;
+            }
+            let identity = block["name"]
+                .as_str()
+                .and_then(|name| self.mcp_identity(self.effective_name(name, &block["input"])));
+            if let Some(object) = block.as_object_mut() {
+                object.remove("_miao_mcp");
+                if let Some(identity) = identity {
+                    object.insert("_miao_mcp".into(), serde_json::json!(identity));
+                }
+            }
+        }
+    }
     /// Evaluation ablation switch: `false` disables the read warm-up and the
     /// post-edit diagnostics report while every other path stays identical.
     pub fn with_lsp_diagnostics(mut self, enabled: bool) -> Self {
@@ -1732,8 +1758,8 @@ impl Tools {
             ]);
         }
         if self.process_enabled {
-            definitions.push(ToolDefinition{name:"run_command".into(),description:"Run an explicit argv in a workspace-write sandbox. Timeout 1..120000 ms; stdout/stderr bounded to 32768 bytes each. No implicit shell and no background lifetime. pty merges stdout/stderr behind a terminal. Requires process permission.".into(),input_schema:json!({"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":128},"cwd":{"type":"string","default":"."},"timeout_ms":{"type":"integer","minimum":1,"maximum":120000,"default":10000},"pty":{"type":"boolean","default":false}},"required":["argv"],"additionalProperties":false})});
-            definitions.push(ToolDefinition{name:"bash".into(),description:"Run a shell command line (bash -c) in a workspace-write sandbox. Timeout 1..120000 ms; output bounded to 32768 bytes. pty merges stdout/stderr behind a terminal. Requires process permission.".into(),input_schema:json!({"type":"object","properties":{"command":{"type":"string","minLength":1},"cwd":{"type":"string","default":"."},"timeout_ms":{"type":"integer","minimum":1,"maximum":120000,"default":10000},"pty":{"type":"boolean","default":false}},"required":["command"],"additionalProperties":false})});
+            definitions.push(ToolDefinition{name:"run_command".into(),description:format!("Run an explicit argv in a workspace-write sandbox. Timeout 1..{} ms; stdout/stderr bounded to 32768 bytes each. No implicit shell and no background lifetime. pty merges stdout/stderr behind a terminal. Requires process permission.",crate::process::MAX_TIMEOUT_MS),input_schema:json!({"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":128},"cwd":{"type":"string","default":"."},"timeout_ms":{"type":"integer","minimum":1,"maximum":crate::process::MAX_TIMEOUT_MS,"default":crate::process::DEFAULT_TIMEOUT_MS},"pty":{"type":"boolean","default":false}},"required":["argv"],"additionalProperties":false})});
+            definitions.push(ToolDefinition{name:"bash".into(),description:format!("Run a shell command line (bash -c) in a workspace-write sandbox. Timeout 1..{} ms; output bounded to 32768 bytes. pty merges stdout/stderr behind a terminal. Requires process permission.",crate::process::MAX_TIMEOUT_MS),input_schema:json!({"type":"object","properties":{"command":{"type":"string","minLength":1},"cwd":{"type":"string","default":"."},"timeout_ms":{"type":"integer","minimum":1,"maximum":crate::process::MAX_TIMEOUT_MS,"default":crate::process::DEFAULT_TIMEOUT_MS},"pty":{"type":"boolean","default":false}},"required":["command"],"additionalProperties":false})});
         }
         if self.background_enabled {
             let mut start = definitions

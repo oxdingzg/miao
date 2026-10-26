@@ -1,0 +1,21 @@
+{
+  "scenario": "mcp-fixture",
+  "engine": "rust",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e8ceb992fffeahj5fo1cHo",
+  "cost": 0.00217,
+  "tokensIn": 28303,
+  "tokensOut": 106,
+  "stepFinishes": 2,
+  "tools": [
+    {
+      "tool": "mcp__dice__roll_dice",
+      "status": "completed",
+      "background": false
+    }
+  ],
+  "errors": []
+}

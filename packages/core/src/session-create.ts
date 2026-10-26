@@ -8,6 +8,7 @@ import { EventV2 } from "./event"
 import { ProjectV2 } from "./project"
 import { ProjectTable } from "./project/sql"
 import { SessionOwnership } from "./session/ownership"
+import { SessionEnginePlacement } from "./session/engine-placement"
 import { SessionStore } from "./session/store"
 import { SessionProjector } from "./session/projector"
 import { SessionSchema } from "./session/schema"
@@ -56,7 +57,18 @@ const layer = Layer.effect(
       const sessionID = input.id ?? SessionSchema.ID.create()
       const recorded = yield* store.get(sessionID)
       if (recorded) return recorded
-      yield* ownership.claim(sessionID)
+      const adopted = yield* ownership.claim(sessionID).pipe(
+        Effect.as(undefined),
+        Effect.catchDefect((defect) => {
+          if (!(defect instanceof SessionEnginePlacement.Conflict)) return Effect.die(defect)
+          // A concurrent native creator can bind after the initial empty read.
+          // Adopt its projected Session; an unprojected binding remains a conflict.
+          return store
+            .get(sessionID)
+            .pipe(Effect.flatMap((session) => (session ? Effect.succeed(session) : Effect.die(defect))))
+        }),
+      )
+      if (adopted) return adopted
       const project = yield* projects.resolve(input.location.directory)
       yield* db
         .insert(ProjectTable)

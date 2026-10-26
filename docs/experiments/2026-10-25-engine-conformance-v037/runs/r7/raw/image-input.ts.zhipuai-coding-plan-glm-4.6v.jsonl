@@ -1,0 +1,5 @@
+{"type":"segment","index":0,"resume":false,"prompt":"A tiny image is attached. What is its dominant color? Answer with a single color word."}
+{"type":"step_start","timestamp":1792935396636,"sessionID":"ses_gfe5e8cb91126ffeJKq2ajuFym","part":{"id":"msg_g01a17347050a001eSvY0jM8Ac-step-start","sessionID":"ses_gfe5e8cb91126ffeJKq2ajuFym","messageID":"msg_g01a17347050a001eSvY0jM8Ac","type":"step-start"}}
+{"type":"text","timestamp":1792935397309,"sessionID":"ses_gfe5e8cb91126ffeJKq2ajuFym","part":{"id":"text-0","sessionID":"ses_gfe5e8cb91126ffeJKq2ajuFym","messageID":"msg_g01a17347050a001eSvY0jM8Ac","type":"text","text":"\nred"}}
+{"type":"step_finish","timestamp":1792935397311,"sessionID":"ses_gfe5e8cb91126ffeJKq2ajuFym","part":{"id":"msg_g01a17347050a001eSvY0jM8Ac-step-finish","sessionID":"ses_gfe5e8cb91126ffeJKq2ajuFym","messageID":"msg_g01a17347050a001eSvY0jM8Ac","type":"step-finish","reason":"stop","cost":0,"tokens":{"input":13339,"output":7,"reasoning":66,"cache":{"read":43,"write":0}}}}
+{"type":"segment.end","index":0,"exitCode":0,"seconds":9.6,"killed":false,"timedOut":false}

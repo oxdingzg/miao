@@ -1,0 +1,161 @@
+{
+  "date": "2026-10-25",
+  "method": "Automated keys in the actual Neovim/CodeCompanion UI connected to the product miao acp CLI and native Rust engine; controlled loopback model fixture.",
+  "candidateVersion": "0.3.7",
+  "sourceCheckpoint": "95fc78a62a",
+  "cliSha256": "a64baff7179a3657d2d4973711fbd6b265501706ea50a9b89e05d7d931869226",
+  "engineSha256": "65cf97243fbb7bbfe66d971acafb818be9617b7941decca095b20c1b48f5fd3c",
+  "neovim": "0.12.6",
+  "codecompanion": {
+    "version": "20.0.1",
+    "commit": "142eadffdaa8dd06060646b6f8ef74e99c42ab06"
+  },
+  "plenaryCommit": "74b06c6c75e4eeb3108ec01852001636d85a932b",
+  "pass": 3,
+  "fail": 0,
+  "cases": [
+    {
+      "phase": "ALLOW",
+      "uiKey": "g2",
+      "before": {
+        "exists": false,
+        "text": null
+      },
+      "after": {
+        "exists": true,
+        "text": "approved"
+      },
+      "providerEvents": [
+        {
+          "phase": "ALLOW",
+          "cancelled": null,
+          "lastRole": "user"
+        },
+        {
+          "phase": "ALLOW",
+          "cancelled": null,
+          "lastRole": "tool"
+        },
+        {
+          "phase": "TITLE",
+          "cancelled": null,
+          "lastRole": "user"
+        }
+      ],
+      "pass": true,
+      "sessionID": "ses_gfe5e8c643836ffeHzkz6seOYh",
+      "stopReason": "end_turn",
+      "nativeRunState": "completed",
+      "selectedOutcome": {
+        "outcome": "selected",
+        "optionId": "once"
+      },
+      "sentCancel": false,
+      "stdoutProtocolValid": true,
+      "agentFrames": 10,
+      "clientEvidence": "raw/allow.client.jsonl",
+      "agentEvidence": "raw/allow.agent.jsonl"
+    },
+    {
+      "phase": "DENY",
+      "uiKey": "g3",
+      "before": {
+        "exists": false,
+        "text": null
+      },
+      "after": {
+        "exists": false,
+        "text": null
+      },
+      "providerEvents": [
+        {
+          "phase": "DENY",
+          "cancelled": null,
+          "lastRole": "user"
+        },
+        {
+          "phase": "DENY",
+          "cancelled": null,
+          "lastRole": "tool"
+        },
+        {
+          "phase": "TITLE",
+          "cancelled": null,
+          "lastRole": "user"
+        }
+      ],
+      "pass": true,
+      "sessionID": "ses_gfe5e8c6425b6ffe0fcZrl6o77",
+      "stopReason": "end_turn",
+      "nativeRunState": "completed",
+      "selectedOutcome": {
+        "outcome": "selected",
+        "optionId": "reject"
+      },
+      "sentCancel": false,
+      "stdoutProtocolValid": true,
+      "agentFrames": 10,
+      "clientEvidence": "raw/deny.client.jsonl",
+      "agentEvidence": "raw/deny.agent.jsonl"
+    },
+    {
+      "phase": "CANCEL",
+      "uiKey": "q",
+      "before": null,
+      "after": null,
+      "providerEvents": [
+        {
+          "phase": "CANCEL",
+          "cancelled": null,
+          "lastRole": "user"
+        },
+        {
+          "phase": "CANCEL",
+          "cancelled": true,
+          "lastRole": null
+        },
+        {
+          "phase": "TITLE",
+          "cancelled": null,
+          "lastRole": "user"
+        }
+      ],
+      "pass": true,
+      "sessionID": "ses_gfe5e8c64141effeJ6ExD74nb3",
+      "stopReason": "cancelled",
+      "nativeRunState": "interrupted",
+      "selectedOutcome": null,
+      "sentCancel": true,
+      "stdoutProtocolValid": true,
+      "agentFrames": 5,
+      "clientEvidence": "raw/cancel.client.jsonl",
+      "agentEvidence": "raw/cancel.agent.jsonl"
+    }
+  ],
+  "priorAttempts": [
+    {
+      "name": "setup-model-route",
+      "countedAsPass": false,
+      "reason": "Fixture mixed V1 permission and V2 providers; whole-document V1 migration dropped the V2 provider. Corrected the fixture to pure V2."
+    },
+    {
+      "name": "expired-allow",
+      "countedAsPass": false,
+      "reason": "Approval remained unanswered past the configured 60-second default and the command was denied. Late UI acceptance did not write the file. The selected run used prompt UI actions."
+    },
+    {
+      "name": "R10-protocol-corruption",
+      "countedAsPass": false,
+      "uiActionsPassed": 3,
+      "stdoutProtocolValid": false,
+      "reason": "Default Effect logger emitted session.resolve into ACP stdout; preserved as raw .stdout.txt files. Fixed in PR #1431; selected R11 reruns all three UI actions with strict JSON-RPC framing."
+    }
+  ],
+  "limitations": [
+    "Candidate integration, not final merged/released artifact.",
+    "Controlled provider fixture, not real-provider or naturally expired credential acceptance.",
+    "Automated actual editor UI; not a new human click-through claim.",
+    "Does not implement the remaining Rust migration phases."
+  ],
+  "stdoutProtocolValid": true
+}

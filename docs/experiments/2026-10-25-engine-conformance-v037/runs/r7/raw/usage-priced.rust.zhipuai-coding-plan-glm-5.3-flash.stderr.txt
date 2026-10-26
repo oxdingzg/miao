@@ -1,0 +1,10 @@
+
+[stdout noise]
+[21:36:03.070] INFO (#56): session.resolve {
+sessionID: "ses_gfe5e8cb998eeffe6z7tU89atO",
+model: "zhipuai-coding-plan/glm-5.3-flash",
+selectionMs: 1,
+connectionMs: 1,
+credentialMs: 0,
+totalMs: 2,
+}

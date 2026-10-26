@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Historia e kontekstit dhe e cache",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} argumentet e menjëhershme · {{read}} cache lexuar · {{write}} cache shkrim",
+  "context.timeline.requestWindow": "Dritarja e tokenit {{value}} në kohën e kërkesës",
+  "context.timeline.catalogWindow": "Dritarja e tokenit {{value}} në katalogun aktual",
+  "context.timeline.unknownWindow": "Dritarja e kontekstit e panjohur",
+  "context.timeline.empty": "Nuk është regjistruar ende asnjë përdorim i rregulluar i ofruesit.",
+  "context.timeline.retry": "Provo sërish historikun e përdorimit",
+  "context.timeline.compaction": "Konteksti i ngjeshur",
+  "context.timeline.cacheRead": "Cache e lexuar",
+  "context.timeline.cacheWrite": "Shkrimi në cache",
+  "context.timeline.ttft": "{{value}} ms në shenjën e parë",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Skedari",
   "desktop.menu.edit": "Redakto",
@@ -604,7 +617,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Ndaloi pranimin automatik të lejeve",
   "toast.permissions.autoaccept.off.description": "Kërkesat për leje do të kërkojnë miratim",
   "settings.permissions.autoaccept.project.title": "Prano automatikis lejet për këtë projekt",
-  "settings.permissions.autoaccept.project.description": "Përgjigju kërkesave të reja për leje nga çdo sesion i këtij projekti pa pyetur. Zgjedhjet në nivel sesioni dhe drejtorie kanë përparësi.",
+  "settings.permissions.autoaccept.project.description":
+    "Përgjigju kërkesave të reja për leje nga çdo sesion i këtij projekti pa pyetur. Zgjedhjet në nivel sesioni dhe drejtorie kanë përparësi.",
   "toast.model.none.title": "Asnjë model i zgjedhur",
   "toast.model.none.description": "Lidhni një ofrues për të përmbledhur këtë sesion",
   "toast.file.loadFailed.title": "Ngarkimi i skedarit dështoi",
@@ -937,8 +951,7 @@ export const dict = {
   "settings.general.row.appearance.title": "Pamja e jashtme",
   "settings.general.row.appearance.description": "Personalizojeni se si duket miao në pajisjen tuaj",
   "settings.general.row.colorScheme.title": "Skema e ngjyrave",
-  "settings.general.row.colorScheme.description":
-    "Zgjidhni nëse miao ndjek temën e sistemit, të lehtë ose të errët",
+  "settings.general.row.colorScheme.description": "Zgjidhni nëse miao ndjek temën e sistemit, të lehtë ose të errët",
   "settings.general.row.theme.title": "Tema",
   "settings.general.row.theme.description": "Personalizojeni se si është tema e Miao.",
   "settings.general.row.font.title": "Fonti i kodit",
@@ -973,7 +986,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Trego përmbledhjet e arsyetimit",
   "settings.general.row.reasoningSummaries.description": "Shfaqni përmbledhjet e arsyetimit të modelit në afatin kohor",
   "settings.general.row.turnDiffs.title": "Shfaq skedarët e ndryshuar për çdo raund",
-  "settings.general.row.turnDiffs.description": "Në kronologji rendit skedarët e ndryshuar të çdo raundi të përfunduar me numërime rreshtash dhe dallime të zgjerueshme.",
+  "settings.general.row.turnDiffs.description":
+    "Në kronologji rendit skedarët e ndryshuar të çdo raundi të përfunduar me numërime rreshtash dhe dallime të zgjerueshme.",
   "settings.general.row.shellToolPartsExpanded.title": "Zgjeroni pjesët e veglave të guaskës",
   "settings.general.row.shellToolPartsExpanded.description":
     "Shfaq pjesët e veglës së guaskës të zgjeruara si parazgjedhje në afatin kohor",
