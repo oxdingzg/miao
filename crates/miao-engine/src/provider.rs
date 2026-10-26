@@ -493,6 +493,9 @@ pub struct Anthropic {
     /// Vertex AI authenticates with an OAuth bearer and a `:rawPredict`
     /// endpoint instead of the `x-api-key` header.
     bearer: bool,
+    /// Vertex AI rejects a `model` body field (the model names the URL) and
+    /// requires the API version in the body instead.
+    vertex: bool,
     copilot: bool,
     extra_headers: BTreeMap<String, String>,
 }
@@ -520,13 +523,15 @@ impl Anthropic {
             max_tokens: 4096,
             prompt_cache: false,
             bearer: false,
+            vertex: false,
             copilot: false,
             extra_headers: BTreeMap::new(),
         })
     }
 
-    /// Vertex AI carries the Anthropic codec over an OAuth bearer credential.
-    pub fn with_bearer_source(
+    /// Vertex AI carries the Anthropic codec over an OAuth bearer credential,
+    /// with the wire differences `rawPredict` imposes.
+    pub fn with_vertex_source(
         endpoint: String,
         source: Source,
         model: String,
@@ -544,6 +549,7 @@ impl Anthropic {
             max_tokens: 4096,
             prompt_cache: false,
             bearer: true,
+            vertex: true,
             copilot: false,
             extra_headers: BTreeMap::new(),
         })
@@ -656,6 +662,12 @@ impl Anthropic {
             json!(request.system)
         };
         let mut body = json!({"model":self.model,"max_tokens":self.max_tokens,"stream":true,"messages":messages,"system":system,"tools":tools});
+        if self.vertex {
+            // `rawPredict` names the model in the URL, rejects a `model` field,
+            // and takes the API version in the body.
+            body.as_object_mut().map(|object| object.remove("model"));
+            body["anthropic_version"] = json!("vertex-2023-10-16");
+        }
         if without_tools {
             body["tool_choice"] = json!({"type":"none"});
         }

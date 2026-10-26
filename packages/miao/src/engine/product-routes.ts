@@ -561,6 +561,35 @@ function profile(model: ModelV2.Info, account: Account, integration: string): Tr
     if (!url) return undefined
     return { provider: wire === "responses" ? "openai-responses" : "openai-chat", endpoint: url }
   }
+  if (model.api.package === "@ai-sdk/google-vertex/anthropic") {
+    // Claude on Vertex authenticates with a Google Cloud access token. Only an
+    // account whose token the engine can resolve (a stored OAuth row) keeps the
+    // same wire natively; Application Default Credentials live inside
+    // `google-auth-library`, so those setups keep the gateway.
+    if (account.value?.type !== "oauth") return undefined
+    const project = vertexSetting(model, "project", VERTEX_PROJECT_ENV)
+    const location = vertexSetting(model, "location", VERTEX_LOCATION_ENV) ?? "global"
+    // `global` and the continental multi-regions resolve on different hosts
+    // than a plain region, exactly as the plugin resolves them.
+    const host =
+      location === "global"
+        ? "aiplatform.googleapis.com"
+        : location === "eu" || location === "us"
+          ? `aiplatform.${location}.rep.googleapis.com`
+          : `${location}-aiplatform.googleapis.com`
+    const declared = model.api.url
+      ?.replaceAll("${GOOGLE_VERTEX_PROJECT}", project ?? "${GOOGLE_VERTEX_PROJECT}")
+      .replaceAll("${GOOGLE_VERTEX_LOCATION}", location)
+      .replaceAll("${GOOGLE_VERTEX_ENDPOINT}", host)
+    const base =
+      declared ??
+      (project === undefined
+        ? undefined
+        : `https://${host}/v1/projects/${project}/locations/${location}/publishers/anthropic`)
+    if (base === undefined) return undefined
+    const url = endpoint(base, `models/${model.api.id.trim()}:streamRawPredict`)
+    return url ? { provider: "vertex-anthropic", endpoint: url } : undefined
+  }
   if (integration === "github-copilot") {
     const enterprise = account.value?.type === "oauth" ? account.value.metadata?.enterpriseUrl : undefined
     const base =
@@ -618,6 +647,15 @@ function profile(model: ModelV2.Info, account: Account, integration: string): Tr
     return url ? { provider: "openai-chat", endpoint: url } : undefined
   }
   return undefined
+}
+
+const VERTEX_PROJECT_ENV = ["GOOGLE_VERTEX_PROJECT", "GOOGLE_CLOUD_PROJECT", "GCP_PROJECT", "GCLOUD_PROJECT"]
+const VERTEX_LOCATION_ENV = ["GOOGLE_VERTEX_LOCATION", "GOOGLE_CLOUD_LOCATION", "VERTEX_LOCATION"]
+
+const vertexSetting = (model: ModelV2.Info, key: string, env: ReadonlyArray<string>) => {
+  const value = setting(model, key)
+  if (typeof value === "string" && value !== "") return value
+  return env.map((name) => process.env[name]).find((item) => item !== undefined && item !== "")
 }
 
 const setting = (model: ModelV2.Info, key: string) =>
