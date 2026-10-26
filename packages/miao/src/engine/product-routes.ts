@@ -497,6 +497,33 @@ function profile(model: ModelV2.Info, account: Account, integration: string) {
       model.api.url ?? (typeof model.request.body.endpoint === "string" ? model.request.body.endpoint : undefined)
     return { provider: "amazon-bedrock", ...(url === undefined ? {} : { endpoint: url }) }
   }
+  if (model.api.package === "@ai-sdk/amazon-bedrock/mantle") {
+    // Mantle speaks the OpenAI wire and authenticates with a Bedrock API key as
+    // a bearer token. An account holding only the AWS SigV4 chain has no bearer
+    // to send, so it keeps the gateway, which signs through the AWS SDK.
+    if (account.value?.type !== "key") return undefined
+    // Same precedence as the AI SDK's option bag, which spreads the provider
+    // settings first and the request body second.
+    const options = { ...model.api.settings, ...model.request.body }
+    const region =
+      (typeof options.region === "string" ? options.region : undefined) ??
+      process.env.AWS_REGION ??
+      "us-east-1"
+    // Mirrors the plugin's `selectMantleModel`: the gpt-oss safeguard models are
+    // the only Mantle models on the chat wire; everything else is Responses.
+    const wire =
+      model.api.id === "openai.gpt-oss-safeguard-20b" || model.api.id === "openai.gpt-oss-safeguard-120b"
+        ? "chat/completions"
+        : "responses"
+    // The SDK appends the wire path to the base URL it was given, so an
+    // explicit `endpoint` replaces the region default rather than the path.
+    const base =
+      (typeof options.endpoint === "string" ? options.endpoint : model.api.url) ??
+      `https://bedrock-mantle.${region}.api.aws/v1`
+    const url = endpoint(base, wire)
+    if (!url) return undefined
+    return { provider: wire === "responses" ? "openai-responses" : "openai-chat", endpoint: url }
+  }
   if (integration === "github-copilot") {
     const enterprise = account.value?.type === "oauth" ? account.value.metadata?.enterpriseUrl : undefined
     const base =
