@@ -237,6 +237,58 @@ test("the engine's timed_out reason projects the timeout marker", () => {
   expect(result.text).toContain("[command timed out]")
 })
 
+test("a refused shell call keeps its reason instead of claiming it never ran", () => {
+  // The engine settles a refused call as `{error}`; projecting it as a shell
+  // result used to drop the reason and render "[command not executed]".
+  expect(productToolResult("bash", { error: "permission denied" })).toEqual({
+    structured: {},
+    text: "permission denied",
+  })
+  expect(productToolResult("run_command", { error: "invalid tool input: timeout_ms must be between 1 and 600000" }).text).toBe(
+    "invalid tool input: timeout_ms must be between 1 and 600000",
+  )
+})
+
+test("a command killed by a signal names the signal", () => {
+  const result = productToolResult("bash", {
+    stdout: "",
+    stderr: "",
+    exit_code: null,
+    signal: 9,
+    reason: "completed",
+    output_incomplete: false,
+    sandbox_profile: "workspace_write",
+    enforcement_required: true,
+    network_allowed: true,
+  })
+  expect(result.structured).toMatchObject({ signal: 9 })
+  expect(result.text).toContain("[killed by signal 9]")
+  expect(result.text).not.toContain("[command not executed]")
+})
+
+test("run_command uses the shell projection the bash tool uses", () => {
+  expect(
+    productToolResult("run_command", {
+      stdout: "hello\n",
+      stderr: "",
+      exit_code: 1,
+      signal: null,
+      reason: "completed",
+      output_incomplete: false,
+      sandbox_profile: "workspace_write",
+      enforcement_required: true,
+      network_allowed: true,
+    }),
+  ).toEqual({
+    structured: {
+      exit: 1,
+      truncated: false,
+      sandbox: { state: "sandboxed", backend: "workspace_write", network: true, denied: [], approved: [] },
+    },
+    text: "hello\n[exit code 1]",
+  })
+})
+
 test("unwraps engine session-state mutations to the tool contract", () => {
   const todos = [{ id: "t1", content: "first", status: "pending", priority: "high" }]
   expect(productToolResult("todowrite", { kind: "todos", revision: 7, value: { todos }, duplicate: false })).toEqual({
