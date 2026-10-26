@@ -225,7 +225,9 @@ impl OpenAIChat {
                 let _ = writeln!(file, "{}", body);
             }
         }
-        let mut url = reqwest::Url::parse(&self.endpoint).map_err(|_| ProviderError::Transport)?;
+        let mut url = reqwest::Url::parse(&self.endpoint).map_err(|error| {
+            ProviderError::Transport(format!("the endpoint is not a URL: {error}"))
+        })?;
         if let Some(query) = self.query.as_deref() {
             url.set_query(Some(query));
         }
@@ -238,8 +240,7 @@ impl OpenAIChat {
             self.request_options.headers(request)?,
             &self.extra_headers,
         )?
-        .build()
-        .map_err(|_| ProviderError::Transport)?;
+        .build()?;
         if let Some(headers) = copilot {
             crate::copilot::apply(&mut request, &headers, false)?;
         }

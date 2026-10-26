@@ -893,6 +893,10 @@ export function productToolInput(
   input: Record<string, unknown>,
   identity?: unknown,
 ): Record<string, unknown> {
+  // The engine's writer names its body `text`; the product write tool calls it
+  // `content`, and the transcript renders that field as the file's content.
+  if (engineTool === "write_file" && input.content === undefined && typeof input.text === "string")
+    return { ...input, content: input.text }
   if (
     engineTool === "tool_call" &&
     productToolID(engineTool, identity).startsWith("mcp__") &&
@@ -946,6 +950,7 @@ export function productToolInput(
 export function productToolResult(
   tool: string,
   result: unknown,
+  display?: unknown,
 ): { structured: Record<string, unknown>; text: string } {
   if (typeof result === "string") return { structured: {}, text: result }
   if (typeof result !== "object" || result === null) return { structured: {}, text: JSON.stringify(result ?? null) }
@@ -953,7 +958,43 @@ export function productToolResult(
   if (tool === "bash" || tool === "run_command") return shellResult(record)
   if (tool === "todowrite") return todosResult(record)
   if (tool === "goal") return goalResult(record)
+  // A file mutation's diffs ride beside the model-facing result, because the
+  // model already wrote the text they describe. The host needs them as the
+  // product's `FileDiff.Info` entries: the edit card renders their patches and
+  // both file cards count their lines.
+  const files = displayFiles(display)
+  if (files.length > 0 && (tool === "edit" || tool === "write" || tool === "apply_patch"))
+    return { structured: { files }, text: JSON.stringify(record) }
   return { structured: {}, text: JSON.stringify(record) }
+}
+
+/**
+ * Project the engine's display block (`{files:[{path,action,patch,additions,deletions}]}`)
+ * onto the product `FileDiff.Info` entries every file renderer reads.
+ */
+function displayFiles(value: unknown): Record<string, unknown>[] {
+  if (typeof value !== "object" || value === null || !("files" in value)) return []
+  const files = Reflect.get(value, "files")
+  if (!Array.isArray(files)) return []
+  return files.flatMap((entry: unknown) => {
+    if (typeof entry !== "object" || entry === null) return []
+    const file = Reflect.get(entry, "path")
+    const patch = Reflect.get(entry, "patch")
+    const additions = Reflect.get(entry, "additions")
+    const deletions = Reflect.get(entry, "deletions")
+    const action = Reflect.get(entry, "action")
+    if (typeof file !== "string" || typeof patch !== "string") return []
+    if (typeof additions !== "number" || typeof deletions !== "number") return []
+    return [
+      {
+        file,
+        patch,
+        additions,
+        deletions,
+        status: action === "add" || action === "create" ? "added" : action === "delete" ? "deleted" : "modified",
+      },
+    ]
+  })
 }
 
 /**
@@ -1159,6 +1200,7 @@ export class ToolBridge {
     const known = plan?.known ?? this.#calls.get(JSON.stringify([event.session_id, event.data.call_id]))
     if (!known) return undefined
     const raw: unknown = "result" in event.data ? Reflect.get(event.data, "result") : undefined
+    const display: unknown = "display" in event.data ? Reflect.get(event.data, "display") : undefined
     const base = {
       sessionID: known.sessionID,
       timestamp: eventTimestamp(event),
@@ -1168,7 +1210,7 @@ export class ToolBridge {
     }
     // A failed call carries its reason as the result text; the raw JSON a
     // dismissal used to show (`{"error":"permission denied"}`) buried it.
-    const mapped = productToolResult(known.tool, raw)
+    const mapped = productToolResult(known.tool, raw, display)
     if ("is_error" in event.data && event.data.is_error === true) {
       return { type: "session.next.tool.failed", ...base, error: { type: "unknown", message: mapped.text } }
     }

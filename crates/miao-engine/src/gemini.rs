@@ -68,8 +68,7 @@ impl Gemini {
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(15))
-                .build()
-                .map_err(|_| ProviderError::Transport)?,
+                .build()?,
             endpoint,
             source,
             model,
@@ -279,11 +278,7 @@ impl Gemini {
         }
         .json(&body);
         let builder = crate::provider::route_headers(builder, &self.extra_headers)?;
-        let request = self
-            .request_options
-            .headers(builder)?
-            .build()
-            .map_err(|_| ProviderError::Transport)?;
+        let request = self.request_options.headers(builder)?.build()?;
         let response =
             request_with_retry("gemini", &self.client, request, &progress, &cancel).await?;
         read_stream(

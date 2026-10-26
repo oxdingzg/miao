@@ -302,6 +302,77 @@ test("unwraps engine session-state mutations to the tool contract", () => {
   })
 })
 
+test("a file mutation projects its display diff onto the product FileDiff shape", () => {
+  const display = {
+    files: [
+      {
+        path: "src/app.ts",
+        action: "update",
+        patch: "Index: src/app.ts\n--- src/app.ts\n+++ src/app.ts\n@@ -1 +1 @@\n-old\n+new\n",
+        additions: 1,
+        deletions: 1,
+      },
+    ],
+  }
+  const edit = productToolResult("edit", { applied: true, sha256: "abc", bytes: 8 }, display)
+  expect(edit.structured).toEqual({
+    files: [
+      {
+        file: "src/app.ts",
+        patch: display.files[0]!.patch,
+        additions: 1,
+        deletions: 1,
+        status: "modified",
+      },
+    ],
+  })
+  // The engine's apply_patch names a creation `add`; the product says `added`.
+  const patched = productToolResult(
+    "apply_patch",
+    { applied: true, files: [{ path: "new.ts", action: "add" }] },
+    { files: [{ path: "new.ts", action: "add", patch: "Index: new.ts\n", additions: 2, deletions: 0 }] },
+  )
+  expect(patched.structured).toMatchObject({ files: [{ file: "new.ts", status: "added", additions: 2 }] })
+  // A result without a display block keeps the old projection, and a display
+  // block never turns a non-file tool's result into a diff list.
+  expect(productToolResult("edit", { applied: true })).toEqual({ structured: {}, text: '{"applied":true}' })
+  expect(productToolResult("bash", { stdout: "ok\n", exit_code: 0 }, display).structured.files).toBeUndefined()
+})
+
+test("the engine's writer names its body text where the product says content", () => {
+  expect(productToolInput("write_file", { path: "a.ts", text: "hello\n", expected_sha256: null })).toEqual({
+    path: "a.ts",
+    text: "hello\n",
+    expected_sha256: null,
+    content: "hello\n",
+  })
+  expect(productToolInput("write_file", { path: "a.ts", text: "x", content: "kept" }).content).toBe("kept")
+})
+
+test("a completed edit rides its diff into the product tool result", () => {
+  const bridge = new ToolBridge()
+  bridge.note({
+    session_id: "ses_abc",
+    seq: 4,
+    kind: "message.committed",
+    data: { role: "assistant", content: [{ type: "tool_use", id: "c1", name: "edit_file", input: {} }] },
+  })
+  const success = bridge.result({
+    session_id: "ses_abc",
+    seq: 6,
+    kind: "tool.completed",
+    data: {
+      call_id: "c1",
+      result: { applied: true, sha256: "abc" },
+      display: { files: [{ path: "a.ts", action: "update", patch: "Index: a.ts\n", additions: 1, deletions: 0 }] },
+      is_error: false,
+    },
+  })
+  expect(success?.type).toBe("session.next.tool.success")
+  if (success?.type === "session.next.tool.success")
+    expect(success.structured).toMatchObject({ files: [{ file: "a.ts", additions: 1, deletions: 0 }] })
+})
+
 test("projects start_job input into the product bash shape", () => {
   expect(productToolInput("start_job", { argv: ["bash", "-c", "sleep 2"], timeout_ms: 1000 })).toEqual({
     command: "sleep 2",

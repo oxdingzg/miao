@@ -38,7 +38,9 @@ impl Provider for Refusing {
             .starts_with("Summarize the conversation portion")
         {
             self.summaries.fetch_add(1, Ordering::SeqCst);
-            return Err(ProviderError::Transport);
+            return Err(ProviderError::Transport(
+                "the summarising provider is unreachable".into(),
+            ));
         }
         Ok(Reply {
             content: json!([{"type":"text","text":"the answer"}]),
