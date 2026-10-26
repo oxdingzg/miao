@@ -276,6 +276,7 @@ pub fn load(workspace: &Path) -> Loaded {
             warnings.push(format!(
                 "unknown theme \"{name}\", falling back to {DEFAULT_THEME}"
             ));
+            name = DEFAULT_THEME.to_string();
             builtin(DEFAULT_THEME).expect("default theme is built in")
         }
     };
