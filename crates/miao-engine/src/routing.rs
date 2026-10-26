@@ -146,6 +146,16 @@ pub fn build_with_responses(
                     .map_err(|_| ProviderError::Transport)?,
             ))
         }
+        "vertex-gemini" => {
+            let endpoint = endpoint.ok_or_else(|| {
+                ProviderError::Stream("vertex-gemini route requires a publisher endpoint".into())
+            })?;
+            Ok(Arc::new(Gemini::with_bearer_source(
+                endpoint.into(),
+                source,
+                model,
+            )?))
+        }
         "gemini" => {
             let default = format!(
                 "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent",

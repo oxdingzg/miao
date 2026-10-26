@@ -450,6 +450,17 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
  * the durable event projection carries no run-terminal marker of its own. The
  * snapshot is therefore polled at the same cadence as
  * {@link nativeSessionEvents} until the engine reports idleness.
+ *
+ * Idleness must hold across two consecutive reads. The engine promotes an
+ * admitted input before it inserts the run row, so a snapshot taken in that
+ * few-millisecond window reports no active run and no pending input for a
+ * Session that is about to run. A client that waits immediately after
+ * prompting lands in that window every time, and returning there makes the
+ * caller abandon the turn it just started while the engine keeps running it —
+ * the CLI then mirrors a transcript with no answer yet and exits 0. One more
+ * read after a poll interval settles outside that window. The cursor is not
+ * part of the test: a background job keeps committing events while a Session
+ * is idle, so requiring a quiet journal would never settle.
  */
 export const waitNative = Effect.fn("NativeSession.wait")(function* (input: {
   native: Pick<NativeEngine.Interface, "snapshot">
@@ -457,6 +468,7 @@ export const waitNative = Effect.fn("NativeSession.wait")(function* (input: {
   storage: AbsolutePath
   location: Location.Ref
 }) {
+  let idle = 0
   while (true) {
     const snapshot = yield* input.native.snapshot({
       sessionID: input.sessionID,
@@ -464,7 +476,8 @@ export const waitNative = Effect.fn("NativeSession.wait")(function* (input: {
       location: input.location,
       metadataOnly: true,
     })
-    if (nativeIdle(snapshot)) return
+    idle = nativeIdle(snapshot) ? idle + 1 : 0
+    if (idle >= 2) return
     yield* Effect.sleep("250 millis")
   }
 })

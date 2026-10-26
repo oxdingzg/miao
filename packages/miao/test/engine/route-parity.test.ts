@@ -200,40 +200,56 @@ it.live("azure deployments carry the deployment in the path, not the version seg
 )
 
 const VERTEX_MODEL = "claude-sonnet-4-5"
+const VERTEX_GEMINI_MODEL = "gemini-2.5-pro"
 const VERTEX_INTEGRATION = "google-vertex"
+const VERTEX_KEY_ENV = "GOOGLE_VERTEX_API_KEY"
+
+type VertexTransport = "anthropic" | "gemini"
 
 /**
- * Vertex Anthropic in the product catalog: the plugin keeps the publisher path
- * on the provider and authenticates with a Google Cloud access token, which the
- * engine can only send when the token is a stored credential.
+ * Vertex in the product catalog: the plugin keeps the publisher path on the
+ * provider and authenticates with a Google Cloud token, or, for Gemini, with an
+ * express-mode API key. Only a token the engine can resolve travels natively.
  */
-const vertexCatalog = (region: string) =>
+const vertexCatalog = (input: { transport: VertexTransport; location: string; project?: string; key?: boolean }) =>
   Effect.gen(function* () {
     const services = yield* Catalog.Service
     const integrations = yield* Integration.Service
     yield* integrations.transform((draft) => {
       draft.update(Integration.ID.make(VERTEX_INTEGRATION), () => {})
+      if (input.key === true) {
+        draft.method.update({
+          integrationID: Integration.ID.make(VERTEX_INTEGRATION),
+          method: { type: "env", names: [VERTEX_KEY_ENV] },
+        })
+      }
     })
+    const model = input.transport === "anthropic" ? VERTEX_MODEL : VERTEX_GEMINI_MODEL
     yield* services.transform((draft) => {
       draft.provider.update(ProviderV2.ID.googleVertex, (provider) => {
         provider.integrationID = Integration.ID.make(VERTEX_INTEGRATION)
         provider.api = {
           type: "aisdk",
-          package: "@ai-sdk/google-vertex/anthropic",
-          settings: { project: "proj-alpha", location: region },
+          package: input.transport === "anthropic" ? "@ai-sdk/google-vertex/anthropic" : "@ai-sdk/google-vertex",
+          settings: { location: input.location, ...(input.project === undefined ? {} : { project: input.project }) },
         }
       })
-      draft.model.update(ProviderV2.ID.googleVertex, ModelV2.ID.make(VERTEX_MODEL), (model) => {
-        model.api.id = ModelV2.ID.make(VERTEX_MODEL)
-        model.capabilities.tools = true
-        model.capabilities.output = ["text"]
+      draft.model.update(ProviderV2.ID.googleVertex, ModelV2.ID.make(model), (entry) => {
+        entry.api.id = ModelV2.ID.make(model)
+        entry.capabilities.tools = true
+        entry.capabilities.output = ["text"]
       })
-      draft.model.default.set(ProviderV2.ID.googleVertex, ModelV2.ID.make(VERTEX_MODEL))
+      draft.model.default.set(ProviderV2.ID.googleVertex, ModelV2.ID.make(model))
     })
   })
 
-/** A shared credential store holding one Google OAuth row for Vertex. */
-const vertexManifest = (region: string) =>
+/** The manifest for one Vertex transport, with its credential in place. */
+const vertexManifest = (input: {
+  transport: VertexTransport
+  location: string
+  project?: string
+  key?: boolean
+}) =>
   Effect.acquireUseRelease(
     Effect.promise(() => tmpdir()),
     (tmp) => {
@@ -242,36 +258,50 @@ const vertexManifest = (region: string) =>
       db.exec(
         "CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, label TEXT, value TEXT, time_created INTEGER)",
       )
-      db.query("INSERT INTO credential VALUES (?,?,?,?,?)").run(
-        "cred_vertex",
-        VERTEX_INTEGRATION,
-        "vertex",
-        JSON.stringify({
-          type: "oauth",
-          methodID: "fixture",
-          access: "GOOGLE_ACCESS",
-          refresh: "GOOGLE_REFRESH",
-          expires: Date.now() + 3_600_000,
-        }),
-        0,
-      )
+      if (input.key !== true)
+        db.query("INSERT INTO credential VALUES (?,?,?,?,?)").run(
+          "cred_vertex",
+          VERTEX_INTEGRATION,
+          "vertex",
+          JSON.stringify({
+            type: "oauth",
+            methodID: "fixture",
+            access: "GOOGLE_ACCESS",
+            refresh: "GOOGLE_REFRESH",
+            expires: Date.now() + 3_600_000,
+          }),
+          0,
+        )
       db.close()
+      const previous = process.env[VERTEX_KEY_ENV]
+      if (input.key === true) process.env[VERTEX_KEY_ENV] = "GOOGLE_VERTEX_SECRET"
       return Effect.scoped(
         Effect.gen(function* () {
-          yield* vertexCatalog(region)
+          yield* vertexCatalog(input)
           const prepared = yield* ProductRoutes.prepare(location, { binary: "fixture", model: "" })
           const file = prepared.modelRoutesConfigFile
           if (!file) throw new Error("missing product routes manifest")
           return (yield* Effect.promise(() => Bun.file(file).json())) as Route[]
         }),
-      ).pipe(Effect.provide(layer), Effect.provideService(Credential.SharedDatabasePath, shared))
+      ).pipe(
+        Effect.provide(layer),
+        Effect.provideService(Credential.SharedDatabasePath, shared),
+        (effect) =>
+          Effect.ensuring(
+            effect,
+            Effect.sync(() => {
+              if (previous === undefined) delete process.env[VERTEX_KEY_ENV]
+              else process.env[VERTEX_KEY_ENV] = previous
+            }),
+          ),
+      )
     },
     (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
   )
 
 it.live("vertex anthropic keeps the global publisher path the plugin builds", () =>
   Effect.gen(function* () {
-    const routes = yield* vertexManifest("global")
+    const routes = yield* vertexManifest({ transport: "anthropic", location: "global", project: "proj-alpha" })
     expect(routes.find((route) => route.id === `google-vertex/${VERTEX_MODEL}`)).toMatchObject({
       provider: "vertex-anthropic",
       endpoint: `https://aiplatform.googleapis.com/v1/projects/proj-alpha/locations/global/publishers/anthropic/models/${VERTEX_MODEL}:streamRawPredict`,
@@ -282,7 +312,7 @@ it.live("vertex anthropic keeps the global publisher path the plugin builds", ()
 
 it.live("vertex anthropic resolves a plain region to its own host", () =>
   Effect.gen(function* () {
-    const routes = yield* vertexManifest("europe-west4")
+    const routes = yield* vertexManifest({ transport: "anthropic", location: "europe-west4", project: "proj-alpha" })
     expect(routes.find((route) => route.id === `google-vertex/${VERTEX_MODEL}`)?.endpoint).toBe(
       `https://europe-west4-aiplatform.googleapis.com/v1/projects/proj-alpha/locations/europe-west4/publishers/anthropic/models/${VERTEX_MODEL}:streamRawPredict`,
     )
@@ -296,6 +326,28 @@ it.live("azure keeps the Responses wire, with api-key and the api-version query"
       provider: "openai-responses",
       endpoint: "https://contoso.openai.azure.com/openai/v1/responses",
       auth: { style: "api-key", query: { "api-version": "v1" } },
+    })
+  }),
+)
+
+it.live("vertex gemini keeps the publisher path and the bearer the plugin sends", () =>
+  Effect.gen(function* () {
+    const routes = yield* vertexManifest({ transport: "gemini", location: "global", project: "proj-alpha" })
+    expect(routes.find((route) => route.id === `google-vertex/${VERTEX_GEMINI_MODEL}`)).toMatchObject({
+      provider: "vertex-gemini",
+      endpoint: `https://aiplatform.googleapis.com/v1/projects/proj-alpha/locations/global/publishers/google/models/${VERTEX_GEMINI_MODEL}:streamGenerateContent`,
+      credential: { id: "cred_vertex", integration: VERTEX_INTEGRATION },
+    })
+  }),
+)
+
+it.live("vertex gemini express mode uses the key on the global host", () =>
+  Effect.gen(function* () {
+    const routes = yield* vertexManifest({ transport: "gemini", location: "us-central1", key: true })
+    expect(routes.find((route) => route.id === `google-vertex/${VERTEX_GEMINI_MODEL}`)).toMatchObject({
+      provider: "gemini",
+      endpoint: `https://aiplatform.googleapis.com/v1/publishers/google/models/${VERTEX_GEMINI_MODEL}:streamGenerateContent`,
+      credential: { type: "environment", key: VERTEX_KEY_ENV },
     })
   }),
 )
