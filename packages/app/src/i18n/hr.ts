@@ -94,6 +94,19 @@ const desktop = [
 ]
 
 export const dict = {
+  "context.timeline.title": "Kontekst i povijest predmemorije",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} tokena upita · {{read}} čitanje predmemorije · {{write}} pisanje u predmemoriju",
+  "context.timeline.requestWindow": "Prozor tokena {{value}} u vrijeme zahtjeva",
+  "context.timeline.catalogWindow": "Prozor tokena {{value}} u trenutnom katalogu",
+  "context.timeline.unknownWindow": "Prozor konteksta nepoznat",
+  "context.timeline.empty": "Još nije zabilježeno korištenje podmirene usluge pružatelja usluga.",
+  "context.timeline.retry": "Ponovo pokušaj povijest korištenja",
+  "context.timeline.compaction": "Kontekst zbijen",
+  "context.timeline.cacheRead": "Čitanje predmemorije",
+  "context.timeline.cacheWrite": "Pisanje u predmemoriju",
+  "context.timeline.ttft": "{{value}} ms do prvog tokena",
+
   ...Object.fromEntries(DESKTOP_NATIVE_KEYS.map((key, index) => [key, desktop[index]])),
   "command.category.suggested": "Predloženo",
   "command.category.view": "Prikaz",
@@ -608,7 +621,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Zaustavljeno automatsko prihvaćanje dopuštenja",
   "toast.permissions.autoaccept.off.description": "Za zahtjeve za dopuštenje bit će potrebno odobrenje",
   "settings.permissions.autoaccept.project.title": "Automatski prihvati dozvole za ovaj projekt",
-  "settings.permissions.autoaccept.project.description": "Odgovori na nove zahtjeve za dozvolama iz bilo koje sesije ovog projekta bez pitanja. Odabiri na razini sesije i direktorija imaju prednost.",
+  "settings.permissions.autoaccept.project.description":
+    "Odgovori na nove zahtjeve za dozvolama iz bilo koje sesije ovog projekta bez pitanja. Odabiri na razini sesije i direktorija imaju prednost.",
   "toast.model.none.title": "Nijedan model nije odabran",
   "toast.model.none.description": "Povežite se s pružateljem usluga kako biste rezimirali ovu sesiju",
   "toast.file.loadFailed.title": "Učitavanje datoteke nije uspjelo",
@@ -670,8 +684,7 @@ export const dict = {
   "error.chain.didYouMean": "Jeste li mislili: {{suggestions}}",
   "error.chain.modelNotFound": "Model nije pronađen: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Provjerite nazive dobavljača/modela svoje konfiguracije (miao.json).",
-  "error.chain.mcpFailed":
-    'MCP poslužitelj "{{name}}" nije uspio. Napomena, miao još ne podržava MCP autentifikaciju.',
+  "error.chain.mcpFailed": 'MCP poslužitelj "{{name}}" nije uspio. Napomena, miao još ne podržava MCP autentifikaciju.',
   "error.chain.providerAuthFailed": "Provjera autentičnosti davatelja nije uspjela ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Inicijalizacija pružatelja "{{provider}}" nije uspjela. Provjerite vjerodajnice i konfiguraciju.',
@@ -942,8 +955,7 @@ export const dict = {
   "settings.general.row.appearance.title": "Izgled",
   "settings.general.row.appearance.description": "Prilagodite kako miao izgleda na vašem uređaju",
   "settings.general.row.colorScheme.title": "Shema boja",
-  "settings.general.row.colorScheme.description":
-    "Odaberite hoće li miao slijediti sistemsku, svijetlu ili tamnu temu",
+  "settings.general.row.colorScheme.description": "Odaberite hoće li miao slijediti sistemsku, svijetlu ili tamnu temu",
   "settings.general.row.theme.title": "Tema",
   "settings.general.row.theme.description": "Prilagodite način na koji je miao tematiziran.",
   "settings.general.row.font.title": "Font koda",
@@ -977,7 +989,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Prikaži sažetke obrazloženja",
   "settings.general.row.reasoningSummaries.description": "Prikažite sažetke obrazloženja modela na vremenskoj traci",
   "settings.general.row.turnDiffs.title": "Prikaži promijenjene datoteke po krugu",
-  "settings.general.row.turnDiffs.description": "Na vremenskoj liniji navodi promijenjene datoteke svakog završenog kruga s brojem linija i proširivim razlikama.",
+  "settings.general.row.turnDiffs.description":
+    "Na vremenskoj liniji navodi promijenjene datoteke svakog završenog kruga s brojem linija i proširivim razlikama.",
   "settings.general.row.shellToolPartsExpanded.title": "Proširite dijelove alata školjke",
   "settings.general.row.shellToolPartsExpanded.description":
     "Prikažite dijelove alata ljuske proširene prema zadanim postavkama na vremenskoj traci",

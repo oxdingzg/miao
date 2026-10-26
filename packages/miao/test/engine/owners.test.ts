@@ -80,6 +80,16 @@ if (binary)
             expect(
               yield* Effect.promise(() => recovered.client.request("events", { session_id: "s", after: 0 })),
             ).toEqual([])
+            // A real request can replace a dead connection while a timer
+            // sweep still holds the old owner's snapshot.
+            for (let attempt = 0; attempt < 10; attempt++) {
+              const current = yield* owners.get(input)
+              yield* Effect.promise(() => current.client.close())
+              const raced = yield* Effect.all([owners.sweepTimers(), owners.get(input)], {
+                concurrency: "unbounded",
+              })
+              expect(yield* owners.get(input)).toBe(raced[1])
+            }
             return owners
           }),
         )

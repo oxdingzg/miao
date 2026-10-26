@@ -3,6 +3,7 @@ import type { AgentAttachment } from "@miao/schema/prompt"
 import { Event } from "@miao/schema/event"
 import { SessionEvent } from "@miao/schema/session-event"
 import { agentManifest, modelRoute, type Route } from "./product-agent"
+import type { SessionMessage } from "@miao/schema/session-message"
 import { LocationServiceMap } from "@miao/core/location-service-map"
 import type { LocationServices } from "@miao/core/location-services"
 import { SessionCreate } from "@miao/core/session-create"
@@ -41,7 +42,9 @@ import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import { Location } from "@miao/schema/location"
 import { Cause, DateTime, Effect, Layer, Option, Queue, Schema, Context } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
-import { discoveredEngine } from "./discovery"
+import { capabilities, discoveredEngine } from "./discovery"
+import { readCatalog } from "./catalog"
+import { generatedInputEngineID, messageID, promotedInputMessageID } from "./identity"
 import { makeEngineOwners } from "./owners"
 import type { EnginePricing } from "./session"
 import { NativeRecovery } from "./recovery"
@@ -56,7 +59,6 @@ import { LLMClient } from "@miao/llm"
 import { llmClient } from "@miao/core/effect/app-node-platform"
 import { SessionNativeTitle } from "@miao/core/session/native-title"
 import { SessionInput } from "@miao/schema/session-input"
-import { SessionMessage } from "@miao/schema/session-message"
 import type { SessionID } from "@miao/schema/session-id"
 import { SessionTitle } from "@miao/core/session/title"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
@@ -89,6 +91,8 @@ const QuestionBindings = Schema.Array(
 )
 /** The engine's `{accepted: boolean}` reply shared by cancel-shaped commands. */
 const AcceptedReply = Schema.Struct({ accepted: Schema.Boolean })
+/** A refused cancel names why, so an unknown id can be resolved and a final one kept. */
+const CancelReply = Schema.Struct({ accepted: Schema.Boolean, reason: Schema.optional(Schema.String) })
 
 import { replayJournal } from "./journal"
 import { readTranscript } from "./transcript"
@@ -309,7 +313,12 @@ export function pendingInputsPage(sessionID: SessionID, value: unknown) {
     Schema.Struct({
       inputs: Schema.Array(
         Schema.Struct({
-          id: SessionMessage.ID,
+          // The engine also admits inputs it generated itself (monitor
+          // notices, cron/wakeup fires, job completion receipts), and those
+          // identities do not carry the product's `msg_` prefix. Decoding
+          // them as SessionMessage.ID failed the whole page, turning every
+          // session with a pending notice into a 500 on /inputs.
+          id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512)),
           prompt: Schema.String,
           delivery: SessionInput.Delivery,
           admitted_seq: Schema.Number,
@@ -324,7 +333,13 @@ export function pendingInputsPage(sessionID: SessionID, value: unknown) {
     inputs: page.inputs.map((entry) =>
       SessionInput.Admitted.make({
         admittedSeq: entry.admitted_seq,
-        id: entry.id,
+        // A product prompt keeps the identity it was submitted with, so a
+        // later exact retry and cancel can address it. An engine-generated
+        // notice has no product identity of its own, so derive one from the
+        // durable engine input id — the same derivation the promotion event
+        // and the cancel path use. Decoding it as SessionMessage.ID failed the
+        // whole page on ids like `monitor:<job>:<uuid>`.
+        id: promotedInputMessageID(entry.id),
         sessionID,
         prompt: {
           text: entry.prompt,
@@ -336,6 +351,28 @@ export function pendingInputsPage(sessionID: SessionID, value: unknown) {
     ),
     hasMore: page.has_more,
   }
+}
+
+/**
+ * Cancel one admitted input.
+ *
+ * A product prompt is cancelled under the identity it was submitted with. A
+ * generated notice is displayed under an identity derived from the engine's
+ * own input id, so a refusal that names an unknown id is resolved back to that
+ * durable row. Only `reason: "unknown"` is resolved: a promoted or cancelled
+ * row already has a final answer, and retrying it under another id would
+ * address a different input.
+ */
+export async function cancelPendingInput(
+  request: (inputID: string) => Promise<unknown>,
+  inputID: SessionMessage.ID,
+): Promise<boolean> {
+  const reply = Schema.decodeUnknownSync(CancelReply)(await request(inputID))
+  if (reply.accepted) return true
+  if (reply.reason !== "unknown") return false
+  const engineInputID = generatedInputEngineID(inputID)
+  if (engineInputID === undefined || engineInputID === inputID) return false
+  return Schema.decodeUnknownSync(AcceptedReply)(await request(engineInputID)).accepted
 }
 
 const refusal = (sessionID: string, error: unknown) =>
@@ -376,6 +413,7 @@ const engineStorageID = (event: OpenCodeEvent) => {
 export const fromOwners = (
   owners: Owners,
   preparation: {
+    catalog?: NativeEngine.Interface["catalog"]
     prompt?: (input: Parameters<NativeEngine.Interface["admit"]>[0]) => Effect.Effect<PromptInput.Prompt, unknown>
     command?: (
       input: Parameters<NativeEngine.Interface["command"]>[0],
@@ -432,6 +470,7 @@ export const fromOwners = (
     )(await connection.client.request("model_catalog"))
   return {
     storageRoot,
+    catalog: preparation.catalog,
     command: (input) =>
       Effect.gen(function* () {
         if (!preparation.command)
@@ -440,7 +479,7 @@ export const fromOwners = (
           )
         const connection = yield* connect({ ...input, refreshContext: true })
         const snapshot = yield* Effect.tryPromise({
-          try: () => connection.client.request("snapshot", { session_id: input.sessionID }),
+          try: () => connection.client.request("snapshot", { session_id: input.sessionID, metadata_only: true }),
           catch: (error) => error,
         })
         const sessionAgent = Schema.decodeUnknownSync(
@@ -467,49 +506,42 @@ export const fromOwners = (
           // durable-input reconciliation makes the retry idempotent.
           Effect.catch((error) =>
             Effect.tryPromise(async () => {
-              if (
-                !(error instanceof Error) ||
-                !error.message.includes("selected history exceeds budget")
-              )
-                throw error
+              if (!(error instanceof Error) || !error.message.includes("selected history exceeds budget")) throw error
               const seen = await Effect.runPromise(
-              Effect.tryPromise({
-                try: () =>
-                  connection.client.request("events", {
-                    session_id: input.sessionID,
-                    after: "",
-                  }) as Promise<Array<{ seq?: number }>>,
-                catch: (cause) => cause,
-              }).pipe(Effect.catch(() => Effect.succeed(undefined))),
-            ).catch(() => undefined)
-            const cursor = Array.isArray(seen)
-              ? Math.max(0, ...seen.map((event) => event?.seq ?? 0))
-              : 0
-            await connection.client.request("request_compact", {
-              session_id: input.sessionID,
-            })
-            await connection.client.request("wake", { session_id: input.sessionID })
-            const deadline = Date.now() + 180_000
-            let compacted = false
-            while (Date.now() < deadline && !compacted) {
-              await Bun.sleep(2_000)
-              const events = (await Effect.runPromise(
                 Effect.tryPromise({
                   try: () =>
                     connection.client.request("events", {
                       session_id: input.sessionID,
-                      after: String(cursor),
-                    }) as Promise<Array<{ type?: string }>>,
+                      after: "",
+                    }) as Promise<Array<{ seq?: number }>>,
                   catch: (cause) => cause,
                 }).pipe(Effect.catch(() => Effect.succeed(undefined))),
-              ).catch(() => undefined)) as Array<{ type?: string }> | undefined
-              compacted =
-                Array.isArray(events) &&
-                events.some((event) => event?.type === "history.compacted")
-            }
-            if (!compacted) throw error
-            await admit(true)
-          })),
+              ).catch(() => undefined)
+              const cursor = Array.isArray(seen) ? Math.max(0, ...seen.map((event) => event?.seq ?? 0)) : 0
+              await connection.client.request("request_compact", {
+                session_id: input.sessionID,
+              })
+              await connection.client.request("wake", { session_id: input.sessionID })
+              const deadline = Date.now() + 180_000
+              let compacted = false
+              while (Date.now() < deadline && !compacted) {
+                await Bun.sleep(2_000)
+                const events = (await Effect.runPromise(
+                  Effect.tryPromise({
+                    try: () =>
+                      connection.client.request("events", {
+                        session_id: input.sessionID,
+                        after: String(cursor),
+                      }) as Promise<Array<{ type?: string }>>,
+                    catch: (cause) => cause,
+                  }).pipe(Effect.catch(() => Effect.succeed(undefined))),
+                ).catch(() => undefined)) as Array<{ type?: string }> | undefined
+                compacted = Array.isArray(events) && events.some((event) => event?.type === "history.compacted")
+              }
+              if (!compacted) throw error
+              await admit(true)
+            }),
+          ),
         )
       }).pipe(Effect.mapError((error) => refusal(input.sessionID, error))),
     shell: (input) =>
@@ -568,7 +600,7 @@ export const fromOwners = (
       ).pipe(Effect.asVoid),
     modelRoutes: (input) =>
       read<readonly SessionModelRoute.Info[]>(input, async (connection) => {
-        await connection.client.request("snapshot", { session_id: input.sessionID })
+        await connection.client.request("snapshot", { session_id: input.sessionID, metadata_only: true })
         return (await routes(connection)).map((entry) => ({
           model: SessionModelRoute.reference(entry.route_id),
           ...(entry.model_key
@@ -617,16 +649,17 @@ export const fromOwners = (
         }),
       ).pipe(Effect.map((value) => pendingInputsPage(input.sessionID, value))),
     cancelInput: (input) =>
-      read<unknown>(input, (connection) =>
-        connection.client.request("cancel_input", {
-          session_id: input.sessionID,
-          input_id: input.inputID,
-        }),
-      ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+      read<boolean>(input, (connection) =>
+        cancelPendingInput(
+          (inputID) =>
+            connection.client.request("cancel_input", { session_id: input.sessionID, input_id: inputID }),
+          input.inputID,
+        ),
+      ),
     revertStage: (input) =>
       read(input, async (connection) => {
         const snapshot = Schema.decodeUnknownSync(Schema.Struct({ cursor: Schema.Number }))(
-          await connection.client.request("snapshot", { session_id: input.sessionID }),
+          await connection.client.request("snapshot", { session_id: input.sessionID, metadata_only: true }),
         )
         let after = 0
         const events: EngineEvent[] = []
@@ -701,7 +734,10 @@ export const fromOwners = (
       }).pipe(Effect.mapError((error) => refusal(input.sessionID, error))),
     snapshot: (input) =>
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
-        connection.client.request("snapshot", { session_id: input.sessionID }),
+        connection.client.request("snapshot", {
+          session_id: input.sessionID,
+          metadata_only: input.metadataOnly ?? false,
+        }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
     usage: (input) =>
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
@@ -732,12 +768,15 @@ export const fromOwners = (
       read(input, async (connection) => {
         // Rust's rename can initialize a Session; the product command operates
         // only on an existing owner, so missing identity must fail first.
-        await connection.client.request("snapshot", { session_id: input.sessionID })
+        await connection.client.request("snapshot", { session_id: input.sessionID, metadata_only: true })
         return connection.client.request("rename", { session_id: input.sessionID, title: input.title })
       }).pipe(Effect.asVoid),
     permissions: (input) =>
       read<readonly Permission.Request[]>(input, async (connection) => {
-        const snapshot = await connection.client.request("snapshot", { session_id: input.sessionID })
+        const snapshot = await connection.client.request("snapshot", {
+          session_id: input.sessionID,
+          metadata_only: true,
+        })
         return Schema.decodeUnknownSync(ApprovalBindings)(snapshot).approvals.map((binding) => {
           if (binding.session_id !== input.sessionID)
             throw new EngineError("approval_owner_mismatch", "Approval belongs to another Session")
@@ -753,7 +792,10 @@ export const fromOwners = (
       }),
     replyPermission: (input) =>
       read(input, async (connection) => {
-        const snapshot = await connection.client.request("snapshot", { session_id: input.sessionID })
+        const snapshot = await connection.client.request("snapshot", {
+          session_id: input.sessionID,
+          metadata_only: true,
+        })
         const binding = Schema.decodeUnknownSync(ApprovalBindings)(snapshot).approvals.find(
           (binding) => binding.session_id === input.sessionID && `per_${binding.request_id}` === input.requestID,
         )
@@ -935,7 +977,7 @@ const layer = Layer.effect(
       const host = path.resolve(import.meta.dir, "worker-host.ts")
       yield* Effect.promise(() => Bun.write(workerConfigFile, JSON.stringify({ argv: [process.execPath, host] })))
       configuration.workerConfigFile = workerConfigFile
-      console.log("[worker-host] config written:", workerConfigFile)
+      yield* Effect.logInfo("[worker-host] config written:", workerConfigFile)
     }
     const mcp = yield* ProductMcp.prepare(configuration).pipe(Effect.provideService(McpAuth.Service, mcpAuth))
     let ownerRouter: Owners | undefined
@@ -1040,9 +1082,11 @@ const layer = Layer.effect(
         : Effect.void,
     )
     yield* Effect.addFinalizer(() => unsubscribeUsage)
+    const catalog = capabilities(configuration.binary)?.catalog === 1
     const engine = fromOwners(
       owners,
       {
+        catalog: catalog ? (input) => readCatalog(configuration.binary, input) : undefined,
         prompt: (input) =>
           PromptMaterialization.prepare(input.prompt).pipe(
             Effect.provideService(Blob.Service, blob),
@@ -1069,7 +1113,7 @@ const layer = Layer.effect(
             const locationContext = runtime as unknown as Context.Context<
               AgentV2.Service | EventV2.Service | SessionRunnerModel.Service
             >
-            const snapshot = yield* engine.snapshot(input)
+            const snapshot = yield* engine.snapshot({ ...input, metadataOnly: true })
             const selection = Schema.decodeUnknownOption(Schema.NullOr(SessionModelRoute.Binding))(
               snapshot["model_selection"],
             )
@@ -1153,7 +1197,11 @@ const layer = Layer.effect(
                   })
                 return
               }
-              if (snapshot.active_run || !Array.isArray(snapshot.messages) || snapshot.messages.length === 0) return
+              if (
+                snapshot.active_run ||
+                !(snapshot.has_messages === true || (Array.isArray(snapshot.messages) && snapshot.messages.length > 0))
+              )
+                return
               yield* scheduleTitle(input)
             }),
           ),

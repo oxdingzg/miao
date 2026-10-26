@@ -1,0 +1,16 @@
+{
+  "scenario": "tool-recall",
+  "engine": "ts",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "fail",
+    "reason": "no completed bash tool execution in events"
+  },
+  "sessionID": "ses_gfe5e8cc1d8a6ffeKiNnypIOoM",
+  "cost": 0.00168,
+  "tokensIn": 13973,
+  "tokensOut": 12,
+  "stepFinishes": 1,
+  "tools": [],
+  "errors": []
+}

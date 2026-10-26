@@ -45,6 +45,14 @@ pub enum ProviderError {
     Stream(String),
     #[error("provider request rejected: {0}")]
     Rejected(String),
+    /// The repetitive-output guard stopped the stream. Never retried: the same
+    /// request would loop again, and earlier tool changes may already have
+    /// completed. `partial` keeps what the user already saw durable.
+    #[error("stopped repetitive {channel} output; this turn was not retried and earlier tool changes may already have completed")]
+    Repetitive {
+        channel: &'static str,
+        partial: Reply,
+    },
 }
 
 impl ProviderError {
@@ -61,6 +69,14 @@ impl ProviderError {
                 unexecuted_calls,
             } => Some((partial, *unexecuted_calls)),
             Self::Routed { source, .. } => source.continuation(),
+            _ => None,
+        }
+    }
+    /// The guard's channel and the reply the stopped stream had produced.
+    pub(crate) fn repetition(&self) -> Option<(&'static str, &Reply)> {
+        match self {
+            Self::Repetitive { channel, partial } => Some((channel, partial)),
+            Self::Routed { source, .. } => source.repetition(),
             _ => None,
         }
     }
@@ -1272,9 +1288,11 @@ async fn read_stream_with_budget<P: Parser>(
         .copied()
         .unwrap_or_default();
     let mut event = watchdogs.event;
+    let mut received_event = false;
     let byte_idle = watchdogs.byte_idle;
     let mut bytes = response.bytes_stream();
     let mut decoder = SseDecoder::default();
+    let mut guard = crate::output_guard::Guard::new();
     let mut total = 0;
     loop {
         let deadline = input_budget
@@ -1286,19 +1304,19 @@ async fn read_stream_with_budget<P: Parser>(
             event.unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(3600));
         let chunk = tokio::select! {
             _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
-            _=tokio::time::sleep_until(event_deadline), if event.is_some()=>return Err(ProviderError::Transport),
+            _=tokio::time::sleep_until(event_deadline), if event.is_some()=>return Err(watchdogs.event_timeout(received_event)),
             _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(input_budget.timeout_error()),
             result=async {
                 let chunk = match byte_idle.is_zero() {
                     true => bytes.next().await,
                     false => tokio::time::timeout(byte_idle, bytes.next())
                         .await
-                        .map_err(|_| match event.is_some() {
+                        .map_err(|_| match received_event {
                             // Silence before any semantic event is the same
                             // retryable failure the old single deadline produced;
                             // after one, a stalled stream stays terminal.
-                            true => ProviderError::Transport,
-                            false => ProviderError::Stream(format!(
+                            false => ProviderError::Transport,
+                            true => ProviderError::Stream(format!(
                                 "provider sent no response bytes for {}ms (set MIAO_LLM_STREAM_IDLE_TIMEOUT_MS to adjust, 0 disables)",
                                 byte_idle.as_millis(),
                             )),
@@ -1325,7 +1343,8 @@ async fn read_stream_with_budget<P: Parser>(
                 Frame::Done => true,
                 Frame::Json(event) => crate::first_event::semantic_event(event),
             } {
-                event = None;
+                received_event = true;
+                event = watchdogs.next_event_deadline();
             }
             // Publish a normalized delta alongside the raw frame. The engine's
             // own first-event and retry logic reads `raw` through `semantic_event`,
@@ -1336,6 +1355,17 @@ async fn read_stream_with_budget<P: Parser>(
                     if normalized.is_empty() {
                         vec![event.clone()]
                     } else {
+                        // The detecting delta is deliberately not published: the
+                        // stream stops where the loop was recognized, and the
+                        // turn fails instead of continuing into a late tool call.
+                        if let Some(channel) =
+                            normalized.iter().find_map(|delta| guard.observe(delta))
+                        {
+                            return Err(ProviderError::Repetitive {
+                                channel: channel.as_str(),
+                                partial: guard.partial(),
+                            });
+                        }
                         normalized
                             .into_iter()
                             .map(|delta| json!({"kind":"delta","delta":delta,"raw":event}))
@@ -1347,8 +1377,11 @@ async fn read_stream_with_budget<P: Parser>(
             let deadline = input_budget
                 .deadline()
                 .unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(120));
+            let event_deadline =
+                event.unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(3600));
             tokio::select! {
                 _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+                _=tokio::time::sleep_until(event_deadline), if event.is_some()=>return Err(watchdogs.event_timeout(received_event)),
                 _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(input_budget.timeout_error()),
                 result=send_all(&progress, &notices)=>if result.is_err(){return Err(ProviderError::Interrupted);},
             }

@@ -132,6 +132,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
       probe(connection).pipe(Effect.catch(() => Effect.succeed(null)))
     for (const [storage, owner] of snapshot) {
       const probed = yield* attempt(owner.connection)
+      if (owners.get(storage) !== owner) continue
       if (probed === null) {
         // A live child that fails the probe stays: the next real request
         // surfaces the engine error instead of a silent replacement.
@@ -147,12 +148,16 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
           if (reowned === null) continue
           const recovered = yield* attempt(reowned)
           if (recovered === null) continue
+          if (owners.get(storage)?.connection !== reowned) continue
           timerMemory.set(storage, recovered.sessions.length)
           results.push({ storage, sessions: recovered.sessions })
           continue
         }
         yield* gate.withPermit(
           Effect.sync(() => {
+            // get() may replace the dead connection while this sweep waits
+            // for the registry permit. Only release the snapshotted owner.
+            if (owners.get(storage) !== owner) return
             owners.delete(storage)
             timerMemory.delete(storage)
           }),
