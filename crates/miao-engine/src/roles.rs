@@ -292,7 +292,9 @@ mod tests {
             _: CancellationToken,
         ) -> Result<Reply, ProviderError> {
             if self.fail_stream {
-                return Err(ProviderError::Transport);
+                return Err(ProviderError::Transport(
+                    "the test provider was told to fail the stream".into(),
+                ));
             }
             Ok(Reply {
                 content: json!([{"type": "text", "text": "ok summary"}]),
@@ -434,7 +436,10 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert_eq!(error, "provider transport failed");
+        assert_eq!(
+            error,
+            "provider transport failed: the test provider was told to fail the stream"
+        );
         let events = store.events("s", 0, 100).await.unwrap();
         assert!(!events.iter().any(|event| event.kind == "role.escalated"));
     }
