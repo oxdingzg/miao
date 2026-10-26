@@ -1013,19 +1013,51 @@ impl Store {
             return Err(Error::Invalid("invalid terminal job state".into()));
         }
         self.call(move |conn| {
-            let tx=write_tx(conn)?;if tx.execute("UPDATE engine_job SET state=?3,result=?4 WHERE id=?1 AND session_id=?2 AND state IN ('queued','running')",params![id,session,state,serde_json::to_string(&result)?])?!=1{return Err(Error::Invalid("job is not active".into()));}
-            append(&tx,&session,"job.finished",json!({"job_id":id,"state":state}))?;
-            let admission = admit_input(&tx, &Input {
-agent_references: Default::default(),
-command: None,
-                session_id: session.clone(),
-                input_id: format!("job:{id}:finished"),
-                prompt: format!("Background job {id} finished with state {state}. Read its stored result with job_status and continue eligible work."),
-                delivery: Delivery::Steer,
-            }, None, &[])?;
+            let tx = write_tx(conn)?;
+            let admission = finish_job_tx(
+                &tx,
+                &session,
+                &id,
+                &state,
+                serde_json::to_string(&result)?,
+                true,
+            )?
+            .expect("admit=true yields an admission");
             tx.commit()?;
             Ok(admission)
-        }).await
+        })
+        .await
+    }
+
+    /// Terminal job settle without waking the Session. Callers that deliver
+    /// their own durable notice (monitors) or whose outcome the model already
+    /// knows (an explicit cancel_job result) finish quietly.
+    pub async fn finish_job_quiet(
+        &self,
+        session: &str,
+        id: &str,
+        state: &str,
+        result: Value,
+    ) -> Result<(), Error> {
+        let (session, id, state) = (session.to_owned(), id.to_owned(), state.to_owned());
+        if !["completed", "failed", "cancelled", "interrupted", "unknown"].contains(&state.as_str())
+        {
+            return Err(Error::Invalid("invalid terminal job state".into()));
+        }
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            finish_job_tx(
+                &tx,
+                &session,
+                &id,
+                &state,
+                serde_json::to_string(&result)?,
+                false,
+            )?;
+            tx.commit()?;
+            Ok(())
+        })
+        .await
     }
 
     pub async fn recover_jobs(&self) -> Result<(), Error> {
@@ -2488,6 +2520,38 @@ fn merge_usage(acc: &mut Value, next: &Value) {
         }
         _ => *acc = next.clone(),
     }
+}
+
+/// Shared terminal settle for `finish_job`/`finish_job_quiet`. With `admit`,
+/// a durable steer input tells the model the job finished and points at
+/// `job_status`; otherwise the caller owns the follow-up notice.
+fn finish_job_tx(
+    tx: &Transaction<'_>,
+    session: &str,
+    id: &str,
+    state: &str,
+    result: String,
+    admit: bool,
+) -> Result<Option<Admission>, Error> {
+    if tx.execute("UPDATE engine_job SET state=?3,result=?4 WHERE id=?1 AND session_id=?2 AND state IN ('queued','running')",params![id,session,state,result])?!=1{return Err(Error::Invalid("job is not active".into()));}
+    append(
+        tx,
+        session,
+        "job.finished",
+        json!({"job_id":id,"state":state}),
+    )?;
+    if !admit {
+        return Ok(None);
+    }
+    let admission = admit_input(tx, &Input {
+agent_references: Default::default(),
+command: None,
+        session_id: session.to_owned(),
+        input_id: format!("job:{id}:finished"),
+        prompt: format!("Background job {id} finished with state {state}. Read its stored result with job_status and continue eligible work."),
+        delivery: Delivery::Steer,
+    }, None, &[])?;
+    Ok(Some(admission))
 }
 
 pub(crate) fn admit_input(
