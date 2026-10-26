@@ -87,6 +87,28 @@ impl ProviderError {
             _ => None,
         }
     }
+    /// The endpoint could not be reached or would not serve this turn. A routed
+    /// turn wraps the failing route's error, and that route was still about
+    /// availability: reporting it as a malformed request sends the operator
+    /// debugging their own input while the provider is down.
+    pub(crate) fn unavailable(&self) -> bool {
+        match self {
+            Self::Routed { source, .. } => source.unavailable(),
+            Self::Transport | Self::ResponseTransport | Self::ContinuableTransport { .. } => true,
+            Self::Http(status) => matches!(status, 429 | 500 | 502 | 503 | 504 | 529),
+            _ => false,
+        }
+    }
+    /// Statuses that blame the request itself, so the promoted input is the
+    /// thing to quarantine. A routed rejection has the same cause as a direct
+    /// one.
+    pub(crate) fn input_rejected(&self) -> bool {
+        match self {
+            Self::Routed { source, .. } => source.input_rejected(),
+            Self::Http(status) => matches!(status, 400 | 404 | 413 | 422),
+            _ => false,
+        }
+    }
 }
 /// Unavailable arguments remain explicit null in history; raw malformed JSON
 /// is not retained in a completed local call or its error result.
