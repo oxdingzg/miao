@@ -27,6 +27,10 @@ pub const SCHEMA_VERSION: u32 = 21;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
+/// The catalog columns a listing needs, in query order; a store written before
+/// one of them existed reads that column as NULL.
+type CatalogFields = (String, Option<i64>, Option<i64>, Option<i64>);
+
 /// A durable, fenced claim on one Session's execution. Every claim advances
 /// `epoch`, so a writer whose ownership was superseded is rejected even while
 /// it is still running. This is the fence later cross-process ownership uses.
@@ -147,7 +151,7 @@ impl Store {
             let fields = ["title", "created_at_ms", "updated_at_ms", "archived_at_ms"].map(|name| {
                 if columns.contains(name) { name } else if name == "title" { "''" } else { "NULL" }
             });
-            let row: Option<(String, Option<i64>, Option<i64>, Option<i64>)> = tx.query_row(
+            let row: Option<CatalogFields> = tx.query_row(
                 &format!("SELECT {} FROM engine_session WHERE id=?1", fields.join(",")), [&session],
                 |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
             ).optional()?;
