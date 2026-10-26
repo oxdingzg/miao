@@ -857,6 +857,169 @@
           }
         ]
       }
+    },
+    {
+      "name": "action-wildcards-match-derived-actions",
+      "request": {
+        "actions": [
+          "read_file"
+        ],
+        "resources": [
+          "a.ts"
+        ],
+        "configured": [
+          {
+            "action": "read*",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "read*",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "action-wildcards-do-not-match-unrelated-actions",
+      "request": {
+        "actions": [
+          "write"
+        ],
+        "resources": [
+          "a.ts"
+        ],
+        "configured": [
+          {
+            "action": "read*",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": [
+          {
+            "action": "read*",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an-alias-hits-a-deny-aimed-at-the-alias",
+      "request": {
+        "actions": [
+          "bash",
+          "terminal"
+        ],
+        "resources": [
+          "rm -rf x"
+        ],
+        "configured": [
+          {
+            "action": "terminal",
+            "resource": "rm *",
+            "effect": "deny"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "deny",
+        "rules": [
+          {
+            "action": "terminal",
+            "resource": "rm *",
+            "effect": "deny"
+          }
+        ]
+      }
+    },
+    {
+      "name": "saved-rules-for-other-actions-do-not-hide-an-ask",
+      "request": {
+        "actions": [
+          "edit"
+        ],
+        "resources": [
+          "a.ts"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ],
+        "saved": [
+          {
+            "action": "bash",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "bash",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an-action-wildcard-catch-all-still-decides-non-explicit",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "a.ts"
+        ],
+        "configured": [
+          {
+            "action": "read*",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "*",
+            "resource": "*.env",
+            "effect": "ask"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "read*",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "*",
+            "resource": "*.env",
+            "effect": "ask"
+          }
+        ]
+      }
     }
   ]
 }

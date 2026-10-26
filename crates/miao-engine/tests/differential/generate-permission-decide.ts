@@ -153,6 +153,32 @@ const cases = [
     resources: ["a.ts"],
     configured: [rule("read", "*", "allow")],
   } },
+  { name: "action-wildcards-match-derived-actions", request: {
+    actions: ["read_file"],
+    resources: ["a.ts"],
+    configured: [rule("read*", "*", "allow")],
+  } },
+  { name: "action-wildcards-do-not-match-unrelated-actions", request: {
+    actions: ["write"],
+    resources: ["a.ts"],
+    configured: [rule("read*", "*", "allow")],
+  } },
+  { name: "an-alias-hits-a-deny-aimed-at-the-alias", request: {
+    actions: ["bash", "terminal"],
+    resources: ["rm -rf x"],
+    configured: [rule("terminal", "rm *", "deny")],
+  } },
+  { name: "saved-rules-for-other-actions-do-not-hide-an-ask", request: {
+    actions: ["edit"],
+    resources: ["a.ts"],
+    configured: [rule("read", "*", "allow")],
+    saved: [rule("bash", "*", "allow")],
+  } },
+  { name: "an-action-wildcard-catch-all-still-decides-non-explicit", request: {
+    actions: ["read"],
+    resources: ["a.ts"],
+    configured: [rule("read*", "*", "allow"), rule("*", "*.env", "ask")],
+  } },
 ].map((item) => ({ ...item, expected: PermissionV2.decide(item.request) }))
 
 const file = new URL("permission_decide.json", import.meta.url)
