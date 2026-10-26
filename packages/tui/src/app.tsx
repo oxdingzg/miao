@@ -440,12 +440,23 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   yield* Effect.sync(() => {
     win32FlushInputBuffer()
     if (result.reason !== undefined) {
-      process.stderr.write((cliErrorMessage(result.reason) ?? errorFormat(result.reason)) + "\n")
+      writeBestEffort(process.stderr, (cliErrorMessage(result.reason) ?? errorFormat(result.reason)) + "\n")
       process.exitCode = 1
     }
-    if (result.epilogue) process.stdout.write(result.epilogue + "\n")
+    if (result.epilogue) writeBestEffort(process.stdout, result.epilogue + "\n")
   })
 })
+
+/**
+ * The Session has already ended by the time these lines are written, so a
+ * terminal that went away (window closed, pty torn down) must not turn a clean
+ * exit into an uncaught EIO and a crash record. The farewell is best effort.
+ */
+function writeBestEffort(stream: { write(text: string): unknown }, text: string) {
+  try {
+    stream.write(text)
+  } catch {}
+}
 
 function App(props: {
   onSnapshot?: () => Promise<string[]>
