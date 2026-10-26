@@ -54,35 +54,42 @@ struct EditWire {
 }
 impl EditWire {
     fn normalize(self) -> Result<EditInput, ToolError> {
-        // One pair only: mixing the short and long names leaves the intent of
-        // the other pair unclear. The old and new text may come from different
-        // pairs, though — `anchor` with `new_string` names one replacement.
-        match (self.anchor, self.new_text, self.old_string, self.new_string) {
-            (Some(anchor), Some(new_text), None, None) => Ok(EditInput {
-                path: self.path,
-                old_string: anchor,
-                new_string: new_text,
-                expected_sha256: self.expected_sha256,
-                replace_all: self.replace_all,
-            }),
-            (Some(anchor), None, None, Some(new_string)) => Ok(EditInput {
-                path: self.path,
-                old_string: anchor,
-                new_string,
-                expected_sha256: self.expected_sha256,
-                replace_all: self.replace_all,
-            }),
-            (None, None, Some(old_string), Some(new_string)) => Ok(EditInput {
-                path: self.path,
-                old_string,
-                new_string,
-                expected_sha256: self.expected_sha256,
-                replace_all: self.replace_all,
-            }),
-            _ => Err(ToolError::InvalidArgs(
-                "pass either old_string with new_string, or anchor with new_text (anchor also accepts new_string); do not pass both pairs".into(),
-            )),
-        }
+        // Each side of the replacement may be named either way: `old_string` or
+        // `anchor`, `new_string` or `new_text`. One name per side is one
+        // replacement; naming a side twice is what makes the edit ambiguous.
+        let old_string = match (self.old_string, self.anchor) {
+            (Some(text), None) | (None, Some(text)) => text,
+            (Some(_), Some(_)) => {
+                return Err(ToolError::InvalidArgs(
+                    "pass the replaced text once, as old_string or anchor, not both".into(),
+                ))
+            }
+            (None, None) => {
+                return Err(ToolError::InvalidArgs(
+                    "pass the replaced text as old_string or anchor".into(),
+                ))
+            }
+        };
+        let new_string = match (self.new_string, self.new_text) {
+            (Some(text), None) | (None, Some(text)) => text,
+            (Some(_), Some(_)) => {
+                return Err(ToolError::InvalidArgs(
+                    "pass the replacement once, as new_string or new_text, not both".into(),
+                ))
+            }
+            (None, None) => {
+                return Err(ToolError::InvalidArgs(
+                    "pass the replacement as new_string or new_text".into(),
+                ))
+            }
+        };
+        Ok(EditInput {
+            path: self.path,
+            old_string,
+            new_string,
+            expected_sha256: self.expected_sha256,
+            replace_all: self.replace_all,
+        })
     }
 }
 

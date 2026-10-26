@@ -439,22 +439,28 @@ async fn model_spellings_of_absent_hashes_and_mixed_anchor_pairs_still_apply() {
 
     // `anchor` names the old text and `new_string` the replacement; mixing the
     // two pairs is one unambiguous replacement, not an ambiguity.
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("ledger.ts"), "let sum = 0\n").unwrap();
-    let (runtime, store) = launch(
-        dir.path(),
-        "edit_file",
-        json!({"path":"ledger.ts","anchor":"let sum = 0","new_string":"let total = 0","expected_sha256":digest(b"let sum = 0\n")}),
-        config(Decision::Allow),
-    )
-    .await;
-    finished(&store).await;
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("ledger.ts")).unwrap(),
-        "let total = 0\n"
-    );
-    assert!(edit_result(&store).await["applied"].as_bool().unwrap());
-    runtime.shutdown().await;
+    for fields in [
+        json!({"anchor":"let sum = 0","new_string":"let total = 0"}),
+        json!({"old_string":"let sum = 0","new_text":"let total = 0"}),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("ledger.ts"), "let sum = 0\n").unwrap();
+        let mut input = json!({"path":"ledger.ts","expected_sha256":digest(b"let sum = 0\n")});
+        input
+            .as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        let (runtime, store) =
+            launch(dir.path(), "edit_file", input, config(Decision::Allow)).await;
+        finished(&store).await;
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("ledger.ts")).unwrap(),
+            "let total = 0\n",
+            "{fields}"
+        );
+        assert!(edit_result(&store).await["applied"].as_bool().unwrap());
+        runtime.shutdown().await;
+    }
 }
 
 async fn edit_result(store: &Store) -> Value {
