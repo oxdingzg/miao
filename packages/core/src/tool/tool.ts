@@ -69,6 +69,12 @@ type Config<
     readonly input: Schema.Schema.Type<Input>
     readonly output: Output["Encoded"]
   }) => ReadonlyArray<Content>
+  /**
+   * Alternative spellings for one input field, keyed by the canonical name.
+   * A call that names the same value differently is moved onto the canonical
+   * field before decoding instead of being rejected for its field name.
+   */
+  readonly aliases?: Readonly<Record<string, ReadonlyArray<string>>>
 }
 
 /**
@@ -111,6 +117,7 @@ export function make<
 >(config: Config<Input, Output, Structured>): Definition<Input, Structured> {
   const tool = Object.freeze({}) as Definition<Input, Structured>
   const definitions = new Map<string, ToolDefinition>()
+  let inputSchema: JsonSchema.JsonSchema | undefined
   runtimes.set(tool, {
     definition: (name) => {
       const cached = definitions.get(name)
@@ -125,7 +132,9 @@ export function make<
       return definition
     },
     settle: (call, context) =>
-      Schema.decodeUnknownEffect(config.input)(call.input).pipe(
+      Schema.decodeUnknownEffect(config.input)(
+        repairInput(call.input, config.aliases, (inputSchema ??= toJsonSchema(config.input))),
+      ).pipe(
         Effect.mapError((error) => new ToolFailure({ message: `Invalid tool input: ${error.message}` })),
         Effect.flatMap((input) =>
           config.execute(input, context).pipe(
@@ -222,6 +231,144 @@ export function makeExternal(config: {
   })
   return tool
 }
+
+/**
+ * Repair the one class of malformed call that is unambiguous: a model writing
+ * a number or boolean as a string (`"timeout": "300000"`) or naming a field a
+ * second way. The tool's own JSON schema still decides everything else, so an
+ * input the schema already accepts is passed through untouched, and a string
+ * the schema itself allows there is never rewritten.
+ */
+function repairInput(
+  input: unknown,
+  aliases: Readonly<Record<string, ReadonlyArray<string>>> | undefined,
+  schema: JsonSchema.JsonSchema,
+): unknown {
+  return repair(applyAliases(input, aliases), schema, definitionsOf(schema))
+}
+
+function applyAliases(
+  input: unknown,
+  aliases: Readonly<Record<string, ReadonlyArray<string>>> | undefined,
+): unknown {
+  if (!aliases || !isRecord(input)) return input
+  const next = { ...input }
+  let changed = false
+  for (const [canonical, spellings] of Object.entries(aliases)) {
+    if (canonical in next) continue
+    const spelling = spellings.find((alias) => alias in next)
+    if (spelling === undefined) continue
+    next[canonical] = next[spelling]
+    delete next[spelling]
+    changed = true
+  }
+  return changed ? next : input
+}
+
+type Definitions = Readonly<Record<string, JsonSchema.JsonSchema>>
+
+const definitionsOf = (schema: JsonSchema.JsonSchema): Definitions => {
+  const defs = schema.$defs
+  return isRecord(defs) ? (defs as Definitions) : {}
+}
+
+function repair(value: unknown, schema: JsonSchema.JsonSchema, defs: Definitions): unknown {
+  if (!isRecord(schema)) return value
+  if (typeof schema.$ref === "string") {
+    const name = schema.$ref.startsWith("#/$defs/") ? schema.$ref.slice("#/$defs/".length) : undefined
+    const target = name === undefined ? undefined : defs[name]
+    return target === undefined ? value : repair(value, target, defs)
+  }
+  const branches = [
+    ...(Array.isArray(schema.anyOf) ? schema.anyOf : []),
+    ...(Array.isArray(schema.oneOf) ? schema.oneOf : []),
+  ].filter(isRecord)
+  if (branches.length > 0) return repairBranch(value, branches, defs)
+  if (isRecord(value) && isRecord(schema.properties)) return repairProperties(value, schema.properties, defs)
+  const items = schema.items
+  if (Array.isArray(value) && isRecord(items)) return value.map((item) => repair(item, items, defs))
+  return coerce(value, schema)
+}
+
+function repairBranch(value: unknown, branches: ReadonlyArray<JsonSchema.JsonSchema>, defs: Definitions): unknown {
+  // A branch that admits the value as written needs no repair; when the value
+  // is composite, repair its nested positions against that same branch.
+  const matching = branches.filter((branch) => admits(value, branch, defs))
+  if (matching.length > 0) return isRecord(value) || Array.isArray(value) ? repair(value, matching[0], defs) : value
+  return branches.map((branch) => repair(value, branch, defs)).find((repaired) => repaired !== value) ?? value
+}
+
+function repairProperties(
+  value: Record<string, unknown>,
+  properties: Record<string, unknown>,
+  defs: Definitions,
+): Record<string, unknown> {
+  let changed = false
+  const next = { ...value }
+  for (const [key, field] of Object.entries(properties)) {
+    if (!(key in value) || !isRecord(field)) continue
+    const repaired = repair(value[key], field, defs)
+    if (repaired === value[key]) continue
+    next[key] = repaired
+    changed = true
+  }
+  return changed ? next : value
+}
+
+/** Whether a schema node accepts the value exactly as written, type and enum. */
+function admits(value: unknown, schema: JsonSchema.JsonSchema, defs: Definitions): boolean {
+  if (!isRecord(schema)) return false
+  if (typeof schema.$ref === "string") {
+    const name = schema.$ref.startsWith("#/$defs/") ? schema.$ref.slice("#/$defs/".length) : undefined
+    const target = name === undefined ? undefined : defs[name]
+    return target === undefined ? false : admits(value, target, defs)
+  }
+  if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return false
+  if (schema.const !== undefined && schema.const !== value) return false
+  const types = typeof schema.type === "string" ? [schema.type] : Array.isArray(schema.type) ? schema.type : []
+  if (types.length === 0) return true
+  return types.some((type) => admitsType(value, type))
+}
+
+function admitsType(value: unknown, type: unknown): boolean {
+  switch (type) {
+    case "string":
+      return typeof value === "string"
+    case "number":
+    case "integer":
+      return typeof value === "number"
+    case "boolean":
+      return typeof value === "boolean"
+    case "null":
+      return value === null
+    case "array":
+      return Array.isArray(value)
+    case "object":
+      return isRecord(value)
+    default:
+      return true
+  }
+}
+
+function coerce(value: unknown, schema: JsonSchema.JsonSchema): unknown {
+  if (typeof value !== "string") return value
+  const types = typeof schema.type === "string" ? [schema.type] : Array.isArray(schema.type) ? schema.type : []
+  const text = value.trim()
+  if (!types.includes("string") && types.some((type) => type === "number" || type === "integer")) {
+    if (!/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text)) return value
+    const number = Number(text)
+    return Number.isFinite(number) ? number : value
+  }
+  if (!types.includes("string") && types.includes("boolean")) {
+    const lower = text.toLowerCase()
+    if (lower === "true") return true
+    if (lower === "false") return false
+  }
+  return value
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
 
 export const validateName = (name: string) =>
   /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name)

@@ -788,6 +788,33 @@ describe("ApplyPatchTool", () => {
     ),
   )
 
+  it.live("accepts the patch under the other spellings models use for it", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            for (const field of ["patch_text", "input"] as const) {
+              const settled = yield* settleTool(registry, {
+                sessionID,
+                ...toolIdentity,
+                call: {
+                  type: "tool-call" as const,
+                  id: `call-${field}`,
+                  name: "apply_patch",
+                  input: { [field]: `*** Begin Patch\n*** Add File: ${field}.txt\n+created\n*** End Patch` },
+                },
+              })
+              expect(settled.result).toEqual({ type: "text", value: `Applied patch sequentially:\nA ${field}.txt` })
+            }
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.live("rejects an add target that appears during permission approval", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),

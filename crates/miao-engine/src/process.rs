@@ -44,17 +44,40 @@ fn sandbox_on() -> bool {
 }
 impl Input {
     pub fn parse(input: Value) -> Result<Self, ToolError> {
-        let input: Self = serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
-        if input.argv.is_empty()
-            || input.argv.len() > 128
-            || input.argv[0].is_empty()
-            || input.argv.iter().any(|s| s.contains('\0'))
-            || input.argv.iter().map(String::len).sum::<usize>() > 32768
-            || !(1..=MAX_TIMEOUT_MS).contains(&input.timeout_ms)
-        {
-            return Err(ToolError::InvalidInput);
+        let input: Self = serde_json::from_value(input)
+            .map_err(|error| ToolError::InvalidArgs(error.to_string()))?;
+        if input.argv.is_empty() {
+            return Err(ToolError::InvalidArgs("argv must not be empty".into()));
         }
-        Ok(input)
+        if input.argv.len() > 128 {
+            return Err(ToolError::InvalidArgs(format!(
+                "argv has {} entries; at most 128 are allowed",
+                input.argv.len()
+            )));
+        }
+        if input.argv[0].is_empty() {
+            return Err(ToolError::InvalidArgs("argv[0] must not be empty".into()));
+        }
+        if input.argv.iter().any(|s| s.contains('\0')) {
+            return Err(ToolError::InvalidArgs(
+                "argv must not contain NUL bytes".into(),
+            ));
+        }
+        let bytes = input.argv.iter().map(String::len).sum::<usize>();
+        if bytes > 32768 {
+            return Err(ToolError::InvalidArgs(format!(
+                "argv is {bytes} bytes; at most 32768 are allowed"
+            )));
+        }
+        if input.timeout_ms == 0 {
+            return Err(ToolError::InvalidArgs(format!(
+                "timeout_ms must be between 1 and {MAX_TIMEOUT_MS}; got 0"
+            )));
+        }
+        Ok(Self {
+            timeout_ms: input.timeout_ms.min(MAX_TIMEOUT_MS),
+            ..input
+        })
     }
 }
 
@@ -71,17 +94,60 @@ pub struct BashInput {
     #[serde(default)]
     pub pty: bool,
 }
+/// Models reach for the names the product-side bash tool and most CLIs use —
+/// `timeout` and `workdir` — and an unknown field rejected the whole call. Both
+/// forms name the same thing, so accept either and keep the canonical names in
+/// the schema.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BashWire {
+    command: String,
+    #[serde(default)]
+    cwd: Option<String>,
+    #[serde(default)]
+    workdir: Option<String>,
+    #[serde(default)]
+    timeout_ms: Option<u64>,
+    #[serde(default)]
+    timeout: Option<u64>,
+    #[serde(default)]
+    pty: bool,
+}
 impl BashInput {
     pub fn parse(input: Value) -> Result<Self, ToolError> {
-        let input: Self = serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
-        if input.command.is_empty()
-            || input.command.len() > 32768
-            || input.command.contains('\0')
-            || !(1..=MAX_TIMEOUT_MS).contains(&input.timeout_ms)
-        {
-            return Err(ToolError::InvalidInput);
+        let wire: BashWire = serde_json::from_value(input)
+            .map_err(|error| ToolError::InvalidArgs(error.to_string()))?;
+        if wire.command.is_empty() {
+            return Err(ToolError::InvalidArgs("command must not be empty".into()));
         }
-        Ok(input)
+        if wire.command.len() > 32768 {
+            return Err(ToolError::InvalidArgs(format!(
+                "command is {} bytes; at most 32768 are allowed",
+                wire.command.len()
+            )));
+        }
+        if wire.command.contains('\0') {
+            return Err(ToolError::InvalidArgs(
+                "command must not contain NUL bytes".into(),
+            ));
+        }
+        let requested = wire
+            .timeout_ms
+            .or(wire.timeout)
+            .unwrap_or(DEFAULT_TIMEOUT_MS);
+        if requested == 0 {
+            return Err(ToolError::InvalidArgs(format!(
+                "timeout_ms must be between 1 and {MAX_TIMEOUT_MS}; got 0"
+            )));
+        }
+        Ok(Self {
+            command: wire.command,
+            cwd: wire.cwd.or(wire.workdir).unwrap_or_else(cwd),
+            // Asking for more than the ceiling is a request for a longer run,
+            // not a malformed call: run it with the longest timeout allowed.
+            timeout_ms: requested.min(MAX_TIMEOUT_MS),
+            pty: wire.pty,
+        })
     }
 
     /// Translate to the argv the sandboxed runner executes.

@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs"
 import path from "path"
 import { describe, expect, test } from "bun:test"
 import type { ToolContent } from "@miao/llm"
-import { Deferred, Effect, Layer } from "effect"
+import { Deferred, Duration, Effect, Layer } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { FSUtil } from "@miao/core/fs-util"
 import { Config } from "@miao/core/config"
@@ -653,6 +653,25 @@ describe("BashTool", () => {
                 text: expect.stringContaining("output capture truncated"),
               })
               expect(settled.output?.structured).not.toHaveProperty("resource")
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("clamps a timeout above the ceiling instead of refusing the command", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) => settleTool(registry, call({ command: "sleep 900", timeout: 900_000 }))).pipe(
+          Effect.andThen((settled) =>
+            Effect.sync(() => {
+              expect(settled.output?.structured).toMatchObject({ exit: 0, truncated: false })
+              const timeout = runs.at(-1)?.options?.timeout
+              expect(timeout === undefined ? undefined : Duration.toMillis(timeout)).toBe(BashTool.MAX_TIMEOUT_MS)
             }),
           ),
         )

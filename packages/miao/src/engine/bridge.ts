@@ -950,22 +950,40 @@ export function productToolResult(
   if (typeof result === "string") return { structured: {}, text: result }
   if (typeof result !== "object" || result === null) return { structured: {}, text: JSON.stringify(result ?? null) }
   const record = result as Record<string, unknown>
-  if (tool === "bash") return shellResult(record)
+  if (tool === "bash" || tool === "run_command") return shellResult(record)
   if (tool === "todowrite") return todosResult(record)
   if (tool === "goal") return goalResult(record)
   return { structured: {}, text: JSON.stringify(record) }
 }
 
-/** Shell results keyed by `stdout`/`stderr` project to the bash tool's output text and `StructuredOutput`. */
+/**
+ * Shell results keyed by `stdout`/`stderr` project to the bash tool's output
+ * text and `StructuredOutput`. A refused call settles as `{error}` instead, and
+ * the refusal reason is the whole result: without it the call rendered as
+ * "[command not executed]" and the model could not tell a denied permission
+ * from an unrun command.
+ */
 function shellResult(record: Record<string, unknown>): { structured: Record<string, unknown>; text: string } {
+  if (typeof record.error === "string") return { structured: {}, text: record.error }
   const stdout = typeof record.stdout === "string" ? record.stdout : ""
   const stderr = typeof record.stderr === "string" ? record.stderr : ""
   const exit = typeof record.exit_code === "number" ? record.exit_code : undefined
+  // A process killed by a signal has no exit code; reporting it as "not
+  // executed" hid both the run and its cause.
+  const signal = typeof record.signal === "number" ? record.signal : undefined
   const timedOut = record.reason === "timed_out"
   const truncated = record.output_incomplete === true || record.reason === "output_limit"
+  const tail = timedOut
+    ? "[command timed out]"
+    : exit !== undefined
+      ? `[exit code ${exit}]`
+      : signal !== undefined
+        ? `[killed by signal ${signal}]`
+        : "[command not executed]"
   return {
     structured: {
       ...(exit === undefined ? {} : { exit }),
+      ...(signal === undefined ? {} : { signal }),
       truncated,
       ...(timedOut ? { timeout: true } : {}),
       sandbox: {
@@ -976,7 +994,7 @@ function shellResult(record: Record<string, unknown>): { structured: Record<stri
         approved: [],
       },
     },
-    text: `${[stdout, stderr].filter(Boolean).join("\n")}${timedOut ? "[command timed out]" : exit === undefined ? "[command not executed]" : `[exit code ${exit}]`}`,
+    text: `${[stdout, stderr].filter(Boolean).join("\n")}${tail}`,
   }
 }
 
@@ -1141,7 +1159,6 @@ export class ToolBridge {
     const known = plan?.known ?? this.#calls.get(JSON.stringify([event.session_id, event.data.call_id]))
     if (!known) return undefined
     const raw: unknown = "result" in event.data ? Reflect.get(event.data, "result") : undefined
-    const output = typeof raw === "string" ? raw : JSON.stringify(raw ?? null)
     const base = {
       sessionID: known.sessionID,
       timestamp: eventTimestamp(event),
@@ -1149,10 +1166,12 @@ export class ToolBridge {
       callID: plan?.provider ?? event.data.call_id,
       provider: { executed: false },
     }
-    if ("is_error" in event.data && event.data.is_error === true) {
-      return { type: "session.next.tool.failed", ...base, error: { type: "unknown", message: output } }
-    }
+    // A failed call carries its reason as the result text; the raw JSON a
+    // dismissal used to show (`{"error":"permission denied"}`) buried it.
     const mapped = productToolResult(known.tool, raw)
+    if ("is_error" in event.data && event.data.is_error === true) {
+      return { type: "session.next.tool.failed", ...base, error: { type: "unknown", message: mapped.text } }
+    }
     return {
       type: "session.next.tool.success",
       ...base,

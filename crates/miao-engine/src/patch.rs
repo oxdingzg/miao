@@ -19,7 +19,8 @@ pub struct Input {
 }
 impl Input {
     pub fn parse(value: Value) -> Result<Self, ToolError> {
-        let input: Self = serde_json::from_value(value).map_err(|_| ToolError::InvalidInput)?;
+        let input: Self = serde_json::from_value(value)
+            .map_err(|error| ToolError::InvalidArgs(error.to_string()))?;
         Ok(input)
     }
 }
@@ -56,17 +57,23 @@ pub struct Operation {
 }
 
 fn valid_path(path: &str) -> Result<(), ToolError> {
-    if path.is_empty()
-        || path.len() > 1024
-        || Path::new(path).is_absolute()
-        || path.contains(['\\', '\0'])
-        || path
-            .split('/')
-            .any(|part| part.is_empty() || part == "." || part == "..")
+    let reason = if path.is_empty() {
+        "a file path must not be empty"
+    } else if path.len() > 1024 {
+        "a file path must be at most 1024 bytes"
+    } else if Path::new(path).is_absolute() {
+        "file paths are workspace-relative, not absolute; drop the leading root"
+    } else if path.contains(['\\', '\0']) {
+        "file paths use forward slashes and must not contain NUL"
+    } else if path
+        .split('/')
+        .any(|part| part.is_empty() || part == "." || part == "..")
     {
-        return Err(ToolError::InvalidInput);
-    }
-    Ok(())
+        "file paths must not contain empty, \".\" or \"..\" segments"
+    } else {
+        return Ok(());
+    };
+    Err(ToolError::InvalidArgs(format!("{reason} (got {path:?})")))
 }
 
 /// Strict V4A-style parser. Unknown directives, a missing End Patch,
@@ -74,12 +81,17 @@ fn valid_path(path: &str) -> Result<(), ToolError> {
 /// authorization or filesystem effect.
 pub fn parse(input: &Input) -> Result<Vec<Operation>, ToolError> {
     if input.patch.len() > MAX_PATCH {
-        return Err(ToolError::InvalidInput);
+        return Err(ToolError::InvalidArgs(format!(
+            "patch is {} bytes; at most {MAX_PATCH} are allowed",
+            input.patch.len()
+        )));
     }
     let mut operations: Vec<Operation> = Vec::new();
     let mut lines = input.patch.lines().peekable();
     if lines.next() != Some("*** Begin Patch") {
-        return Err(ToolError::InvalidInput);
+        return Err(ToolError::InvalidArgs(
+            "patch must start with a line `*** Begin Patch`".into(),
+        ));
     }
     let mut closed = false;
     while let Some(line) = lines.next() {
@@ -93,11 +105,15 @@ pub fn parse(input: &Input) -> Result<Vec<Operation>, ToolError> {
             closed = true;
             break;
         } else {
-            return Err(ToolError::InvalidInput);
+            return Err(ToolError::InvalidArgs(format!(
+                "expected `*** Add File: <path>`, `*** Update File: <path>`, `*** Delete File: <path>` or `*** End Patch`; got {line:?}"
+            )));
         };
         valid_path(path)?;
         if operations.iter().any(|op| op.path == path) {
-            return Err(ToolError::InvalidInput);
+            return Err(ToolError::InvalidArgs(format!(
+                "{path:?} appears in more than one section; one section per file"
+            )));
         }
         let mut operation = Operation {
             action,
@@ -113,8 +129,16 @@ pub fn parse(input: &Input) -> Result<Vec<Operation>, ToolError> {
                     content.push('\n');
                     lines.next();
                 }
-                if content.is_empty() || content.len() > MAX_FILE {
-                    return Err(ToolError::InvalidInput);
+                if content.is_empty() {
+                    return Err(ToolError::InvalidArgs(format!(
+                        "Add File {path:?} has no `+` content lines"
+                    )));
+                }
+                if content.len() > MAX_FILE {
+                    return Err(ToolError::InvalidArgs(format!(
+                        "Add File {path:?} is {} bytes; at most {MAX_FILE} are allowed",
+                        content.len()
+                    )));
                 }
                 operation.content = content;
             }
@@ -144,12 +168,16 @@ pub fn parse(input: &Input) -> Result<Vec<Operation>, ToolError> {
                     let Some((kind, text)) = parsed else { break };
                     hunk.push((kind, text.to_owned()));
                     if hunk.len() > 4096 {
-                        return Err(ToolError::InvalidInput);
+                        return Err(ToolError::InvalidArgs(format!(
+                            "Update File {path:?} has more than 4096 lines in one hunk"
+                        )));
                     }
                     lines.next();
                 }
                 if hunk.is_empty() {
-                    return Err(ToolError::InvalidInput);
+                    return Err(ToolError::InvalidArgs(format!(
+                        "Update File {path:?} has no ` `, `-` or `+` lines under its `@@` marker"
+                    )));
                 }
                 operation.hunks.push(hunk);
             }
@@ -157,11 +185,23 @@ pub fn parse(input: &Input) -> Result<Vec<Operation>, ToolError> {
         }
         operations.push(operation);
         if operations.len() > MAX_FILES {
-            return Err(ToolError::InvalidInput);
+            return Err(ToolError::InvalidArgs(format!(
+                "patch touches more than {MAX_FILES} files"
+            )));
         }
     }
-    if !closed || operations.is_empty() || lines.next().is_some() {
-        return Err(ToolError::InvalidInput);
+    if !closed {
+        return Err(ToolError::InvalidArgs(
+            "patch must end with a line `*** End Patch`".into(),
+        ));
+    }
+    if operations.is_empty() {
+        return Err(ToolError::InvalidArgs("patch has no file sections".into()));
+    }
+    if lines.next().is_some() {
+        return Err(ToolError::InvalidArgs(
+            "patch has content after `*** End Patch`".into(),
+        ));
     }
     Ok(operations)
 }

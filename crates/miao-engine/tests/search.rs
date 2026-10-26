@@ -224,3 +224,22 @@ async fn invalid_regex_glob_scope_and_limits_fail_before_search() {
         assert!(result.get("error").is_some(), "{result}");
     }
 }
+
+#[tokio::test]
+async fn a_file_path_is_rejected_with_the_directory_requirement() {
+    // Search tools walk a directory; a file path used to fail with a bare
+    // "invalid tool input" and the model resent the same path.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("plain.txt"), "needle").unwrap();
+    for name in ["grep", "glob"] {
+        let result = run(
+            dir.path(),
+            name,
+            json!({"pattern":"needle","path":"plain.txt"}),
+            Config::default(),
+        )
+        .await;
+        let error = result["error"].as_str().unwrap_or_default();
+        assert!(error.contains("needs a directory"), "{name}: {result}");
+    }
+}

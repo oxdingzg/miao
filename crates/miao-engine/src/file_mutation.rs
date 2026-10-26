@@ -14,6 +14,15 @@ pub(crate) struct WriteInput {
     pub text: String,
     pub expected_sha256: Option<String>,
 }
+/// The schema admits JSON `null` for a create-only write, and models write that
+/// null as the string "null". The intent is unambiguous, so read every spelling
+/// of "no expected hash" as absent instead of rejecting the whole call.
+fn absent_hash(value: Option<String>) -> Option<String> {
+    value.filter(|hash| {
+        let hash = hash.trim();
+        !hash.is_empty() && !hash.eq_ignore_ascii_case("null") && !hash.eq_ignore_ascii_case("none")
+    })
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct EditInput {
@@ -45,25 +54,42 @@ struct EditWire {
 }
 impl EditWire {
     fn normalize(self) -> Result<EditInput, ToolError> {
-        // One pair only: mixing the short and long names leaves the intent of
-        // the other pair unclear.
-        match (self.anchor, self.new_text, self.old_string, self.new_string) {
-            (Some(anchor), Some(new_text), None, None) => Ok(EditInput {
-                path: self.path,
-                old_string: anchor,
-                new_string: new_text,
-                expected_sha256: self.expected_sha256,
-                replace_all: self.replace_all,
-            }),
-            (None, None, Some(old_string), Some(new_string)) => Ok(EditInput {
-                path: self.path,
-                old_string,
-                new_string,
-                expected_sha256: self.expected_sha256,
-                replace_all: self.replace_all,
-            }),
-            _ => Err(ToolError::InvalidInput),
-        }
+        // Each side of the replacement may be named either way: `old_string` or
+        // `anchor`, `new_string` or `new_text`. One name per side is one
+        // replacement; naming a side twice is what makes the edit ambiguous.
+        let old_string = match (self.old_string, self.anchor) {
+            (Some(text), None) | (None, Some(text)) => text,
+            (Some(_), Some(_)) => {
+                return Err(ToolError::InvalidArgs(
+                    "pass the replaced text once, as old_string or anchor, not both".into(),
+                ))
+            }
+            (None, None) => {
+                return Err(ToolError::InvalidArgs(
+                    "pass the replaced text as old_string or anchor".into(),
+                ))
+            }
+        };
+        let new_string = match (self.new_string, self.new_text) {
+            (Some(text), None) | (None, Some(text)) => text,
+            (Some(_), Some(_)) => {
+                return Err(ToolError::InvalidArgs(
+                    "pass the replacement once, as new_string or new_text, not both".into(),
+                ))
+            }
+            (None, None) => {
+                return Err(ToolError::InvalidArgs(
+                    "pass the replacement as new_string or new_text".into(),
+                ))
+            }
+        };
+        Ok(EditInput {
+            path: self.path,
+            old_string,
+            new_string,
+            expected_sha256: self.expected_sha256,
+            replace_all: self.replace_all,
+        })
     }
 }
 
@@ -75,11 +101,14 @@ impl Mutation {
     pub fn parse(name: &str, input: Value) -> Result<Self, ToolError> {
         let mutation = match name {
             "write_file" => {
-                Self::Write(serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?)
+                let mut input: WriteInput = serde_json::from_value(input)
+                    .map_err(|error| ToolError::InvalidArgs(error.to_string()))?;
+                input.expected_sha256 = absent_hash(input.expected_sha256);
+                Self::Write(input)
             }
             "edit_file" => Self::Edit(
                 serde_json::from_value::<EditWire>(input)
-                    .map_err(|_| ToolError::InvalidInput)?
+                    .map_err(|error| ToolError::InvalidArgs(error.to_string()))?
                     .normalize()?,
             ),
             _ => return Err(ToolError::Unsupported),
@@ -94,16 +123,27 @@ impl Mutation {
                     .bytes()
                     .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         }) {
-            return Err(ToolError::InvalidInput);
+            return Err(ToolError::InvalidArgs(format!(
+                "expected_sha256 must be the 64-character lowercase hex SHA-256 from read_file; got {:?}",
+                hash.unwrap_or_default()
+            )));
         }
         match &mutation {
-            Self::Write(v) if v.text.len() > 32768 => return Err(ToolError::InvalidInput),
-            Self::Edit(v)
-                if v.old_string.is_empty()
-                    || v.old_string.len() > 32768
-                    || v.new_string.len() > 32768 =>
-            {
-                return Err(ToolError::InvalidInput)
+            Self::Write(v) if v.text.len() > 32768 => {
+                return Err(ToolError::InvalidArgs(format!(
+                    "text is {} bytes; write_file accepts at most 32768",
+                    v.text.len()
+                )))
+            }
+            Self::Edit(v) if v.old_string.is_empty() => {
+                return Err(ToolError::InvalidArgs(
+                    "old_string must not be empty; to create a file use write_file".into(),
+                ))
+            }
+            Self::Edit(v) if v.old_string.len() > 32768 || v.new_string.len() > 32768 => {
+                return Err(ToolError::InvalidArgs(
+                    "old_string and new_string must each be at most 32768 bytes".into(),
+                ))
             }
             _ => {}
         }
