@@ -2026,10 +2026,22 @@ command: None,
                         .quarantine_failed_input(session, history_base, &error.to_string())
                         .await?;
                 }
-                match detail.as_ref().and_then(provider_error_text) {
-                    Some(text) => return Err(Error::Invalid(format!("{error}: {text}"))),
-                    None => return Err(Error::Invalid(error.to_string())),
+                let message = match detail.as_ref().and_then(provider_error_text) {
+                    Some(text) => format!("{error}: {text}"),
+                    None => error.to_string(),
+                };
+                if matches!(
+                    error,
+                    ProviderError::Transport
+                        | ProviderError::ResponseTransport
+                        | ProviderError::ContinuableTransport { .. }
+                        | ProviderError::Http(429 | 500 | 502 | 503 | 504 | 529)
+                ) {
+                    return Err(Error::Provider(format!(
+                        "the model endpoint kept failing after retries: {message}"
+                    )));
                 }
+                return Err(Error::Invalid(message));
             }
         };
         inner
