@@ -14,7 +14,6 @@ import { ProductHooks } from "./product-hooks"
 import { PluginHooks } from "./plugin-hooks"
 import { ProductLsp } from "./product-lsp"
 import { ProductFormatter } from "./product-formatter"
-import { ProductPolicy } from "./product-policy"
 import { ProductRoutes } from "./product-routes"
 import { ProductMcp } from "./product-mcp"
 import { McpAuth } from "@miao/core/mcp/auth"
@@ -992,6 +991,11 @@ const layer = Layer.effect(
     const compaction = yield* Effect.promise(() => compactionSettings(global.config))
     const configuration = nativeEngineOptions(process.env, settings)
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
+    // S5 step 2: the engine reads the config itself, so the host passes the
+    // directories and the environment it owns. MIAO_TOOL_BIN is the product
+    // tool directory the product's executable search appends to PATH.
+    configuration.configDir = global.config
+    configuration.env = { MIAO_TOOL_BIN: global.bin }
     if (process.env.MIAO_ENGINE_WORKER === "1") {
       // Opt-in ADR-12 worker host: serve the workspace's custom tools to the
       // engine. The config lives outside any model-writable workspace (tmp),
@@ -1026,7 +1030,6 @@ const layer = Layer.effect(
         const hooks = yield* ProductHooks.prepare(location, { ...effective, ...context.options })
         const lsp = yield* ProductLsp.prepare(location, effective)
         const formatter = yield* ProductFormatter.prepare(location, effective)
-        const policy = yield* ProductPolicy.prepare(effective, global.config)
         const productTools = yield* ProductTools.prepare(configuration, creation, {
           get: (input) =>
             ownerRouter === undefined
@@ -1042,7 +1045,6 @@ const layer = Layer.effect(
             ...hooks,
             ...lsp,
             ...formatter,
-            ...policy,
             ...productTools,
             ...pluginHooks,
           },
