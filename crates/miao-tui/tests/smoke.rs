@@ -192,8 +192,10 @@ fn panic_restores_terminal() {
         101,
         "panic must exit 101, got {status:?}"
     );
+    // The reader thread can lag the process exit by a flush, so poll instead
+    // of sampling once.
     assert!(
-        harness.text().contains("injected panic"),
+        wait_for(&harness, "injected panic", Duration::from_secs(2)),
         "panic message missing from output:\n{}",
         harness.text()
     );
@@ -201,6 +203,11 @@ fn panic_restores_terminal() {
     // unix-only; on Windows the exit code plus message stand in.
     #[cfg(not(windows))]
     {
+        assert!(
+            wait_for(&harness, "\x1b[?1049l", Duration::from_secs(2)),
+            "terminal was not restored after panic:\n{}",
+            harness.text()
+        );
         let output = harness.text();
         let entered = output
             .find("\x1b[?1049h")
