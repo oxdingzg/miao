@@ -5,21 +5,15 @@
   "outcome": {
     "status": "pass"
   },
-  "sessionID": "ses_gfe5e94be21fbffeTJfgjPQanj",
-  "cost": 0.00182,
-  "tokensIn": 45777,
-  "tokensOut": 445,
-  "stepFinishes": 4,
+  "sessionID": "ses_gfe5e87d9bb13ffevabmTC0Mgk",
+  "cost": 0.0022,
+  "tokensIn": 42380,
+  "tokensOut": 168,
+  "stepFinishes": 3,
   "tools": [
     {
       "tool": "read",
       "status": "completed",
-      "background": false
-    },
-    {
-      "tool": "edit",
-      "status": "error",
-      "error": "{\"error\":\"invalid tool input\"}",
       "background": false
     },
     {
