@@ -20,6 +20,20 @@ import type { PromptInput } from "@miao/schema/prompt-input"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {
+  /** Read-only catalog batches must never acquire execution owners. */
+  readonly catalog?: (input: {
+    storage: AbsolutePath
+    location: Location.Ref
+    sessions: readonly SessionID[]
+    usage: boolean
+  }) => Effect.Effect<
+    readonly {
+      sessionID: SessionID
+      snapshot: Readonly<Record<string, unknown>>
+      usage?: Readonly<Record<string, unknown>>
+    }[],
+    ConflictError
+  >
   /**
    * Root of the product-side native databases, resolved from the global
    * `engine.storage` key or `MIAO_ENGINE_STORAGE`. Absent keeps new Sessions
@@ -195,6 +209,8 @@ export interface Interface {
    * for a native Session: their catalog does not contain it.
    */
   readonly snapshot: (input: {
+    /** Omit transcript projection for catalog and peer reads. */
+    metadataOnly?: boolean
     sessionID: SessionID
     storage: AbsolutePath
     location: Location.Ref

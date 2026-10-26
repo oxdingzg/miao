@@ -78,6 +78,81 @@ impl Drop for RuntimeLease {
 }
 
 impl Store {
+    /// Read committed catalog facts without migrations, leases, or a Runtime.
+    pub async fn open_reader(path: impl AsRef<Path>) -> Result<Self, Error> {
+        let path = path.as_ref().to_path_buf();
+        let (work, mut receive) = mpsc::channel::<Work>(64);
+        let (ready, started) = oneshot::channel();
+        let (stopped, closed) = watch::channel(());
+        std::thread::spawn(move || {
+            let _stopped = stopped;
+            let opened = (|| -> Result<_, Error> {
+                let canonical = path.canonicalize()?;
+                let conn = Connection::open_with_flags(
+                    &canonical,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+                )?;
+                conn.busy_timeout(std::time::Duration::from_secs(2))?;
+                let application: u32 =
+                    conn.query_row("PRAGMA application_id", [], |row| row.get(0))?;
+                let version: u32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+                if application != APPLICATION_ID || version > SCHEMA_VERSION {
+                    return Err(Error::Invalid("unsupported engine catalog database".into()));
+                }
+                Ok((conn, canonical))
+            })();
+            match opened {
+                Ok((mut conn, canonical)) => {
+                    if ready.send(Ok(canonical)).is_err() {
+                        return;
+                    }
+                    while let Some(job) = receive.blocking_recv() {
+                        job(&mut conn);
+                    }
+                }
+                Err(error) => {
+                    let _ = ready.send(Err(error));
+                }
+            }
+        });
+        let path = started.await.map_err(|_| Error::Closed)??;
+        Ok(Self {
+            work,
+            closed,
+            runtime_owner: Arc::new(AtomicBool::new(false)),
+            path: Arc::new(path),
+        })
+    }
+
+    /// Only the fields needed for catalog projection; never materialize inbox,
+    /// transcript, tool payloads, questions, or context-source contents.
+    pub async fn catalog_info(&self, session: &str) -> Result<Value, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            // Catalog reads must not migrate an older store just to display
+            // it. Metadata added by newer writers remains unknown until then.
+            let columns = {
+                let mut statement = tx.prepare("SELECT name FROM pragma_table_info('engine_session')")?;
+                let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+                rows.collect::<Result<HashSet<_>, _>>()?
+            };
+            let fields = ["title", "created_at_ms", "updated_at_ms", "archived_at_ms"].map(|name| {
+                if columns.contains(name) { name } else if name == "title" { "''" } else { "NULL" }
+            });
+            let (title, created, updated, archived): (String, Option<i64>, Option<i64>, Option<i64>) = tx.query_row(
+                &format!("SELECT {} FROM engine_session WHERE id=?1", fields.join(",")), [&session],
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
+            )?;
+            let parent: Option<String> = tx.query_row("SELECT parent_session_id FROM engine_lineage WHERE session_id=?1", [&session], |row| row.get(0)).optional()?;
+            let model = crate::session_model::selected(&tx, &session)?;
+            let account = crate::session_account::selected_at(&tx, &session, i64::MAX as u64)?;
+            let agent = crate::session_agent::selected(&tx, &session)?.map(|(agent, _)| json!({"name":agent.name}));
+            tx.commit()?;
+            Ok(json!({"session_id":session,"title":title,"created_at_ms":created,"updated_at_ms":updated,"archived_at_ms":archived,"parent_session_id":parent,"model_selection":model,"account_selection":account,"agent":agent}))
+        }).await
+    }
+
     pub(crate) fn claim_runtime(&self) -> Result<RuntimeLease, Error> {
         self.runtime_owner
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -850,40 +925,14 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx = write_tx(conn)?;
-            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
-            let mut pending: Vec<(String, String, Option<String>)> = {
-                let mut stmt = tx.prepare("SELECT id,prompt,attachments FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='steer' ORDER BY admitted_seq")?;
-                let rows = stmt.query_map([&session], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
-                rows.collect::<Result<_,_>>()?
-            };
-            if pending.is_empty() && idle {
-                if let Some(row) = tx.query_row("SELECT id,prompt,attachments FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='queue' ORDER BY admitted_seq LIMIT 1", [&session], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()? { pending.push(row); }
+            if let Some(lease) = &lease {
+                require_lease(&tx, &session, lease)?;
             }
-            let mut events = Vec::new();
-            for (id,prompt,attachments) in pending {
-                let checkpoint=uuid::Uuid::new_v4().to_string();
-                let media = attachments.as_deref().map(serde_json::from_str::<Vec<Attachment>>).transpose()?.unwrap_or_default();
-                let mut data = json!({"input_id":id,"prompt":prompt,"checkpoint":checkpoint});
-                if !media.is_empty() { data["attachments"] = json!(media); }
-                if let Some(command)=crate::session_command::for_input(&tx,&session,&id)? {data["command"]=serde_json::to_value(command)?;}
-                let agents=crate::session_agent::input_references(&tx,&session,&id)?;
-                if !agents.is_empty() {data["agent_references"]=serde_json::to_value(&agents)?;crate::session_agent::register_references(&tx,&session,&agents.catalog)?;}
-                let is_command=data["command"].is_object();
-                let e = append(&tx, &session, "input.promoted", data)?;
-                tx.execute("UPDATE engine_input SET state='promoted' WHERE id=?1", [&id])?;
-                let mut parts = vec![json!({"type":"text","text":prompt})];
-                parts.extend(media.iter().map(Attachment::part));
-                if !is_command {parts.extend(agents.mentions.iter().map(|reference|json!({"type":"agent_reference","name":reference.name,"metadata":{"source":reference.source}})));}
-                tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,'user',?3,?4,?5)", params![session,e.seq,serde_json::to_string(&Value::Array(parts))?,checkpoint,e.recorded_at_ms])?;
-                events.push(e);
-                // Preparation is a settled operator boundary. Do not promote
-                // a later steer past this command before its effects settle.
-                if is_command {break;}
-
-            }
+            let events = promote_tx(&tx, &session, idle)?;
             tx.commit()?;
             Ok(events)
-        }).await
+        })
+        .await
     }
 
     pub async fn create_job(
@@ -964,19 +1013,51 @@ impl Store {
             return Err(Error::Invalid("invalid terminal job state".into()));
         }
         self.call(move |conn| {
-            let tx=write_tx(conn)?;if tx.execute("UPDATE engine_job SET state=?3,result=?4 WHERE id=?1 AND session_id=?2 AND state IN ('queued','running')",params![id,session,state,serde_json::to_string(&result)?])?!=1{return Err(Error::Invalid("job is not active".into()));}
-            append(&tx,&session,"job.finished",json!({"job_id":id,"state":state}))?;
-            let admission = admit_input(&tx, &Input {
-agent_references: Default::default(),
-command: None,
-                session_id: session.clone(),
-                input_id: format!("job:{id}:finished"),
-                prompt: format!("Background job {id} finished with state {state}. Read its stored result with job_status and continue eligible work."),
-                delivery: Delivery::Steer,
-            }, None, &[])?;
+            let tx = write_tx(conn)?;
+            let admission = finish_job_tx(
+                &tx,
+                &session,
+                &id,
+                &state,
+                serde_json::to_string(&result)?,
+                true,
+            )?
+            .expect("admit=true yields an admission");
             tx.commit()?;
             Ok(admission)
-        }).await
+        })
+        .await
+    }
+
+    /// Terminal job settle without waking the Session. Callers that deliver
+    /// their own durable notice (monitors) or whose outcome the model already
+    /// knows (an explicit cancel_job result) finish quietly.
+    pub async fn finish_job_quiet(
+        &self,
+        session: &str,
+        id: &str,
+        state: &str,
+        result: Value,
+    ) -> Result<(), Error> {
+        let (session, id, state) = (session.to_owned(), id.to_owned(), state.to_owned());
+        if !["completed", "failed", "cancelled", "interrupted", "unknown"].contains(&state.as_str())
+        {
+            return Err(Error::Invalid("invalid terminal job state".into()));
+        }
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            finish_job_tx(
+                &tx,
+                &session,
+                &id,
+                &state,
+                serde_json::to_string(&result)?,
+                false,
+            )?;
+            tx.commit()?;
+            Ok(())
+        })
+        .await
     }
 
     pub async fn recover_jobs(&self) -> Result<(), Error> {
@@ -1076,12 +1157,22 @@ command: None,
     /// One read transaction captures a replay cursor and its projections. This
     /// is a bounded resync view, not an unbounded transcript dump.
     pub async fn snapshot(&self, session: &str) -> Result<Value, Error> {
+        self.snapshot_with_metadata(session, false).await
+    }
+
+    /// Catalog and peer readers never need to project or serialize transcripts.
+    pub async fn snapshot_with_metadata(
+        &self,
+        session: &str,
+        metadata_only: bool,
+    ) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx=conn.transaction()?;
             let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
             let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
-            let messages=projected(&tx,&session,cursor,true)?;
+            let messages=if metadata_only { Vec::new() } else { projected(&tx,&session,cursor,true)? };
+            let has_messages:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_message m WHERE m.session_id=?1 AND m.reverted=0 AND NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq))",[&session],|row|row.get(0))?;
             // Context readers need the cut and summary from the same transaction
             // as the visible messages. A second selected-history read could race
             // a compaction/revert and produce a mixed-generation transcript.
@@ -1120,7 +1211,11 @@ command: None,
             let staged_revert:Option<(i64,i64)>=tx.query_row("SELECT boundary_seq,snapshot_id FROM engine_staged_revert WHERE session_id=?1",[&session],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
             let staged_revert=staged_revert.map(|(boundary_seq,snapshot_id)|json!({"boundary_seq":boundary_seq,"snapshot_id":snapshot_id}));
             let transfer_import:Option<String>=tx.query_row("SELECT id FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?;
-            let snapshot=json!({"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
+            let mut snapshot=json!({"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
+            if metadata_only {
+                snapshot.as_object_mut().unwrap().remove("messages");
+            }
+            snapshot["has_messages"]=json!(has_messages);
             // A snapshot carries the whole Session (messages + selection + state);
             // a 1M-token Session serializes to roughly 4-6 MB, so this bound
             // only stops runaway payloads.
@@ -1517,6 +1612,43 @@ command: None,
             .await
     }
 
+    /// Publish the first input promotion and its running execution together.
+    /// A concurrent snapshot must never see both an empty inbox and no run
+    /// after admission while the coordinator is still starting execution.
+    pub async fn start_run_with_inputs_fenced(
+        &self,
+        session: &str,
+        run: &str,
+        force: bool,
+        lease: &SessionLease,
+    ) -> Result<Option<Vec<Event>>, Error> {
+        let (session, run, lease) = (session.to_owned(), run.to_owned(), lease.clone());
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            require_lease(&tx, &session, &lease)?;
+            let promoted = promote_tx(&tx, &session, true)?;
+            if promoted.is_empty() && !force {
+                return Ok(None);
+            }
+            let history: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_message WHERE session_id=?1 AND reverted=0)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !history {
+                return Err(Error::Invalid("Session has no admitted history".into()));
+            }
+            tx.execute(
+                "INSERT INTO engine_run VALUES(?1,?2,'running')",
+                params![run, session],
+            )?;
+            append(&tx, &session, "run.started", json!({"run_id":run}))?;
+            tx.commit()?;
+            Ok(Some(promoted))
+        })
+        .await
+    }
+
     async fn start_run_inner(
         &self,
         session: &str,
@@ -1729,13 +1861,13 @@ command: None,
         })
         .await
     }
-    /// A lease is alive while its last heartbeat is within twice the declared
-    /// interval; expired or missing leases make timers adoptable.
-    pub async fn has_running_runs(&self) -> Result<bool, Error> {
+    /// Runs claimed by this process, excluding other owners and unclaimed
+    /// crash residue in the shared database.
+    pub async fn has_owned_running_runs(&self) -> Result<bool, Error> {
         self.call(|conn| {
             Ok(conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM engine_run WHERE state='running')",
-                [],
+                "SELECT EXISTS(SELECT 1 FROM engine_run r JOIN engine_lease l ON l.session_id=r.session_id WHERE r.state='running' AND l.owner_pid=?1)",
+                [std::process::id()],
                 |row| row.get(0),
             )?)
         })
@@ -2082,7 +2214,15 @@ command: None,
             let row:Option<(String,String,String)>=tx.query_row("SELECT t.name,t.input,l.root FROM engine_tool t JOIN engine_run r ON r.id=t.run_id JOIN engine_location l ON l.session_id=r.session_id WHERE t.id=?1 AND t.state='planned' AND r.id=?2 AND r.session_id=?3 AND r.state='running'",params![key,approval.run_id,approval.session_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
             let (name,input,root)=row.ok_or(Error::ApprovalResolved)?;
             let original:Value=serde_json::from_str(&input)?;
-            if name!=approval.tool||root!=approval.location||original["input"]!=approval.input||input_digest(&root,&name,&approval.resource,&approval.input)?!=approval.input_hash {return Err(Error::ApprovalMismatch);}
+            // Compact discovery persists the provider's wrapper, while the
+            // approval and exact grant scope authorize the prepared target.
+            // Derive both target and arguments from that immutable plan.
+            let (name,input)=if name=="tool_call" {
+                let invocation=crate::tool_catalog::Invocation::parse(original["input"].clone()).map_err(|_|Error::ApprovalMismatch)?;
+                if !invocation.name.starts_with("mcp_")&&!crate::worker::owns(&invocation.name) {return Err(Error::ApprovalMismatch);}
+                (invocation.name,invocation.arguments)
+            } else { (name,original["input"].clone()) };
+            if name!=approval.tool||root!=approval.location||input!=approval.input||input_digest(&root,&name,&approval.resource,&approval.input)?!=approval.input_hash {return Err(Error::ApprovalMismatch);}
             if approval.expires_at_ms<=now_ms(){return Err(Error::ApprovalExpired);}
             tx.execute("INSERT INTO engine_approval VALUES(?1,?2,?3,?4,?5,?6,'pending')",params![approval.request_id,approval.session_id,approval.run_id,key,serde_json::to_string(&approval)?,approval.expires_at_ms])?;
             if let Some(scope) = &scope { crate::permission_grant::bind_request(&tx,&approval,scope)?; }
@@ -2253,6 +2393,57 @@ command: None,
     }
 }
 
+fn promote_tx(tx: &Transaction<'_>, session: &str, idle: bool) -> Result<Vec<Event>, Error> {
+    let mut pending: Vec<(String, String, Option<String>)> = {
+        let mut stmt = tx.prepare("SELECT id,prompt,attachments FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='steer' ORDER BY admitted_seq")?;
+        let rows = stmt.query_map([session], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    if pending.is_empty() && idle {
+        if let Some(row) = tx.query_row("SELECT id,prompt,attachments FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='queue' ORDER BY admitted_seq LIMIT 1", [session], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()? { pending.push(row); }
+    }
+    let mut events = Vec::new();
+    for (id, prompt, attachments) in pending {
+        let checkpoint = uuid::Uuid::new_v4().to_string();
+        let media = attachments
+            .as_deref()
+            .map(serde_json::from_str::<Vec<Attachment>>)
+            .transpose()?
+            .unwrap_or_default();
+        let mut data = json!({"input_id":id,"prompt":prompt,"checkpoint":checkpoint});
+        if !media.is_empty() {
+            data["attachments"] = json!(media);
+        }
+        if let Some(command) = crate::session_command::for_input(tx, session, &id)? {
+            data["command"] = serde_json::to_value(command)?;
+        }
+        let agents = crate::session_agent::input_references(tx, session, &id)?;
+        if !agents.is_empty() {
+            data["agent_references"] = serde_json::to_value(&agents)?;
+            crate::session_agent::register_references(tx, session, &agents.catalog)?;
+        }
+        let is_command = data["command"].is_object();
+        let e = append(tx, session, "input.promoted", data)?;
+        tx.execute(
+            "UPDATE engine_input SET state='promoted' WHERE id=?1",
+            [&id],
+        )?;
+        let mut parts = vec![json!({"type":"text","text":prompt})];
+        parts.extend(media.iter().map(Attachment::part));
+        if !is_command {
+            parts.extend(agents.mentions.iter().map(|reference|json!({"type":"agent_reference","name":reference.name,"metadata":{"source":reference.source}})));
+        }
+        tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,'user',?3,?4,?5)", params![session,e.seq,serde_json::to_string(&Value::Array(parts))?,checkpoint,e.recorded_at_ms])?;
+        events.push(e);
+        // Preparation is a settled operator boundary. Do not promote
+        // a later steer past this command before its effects settle.
+        if is_command {
+            break;
+        }
+    }
+    Ok(events)
+}
+
 /// A lease is live while its heartbeat is fresh and, on hosts where the owner
 /// pid can be probed, that process still runs. A crashed owner therefore stops
 /// being live immediately instead of blocking adoption for a full interval.
@@ -2329,6 +2520,38 @@ fn merge_usage(acc: &mut Value, next: &Value) {
         }
         _ => *acc = next.clone(),
     }
+}
+
+/// Shared terminal settle for `finish_job`/`finish_job_quiet`. With `admit`,
+/// a durable steer input tells the model the job finished and points at
+/// `job_status`; otherwise the caller owns the follow-up notice.
+fn finish_job_tx(
+    tx: &Transaction<'_>,
+    session: &str,
+    id: &str,
+    state: &str,
+    result: String,
+    admit: bool,
+) -> Result<Option<Admission>, Error> {
+    if tx.execute("UPDATE engine_job SET state=?3,result=?4 WHERE id=?1 AND session_id=?2 AND state IN ('queued','running')",params![id,session,state,result])?!=1{return Err(Error::Invalid("job is not active".into()));}
+    append(
+        tx,
+        session,
+        "job.finished",
+        json!({"job_id":id,"state":state}),
+    )?;
+    if !admit {
+        return Ok(None);
+    }
+    let admission = admit_input(tx, &Input {
+agent_references: Default::default(),
+command: None,
+        session_id: session.to_owned(),
+        input_id: format!("job:{id}:finished"),
+        prompt: format!("Background job {id} finished with state {state}. Read its stored result with job_status and continue eligible work."),
+        delivery: Delivery::Steer,
+    }, None, &[])?;
+    Ok(Some(admission))
 }
 
 pub(crate) fn admit_input(
@@ -2721,7 +2944,7 @@ pub(crate) fn projected(
     skip_transferred: bool,
 ) -> Result<Vec<Value>, Error> {
     let mut stmt=tx.prepare("SELECT m.seq,m.role,m.content,m.checkpoint,m.recorded_at_ms FROM engine_message m WHERE m.session_id=?1 AND m.seq<=?2 AND m.reverted=0
-        AND (?3=0 OR NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq)) ORDER BY m.seq LIMIT 1001")?;
+        AND (?3=0 OR NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq)) ORDER BY m.seq LIMIT 20001")?;
     let mut rows = stmt.query(params![session, cursor, skip_transferred])?;
     let mut messages = Vec::new();
     let mut bytes = 0;

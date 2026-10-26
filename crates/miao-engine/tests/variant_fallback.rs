@@ -29,7 +29,7 @@ async fn configured_default_and_explicit_variants_preserve_fallback_authority_an
                 if primary {
                     StatusCode::SERVICE_UNAVAILABLE
                 } else {
-                    StatusCode::BAD_REQUEST
+                    StatusCode::UNPROCESSABLE_ENTITY
                 },
                 "fixture",
             )

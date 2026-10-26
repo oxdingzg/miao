@@ -55,6 +55,42 @@ test.skipIf(process.platform === "win32")(
   10_000,
 )
 
+test.skipIf(process.platform === "win32")(
+  "capabilities decodes the engine's snake_case route schema",
+  async () => {
+    await using tmp = await tmpdir()
+    const script = path.join(tmp.path, "miao-engine")
+    // The engine writes snake_case; a frame that only carries the camelCase
+    // spelling used to make an older engine look like one that predates the
+    // field, so the fail-fast never fired.
+    const contract = (extra = "") =>
+      `#!/bin/sh\nprintf '%s' '{"name":"miao-engine","version":"9.9.9","protocol":2,"schema":12${extra}}'\n`
+    const probe = (environment: Record<string, string>) =>
+      resolveEngine({ environment, probe: capabilities, exists: () => true })
+
+    await Bun.write(script, contract(',"routes_schema":1'))
+    await chmod(script, 0o755)
+    expect(capabilities(script)).toEqual({ ...engine(2), routesSchema: 1 })
+    expect(() => probe({ MIAO_ENGINE_BIN: script })).toThrow("route schema")
+
+    await Bun.write(script, contract(',"routes_schema":2'))
+    expect(probe({ MIAO_ENGINE_BIN: script })?.binary).toBe(script)
+
+    // An engine that predates the field keeps the existing policy: accepted.
+    await Bun.write(script, contract(',"build":"legacy"'))
+    expect(capabilities(script)).toEqual(engine(2))
+
+    // A frame that contradicts itself or carries a non-number is not a contract.
+    await Bun.write(script, contract(',"routes_schema":2,"routesSchema":1'))
+    expect(capabilities(script)).toBeUndefined()
+    expect(() => probe({ MIAO_ENGINE_BIN: script })).toThrow("cannot report capabilities")
+
+    await Bun.write(script, contract(',"routes_schema":"2"'))
+    expect(capabilities(script)).toBeUndefined()
+  },
+  15_000,
+)
+
 test("an engine whose route manifest schema is too old is refused", () => {
   const older = { ...engine(2), routesSchema: 1 }
   expect(() =>

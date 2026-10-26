@@ -25,6 +25,15 @@ and it must not let a slow subscriber stall execution.
   a snapshot after a crash; this boundary is stated to clients.
 - **Snapshot and resync.** A snapshot carries session, epoch, cursor and
   outstanding requests. A cursor too old to replay takes the resync path.
+- **Pruning facts.** Request-only tool-output pruning commits a fenced
+  `context.pruned` row before the affected `provider.started` row. It names the
+  run, step and context epoch, the `tool_output_budget` reason, affected payload
+  and message counts, and `before_bytes`, `after_bytes`, `saved_bytes`. The scope
+  is `tool_result_payloads` and the unit is `utf8_bytes`; replacement markers
+  count toward the remaining size. These are neither token estimates nor full
+  context-window measurements. Replay and export retain the facts without
+  replacing stored history or duplicating tool output into the event. No row is
+  emitted when nothing was pruned.
 - **Lag is isolated.** A slow subscriber has a bounded queue and is disconnected
   or told to resync on overflow; it can never apply backpressure to the provider
   or the run loop.

@@ -1,6 +1,6 @@
 import { Option, Schema } from "effect"
 import { SessionMessage } from "@miao/schema/session-message"
-import { messageID } from "./identity"
+import { messageID, promotedInputMessageID } from "./identity"
 import type { EngineEvent } from "./client"
 
 const Promoted = Schema.Struct({ input_id: Schema.String, command: Schema.optional(Schema.Unknown) })
@@ -16,8 +16,13 @@ export function engineMessageSequence(sessionID: string, requested: SessionMessa
     if (event.session_id !== sessionID) continue
     if (event.kind === "input.promoted") {
       const data = Schema.decodeUnknownSync(Promoted)(event.data)
-      const id = data.input_id.startsWith("msg_") ? data.input_id : messageID(sessionID, event.seq)
-      if (id === requested) {
+      const id = promotedInputMessageID(data.input_id)
+      // Older projections derived a generated notice's public id from the
+      // promotion seq. Keep addressing that identity for fork and revert, on
+      // the same durable event, but never alias a submitted `msg_` prompt: its
+      // seq-shaped neighbour names a different message.
+      const legacy = data.input_id.startsWith("msg_") ? undefined : messageID(sessionID, event.seq)
+      if (id === requested || legacy === requested) {
         if (typeof data.command === "object" && data.command !== null)
           return events.find(
             (item) =>

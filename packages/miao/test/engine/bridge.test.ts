@@ -112,7 +112,10 @@ test("maps input.promoted to a prompt.admitted payload", () => {
     data: { input_id: "in_1", prompt: "hello" },
   }
   const admitted = translatePrompt(event)
-  expect(String(admitted?.messageID)).toBe("msg_ses_abc_7")
+  // A generated input's identity comes from the engine input id, not the
+  // promotion seq: the inbox page, a replayed promotion and a cancel must all
+  // address the same input.
+  expect(String(admitted?.messageID)).toBe("msg_gen_aW5fMQ")
   expect(admitted?.prompt).toEqual({ text: "hello" })
   expect(String(admitted?.sessionID)).toBe("ses_abc")
   expect(admitted?.delivery).toBe("steer")
@@ -252,7 +255,10 @@ test("projects start_job input into the product bash shape", () => {
     command: "sleep 2",
     run_in_background: true,
   })
-  expect(productToolInput("start_job", { argv: ["echo", "hi"] })).toEqual({ command: "echo hi", run_in_background: true })
+  expect(productToolInput("start_job", { argv: ["echo", "hi"] })).toEqual({
+    command: "echo hi",
+    run_in_background: true,
+  })
   expect(productToolInput("bash", { command: "ls" })).toEqual({ command: "ls" })
 })
 
@@ -531,21 +537,32 @@ test("settles a step on the committed assistant message", () => {
 })
 
 test("translateExpiredCredential parses the structured expired failure", () => {
-  const make = (message: string | undefined): EngineEvent => ({
-    kind: "stop_failure",
-    seq: 1,
-    session_id: "ses_test",
-    recorded_at_ms: 1,
-    ...(message === undefined ? {} : { data: { reason: "error", message } } as object),
-  }) as unknown as EngineEvent
+  const make = (message: string | undefined): EngineEvent =>
+    ({
+      kind: "stop_failure",
+      seq: 1,
+      session_id: "ses_test",
+      recorded_at_ms: 1,
+      ...(message === undefined ? {} : ({ data: { reason: "error", message } } as object)),
+    }) as unknown as EngineEvent
 
   const identity = translateExpiredCredential(
     make("credential cred_1 (openai) is expired; its owning broker must refresh it"),
   )
   expect(identity).toEqual({ id: "cred_1", integration: "openai" })
 
-  expect(translateExpiredCredential(make("invalid request: credential: credential cred_google (google) is expired; its owning broker must refresh it"))).toEqual({ id: "cred_google", integration: "google" })
-  expect(translateExpiredCredential(make("credential: credential cred_google (google) is expired; its owning broker must refresh it"))).toEqual({ id: "cred_google", integration: "google" })
+  expect(
+    translateExpiredCredential(
+      make(
+        "invalid request: credential: credential cred_google (google) is expired; its owning broker must refresh it",
+      ),
+    ),
+  ).toEqual({ id: "cred_google", integration: "google" })
+  expect(
+    translateExpiredCredential(
+      make("credential: credential cred_google (google) is expired; its owning broker must refresh it"),
+    ),
+  ).toEqual({ id: "cred_google", integration: "google" })
   // An unrelated failure carries no credential identity.
   expect(translateExpiredCredential(make("provider connection refused"))).toBeUndefined()
   expect(translateExpiredCredential(make(undefined))).toBeUndefined()
@@ -584,4 +601,78 @@ test("native commits infer tool continuation without overriding explicit finishe
       undefined,
     )?.finish,
   ).toBe("length")
+})
+
+test("durable MCP identities preserve long server and tool names through replay and approval", () => {
+  const alias = "mcp_team_search__find_documents_0123456789abcdef0123456789abcdef"
+  const identity = { server: "team_search.production-west", tool: "find_documents_with_metadata/v2" }
+  const committed = {
+    ...event("message.committed"),
+    data: {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "call_mcp", name: alias, input: { query: "fixture" }, _miao_mcp: identity }],
+    },
+  }
+  expect(translateTools(committed)[0]?.tool).toBe("mcp__team_search.production-west__find_documents_with_metadata/v2")
+  expect(
+    translateTools({
+      ...committed,
+      data: {
+        ...committed.data,
+        content: [
+          {
+            type: "tool_use",
+            id: "call_mcp",
+            name: "tool_call",
+            input: { name: alias, arguments: { query: "fixture" }, select: ["/content/0/text"] },
+            _miao_mcp: identity,
+          },
+        ],
+      },
+    })[0],
+  ).toMatchObject({
+    tool: "mcp__team_search.production-west__find_documents_with_metadata/v2",
+    input: { query: "fixture" },
+  })
+  expect(translateTools(JSON.parse(JSON.stringify(committed)))[0]?.tool).toBe(
+    "mcp__team_search.production-west__find_documents_with_metadata/v2",
+  )
+  expect(
+    translateApproval({
+      ...event("approval.requested"),
+      data: { request_id: "req", session_id: "ses_test", tool: alias, resource: "@mcp/fixture", mcp: identity },
+    })?.action,
+  ).toBe("mcp__team_search.production-west__find_documents_with_metadata/v2")
+})
+
+test("malformed identity metadata cannot override builtins or break historical aliases", () => {
+  const alias = "mcp_dice_roll_dice_f03cf0c725b907c9894d9e5988840834"
+  for (const identity of [
+    null,
+    {},
+    { server: "dice", tool: 4 },
+    { server: "bad/server", tool: "roll" },
+    { server: "dice", tool: "bad\nname" },
+  ]) {
+    expect(productToolID(alias, identity)).toBe("mcp__dice__roll_dice")
+  }
+  expect(productToolID("run_command", { server: "forged", tool: "forged" })).toBe("bash")
+  expect(productToolID("tool_call", { server: "dice", tool: "roll_dice" })).toBe("mcp__dice__roll_dice")
+})
+
+test("projects foreground argv commands into readable product shell input", () => {
+  expect(productToolInput("run_command", { argv: ["echo", "hello world"], cwd: "src", timeout_ms: 50 })).toEqual({
+    argv: ["echo", "hello world"],
+    cwd: "src",
+    timeout_ms: 50,
+    command: "echo 'hello world'",
+  })
+  expect(productToolInput("bash", { argv: ["rm", "deleteme.txt"] })).toEqual({
+    argv: ["rm", "deleteme.txt"],
+    command: "rm deleteme.txt",
+  })
+  expect(productToolInput("run_command", { argv: ["echo", "", "$HOME"] }).command).toBe("echo '' '$HOME'")
+  expect(productToolInput("bash", { command: "ls", argv: ["rm", "x"] }).command).toBe("ls")
+  expect(productToolInput("run_command", { argv: ["echo", "a'b"] }).command).toBe("echo 'a'\\''b'")
+  expect(productToolInput("read_file", { argv: ["x"] })).toEqual({ argv: ["x"] })
 })

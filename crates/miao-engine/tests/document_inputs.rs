@@ -46,7 +46,9 @@ async fn physical_adapters_lower_documents_and_normalize_declared_text_only_mode
         let send = send.clone();
         async move {
             send.send(body).await.unwrap();
-            (StatusCode::BAD_REQUEST, "fixture")
+            // A sentinel only: 422 is never retried or replayed, so the
+            // capture below pairs one request with one stream.
+            (StatusCode::UNPROCESSABLE_ENTITY, "fixture")
         }
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -83,7 +85,7 @@ async fn physical_adapters_lower_documents_and_normalize_declared_text_only_mode
                 selected
                     .stream(original.clone(), progress, CancellationToken::new())
                     .await,
-                Err(ProviderError::Http(400))
+                Err(ProviderError::Http(422))
             ));
             let body = seen.recv().await.unwrap();
             let encoded = body.to_string();
@@ -229,7 +231,9 @@ async fn host_route_modalities_apply_to_the_owner_default_and_explicit_route() {
         let send = send.clone();
         async move {
             send.send(body).await.unwrap();
-            (StatusCode::BAD_REQUEST, "fixture")
+            // A sentinel only: 422 is never retried or replayed, so the
+            // capture below pairs one request with one stream.
+            (StatusCode::UNPROCESSABLE_ENTITY, "fixture")
         }
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -264,7 +268,7 @@ async fn host_route_modalities_apply_to_the_owner_default_and_explicit_route() {
             selected
                 .stream(request(), progress, CancellationToken::new())
                 .await,
-            Err(ProviderError::Http(400))
+            Err(ProviderError::Http(422))
         ));
         let body = seen.recv().await.unwrap().to_string();
         assert!(!body.contains(PNG));

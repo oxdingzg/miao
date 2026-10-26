@@ -11,6 +11,32 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-10-25
+
+### Added
+- **tui**: consolidate the composer into a compact status layout (#1407) (`1127fe1688`)
+- **build**: embed the engine binary into the single-file build (#1394) (`9a8fcacb41`)
+- **app**: chart persisted context and cache history (#1410) (`514ceebe15`)
+- **session**: expose paginated provider usage history (#1408) (`00a7797510`)
+- **tui**: show the installation version under the home logo (#1396) (`67688731db`)
+
+### Fixed
+- **engine**: preserve original MCP identities in durable history (#1433) (`6321206f1d`)
+- **engine**: bind compact tool approvals to the planned target (#1434) (`c257e2977f`)
+- **engine**: cancel lifecycle hooks with the active session (#1435) (`00ddaf7134`)
+- **server**: join native title work through durable rename (#1438) (`d474d762cd`)
+- **server**: keep native diagnostics off protocol stdout (#1431) (`4c04641437`)
+- **engine**: preserve explicit context limits in generated routes (#1422) (`89f23cb151`)
+- **core**: adopt concurrent native session creation (#1426) (`2d78e1ad39`)
+- **engine**: give generated inbox inputs a product identity (#1419) (`e1640bf438`)
+- **tui**: scope session listings to the active directory or project (#1417) (`ebcd5e1742`)
+- **engine**: reclaim idle runtimes using process-owned live work (#1400) (`f884910795`)
+- **core**: settle session titles before headless teardown (#1423) (`0f2de87af6`)
+- **engine**: accept ten-minute foreground timeouts (#1418) (`f9e33b9ae0`)
+- **engine**: release orphaned engines instead of resurrecting them (#1411) (`cf3b1cefc1`)
+- **engine**: decode the engine's snake_case route schema (#1429) (`ebcd8758f8`)
+- **engine**: prevent catalog reads and transport loss from stalling sessions (#1398) (`11f40256a6`)
+
 ## [0.3.6] - 2026-10-25
 
 ### Added

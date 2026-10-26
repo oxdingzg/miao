@@ -1,0 +1,5 @@
+{
+  "reason": "Runner mistakenly pinned raw upstream catalog using MIAO_MODELS_PATH, bypassing normal reference-rate overlay and invalidating priced-usage acceptance. Aborted own harness and active cell; preserve partial cells, not a complete acceptance run.",
+  "artifactSource": "96e5d42c33",
+  "completedCells": 4
+}
