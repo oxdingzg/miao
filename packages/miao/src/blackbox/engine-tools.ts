@@ -6,6 +6,7 @@ const Settlement = Schema.Struct({
   output: Schema.Json,
   is_error: Schema.Boolean,
   output_json: Schema.optional(Schema.String),
+  display: Schema.optional(Schema.Json),
 })
 
 /** One subscribed engine Session. Associate provider content with run-scoped
@@ -61,6 +62,9 @@ export class EngineTools {
       output: data.result,
       is_error: data.is_error ?? false,
       ...(typeof data.result_json === "string" ? { output_json: data.result_json } : {}),
+      // The host renders this diff; a replay that dropped it would lose the
+      // transcript's file content even though the model never saw it.
+      ...(data.display === undefined ? {} : { display: data.display }),
     })
     const recorded = this.#receipts.get(data.call_id)
     if (recorded) {
