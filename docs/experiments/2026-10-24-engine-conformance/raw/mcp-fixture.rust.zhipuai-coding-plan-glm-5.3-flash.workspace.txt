@@ -27,7 +27,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         "type": "local",
         "command": [
           "bun",
-          "/var/folders/3w/ll17256n7q9b7g7bt0qr9hqr0000gp/T/conf-mcp-fixture-rust-0KhlvK/.miao/dice-server.mjs"
+          "/var/folders/3w/ll17256n7q9b7g7bt0qr9hqr0000gp/T/.tmpszAu8l/conf-mcp-fixture-rust-82Tfu6/.miao/dice-server.mjs"
         ]
       }
     }

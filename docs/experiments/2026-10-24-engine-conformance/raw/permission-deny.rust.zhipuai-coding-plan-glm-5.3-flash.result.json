@@ -5,28 +5,17 @@
   "outcome": {
     "status": "pass"
   },
-  "sessionID": "ses_gfe5e94ac9ef7ffecrD8c6nbPO",
-  "cost": 0.00204,
-  "tokensIn": 45906,
-  "tokensOut": 941,
-  "stepFinishes": 4,
+  "sessionID": "ses_gfe5e87d20c5ffferVdsyoepK4",
+  "cost": 0.00143,
+  "tokensIn": 28097,
+  "tokensOut": 106,
+  "stepFinishes": 2,
   "tools": [
-    {
-      "tool": "read",
-      "status": "completed",
-      "background": false
-    },
     {
       "tool": "bash",
       "status": "error",
       "error": "{\"error\":\"permission denied\"}",
       "command": "rm deleteme.txt",
-      "background": false
-    },
-    {
-      "tool": "bash",
-      "status": "error",
-      "error": "{\"error\":\"permission denied\"}",
       "background": false
     }
   ],

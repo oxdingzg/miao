@@ -5,28 +5,17 @@
   "outcome": {
     "status": "pass"
   },
-  "sessionID": "ses_gfe5e94adffd9ffeK04OXLPXAn",
-  "cost": 0.00393,
-  "tokensIn": 16631,
-  "tokensOut": 106,
-  "stepFinishes": 5,
+  "sessionID": "ses_gfe5e87d3d23effe30kiBK1woE",
+  "cost": 0.00293,
+  "tokensIn": 16672,
+  "tokensOut": 40,
+  "stepFinishes": 3,
   "tools": [
     {
       "tool": "bash",
       "status": "completed",
       "command": "sleep 2",
       "background": true
-    },
-    {
-      "tool": "job_list",
-      "status": "completed",
-      "background": false
-    },
-    {
-      "tool": "bash",
-      "status": "completed",
-      "command": "sleep 3",
-      "background": false
     },
     {
       "tool": "job_list",

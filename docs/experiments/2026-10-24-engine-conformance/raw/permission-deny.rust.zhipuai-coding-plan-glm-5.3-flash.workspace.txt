@@ -1,0 +1,15 @@
+--- deleteme.txt
+delete me
+
+--- .miao/miao.json
+{
+  "$schema": "https://mtty.dev/miao/config.json",
+  "permissions": [
+    {
+      "action": "bash",
+      "resource": "rm *",
+      "effect": "deny"
+    }
+  ]
+}
+
