@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
-import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { ensureEmbeddedEngine, engineTargets } from "@/engine/embedded"
 import type { Capabilities } from "@/engine/discovery"
+import { resolveEngine } from "@/engine/discovery"
 
 const ok =
   (overrides: Partial<Capabilities> = {}) =>
@@ -65,6 +66,38 @@ test("a managed compatible extraction refreshes when the embedded payload change
   expect(await readFile(`${target}.embedded.sha256`, "utf8")).toBe(
     createHash("sha256").update("ENGINE-NEW").digest("hex"),
   )
+})
+
+test("a packaged build creates its own paired engine while the unmarked launcher engine stays intact", async () => {
+  await using tmp = await scratch()
+  const directory = await realpath(tmp.dir)
+  const retained = path.join(directory, ".versions", "build-2")
+  await mkdir(retained, { recursive: true })
+  const executable = path.join(retained, "miao")
+  const launcher = path.join(directory, "miao")
+  const old = path.join(directory, `miao-engine${EXE}`)
+  const paired = path.join(retained, `miao-engine${EXE}`)
+  await writeFile(executable, "new launcher")
+  await writeFile(launcher, "new launcher")
+  await writeFile(old, "OLD-ENGINE")
+  const probe = (binary: string) =>
+    binary === old ? ok({ version: "0.3.6" })() : binary === paired ? ok({ version: "0.3.7" })() : undefined
+  expect(
+    await ensureEmbeddedEngine({
+      executable,
+      launcher,
+      preferPaired: true,
+      environment: {},
+      load: async () => ({
+        bytes: payload("NEW-ENGINE"),
+        sha256: createHash("sha256").update("NEW-ENGINE").digest("hex"),
+      }),
+      probe,
+    }),
+  ).toBe(paired)
+  expect(await readFile(old, "utf8")).toBe("OLD-ENGINE")
+  expect(await readFile(paired, "utf8")).toBe("NEW-ENGINE")
+  expect(resolveEngine({ executable, launcher, environment: {}, probe })?.binary).toBe(paired)
 })
 
 test("an explicit engine leaves even a managed old extraction untouched", async () => {

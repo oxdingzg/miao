@@ -42,7 +42,7 @@ import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import { Location } from "@miao/schema/location"
 import { Cause, DateTime, Effect, Layer, Option, Queue, Schema, Context } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
-import { capabilities, discoveredEngine } from "./discovery"
+import { capabilities, discoveredEngine, resolveEngine } from "./discovery"
 import { readCatalog } from "./catalog"
 import { generatedInputEngineID, messageID, promotedInputMessageID } from "./identity"
 import { makeEngineOwners } from "./owners"
@@ -986,6 +986,12 @@ const layer = Layer.effect(
     let locationPricing: EnginePricing | undefined
     const owners = yield* makeEngineOwners({ ...configuration, ...mcp }, (location) =>
       Effect.gen(function* () {
+        // A shared transport must not probe or reject binaries for TS-only
+        // Sessions. Validate when an actual native owner is opened.
+        yield* Effect.try({
+          try: () => resolveEngine({ environment: { MIAO_ENGINE_BIN: configuration.binary } }),
+          catch: (error) => new EngineError("engine_incompatible", error instanceof Error ? error.message : String(error)),
+        })
         const integrations = yield* Integration.Service
         const { prices, ...routes } = yield* ProductRoutes.prepare(location, configuration, compaction).pipe(
           Effect.provideService(Credential.Service, credentials),

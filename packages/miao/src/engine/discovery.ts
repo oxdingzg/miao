@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process"
 import { existsSync, realpathSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { InstallationExecutable } from "@miao/core/installation/executable"
 
 /**
  * Engine-host contract this build requires. It moves only when a newer product
@@ -35,8 +36,11 @@ const EXE = process.platform === "win32" ? ".exe" : ""
  * Install locations the release flow can write, most specific first. An
  * explicit `MIAO_ENGINE_BIN` always wins.
  */
-const candidates = (executable: string) => [
+const candidates = (executable: string, launcher?: string) => [
   ...(path.basename(executable).startsWith("miao") ? [path.join(path.dirname(executable), `miao-engine${EXE}`)] : []),
+  ...(launcher && path.basename(launcher).startsWith("miao") && path.dirname(launcher) !== path.dirname(executable)
+    ? [path.join(path.dirname(launcher), `miao-engine${EXE}`)]
+    : []),
   path.join(os.homedir(), ".miao", "bin", `miao-engine${EXE}`),
   path.join(os.homedir(), ".local", "share", "miao-engine", "bin", `miao-engine${EXE}`),
   path.join(os.homedir(), ".local", "bin", `miao-engine${EXE}`),
@@ -90,6 +94,7 @@ export function resolveEngine(
     probe?: (binary: string) => Capabilities | undefined
     exists?: (binary: string) => boolean
     executable?: string
+    launcher?: string
   } = {},
 ): { binary: string; capabilities: Capabilities } | undefined {
   const environment = input.environment ?? process.env
@@ -110,8 +115,9 @@ export function resolveEngine(
     }
     return { binary: explicit, capabilities: found }
   }
-  const executable = input.executable ?? process.execPath
-  for (const binary of candidates(existsSync(executable) ? realpathSync(executable) : executable)) {
+  const executable = input.executable ?? InstallationExecutable.executable
+  const launcher = input.launcher ?? (input.executable === undefined ? InstallationExecutable.launcher : undefined)
+  for (const binary of candidates(existsSync(executable) ? realpathSync(executable) : executable, launcher)) {
     if (!exists(binary)) continue
     const found = probe(binary)
     if (found && compatible(found)) return { binary, capabilities: found }
