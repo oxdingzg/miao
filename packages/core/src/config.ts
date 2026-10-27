@@ -14,6 +14,7 @@ import { ConfigV1 } from "./v1/config/config"
 import { Directory, Document, Info, type Entry } from "@miao/schema/config"
 export { Directory, Document, type Entry, Info } from "@miao/schema/config"
 import { ConfigMigrateV1 } from "./v1/config/migrate"
+import { ConfigErrorV1 } from "./v1/config/error"
 
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -61,6 +62,8 @@ export const decodeDocument = (input: unknown) =>
     ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
     : decodeInfo(input)
 
+
+
 /** One ordered configuration source: the shape the engine's `--config-sources` reads. */
 export type Source = { dir: string } | { file: string } | { content: string }
 
@@ -86,20 +89,44 @@ const layer = Layer.effect(
     const policy = yield* Policy.Service
 
     const loadFile = Effect.fnUntraced(function* (filepath: string) {
-      const text = yield* fs.readFileStringSafe(filepath)
-      if (!text) return
-      return parseDocument(text, filepath)
+      const text = yield* fs.readFileString(filepath).pipe(
+        // A missing file is the normal end of discovery; an unreadable one is
+        // an operator-visible problem the engine also refuses (S5 failure
+        // strategy: neither side stays silent).
+        Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)),
+      )
+      if (text === undefined || text === "") return
+      return yield* parseDocument(text, filepath)
     })
 
-    const parseDocument = (text: string, filepath?: string) => {
-      const errors: ParseError[] = []
-      const input: unknown = parse(text, errors, { allowTrailingComma: true })
-      if (errors.length) return
-
-      const info = Option.getOrUndefined(decodeDocument(input))
-      if (!info) return
-      return new Document({ type: "document", path: filepath, info })
-    }
+    // A malformed or schema-invalid document fails with its file and key
+    // paths instead of silently disappearing: the engine refuses the same
+    // document, and the S5 failure strategy forbids one side staying silent.
+    const parseDocument = (text: string, filepath?: string) =>
+      Effect.gen(function* () {
+        const origin = filepath ?? "inline config"
+        const errors: ParseError[] = []
+        const input: unknown = parse(text, errors, { allowTrailingComma: true })
+        if (errors.length)
+          return yield* Effect.fail(
+            new ConfigErrorV1.JsonError({
+              path: origin,
+              message: errors.map((error) => `${error.error} at offset ${error.offset}`).join("; "),
+            }),
+          )
+        const invalid = (error: { message: string }) =>
+          new ConfigErrorV1.InvalidError({ path: origin, message: error.message })
+        const info = yield* ConfigMigrateV1.isV1(input)
+          ? Effect.mapError(
+              Effect.flatMap(
+                Schema.decodeUnknownEffect(ConfigV1.Info, decodeOptions)(input),
+                (v1) => Schema.decodeUnknownEffect(Info, decodeOptions)(ConfigMigrateV1.migrate(v1)),
+              ),
+              invalid,
+            )
+          : Effect.mapError(Schema.decodeUnknownEffect(Info, decodeOptions)(input), invalid)
+        return new Document({ type: "document", path: filepath, info })
+      })
 
     const loadDirectory = Effect.fnUntraced(function* (directory: AbsolutePath) {
       return [
@@ -150,7 +177,7 @@ const layer = Layer.effect(
     // Apply general settings first and more specific settings last:
     // global config, project files, then `.miao` files.
     const custom = customFile ? yield* loadFile(path.resolve(customFile)).pipe(Effect.orDie) : undefined
-    const content = customContent ? parseDocument(customContent) : undefined
+    const content = customContent ? yield* parseDocument(customContent) : undefined
     const configs = [
       ...(supplementary[0] ?? []),
       ...(custom ? [custom] : []),
@@ -187,7 +214,13 @@ const layer = Layer.effect(
         return sources
       }),
     })
-  }),
+  }).pipe(
+    // A config the engine would refuse must refuse here too, loudly. The
+    // failure is a defect on purpose: there is no recovering a Location whose
+    // authority documents do not parse, and keeping the error channel typed
+    // would push config errors into every graph that touches Config.
+    Effect.orDie,
+  ),
 )
 
 export const locationLayer = layer.pipe(Layer.provideMerge(Policy.locationLayer))
