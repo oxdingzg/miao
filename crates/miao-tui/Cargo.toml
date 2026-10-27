@@ -1,0 +1,20 @@
+[package]
+name = "miao-tui"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+
+[[bin]]
+name = "miao-tui"
+path = "src/main.rs"
+
+[dependencies]
+crossterm = "0.29"
+ratatui = "0.30"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+
+[dev-dependencies]
+portable-pty = "0.9"
