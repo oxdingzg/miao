@@ -469,7 +469,7 @@ impl Composer {
     /// reaches which edit. Keys the keymap does not name (Home, End, Tab) keep
     /// their terminal meaning.
     fn handle_edit_key(&mut self, key: KeyEvent, keys: &Keymap) -> Action {
-        let action = keys.action(&key);
+        let action = keys.input_action(&key);
         match action {
             Some(keybinds::Action::InputSubmit) => return self.submit(),
             Some(keybinds::Action::InputNewline) => self.editor.insert_char('\n'),

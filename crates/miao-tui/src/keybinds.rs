@@ -199,6 +199,30 @@ const DEFAULTS: &[(Action, &str)] = &[
     (Action::LineDown, "ctrl+alt+e"),
 ];
 
+/// The composer's vocabulary, in priority order. `input_move_up` and
+/// `history_previous` share a stroke; the cursor motion wins and the history
+/// becomes its fallback.
+const INPUT_ACTIONS: &[Action] = &[
+    Action::InputSubmit,
+    Action::InputNewline,
+    Action::InputBackspace,
+    Action::InputDelete,
+    Action::InputMoveLeft,
+    Action::InputMoveRight,
+    Action::InputMoveUp,
+    Action::InputMoveDown,
+    Action::InputLineHome,
+    Action::InputLineEnd,
+    Action::InputWordBackward,
+    Action::InputWordForward,
+    Action::InputDeleteWordBackward,
+    Action::InputDeleteWordForward,
+    Action::InputDeleteToLineStart,
+    Action::InputDeleteToLineEnd,
+    Action::HistoryPrevious,
+    Action::HistoryNext,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Key {
     code: KeyCode,
@@ -267,13 +291,12 @@ impl Keymap {
         })
     }
 
-    /// The first action either named by a plain stroke or matched by one.
+    /// The first composer action matched by this key.
     ///
-    /// Actions are tried in [`ACTIONS`] order; that ordering keeps the composer
-    /// actions, which are mutually exclusive, ahead of anything sharing a
-    /// stroke by accident.
-    pub fn action(&self, key: &KeyEvent) -> Option<Action> {
-        ACTIONS
+    /// Only `input_*` actions are considered: `ctrl+d` is also `app_exit`, and
+    /// the composer must still see it as `input_delete` while it holds a draft.
+    pub fn input_action(&self, key: &KeyEvent) -> Option<Action> {
+        INPUT_ACTIONS
             .iter()
             .copied()
             .find(|action| self.matches(*action, key))
@@ -444,8 +467,14 @@ mod tests {
         // `up` is bound twice; the composer action wins the generic lookup so
         // history stays the fallback when the cursor cannot move.
         assert_eq!(
-            keymap.action(&key(KeyCode::Up, KeyModifiers::NONE)),
+            keymap.input_action(&key(KeyCode::Up, KeyModifiers::NONE)),
             Some(Action::InputMoveUp)
+        );
+        // `ctrl+d` is both `app_exit` and `input_delete`; the composer looks up
+        // only its own actions, so the draft gets the delete.
+        assert_eq!(
+            keymap.input_action(&key(KeyCode::Char('d'), KeyModifiers::CONTROL)),
+            Some(Action::InputDelete)
         );
     }
 

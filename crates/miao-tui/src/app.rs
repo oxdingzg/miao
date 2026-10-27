@@ -921,7 +921,10 @@ impl App {
             self.shell.composer.dismiss_completion();
             return;
         }
-        if action(keybinds::Action::AppExit) {
+        // `app_exit` shares `ctrl+d` with `input_delete`; like the TypeScript
+        // host it only exits while the composer is empty, so `ctrl+d` still
+        // deletes forward when there is a draft.
+        if action(keybinds::Action::AppExit) && self.shell.composer.editor.is_empty() {
             self.quit = true;
             return;
         }
@@ -1377,6 +1380,20 @@ mod tests {
         assert!(!app.quit);
         assert!(app.shell.composer.editor.is_empty());
         app.handle(key(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(app.quit);
+    }
+
+    #[test]
+    fn ctrl_d_deletes_forward_before_it_quits() {
+        let mut app = session_app();
+        app.handle(key(KeyCode::Char('h'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('i'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Left, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('d'), KeyModifiers::CONTROL));
+        assert!(!app.quit);
+        assert_eq!(app.shell.composer.editor.text(), "h");
+        app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('d'), KeyModifiers::CONTROL));
         assert!(app.quit);
     }
 
