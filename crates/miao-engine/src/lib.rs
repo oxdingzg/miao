@@ -36,6 +36,7 @@ pub mod pdf;
 pub mod permission;
 pub mod permission_grant;
 pub mod permission_rules;
+pub mod permission_saved;
 mod persona;
 pub mod process;
 pub mod protocol;

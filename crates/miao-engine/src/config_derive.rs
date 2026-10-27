@@ -122,6 +122,52 @@ pub fn policy_from_directory(
     Ok(policy(&documents, miao_sandbox))
 }
 
+/// Derive the product policy from the host's ordered source plan: the same
+/// documents the product's Config service applies, lowest priority first.
+pub fn policy_from_sources(
+    sources: &[Source],
+    miao_sandbox: Option<&str>,
+) -> Result<permission::Config, String> {
+    let documents = load(sources)?;
+    Ok(policy(&documents, miao_sandbox))
+}
+
+/// Parse the host's ordered source plan: a JSON array of `{"dir": path}`,
+/// `{"file": path}` or `{"content": text}` entries, lowest priority first.
+pub fn plan(text: &str) -> Result<Vec<Source>, String> {
+    if text.len() > 65536 {
+        return Err("config source plan exceeds 64 KiB".into());
+    }
+    let value: Value = serde_json::from_str(text)
+        .map_err(|error| format!("invalid config source plan: {error}"))?;
+    let entries = value
+        .as_array()
+        .ok_or("config source plan must be a JSON array")?;
+    entries
+        .iter()
+        .map(|entry| {
+            let object = entry
+                .as_object()
+                .ok_or("config source plan entries must be objects")?;
+            match (object.get("dir"), object.get("file"), object.get("content")) {
+                (Some(dir), None, None) => Ok(Source::Dir(PathBuf::from(
+                    dir.as_str().ok_or("config source dir must be a string")?,
+                ))),
+                (None, Some(file), None) => Ok(Source::File(PathBuf::from(
+                    file.as_str().ok_or("config source file must be a string")?,
+                ))),
+                (None, None, Some(content)) => Ok(Source::Content(
+                    content
+                        .as_str()
+                        .ok_or("config source content must be a string")?
+                        .to_string(),
+                )),
+                _ => Err("config source entry needs exactly one of dir, file, content".into()),
+            }
+        })
+        .collect()
+}
+
 /// A built-in language server, ported from the product's `LSPServer.servers`.
 /// The golden fixtures pin this table against the TypeScript original; a
 /// product-side change must land here and in the fixtures together.

@@ -61,9 +61,18 @@ export const decodeDocument = (input: unknown) =>
     ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
     : decodeInfo(input)
 
+/** One ordered configuration source: the shape the engine's `--config-sources` reads. */
+export type Source = { dir: string } | { file: string } | { content: string }
+
 export interface Interface {
   /** Returns location config documents and supplemental directories from lowest to highest priority. */
   readonly entries: () => Effect.Effect<Entry[]>
+  /**
+   * Returns the ordered source plan behind `entries`, lowest to highest
+   * priority. S5 transition readers only: the real layer provides it, test
+   * doubles that do not feed the engine may omit it.
+   */
+  readonly sources?: () => Effect.Effect<Source[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/Config") {}
@@ -158,9 +167,24 @@ const layer = Layer.effect(
         .flatMap((config) => config.info.experimental?.policies ?? []),
     )
 
+    // The source plan mirrors `configs` exactly: global directory, the custom
+    // file, config files discovered between the project root and this
+    // directory (nearest last), the remaining `.miao`/`.opencode` directories
+    // and a custom directory, then inline content last.
+    const sources: Source[] = [
+      { dir: globalDirectory },
+      ...(custom ? [{ file: path.resolve(customFile!) }] : []),
+      ...directPaths.map((file) => ({ file })),
+      ...directories.slice(1).map((directory) => ({ dir: directory })),
+      ...(content ? [{ content: customContent! }] : []),
+    ]
+
     return Service.of({
       entries: Effect.fn("Config.entries")(function* () {
         return configs
+      }),
+      sources: Effect.fn("Config.sources")(function* () {
+        return sources
       }),
     })
   }),

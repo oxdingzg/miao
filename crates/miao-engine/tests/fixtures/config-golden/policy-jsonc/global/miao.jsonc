@@ -1,0 +1,5 @@
+{
+  // Operators comment their intent; trailing commas survive hand edits.
+  "sandbox": { "mode": "off", }, // off by project choice
+  "theme": "dark",
+}

@@ -194,6 +194,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--provider",
             "--policy",
             "--config-dir",
+            "--config-sources",
             "--mode",
             "--edit-recovery",
             "--verify-command",
@@ -447,6 +448,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             return Err("permission config exceeds 64 KiB".into());
         }
         serde_json::from_slice::<Config>(&bytes)?
+    } else if let Some(json) = options.get("--config-sources") {
+        // The host forwards the ordered config source plan it resolved for
+        // this Location, so the project chain overrides the global directory
+        // exactly the way the product applies them. The plan supersedes the
+        // single-directory fallback, which only sees the global files.
+        let sandbox = std::env::var("MIAO_SANDBOX").ok();
+        let sources = miao_engine::config_derive::plan(json)?;
+        miao_engine::config_derive::policy_from_sources(&sources, sandbox.as_deref())?
     } else if let Some(directory) = options.get("--config-dir") {
         // No explicit operator policy: derive the product policy from the
         // config directory and the environment the host forwarded, the way
@@ -676,6 +685,26 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         tools = tools
             .with_protected_resource(&path)
             .with_lsp(Arc::new(registry));
+    } else if let Some(json) = options.get("--config-sources") {
+        // Derive the servers from the same ordered plan the policy used, so
+        // project-level `lsp` sections override the global directory.
+        let sources = miao_engine::config_derive::plan(json)?;
+        let documents = miao_engine::config_derive::load(&sources)?;
+        let configured = miao_engine::config_derive::lsp_configured(&documents);
+        let lookup = miao_engine::config_derive::system_lookup();
+        let configs = miao_engine::config_derive::lsp_entries(
+            configured.as_ref(),
+            &miao_engine::config_derive::BUILTIN_SERVERS,
+            &lookup,
+        )?;
+        if !configs.is_empty() {
+            let registry = miao_engine::lsp::Registry::connect(
+                configs,
+                std::path::Path::new(tools.location()),
+            )
+            .await?;
+            tools = tools.with_lsp(Arc::new(registry));
+        }
     } else if let Some(directory) = options.get("--config-dir") {
         // No explicit LSP manifest: derive the servers from the config
         // directory the way the product used to before materializing one.
