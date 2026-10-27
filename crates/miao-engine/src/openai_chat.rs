@@ -5,7 +5,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::HashMap, time::Duration};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -340,7 +340,12 @@ struct Call {
 struct ChatState {
     text: String,
     reasoning: String,
-    calls: BTreeMap<u64, Call>,
+    /// Calls in arrival order. Not keyed by the provider's `index`: a gateway
+    /// that restarts its numbering for a second call would otherwise merge
+    /// two distinct calls into one garbled identity.
+    calls: Vec<Call>,
+    /// The call each provider `index` is currently streaming into.
+    route: HashMap<u64, usize>,
     finish: Option<String>,
     usage: Value,
     done: bool,
@@ -426,11 +431,37 @@ impl Parser for ChatState {
                     .as_u64()
                     .filter(|i| *i < 64)
                     .ok_or_else(invalid)?;
-                let call = self.calls.entry(index).or_default();
-                if let Some(id) = tool["id"].as_str() {
-                    call.id.push_str(id);
+                let id = tool["id"].as_str().filter(|id| !id.is_empty());
+                // A first frame starts a call; so does a frame that names a
+                // different call than the one this index is streaming. Some
+                // gateways restart `index` at zero for every call, and
+                // appending those frames together produced one call whose id
+                // was two ids and whose name was the name twice — a call the
+                // engine could not execute or even report on.
+                let slot = match (self.route.get(&index).copied(), id) {
+                    (Some(slot), Some(id)) if !self.calls[slot].id.is_empty() && self.calls[slot].id != id => {
+                        self.calls.push(Call::default());
+                        self.calls.len() - 1
+                    }
+                    (Some(slot), _) => slot,
+                    (None, _) => {
+                        self.calls.push(Call::default());
+                        self.calls.len() - 1
+                    }
+                };
+                self.route.insert(index, slot);
+                let call = &mut self.calls[slot];
+                if let Some(id) = id {
+                    if call.id.is_empty() {
+                        call.id.push_str(id);
+                    }
                 }
                 if let Some(name) = tool["function"]["name"].as_str() {
+                    // A frame that carries the call id restates its name;
+                    // id-less frames only extend a name that streamed in pieces.
+                    if id.is_some() {
+                        call.name.clear();
+                    }
                     call.name.push_str(name);
                 }
                 if let Some(args) = tool["function"]["arguments"].as_str() {
@@ -531,7 +562,7 @@ impl Parser for ChatState {
             content.push(json!({"type":"text","text":self.text}));
         }
         let mut ids = std::collections::HashSet::new();
-        for call in self.calls.into_values() {
+        for call in self.calls {
             if call.id.is_empty() || call.name.is_empty() || !ids.insert(call.id.clone()) {
                 return Err(ProviderError::Stream("invalid tool identity".into()));
             }

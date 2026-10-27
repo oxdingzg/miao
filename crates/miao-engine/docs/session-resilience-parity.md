@@ -91,7 +91,10 @@ at most two correction turns per admitted user-input allowance. Valid calls in
 the same reply settle normally and are not automatically replayed. A third
 invalid response settles its error but stops the run; a later successful answer
 completes the run while intermediate errors remain visible. Provider-executed
-and unregistered calls are not eligible for this correction path.
+calls are not eligible for this correction path. A call naming a tool the
+catalog does not have is corrected like any other malformed call, with an
+`Unknown tool: <name>` result, matching the TypeScript runner's settlement;
+only a misplaced hosted action ends the run.
 
 Durable history retains null plus the invalid-input marker. The selected model
 request explicitly projects that failed call to an empty object because provider
