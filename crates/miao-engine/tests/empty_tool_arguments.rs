@@ -112,7 +112,8 @@ async fn an_empty_argument_object_is_settled_with_the_arguments_it_needs() {
     let history = store.history("s").await.unwrap();
     let rejected = history
         .iter()
-        .flat_map(|message| message.content.clone())
+        .filter_map(|message| message.content.as_array())
+        .flatten()
         .find(|block| block["type"] == "tool_result")
         .expect("settled tool result");
     assert!(

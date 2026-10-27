@@ -1322,7 +1322,7 @@ impl Tools {
         let ToolError::InvalidInput = error else {
             return error.to_string();
         };
-        let missing: Vec<&str> = self
+        let missing: Vec<String> = self
             .definitions()
             .iter()
             .find(|tool| tool.name == name)
@@ -1332,6 +1332,7 @@ impl Tools {
                     .iter()
                     .filter_map(Value::as_str)
                     .filter(|field| input.get(*field).is_none())
+                    .map(str::to_owned)
                     .collect()
             })
             .unwrap_or_default();
