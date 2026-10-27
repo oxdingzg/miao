@@ -70,6 +70,23 @@ test("an active continuation shows waiting again after the previous step finishe
   ).toBe(true)
 })
 
+test("a tool that is still executing is the wait, not the provider", () => {
+  // The step that requested a delegated `task` is complete while the child
+  // Session runs, so the message shape alone read as an unanswered provider
+  // request — for eighty minutes, in the case this covers.
+  expect(
+    waitingForResponse({
+      busy: true,
+      blocked: false,
+      message: { ...assistant, time: { created: 2, completed: 3 }, finish: "tool-calls" },
+      content: [{ type: "text", id: "part", text: "delegating" }],
+      running: true,
+    }),
+  ).toBe(false)
+  expect(waitingForResponse({ busy: true, blocked: false, running: true })).toBe(false)
+  expect(waitingForResponse({ busy: true, blocked: false, running: false })).toBe(true)
+})
+
 test("status polling detects idle without needing a terminal content event", async () => {
   const statuses: string[] = []
   const idle = Promise.withResolvers<void>()
