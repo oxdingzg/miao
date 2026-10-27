@@ -72,6 +72,7 @@ import { SessionBackgroundJobs } from "../background-jobs"
 import { SessionMessage } from "../message"
 import { SessionPrune } from "../prune"
 import { SessionInput } from "../input"
+import { SessionAdmission } from "../admission"
 import { SessionPlacement } from "../placement"
 import { ToolCallLeak } from "../tool-call-leak"
 import { Prompt } from "../prompt"
@@ -248,6 +249,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2.Service
+    const admission = yield* SessionAdmission.Service
     const llm = yield* LLMClient.Service
     const agents = yield* AgentV2.Service
     const shell = yield* BashTool.Execution
@@ -1689,7 +1691,7 @@ const layer = Layer.effect(
       // Checkpoint the child Session onto the still-running task part so a
       // client can stream the child's activity inline before the result lands.
       if (request.context?.progress) yield* request.context.progress({ structured: { sessionID: child.id } })
-      yield* SessionInput.admit(db, events, {
+      yield* admission.admit({
         id: SessionMessage.ID.create(),
         sessionID: child.id,
         prompt: Prompt.make({ text: request.prompt, files: request.files, agents: request.agents }),
@@ -1933,6 +1935,7 @@ const layer = Layer.effect(
                     events,
                     store,
                     ownership,
+                    admission,
                     todos,
                     execution: Option.getOrUndefined(yield* Effect.serviceOption(SessionExecution.Service)),
                     jobs: Option.getOrUndefined(jobsOption),
@@ -2154,7 +2157,7 @@ const layer = Layer.effect(
                     })
                   } else {
                     loopIterations += 1
-                    yield* SessionInput.admit(db, events, {
+                    yield* admission.admit({
                       id: SessionMessage.ID.create(),
                       sessionID: input.sessionID,
                       prompt: Prompt.make({
@@ -2233,6 +2236,7 @@ export const node = makeLocationNode({
     Database.node,
     SessionCreate.node,
     SessionOwnership.node,
+    SessionAdmission.node,
     SessionTodo.node,
     PermissionV2.node,
     Blob.node,

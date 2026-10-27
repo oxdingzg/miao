@@ -15,6 +15,7 @@ import { Tool, type AnyTool } from "../tool/tool"
 import { SessionExecution } from "./execution"
 import { SessionGoal } from "./goal"
 import { SessionHistory } from "./history"
+import type { SessionAdmission } from "./admission"
 import { SessionInput } from "./input"
 import { SessionMessage } from "./message"
 import type { SessionOwnership } from "./ownership"
@@ -233,6 +234,7 @@ export interface Sources {
   readonly events: EventV2.Interface
   readonly store: SessionStore.Interface
   readonly ownership: SessionOwnership.Interface
+  readonly admission: SessionAdmission.Interface
   readonly todos: SessionTodo.Interface
   readonly execution?: SessionExecution.Interface
   readonly jobs?: BackgroundJob.Interface
@@ -295,7 +297,7 @@ export const makePeers = (input: Sources): Peers => {
     work,
     pending: (sessionID) => SessionInput.countPending(input.db, sessionID),
     admit: ({ id, sessionID, prompt, delivery }) =>
-      SessionInput.admit(input.db, input.events, { id, sessionID, prompt, delivery }).pipe(Effect.asVoid),
+      input.admission.admit({ id, sessionID, prompt, delivery }).pipe(Effect.asVoid),
     history: (sessionID) => SessionHistory.all(input.db, sessionID),
     wake: input.wake ?? (() => Effect.void),
   }

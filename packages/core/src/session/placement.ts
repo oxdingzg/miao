@@ -2,14 +2,12 @@ export * as SessionPlacement from "./placement"
 
 import path from "path"
 import { Context, Effect, Layer, Schema } from "effect"
-import { Database } from "../database/database"
 import { MoveSession } from "../control-plane/move-session"
 import { makeGlobalNode } from "../effect/app-node"
-import { EventV2 } from "../event"
 import { ProjectV2 } from "../project"
 import { ProjectWorktree } from "../project/worktree"
 import { AbsolutePath } from "../schema"
-import { SessionInput } from "./input"
+import { SessionAdmission } from "./admission"
 import { SessionMessage } from "./message"
 import { Prompt } from "./prompt"
 import { SessionSchema } from "./schema"
@@ -52,13 +50,12 @@ export class Service extends Context.Service<Service, Interface>()("@miao/Sessio
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const events = yield* EventV2.Service
     const store = yield* SessionStore.Service
     const ownership = yield* SessionOwnership.Service
     const projects = yield* ProjectV2.Service
     const worktrees = yield* ProjectWorktree.Service
     const move = yield* MoveSession.Service
-    const { db } = yield* Database.Service
+    const admission = yield* SessionAdmission.Service
 
     /**
      * Where a worktree operation is anchored. `Git.repo.discover` reports the
@@ -84,7 +81,7 @@ const layer = Layer.effect(
     // reminder is admitted as a steer so the runner that owns the new directory
     // has something to promote once it is woken.
     const remind = Effect.fnUntraced(function* (sessionID: SessionSchema.ID, text: string) {
-      yield* SessionInput.admit(db, events, {
+      yield* admission.admit({
         id: SessionMessage.ID.create(),
         sessionID,
         prompt: Prompt.make({ text: `<system-reminder>${text}</system-reminder>` }),
@@ -163,12 +160,11 @@ export const node = makeGlobalNode({
   service: Service,
   layer,
   deps: [
-    Database.node,
-    EventV2.node,
     SessionStore.node,
     ProjectV2.node,
     ProjectWorktree.node,
     MoveSession.node,
     SessionOwnership.node,
+    SessionAdmission.node,
   ],
 })

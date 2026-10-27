@@ -9,6 +9,7 @@ import { FSUtil } from "../fs-util"
 import { Location } from "../location"
 import { AbsolutePath } from "../schema"
 import { WorkspaceV2 } from "../workspace"
+import type { SessionAdmission } from "./admission"
 import { SessionEnginePlacement } from "./engine-placement"
 import { SessionHeal } from "./heal"
 import { SessionTable } from "./sql"
@@ -57,6 +58,7 @@ export const resolve = Effect.fn("SessionRouting.resolve")(function* (input: {
   db: Database.Interface["db"]
   events: EventV2.Interface
   fs: FSUtil.Interface
+  admission: SessionAdmission.Interface
   sessionID: SessionID
 }) {
   const placement = yield* SessionEnginePlacement.find(input.db, input.sessionID)
@@ -84,6 +86,7 @@ export const resolve = Effect.fn("SessionRouting.resolve")(function* (input: {
     db: input.db,
     events: input.events,
     fs: input.fs,
+    admission: input.admission,
     sessionID: input.sessionID,
     directory: AbsolutePath.make(row.directory),
     projectID: row.projectID,
