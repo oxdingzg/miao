@@ -3,10 +3,11 @@ use std::path::Path;
 use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph, Wrap};
+use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 
+use crate::dialogs::{Dialog, ListDialog};
 use crate::editor::Composer;
 use crate::session::{
     ApprovalView, Entry, Part, QuestionView, SessionSummary, ToolPart, Transcript,
@@ -32,6 +33,9 @@ pub struct Shell {
     pub composer: Composer,
     pub panel: Option<Panel>,
     pub sidebar: Option<SidebarPane>,
+    /// The projection behind `transcript.lines`, kept so a theme change can
+    /// repaint the same content instead of waiting for the next snapshot.
+    last: Option<Transcript>,
 }
 
 impl Shell {
@@ -50,6 +54,7 @@ impl Shell {
                 theme,
                 session: None,
             }),
+            last: None,
         }
     }
 
@@ -57,6 +62,22 @@ impl Shell {
         self.transcript.lines = transcript_lines(transcript, &self.transcript.theme);
         let max = self.transcript.lines.len().saturating_sub(1);
         self.transcript.scroll = self.transcript.scroll.min(max as u16);
+        self.last = Some(transcript.clone());
+    }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.title.set_theme(theme.clone());
+        self.transcript.theme = theme.clone();
+        if let Some(sidebar) = self.sidebar.as_mut() {
+            sidebar.theme = theme.clone();
+        }
+        if let Some(last) = &self.last {
+            self.transcript.lines = transcript_lines(last, &theme);
+        }
+    }
+
+    pub fn theme(&self) -> &Theme {
+        &self.transcript.theme
     }
 
     /// Show one status line instead of a transcript: engine failures and other
@@ -69,6 +90,7 @@ impl Shell {
         ))];
         self.transcript.scroll = 0;
         self.transcript.follow = false;
+        self.last = None;
     }
 
     pub fn scroll_transcript(&mut self, delta: i32) {
@@ -149,6 +171,10 @@ impl TitlePane {
     pub fn set_status(&mut self, status: Option<String>) {
         self.status = status;
     }
+
+    fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
 }
 
 impl Pane for TitlePane {
@@ -219,6 +245,10 @@ impl Home {
 
     pub fn set_notice(&mut self, notice: Option<String>) {
         self.notice = notice;
+    }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
     }
 
     pub fn set_rows(&mut self, rows: Vec<SessionSummary>) {
@@ -647,6 +677,200 @@ impl Pane for SidebarPane {
             area,
         );
     }
+}
+
+/// Draw a modal dialog centered over the current screen. `Clear` hides the
+/// page underneath so the dialog never blends with the transcript.
+pub fn render_dialog(frame: &mut Frame, area: Rect, dialog: &Dialog, theme: &Theme) {
+    if area.width < 20 || area.height < 5 {
+        return;
+    }
+    let palette = theme.palette;
+    let width = ((area.width as u32 * 60 / 100) as u16)
+        .clamp(40, 80)
+        .min(area.width);
+    let height = dialog.height().min(area.height);
+    let rect = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+    frame.render_widget(Clear, rect);
+    let block = Block::bordered()
+        .title(Span::styled(
+            format!(" {} ", dialog.title()),
+            Style::new()
+                .fg(palette.primary)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .border_style(Style::new().fg(palette.primary))
+        .style(Style::new().bg(palette.surface));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+    if let Some(list) = dialog.list() {
+        render_list(frame, inner, list, theme);
+        return;
+    }
+    if let Some(input) = dialog.rename_input() {
+        render_rename(frame, inner, input, theme);
+        return;
+    }
+    if let Some(confirm) = dialog.confirm() {
+        render_confirm(frame, inner, confirm, theme);
+    }
+}
+
+fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) {
+    let palette = theme.palette;
+    let hint_area = Rect {
+        y: area.y + area.height - 1,
+        height: 1,
+        ..area
+    };
+    let list_area = Rect {
+        height: area.height - 1,
+        ..area
+    };
+    if list.rows.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "nothing to show",
+                Style::new().fg(palette.text_muted),
+            )),
+            list_area,
+        );
+    } else {
+        let visible = list_area.height as usize;
+        let offset = list
+            .selected
+            .saturating_sub(visible.saturating_sub(1))
+            .min(list.rows.len().saturating_sub(visible));
+        let lines = list
+            .rows
+            .iter()
+            .enumerate()
+            .skip(offset)
+            .take(visible)
+            .map(|(index, row)| {
+                let selected = index == list.selected;
+                let marker = if selected { "▸ " } else { "  " };
+                let style = if selected {
+                    Style::new()
+                        .fg(palette.primary)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::new().fg(palette.text)
+                };
+                let label = clip_cells(&row.label, 0, list_area.width.saturating_sub(2));
+                let used = label
+                    .chars()
+                    .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
+                    .sum::<usize>();
+                let detail = if row.detail.is_empty() {
+                    String::new()
+                } else {
+                    clip_cells(
+                        &format!("   {}", row.detail),
+                        0,
+                        (list_area.width as usize).saturating_sub(used + 2) as u16,
+                    )
+                };
+                Line::from(vec![
+                    Span::styled(format!("{marker}{label}"), style),
+                    Span::styled(detail, Style::new().fg(palette.text_muted)),
+                ])
+            })
+            .collect::<Vec<_>>();
+        frame.render_widget(Paragraph::new(lines), list_area);
+    }
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            list.hint,
+            Style::new().fg(palette.text_muted),
+        ))),
+        hint_area,
+    );
+}
+
+fn render_rename(frame: &mut Frame, area: Rect, input: &crate::editor::Editor, theme: &Theme) {
+    let palette = theme.palette;
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            "title",
+            Style::new().fg(palette.text_muted),
+        ))),
+        Rect { height: 1, ..area },
+    );
+    let input_area = Rect {
+        y: area.y + 1,
+        height: 1,
+        ..area
+    };
+    if input_area.width == 0 {
+        return;
+    }
+    let text = clip_cells(input.text(), 0, input_area.width);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            text,
+            Style::new().fg(palette.text),
+        ))),
+        input_area,
+    );
+    let (_, cells) = input.cursor_position();
+    let column = cells.min(input_area.width as usize - 1) as u16;
+    frame.set_cursor_position(Position::new(input_area.x + column, input_area.y));
+}
+
+fn render_confirm(
+    frame: &mut Frame,
+    area: Rect,
+    confirm: &crate::dialogs::ConfirmDialog,
+    theme: &Theme,
+) {
+    let palette = theme.palette;
+    let button_area = Rect {
+        y: area.y + area.height - 1,
+        height: 1,
+        ..area
+    };
+    let message_area = Rect {
+        height: area.height.saturating_sub(2),
+        ..area
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            confirm.message.clone(),
+            Style::new().fg(palette.text),
+        )))
+        .wrap(Wrap { trim: false }),
+        message_area,
+    );
+    let selected = Style::new()
+        .fg(palette.primary)
+        .add_modifier(Modifier::BOLD);
+    let idle = Style::new().fg(palette.text_muted);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!("{} cancel   ", if confirm.confirmed { " " } else { "▸" }),
+                if confirm.confirmed { idle } else { selected },
+            ),
+            Span::styled(
+                format!("{} delete", if confirm.confirmed { "▸" } else { " " }),
+                if confirm.confirmed {
+                    Style::new().fg(palette.error).add_modifier(Modifier::BOLD)
+                } else {
+                    idle
+                },
+            ),
+        ])),
+        button_area,
+    );
 }
 
 /// A blocking engine decision drawn above the composer. Only one request is

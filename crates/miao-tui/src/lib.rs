@@ -1,10 +1,12 @@
 pub mod app;
+pub mod dialogs;
 pub mod editor;
 pub mod engine;
 pub mod event;
 pub mod input;
 pub mod pane;
 pub mod session;
+pub mod state;
 pub mod terminal;
 pub mod theme;
 pub mod transport;

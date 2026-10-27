@@ -689,12 +689,7 @@ fn index_files(root: &Path) -> Vec<String> {
 }
 
 pub fn state_file() -> PathBuf {
-    std::env::var_os("MIAO_TUI_STATE_DIR")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("XDG_DATA_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))
-        .map(|directory| directory.join("miao-tui").join("composer.json"))
-        .unwrap_or_else(|| PathBuf::from("composer.json"))
+    crate::state::file("composer.json")
 }
 
 fn load_history(path: &Path) -> Vec<String> {

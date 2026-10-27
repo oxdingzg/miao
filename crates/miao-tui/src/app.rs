@@ -3,12 +3,14 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
 
+use crate::dialogs::{Action as DialogAction, ConfirmKind, Dialog, ModelInfo};
 use crate::editor::Action;
 use crate::engine;
 use crate::event::AppEvent;
-use crate::pane::{Home, Pane, Panel, PanelKind, Shell};
+use crate::pane::{render_dialog, Home, Pane, Panel, PanelKind, Shell};
 use crate::session::{SessionState, SessionSummary};
-use crate::theme::Theme;
+use crate::state;
+use crate::theme::{self, Theme};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
@@ -26,6 +28,14 @@ pub struct App {
     pub session: Option<SessionSummary>,
     pub state: SessionState,
     pub quit: bool,
+    dialog: Option<Dialog>,
+    /// `Ctrl+X` was pressed; the next key completes the chord.
+    leader: bool,
+    models: Vec<ModelInfo>,
+    /// Every root Session, archived included, for the Session dialog.
+    catalog: Vec<SessionSummary>,
+    /// The model dialog waits for the catalog when nothing is cached yet.
+    pending_models: bool,
 }
 
 impl App {
@@ -39,6 +49,11 @@ impl App {
             session: None,
             state: SessionState::default(),
             quit: false,
+            dialog: None,
+            leader: false,
+            models: Vec::new(),
+            catalog: Vec::new(),
+            pending_models: false,
         }
     }
 
@@ -61,6 +76,9 @@ impl App {
             }
             Screen::Session => self.shell.render(frame),
         }
+        if let Some(dialog) = self.dialog.as_ref() {
+            render_dialog(frame, frame.area(), dialog, self.shell.theme());
+        }
     }
 
     pub fn handle(&mut self, event: AppEvent) {
@@ -76,12 +94,40 @@ impl App {
                 self.home.set_rows(rows);
                 self.home.set_notice(None);
             }
+            AppEvent::Catalog(rows) => {
+                self.catalog = rows;
+                if matches!(self.dialog, Some(Dialog::Sessions(_))) {
+                    self.reopen_sessions_dialog();
+                }
+            }
+            AppEvent::Models(models) => {
+                self.models = models;
+                if self.pending_models {
+                    self.pending_models = false;
+                    self.open_dialog(Dialog::models(&self.models));
+                }
+            }
+            AppEvent::SessionRemoved(id) => {
+                if self
+                    .session
+                    .as_ref()
+                    .is_some_and(|session| session.id == id)
+                {
+                    self.leave_session();
+                }
+            }
             AppEvent::SessionOpened {
                 summary,
                 transcript,
                 state,
             } => {
                 self.session = summary;
+                if let Some(summary) = &self.session {
+                    match self.catalog.iter_mut().find(|row| row.id == summary.id) {
+                        Some(row) => *row = summary.clone(),
+                        None => self.catalog.push(summary.clone()),
+                    }
+                }
                 self.state = state;
                 self.shell.set_session(self.session.as_ref());
                 self.shell.set_transcript(&transcript);
@@ -109,10 +155,195 @@ impl App {
             // double every keystroke.
             return;
         }
+        if self.dialog.is_some() {
+            // Dialogs are modal: nothing reaches the page below, and Esc
+            // closes the top layer. Ctrl+C still quits.
+            if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+                self.quit = true;
+                return;
+            }
+            self.handle_dialog_key(key);
+            return;
+        }
+        if self.leader {
+            self.leader = false;
+            self.handle_leader(key);
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('x') {
+            self.leader = true;
+            return;
+        }
         match self.screen {
             Screen::Home => self.handle_home_key(key),
             Screen::Session => self.handle_session_key(key),
         }
+    }
+
+    fn handle_dialog_key(&mut self, key: KeyEvent) {
+        let Some(dialog) = self.dialog.as_mut() else {
+            return;
+        };
+        let action = dialog.handle_key(key);
+        self.dialog_action(action);
+    }
+
+    fn handle_leader(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('m') => {
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.catalog();
+                }
+                if self.models.is_empty() {
+                    self.pending_models = true;
+                    return;
+                }
+                self.open_dialog(Dialog::models(&self.models));
+            }
+            KeyCode::Char('t') => {
+                let current = self.shell.theme().name.clone();
+                self.open_dialog(Dialog::theme(&current));
+            }
+            KeyCode::Char('l') => {
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.refresh_sessions();
+                }
+                self.open_dialog(Dialog::sessions(&self.catalog));
+            }
+            KeyCode::Char('n') => {
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.new_session();
+                }
+            }
+            KeyCode::Char('q') => self.quit = true,
+            _ => {}
+        }
+    }
+
+    fn open_dialog(&mut self, dialog: Dialog) {
+        self.pending_models = false;
+        self.shell.composer.dismiss_completion();
+        self.dialog = Some(dialog);
+    }
+
+    fn reopen_sessions_dialog(&mut self) {
+        let selected = match self.dialog.take() {
+            Some(Dialog::Sessions(list)) => list.rows.get(list.selected).map(|row| row.id.clone()),
+            _ => None,
+        };
+        let mut dialog = Dialog::sessions(&self.catalog);
+        if let (Some(list), Some(id)) = (dialog.list_mut(), selected) {
+            if let Some(index) = list.rows.iter().position(|row| row.id == id) {
+                list.selected = index;
+            }
+        }
+        self.dialog = Some(dialog);
+    }
+
+    fn dialog_action(&mut self, action: DialogAction) {
+        match action {
+            DialogAction::None => {}
+            DialogAction::Close => self.dialog = None,
+            DialogAction::Chosen(index) => self.choose(index),
+            DialogAction::OpenSession(id) => {
+                self.dialog = None;
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.open(&id);
+                }
+            }
+            DialogAction::Rename(id) => {
+                let title = self.title_of(&id);
+                self.open_dialog(Dialog::rename(&id, &title));
+            }
+            DialogAction::ToggleArchive(id) => {
+                let archived = self
+                    .catalog
+                    .iter()
+                    .find(|row| row.id == id)
+                    .is_some_and(|row| row.archived_at_ms.is_some());
+                self.dialog = None;
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.archive(&id, !archived);
+                }
+            }
+            DialogAction::Remove(id) => {
+                let title = self.title_of(&id);
+                self.open_dialog(Dialog::confirm_remove(&id, &title));
+            }
+            DialogAction::Submit(title) => {
+                let Some(Dialog::Rename { session_id, .. }) = self.dialog.take() else {
+                    return;
+                };
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.rename(&session_id, &title);
+                }
+                if self.session_id().as_deref() == Some(session_id.as_str()) {
+                    let mut summary = self.session.clone();
+                    if let Some(summary) = summary.as_mut() {
+                        summary.title = Some(title.clone());
+                    }
+                    self.session = summary;
+                    self.shell.set_session(self.session.as_ref());
+                }
+            }
+            DialogAction::Confirmed(kind) => {
+                let ConfirmKind::RemoveSession(id) = kind;
+                self.dialog = None;
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.remove(&id);
+                }
+            }
+        }
+    }
+
+    /// The model dialog returns an index into the last catalog; the theme
+    /// dialog an index into the built-in names.
+    fn choose(&mut self, index: usize) {
+        let is_theme = matches!(self.dialog, Some(Dialog::Theme(_)));
+        self.dialog = None;
+        if is_theme {
+            let names = theme::names();
+            if let Some(name) = names.get(index) {
+                self.apply_theme(name);
+            }
+            return;
+        }
+        let Some(binding) = self.models.get(index).map(ModelInfo::binding) else {
+            return;
+        };
+        let Some(session_id) = self.session_id() else {
+            self.shell.composer.notice = Some("open a Session to select a model".into());
+            return;
+        };
+        if let Some(engine) = self.engine.as_ref() {
+            engine.select_model(&session_id, binding);
+        }
+    }
+
+    fn apply_theme(&mut self, name: &str) {
+        let Some(palette) = theme::builtin(name) else {
+            return;
+        };
+        state::save_theme(name);
+        let theme = Theme {
+            name: name.to_string(),
+            palette,
+        };
+        self.shell.set_theme(theme.clone());
+        self.home.set_theme(theme);
+    }
+
+    fn session_id(&self) -> Option<String> {
+        self.session.as_ref().map(|session| session.id.clone())
+    }
+
+    fn title_of(&self, id: &str) -> String {
+        self.catalog
+            .iter()
+            .chain(self.home.rows.iter())
+            .find(|row| row.id == id)
+            .map(|row| row.label().to_string())
+            .unwrap_or_else(|| "untitled".to_string())
     }
 
     fn handle_home_key(&mut self, key: KeyEvent) {
@@ -175,6 +406,13 @@ impl App {
             }
             self.shell.composer.editor.clear();
             self.shell.composer.dismiss_completion();
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('r') {
+            if let Some(session) = self.session.as_ref() {
+                let dialog = Dialog::rename(&session.id, session.label());
+                self.open_dialog(dialog);
+            }
             return;
         }
         let ctrl_alt = key.modifiers.contains(KeyModifiers::CONTROL)
@@ -327,6 +565,8 @@ impl App {
         self.shell.title.set_status(None);
         self.shell.composer.editor.clear();
         self.shell.composer.dismiss_completion();
+        self.dialog = None;
+        self.leader = false;
         if let Some(engine) = self.engine.as_ref() {
             engine.refresh_sessions();
         }
@@ -488,5 +728,69 @@ mod tests {
         app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(app.screen, Screen::Home);
         assert!(app.session.is_none());
+    }
+
+    fn leader(app: &mut App, letter: char) {
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
+        app.handle(key(KeyCode::Char(letter), KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn the_leader_opens_the_theme_dialog_and_keeps_typing_out_of_the_composer() {
+        let mut app = session_app();
+        leader(&mut app, 't');
+        assert!(matches!(app.dialog, Some(Dialog::Theme(_))));
+        assert!(app.shell.composer.editor.is_empty());
+        // Modal: a printable key goes nowhere, and Esc closes the dialog
+        // without leaving the Session.
+        app.handle(key(KeyCode::Char('z'), KeyModifiers::NONE));
+        assert!(app.shell.composer.editor.is_empty());
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.dialog.is_none());
+        assert_eq!(app.screen, Screen::Session);
+    }
+
+    #[test]
+    fn the_leader_q_quits_and_an_unknown_chord_does_nothing() {
+        let mut app = session_app();
+        leader(&mut app, 'z');
+        assert!(!app.quit);
+        assert!(app.shell.composer.editor.is_empty());
+        leader(&mut app, 'q');
+        assert!(app.quit);
+    }
+
+    #[test]
+    fn the_session_dialog_reaches_rename_and_delete_confirmation() {
+        let mut app = app();
+        app.handle(AppEvent::Catalog(vec![summary("ses_a", 10)]));
+        leader(&mut app, 'l');
+        assert!(matches!(app.dialog, Some(Dialog::Sessions(_))));
+        app.handle(key(KeyCode::Char('r'), KeyModifiers::NONE));
+        assert!(matches!(app.dialog, Some(Dialog::Rename { .. })));
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.dialog.is_none());
+        leader(&mut app, 'l');
+        app.handle(key(KeyCode::Char('d'), KeyModifiers::NONE));
+        let Some(Dialog::Confirm(confirm)) = &app.dialog else {
+            panic!("expected a delete confirmation");
+        };
+        assert!(!confirm.confirmed, "delete must start on cancel");
+    }
+
+    #[test]
+    fn ctrl_r_renames_the_open_session_from_its_current_title() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_a", 10)),
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        app.handle(key(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        let Some(Dialog::Rename { session_id, input }) = &app.dialog else {
+            panic!("expected the rename dialog");
+        };
+        assert_eq!(session_id, "ses_a");
+        assert_eq!(input.text(), "ses_a");
     }
 }
