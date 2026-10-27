@@ -336,6 +336,66 @@ struct Call {
     name: String,
     arguments: String,
 }
+
+/// The argument object of a call the model wrote as its native
+/// `<tool_call><function=NAME><parameter=KEY>VALUE</parameter>…` text. Only the
+/// block naming this call is read, and only when the streamed frame carried no
+/// usable arguments of its own.
+fn inline_arguments(text: &str, name: &str) -> Option<Value> {
+    let mut rest = text;
+    while let Some(start) = rest.find("<tool_call>") {
+        let body = &rest[start + "<tool_call>".len()..];
+        let end = body.find("</tool_call>")?;
+        let block = &body[..end];
+        rest = &body[end + "</tool_call>".len()..];
+        let Some(opened) = block.find("<function=").map(|at| &block[at + "<function=".len()..]) else {
+            continue;
+        };
+        let Some(header) = opened.find('>') else {
+            continue;
+        };
+        if opened[..header].trim() != name {
+            continue;
+        }
+        let mut parameters = serde_json::Map::new();
+        let mut inner = &opened[header + 1..];
+        while let Some(at) = inner.find("<parameter=") {
+            let parameter = &inner[at + "<parameter=".len()..];
+            let Some(header) = parameter.find('>') else {
+                break;
+            };
+            let value = &parameter[header + 1..];
+            let Some(end) = value.find("</parameter>") else {
+                break;
+            };
+            parameters.insert(
+                parameter[..header].trim().to_string(),
+                inline_value(&value[..end]),
+            );
+            inner = &value[end + "</parameter>".len()..];
+        }
+        if parameters.is_empty() {
+            continue;
+        }
+        return Some(Value::Object(parameters));
+    }
+    None
+}
+
+/// A parameter arrives as text, with no type of its own. Only the JSON
+/// literals a caller would never mean as text are decoded; everything else
+/// stays a string, so a code body or a numeric-looking path is untouched.
+fn inline_value(raw: &str) -> Value {
+    match raw {
+        "null" => Value::Null,
+        "true" => Value::Bool(true),
+        "false" => Value::Bool(false),
+        _ => match serde_json::from_str::<Value>(raw) {
+            Ok(value) if value.is_object() || value.is_array() => value,
+            _ => Value::String(raw.into()),
+        },
+    }
+}
 #[derive(Default)]
 struct ChatState {
     text: String,
@@ -559,17 +619,30 @@ impl Parser for ChatState {
             content.push(json!({"type":"reasoning","text":self.reasoning}));
         }
         if !self.text.is_empty() {
-            content.push(json!({"type":"text","text":self.text}));
+            content.push(json!({"type":"text","text":self.text.clone()}));
         }
         let mut ids = std::collections::HashSet::new();
         for call in self.calls {
             if call.id.is_empty() || call.name.is_empty() || !ids.insert(call.id.clone()) {
                 return Err(ProviderError::Stream("invalid tool identity".into()));
             }
+            // The gateway serving MiMo lifts small calls out of the model's
+            // own `<tool_call>` text but leaves a large argument object in the
+            // text and emits the call with no arguments at all — three times
+            // in one run, which used to end the Session. The arguments are in
+            // the reply either way, so read them back instead of correcting a
+            // call the model did make.
+            let arguments = match serde_json::from_str::<Value>(&call.arguments) {
+                Ok(input) if input.is_object() => call.arguments.clone(),
+                _ => match inline_arguments(&self.text, &call.name) {
+                    Some(recovered) => recovered.to_string(),
+                    None => call.arguments.clone(),
+                },
+            };
             content.push(crate::provider::decode_tool_call(
                 &call.id,
                 &call.name,
-                &call.arguments,
+                &arguments,
             )?);
         }
         Ok(Reply {

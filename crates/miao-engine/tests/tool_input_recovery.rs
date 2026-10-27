@@ -281,14 +281,17 @@ async fn changing_invalid_calls_cannot_bypass_the_two_correction_allowance() {
             .await
             .unwrap();
         let events = finished(&store).await;
+        // Exhausting the allowance pauses the drain; it is not a provider
+        // failure, so the Session stays usable and the transcript says why.
         assert_eq!(
             events
                 .iter()
                 .find(|event| event.kind == "run.finished")
                 .unwrap()
                 .data["reason"],
-            "failed"
+            "completed"
         );
+        assert!(!events.iter().any(|event| event.kind == "stop_failure"));
         assert_eq!(
             events
                 .iter()
@@ -299,6 +302,9 @@ async fn changing_invalid_calls_cannot_bypass_the_two_correction_allowance() {
         assert!(events
             .iter()
             .any(|event| event.kind == "tool.input_recovery.stopped"));
+        assert!(events
+            .iter()
+            .any(|event| event.kind == "message.synthetic"));
         assert!(!events.iter().any(|event| event.kind == "tool.dispatched"));
         server.await.unwrap();
         let mut count = 0;

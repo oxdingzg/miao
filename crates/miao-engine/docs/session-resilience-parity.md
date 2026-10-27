@@ -89,8 +89,11 @@ The runtime settles the invalid local call with a sanitized error without
 permission checks, hooks, or tool dispatch, then reloads committed history for
 at most two correction turns per admitted user-input allowance. Valid calls in
 the same reply settle normally and are not automatically replayed. A third
-invalid response settles its error but stops the run; a later successful answer
-completes the run while intermediate errors remain visible. Provider-executed
+invalid response settles its error and pauses the drain the way an exhausted
+provider-turn allowance does: the run ends cleanly with an injected history
+fact, so the Session stays usable instead of failing with an error the user
+cannot act on. A later successful answer completes the run while intermediate
+errors remain visible. Provider-executed
 calls are not eligible for this correction path. A call naming a tool the
 catalog does not have is corrected like any other malformed call, with an
 `Unknown tool: <name>` result, matching the TypeScript runner's settlement;

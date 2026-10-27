@@ -2677,11 +2677,23 @@ command: None,
                 )
                 .await?;
         }
+        // The allowance corrects a malformed call twice. A model still writing
+        // unparseable arguments after that will not recover inside this run, so
+        // pause the drain the way an exhausted turn allowance does: the third
+        // invalid reply is already settled as a visible error result, and the
+        // Session stays usable instead of ending in a fatal provider error.
         if invalid_input && input_corrections > 2 {
             inner.store.record(session, "tool.input_recovery.stopped", json!({"run_id":run,"step":step,"reason":"correction_budget","attempts":input_corrections})).await?;
-            return Err(Error::Invalid(
-                "invalid tool JSON correction allowance exceeded".into(),
-            ));
+            inner
+                .store
+                .inject(
+                    session,
+                    &format!("correction-{run}"),
+                    "Stopped after the model repeatedly produced invalid JSON tool arguments. Send a message to continue.",
+                    "engine",
+                )
+                .await?;
+            return Ok(());
         }
         // Boundary reload always follows committed tool results. Steers promote
         // before continuation; queue only when this task would otherwise idle.
