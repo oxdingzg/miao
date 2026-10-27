@@ -86,8 +86,7 @@ import { PromptHistoryProvider } from "./component/prompt/history"
 import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
 import { ToastProvider, useToast } from "./ui/toast"
-import { isDefaultTitle } from "./util/session"
-import { terminalTitle } from "./util/terminal-title"
+import { tabTitle, terminalTitle } from "./util/terminal-title"
 import { Locale } from "./util/locale"
 import { sessionEpilogue } from "./util/presentation"
 import { KVProvider, useKV } from "./context/kv"
@@ -630,28 +629,37 @@ function App(props: {
   })
 
   // Update terminal window title based on current route and session
+  // Streaming a transcript re-runs this effect, and the OSC write should not
+  // repeat for one title; a refresh counter change is the one case that must
+  // rewrite it even when unchanged.
+  let writtenTitle: { title: string; refresh: number } | undefined
   createEffect(() => {
-    terminalTitleRefresh()
+    const refresh = terminalTitleRefresh()
+    const write = (title: string) => {
+      if (writtenTitle?.title === title && writtenTitle.refresh === refresh) return
+      writtenTitle = { title, refresh }
+      renderer.setTerminalTitle(title)
+    }
     if (!terminalTitleEnabled() || Flag.MIAO_DISABLE_TERMINAL_TITLE) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("miao")
+      write("miao")
       return
     }
 
     if (route.data.type === "session") {
       const session = sync.session.get(route.data.sessionID)
-      if (!session || isDefaultTitle(session.title)) {
-        renderer.setTerminalTitle("miao")
+      if (!session) {
+        write("miao")
         return
       }
-
-      renderer.setTerminalTitle(terminalTitle(session.title))
+      const asked = sync.data.message[route.data.sessionID]?.find((message) => message.type === "user")
+      write(tabTitle({ title: session.title, prompt: asked?.type === "user" ? asked.text : undefined }))
       return
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(terminalTitle(route.data.id))
+      write(terminalTitle(route.data.id))
     }
   })
 
