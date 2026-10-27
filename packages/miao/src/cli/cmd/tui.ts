@@ -1,12 +1,18 @@
 import { WindowLifecycle } from "@/runtime/lifecycle"
 import { cmd } from "@/cli/cmd/cmd"
 import path from "path"
+import os from "os"
+import { existsSync } from "fs"
 import { UI } from "@/cli/ui"
 import { errorMessage } from "@miao/tui/util/error"
 import { withNetworkOptions, resolveNetworkOptionsNoConfig, hasArg } from "@/cli/network"
 import { Filesystem } from "@/util/filesystem"
 import { validateSession } from "../tui/validate-session"
 import { validateModel } from "../tui/validate-model"
+
+/// Which TUI implementation `miao` starts. The Rust TUI runs the engine itself
+/// and is selected explicitly until the cutover makes it the default.
+const DEFAULT_TUI: "rust" | "legacy" = "legacy"
 
 async function input(value?: string) {
   const piped = process.stdin.isTTY ? undefined : await Bun.stdin.text()
@@ -19,6 +25,50 @@ export function resolveThreadDirectory(project?: string, envPWD = process.env.PW
   const root = Filesystem.resolve(envPWD ?? cwd)
   if (project) return Filesystem.resolve(path.isAbsolute(project) ? project : path.join(root, project))
   return Filesystem.resolve(cwd)
+}
+
+export function selectedTui(args: { tui?: string }, environment = process.env): "rust" | "legacy" {
+  const choice = args.tui ?? environment.MIAO_TUI
+  return choice === "rust" || choice === "legacy" ? choice : DEFAULT_TUI
+}
+
+/// `MIAO_TUI_BIN` first, then the locations `install` writes, then PATH.
+export function rustTuiBinary(environment = process.env): string | undefined {
+  if (environment.MIAO_TUI_BIN) return environment.MIAO_TUI_BIN
+  const name = process.platform === "win32" ? "miao-tui.exe" : "miao-tui"
+  const installed = [
+    path.join(os.homedir(), ".miao", "bin", name),
+    path.join(os.homedir(), ".local", "bin", name),
+  ].find((candidate) => existsSync(candidate))
+  return installed ?? Bun.which(name) ?? undefined
+}
+
+/// Options the Rust TUI does not implement. They are refused rather than
+/// silently dropped: a user who asked for `--fork` must not get a different
+/// Session than they asked for.
+export function unsupportedByRustTui(args: {
+  mini?: boolean
+  fork?: boolean
+  agent?: string
+  auto?: boolean
+  yolo?: boolean
+  "dangerously-skip-permissions"?: boolean
+  replay?: boolean
+  noReplay?: boolean
+  replayLimit?: number
+  demo?: boolean
+}): string | undefined {
+  const options: Array<[string, boolean | undefined]> = [
+    ["--mini", args.mini],
+    ["--fork", args.fork],
+    ["--agent", args.agent !== undefined],
+    ["--auto", args.auto || args.yolo || args["dangerously-skip-permissions"]],
+    ["--replay", args.replay !== undefined],
+    ["--no-replay", args.noReplay],
+    ["--replay-limit", args.replayLimit !== undefined],
+    ["--demo", args.demo !== undefined],
+  ]
+  return options.find(([, set]) => set)?.[0]
 }
 
 export const TuiThreadCommand = cmd({
@@ -34,6 +84,11 @@ export const TuiThreadCommand = cmd({
         type: "string",
         alias: ["m"],
         describe: "model to use in the format of provider/model",
+      })
+      .option("tui", {
+        type: "string",
+        choices: ["rust", "legacy"] as const,
+        describe: "TUI implementation to start (MIAO_TUI also selects one)",
       })
       .option("continue", {
         alias: ["c"],
@@ -132,6 +187,61 @@ export const TuiThreadCommand = cmd({
         replayLimit: args.replayLimit,
         demo: args.demo,
       })
+      return
+    }
+
+    if (selectedTui(args) === "rust") {
+      const unsupported = unsupportedByRustTui(args)
+      if (unsupported) {
+        UI.error(`${unsupported} is not supported by the Rust TUI; use --tui legacy`)
+        process.exitCode = 1
+        return
+      }
+      if (process.platform === "win32" && !(await import("@miao/tui/terminal-win32")).vtSupported()) {
+        UI.error(
+          "The interactive interface needs a VT-capable terminal. Use Windows Terminal or PowerShell 7, or run `miao run` for plain output.",
+        )
+        process.exitCode = 1
+        return
+      }
+
+      const next = resolveThreadDirectory(args.project)
+      try {
+        process.chdir(next)
+      } catch {
+        UI.error("Failed to change directory to " + next)
+        process.exitCode = 1
+        return
+      }
+      const cwd = Filesystem.resolve(process.cwd())
+      const binary = rustTuiBinary()
+      if (!binary) {
+        UI.error("The Rust TUI is not installed. Reinstall miao, or start the TypeScript TUI with --tui legacy.")
+        process.exitCode = 1
+        return
+      }
+      const { DatabaseFile } = await import("@miao/core/database/file")
+      const { Global } = await import("@miao/core/global")
+      const prompt = await input(args.prompt)
+      // The Rust TUI spawns the engine itself, so it needs the same database,
+      // configuration directory, and tool bin the TypeScript host would use.
+      const argv = [binary, "--workspace", cwd, "--db", DatabaseFile.path(), "--config-dir", Global.Path.config]
+      if (args.model) argv.push("--model", args.model)
+      if (args.session) argv.push("--session", args.session)
+      else if (args.continue) argv.push("--continue")
+      if (prompt) argv.push("--prompt", prompt)
+      setTimeout(() => {
+        void (async () => {
+          const { upgrade } = await import("@/cli/upgrade")
+          await upgrade()
+        })().catch(() => {})
+      }, 1000).unref?.()
+      const child = Bun.spawn(argv, {
+        cwd,
+        stdio: ["inherit", "inherit", "inherit"],
+        env: { ...process.env, MIAO_TOOL_BIN: Global.Path.bin },
+      })
+      process.exitCode = await child.exited
       return
     }
 

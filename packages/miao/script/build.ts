@@ -356,41 +356,56 @@ for (const item of targets) {
   binaries[name] = Script.version
 }
 
-/**
- * Build the engine binary for this platform (B5) and archive it at the repo
- * root next to the CLI archives. Build failures fail the release rather than
- * uploading a stale binary or silently omitting an advertised platform asset.
- */
-async function buildEngineArchive(): Promise<{ archives: string[]; engines: Record<string, string> }> {
-  const os = ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string | undefined>)[
-    process.platform
+const hostOs = () =>
+  ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string | undefined>)[process.platform]
+
+/// The static Linux target for this architecture. The CLI archive can rely on
+/// the runner's glibc because it is a Bun executable, but a native binary
+/// linked against a newer runner glibc refuses to start on the LTS
+/// distributions many users run. musl also makes one archive work across glibc
+/// versions and distributions.
+const linuxMuslTarget = (arch: string) =>
+  arch === "arm64" ? "aarch64-unknown-linux-musl" : "x86_64-unknown-linux-musl"
+
+/// The target/arch pairs a native build produces on this host. The darwin
+/// build produces both architectures on one runner, so the archive set does
+/// not wait on the Intel pool; every other platform builds its host target.
+function nativeTargets(): { target: string | undefined; arch: string }[] {
+  if (darwinFlag)
+    return [
+      { target: process.arch === "arm64" ? undefined : "aarch64-apple-darwin", arch: "arm64" },
+      { target: process.arch === "x64" ? undefined : "x86_64-apple-darwin", arch: "x64" },
+    ]
+  return [
+    {
+      target: process.platform === "linux" ? linuxMuslTarget(process.arch) : undefined,
+      arch: process.arch === "arm64" ? "arm64" : "x64",
+    },
   ]
-  if (!os) return { archives: [], engines: {} }
-  // Ship a static Linux engine. The CLI archive can rely on the runner's glibc
-  // because it is a Bun executable, but a native engine linked against a newer
-  // runner glibc refuses to start on the LTS distributions many users run.
-  // musl also makes one archive work across glibc versions and distributions.
-  const linuxTarget =
-    process.platform === "linux"
-      ? process.arch === "arm64"
-        ? "aarch64-unknown-linux-musl"
-        : "x86_64-unknown-linux-musl"
-      : undefined
-  // The darwin build produces both architectures on one runner, so the archive
-  // set does not wait on the Intel pool, whose jobs have taken ten times as long
-  // as their arm64 siblings and never finished inside their budget. Every other
-  // platform builds its host target as before.
-  const wanted = darwinFlag
-    ? [
-        { target: process.arch === "arm64" ? undefined : "aarch64-apple-darwin", arch: "arm64" },
-        { target: process.arch === "x64" ? undefined : "x86_64-apple-darwin", arch: "x64" },
-      ]
-    : [{ target: linuxTarget as string | undefined, arch: process.arch === "arm64" ? "arm64" : "x64" }]
-  const crate = path.resolve(dir, "../../crates/miao-engine")
+}
+
+/**
+ * Build, sign, and archive one native binary per target. The engine and the
+ * Rust TUI ride the same release, so they share the musl, signing, and
+ * archiving rules instead of growing two variants that can drift.
+ *
+ * Build failures fail the release rather than uploading a stale binary or
+ * silently omitting an advertised platform asset.
+ */
+async function buildNativeArchives(spec: {
+  crate: string
+  binary: string
+  licenses: string[]
+  env?: Record<string, string>
+}): Promise<{ archives: string[]; bins: Record<string, string> }> {
+  const os = hostOs()
+  if (!os) return { archives: [], bins: {} }
+  const crate = path.resolve(dir, "../../crates", spec.crate)
+  const suffix = process.platform === "win32" ? ".exe" : ""
   const archives: string[] = []
-  const engines: Record<string, string> = {}
-  for (const { target, arch } of wanted) {
-    const musl = process.platform === "linux" && target === linuxTarget
+  const bins: Record<string, string> = {}
+  for (const { target, arch } of nativeTargets()) {
+    const musl = process.platform === "linux" && target === linuxMuslTarget(process.arch)
     const muslEnv =
       musl && target
         ? {
@@ -398,25 +413,24 @@ async function buildEngineArchive(): Promise<{ archives: string[]; engines: Reco
             [`CARGO_TARGET_${target.toUpperCase().replaceAll("-", "_")}_LINKER`]: "musl-gcc",
           }
         : {}
-    await $`cargo build --locked --release --bin miao-engine ${target ? ["--target", target] : []}`
+    await $`cargo build --locked --release --bin ${spec.binary} ${target ? ["--target", target] : []}`
       .cwd(crate)
       // Bun's .env() replaces the whole environment for the command: passing
       // only the musl overrides stripped PATH, so every cc/linker spawn failed
       // with "not found". Merge over the inherited environment instead.
-      .env({ ...process.env, ...muslEnv })
-    const suffix = process.platform === "win32" ? ".exe" : ""
+      .env({ ...process.env, ...muslEnv, ...spec.env })
     const bin = path.join(
       path.resolve(crate, process.env.CARGO_TARGET_DIR ?? "target"),
       ...(target ? [target] : []),
       "release",
-      `miao-engine${suffix}`,
+      `${spec.binary}${suffix}`,
     )
     // A cross-built binary cannot run here, so only the host target asserts its
     // version; the same crate produced both.
     if (!target || musl) {
-      const version = (await $`${bin} --version`.text()).trim()
-      if (version !== `miao-engine ${Script.version}`)
-        throw new Error(`engine version mismatch: ${version}; expected miao-engine ${Script.version}`)
+      const reported = (await $`${bin} --version`.text()).trim()
+      if (reported !== `${spec.binary} ${Script.version}`)
+        throw new Error(`${spec.binary} version mismatch: ${reported}; expected ${spec.binary} ${Script.version}`)
     }
     if (process.platform === "darwin") {
       const identity = await developerIdIdentity()
@@ -426,15 +440,14 @@ async function buildEngineArchive(): Promise<{ archives: string[]; engines: Reco
         await codesign(["--force", "--sign", "-", bin])
       }
     }
-    engines[`${process.platform}-${arch}`] = bin
-    const name = `miao-engine-${os}-${arch}`
+    bins[`${process.platform}-${arch}`] = bin
+    const name = `${spec.binary}-${os}-${arch}`
     const staging = `dist/${name}`
     await mkdir(staging, { recursive: true })
-    const files = [`miao-engine${suffix}`, "LICENSE", "LICENSE-APACHE-2.0", "NOTICE"]
+    const files = [`${spec.binary}${suffix}`, ...spec.licenses.map((file) => path.basename(file))]
     await Promise.all([
-      copyFile(bin, path.join(staging, `miao-engine${suffix}`)),
-      copyFile(path.resolve(dir, "../../LICENSE"), path.join(staging, "LICENSE")),
-      ...files.slice(2).map((file) => copyFile(path.join(crate, file), path.join(staging, file))),
+      copyFile(bin, path.join(staging, `${spec.binary}${suffix}`)),
+      ...spec.licenses.map((file) => copyFile(file, path.join(staging, path.basename(file)))),
     ])
     if (process.platform === "win32") {
       await $`powershell -NoProfile -Command ${`Compress-Archive -Path ${staging}/* -DestinationPath dist/${name}.zip -Force`}`
@@ -450,7 +463,34 @@ async function buildEngineArchive(): Promise<{ archives: string[]; engines: Reco
     await $`tar -czf ../${name}.tar.gz ${files}`.cwd(staging)
     archives.push(`./dist/${name}.tar.gz`)
   }
-  return { archives, engines }
+  return { archives, bins }
+}
+
+/** Build the engine binary for this platform (B5). */
+async function buildEngineArchive(): Promise<{ archives: string[]; engines: Record<string, string> }> {
+  const engineCrate = path.resolve(dir, "../../crates/miao-engine")
+  const { archives, bins } = await buildNativeArchives({
+    crate: "miao-engine",
+    binary: "miao-engine",
+    licenses: [
+      path.resolve(dir, "../../LICENSE"),
+      path.join(engineCrate, "LICENSE-APACHE-2.0"),
+      path.join(engineCrate, "NOTICE"),
+    ],
+  })
+  return { archives, engines: bins }
+}
+
+/** Build the Rust TUI binary. It is installed next to the CLI by `install`. */
+async function buildTuiArchive(): Promise<string[]> {
+  // The release build stamps the product version into `miao-tui --version`.
+  const { archives } = await buildNativeArchives({
+    crate: "miao-tui",
+    binary: "miao-tui",
+    licenses: [path.resolve(dir, "../../LICENSE")],
+    env: { MIAO_VERSION: Script.version },
+  })
+  return archives
 }
 
 if (Script.release) {
@@ -470,6 +510,10 @@ if (Script.release) {
   // The engine binary rides the same release channel (B5): one archive per
   // platform, built from this commit alongside the CLI.
   archives.push(...(engineBuild ?? (await buildEngineArchive())).archives)
+  // The Rust TUI is a separate binary the installer places next to the CLI.
+  // Building it here keeps that archive on the same commit as the engine the
+  // two are tested against.
+  archives.push(...(await buildTuiArchive()))
 
   // Bare executables cannot carry a staple ticket; submitting the zip registers
   // the binary's cdhash and Gatekeeper checks it online at first launch.
