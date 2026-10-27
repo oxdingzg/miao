@@ -302,9 +302,7 @@ async fn changing_invalid_calls_cannot_bypass_the_two_correction_allowance() {
         assert!(events
             .iter()
             .any(|event| event.kind == "tool.input_recovery.stopped"));
-        assert!(events
-            .iter()
-            .any(|event| event.kind == "message.synthetic"));
+        assert!(events.iter().any(|event| event.kind == "message.synthetic"));
         assert!(!events.iter().any(|event| event.kind == "tool.dispatched"));
         server.await.unwrap();
         let mut count = 0;
@@ -387,7 +385,8 @@ async fn provider_executed_calls_are_never_corrected_or_dispatched() {
     assert_eq!(calls, 1);
     assert!(!events
         .iter()
-        .any(|event| event.kind == "tool.dispatched" || event.kind == "tool.input_recovery.continuation"));
+        .any(|event| event.kind == "tool.dispatched"
+            || event.kind == "tool.input_recovery.continuation"));
 }
 
 /// A name the catalog does not know is still the model's to correct. A MiMo
@@ -412,7 +411,12 @@ async fn unregistered_calls_are_corrected_within_the_same_budget_and_never_dispa
     let results = events
         .iter()
         .filter(|event| event.kind == "message.committed")
-        .flat_map(|event| event.data["content"].as_array().cloned().unwrap_or_default())
+        .flat_map(|event| {
+            event.data["content"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+        })
         .filter(|block| block["type"] == "tool_result")
         .map(|block| block["content"].to_string())
         .collect::<Vec<_>>();

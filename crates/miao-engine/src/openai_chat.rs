@@ -348,7 +348,10 @@ fn inline_arguments(text: &str, name: &str) -> Option<Value> {
         let end = body.find("</tool_call>")?;
         let block = &body[..end];
         rest = &body[end + "</tool_call>".len()..];
-        let Some(opened) = block.find("<function=").map(|at| &block[at + "<function=".len()..]) else {
+        let Some(opened) = block
+            .find("<function=")
+            .map(|at| &block[at + "<function=".len()..])
+        else {
             continue;
         };
         let Some(header) = opened.find('>') else {
@@ -499,7 +502,9 @@ impl Parser for ChatState {
                 // was two ids and whose name was the name twice — a call the
                 // engine could not execute or even report on.
                 let slot = match (self.route.get(&index).copied(), id) {
-                    (Some(slot), Some(id)) if !self.calls[slot].id.is_empty() && self.calls[slot].id != id => {
+                    (Some(slot), Some(id))
+                        if !self.calls[slot].id.is_empty() && self.calls[slot].id != id =>
+                    {
                         self.calls.push(Call::default());
                         self.calls.len() - 1
                     }
@@ -640,9 +645,7 @@ impl Parser for ChatState {
                 },
             };
             content.push(crate::provider::decode_tool_call(
-                &call.id,
-                &call.name,
-                &arguments,
+                &call.id, &call.name, &arguments,
             )?);
         }
         Ok(Reply {
