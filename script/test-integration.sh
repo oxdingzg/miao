@@ -59,7 +59,14 @@ reap_group() {
 
 run_attempt() {
   local file="$1"
-  TMPDIR="$round" bun test --timeout "$timeout_ms" --only-failures "./$file" &
+  # The ACP suite drives its own real `miao serve` and expects TS-server
+  # mode; a visible engine binary switches serve into native engine mode
+  # whose credential routing the fixtures cannot provide. Only test/engine
+  # files run against the engine under test.
+  local strip_engine=""
+  case "$file" in test/acp/*) strip_engine="-u MIAO_ENGINE_BIN" ;; esac
+  # env options must precede the assignments, so the strip flag expands first.
+  env $strip_engine TMPDIR="$round" bun test --timeout "$timeout_ms" --only-failures "./$file" &
   local pid=$!
   local elapsed=0
   while kill -0 "$pid" 2>/dev/null; do
