@@ -17,6 +17,7 @@ import { PermissionSaved } from "@miao/core/permission/saved"
 import { Project } from "@miao/core/project"
 import { PtyTicket } from "@miao/core/pty/ticket"
 import { SessionV2 } from "@miao/core/session"
+import { SessionAdmission } from "@miao/core/session/admission"
 import { SessionExecution } from "@miao/core/session/execution"
 import { LocationServiceMap } from "@miao/core/location-service-map"
 import { SessionExecutionLocal } from "@miao/core/session/execution/local"
@@ -43,6 +44,7 @@ const applicationServices = LayerNode.group([
   httpClient,
   ToolOutputStore.cleanupNode,
   SessionV2.node,
+  SessionAdmission.node,
   PermissionSaved.node,
   PtyTicket.node,
   Credential.node,

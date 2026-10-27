@@ -45,6 +45,7 @@ import { capabilities, discoveredEngine, resolveEngine } from "./discovery"
 import { readCatalog } from "./catalog"
 import { generatedInputEngineID, messageID, promotedInputMessageID } from "./identity"
 import { makeEngineOwners } from "./owners"
+import { projectInputAdmitted } from "./input-projection"
 import type { EnginePricing } from "./session"
 import { NativeRecovery } from "./recovery"
 import { decodeAttachments } from "./prompt-attachments"
@@ -65,6 +66,7 @@ import { memoMap } from "@miao/core/effect/memo-map"
 
 import { SessionStore } from "@miao/core/session/store"
 import { SessionOwnership } from "@miao/core/session/ownership"
+import { SessionExecution } from "@miao/core/session/execution"
 import { SessionUsageStore } from "@miao/core/session/usage-store"
 import { Question } from "@miao/schema/question"
 import { translateApproval, translateQuestion } from "./bridge"
@@ -964,6 +966,13 @@ export const fromOwners = (
       ),
   }
 }
+
+/** The composed engine transport, when this process runs one. The engine is a
+ * process singleton (one child per storage), so the admission router reads it
+ * here instead of requiring the NativeEngine service in every Core graph. */
+let transport: NativeEngine.Interface | undefined
+export const currentTransport = (): NativeEngine.Interface | undefined => transport
+
 const layer = Layer.effect(
   NativeEngine.Service,
   Effect.gen(function* () {
@@ -979,6 +988,7 @@ const layer = Layer.effect(
     const llm = yield* LLMClient.Service
     const database = yield* Database.Service
     const events = yield* EventV2.Service
+    const execution = yield* SessionExecution.Service
     const sessions = yield* SessionStore.Service
     const ownershipService = yield* SessionOwnership.Service
     // Workflow subagents create first-class product Sessions from the
@@ -1012,6 +1022,18 @@ const layer = Layer.effect(
     // Journal replays price with the same catalog the live connection got; the
     // per-Location prepare refreshes it whenever an owner connects.
     let locationPricing: EnginePricing | undefined
+    // The S2 projection bridge: engine `input.admitted` rows for TS-owned
+    // placements are the only writes `session_input` receives. Projection is
+    // fire-and-forget; the engine journal stays the ordering authority.
+    const projectAdmitted = (event: EngineEvent) => {
+      void projectInputAdmitted(
+        { db: database.db, events, wake: (sessionID) => execution.wake(sessionID) },
+        event,
+      ).pipe(
+        Effect.catchCause((cause) => Effect.logWarning("engine input projection failed", { cause: Cause.pretty(cause) })),
+        Effect.runPromise,
+      ).catch(() => undefined)
+    }
     const owners = yield* makeEngineOwners({ ...configuration, ...mcp }, (location) =>
       Effect.gen(function* () {
         // A shared transport must not probe or reject binaries for TS-only
@@ -1050,6 +1072,7 @@ const layer = Layer.effect(
           },
           refresh: context.refresh,
           pricing: prices && ((model: string) => prices[model]),
+          onEngineEvent: projectAdmitted,
           onCredentialExpired: (input: { sessionID: string; id: string; integration: string }) =>
             Effect.runPromise(
               Effect.gen(function* () {
@@ -1222,7 +1245,7 @@ const layer = Layer.effect(
       }).pipe(Effect.asVoid)
     })
     yield* Effect.addFinalizer(() => unsubscribeTitle)
-    return NativeEngine.Service.of({
+    const service = NativeEngine.Service.of({
       ...engine,
       snapshot: (input) =>
         engine.snapshot(input).pipe(
@@ -1249,6 +1272,11 @@ const layer = Layer.effect(
           ),
         ),
     })
+    // The engine transport is a process singleton (one engine child per
+    // storage); the admission router reads it here instead of requiring the
+    // service, so Core graphs that never see NativeEngine still resolve.
+    transport = service
+    return service
   }),
 )
 
@@ -1265,6 +1293,7 @@ export const node = makeGlobalNode({
     FSUtil.node,
     Database.node,
     EventV2.node,
+    SessionExecution.node,
     SessionStore.node,
     SessionCreate.node,
     SessionOwnership.node,

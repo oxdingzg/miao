@@ -1,7 +1,7 @@
 import { Location } from "@miao/schema/location"
 import { ClientEvents } from "@miao/server/client-events"
 import { Effect, Scope, Semaphore } from "effect"
-import { EngineError, type EngineOptions } from "./client"
+import { EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { connectEngine } from "./connection"
 import type { CredentialExpiredTrigger, EnginePricing } from "./session"
 
@@ -14,6 +14,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
       refresh: Effect.Effect<void, EngineError>
       pricing?: EnginePricing
       onCredentialExpired?: CredentialExpiredTrigger
+      onEngineEvent?: (event: EngineEvent) => void
     },
     EngineError,
     Scope.Scope
@@ -98,6 +99,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
           },
           context.pricing,
           context.onCredentialExpired,
+          context.onEngineEvent,
         ).pipe(Effect.provideService(Scope.Scope, scope), Effect.provideService(ClientEvents.Service, clients))
         owners.set(input.storage, {
           input,

@@ -27,6 +27,7 @@ import { ToolOutputStore } from "@miao/core/tool-output-store"
 import { BackgroundJob } from "@miao/core/background-job"
 import { Ripgrep } from "@miao/core/ripgrep"
 import { SessionProjector } from "@miao/core/session/projector"
+import { SessionAdmission } from "@miao/core/session/admission"
 import { SessionV2 } from "@miao/core/session"
 import { SessionSchedule } from "@miao/core/session/schedule"
 import { SessionExecution } from "@miao/core/session/execution"
@@ -87,6 +88,12 @@ export interface AssemblyOptions {
    * itself, so the host supplies them.
    */
   readonly extensions?: Layer.Layer<never, any, any>
+  /**
+   * Host-supplied node replacements applied to every service-graph build,
+   * including the per-Location map. This is how a host swaps Core's default
+   * SessionAdmission writer for an engine-owned one.
+   */
+  readonly replacements?: LayerNode.Replacements
 }
 
 // Route tree:
@@ -127,6 +134,7 @@ const app = LayerNode.group([
   ModelsCatalog.node,
   PermissionSaved.node,
   SessionProjector.node,
+  SessionAdmission.node,
   McpAuth.node,
   WorkspaceLive.node,
   httpClient,
@@ -146,7 +154,12 @@ const app = LayerNode.group([
 export function createRoutes(
   options: AssemblyOptions = {},
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
-  const locationServiceMapV2 = buildLocationServiceMap()
+  const locationServiceMapV2 = buildLocationServiceMap(options.replacements ?? [])
+  const replacements: LayerNode.Replacements = [
+    [LocationServiceMap.node, locationServiceMapV2],
+    [SessionExecution.node, SessionExecutionLocal.node],
+    ...(options.replacements ?? []),
+  ]
 
   const http = Layer.mergeAll(apiRoutes(options.auth, options.runtime), options.extensions ?? Layer.empty).pipe(
     Layer.provide([errorLayer, compressionLayer, corsVaryFix, cors(options.cors), HttpServer.layerServices]),
@@ -158,20 +171,10 @@ export function createRoutes(
   // Routers, authentication, middleware, and controls belong to a listener.
   // Core execution and storage services below share the process MemoMap.
   return Layer.fresh(http).pipe(
-    Layer.provide(AppNodeBuilder.build(MoveSession.node, [[LocationServiceMap.node, locationServiceMapV2]])),
-    Layer.provide(
-      AppNodeBuilder.build(SessionV2.node, [
-        [LocationServiceMap.node, locationServiceMapV2],
-        [SessionExecution.node, SessionExecutionLocal.node],
-      ]),
-    ),
+    Layer.provide(AppNodeBuilder.build(MoveSession.node, replacements)),
+    Layer.provide(AppNodeBuilder.build(SessionV2.node, replacements)),
     Layer.provide(locationServiceMapV2),
-    Layer.provide(
-      AppNodeBuilder.build(app, [
-        [LocationServiceMap.node, locationServiceMapV2],
-        [SessionExecution.node, SessionExecutionLocal.node],
-      ]),
-    ),
+    Layer.provide(AppNodeBuilder.build(app, replacements)),
     // Must stay last: layers provided later in this pipe build beneath earlier ones,
     // so Observability must come after every service graph. Otherwise eagerly forked
     // fibers (e.g. the ModelsCatalog background refresh) capture Effect's default stdout
