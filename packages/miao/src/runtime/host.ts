@@ -96,6 +96,10 @@ export async function start(filename: string) {
       port: 0,
       mdns: false,
       cors: [],
+      // The window's first prompt creates a Session in the window's own
+      // directory; start that directory's native owner while the user is still
+      // reading the home screen instead of on Enter.
+      prewarm: process.cwd(),
       runtime: {
         administration: async () => {
           if (state.stopped) return undefined
