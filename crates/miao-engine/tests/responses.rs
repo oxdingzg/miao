@@ -110,6 +110,115 @@ async fn responses_runtime_preserves_opaque_reasoning_and_function_outputs() {
 }
 
 #[tokio::test]
+async fn glm_history_switches_to_responses_without_losing_tool_pairs() {
+    let (url, mut requests, server) = common::endpoint(vec![(
+        200,
+        stream(json!([{"type":"message","role":"assistant","content":[{"type":"output_text","text":"continued"}]}]), "completed"),
+    )]).await;
+    let provider = OpenAIResponses::new(url, "fixture".into(), "fixture-model".into()).unwrap();
+    let mut input = request();
+    for (role, content) in [
+        (
+            "assistant",
+            json!([{"type":"reasoning","text":"private GLM thinking"}]),
+        ),
+        (
+            "assistant",
+            json!([
+                {"type":"reasoning","text":"more private thinking","signature":"foreign-signature"},
+                {"type":"text","text":"Checking files"},
+                {"type":"tool_use","id":"glm-call-1","name":"read_file","input":{"path":"file"}},
+                {"type":"tool_use","id":"glm-call-2","name":"read_file","input":{"path":"missing"}}
+            ]),
+        ),
+        (
+            "user",
+            json!([
+                {"type":"tool_result","tool_use_id":"glm-call-1","content":"file contents"},
+                {"type":"tool_result","tool_use_id":"glm-call-2","content":"not found","is_error":true}
+            ]),
+        ),
+        (
+            "assistant",
+            json!([{"type":"reasoning","text":"done thinking"},{"type":"text","text":"Checked"}]),
+        ),
+        (
+            "user",
+            json!([{"type":"text","text":"continue with Responses"}]),
+        ),
+    ] {
+        input.messages.push(Message {
+            role: role.into(),
+            content,
+            checkpoint: None,
+            recorded_at_ms: None,
+        });
+    }
+    let history = input.messages.clone();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(input, progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(reply.content[0]["text"], "continued");
+    server.await.unwrap();
+    let body = requests.recv().await.unwrap();
+    assert_eq!(
+        body["input"],
+        json!([
+            {"role":"user","content":[{"type":"input_text","text":"hello"}]},
+            {"role":"assistant","content":[{"type":"output_text","text":"Checking files"}]},
+            {"type":"function_call","call_id":"glm-call-1","name":"read_file","arguments":"{\"path\":\"file\"}"},
+            {"type":"function_call","call_id":"glm-call-2","name":"read_file","arguments":"{\"path\":\"missing\"}"},
+            {"type":"function_call_output","call_id":"glm-call-1","output":"file contents"},
+            {"type":"function_call_output","call_id":"glm-call-2","output":"Tool error: not found"},
+            {"role":"assistant","content":[{"type":"output_text","text":"Checked"}]},
+            {"role":"user","content":[{"type":"input_text","text":"continue with Responses"}]}
+        ])
+    );
+    assert_eq!(history[1].content[0]["text"], "private GLM thinking");
+    assert!(!body.to_string().contains("thinking"));
+    assert!(!body.to_string().contains("foreign-signature"));
+}
+
+#[tokio::test]
+async fn malformed_reasoning_and_tool_history_still_fail_before_sending() {
+    for (role, block) in [
+        ("assistant", json!({"type":"reasoning","text":null})),
+        ("user", json!({"type":"reasoning","text":"invalid role"})),
+        (
+            "assistant",
+            json!({"type":"tool_use","id":"call","name":"read_file","input":[]}),
+        ),
+        (
+            "user",
+            json!({"type":"tool_result","tool_use_id":"call","content":[]}),
+        ),
+    ] {
+        let provider = OpenAIResponses::new(
+            "http://127.0.0.1:1/unused".into(),
+            "fixture".into(),
+            "model".into(),
+        )
+        .unwrap();
+        let mut input = request();
+        input.messages.push(Message {
+            role: role.into(),
+            content: json!([block]),
+            checkpoint: None,
+            recorded_at_ms: None,
+        });
+        let (progress, _receive) = mpsc::channel(64);
+        assert!(matches!(
+            provider
+                .stream(input, progress, CancellationToken::new())
+                .await,
+            Err(ProviderError::Stream(_))
+        ));
+    }
+}
+
+#[tokio::test]
 async fn invalid_shapes_refusal_hosted_actions_and_truncation_fail_closed() {
     let cases = [
         stream(
