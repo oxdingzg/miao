@@ -1,7 +1,10 @@
 use crossterm::event::Event as TerminalEvent;
 use crossterm::event::KeyEvent;
+use serde_json::Value;
 
 use crate::dialogs::{AccountInfo, ModelInfo};
+use crate::platform::attention;
+use crate::platform::clipboard;
 use crate::session::{SessionState, SessionSummary, Transcript};
 use crate::status::UsageSummary;
 
@@ -10,6 +13,18 @@ pub enum AppEvent {
     Key(KeyEvent),
     /// Bracketed paste, delivered as one chunk so line breaks stay literal.
     Paste(String),
+    /// Terminal focus change, which gates desktop notifications.
+    Focus(bool),
+    /// A watched Session event worth telling the user about.
+    Attention {
+        kind: attention::Kind,
+        /// Approval or question id, deduplicated while it stays pending.
+        id: Option<String>,
+    },
+    /// A clipboard read that ran off the UI thread.
+    Clipboard(Option<clipboard::Content>),
+    /// The external editor exited; `Ok(None)` means it saved an empty file.
+    EditorFinished(Result<Option<String>, String>),
     Resize {
         width: u16,
         height: u16,
@@ -35,10 +50,11 @@ pub enum AppEvent {
     /// A control action (cancel, approve, answer) the engine refused. Shown as
     /// a composer notice; it never ends the transport.
     ActionFailed(String),
-    /// A prompt the engine refused. The UI puts `text` back in the composer so
-    /// the draft is never lost.
+    /// A prompt the engine refused. The UI puts `text` and its attachments
+    /// back in the composer so the draft is never lost.
     PromptFailed {
         text: String,
+        attachments: Vec<Value>,
         message: String,
     },
     /// A terminal engine failure; the task stops after sending it.
@@ -67,6 +83,8 @@ pub fn from_terminal(event: TerminalEvent) -> Option<AppEvent> {
     match event {
         TerminalEvent::Key(key) => Some(AppEvent::Key(key)),
         TerminalEvent::Paste(text) => Some(AppEvent::Paste(text)),
+        TerminalEvent::FocusGained => Some(AppEvent::Focus(true)),
+        TerminalEvent::FocusLost => Some(AppEvent::Focus(false)),
         TerminalEvent::Resize(width, height) => Some(AppEvent::Resize { width, height }),
         _ => None,
     }

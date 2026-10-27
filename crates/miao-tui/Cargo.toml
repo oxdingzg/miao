@@ -16,6 +16,7 @@ path = "tests/fixtures/fake_engine.rs"
 test = false
 
 [dependencies]
+base64 = "0.22"
 crossterm = "0.29"
 ratatui = "0.30"
 serde = { version = "1", features = ["derive"] }

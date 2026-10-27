@@ -2,13 +2,16 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
+use serde_json::Value;
 
 use crate::commands::{self, Builtin};
 use crate::dialogs::{AccountInfo, Action as DialogAction, ConfirmKind, Dialog, ModelInfo, Row};
 use crate::editor::Action;
 use crate::engine;
-use crate::event::AppEvent;
+use crate::event::{AppEvent, Bus};
 use crate::pane::{render_dialog, Home, Pane, Panel, PanelKind, Shell};
+use crate::platform::attention::{self, Attention};
+use crate::platform::{clipboard, editor, zed};
 use crate::session::{SessionState, SessionSummary};
 use crate::state::{self, StashEntry};
 use crate::status::UsageSummary;
@@ -49,10 +52,23 @@ pub struct App {
     /// Template commands discovered at startup; a slash prompt naming one is
     /// rendered and admitted as a command instead of plain text.
     templates: Vec<commands::Template>,
+    attention: Attention,
+    /// Set once the engine is attached; clipboard reads report back through it.
+    bus: Option<Bus>,
+    pending_editor: Option<editor::Request>,
+    /// Approval and question ids already announced.
+    notified: Vec<String>,
+    /// The Zed selection already sent with an earlier prompt.
+    zed_selection_key: Option<String>,
+    clipboard_busy: bool,
 }
 
 impl App {
-    pub fn new(workspace: PathBuf, theme: Theme) -> Self {
+    pub fn new(
+        workspace: PathBuf,
+        theme: Theme,
+        attention_config: crate::config::AttentionConfig,
+    ) -> Self {
         let home = Home::new(theme.clone());
         let templates = commands::templates(&workspace);
         let mut shell = Shell::new(&workspace, theme);
@@ -79,7 +95,22 @@ impl App {
             pending_models: false,
             pending_accounts: false,
             templates,
+            attention: Attention::new(attention_config),
+            bus: None,
+            pending_editor: None,
+            notified: Vec::new(),
+            zed_selection_key: None,
+            clipboard_busy: false,
         }
+    }
+
+    pub fn set_bus(&mut self, bus: Bus) {
+        self.bus = Some(bus);
+    }
+
+    /// The editor the drive loop should run after suspending the terminal.
+    pub fn take_editor_request(&mut self) -> Option<editor::Request> {
+        self.pending_editor.take()
     }
 
     pub fn attach_engine(&mut self, engine: engine::Handle) {
@@ -115,9 +146,37 @@ impl App {
             AppEvent::Key(key) => self.handle_key(key),
             AppEvent::Paste(text) => {
                 if self.screen == Screen::Session {
-                    self.shell.composer.paste(&text);
+                    // Windows Terminal can surface an image-only clipboard as an
+                    // empty bracketed paste; reading the clipboard is the only
+                    // way to find out what it held.
+                    if text.is_empty() {
+                        self.read_clipboard();
+                    } else {
+                        self.shell.composer.paste(&text);
+                    }
                 }
             }
+            AppEvent::Focus(focused) => self.attention.set_focus(focused),
+            AppEvent::Attention { kind, id } => self.announce(kind, id),
+            AppEvent::Clipboard(content) => {
+                self.clipboard_busy = false;
+                match content {
+                    Some(clipboard::Content::Image { mime, data }) => {
+                        let count = self.shell.composer.attach_image(&mime, &data);
+                        self.notice(&format!("attached image {count}"));
+                    }
+                    Some(clipboard::Content::Text(text)) => self.shell.composer.paste(&text),
+                    None => self.notice("the clipboard is empty"),
+                }
+            }
+            AppEvent::EditorFinished(result) => match result {
+                Ok(Some(text)) => {
+                    self.shell.composer.restore(&text);
+                    self.shell.composer.notice = None;
+                }
+                Ok(None) => {}
+                Err(message) => self.notice(&message),
+            },
             AppEvent::Resize { .. } => {}
             AppEvent::Sessions(rows) => {
                 self.home.set_rows(rows);
@@ -185,8 +244,12 @@ impl App {
             AppEvent::ActionFailed(message) => {
                 self.shell.composer.notice = Some(message);
             }
-            AppEvent::PromptFailed { text, message } => {
-                self.shell.composer.restore(&text);
+            AppEvent::PromptFailed {
+                text,
+                attachments,
+                message,
+            } => {
+                self.shell.composer.restore_with(&text, attachments);
                 self.shell.composer.notice = Some(message);
             }
             AppEvent::EngineFailure(message) => {
@@ -249,6 +312,7 @@ impl App {
             KeyCode::Char('d') => self.run_builtin(Builtin::Debug),
             KeyCode::Char('p') => self.run_builtin(Builtin::Stash),
             KeyCode::Char('P') => self.run_builtin(Builtin::StashDraft),
+            KeyCode::Char('e') => self.run_builtin(Builtin::Editor),
             KeyCode::Char('q') => self.run_builtin(Builtin::Quit),
             _ => {}
         }
@@ -276,6 +340,7 @@ impl App {
             Builtin::Debug => self.open_debug(),
             Builtin::Stash => self.open_stash(),
             Builtin::StashDraft => self.stash_current(),
+            Builtin::Editor => self.open_editor(),
             Builtin::Help => self.open_help(),
             Builtin::Quit => self.quit = true,
         }
@@ -631,6 +696,76 @@ impl App {
         }
     }
 
+    /// Tell the user about a Session event, at most once per pending request.
+    fn announce(&mut self, kind: attention::Kind, id: Option<String>) {
+        if let Some(id) = id {
+            if self.notified.contains(&id) {
+                return;
+            }
+            self.notified.push(id);
+            if self.notified.len() > 64 {
+                self.notified.remove(0);
+            }
+        }
+        let title = self
+            .session
+            .as_ref()
+            .map(|session| session.label().to_string())
+            .unwrap_or_else(|| "miao".to_string());
+        self.attention.notify(kind, &title);
+    }
+
+    /// Read the clipboard off the UI thread. Text goes into the composer; an
+    /// image becomes a numbered attachment.
+    fn read_clipboard(&mut self) {
+        if self.clipboard_busy {
+            return;
+        }
+        let Some(bus) = self.bus.clone() else {
+            return;
+        };
+        self.clipboard_busy = true;
+        let host_file = std::env::var_os("MTTY_CLIPBOARD_FILE").map(PathBuf::from);
+        std::thread::spawn(move || {
+            let content = clipboard::read(host_file.as_deref());
+            bus.send(AppEvent::Clipboard(content));
+        });
+    }
+
+    fn copy_last_response(&mut self) {
+        let Some(text) = self.shell.last_response() else {
+            self.notice("there is no response to copy");
+            return;
+        };
+        clipboard::copy(&text);
+        self.notice("copied the last response");
+    }
+
+    fn open_editor(&mut self) {
+        if self.screen != Screen::Session {
+            self.notice("open a Session to compose a prompt");
+            return;
+        }
+        let text = self.shell.composer.editor.text().to_string();
+        match editor::request(&self.workspace, text) {
+            Ok(request) => self.pending_editor = Some(request),
+            Err(message) => self.notice(&message),
+        }
+    }
+
+    /// Prepend the current Zed selection once per selection. The engine sees
+    /// one prompt string, so the context travels as text rather than a part.
+    fn zed_context(&mut self) -> Option<String> {
+        let selection = zed::selection(&self.workspace)?;
+        let context = zed::context(&selection)?;
+        let key = zed::key(&selection);
+        if self.zed_selection_key.as_deref() == Some(key.as_str()) {
+            return None;
+        }
+        self.zed_selection_key = Some(key);
+        Some(context)
+    }
+
     fn apply_theme(&mut self, name: &str) {
         let Some(palette) = theme::builtin(name) else {
             return;
@@ -730,6 +865,14 @@ impl App {
             self.open_accounts();
             return;
         }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('v') {
+            self.read_clipboard();
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('y') {
+            self.copy_last_response();
+            return;
+        }
         let ctrl_alt = key.modifiers.contains(KeyModifiers::CONTROL)
             && key.modifiers.contains(KeyModifiers::ALT);
         if matches!(key.code, KeyCode::PageUp) || (ctrl_alt && key.code == KeyCode::Char('y')) {
@@ -746,7 +889,7 @@ impl App {
         match self.shell.composer.handle_key(key) {
             Action::None => {}
             Action::Quit => self.quit = true,
-            Action::Submit(text) => self.submit(text),
+            Action::Submit { text, attachments } => self.submit(text, attachments),
         }
     }
 
@@ -858,13 +1001,13 @@ impl App {
         self.shell.title.set_status(Some(status));
     }
 
-    fn submit(&mut self, text: String) {
+    fn submit(&mut self, text: String, attachments: Vec<Value>) {
         let Some(session_id) = self.session.as_ref().map(|session| session.id.clone()) else {
-            self.shell.composer.restore(&text);
+            self.shell.composer.restore_with(&text, attachments);
             return;
         };
         let Some(engine) = self.engine.clone() else {
-            self.shell.composer.restore(&text);
+            self.shell.composer.restore_with(&text, attachments);
             return;
         };
         self.shell.composer.notice = None;
@@ -882,7 +1025,13 @@ impl App {
                 return;
             }
         }
-        engine.prompt(&session_id, &text);
+        // Editor context is a prompt prefix rather than a wire field: the
+        // engine admits one text string, and the TS client does the same.
+        let text = match self.zed_context() {
+            Some(context) => format!("{context}\n\n{text}"),
+            None => text,
+        };
+        engine.prompt(&session_id, &text, attachments);
     }
 
     fn leave_session(&mut self) {
@@ -894,8 +1043,7 @@ impl App {
         self.shell.panel = None;
         self.shell.set_session(None);
         self.shell.title.set_status(None);
-        self.shell.composer.editor.clear();
-        self.shell.composer.dismiss_completion();
+        self.shell.composer.clear();
         self.dialog = None;
         self.leader = false;
         if let Some(engine) = self.engine.as_ref() {
@@ -945,6 +1093,7 @@ mod tests {
                 name: DEFAULT_THEME.to_string(),
                 palette,
             },
+            crate::config::AttentionConfig::default(),
         )
     }
 

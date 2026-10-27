@@ -1,5 +1,6 @@
 pub mod app;
 pub mod commands;
+pub mod config;
 pub mod dialogs;
 pub mod editor;
 pub mod engine;
@@ -7,6 +8,7 @@ pub mod event;
 pub mod input;
 pub mod markdown;
 pub mod pane;
+pub mod platform;
 pub mod session;
 pub mod state;
 pub mod status;
@@ -31,7 +33,11 @@ pub fn run(
     for warning in &loaded.warnings {
         eprintln!("miao-tui: {warning}");
     }
-    let mut app = App::new(workspace.clone(), loaded.theme);
+    let (config, warnings) = config::load(&workspace);
+    for warning in &warnings {
+        eprintln!("miao-tui: {warning}");
+    }
+    let mut app = App::new(workspace.clone(), loaded.theme, config.attention);
     let mut terminal = terminal::init().inspect_err(|_| terminal::restore())?;
     terminal::install_panic_hook();
     let (bus, mut events) = event::bus();
@@ -64,13 +70,14 @@ async fn drive(
     match engine::settings(workspace, db, model) {
         Ok(settings) => {
             app.set_settings(settings.clone());
-            match engine::attach(&settings, bus) {
+            match engine::attach(&settings, bus.clone()) {
                 Ok(handle) => app.attach_engine(handle),
                 Err(message) => app.handle(AppEvent::EngineFailure(message)),
             }
         }
         Err(message) => app.handle(AppEvent::EngineFailure(message)),
     }
+    app.set_bus(bus.clone());
     let mut ticker = tokio::time::interval(Duration::from_millis(100));
     loop {
         terminal.draw(|frame| app.render(frame))?;
@@ -82,7 +89,15 @@ async fn drive(
         }
         tokio::select! {
             event = events.recv() => match event {
-                Some(app_event) => app.handle(app_event),
+                Some(app_event) => {
+                    app.handle(app_event);
+                    if let Some(request) = app.take_editor_request() {
+                        terminal::suspend();
+                        let result = platform::editor::run(&request);
+                        terminal::resume(terminal)?;
+                        app.handle(AppEvent::EditorFinished(result));
+                    }
+                }
                 None => return Ok(()),
             },
             _ = ticker.tick() => {}

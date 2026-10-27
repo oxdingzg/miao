@@ -15,6 +15,7 @@ use tokio::time::Instant;
 
 use crate::dialogs::{AccountInfo, ModelInfo};
 use crate::event::{AppEvent, Bus};
+use crate::platform::attention;
 use crate::session::{
     catalog_rows, home_rows, DisplayFile, SessionState, SessionSummary, Transcript,
 };
@@ -31,10 +32,12 @@ pub enum Request {
     RefreshSessions,
     Open(String),
     Refresh,
-    /// Admit one prompt into a Session and wake it.
+    /// Admit one prompt with its inline media attachments into a Session and
+    /// wake it.
     Prompt {
         session_id: String,
         text: String,
+        attachments: Vec<Value>,
     },
     /// Admit a rendered template command: the engine captures the reference,
     /// prepares its placeholders after promotion, and records the command.
@@ -121,10 +124,11 @@ impl Handle {
         let _ = self.tx.send(Request::Refresh);
     }
 
-    pub fn prompt(&self, session_id: &str, text: &str) {
+    pub fn prompt(&self, session_id: &str, text: &str, attachments: Vec<Value>) {
         let _ = self.tx.send(Request::Prompt {
             session_id: session_id.to_string(),
             text: text.to_string(),
+            attachments,
         });
     }
 
@@ -300,6 +304,9 @@ pub fn attach(settings: &Settings, bus: Bus) -> Result<Handle, String> {
 struct Opened {
     id: String,
     seen: u64,
+    /// Committed sequence covered by the last snapshot. Events at or below it
+    /// are replay, not news, so they must not fire attention sounds.
+    live_after: u64,
     displays: HashMap<String, Vec<DisplayFile>>,
 }
 
@@ -331,14 +338,18 @@ async fn run(
                     dirty = None;
                     open_session(&client, &bus, &mut open, session_id).await;
                 }
-                Some(Request::Prompt { session_id, text }) => {
+                Some(Request::Prompt {
+                    session_id,
+                    text,
+                    attachments,
+                }) => {
                     let input = json!({
                         "session_id": session_id.clone(),
                         "input_id": new_id("in"),
                         "prompt": text,
                         "delivery": "steer",
                     });
-                    match client.admit(input, true, Vec::new()).await {
+                    match client.admit(input, true, attachments.clone()).await {
                         Ok(_) => {
                             if open.as_ref().is_some_and(|state| state.id == session_id) {
                                 dirty = Some(Instant::now());
@@ -346,6 +357,7 @@ async fn run(
                         }
                         Err(error) => bus.send(AppEvent::PromptFailed {
                             text,
+                            attachments,
                             message: format!("send failed: {error}"),
                         }),
                     }
@@ -371,6 +383,7 @@ async fn run(
                         }
                         Err(error) => bus.send(AppEvent::PromptFailed {
                             text: original,
+                            attachments: Vec::new(),
                             message: format!("command failed: {error}"),
                         }),
                     }
@@ -561,6 +574,13 @@ async fn run(
                 }
                 Some(TransportEvent::Event(event)) => {
                     let watched = open.as_ref().is_some_and(|state| state.id == event.session_id);
+                    if watched && open.as_ref().is_some_and(|state| event.seq > state.live_after) {
+                        // Replay stops at the snapshot cursor: only events past
+                        // it describe something that just happened.
+                        if let Some((kind, id)) = attention_event(&event) {
+                            bus.send(AppEvent::Attention { kind, id });
+                        }
+                    }
                     // Anything that changes run status, the transcript, or a
                     // pending decision settles into the next snapshot.
                     if watched
@@ -643,6 +663,7 @@ async fn open_session(
     let mut state = Opened {
         id: session_id,
         seen: 0,
+        live_after: 0,
         displays: HashMap::new(),
     };
     project(client, bus, &mut state).await;
@@ -689,12 +710,42 @@ async fn project(client: &EngineClient, bus: &Bus, state: &mut Opened) {
     }
     state.displays = transcript.displays.clone();
     let cursor = snapshot.get("cursor").and_then(Value::as_u64).unwrap_or(0);
+    state.live_after = cursor.max(state.live_after);
     let _ = client.subscribe(&state.id, cursor).await;
     bus.send(AppEvent::SessionOpened {
         summary: SessionSummary::from_snapshot(&snapshot),
         transcript: Box::new(transcript),
         state: SessionState::from_snapshot(&snapshot),
     });
+}
+
+/// An event the user should hear about if attention is enabled. Approval and
+/// question ids deduplicate repeated notifications for one pending request.
+fn attention_event(event: &transport::EngineEvent) -> Option<(attention::Kind, Option<String>)> {
+    match event.kind.as_str() {
+        "approval.requested" => Some((
+            attention::Kind::Permission,
+            event
+                .data
+                .get("request_id")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        )),
+        "question.requested" => Some((
+            attention::Kind::Question,
+            event
+                .data
+                .get("question_id")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        )),
+        "run.finished" => match event.data.get("reason").and_then(Value::as_str) {
+            Some("failed") => Some((attention::Kind::Error, None)),
+            Some("interrupted") => None,
+            _ => Some((attention::Kind::Done, None)),
+        },
+        _ => None,
+    }
 }
 
 /// Session and input ids are only opaque keys to the engine; hex keeps them
