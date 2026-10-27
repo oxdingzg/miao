@@ -96,10 +96,24 @@ fn main() {
                     "account_selection": {"credential_id": "cred_a"},
                 });
                 if !metadata_only {
-                    snapshot["messages"] = json!([
-                        {"seq":1,"role":"user","content":"hello from the fixture","checkpoint":null,"recorded_at_ms":null},
-                        {"seq":2,"role":"assistant","content":[{"type":"text","text":"fixture answer"}],"identity":{"agent":"build","provider":{"model":"fake/model"}},"checkpoint":null,"recorded_at_ms":null}
-                    ]);
+                    // ses_b is the renderer fixture: markdown structure plus a
+                    // completed tool call, so the smoke test can assert what a
+                    // person sees rather than the transport bytes.
+                    snapshot["messages"] = if target == "ses_b" {
+                        json!([
+                            {"seq":1,"role":"user","content":"show the renderer","checkpoint":null,"recorded_at_ms":null},
+                            {"seq":2,"role":"assistant","content":[
+                                {"type":"text","text":"## Fixture Notes\n\n- **bold** and `code`\n\n| name | value |\n| --- | --- |\n| a | 1 |"},
+                                {"type":"tool_use","id":"call_1","name":"read_file","input":{"path":"src/lib.rs"}}
+                            ],"identity":{"agent":"build","provider":{"model":"fake/model"}},"checkpoint":null,"recorded_at_ms":null},
+                            {"seq":3,"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"{\"text\":\"one\\ntwo\",\"sha256\":\"0\"}","is_error":false}],"checkpoint":null,"recorded_at_ms":null}
+                        ])
+                    } else {
+                        json!([
+                            {"seq":1,"role":"user","content":"hello from the fixture","checkpoint":null,"recorded_at_ms":null},
+                            {"seq":2,"role":"assistant","content":[{"type":"text","text":"fixture answer"}],"identity":{"agent":"build","provider":{"model":"fake/model"}},"checkpoint":null,"recorded_at_ms":null}
+                        ])
+                    };
                 }
                 snapshot["pending"] = json!([]);
                 snapshot["active_run"] = json!(null);

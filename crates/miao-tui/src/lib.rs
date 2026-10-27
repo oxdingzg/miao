@@ -5,12 +5,14 @@ pub mod editor;
 pub mod engine;
 pub mod event;
 pub mod input;
+pub mod markdown;
 pub mod pane;
 pub mod session;
 pub mod state;
 pub mod status;
 pub mod terminal;
 pub mod theme;
+pub mod tool;
 pub mod transport;
 
 use std::error::Error;

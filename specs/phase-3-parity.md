@@ -131,3 +131,23 @@
 | `/init`、`/review` | 有意偏离（Phase 4 宿主移植） | 插件宿主注入，纯引擎客户端拿不到 |
 | 模板的 `agent`/`model`/`variant`/`subtask` 执行默认值 | 有意偏离（Phase 4 宿主移植） | 引擎要求 agent 带捕获 manifest；本片只发 `{name, arguments}` |
 | MCP 命令（`:mcp`）与 skills 来源 | 有意偏离（Phase 4 宿主移植） | 数据来自宿主服务 |
+
+## T9 渲染对齐
+
+| 行为 | 状态 | 备注 |
+|---|---|---|
+| assistant 文本按 markdown 渲染：标题、强调、行内代码、围栏、列表、引用、分隔线、表格 | 已对齐 | `markdown.rs`；围栏内不做行内解析，未闭合围栏保留正文 |
+| 语法高亮（代码块与 diff 的 tree-sitter 着色） | 有意偏离（依赖） | Rust 侧按主题色区分 `+`/`-`/`@@` 与代码块底纹，不引入 tree-sitter |
+| 引擎工具名投影为产品词汇（`read_file`→`read` 等） | 已对齐 | `tool::product_name`；子集同 `bridge.ts:TOOL_IDS` |
+| 引擎输入字段投影（`path`→`filePath`、`text`→`content`、argv→command、task 描述） | 已对齐 | `tool::product_input` |
+| shell 结果投影：stdout+stderr+`[exit code N]`/超时/信号/未执行，拒绝原因只显示错误文本 | 已对齐 | `tool::shell_text`；ANSI 序列先剥离 |
+| bash 行：命令首行 + 输出前 6 行折叠 | 已对齐 | TS 折叠态同 6 行 |
+| read 行：路径 + `Read N lines`/`Read image`/`Read N entries`（truncated 注明） | 已对齐 | 读引擎结果里的 `text`/`entries` |
+| glob/grep 行：pattern（含 path）+ 匹配数 | 已对齐 | 匹配数来自结果 `matches` |
+| write/edit/apply_patch：文件摘要 + 每个文件的 `◆ action +N −M` 与 12 行 diff | 已对齐 | diff 来自已提交的 `tool.completed.display`；跳过 `Index:`/`---`/`+++` 头 |
+| todowrite：`[✓] id: content ← deps`，in_progress warning、其余 muted | 已对齐 | todo 取自输入的 `todos`；结果 `{value:{todos}}` 兜底 |
+| question：每个问题 + 答案（无答案 `(no answer)`） | 已对齐 | 答案来自结果 `answers` |
+| webfetch/websearch/skill：单行，不显示正文 | 已对齐 | 与 TS 折叠态一致 |
+| task：描述 + 结果摘要 | 有意偏离（后续切片） | 内联子会话 transcript 需要订阅子 Session 的 wire，不在本片 |
+| 工具行展开/折叠（TS 的 click to view） | 有意偏离（交互面） | transcript 当前是只读阅读面；预览行数按折叠态 |
+| transcript 中持久化消息以外的事件类型 | 已对齐 | 仍只由 snapshot 投影消息；`tool.completed` 只补 display diff |
