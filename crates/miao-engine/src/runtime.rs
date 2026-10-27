@@ -4398,7 +4398,10 @@ async fn authorize(
             // product's decide() would: a configured deny never reaches this
             // branch, and a saved "always allow" lifts the remaining ask. The
             // whole call stays a question unless every target is covered.
-            let saved = inner.store.saved_rules(inner.tools.location().to_string()).await?;
+            let saved = inner
+                .store
+                .saved_rules(inner.tools.location().to_string())
+                .await?;
             if !saved.is_empty() {
                 let action = policy.bound_action(prepared.name());
                 let covered = auto_targets.iter().all(|target| {
@@ -4438,7 +4441,10 @@ async fn authorize(
         prepared.resource(),
         prepared.input(),
     )?;
-    let saved_authority = inner.store.saved_rules(inner.tools.location().to_string()).await?;
+    let saved_authority = inner
+        .store
+        .saved_rules(inner.tools.location().to_string())
+        .await?;
     let authority_revision = crate::permission::digest(&serde_json::to_vec(&json!({
         "semantics":"exact-persistent-authority-v1","policy":policy.revision(),
         "boundary":inner.tools.grant_authority_descriptor(),"access":format!("{:?}",prepared.access()),

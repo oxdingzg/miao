@@ -39,7 +39,11 @@ fn bounded(workspace: &str) -> bool {
 
 /// Project the host's saved rules for one workspace. Idempotent by the rule's
 /// content digest: replaying the import never duplicates a row.
-pub(crate) fn project(connection: &mut Connection, workspace: &str, rules: &[Rule]) -> Result<(), Error> {
+pub(crate) fn project(
+    connection: &mut Connection,
+    workspace: &str,
+    rules: &[Rule],
+) -> Result<(), Error> {
     if !bounded(workspace) || rules.len() > MAX_RULES {
         return Err(Error::Invalid("invalid saved permission projection".into()));
     }
@@ -121,7 +125,11 @@ mod tests {
 
     #[test]
     fn the_projection_survives_a_reopen() {
-        let path = std::env::temp_dir().join(format!("miao-saved-{}-{}.db", std::process::id(), rule_digest(&rule("bash", "*")).unwrap()));
+        let path = std::env::temp_dir().join(format!(
+            "miao-saved-{}-{}.db",
+            std::process::id(),
+            rule_digest(&rule("bash", "*")).unwrap()
+        ));
         let _ = std::fs::remove_file(&path);
         {
             let mut connection = Connection::open(&path).unwrap();

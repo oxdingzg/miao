@@ -477,7 +477,10 @@ impl Host {
                     .map_err(Error::from)
             }
             Command::PermissionSavedProject { workspace, rules } => {
-                runtime.store().project_saved_rules(workspace, rules).await?;
+                runtime
+                    .store()
+                    .project_saved_rules(workspace, rules)
+                    .await?;
                 Ok(json!({ "accepted": true }))
             }
             Command::Approve {

@@ -2211,7 +2211,10 @@ impl Store {
             .await
     }
 
-    pub async fn saved_rules(&self, workspace: String) -> Result<Vec<crate::permission_rules::Rule>, Error> {
+    pub async fn saved_rules(
+        &self,
+        workspace: String,
+    ) -> Result<Vec<crate::permission_rules::Rule>, Error> {
         self.call(move |conn| crate::permission_saved::rules(conn, &workspace))
             .await
     }
