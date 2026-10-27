@@ -1,4 +1,16 @@
 {
+  "tui": [
+    "crates/miao-tui/**",
+    ".github/workflows/tui.yml",
+    "packages/tui/src/config/**",
+    "packages/tui/src/theme/**",
+    "packages/miao/src/config/tui.ts",
+    ".github/workflows/ci.yml",
+    ".github/ci-checks.json",
+    ".github/scripts/ci-gate.py",
+    ".github/scripts/test_ci_gate.py",
+    ".github/actions/**"
+  ],
   "engine": [
     "crates/miao-engine/**",
     "crates/miao-sandbox/**",
