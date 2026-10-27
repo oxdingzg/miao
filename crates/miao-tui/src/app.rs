@@ -9,6 +9,7 @@ use crate::dialogs::{AccountInfo, Action as DialogAction, ConfirmKind, Dialog, M
 use crate::editor::Action;
 use crate::engine;
 use crate::event::{AppEvent, Bus};
+use crate::keybinds::{self, Keymap};
 use crate::pane::{render_dialog, Home, Pane, Panel, PanelKind, Shell};
 use crate::platform::attention::{self, Attention};
 use crate::platform::{clipboard, editor, zed};
@@ -46,6 +47,7 @@ pub struct App {
     dialog: Option<Dialog>,
     /// `Ctrl+X` was pressed; the next key completes the chord.
     leader: bool,
+    keys: Keymap,
     workspace: PathBuf,
     /// What the engine was started with, shown by the debug dialog.
     settings: Option<engine::Settings>,
@@ -81,6 +83,7 @@ impl App {
         workspace: PathBuf,
         theme: Theme,
         themes: theme::Catalog,
+        keys: Keymap,
         attention_config: crate::config::AttentionConfig,
         startup: Startup,
     ) -> Self {
@@ -100,6 +103,7 @@ impl App {
             quit: false,
             dialog: None,
             leader: false,
+            keys,
             workspace,
             settings: None,
             models: Vec::new(),
@@ -308,7 +312,7 @@ impl App {
         if self.dialog.is_some() {
             // Dialogs are modal: nothing reaches the page below, and Esc
             // closes the top layer. Ctrl+C still quits.
-            if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            if self.keys.matches(keybinds::Action::InputClear, &key) {
                 self.quit = true;
                 return;
             }
@@ -320,11 +324,11 @@ impl App {
             self.handle_leader(key);
             return;
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('x') {
+        if self.keys.is_leader(&key) {
             self.leader = true;
             return;
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('p') {
+        if self.keys.matches(keybinds::Action::CommandList, &key) {
             self.open_palette();
             return;
         }
@@ -365,17 +369,18 @@ impl App {
     }
 
     fn handle_leader(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Char('m') => self.run_builtin(Builtin::Models),
-            KeyCode::Char('t') => self.run_builtin(Builtin::Theme),
-            KeyCode::Char('l') => self.run_builtin(Builtin::Sessions),
-            KeyCode::Char('n') => self.run_builtin(Builtin::NewSession),
-            KeyCode::Char('s') => self.run_builtin(Builtin::Status),
-            KeyCode::Char('d') => self.run_builtin(Builtin::Debug),
-            KeyCode::Char('p') => self.run_builtin(Builtin::Stash),
-            KeyCode::Char('P') => self.run_builtin(Builtin::StashDraft),
-            KeyCode::Char('e') => self.run_builtin(Builtin::Editor),
-            KeyCode::Char('q') => self.run_builtin(Builtin::Quit),
+        match self.keys.leader_action(&key) {
+            Some(keybinds::Action::ModelList) => self.run_builtin(Builtin::Models),
+            Some(keybinds::Action::ThemeList) => self.run_builtin(Builtin::Theme),
+            Some(keybinds::Action::SessionList) => self.run_builtin(Builtin::Sessions),
+            Some(keybinds::Action::SessionNew) => self.run_builtin(Builtin::NewSession),
+            Some(keybinds::Action::StatusView) => self.run_builtin(Builtin::Status),
+            Some(keybinds::Action::DebugView) => self.run_builtin(Builtin::Debug),
+            Some(keybinds::Action::Stash) => self.run_builtin(Builtin::Stash),
+            Some(keybinds::Action::StashDraft) => self.run_builtin(Builtin::StashDraft),
+            Some(keybinds::Action::EditorOpen) => self.run_builtin(Builtin::Editor),
+            Some(keybinds::Action::CopyMessage) => self.copy_last_response(),
+            Some(keybinds::Action::AppExit) => self.run_builtin(Builtin::Quit),
             _ => {}
         }
     }
@@ -856,9 +861,11 @@ impl App {
     }
 
     fn handle_home_key(&mut self, key: KeyEvent) {
+        if self.keys.matches(keybinds::Action::AppExit, &key) {
+            self.quit = true;
+            return;
+        }
         match (key.code, key.modifiers) {
-            (KeyCode::Char('c' | 'd'), KeyModifiers::CONTROL) => self.quit = true,
-            (KeyCode::Char('q'), KeyModifiers::NONE) => self.quit = true,
             (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
                 self.home.move_cursor(1);
             }
@@ -886,7 +893,8 @@ impl App {
     }
 
     fn handle_session_key(&mut self, key: KeyEvent) {
-        if key.code == KeyCode::Esc {
+        let action = |action| self.keys.matches(action, &key);
+        if action(keybinds::Action::SessionInterrupt) {
             if self.shell.composer.dismiss_completion() {
                 return;
             }
@@ -908,23 +916,26 @@ impl App {
             self.leave_session();
             return;
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
-            if self.shell.composer.editor.is_empty() {
-                self.quit = true;
-                return;
-            }
+        if action(keybinds::Action::InputClear) && !self.shell.composer.editor.is_empty() {
             self.shell.composer.editor.clear();
             self.shell.composer.dismiss_completion();
             return;
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('r') {
+        // `app_exit` shares `ctrl+d` with `input_delete`; like the TypeScript
+        // host it only exits while the composer is empty, so `ctrl+d` still
+        // deletes forward when there is a draft.
+        if action(keybinds::Action::AppExit) && self.shell.composer.editor.is_empty() {
+            self.quit = true;
+            return;
+        }
+        if action(keybinds::Action::SessionRename) {
             if let Some(session) = self.session.as_ref() {
                 let dialog = Dialog::rename(&session.id, session.label());
                 self.open_dialog(dialog);
             }
             return;
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('o') {
+        if action(keybinds::Action::Accounts) {
             self.open_accounts();
             return;
         }
@@ -932,24 +943,30 @@ impl App {
             self.read_clipboard();
             return;
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('y') {
+        if action(keybinds::Action::CopyMessage) {
             self.copy_last_response();
             return;
         }
-        let ctrl_alt = key.modifiers.contains(KeyModifiers::CONTROL)
-            && key.modifiers.contains(KeyModifiers::ALT);
-        if matches!(key.code, KeyCode::PageUp) || (ctrl_alt && key.code == KeyCode::Char('y')) {
+        if action(keybinds::Action::PageUp) {
             self.shell.scroll_transcript(-5);
             return;
         }
-        if matches!(key.code, KeyCode::PageDown) || (ctrl_alt && key.code == KeyCode::Char('e')) {
+        if action(keybinds::Action::PageDown) {
             self.shell.scroll_transcript(5);
+            return;
+        }
+        if action(keybinds::Action::LineUp) {
+            self.shell.scroll_transcript(-1);
+            return;
+        }
+        if action(keybinds::Action::LineDown) {
+            self.shell.scroll_transcript(1);
             return;
         }
         if self.handle_panel_key(key) {
             return;
         }
-        match self.shell.composer.handle_key(key) {
+        match self.shell.composer.handle_key(key, &self.keys) {
             Action::None => {}
             Action::Quit => self.quit = true,
             Action::Submit { text, attachments } => self.submit(text, attachments),
@@ -1199,6 +1216,7 @@ mod tests {
                 palette,
             },
             theme::Catalog::builtin(),
+            Keymap::default(),
             crate::config::AttentionConfig::default(),
             startup,
         )
@@ -1366,11 +1384,51 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_d_deletes_forward_before_it_quits() {
+        let mut app = session_app();
+        app.handle(key(KeyCode::Char('h'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('i'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Left, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('d'), KeyModifiers::CONTROL));
+        assert!(!app.quit);
+        assert_eq!(app.shell.composer.editor.text(), "h");
+        app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('d'), KeyModifiers::CONTROL));
+        assert!(app.quit);
+    }
+
+    #[test]
     fn typing_q_goes_into_the_composer_instead_of_quitting() {
         let mut app = session_app();
         app.handle(key(KeyCode::Char('q'), KeyModifiers::NONE));
         assert!(!app.quit);
         assert_eq!(app.shell.composer.editor.text(), "q");
+    }
+
+    #[test]
+    fn a_configured_keybind_replaces_the_default_stroke() {
+        let mut app = app_with(Startup::default());
+        app.keys = Keymap::from_overrides(&std::collections::BTreeMap::from([(
+            "command_list".to_string(),
+            Some(vec!["ctrl+space".to_string()]),
+        )]));
+        app.handle(key(KeyCode::Char('p'), KeyModifiers::CONTROL));
+        assert!(app.dialog.is_none());
+        app.handle(key(KeyCode::Char(' '), KeyModifiers::CONTROL));
+        assert!(app.dialog.is_some());
+    }
+
+    #[test]
+    fn a_configured_leader_chord_runs_its_action() {
+        let mut app = app();
+        app.keys = Keymap::from_overrides(&std::collections::BTreeMap::from([(
+            "theme_list".to_string(),
+            Some(vec!["<leader>c".to_string()]),
+        )]));
+        leader(&mut app, 't');
+        assert!(app.dialog.is_none());
+        leader(&mut app, 'c');
+        assert!(app.dialog.is_some());
     }
 
     #[test]

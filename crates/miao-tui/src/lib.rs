@@ -6,6 +6,7 @@ pub mod editor;
 pub mod engine;
 pub mod event;
 pub mod input;
+pub mod keybinds;
 pub mod markdown;
 pub mod pane;
 pub mod platform;
@@ -58,6 +59,7 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         workspace.clone(),
         loaded.theme,
         loaded.catalog,
+        keybinds::Keymap::from_overrides(&config.keybinds),
         config.attention,
         startup,
     );

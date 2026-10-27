@@ -12,6 +12,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use serde_json::{json, Value};
 use unicode_width::UnicodeWidthChar;
 
+use crate::keybinds::{self, Keymap};
+
 const HISTORY_LIMIT: usize = 100;
 const FILE_LIMIT: usize = 2000;
 const TAB_CELLS: usize = 4;
@@ -122,6 +124,16 @@ impl Editor {
         }
         self.buffer.replace_range(start..self.cursor, "");
         self.cursor = start;
+        self.goal = None;
+        true
+    }
+
+    pub fn delete_word_forward(&mut self) -> bool {
+        let end = self.word_end(self.cursor);
+        if end == self.cursor {
+            return false;
+        }
+        self.buffer.replace_range(self.cursor..end, "");
         self.goal = None;
         true
     }
@@ -418,7 +430,7 @@ impl Composer {
 
     /// Feed a key to the editor. The caller keeps the keys that mean app
     /// navigation (`Esc`, `Ctrl+C`, transcript scrolling) before this point.
-    pub fn handle_key(&mut self, key: KeyEvent) -> Action {
+    pub fn handle_key(&mut self, key: KeyEvent, keys: &Keymap) -> Action {
         if key.kind != KeyEventKind::Press {
             return Action::None;
         }
@@ -446,91 +458,83 @@ impl Composer {
                 return Action::None;
             }
         }
-        let action = self.handle_edit_key(key);
+        let action = self.handle_edit_key(key, keys);
         if matches!(action, Action::None) {
             self.refresh_completion();
         }
         action
     }
 
-    fn handle_edit_key(&mut self, key: KeyEvent) -> Action {
-        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-        let alt = key.modifiers.contains(KeyModifiers::ALT);
-        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
-        match key.code {
-            KeyCode::Enter if !ctrl && !alt && !shift => return self.submit(),
-            KeyCode::Enter => self.editor.insert_char('\n'),
-            KeyCode::Char('j') if ctrl => self.editor.insert_char('\n'),
-            KeyCode::Backspace if ctrl || alt => {
-                self.editor.delete_word_backward();
-            }
-            KeyCode::Backspace => {
+    /// Editing keys are the `input_*` actions; the keymap decides which stroke
+    /// reaches which edit. Keys the keymap does not name (Home, End, Tab) keep
+    /// their terminal meaning.
+    fn handle_edit_key(&mut self, key: KeyEvent, keys: &Keymap) -> Action {
+        let action = keys.input_action(&key);
+        match action {
+            Some(keybinds::Action::InputSubmit) => return self.submit(),
+            Some(keybinds::Action::InputNewline) => self.editor.insert_char('\n'),
+            Some(keybinds::Action::InputBackspace) => {
                 self.editor.backspace();
             }
-            KeyCode::Delete => {
+            Some(keybinds::Action::InputDelete) => {
                 self.editor.delete_forward();
             }
-            KeyCode::Left if ctrl || alt => {
-                self.editor.move_word_backward();
-            }
-            KeyCode::Left => {
+            Some(keybinds::Action::InputMoveLeft) => {
                 self.editor.move_left();
             }
-            KeyCode::Right if ctrl || alt => {
-                self.editor.move_word_forward();
-            }
-            KeyCode::Right => {
+            Some(keybinds::Action::InputMoveRight) => {
                 self.editor.move_right();
             }
-            KeyCode::Up => {
+            Some(keybinds::Action::InputMoveUp) => {
                 if !self.editor.move_up() {
                     self.history_previous();
                 }
             }
-            KeyCode::Down => {
+            Some(keybinds::Action::InputMoveDown) => {
                 if !self.editor.move_down() {
                     self.history_next();
                 }
             }
-            KeyCode::Home => {
+            Some(keybinds::Action::InputLineHome) => {
                 self.editor.move_line_start();
             }
-            KeyCode::End => {
+            Some(keybinds::Action::InputLineEnd) => {
                 self.editor.move_line_end();
             }
-            KeyCode::Tab => self.editor.insert_str("  "),
-            KeyCode::Char('a') if ctrl => {
-                self.editor.move_line_start();
-            }
-            KeyCode::Char('e') if ctrl => {
-                self.editor.move_line_end();
-            }
-            KeyCode::Char('b') if ctrl => {
-                self.editor.move_left();
-            }
-            KeyCode::Char('f') if ctrl => {
-                self.editor.move_right();
-            }
-            KeyCode::Char('b') if alt => {
+            Some(keybinds::Action::InputWordBackward) => {
                 self.editor.move_word_backward();
             }
-            KeyCode::Char('f') if alt => {
+            Some(keybinds::Action::InputWordForward) => {
                 self.editor.move_word_forward();
             }
-            KeyCode::Char('w') if ctrl => {
+            Some(keybinds::Action::InputDeleteWordBackward) => {
                 self.editor.delete_word_backward();
             }
-            KeyCode::Char('u') if ctrl => {
+            Some(keybinds::Action::InputDeleteWordForward) => {
+                self.editor.delete_word_forward();
+            }
+            Some(keybinds::Action::InputDeleteToLineStart) => {
                 self.editor.delete_to_line_start();
             }
-            KeyCode::Char('k') if ctrl => {
+            Some(keybinds::Action::InputDeleteToLineEnd) => {
                 self.editor.delete_to_line_end();
             }
-            KeyCode::Char('d') if ctrl => {
-                self.editor.delete_forward();
-            }
-            KeyCode::Char(c) if !ctrl && !alt => self.editor.insert_char(c),
-            _ => {}
+            _ => match key.code {
+                KeyCode::Home => {
+                    self.editor.move_line_start();
+                }
+                KeyCode::End => {
+                    self.editor.move_line_end();
+                }
+                KeyCode::Tab => self.editor.insert_str("  "),
+                KeyCode::Char(c)
+                    if !key.modifiers.contains(KeyModifiers::CONTROL)
+                        && !key.modifiers.contains(KeyModifiers::ALT) =>
+                {
+                    self.editor.insert_char(c);
+                }
+                _ => {}
+            },
         }
         Action::None
     }
@@ -917,7 +921,10 @@ mod tests {
         let mut composer = composer(&dir);
         composer.editor.set_text("first");
         assert!(matches!(
-            composer.handle_edit_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            composer.handle_edit_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &Keymap::default()
+            ),
             Action::Submit { .. }
         ));
         composer.editor.set_text("draft");
@@ -952,7 +959,10 @@ mod tests {
         composer.refresh_completion();
         assert_eq!(composer.completion.selected, 0);
         let cursor = composer.editor.cursor();
-        composer.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        composer.handle_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &Keymap::default(),
+        );
         assert_eq!(composer.completion.selected, 1);
         // The arrow must not also move the text cursor while the list owns it.
         assert_eq!(composer.editor.cursor(), cursor);

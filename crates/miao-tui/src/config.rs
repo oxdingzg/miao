@@ -40,6 +40,9 @@ pub struct Config {
     pub mouse: bool,
     /// `None` leaves the terminal's own cursor shape alone.
     pub cursor: Option<Cursor>,
+    /// `keybinds` entries, flattened to action name → strokes. `None` means the
+    /// action was explicitly unbound (`false` or `"none"`).
+    pub keybinds: BTreeMap<String, Option<Vec<String>>>,
 }
 
 impl Default for Config {
@@ -48,6 +51,7 @@ impl Default for Config {
             attention: AttentionConfig::default(),
             mouse: true,
             cursor: None,
+            keybinds: BTreeMap::new(),
         }
     }
 }
@@ -175,6 +179,9 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
     if let Some(cursor) = field("cursor") {
         merge_cursor(cursor, path, config, warnings);
     }
+    if let Some(keybinds) = field("keybinds") {
+        merge_keybinds(keybinds, path, config, warnings);
+    }
     let Some(attention) = field("attention") else {
         return;
     };
@@ -263,6 +270,64 @@ fn merge_cursor(
                 path.display()
             )),
         }
+    }
+}
+
+fn merge_keybinds(
+    value: &serde_json::Value,
+    path: &Path,
+    config: &mut Config,
+    warnings: &mut Vec<String>,
+) {
+    let Some(object) = value.as_object() else {
+        warnings.push(format!(
+            "tui config {}: keybinds must be an object, ignoring",
+            path.display()
+        ));
+        return;
+    };
+    for (name, value) in object {
+        let specs = match value {
+            // `false` is how the TypeScript host spells "unbind this".
+            serde_json::Value::Bool(false) => {
+                config.keybinds.insert(name.clone(), None);
+                continue;
+            }
+            serde_json::Value::String(spec) => vec![spec.clone()],
+            serde_json::Value::Array(items) => {
+                let specs: Option<Vec<String>> = items
+                    .iter()
+                    .map(|item| item.as_str().map(str::to_string))
+                    .collect();
+                let Some(specs) = specs else {
+                    warnings.push(format!(
+                        "tui config {}: keybinds.{name} entries must be strings, ignoring",
+                        path.display()
+                    ));
+                    continue;
+                };
+                specs
+            }
+            _ => {
+                warnings.push(format!(
+                    "tui config {}: keybinds.{name} must be a string, a list or false, ignoring",
+                    path.display()
+                ));
+                continue;
+            }
+        };
+        // One entry may carry several comma-separated strokes, and `none`
+        // reaches the same state as `false`.
+        let specs: Vec<String> = specs
+            .iter()
+            .flat_map(|spec| spec.split(','))
+            .map(str::trim)
+            .filter(|spec| !spec.is_empty() && !spec.eq_ignore_ascii_case("none"))
+            .map(str::to_string)
+            .collect();
+        config
+            .keybinds
+            .insert(name.clone(), (!specs.is_empty()).then_some(specs));
     }
 }
 
@@ -430,6 +495,50 @@ mod tests {
             config.attention.sounds.get("error").map(String::as_str),
             Some("/tmp/error.wav")
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn keybinds_accept_strings_lists_and_unbinding() {
+        let dir = temp_dir("keybinds");
+        let (config, warnings) = merge_at(
+            r##"{
+                "keybinds": {
+                    "command_list": "ctrl+space",
+                    "session_list": ["<leader>1", "ctrl+l"],
+                    "app_exit": false,
+                    "theme_list": "none"
+                }
+            }"##,
+            &dir,
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(
+            config.keybinds.get("command_list"),
+            Some(&Some(vec!["ctrl+space".to_string()]))
+        );
+        assert_eq!(
+            config.keybinds.get("session_list"),
+            Some(&Some(vec!["<leader>1".to_string(), "ctrl+l".to_string()]))
+        );
+        assert_eq!(config.keybinds.get("app_exit"), Some(&None));
+        assert_eq!(config.keybinds.get("theme_list"), Some(&None));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nested_keybinds_are_flattened_and_invalid_values_warn() {
+        let dir = temp_dir("nested-keybinds");
+        let (config, warnings) =
+            merge_at(r#"{"tui": {"keybinds": {"model_list": "ctrl+m"}}}"#, &dir);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(
+            config.keybinds.get("model_list"),
+            Some(&Some(vec!["ctrl+m".to_string()]))
+        );
+
+        let (_, warnings) = merge_at(r#"{"keybinds": {"a": 1, "b": [1]}}"#, &dir);
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

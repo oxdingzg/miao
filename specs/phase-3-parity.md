@@ -12,7 +12,7 @@
 | panic 时恢复终端状态 | 已对齐 | panic hook 先 restore 再走默认 hook；`MIAO_TUI_TEST_PANIC` 注入钩子由 pty 测试覆盖 |
 | Ctrl+C 在输入行非空时清空输入、为空时退出 | 已对齐 | 对齐 `packages/tui/src/config/keybind.ts:164`（input_clear=ctrl+c）与 `packages/tui/src/app.tsx:1238`（app_exit 仅输入空时生效） |
 | ctrl+d 退出（仅输入空时） | 已对齐 | 同 app_exit 键位 |
-| `<leader>q` 退出 | 有意偏离（基础版） | T1 用裸 `q` 直接退出；T4 输入编辑器落地时改为 leader chord，避免与打字冲突（`src/app.rs` 注释） |
+| `<leader>q` 退出 | 已对齐 | app_exit 去掉裸 `q`，由 `<leader>q`、ctrl+c（输入为空）、ctrl+d 触发，且都走 keymap（`src/app.rs:handle_home_key/handle_session_key`） |
 | 标题栏显示 workspace 与分支名 | 已对齐（T1 占位） | 分支来自 `git rev-parse --abbrev-ref HEAD`，无 git 时显示 no git |
 | composer 提示符与输入回显 | 有意偏离（基础版） | 单行 `> ` 回显；多行编辑、CJK/IME、粘贴、历史归 T4 |
 | transcript 渲染 | 未做 | T3；T1 仅占位边框与说明文字 |
@@ -23,7 +23,7 @@
 | tui.json 为 JSONC（注释 / 尾逗号容忍） | 已对齐 | 本地剥离注释与尾逗号后 serde_json 解析（`src/theme.rs`） |
 | tui.json 未知字段忽略并记录、不崩 | 已对齐 | 未知字段记 warning 到 stderr（config 加载发生在进 raw mode 之前）；损坏文件整份跳过并记录，同 TS 的 catch→log 语义 |
 | 自定义主题 `themes/*.json` | 已对齐（dark 模式） | `theme::custom_themes`：全局配置目录 + 向上每层 `.miao` 的 `themes/*.json`，主题名取文件名，按 TS 的扫描顺序后者覆盖前者；支持 `defs` 引用、`{dark, light}` 取 dark、ANSI 码、`#rgb`/`#rrggbb`(`aa`)；缺必需色或循环引用则整份跳过并告警；同名覆盖内置主题 |
-| keybinds 自定义覆盖 | 未做 | T1 键位固定 |
+| keybinds 自定义覆盖 | 已对齐 | `config.keybinds` 解析 `string`/`string[]`/`false`/`"none"`（`merge_keybinds`），`keybinds::Keymap` 按 TS `keybind.ts` 的默认值建表并被覆盖；未知 action 静默丢弃、坏 stroke 忽略；`<leader>` 前缀与 leader 键本身都可改，`input_*` 全部走表（含新增 `delete_word_forward`）；命令面板/帮助里的键位提示仍显示默认值 |
 | 鼠标捕获（TS 默认开启） | 已对齐 | `config.mouse` 默认 true；滚轮在对话框/会话列表移动选择、在 transcript 滚动 3 行，按键事件忽略（`app::handle_mouse`）；`mouse: false` 不启用捕获 |
 | 光标样式 `cursor.style` | 已对齐 | `cursor.style`（block/underline/line/default）与 `cursor.blinking` 映射到 DECSCUSR（`terminal::cursor_style`），启动、外编返回、panic 恢复都重设/复位；未配置时不发序列 |
 | `miao-tui` 为非默认入口 | 已对齐 | 独立二进制，`--workspace <dir>`（默认 cwd）；`miao` 默认命令仍走 TS TUI，剪彩在 T11 |
