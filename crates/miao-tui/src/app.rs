@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
 
+use crate::commands::{self, Builtin};
 use crate::dialogs::{AccountInfo, Action as DialogAction, ConfirmKind, Dialog, ModelInfo, Row};
 use crate::editor::Action;
 use crate::engine;
@@ -45,13 +46,21 @@ pub struct App {
     pending_models: bool,
     /// Same for the account dialog.
     pending_accounts: bool,
+    /// Template commands discovered at startup; a slash prompt naming one is
+    /// rendered and admitted as a command instead of plain text.
+    templates: Vec<commands::Template>,
 }
 
 impl App {
     pub fn new(workspace: PathBuf, theme: Theme) -> Self {
         let home = Home::new(theme.clone());
+        let templates = commands::templates(&workspace);
+        let mut shell = Shell::new(&workspace, theme);
+        shell
+            .composer
+            .set_commands(commands::completion_names(&templates));
         Self {
-            shell: Shell::new(&workspace, theme),
+            shell,
             home,
             screen: Screen::Home,
             engine: None,
@@ -69,6 +78,7 @@ impl App {
             catalog: Vec::new(),
             pending_models: false,
             pending_accounts: false,
+            templates,
         }
     }
 
@@ -211,6 +221,10 @@ impl App {
             self.leader = true;
             return;
         }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('p') {
+            self.open_palette();
+            return;
+        }
         match self.screen {
             Screen::Home => self.handle_home_key(key),
             Screen::Session => self.handle_session_key(key),
@@ -227,38 +241,106 @@ impl App {
 
     fn handle_leader(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Char('m') => {
-                if let Some(engine) = self.engine.as_ref() {
-                    engine.catalog();
-                }
-                if self.models.is_empty() {
-                    self.pending_models = true;
-                    return;
-                }
-                self.open_dialog(Dialog::models(&self.models));
-            }
-            KeyCode::Char('t') => {
-                let current = self.shell.theme().name.clone();
-                self.open_dialog(Dialog::theme(&current));
-            }
-            KeyCode::Char('l') => {
-                if let Some(engine) = self.engine.as_ref() {
-                    engine.refresh_sessions();
-                }
-                self.open_dialog(Dialog::sessions(&self.catalog));
-            }
-            KeyCode::Char('n') => {
+            KeyCode::Char('m') => self.run_builtin(Builtin::Models),
+            KeyCode::Char('t') => self.run_builtin(Builtin::Theme),
+            KeyCode::Char('l') => self.run_builtin(Builtin::Sessions),
+            KeyCode::Char('n') => self.run_builtin(Builtin::NewSession),
+            KeyCode::Char('s') => self.run_builtin(Builtin::Status),
+            KeyCode::Char('d') => self.run_builtin(Builtin::Debug),
+            KeyCode::Char('p') => self.run_builtin(Builtin::Stash),
+            KeyCode::Char('P') => self.run_builtin(Builtin::StashDraft),
+            KeyCode::Char('q') => self.run_builtin(Builtin::Quit),
+            _ => {}
+        }
+    }
+
+    fn run_builtin(&mut self, builtin: Builtin) {
+        match builtin {
+            Builtin::Models => self.open_models(),
+            Builtin::Theme => self.open_theme(),
+            Builtin::Sessions => self.open_sessions(),
+            Builtin::NewSession => {
                 if let Some(engine) = self.engine.as_ref() {
                     engine.new_session();
                 }
             }
-            KeyCode::Char('s') => self.open_status(),
-            KeyCode::Char('d') => self.open_debug(),
-            KeyCode::Char('p') => self.open_stash(),
-            KeyCode::Char('P') => self.stash_current(),
-            KeyCode::Char('q') => self.quit = true,
-            _ => {}
+            Builtin::Rename => match self.session.as_ref() {
+                Some(session) => {
+                    let dialog = Dialog::rename(&session.id, session.label());
+                    self.open_dialog(dialog);
+                }
+                None => self.notice("open a Session to rename it"),
+            },
+            Builtin::Status => self.open_status(),
+            Builtin::Accounts => self.open_accounts(),
+            Builtin::Debug => self.open_debug(),
+            Builtin::Stash => self.open_stash(),
+            Builtin::StashDraft => self.stash_current(),
+            Builtin::Help => self.open_help(),
+            Builtin::Quit => self.quit = true,
         }
+    }
+
+    fn open_models(&mut self) {
+        if let Some(engine) = self.engine.as_ref() {
+            engine.catalog();
+        }
+        if self.models.is_empty() {
+            self.pending_models = true;
+            return;
+        }
+        self.open_dialog(Dialog::models(&self.models));
+    }
+
+    fn open_theme(&mut self) {
+        let current = self.shell.theme().name.clone();
+        self.open_dialog(Dialog::theme(&current));
+    }
+
+    fn open_sessions(&mut self) {
+        if let Some(engine) = self.engine.as_ref() {
+            engine.refresh_sessions();
+        }
+        self.open_dialog(Dialog::sessions(&self.catalog));
+    }
+
+    /// The palette lists the same actions as the key chords, with the chord
+    /// beside each label; template commands stay discoverable through slash
+    /// completion because they still need their arguments typed.
+    fn open_palette(&mut self) {
+        let rows = Builtin::ALL
+            .into_iter()
+            .map(|builtin| Row {
+                id: builtin.name().to_string(),
+                label: builtin.label().to_string(),
+                detail: builtin.keys().to_string(),
+            })
+            .collect();
+        self.open_dialog(Dialog::command_palette(rows));
+    }
+
+    fn open_help(&mut self) {
+        let mut rows = Builtin::ALL
+            .into_iter()
+            .map(|builtin| Row {
+                id: format!("/{}", builtin.name()),
+                label: format!("/{}", builtin.name()),
+                detail: match builtin.keys() {
+                    "" => builtin.label().to_string(),
+                    keys => format!("{} · {keys}", builtin.label()),
+                },
+            })
+            .collect::<Vec<_>>();
+        rows.push(row(
+            "keys",
+            "Esc back · ctrl+r rename · ctrl+o accounts · ctrl+p commands · PgUp/PgDn scroll",
+        ));
+        rows.extend(self.templates.iter().map(|template| Row {
+            id: format!("/{}", template.name),
+            label: format!("/{}", template.name),
+            detail: template.description.clone(),
+        }));
+        self.open_dialog(Dialog::help(rows));
     }
 
     fn open_dialog(&mut self, dialog: Dialog) {
@@ -346,6 +428,13 @@ impl App {
                 self.stash = state::stash_remove(index);
                 let rows = self.stash_rows();
                 self.open_dialog(Dialog::stash(rows));
+            }
+            DialogAction::Command(name) => {
+                self.dialog = None;
+                match Builtin::from_name(&name) {
+                    Some(builtin) => self.run_builtin(builtin),
+                    None => self.notice(&format!("unknown command: /{name}")),
+                }
             }
         }
     }
@@ -468,6 +557,7 @@ impl App {
 
     fn open_accounts(&mut self) {
         if self.session_id().is_none() {
+            self.notice("open a Session to switch accounts");
             return;
         }
         if let Some(engine) = self.engine.as_ref() {
@@ -773,11 +863,25 @@ impl App {
             self.shell.composer.restore(&text);
             return;
         };
-        let Some(engine) = self.engine.as_ref() else {
+        let Some(engine) = self.engine.clone() else {
             self.shell.composer.restore(&text);
             return;
         };
         self.shell.composer.notice = None;
+        // A first-word slash command the TUI knows runs here; a discovered
+        // template is rendered and admitted with its command reference; any
+        // other slash text is a plain prompt, like the TS composer.
+        if let Some((name, arguments)) = commands::split(&text) {
+            if let Some(builtin) = Builtin::from_name(&name) {
+                self.run_builtin(builtin);
+                return;
+            }
+            if let Some(template) = self.templates.iter().find(|item| item.name == name) {
+                let prompt = commands::render_template(&template.template, &arguments);
+                engine.command(&session_id, &prompt, &text, &name, &arguments);
+                return;
+            }
+        }
         engine.prompt(&session_id, &text);
     }
 
@@ -1142,5 +1246,75 @@ mod tests {
         let mut app = session_app();
         leader(&mut app, 'p');
         assert!(matches!(app.dialog, Some(Dialog::Stash(_))));
+    }
+
+    fn engine_session_app() -> App {
+        let mut app = session_app();
+        app.engine = Some(engine::Handle::inert());
+        open_session(&mut app, "ses_a");
+        app
+    }
+
+    #[test]
+    fn ctrl_p_opens_the_palette_and_runs_the_chosen_action() {
+        let mut app = engine_session_app();
+        app.handle(key(KeyCode::Char('p'), KeyModifiers::CONTROL));
+        assert!(matches!(app.dialog, Some(Dialog::Palette(_))));
+        for c in "theme".chars() {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        let palette = app
+            .dialog
+            .as_ref()
+            .and_then(Dialog::palette)
+            .expect("palette");
+        assert_eq!(palette.visible.len(), 1);
+        assert!(
+            app.shell.composer.editor.is_empty(),
+            "typing filters, not the composer"
+        );
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(app.dialog, Some(Dialog::Theme(_))));
+    }
+
+    #[test]
+    fn a_slash_builtin_runs_its_action_instead_of_prompting() {
+        let mut app = engine_session_app();
+        app.shell.composer.editor.set_text("/status");
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(app.dialog, Some(Dialog::Status(_))));
+        assert!(app.shell.composer.editor.is_empty());
+    }
+
+    #[test]
+    fn slash_help_lists_the_builtins_and_discovered_templates() {
+        let mut app = engine_session_app();
+        app.templates = vec![commands::Template {
+            name: "review".into(),
+            description: "Read a diff".into(),
+            template: "Review $1".into(),
+        }];
+        app.shell.composer.editor.set_text("/help");
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        let list = app
+            .dialog
+            .as_ref()
+            .and_then(Dialog::list)
+            .expect("help list");
+        assert_eq!(list.title, "help");
+        assert!(list.rows.iter().any(|row| row.label == "/status"));
+        assert!(list
+            .rows
+            .iter()
+            .any(|row| row.label == "/review" && row.detail == "Read a diff"));
+    }
+
+    #[test]
+    fn an_unknown_slash_word_still_reaches_the_composer_as_a_prompt() {
+        let mut app = engine_session_app();
+        app.shell.composer.editor.set_text("/nope plain text");
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.dialog.is_none());
+        assert!(app.shell.composer.editor.is_empty());
     }
 }

@@ -7,7 +7,7 @@ use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 
-use crate::dialogs::{Dialog, ListDialog, ListKind};
+use crate::dialogs::{Dialog, ListDialog, ListKind, PaletteDialog};
 use crate::editor::Composer;
 use crate::session::{
     ApprovalView, Entry, Part, QuestionView, SessionSummary, ToolPart, Transcript,
@@ -715,6 +715,10 @@ pub fn render_dialog(frame: &mut Frame, area: Rect, dialog: &Dialog, theme: &The
         render_list(frame, inner, list, theme);
         return;
     }
+    if let Some(palette) = dialog.palette() {
+        render_palette(frame, inner, palette, theme);
+        return;
+    }
     if let Some(input) = dialog.rename_input() {
         render_rename(frame, inner, input, theme);
         return;
@@ -803,6 +807,80 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
         ))),
         hint_area,
     );
+}
+
+fn render_palette(frame: &mut Frame, area: Rect, palette: &PaletteDialog, theme: &Theme) {
+    let colors = theme.palette;
+    let input_area = Rect { height: 1, ..area };
+    let list_area = Rect {
+        y: area.y + 1,
+        height: area.height.saturating_sub(1),
+        ..area
+    };
+    let text = clip_cells(palette.input.text(), 0, input_area.width.saturating_sub(2));
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("› ", Style::new().fg(colors.primary)),
+            Span::styled(text, Style::new().fg(colors.text)),
+        ])),
+        input_area,
+    );
+    let (_, cells) = palette.input.cursor_position();
+    if input_area.width > 0 {
+        let column = (2 + cells).min(input_area.width as usize - 1) as u16;
+        frame.set_cursor_position(Position::new(input_area.x + column, input_area.y));
+    }
+    if palette.visible.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "no matching command",
+                Style::new().fg(colors.text_muted),
+            )),
+            list_area,
+        );
+        return;
+    }
+    let visible = list_area.height as usize;
+    let offset = palette
+        .selected
+        .saturating_sub(visible.saturating_sub(1))
+        .min(palette.visible.len().saturating_sub(visible));
+    let lines = palette
+        .visible
+        .iter()
+        .enumerate()
+        .skip(offset)
+        .take(visible)
+        .map(|(index, row_index)| {
+            let row = &palette.rows[*row_index];
+            let selected = index == palette.selected;
+            let marker = if selected { "▸ " } else { "  " };
+            let style = if selected {
+                Style::new().fg(colors.primary).add_modifier(Modifier::BOLD)
+            } else {
+                Style::new().fg(colors.text)
+            };
+            let label = clip_cells(&row.label, 0, list_area.width.saturating_sub(2));
+            let used = label
+                .chars()
+                .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
+                .sum::<usize>();
+            let detail = if row.detail.is_empty() {
+                String::new()
+            } else {
+                clip_cells(
+                    &format!("   {}", row.detail),
+                    0,
+                    (list_area.width as usize).saturating_sub(used + 2) as u16,
+                )
+            };
+            Line::from(vec![
+                Span::styled(format!("{marker}{label}"), style),
+                Span::styled(detail, Style::new().fg(colors.text_muted)),
+            ])
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(lines), list_area);
 }
 
 fn render_rename(frame: &mut Frame, area: Rect, input: &crate::editor::Editor, theme: &Theme) {
