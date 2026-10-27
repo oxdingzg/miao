@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
-import { Renderable, TextRenderable, SyntaxStyle } from "@opentui/core"
+import { CodeRenderable, MarkdownRenderable, Renderable, TextRenderable, SyntaxStyle } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { createSignal, For, Show } from "solid-js"
 import { Markdown } from "../../src/component/markdown"
@@ -56,6 +56,53 @@ test("many modest messages share the native budget, and unmount releases it for 
       await app.renderOnce()
       expect(Renderable.renderablesByNumber.size - before).toBeLessThan(5)
     }
+  } finally {
+    app.renderer.destroy()
+    syntax.destroy()
+  }
+}, 30000)
+
+test("the message being watched keeps its rich rendering when the pool runs out", async () => {
+  const syntax = SyntaxStyle.create()
+  const app = await testRender(
+    () => (
+      <box flexDirection="column">
+        <For each={Array.from({ length: 5 }, (_, i) => i)}>
+          {(i) => <Markdown content={`message ${i}\n\n${table(100)}`} syntaxStyle={syntax} />}
+        </For>
+      </box>
+    ),
+    { width: 80, height: 40 },
+  )
+  try {
+    await app.renderOnce()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await app.renderOnce()
+    const nodes = [...Renderable.renderablesByNumber.values()]
+    const rich = nodes.filter((node): node is MarkdownRenderable => node instanceof MarkdownRenderable)
+    const plain = nodes.filter((node): node is TextRenderable => node instanceof TextRenderable)
+    // The transcript mounts oldest-first, so the last message is the newest.
+    expect(rich.some((node) => node.content.includes("message 4"))).toBe(true)
+    expect(rich.some((node) => node.content.includes("message 0"))).toBe(false)
+    expect(plain.some((node) => node.plainText.includes("message 0"))).toBe(true)
+  } finally {
+    app.renderer.destroy()
+    syntax.destroy()
+  }
+}, 30000)
+
+test("a message over the budget still highlights its fenced code", async () => {
+  const syntax = SyntaxStyle.create()
+  const source = `${table(2000)}\n\n\`\`\`ts\nconst answer: number = 42\n\`\`\`\n`
+  const app = await testRender(() => <Markdown content={source} syntaxStyle={syntax} />, { width: 80, height: 25 })
+  try {
+    await app.renderOnce()
+    const nodes = [...Renderable.renderablesByNumber.values()]
+    const code = nodes.filter((node): node is CodeRenderable => node instanceof CodeRenderable)
+    expect(code.some((node) => node.plainText.includes("const answer"))).toBe(true)
+    const plain = nodes.filter((node): node is TextRenderable => node instanceof TextRenderable)
+    expect(plain.some((node) => node.plainText.includes("cell-1999"))).toBe(true)
+    expect(nodes.some((node) => node instanceof MarkdownRenderable)).toBe(false)
   } finally {
     app.renderer.destroy()
     syntax.destroy()
