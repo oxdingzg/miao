@@ -2968,6 +2968,11 @@ pub(crate) fn projected(
     cursor: u64,
     skip_transferred: bool,
 ) -> Result<Vec<Value>, Error> {
+    // Read the Session's identity journal once. Looking each message's identity
+    // up separately scanned every event of the Session per message, which made a
+    // long transcript's snapshot quadratic: 1,124 messages over 7,227 events took
+    // 2.8 s, and every TUI re-hydration paid it again.
+    let profiles = assistant_profiles(tx, session)?;
     let mut stmt=tx.prepare("SELECT m.seq,m.role,m.content,m.checkpoint,m.recorded_at_ms FROM engine_message m WHERE m.session_id=?1 AND m.seq<=?2 AND m.reverted=0
         AND (?3=0 OR NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq)) ORDER BY m.seq LIMIT 20001")?;
     let mut rows = stmt.query(params![session, cursor, skip_transferred])?;
@@ -2987,12 +2992,30 @@ pub(crate) fn projected(
         }
         let seq = row.get::<_, u64>(0)?;
         let mut message = json!({"seq":seq,"role":row.get::<_,String>(1)?,"content":serde_json::from_str::<Value>(&content)?,"checkpoint":row.get::<_,Option<String>>(3)?,"recorded_at_ms":row.get::<_,Option<u64>>(4)?});
-        if let Some((profile, _)) = assistant_profile(tx, session, seq)? {
-            message["identity"] = profile;
+        if let Some(profile) = profiles.get(&seq) {
+            message["identity"] = profile.clone();
         }
         messages.push(message);
     }
     Ok(messages)
+}
+
+/// Every assistant identity in one pass, keyed by the message it belongs to.
+/// A duplicate keeps the earliest event, matching the `ORDER BY seq LIMIT 1`
+/// lookup this replaces.
+fn assistant_profiles(tx: &Transaction<'_>, session: &str) -> Result<HashMap<u64, Value>, Error> {
+    let mut stmt = tx.prepare(
+        "SELECT data FROM engine_event WHERE session_id=?1 AND kind='assistant.identity' ORDER BY seq",
+    )?;
+    let rows = stmt.query_map([session], |row| row.get::<_, String>(0))?;
+    let mut profiles = HashMap::new();
+    for row in rows {
+        let data: Value = serde_json::from_str(&row?)?;
+        if let Some(seq) = data["assistant_seq"].as_u64() {
+            profiles.entry(seq).or_insert(data);
+        }
+    }
+    Ok(profiles)
 }
 
 fn assistant_profile(
