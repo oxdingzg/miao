@@ -103,6 +103,26 @@ fn main() {
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
             }
             "sessions" if sessions => send(&mut out, json!({"id":id,"result":["ses_a","ses_b"]})),
+            // Accepted writes are logged verbatim so the smoke test can assert
+            // exactly what the composer sent.
+            "initialize" if sessions => {
+                send(
+                    &mut out,
+                    json!({"id":id,"result":{"session_id":frame["params"]["session_id"]}}),
+                );
+            }
+            "admit" if sessions => {
+                if let Some(path) = std::env::var_os("MIAO_TUI_FAKE_ADMIT_LOG") {
+                    if let Ok(line) = serde_json::to_string(&frame["params"]) {
+                        let _ = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(path)
+                            .and_then(|mut file| writeln!(file, "{line}"));
+                    }
+                }
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
             "snapshot" | "hang" => {}
             "exit" => return,
             "shutdown" => {

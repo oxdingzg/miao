@@ -6,6 +6,8 @@ use crate::session::{SessionSummary, Transcript};
 #[derive(Debug)]
 pub enum AppEvent {
     Key(KeyEvent),
+    /// Bracketed paste, delivered as one chunk so line breaks stay literal.
+    Paste(String),
     Resize {
         width: u16,
         height: u16,
@@ -16,6 +18,12 @@ pub enum AppEvent {
     SessionOpened {
         summary: Option<SessionSummary>,
         transcript: Box<Transcript>,
+    },
+    /// A prompt the engine refused. The UI puts `text` back in the composer so
+    /// the draft is never lost.
+    PromptFailed {
+        text: String,
+        message: String,
     },
     /// A terminal engine failure; the task stops after sending it.
     EngineFailure(String),
@@ -42,6 +50,7 @@ pub fn bus() -> (Bus, Rx) {
 pub fn from_terminal(event: TerminalEvent) -> Option<AppEvent> {
     match event {
         TerminalEvent::Key(key) => Some(AppEvent::Key(key)),
+        TerminalEvent::Paste(text) => Some(AppEvent::Paste(text)),
         TerminalEvent::Resize(width, height) => Some(AppEvent::Resize { width, height }),
         _ => None,
     }

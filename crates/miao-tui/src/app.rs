@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
 
+use crate::editor::Action;
 use crate::engine;
 use crate::event::AppEvent;
 use crate::pane::{Home, Pane, Shell};
@@ -63,6 +64,11 @@ impl App {
     pub fn handle(&mut self, event: AppEvent) {
         match event {
             AppEvent::Key(key) => self.handle_key(key),
+            AppEvent::Paste(text) => {
+                if self.screen == Screen::Session {
+                    self.shell.composer.paste(&text);
+                }
+            }
             AppEvent::Resize { .. } => {}
             AppEvent::Sessions(rows) => {
                 self.home.set_rows(rows);
@@ -76,6 +82,10 @@ impl App {
                 self.shell.set_session(self.session.as_ref());
                 self.shell.set_transcript(&transcript);
                 self.screen = Screen::Session;
+            }
+            AppEvent::PromptFailed { text, message } => {
+                self.shell.composer.restore(&text);
+                self.shell.composer.notice = Some(message);
             }
             AppEvent::EngineFailure(message) => {
                 self.home.set_notice(Some(message.clone()));
@@ -117,57 +127,69 @@ impl App {
                     engine.refresh_sessions();
                 }
             }
+            (KeyCode::Char('n'), KeyModifiers::NONE) => {
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.new_session();
+                }
+            }
             _ => {}
         }
     }
 
     fn handle_session_key(&mut self, key: KeyEvent) {
-        let engine = self.engine.as_ref();
-        match (key.code, key.modifiers) {
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-                if self.shell.composer.input.is_empty() {
-                    self.quit = true;
-                } else {
-                    self.shell.composer.input.clear();
-                }
+        if key.code == KeyCode::Esc {
+            if !self.shell.composer.dismiss_completion() {
+                self.leave_session();
             }
-            (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
-                if self.shell.composer.input.is_empty() {
-                    self.quit = true;
-                }
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
+            if self.shell.composer.editor.is_empty() {
+                self.quit = true;
+                return;
             }
-            // TS TUI binds app_exit to <leader>q; plain q is the T1 basic
-            // version and moves to the leader chord when the T4 editor lands.
-            (KeyCode::Char('q'), KeyModifiers::NONE) => self.quit = true,
-            (KeyCode::Esc, _) => {
-                self.screen = Screen::Home;
-                self.session = None;
-                self.shell.set_session(None);
-                self.shell.composer.input.clear();
-                if let Some(engine) = engine {
-                    engine.refresh_sessions();
-                }
-            }
-            (KeyCode::Char('j'), KeyModifiers::NONE) if self.shell.composer.input.is_empty() => {
-                self.shell.scroll_transcript(1);
-            }
-            (KeyCode::Char('k'), KeyModifiers::NONE) if self.shell.composer.input.is_empty() => {
-                self.shell.scroll_transcript(-1);
-            }
-            (KeyCode::Down, _) => self.shell.scroll_transcript(1),
-            (KeyCode::Up, _) => self.shell.scroll_transcript(-1),
-            (KeyCode::Char('r'), KeyModifiers::NONE) if self.shell.composer.input.is_empty() => {
-                if let Some(engine) = engine {
-                    engine.refresh();
-                }
-            }
-            (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
-                self.shell.composer.input.push(c);
-            }
-            (KeyCode::Backspace, KeyModifiers::NONE) => {
-                self.shell.composer.input.pop();
-            }
-            _ => {}
+            self.shell.composer.editor.clear();
+            self.shell.composer.dismiss_completion();
+            return;
+        }
+        let ctrl_alt = key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.modifiers.contains(KeyModifiers::ALT);
+        if matches!(key.code, KeyCode::PageUp) || (ctrl_alt && key.code == KeyCode::Char('y')) {
+            self.shell.scroll_transcript(-5);
+            return;
+        }
+        if matches!(key.code, KeyCode::PageDown) || (ctrl_alt && key.code == KeyCode::Char('e')) {
+            self.shell.scroll_transcript(5);
+            return;
+        }
+        match self.shell.composer.handle_key(key) {
+            Action::None => {}
+            Action::Quit => self.quit = true,
+            Action::Submit(text) => self.submit(text),
+        }
+    }
+
+    fn submit(&mut self, text: String) {
+        let Some(session_id) = self.session.as_ref().map(|session| session.id.clone()) else {
+            self.shell.composer.restore(&text);
+            return;
+        };
+        let Some(engine) = self.engine.as_ref() else {
+            self.shell.composer.restore(&text);
+            return;
+        };
+        self.shell.composer.notice = None;
+        engine.prompt(&session_id, &text);
+    }
+
+    fn leave_session(&mut self) {
+        self.screen = Screen::Home;
+        self.session = None;
+        self.shell.set_session(None);
+        self.shell.composer.editor.clear();
+        self.shell.composer.dismiss_completion();
+        if let Some(engine) = self.engine.as_ref() {
+            engine.refresh_sessions();
         }
     }
 }
@@ -220,19 +242,31 @@ mod tests {
         app.handle(key(KeyCode::Char('h'), KeyModifiers::NONE));
         app.handle(key(KeyCode::Char('c'), KeyModifiers::CONTROL));
         assert!(!app.quit);
-        assert!(app.shell.composer.input.is_empty());
+        assert!(app.shell.composer.editor.is_empty());
         app.handle(key(KeyCode::Char('c'), KeyModifiers::CONTROL));
         assert!(app.quit);
     }
 
     #[test]
-    fn plain_q_quits_but_typing_does_not() {
+    fn typing_q_goes_into_the_composer_instead_of_quitting() {
         let mut app = session_app();
-        app.handle(key(KeyCode::Char('a'), KeyModifiers::NONE));
-        assert!(!app.quit);
-        assert_eq!(app.shell.composer.input, "a");
         app.handle(key(KeyCode::Char('q'), KeyModifiers::NONE));
-        assert!(app.quit);
+        assert!(!app.quit);
+        assert_eq!(app.shell.composer.editor.text(), "q");
+    }
+
+    #[test]
+    fn shift_enter_inserts_a_newline_and_enter_submits() {
+        let mut app = session_app();
+        app.handle(key(KeyCode::Char('h'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('i'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Enter, KeyModifiers::SHIFT));
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::NONE));
+        assert_eq!(app.shell.composer.editor.text(), "hi\nx");
+        // Without an engine the prompt cannot be sent, so the draft is handed
+        // back rather than dropped.
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.shell.composer.editor.text(), "hi\nx");
     }
 
     #[test]
@@ -242,7 +276,7 @@ mod tests {
         event.kind = KeyEventKind::Release;
         app.handle(AppEvent::Key(event));
         assert!(!app.quit);
-        assert!(app.shell.composer.input.is_empty());
+        assert!(app.shell.composer.editor.is_empty());
     }
 
     #[test]

@@ -27,6 +27,12 @@ pub enum Request {
     RefreshSessions,
     Open(String),
     Refresh,
+    /// Admit one prompt into a Session and wake it.
+    Prompt {
+        session_id: String,
+        text: String,
+    },
+    NewSession,
 }
 
 #[derive(Clone)]
@@ -45,6 +51,17 @@ impl Handle {
 
     pub fn refresh(&self) {
         let _ = self.tx.send(Request::Refresh);
+    }
+
+    pub fn prompt(&self, session_id: &str, text: &str) {
+        let _ = self.tx.send(Request::Prompt {
+            session_id: session_id.to_string(),
+            text: text.to_string(),
+        });
+    }
+
+    pub fn new_session(&self) {
+        let _ = self.tx.send(Request::NewSession);
     }
 }
 
@@ -156,16 +173,38 @@ async fn run(
                 }
                 Some(Request::Open(session_id)) => {
                     dirty = None;
-                    if let Some(previous) = open.take() {
-                        let _ = client.unsubscribe(&previous.id).await;
+                    open_session(&client, &bus, &mut open, session_id).await;
+                }
+                Some(Request::Prompt { session_id, text }) => {
+                    let input = json!({
+                        "session_id": session_id.clone(),
+                        "input_id": new_id("in"),
+                        "prompt": text,
+                        "delivery": "steer",
+                    });
+                    match client.admit(input, true, Vec::new()).await {
+                        Ok(_) => {
+                            if open.as_ref().is_some_and(|state| state.id == session_id) {
+                                dirty = Some(Instant::now());
+                            }
+                        }
+                        Err(error) => bus.send(AppEvent::PromptFailed {
+                            text,
+                            message: format!("send failed: {error}"),
+                        }),
                     }
-                    let mut state = Opened {
-                        id: session_id,
-                        seen: 0,
-                        displays: HashMap::new(),
-                    };
-                    project(&client, &bus, &mut state).await;
-                    open = Some(state);
+                }
+                Some(Request::NewSession) => {
+                    dirty = None;
+                    let id = new_id("ses");
+                    match client.initialize(&id, "New session").await {
+                        Ok(_) => open_session(&client, &bus, &mut open, id).await,
+                        Err(error) => {
+                            bus.send(AppEvent::EngineFailure(format!(
+                                "cannot create a Session: {error}"
+                            )));
+                        }
+                    }
                 }
             },
             event = events.recv() => match event {
@@ -229,6 +268,24 @@ async fn refresh_sessions(client: &EngineClient, bus: &Bus) {
     bus.send(AppEvent::Sessions(home_rows(rows)));
 }
 
+async fn open_session(
+    client: &EngineClient,
+    bus: &Bus,
+    open: &mut Option<Opened>,
+    session_id: String,
+) {
+    if let Some(previous) = open.take() {
+        let _ = client.unsubscribe(&previous.id).await;
+    }
+    let mut state = Opened {
+        id: session_id,
+        seen: 0,
+        displays: HashMap::new(),
+    };
+    project(client, bus, &mut state).await;
+    *open = Some(state);
+}
+
 /// Re-read the Session snapshot and replay only the events not yet seen. The
 /// snapshot loses display diffs (they live on `tool.completed`, not on message
 /// content), so the previously replayed diffs are carried over instead of
@@ -274,4 +331,20 @@ async fn project(client: &EngineClient, bus: &Bus, state: &mut Opened) {
         summary: SessionSummary::from_snapshot(&snapshot),
         transcript: Box::new(transcript),
     });
+}
+
+/// Session and input ids are only opaque keys to the engine; hex keeps them
+/// readable and sorted by creation.
+fn new_id(prefix: &str) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    format!(
+        "{prefix}_{nanos:x}{:x}{:x}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
 }

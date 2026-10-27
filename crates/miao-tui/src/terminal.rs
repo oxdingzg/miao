@@ -1,5 +1,6 @@
 use std::io::{self, Stdout};
 
+use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -11,12 +12,12 @@ pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 
 pub fn init() -> io::Result<Tui> {
     enable_raw_mode()?;
-    execute!(io::stdout(), EnterAlternateScreen)?;
+    execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste)?;
     Terminal::new(CrosstermBackend::new(io::stdout()))
 }
 
 pub fn restore() {
-    let _ = execute!(io::stdout(), LeaveAlternateScreen);
+    let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableBracketedPaste);
     let _ = disable_raw_mode();
 }
 

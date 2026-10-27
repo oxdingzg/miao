@@ -1,11 +1,13 @@
 use std::path::Path;
 
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Wrap};
 use ratatui::Frame;
+use unicode_width::UnicodeWidthChar;
 
+use crate::editor::Composer;
 use crate::session::{Entry, Part, SessionSummary, ToolPart, Transcript};
 use crate::theme::Theme;
 
@@ -25,7 +27,7 @@ pub trait Pane {
 pub struct Shell {
     pub title: TitlePane,
     pub transcript: TranscriptPane,
-    pub composer: ComposerPane,
+    pub composer: Composer,
     pub sidebar: Option<SidebarPane>,
 }
 
@@ -39,10 +41,7 @@ impl Shell {
                 scroll: 0,
                 follow: true,
             },
-            composer: ComposerPane {
-                input: String::new(),
-                theme: theme.clone(),
-            },
+            composer: Composer::new(workspace),
             sidebar: Some(SidebarPane {
                 theme,
                 session: None,
@@ -87,7 +86,7 @@ impl Shell {
         let [title_area, body_area, composer_area] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(1),
-            Constraint::Length(3),
+            Constraint::Length(composer_height(&self.composer)),
         ])
         .areas(frame.area());
         self.title.render(frame, title_area);
@@ -102,7 +101,7 @@ impl Shell {
         } else {
             self.transcript.render(frame, body_area);
         }
-        self.composer.render(frame, composer_area);
+        render_composer(frame, composer_area, &self.composer, &self.transcript.theme);
     }
 }
 
@@ -228,14 +227,17 @@ impl Home {
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
         let block = Block::bordered()
-            .title(Span::styled(" sessions ", Style::new().fg(palette.primary)))
+            .title(Span::styled(
+                " sessions · n new ",
+                Style::new().fg(palette.primary),
+            ))
             .border_style(Style::new().fg(palette.border))
             .style(Style::new().bg(palette.background));
         if self.rows.is_empty() {
             let message = self
                 .notice
                 .clone()
-                .unwrap_or_else(|| "no sessions in this workspace yet".to_string());
+                .unwrap_or_else(|| "no sessions yet · press n to start one".to_string());
             frame.render_widget(
                 Paragraph::new(message)
                     .style(Style::new().fg(palette.text_muted))
@@ -468,25 +470,119 @@ fn compact(text: &str) -> String {
     cut
 }
 
-pub struct ComposerPane {
-    pub input: String,
-    theme: Theme,
+/// Input rows the composer grows to before it scrolls; the border and the
+/// completion list live outside this budget.
+const COMPOSER_INPUT_ROWS: usize = 8;
+const COMPOSER_COMPLETION_ROWS: usize = 6;
+
+fn composer_height(composer: &Composer) -> u16 {
+    let input = composer.editor.line_count().clamp(1, COMPOSER_INPUT_ROWS);
+    let completion = composer
+        .completion
+        .items
+        .len()
+        .min(COMPOSER_COMPLETION_ROWS);
+    (2 + input + completion) as u16
 }
 
-impl Pane for ComposerPane {
-    fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let palette = self.theme.palette;
-        let block = Block::bordered()
-            .title(Span::styled(" composer ", Style::new().fg(palette.primary)))
-            .border_style(Style::new().fg(palette.border))
-            .style(Style::new().bg(palette.background));
-        frame.render_widget(
-            Paragraph::new(format!("> {}", self.input))
-                .style(Style::new().fg(palette.text))
-                .block(block),
-            area,
-        );
+fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
+    let palette = theme.palette;
+    let title = match &composer.notice {
+        Some(notice) => format!(" composer · {notice} "),
+        None => " composer ".to_string(),
+    };
+    let block = Block::bordered()
+        .title(Span::styled(title, Style::new().fg(palette.primary)))
+        .border_style(Style::new().fg(palette.border))
+        .style(Style::new().bg(palette.background));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    if inner.width == 0 || inner.height == 0 {
+        return;
     }
+
+    let completion_rows = composer
+        .completion
+        .items
+        .len()
+        .min(COMPOSER_COMPLETION_ROWS) as u16;
+    let input_area = Rect {
+        height: inner.height.saturating_sub(completion_rows),
+        ..inner
+    };
+    let (cursor_line, cursor_cell) = composer.editor.cursor_position();
+    let row_offset = cursor_line.saturating_sub(input_area.height.saturating_sub(1) as usize);
+    let cell_offset = cursor_cell.saturating_sub(input_area.width.saturating_sub(1) as usize);
+    let lines = composer
+        .editor
+        .lines()
+        .skip(row_offset)
+        .take(input_area.height as usize)
+        .map(|line| {
+            Line::from(Span::styled(
+                clip_cells(&line, cell_offset, input_area.width),
+                Style::new().fg(palette.text),
+            ))
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(lines), input_area);
+
+    let cursor_row = cursor_line - row_offset;
+    let cursor_column = cursor_cell - cell_offset;
+    if cursor_row < input_area.height as usize && cursor_column < input_area.width as usize {
+        frame.set_cursor_position(Position::new(
+            input_area.x + cursor_column as u16,
+            input_area.y + cursor_row as u16,
+        ));
+    }
+
+    let completion_area = Rect {
+        y: inner.y + input_area.height,
+        height: completion_rows,
+        ..inner
+    };
+    let items = composer
+        .completion
+        .items
+        .iter()
+        .take(COMPOSER_COMPLETION_ROWS)
+        .enumerate()
+        .map(|(index, path)| {
+            let selected = index == composer.completion.selected;
+            Line::from(Span::styled(
+                format!("{}{path}", if selected { "▸ " } else { "  " }),
+                if selected {
+                    Style::new()
+                        .fg(palette.primary)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::new().fg(palette.text_muted)
+                },
+            ))
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(items), completion_area);
+}
+
+/// Skip `offset` display cells and take at most `width` cells of a line.
+fn clip_cells(line: &str, offset: usize, width: u16) -> String {
+    let mut skipped = 0;
+    let mut taken = 0;
+    let limit = width as usize;
+    let mut out = String::new();
+    for c in line.chars() {
+        let cells = UnicodeWidthChar::width(c).unwrap_or(0);
+        if skipped < offset {
+            skipped += cells;
+            continue;
+        }
+        if taken + cells > limit {
+            break;
+        }
+        taken += cells;
+        out.push(c);
+    }
+    out
 }
 
 pub struct SidebarPane {
