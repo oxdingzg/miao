@@ -388,6 +388,16 @@ mod tests {
         }
     }
 
+    // The lookup joins with the platform separator, so an expectation written by
+    // hand as "/tools/gopls" compares equal on Linux and macOS but not on
+    // Windows, where the joined path is "\\tools\\gopls".
+    fn installed(name: &str) -> String {
+        PathBuf::from("/tools")
+            .join(name)
+            .to_string_lossy()
+            .into_owned()
+    }
+
     #[test]
     fn sandbox_environment_overrides_config_in_both_directions() {
         let config = documents(&[serde_json::json!({"sandbox": {"mode": "off"}})]);
@@ -460,10 +470,10 @@ mod tests {
             lsp_entries(None, &BUILTIN_SERVERS, &lookup(&["gopls", "rust-analyzer"])).unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].name, "gopls");
-        assert_eq!(entries[0].argv, vec!["/tools/gopls"]);
+        assert_eq!(entries[0].argv, vec![installed("gopls")]);
         assert_eq!(entries[0].extensions, vec![".go"]);
         assert_eq!(entries[1].name, "rust");
-        assert_eq!(entries[1].argv, vec!["/tools/rust-analyzer"]);
+        assert_eq!(entries[1].argv, vec![installed("rust-analyzer")]);
         assert_eq!(entries[0].env, std::collections::BTreeMap::new());
         assert_eq!(entries[0].initialization, None);
     }
@@ -521,7 +531,7 @@ mod tests {
         let entries =
             lsp_entries(Some(&configured), &BUILTIN_SERVERS, &lookup(&["second"])).unwrap();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].argv, vec!["/tools/second"]);
+        assert_eq!(entries[0].argv, vec![installed("second")]);
     }
 
     #[test]
