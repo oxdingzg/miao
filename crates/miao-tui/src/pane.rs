@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use ratatui::layout::{Constraint, Layout, Position, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use ratatui::Frame;
@@ -9,16 +9,9 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::dialogs::{Dialog, ListDialog, ListKind, PaletteDialog};
 use crate::editor::Composer;
-use crate::session::{
-    ApprovalView, Entry, Part, QuestionView, SessionSummary, ToolPart, Transcript,
-};
+use crate::session::{ApprovalView, Entry, Part, QuestionView, SessionSummary, Transcript};
 use crate::theme::Theme;
-
-/// How many output lines one tool row shows before collapsing. The full output
-/// stays in the engine; this is a reading surface, not a pager.
-const TOOL_PREVIEW_LINES: usize = 8;
-/// How many diff lines one changed file shows before collapsing.
-const DIFF_PREVIEW_LINES: usize = 12;
+use crate::{markdown, tool};
 
 const SIDEBAR_MIN_WIDTH: u16 = 100;
 const SIDEBAR_WIDTH: u16 = 24;
@@ -393,16 +386,16 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>
                 )));
                 for part in parts {
                     match part {
-                        Part::Text(text) => {
-                            for line in text.lines() {
-                                lines.push(Line::from(line.to_string()));
-                            }
-                        }
+                        Part::Text(text) => lines.extend(markdown::lines(text, theme)),
                         Part::Reasoning(text) => lines.push(Line::from(Span::styled(
                             format!("▸ thinking · {} chars", text.chars().count()),
                             Style::new().fg(palette.text_muted),
                         ))),
-                        Part::Tool(tool) => transparent_tool(&mut lines, tool, transcript, theme),
+                        Part::Tool(call) => lines.extend(tool::lines(
+                            call,
+                            transcript.displays.get(&call.id).map(Vec::as_slice),
+                            theme,
+                        )),
                     }
                 }
                 lines.push(Line::default());
@@ -416,97 +409,6 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>
         )));
     }
     lines
-}
-
-fn transparent_tool(
-    lines: &mut Vec<Line<'static>>,
-    tool: &ToolPart,
-    transcript: &Transcript,
-    theme: &Theme,
-) {
-    let palette = theme.palette;
-    let (glyph, style) = if tool.failed {
-        ("✗", Style::new().fg(palette.error))
-    } else if tool.output.is_some() {
-        ("✓", Style::new().fg(palette.success))
-    } else {
-        ("·", Style::new().fg(palette.warning))
-    };
-    lines.push(Line::from(vec![
-        Span::styled(format!("{glyph} "), style),
-        Span::styled(tool.name.clone(), Style::new().fg(palette.secondary)),
-        Span::styled(
-            format!("  {}", input_summary(&tool.input)),
-            Style::new().fg(palette.text_muted),
-        ),
-    ]));
-    if let Some(output) = &tool.output {
-        for line in output.lines().take(TOOL_PREVIEW_LINES) {
-            lines.push(Line::from(Span::styled(
-                format!("  │ {line}"),
-                Style::new().fg(if tool.failed {
-                    palette.error
-                } else {
-                    palette.text_muted
-                }),
-            )));
-        }
-        let total = output.lines().count();
-        if total > TOOL_PREVIEW_LINES {
-            lines.push(Line::from(Span::styled(
-                format!("  │ … {} more lines", total - TOOL_PREVIEW_LINES),
-                Style::new().fg(palette.text_muted),
-            )));
-        }
-    }
-    if let Some(files) = transcript.displays.get(&tool.id) {
-        for file in files {
-            lines.push(Line::from(Span::styled(
-                format!(
-                    "  ◆ {} {} +{} −{}",
-                    file.action, file.path, file.additions, file.deletions
-                ),
-                Style::new().fg(palette.accent),
-            )));
-            for line in file.patch.lines().take(DIFF_PREVIEW_LINES) {
-                lines.push(Line::from(Span::styled(
-                    format!("  {line}"),
-                    Style::new().fg(diff_color(line, theme)),
-                )));
-            }
-            let total = file.patch.lines().count();
-            if total > DIFF_PREVIEW_LINES {
-                lines.push(Line::from(Span::styled(
-                    format!("  … {} more diff lines", total - DIFF_PREVIEW_LINES),
-                    Style::new().fg(palette.text_muted),
-                )));
-            }
-        }
-    }
-}
-
-fn diff_color(line: &str, theme: &Theme) -> Color {
-    let palette = theme.palette;
-    if line.starts_with('+') {
-        return palette.success;
-    }
-    if line.starts_with('-') {
-        return palette.error;
-    }
-    if line.starts_with("@@") {
-        return palette.accent;
-    }
-    palette.text_muted
-}
-
-fn input_summary(input: &serde_json::Value) -> String {
-    let candidate = ["command", "path", "pattern", "query", "url", "description"]
-        .iter()
-        .find_map(|key| input.get(key).and_then(serde_json::Value::as_str));
-    match candidate {
-        Some(text) => compact(text),
-        None => compact(&input.to_string()),
-    }
 }
 
 fn compact(text: &str) -> String {
