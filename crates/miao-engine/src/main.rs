@@ -846,12 +846,25 @@ async fn serve(
             };
             let mut line = serde_json::to_vec(&value).map_err(io::Error::other)?;
             line.push(b'\n');
-            tokio::time::timeout(Duration::from_secs(5), async {
+            // A slow reader is backpressure, not a fatal transport error: the
+            // client may be parsing a multi-megabyte replay frame or paused by
+            // GC, and killing the engine would end every Session it owns. Block
+            // until the pipe drains; only a closed pipe (a dead host) or an
+            // explicit shutdown ends the stream.
+            let write = async {
                 stdout.write_all(&line).await?;
                 stdout.flush().await
-            })
-            .await
-            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "stdio subscriber too slow"))??;
+            };
+            tokio::pin!(write);
+            tokio::select! {
+                result = &mut write => result?,
+                _ = stop_output.cancelled() => {
+                    // Shutdown already asked for this frame. The peer is still
+                    // reading, so give the remaining frames a bounded drain
+                    // instead of blocking process exit on a peer that stopped.
+                    let _ = tokio::time::timeout(Duration::from_secs(5), &mut write).await;
+                }
+            }
         }
         Ok::<_, io::Error>(())
     });
@@ -967,11 +980,13 @@ async fn serve(
 }
 
 async fn send(output: &mpsc::Sender<Value>, value: Value) -> io::Result<()> {
-    // A replay burst can exceed the queue even while stdout is being drained.
-    // Apply bounded backpressure instead of terminating every active Session.
-    tokio::time::timeout(Duration::from_secs(5), output.send(value))
+    // A replay burst can exceed the queue while stdout is being drained. Wait
+    // for the writer instead of terminating the Session: the reader may be
+    // parsing a large frame, and the durable event cursor lets a real
+    // disconnect replay later. Only a closed channel ends the stream.
+    output
+        .send(value)
         .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "stdio subscriber too slow"))?
         .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "stdio subscriber disconnected"))
 }
 
