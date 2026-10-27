@@ -42,6 +42,16 @@ export interface Interface {
    */
   readonly storageRoot?: string
 
+  /**
+   * Best-effort preparation of one Location's native owner. The first
+   * `session.create` a process sees otherwise pays for the engine child and the
+   * product context behind it (plugins, model routes, tools) while the user is
+   * waiting for the session view, so a host that knows which Location it is
+   * about to serve can start that work early. Never fails: a Location that
+   * cannot be prepared is prepared again, inline, when it is first used.
+   */
+  readonly warm?: (input: { location: Location.Ref }) => Effect.Effect<void>
+
   readonly command: (input: {
     sessionID: SessionID
     storage: AbsolutePath

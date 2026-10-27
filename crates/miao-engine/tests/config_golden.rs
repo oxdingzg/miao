@@ -37,8 +37,11 @@ fn derived_policy_matches_every_golden_case() {
     for case in cases {
         let environment = read_environment(&case);
         let sandbox = environment.get("MIAO_SANDBOX").and_then(Value::as_str);
-        let derived = config_derive::policy_from_directory(&case.join("global"), sandbox)
-            .unwrap_or_else(|error| panic!("{}: {error}", case.display()));
+        let derived = match read_sources(&case) {
+            Some(sources) => config_derive::policy_from_sources(&sources, sandbox),
+            None => config_derive::policy_from_directory(&case.join("global"), sandbox),
+        }
+        .unwrap_or_else(|error| panic!("{}: {error}", case.display()));
         let expected: Value = serde_json::from_str(
             &std::fs::read_to_string(case.join("expected-policy.json")).unwrap(),
         )
@@ -50,6 +53,35 @@ fn derived_policy_matches_every_golden_case() {
             case.display()
         );
     }
+}
+
+/// A case with a `sources.json` plan drives the ordered multi-source loader
+/// the host forwards as `--config-sources`; paths are relative to the case.
+fn read_sources(case: &Path) -> Option<Vec<config_derive::Source>> {
+    let text = std::fs::read_to_string(case.join("sources.json")).ok()?;
+    let value: Value = serde_json::from_str(&text).unwrap();
+    Some(
+        value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| {
+                if let Some(dir) = entry.get("dir").and_then(Value::as_str) {
+                    config_derive::Source::Dir(case.join(dir))
+                } else if let Some(file) = entry.get("file").and_then(Value::as_str) {
+                    config_derive::Source::File(case.join(file))
+                } else {
+                    config_derive::Source::Content(
+                        entry
+                            .get("content")
+                            .and_then(Value::as_str)
+                            .unwrap()
+                            .to_string(),
+                    )
+                }
+            })
+            .collect(),
+    )
 }
 
 /// The injected lookup the golden cases assume: an absolute command resolves
