@@ -10,9 +10,9 @@ import { Filesystem } from "@/util/filesystem"
 import { validateSession } from "../tui/validate-session"
 import { validateModel } from "../tui/validate-model"
 
-/// Which TUI implementation `miao` starts. The Rust TUI runs the engine itself
-/// and is selected explicitly until the cutover makes it the default.
-const DEFAULT_TUI: "rust" | "legacy" = "legacy"
+/// Which TUI implementation `miao` starts. The Rust TUI is the default; the
+/// TypeScript one stays available through `--tui legacy` or `MIAO_TUI=legacy`.
+const DEFAULT_TUI: "rust" | "legacy" = "rust"
 
 async function input(value?: string) {
   const piped = process.stdin.isTTY ? undefined : await Bun.stdin.text()
@@ -191,58 +191,64 @@ export const TuiThreadCommand = cmd({
     }
 
     if (selectedTui(args) === "rust") {
-      const unsupported = unsupportedByRustTui(args)
-      if (unsupported) {
-        UI.error(`${unsupported} is not supported by the Rust TUI; use --tui legacy`)
-        process.exitCode = 1
-        return
-      }
-      if (process.platform === "win32" && !(await import("@miao/tui/terminal-win32")).vtSupported()) {
-        UI.error(
-          "The interactive interface needs a VT-capable terminal. Use Windows Terminal or PowerShell 7, or run `miao run` for plain output.",
-        )
-        process.exitCode = 1
-        return
-      }
-
-      const next = resolveThreadDirectory(args.project)
-      try {
-        process.chdir(next)
-      } catch {
-        UI.error("Failed to change directory to " + next)
-        process.exitCode = 1
-        return
-      }
-      const cwd = Filesystem.resolve(process.cwd())
       const binary = rustTuiBinary()
-      if (!binary) {
+      // An explicit request owns its failure: silently starting a different
+      // TUI would hide that the install is incomplete. The default falls back
+      // so an installation that predates the Rust binary keeps working.
+      if (!binary && (args.tui === "rust" || process.env.MIAO_TUI === "rust")) {
         UI.error("The Rust TUI is not installed. Reinstall miao, or start the TypeScript TUI with --tui legacy.")
         process.exitCode = 1
         return
       }
-      const { DatabaseFile } = await import("@miao/core/database/file")
-      const { Global } = await import("@miao/core/global")
-      const prompt = await input(args.prompt)
-      // The Rust TUI spawns the engine itself, so it needs the same database,
-      // configuration directory, and tool bin the TypeScript host would use.
-      const argv = [binary, "--workspace", cwd, "--db", DatabaseFile.path(), "--config-dir", Global.Path.config]
-      if (args.model) argv.push("--model", args.model)
-      if (args.session) argv.push("--session", args.session)
-      else if (args.continue) argv.push("--continue")
-      if (prompt) argv.push("--prompt", prompt)
-      setTimeout(() => {
-        void (async () => {
-          const { upgrade } = await import("@/cli/upgrade")
-          await upgrade()
-        })().catch(() => {})
-      }, 1000).unref?.()
-      const child = Bun.spawn(argv, {
-        cwd,
-        stdio: ["inherit", "inherit", "inherit"],
-        env: { ...process.env, MIAO_TOOL_BIN: Global.Path.bin },
-      })
-      process.exitCode = await child.exited
-      return
+      if (binary) {
+        const unsupported = unsupportedByRustTui(args)
+        if (unsupported) {
+          UI.error(`${unsupported} is not supported by the Rust TUI; use --tui legacy`)
+          process.exitCode = 1
+          return
+        }
+        if (process.platform === "win32" && !(await import("@miao/tui/terminal-win32")).vtSupported()) {
+          UI.error(
+            "The interactive interface needs a VT-capable terminal. Use Windows Terminal or PowerShell 7, or run `miao run` for plain output.",
+          )
+          process.exitCode = 1
+          return
+        }
+
+        const next = resolveThreadDirectory(args.project)
+        try {
+          process.chdir(next)
+        } catch {
+          UI.error("Failed to change directory to " + next)
+          process.exitCode = 1
+          return
+        }
+        const cwd = Filesystem.resolve(process.cwd())
+        const { DatabaseFile } = await import("@miao/core/database/file")
+        const { Global } = await import("@miao/core/global")
+        const prompt = await input(args.prompt)
+        // The Rust TUI spawns the engine itself, so it needs the same database,
+        // configuration directory, and tool bin the TypeScript host would use.
+        const argv = [binary, "--workspace", cwd, "--db", DatabaseFile.path(), "--config-dir", Global.Path.config]
+        if (args.model) argv.push("--model", args.model)
+        if (args.session) argv.push("--session", args.session)
+        else if (args.continue) argv.push("--continue")
+        if (prompt) argv.push("--prompt", prompt)
+        setTimeout(() => {
+          void (async () => {
+            const { upgrade } = await import("@/cli/upgrade")
+            await upgrade()
+          })().catch(() => {})
+        }, 1000).unref?.()
+        const child = Bun.spawn(argv, {
+          cwd,
+          stdio: ["inherit", "inherit", "inherit"],
+          env: { ...process.env, MIAO_TOOL_BIN: Global.Path.bin },
+        })
+        process.exitCode = await child.exited
+        return
+      }
+      UI.warn("The Rust TUI is not installed; starting the TypeScript TUI. Reinstall miao to get it.")
     }
 
     const unsupported = [

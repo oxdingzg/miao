@@ -15,10 +15,11 @@
 | `<leader>q` 退出 | 已对齐 | app_exit 去掉裸 `q`，由 `<leader>q`、ctrl+c（输入为空）、ctrl+d 触发，且都走 keymap（`src/app.rs:handle_home_key/handle_session_key`） |
 | 标题栏显示 workspace 与分支名 | 已对齐（T1 占位） | 分支来自 `git rev-parse --abbrev-ref HEAD`，无 git 时显示 no git |
 | composer 提示符与输入回显 | 有意偏离（基础版） | 单行 `> ` 回显；多行编辑、CJK/IME、粘贴、历史归 T4 |
-| transcript 渲染 | 未做 | T3；T1 仅占位边框与说明文字 |
-| 右侧侧栏 | 未做 | T3+；T1 在宽度 ≥100 列时渲染占位侧栏 |
+| transcript 渲染 | 已对齐（T3） | T1 的占位边框由 T3 的真实 transcript 取代，逐行条目见 T3 节 |
+| 右侧侧栏 | 已对齐（T3） | `pane.rs:SidebarPane`，宽度 ≥100 列时显示，见 T3 节 |
 | resize（SIGWINCH / ConPTY resize）自适应不崩 | 已对齐 | crossterm Resize 事件驱动重绘；pty 冒烟覆盖三平台 |
-| `.miao/tui.json` 主题名选择 | 已对齐（dark 模式） | `BUILTIN_THEMES` 由 `packages/tui/src/theme/assets/*.json` 的 dark 侧生成，34 个内置主题全在（`every_typescript_theme_is_available` 守住名单）；light 模式与终端背景探测未做 |
+| `.miao/tui.json` 主题名选择 | 已对齐（dark 模式） | `BUILTIN_THEMES` 由 `packages/tui/src/theme/assets/*.json` 的 dark 侧生成，34 个内置主题全在（`every_typescript_theme_is_available` 守住名单）；light 模式见下一行 |
+| light 模式 / 终端背景探测 | 有意偏离 | Rust TUI 恒用 dark 侧调色板；TS 的 store 默认也是 dark，只有探测到浅色终端时才切 light（`packages/tui/src/context/theme.tsx:95`），未探测时两者一致 |
 | `.miao/tui.json` 多文件合并（全局目录 → MIAO_TUI_CONFIG → 项目链，就近覆盖） | 已对齐 | `config::files` 是 attention 与 theme 共用的同一条链（全局目录 → `MIAO_TUI_CONFIG` → 项目根-first）；嵌套 `{"tui": {...}}` 按 TS 规则摊平，顶层字段优先 |
 | tui.json 为 JSONC（注释 / 尾逗号容忍） | 已对齐 | 本地剥离注释与尾逗号后 serde_json 解析（`src/theme.rs`） |
 | tui.json 未知字段忽略并记录、不崩 | 已对齐 | 未知字段记 warning 到 stderr（config 加载发生在进 raw mode 之前）；损坏文件整份跳过并记录，同 TS 的 catch→log 语义 |
@@ -26,7 +27,7 @@
 | keybinds 自定义覆盖 | 已对齐 | `config.keybinds` 解析 `string`/`string[]`/`false`/`"none"`（`merge_keybinds`），`keybinds::Keymap` 按 TS `keybind.ts` 的默认值建表并被覆盖；未知 action 静默丢弃、坏 stroke 忽略；`<leader>` 前缀与 leader 键本身都可改，`input_*` 全部走表（含新增 `delete_word_forward`）；命令面板/帮助里的键位提示仍显示默认值 |
 | 鼠标捕获（TS 默认开启） | 已对齐 | `config.mouse` 默认 true；滚轮在对话框/会话列表移动选择、在 transcript 滚动 3 行，按键事件忽略（`app::handle_mouse`）；`mouse: false` 不启用捕获 |
 | 光标样式 `cursor.style` | 已对齐 | `cursor.style`（block/underline/line/default）与 `cursor.blinking` 映射到 DECSCUSR（`terminal::cursor_style`），启动、外编返回、panic 恢复都重设/复位；未配置时不发序列 |
-| `miao-tui` 为非默认入口 | 已对齐 | 独立二进制，`--workspace <dir>`（默认 cwd）；`miao` 默认命令仍走 TS TUI，剪彩在 T11 |
+| `miao-tui` 为默认入口 | 已对齐 | 独立二进制，`--workspace <dir>`（默认 cwd）；`miao` 默认走 Rust TUI，`--tui legacy` 或 `MIAO_TUI=legacy` 回退；显式选 Rust 但二进制缺失时报告安装不完整，默认路径缺二进制时告警并回退到 TS TUI（`selectedTui`/`rustTuiBinary`） |
 
 ## T2 传输层（crates/miao-tui/src/transport.rs）
 
