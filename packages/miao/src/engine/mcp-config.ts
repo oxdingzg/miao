@@ -5,8 +5,13 @@ import type { EngineOptions } from "./client"
 
 /** Materialize trusted global servers for one native owner, never project config. */
 export function prepareMcpConfig(options: EngineOptions, inherited: Record<string, string | undefined> = process.env) {
-  if (options.mcpConfigFile || !options.mcpSettings?.servers || !options.policyFile) return
-  const policy: unknown = JSON.parse(readFileSync(options.policyFile, "utf8"))
+  if (options.mcpConfigFile || !options.mcpSettings?.servers) return
+  // Without an explicit operator policy the engine derives the product policy
+  // (workspace mode, MCP allowed) from the config directory; only a policy
+  // file still needs reading.
+  const policy: unknown = options.policyFile
+    ? JSON.parse(readFileSync(options.policyFile, "utf8"))
+    : { mode: "workspace", allow_mcp: true }
   if (
     typeof policy !== "object" ||
     policy === null ||
