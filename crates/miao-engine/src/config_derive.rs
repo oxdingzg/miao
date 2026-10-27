@@ -138,8 +138,8 @@ pub fn plan(text: &str) -> Result<Vec<Source>, String> {
     if text.len() > 65536 {
         return Err("config source plan exceeds 64 KiB".into());
     }
-    let value: Value =
-        serde_json::from_str(text).map_err(|error| format!("invalid config source plan: {error}"))?;
+    let value: Value = serde_json::from_str(text)
+        .map_err(|error| format!("invalid config source plan: {error}"))?;
     let entries = value
         .as_array()
         .ok_or("config source plan must be a JSON array")?;
