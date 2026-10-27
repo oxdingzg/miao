@@ -1,10 +1,10 @@
 //! TUI settings read from `tui.json` files.
 //!
-//! Only the `attention` section is consumed here; the theme keeps its own
-//! loader because its merge warnings predate this module. The file order
-//! matches the TypeScript host: global config, `MIAO_TUI_CONFIG`, then the
-//! project's `.miao/tui.json` files from the workspace root downwards, so the
-//! closest file wins.
+//! Only the `attention` section is consumed here; the theme has its own parser
+//! but reads the same files, so `files` lives here. The order matches the
+//! TypeScript host: global config, `MIAO_TUI_CONFIG`, then the project's
+//! `.miao/tui.json` files from the workspace root downwards, so the closest
+//! file wins.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -49,7 +49,7 @@ pub const SOUND_NAMES: &[&str] = &[
 pub fn load(workspace: &Path) -> (Config, Vec<String>) {
     let mut warnings = Vec::new();
     let mut config = Config::default();
-    for path in files(workspace) {
+    for path in files(workspace, global_dir().as_deref()) {
         if let Ok(text) = std::fs::read_to_string(&path) {
             merge(&text, &path, &mut config, &mut warnings);
         }
@@ -57,9 +57,12 @@ pub fn load(workspace: &Path) -> (Config, Vec<String>) {
     (config, warnings)
 }
 
-fn files(workspace: &Path) -> Vec<PathBuf> {
+/// The `tui.json` files the TypeScript host merges, lowest precedence first:
+/// the global config directory, `MIAO_TUI_CONFIG`, then the project's `.miao`
+/// files from the workspace root downwards so the closest file wins.
+pub(crate) fn files(workspace: &Path, global: Option<&Path>) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    if let Some(dir) = global_dir() {
+    if let Some(dir) = global {
         let candidate = dir.join("tui.json");
         if candidate.is_file() {
             files.push(candidate);

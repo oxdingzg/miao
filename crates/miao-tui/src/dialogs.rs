@@ -292,8 +292,8 @@ impl Dialog {
         ))
     }
 
-    pub fn theme(current: &str) -> Self {
-        let names = crate::theme::names();
+    pub fn theme(current: &str, catalog: &crate::theme::Catalog) -> Self {
+        let names = catalog.names();
         let mut list = ListDialog::new(
             "theme",
             names

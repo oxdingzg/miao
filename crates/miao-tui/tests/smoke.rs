@@ -509,8 +509,10 @@ fn the_leader_opens_the_theme_dialog_and_saves_the_choice() {
         plain(&harness.text())
     );
     harness.write(b"\x18t");
+    // The menu holds every built-in theme and opens around the active one, so
+    // the first visible window is the end of the list rather than its head.
     assert!(
-        wait_for_plain(&harness, "catppuccin-frappe", Duration::from_secs(2)),
+        wait_for_plain(&harness, "everforest", Duration::from_secs(2)),
         "the theme dialog did not render:\n{}",
         plain(&harness.text())
     );
