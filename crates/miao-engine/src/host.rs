@@ -467,6 +467,15 @@ impl Host {
                 self.subscriptions.remove(&session_id);
                 Ok(json!({ "accepted": true }))
             }
+            Command::PermissionEvaluate { request } => {
+                if request.actions.is_empty() || request.resources.is_empty() {
+                    return Err(Error::Invalid(
+                        "permission_evaluate requires actions and resources".into(),
+                    ));
+                }
+                serde_json::to_value(crate::permission_rules::evaluate(&request)?)
+                    .map_err(Error::from)
+            }
             Command::Approve {
                 session_id,
                 response,
