@@ -73,7 +73,10 @@ fn golden_lookup(environment: &Value) -> impl Fn(&str) -> Option<PathBuf> {
         if command.starts_with('/') {
             return Some(PathBuf::from(command));
         }
-        Some(PathBuf::from("/tools").join(command))
+        // The samples are shared with the TypeScript reference and captured with
+        // POSIX separators, so the fake install path is composed the same way on
+        // every host instead of letting Path::join pick the native separator.
+        Some(PathBuf::from(format!("/tools/{command}")))
     }
 }
 
