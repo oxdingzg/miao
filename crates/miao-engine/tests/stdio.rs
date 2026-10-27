@@ -438,3 +438,78 @@ async fn product_bridge_does_not_keep_stdio_shutdown_open() {
             .success()
     );
 }
+
+#[tokio::test]
+async fn a_slow_reader_does_not_kill_the_engine() {
+    use tokio::io::AsyncWriteExt;
+    let dir = tempfile::tempdir().unwrap();
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-only")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let prompt = "x".repeat(16 * 1024);
+    let mut requests = String::new();
+    for index in 0..150 {
+        requests.push_str(
+            &json!({
+                "id": index + 1,
+                "method": "admit",
+                "params": {
+                    "input": {
+                        "session_id": "s",
+                        "input_id": format!("slow-{index}"),
+                        "prompt": prompt,
+                    },
+                    "resume": false,
+                },
+            })
+            .to_string(),
+        );
+        requests.push('\n');
+    }
+    requests.push_str(
+        &json!({"id": 999, "method": "events", "params": {"session_id": "s", "after": 0}})
+            .to_string(),
+    );
+    requests.push('\n');
+    input.write_all(requests.as_bytes()).await.unwrap();
+    input.flush().await.unwrap();
+
+    // The events reply is larger than the pipe buffer and the output queue, so
+    // the old five-second write deadline killed the engine while the client was
+    // merely slow to read. Slow is backpressure: wait for the reader.
+    tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "engine exited while its reader was slow"
+    );
+
+    drop(input);
+    let output = child.wait_with_output().await.unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let events = replies.iter().find(|reply| reply["id"] == 999).unwrap();
+    assert_eq!(events["result"].as_array().unwrap().len(), 150);
+}

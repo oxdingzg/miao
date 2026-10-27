@@ -58,8 +58,11 @@ retaining the same cursor, identity, pending work and Session state. An omitted
 
 `event` notifications are committed canonical events; `progress` notifications
 are ephemeral provider frames that are not durable and may be followed by a
-`resync`. A slow stdout consumer is terminated and reconnects by reading
-committed events, so replay→live never depends on a transient frame.
+`resync`. A slow stdout consumer applies backpressure through the pipe: the
+writer waits for the reader instead of terminating the engine, and only a
+closed pipe (a dead host) or `shutdown` ends the stream. The durable cursor
+still makes replay→live independent of any transient frame, so a client that
+does disconnect can resume from committed events.
 
 ## Lifecycle event vocabulary
 
