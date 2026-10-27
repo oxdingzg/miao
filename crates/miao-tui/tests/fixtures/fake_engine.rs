@@ -21,6 +21,9 @@ fn main() {
     // smoke test. Without it `snapshot` stays silent, which is the transport
     // suite's request-timeout case.
     let sessions = std::env::var_os("MIAO_TUI_FAKE_SESSIONS").is_some();
+    // The approval scenario keeps one request outstanding until the client
+    // resolves it, so the panel has something to show on the first snapshot.
+    let mut approval_pending = std::env::var_os("MIAO_TUI_FAKE_APPROVAL").is_some();
 
     for line in stdin.lock().lines() {
         let Ok(line) = line else { return };
@@ -96,6 +99,27 @@ fn main() {
                         {"seq":2,"role":"assistant","content":[{"type":"text","text":"fixture answer"}],"identity":{"agent":"build","provider":{"model":"fake/model"}},"checkpoint":null,"recorded_at_ms":null}
                     ]);
                 }
+                snapshot["pending"] = json!([]);
+                snapshot["active_run"] = json!(null);
+                snapshot["approvals"] = json!([]);
+                snapshot["questions"] = json!([]);
+                if approval_pending {
+                    snapshot["active_run"] = json!("run-1");
+                    snapshot["approvals"] = json!([{
+                        "request_id": "run-1/call_1",
+                        "session_id": target,
+                        "run_id": "run-1",
+                        "call_id": "call_1",
+                        "location": "/tmp",
+                        "tool": "bash",
+                        "resource": "ls -la",
+                        "input": {"command": "ls -la"},
+                        "input_hash": "a".repeat(64),
+                        "policy_revision": "rev-1",
+                        "matcher": {"kind": "builtin"},
+                        "expires_at_ms": 0
+                    }]);
+                }
                 send(&mut out, json!({"id":id,"result":snapshot}));
             }
             "events" if sessions => send(&mut out, json!({"id":id,"result":[]})),
@@ -111,16 +135,18 @@ fn main() {
                     json!({"id":id,"result":{"session_id":frame["params"]["session_id"]}}),
                 );
             }
+            "approve" if sessions => {
+                log_action(&frame["params"], "approve");
+                approval_pending = false;
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "cancel" if sessions => {
+                log_action(&frame["params"], "cancel");
+                approval_pending = false;
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
             "admit" if sessions => {
-                if let Some(path) = std::env::var_os("MIAO_TUI_FAKE_ADMIT_LOG") {
-                    if let Ok(line) = serde_json::to_string(&frame["params"]) {
-                        let _ = std::fs::OpenOptions::new()
-                            .create(true)
-                            .append(true)
-                            .open(path)
-                            .and_then(|mut file| writeln!(file, "{line}"));
-                    }
-                }
+                log_action(&frame["params"], "admit");
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
             }
             "snapshot" | "hang" => {}
@@ -155,6 +181,21 @@ fn event(session_id: &str, seq: u64, kind: &str) -> Value {
 
 fn seq(event: &Value) -> u64 {
     event["seq"].as_u64().unwrap_or(0)
+}
+
+/// Append one accepted write to `MIAO_TUI_FAKE_ADMIT_LOG` so the smoke test
+/// can assert exactly what the TUI sent.
+fn log_action(params: &Value, method: &str) {
+    let Some(path) = std::env::var_os("MIAO_TUI_FAKE_ADMIT_LOG") else {
+        return;
+    };
+    if let Ok(line) = serde_json::to_string(&json!({"method": method, "params": params})) {
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .and_then(|mut file| writeln!(file, "{line}"));
+    }
 }
 
 fn send(out: &mut std::io::Stdout, frame: Value) {
