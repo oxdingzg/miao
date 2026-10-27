@@ -17,6 +17,13 @@ fn main() {
     let mut session_id = "s".to_string();
     let mut subscribed = false;
     let mut next = 1;
+    // `MIAO_TUI_FAKE_SESSIONS` turns this into a catalog view for the pty
+    // smoke test. Without it `snapshot` stays silent, which is the transport
+    // suite's request-timeout case.
+    let sessions = std::env::var_os("MIAO_TUI_FAKE_SESSIONS").is_some();
+    // The approval scenario keeps one request outstanding until the client
+    // resolves it, so the panel has something to show on the first snapshot.
+    let mut approval_pending = std::env::var_os("MIAO_TUI_FAKE_APPROVAL").is_some();
 
     for line in stdin.lock().lines() {
         let Ok(line) = line else { return };
@@ -69,6 +76,126 @@ fn main() {
                 );
             }
             // Silent methods: only the request timeout can settle these.
+            "snapshot" if sessions => {
+                let target = frame["params"]["session_id"].as_str().unwrap_or("ses_a");
+                let metadata_only = frame["params"]["metadata_only"].as_bool().unwrap_or(false);
+                let (title, updated) = if target == "ses_a" {
+                    ("Project A", 2_000)
+                } else {
+                    ("Project B", 1_000)
+                };
+                let mut snapshot = json!({
+                    "session_id": target,
+                    "title": title,
+                    "cursor": 2,
+                    "updated_at_ms": updated,
+                    "archived_at_ms": null,
+                    "parent_session_id": null,
+                    "location": "/tmp",
+                    "model_selection": {"protocol": "chat", "model": "fake/glm"},
+                    "account_selection": {"credential_id": "cred_a"},
+                });
+                if !metadata_only {
+                    snapshot["messages"] = json!([
+                        {"seq":1,"role":"user","content":"hello from the fixture","checkpoint":null,"recorded_at_ms":null},
+                        {"seq":2,"role":"assistant","content":[{"type":"text","text":"fixture answer"}],"identity":{"agent":"build","provider":{"model":"fake/model"}},"checkpoint":null,"recorded_at_ms":null}
+                    ]);
+                }
+                snapshot["pending"] = json!([]);
+                snapshot["active_run"] = json!(null);
+                snapshot["approvals"] = json!([]);
+                snapshot["questions"] = json!([]);
+                if approval_pending {
+                    snapshot["active_run"] = json!("run-1");
+                    snapshot["approvals"] = json!([{
+                        "request_id": "run-1/call_1",
+                        "session_id": target,
+                        "run_id": "run-1",
+                        "call_id": "call_1",
+                        "location": "/tmp",
+                        "tool": "bash",
+                        "resource": "ls -la",
+                        "input": {"command": "ls -la"},
+                        "input_hash": "a".repeat(64),
+                        "policy_revision": "rev-1",
+                        "matcher": {"kind": "builtin"},
+                        "expires_at_ms": 0
+                    }]);
+                }
+                send(&mut out, json!({"id":id,"result":snapshot}));
+            }
+            "events" if sessions => send(&mut out, json!({"id":id,"result":[]})),
+            "unsubscribe" if sessions => {
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "sessions" if sessions => send(&mut out, json!({"id":id,"result":["ses_a","ses_b"]})),
+            // Accepted writes are logged verbatim so the smoke test can assert
+            // exactly what the composer sent.
+            "initialize" if sessions => {
+                send(
+                    &mut out,
+                    json!({"id":id,"result":{"session_id":frame["params"]["session_id"]}}),
+                );
+            }
+            "approve" if sessions => {
+                log_action(&frame["params"], "approve");
+                approval_pending = false;
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "cancel" if sessions => {
+                log_action(&frame["params"], "cancel");
+                approval_pending = false;
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "admit" if sessions => {
+                log_action(&frame["params"], "admit");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            // Two catalog entries with two credentials, so both the model
+            // dialog and the account dialog have something to pick from.
+            "model_catalog" if sessions => send(
+                &mut out,
+                json!({"id":id,"result":[
+                    {"route_id":"r1","protocol":"chat","model":"fake/glm","credential_id":"cred_a"},
+                    {"protocol":"responses","model":"fake/gpt","variants":["low","high"],"credential_id":"cred_b"}
+                ]}),
+            ),
+            "usage" if sessions => send(
+                &mut out,
+                json!({"id":id,"result":{
+                    "providerUsage": {},
+                    "providerDetail": {},
+                    "auxiliary": {},
+                    "turns": 3,
+                    "partialTurns": 1,
+                    "tokens": {"input": 1200, "output": 300, "cacheRead": 900, "cacheWrite": 0, "nonCached": 300},
+                    "cacheDiagnostics": {},
+                    "ttftMs": {"count": 3, "avg": 812, "min": 400, "max": 1200},
+                    "lineage": [{"protocol": "chat", "model": "fake/glm", "turns": 3}],
+                    "tools": {"calls": 5, "failures": 1},
+                    "turnsDetail": []
+                }}),
+            ),
+            "select_account" if sessions => {
+                log_action(&frame["params"], "select_account");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "select_model" if sessions => {
+                log_action(&frame["params"], "select_model");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "rename" if sessions => {
+                log_action(&frame["params"], "rename");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "archive" if sessions => {
+                log_action(&frame["params"], "archive");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "remove" if sessions => {
+                log_action(&frame["params"], "remove");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
             "snapshot" | "hang" => {}
             "exit" => return,
             "shutdown" => {
@@ -101,6 +228,21 @@ fn event(session_id: &str, seq: u64, kind: &str) -> Value {
 
 fn seq(event: &Value) -> u64 {
     event["seq"].as_u64().unwrap_or(0)
+}
+
+/// Append one accepted write to `MIAO_TUI_FAKE_ADMIT_LOG` so the smoke test
+/// can assert exactly what the TUI sent.
+fn log_action(params: &Value, method: &str) {
+    let Some(path) = std::env::var_os("MIAO_TUI_FAKE_ADMIT_LOG") else {
+        return;
+    };
+    if let Ok(line) = serde_json::to_string(&json!({"method": method, "params": params})) {
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .and_then(|mut file| writeln!(file, "{line}"));
+    }
 }
 
 fn send(out: &mut std::io::Stdout, frame: Value) {

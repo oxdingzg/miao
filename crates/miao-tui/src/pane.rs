@@ -1,12 +1,24 @@
 use std::path::Path;
 
-use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Style;
+use ratatui::layout::{Constraint, Layout, Position, Rect};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph};
+use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use ratatui::Frame;
+use unicode_width::UnicodeWidthChar;
 
+use crate::dialogs::{Dialog, ListDialog, ListKind, PaletteDialog};
+use crate::editor::Composer;
+use crate::session::{
+    ApprovalView, Entry, Part, QuestionView, SessionSummary, ToolPart, Transcript,
+};
 use crate::theme::Theme;
+
+/// How many output lines one tool row shows before collapsing. The full output
+/// stays in the engine; this is a reading surface, not a pager.
+const TOOL_PREVIEW_LINES: usize = 8;
+/// How many diff lines one changed file shows before collapsing.
+const DIFF_PREVIEW_LINES: usize = 12;
 
 const SIDEBAR_MIN_WIDTH: u16 = 100;
 const SIDEBAR_WIDTH: u16 = 24;
@@ -18,8 +30,12 @@ pub trait Pane {
 pub struct Shell {
     pub title: TitlePane,
     pub transcript: TranscriptPane,
-    pub composer: ComposerPane,
+    pub composer: Composer,
+    pub panel: Option<Panel>,
     pub sidebar: Option<SidebarPane>,
+    /// The projection behind `transcript.lines`, kept so a theme change can
+    /// repaint the same content instead of waiting for the next snapshot.
+    last: Option<Transcript>,
 }
 
 impl Shell {
@@ -28,20 +44,77 @@ impl Shell {
             title: TitlePane::new(workspace, theme.clone()),
             transcript: TranscriptPane {
                 theme: theme.clone(),
+                lines: vec![Line::from("no Session selected")],
+                scroll: 0,
+                follow: true,
             },
-            composer: ComposerPane {
-                input: String::new(),
-                theme: theme.clone(),
-            },
-            sidebar: Some(SidebarPane { theme }),
+            composer: Composer::new(workspace),
+            panel: None,
+            sidebar: Some(SidebarPane {
+                theme,
+                session: None,
+            }),
+            last: None,
+        }
+    }
+
+    pub fn set_transcript(&mut self, transcript: &Transcript) {
+        self.transcript.lines = transcript_lines(transcript, &self.transcript.theme);
+        let max = self.transcript.lines.len().saturating_sub(1);
+        self.transcript.scroll = self.transcript.scroll.min(max as u16);
+        self.last = Some(transcript.clone());
+    }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.title.set_theme(theme.clone());
+        self.transcript.theme = theme.clone();
+        if let Some(sidebar) = self.sidebar.as_mut() {
+            sidebar.theme = theme.clone();
+        }
+        if let Some(last) = &self.last {
+            self.transcript.lines = transcript_lines(last, &theme);
+        }
+    }
+
+    pub fn theme(&self) -> &Theme {
+        &self.transcript.theme
+    }
+
+    /// Show one status line instead of a transcript: engine failures and other
+    /// states where there is no Session content to render.
+    pub fn set_message(&mut self, message: &str) {
+        let palette = self.transcript.theme.palette;
+        self.transcript.lines = vec![Line::from(Span::styled(
+            message.to_string(),
+            Style::new().fg(palette.error),
+        ))];
+        self.transcript.scroll = 0;
+        self.transcript.follow = false;
+        self.last = None;
+    }
+
+    pub fn scroll_transcript(&mut self, delta: i32) {
+        // Scrolling up detaches from the bottom; new content then lands above
+        // the viewport instead of pulling it along.
+        self.transcript.follow = false;
+        let max = self.transcript.lines.len().saturating_sub(1);
+        let next = self.transcript.scroll as i32 + delta;
+        self.transcript.scroll = next.clamp(0, max as i32) as u16;
+    }
+
+    pub fn set_session(&mut self, session: Option<&SessionSummary>) {
+        if let Some(sidebar) = self.sidebar.as_mut() {
+            sidebar.session = session.cloned();
         }
     }
 
     pub fn render(&mut self, frame: &mut Frame) {
-        let [title_area, body_area, composer_area] = Layout::vertical([
+        let panel_height = self.panel.as_ref().map_or(0, Panel::height);
+        let [title_area, body_area, panel_area, composer_area] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(1),
-            Constraint::Length(3),
+            Constraint::Length(panel_height),
+            Constraint::Length(composer_height(&self.composer)),
         ])
         .areas(frame.area());
         self.title.render(frame, title_area);
@@ -56,12 +129,16 @@ impl Shell {
         } else {
             self.transcript.render(frame, body_area);
         }
-        self.composer.render(frame, composer_area);
+        if let Some(panel) = self.panel.as_ref() {
+            panel.render(frame, panel_area, &self.transcript.theme);
+        }
+        render_composer(frame, composer_area, &self.composer, &self.transcript.theme);
     }
 }
 
 pub struct TitlePane {
     label: String,
+    status: Option<String>,
     theme: Theme,
 }
 
@@ -72,7 +149,8 @@ impl TitlePane {
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| workspace.display().to_string());
         Self {
-            label: format!(" miao-tui · {name} · {} ", git_branch(workspace)),
+            label: format!(" miao-tui · {name} · {}", git_branch(workspace)),
+            status: None,
             theme,
         }
     }
@@ -89,21 +167,38 @@ fn git_branch(workspace: &Path) -> String {
         .unwrap_or_else(|| "no git".to_string())
 }
 
+impl TitlePane {
+    pub fn set_status(&mut self, status: Option<String>) {
+        self.status = status;
+    }
+
+    fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+}
+
 impl Pane for TitlePane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let style = Style::new()
-            .fg(self.theme.palette.primary)
-            .bg(self.theme.palette.surface)
-            .bold();
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(self.label.as_str(), style))),
-            area,
-        );
+        let palette = self.theme.palette;
+        let style = Style::new().fg(palette.primary).bg(palette.surface).bold();
+        let mut spans = vec![Span::styled(format!("{} ", self.label), style)];
+        if let Some(status) = &self.status {
+            spans.push(Span::styled(
+                format!("· {status} "),
+                Style::new().fg(palette.text_muted).bg(palette.surface),
+            ));
+        }
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
     }
 }
 
 pub struct TranscriptPane {
     theme: Theme,
+    lines: Vec<Line<'static>>,
+    scroll: u16,
+    /// Follow the tail while new projections arrive. Any manual scroll clears
+    /// it, so reading history is not interrupted by committed events.
+    follow: bool,
 }
 
 impl Pane for TranscriptPane {
@@ -116,52 +211,1081 @@ impl Pane for TranscriptPane {
             ))
             .border_style(Style::new().fg(palette.border))
             .style(Style::new().bg(palette.background));
+        if self.follow {
+            let viewport = area.height.saturating_sub(2) as usize;
+            self.scroll = self.lines.len().saturating_sub(viewport) as u16;
+        }
         frame.render_widget(
-            Paragraph::new("awaiting engine transport (T2); transcript rendering lands in T3")
-                .style(Style::new().fg(palette.text_muted))
-                .block(block),
+            Paragraph::new(self.lines.clone())
+                .style(Style::new().fg(palette.text))
+                .block(block)
+                .wrap(Wrap { trim: false })
+                .scroll((self.scroll, 0)),
             area,
         );
     }
 }
 
-pub struct ComposerPane {
-    pub input: String,
+pub struct Home {
+    pub rows: Vec<SessionSummary>,
+    pub selected: usize,
+    notice: Option<String>,
     theme: Theme,
 }
 
-impl Pane for ComposerPane {
-    fn render(&mut self, frame: &mut Frame, area: Rect) {
+impl Home {
+    pub fn new(theme: Theme) -> Self {
+        Self {
+            rows: Vec::new(),
+            selected: 0,
+            notice: None,
+            theme,
+        }
+    }
+
+    pub fn set_notice(&mut self, notice: Option<String>) {
+        self.notice = notice;
+    }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
+    pub fn set_rows(&mut self, rows: Vec<SessionSummary>) {
+        let selected_id = self.rows.get(self.selected).map(|row| row.id.clone());
+        self.rows = rows;
+        self.selected = selected_id
+            .and_then(|id| self.rows.iter().position(|row| row.id == id))
+            .unwrap_or(0)
+            .min(self.rows.len().saturating_sub(1));
+    }
+
+    pub fn move_cursor(&mut self, delta: i32) {
+        if self.rows.is_empty() {
+            self.selected = 0;
+            return;
+        }
+        let next = self.selected as i32 + delta;
+        self.selected = next.clamp(0, self.rows.len() as i32 - 1) as usize;
+    }
+
+    pub fn current(&self) -> Option<&SessionSummary> {
+        self.rows.get(self.selected)
+    }
+
+    pub fn render(&self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
         let block = Block::bordered()
-            .title(Span::styled(" composer ", Style::new().fg(palette.primary)))
+            .title(Span::styled(
+                " sessions · n new ",
+                Style::new().fg(palette.primary),
+            ))
             .border_style(Style::new().fg(palette.border))
             .style(Style::new().bg(palette.background));
+        if self.rows.is_empty() {
+            let message = self
+                .notice
+                .clone()
+                .unwrap_or_else(|| "no sessions yet · press n to start one".to_string());
+            frame.render_widget(
+                Paragraph::new(message)
+                    .style(Style::new().fg(palette.text_muted))
+                    .block(block),
+                area,
+            );
+            return;
+        }
+        let notice = self.notice.iter().flat_map(|notice| {
+            [
+                Line::from(Span::styled(notice.clone(), Style::new().fg(palette.error))),
+                Line::default(),
+            ]
+        });
+        let rows = self.rows.iter().enumerate().map(|(index, row)| {
+            let marker = if index == self.selected { "▸ " } else { "  " };
+            let style = if index == self.selected {
+                Style::new()
+                    .fg(palette.primary)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::new().fg(palette.text)
+            };
+            let detail = match (row.directory.as_deref(), row.updated_at_ms) {
+                (Some(directory), Some(updated)) => {
+                    let name = Path::new(directory)
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| directory.to_string());
+                    format!("{}  ·  {}", relative_time(updated), name)
+                }
+                _ => String::new(),
+            };
+            Line::from(vec![
+                Span::styled(format!("{marker}{}", row.label()), style),
+                Span::styled(
+                    if detail.is_empty() {
+                        String::new()
+                    } else {
+                        format!("   {detail}")
+                    },
+                    Style::new().fg(palette.text_muted),
+                ),
+            ])
+        });
         frame.render_widget(
-            Paragraph::new(format!("> {}", self.input))
-                .style(Style::new().fg(palette.text))
-                .block(block),
+            Paragraph::new(notice.chain(rows).collect::<Vec<_>>())
+                .block(block)
+                .wrap(Wrap { trim: false }),
             area,
         );
     }
+}
+
+fn relative_time(updated_at_ms: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(updated_at_ms);
+    let delta_ms = now.saturating_sub(updated_at_ms);
+    let minutes = delta_ms / 60_000;
+    match minutes {
+        0 => "just now".to_string(),
+        1..=59 => format!("{minutes}m ago"),
+        _ => {
+            let hours = minutes / 60;
+            if hours < 24 {
+                format!("{hours}h ago")
+            } else {
+                format!("{}d ago", hours / 24)
+            }
+        }
+    }
+}
+
+fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>> {
+    let palette = theme.palette;
+    let mut lines = Vec::new();
+    for entry in &transcript.entries {
+        match entry {
+            Entry::User { text } => {
+                for line in text.lines() {
+                    lines.push(Line::from(vec![
+                        Span::styled("❯ ", Style::new().fg(palette.primary)),
+                        Span::styled(line.to_string(), Style::new().fg(palette.text)),
+                    ]));
+                }
+                lines.push(Line::default());
+            }
+            Entry::Assistant {
+                agent,
+                model,
+                parts,
+            } => {
+                let label = match (agent.as_deref(), model.as_deref()) {
+                    (Some(agent), Some(model)) => format!("✳ {agent} · {model}"),
+                    (Some(agent), None) => format!("✳ {agent}"),
+                    (None, Some(model)) => format!("✳ {model}"),
+                    (None, None) => "✳ assistant".to_string(),
+                };
+                lines.push(Line::from(Span::styled(
+                    label,
+                    Style::new().fg(palette.text_muted),
+                )));
+                for part in parts {
+                    match part {
+                        Part::Text(text) => {
+                            for line in text.lines() {
+                                lines.push(Line::from(line.to_string()));
+                            }
+                        }
+                        Part::Reasoning(text) => lines.push(Line::from(Span::styled(
+                            format!("▸ thinking · {} chars", text.chars().count()),
+                            Style::new().fg(palette.text_muted),
+                        ))),
+                        Part::Tool(tool) => transparent_tool(&mut lines, tool, transcript, theme),
+                    }
+                }
+                lines.push(Line::default());
+            }
+        }
+    }
+    if lines.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "this Session has no messages yet",
+            Style::new().fg(palette.text_muted),
+        )));
+    }
+    lines
+}
+
+fn transparent_tool(
+    lines: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    transcript: &Transcript,
+    theme: &Theme,
+) {
+    let palette = theme.palette;
+    let (glyph, style) = if tool.failed {
+        ("✗", Style::new().fg(palette.error))
+    } else if tool.output.is_some() {
+        ("✓", Style::new().fg(palette.success))
+    } else {
+        ("·", Style::new().fg(palette.warning))
+    };
+    lines.push(Line::from(vec![
+        Span::styled(format!("{glyph} "), style),
+        Span::styled(tool.name.clone(), Style::new().fg(palette.secondary)),
+        Span::styled(
+            format!("  {}", input_summary(&tool.input)),
+            Style::new().fg(palette.text_muted),
+        ),
+    ]));
+    if let Some(output) = &tool.output {
+        for line in output.lines().take(TOOL_PREVIEW_LINES) {
+            lines.push(Line::from(Span::styled(
+                format!("  │ {line}"),
+                Style::new().fg(if tool.failed {
+                    palette.error
+                } else {
+                    palette.text_muted
+                }),
+            )));
+        }
+        let total = output.lines().count();
+        if total > TOOL_PREVIEW_LINES {
+            lines.push(Line::from(Span::styled(
+                format!("  │ … {} more lines", total - TOOL_PREVIEW_LINES),
+                Style::new().fg(palette.text_muted),
+            )));
+        }
+    }
+    if let Some(files) = transcript.displays.get(&tool.id) {
+        for file in files {
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "  ◆ {} {} +{} −{}",
+                    file.action, file.path, file.additions, file.deletions
+                ),
+                Style::new().fg(palette.accent),
+            )));
+            for line in file.patch.lines().take(DIFF_PREVIEW_LINES) {
+                lines.push(Line::from(Span::styled(
+                    format!("  {line}"),
+                    Style::new().fg(diff_color(line, theme)),
+                )));
+            }
+            let total = file.patch.lines().count();
+            if total > DIFF_PREVIEW_LINES {
+                lines.push(Line::from(Span::styled(
+                    format!("  … {} more diff lines", total - DIFF_PREVIEW_LINES),
+                    Style::new().fg(palette.text_muted),
+                )));
+            }
+        }
+    }
+}
+
+fn diff_color(line: &str, theme: &Theme) -> Color {
+    let palette = theme.palette;
+    if line.starts_with('+') {
+        return palette.success;
+    }
+    if line.starts_with('-') {
+        return palette.error;
+    }
+    if line.starts_with("@@") {
+        return palette.accent;
+    }
+    palette.text_muted
+}
+
+fn input_summary(input: &serde_json::Value) -> String {
+    let candidate = ["command", "path", "pattern", "query", "url", "description"]
+        .iter()
+        .find_map(|key| input.get(key).and_then(serde_json::Value::as_str));
+    match candidate {
+        Some(text) => compact(text),
+        None => compact(&input.to_string()),
+    }
+}
+
+fn compact(text: &str) -> String {
+    let single = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if single.chars().count() <= 80 {
+        return single;
+    }
+    let mut cut = single.chars().take(77).collect::<String>();
+    cut.push('…');
+    cut
+}
+
+/// Input rows the composer grows to before it scrolls; the border and the
+/// completion list live outside this budget.
+const COMPOSER_INPUT_ROWS: usize = 8;
+const COMPOSER_COMPLETION_ROWS: usize = 6;
+
+fn composer_height(composer: &Composer) -> u16 {
+    let input = composer.editor.line_count().clamp(1, COMPOSER_INPUT_ROWS);
+    let completion = composer
+        .completion
+        .items
+        .len()
+        .min(COMPOSER_COMPLETION_ROWS);
+    (2 + input + completion) as u16
+}
+
+fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
+    let palette = theme.palette;
+    let title = match &composer.notice {
+        Some(notice) => format!(" composer · {notice} "),
+        None => " composer ".to_string(),
+    };
+    let block = Block::bordered()
+        .title(Span::styled(title, Style::new().fg(palette.primary)))
+        .border_style(Style::new().fg(palette.border))
+        .style(Style::new().bg(palette.background));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let completion_rows = composer
+        .completion
+        .items
+        .len()
+        .min(COMPOSER_COMPLETION_ROWS) as u16;
+    let input_area = Rect {
+        height: inner.height.saturating_sub(completion_rows),
+        ..inner
+    };
+    let (cursor_line, cursor_cell) = composer.editor.cursor_position();
+    let row_offset = cursor_line.saturating_sub(input_area.height.saturating_sub(1) as usize);
+    let cell_offset = cursor_cell.saturating_sub(input_area.width.saturating_sub(1) as usize);
+    let lines = composer
+        .editor
+        .lines()
+        .skip(row_offset)
+        .take(input_area.height as usize)
+        .map(|line| {
+            Line::from(Span::styled(
+                clip_cells(&line, cell_offset, input_area.width),
+                Style::new().fg(palette.text),
+            ))
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(lines), input_area);
+
+    let cursor_row = cursor_line - row_offset;
+    let cursor_column = cursor_cell - cell_offset;
+    if cursor_row < input_area.height as usize && cursor_column < input_area.width as usize {
+        frame.set_cursor_position(Position::new(
+            input_area.x + cursor_column as u16,
+            input_area.y + cursor_row as u16,
+        ));
+    }
+
+    let completion_area = Rect {
+        y: inner.y + input_area.height,
+        height: completion_rows,
+        ..inner
+    };
+    let items = composer
+        .completion
+        .items
+        .iter()
+        .take(COMPOSER_COMPLETION_ROWS)
+        .enumerate()
+        .map(|(index, path)| {
+            let selected = index == composer.completion.selected;
+            Line::from(Span::styled(
+                format!("{}{path}", if selected { "▸ " } else { "  " }),
+                if selected {
+                    Style::new()
+                        .fg(palette.primary)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::new().fg(palette.text_muted)
+                },
+            ))
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(items), completion_area);
+}
+
+/// Skip `offset` display cells and take at most `width` cells of a line.
+fn clip_cells(line: &str, offset: usize, width: u16) -> String {
+    let mut skipped = 0;
+    let mut taken = 0;
+    let limit = width as usize;
+    let mut out = String::new();
+    for c in line.chars() {
+        let cells = UnicodeWidthChar::width(c).unwrap_or(0);
+        if skipped < offset {
+            skipped += cells;
+            continue;
+        }
+        if taken + cells > limit {
+            break;
+        }
+        taken += cells;
+        out.push(c);
+    }
+    out
 }
 
 pub struct SidebarPane {
     theme: Theme,
+    session: Option<SessionSummary>,
 }
 
 impl Pane for SidebarPane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
         let block = Block::bordered()
-            .title(Span::styled(" sidebar ", Style::new().fg(palette.primary)))
+            .title(Span::styled(" session ", Style::new().fg(palette.primary)))
             .border_style(Style::new().fg(palette.border))
             .style(Style::new().bg(palette.background));
+        let lines = match &self.session {
+            None => vec![Line::from(Span::styled(
+                "no Session selected",
+                Style::new().fg(palette.text_muted),
+            ))],
+            Some(session) => vec![
+                Line::from(Span::styled(
+                    session.label().to_string(),
+                    Style::new().fg(palette.text).add_modifier(Modifier::BOLD),
+                )),
+                Line::default(),
+                Line::from(Span::styled(
+                    session.directory.clone().unwrap_or_default(),
+                    Style::new().fg(palette.text_muted),
+                )),
+                Line::from(Span::styled(
+                    session
+                        .updated_at_ms
+                        .map(|updated| format!("updated {}", relative_time(updated)))
+                        .unwrap_or_default(),
+                    Style::new().fg(palette.text_muted),
+                )),
+            ],
+        };
         frame.render_widget(
-            Paragraph::new("session info lands in T3+")
-                .style(Style::new().fg(palette.text_muted))
-                .block(block),
+            Paragraph::new(lines)
+                .block(block)
+                .wrap(Wrap { trim: false }),
             area,
         );
+    }
+}
+
+/// Draw a modal dialog centered over the current screen. `Clear` hides the
+/// page underneath so the dialog never blends with the transcript.
+pub fn render_dialog(frame: &mut Frame, area: Rect, dialog: &Dialog, theme: &Theme) {
+    if area.width < 20 || area.height < 5 {
+        return;
+    }
+    let palette = theme.palette;
+    let width = ((area.width as u32 * 60 / 100) as u16)
+        .clamp(40, 80)
+        .min(area.width);
+    let height = dialog.height().min(area.height);
+    let rect = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+    frame.render_widget(Clear, rect);
+    let block = Block::bordered()
+        .title(Span::styled(
+            format!(" {} ", dialog.title()),
+            Style::new()
+                .fg(palette.primary)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .border_style(Style::new().fg(palette.primary))
+        .style(Style::new().bg(palette.surface));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+    if let Some(list) = dialog.list() {
+        render_list(frame, inner, list, theme);
+        return;
+    }
+    if let Some(palette) = dialog.palette() {
+        render_palette(frame, inner, palette, theme);
+        return;
+    }
+    if let Some(input) = dialog.rename_input() {
+        render_rename(frame, inner, input, theme);
+        return;
+    }
+    if let Some(confirm) = dialog.confirm() {
+        render_confirm(frame, inner, confirm, theme);
+    }
+}
+
+fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) {
+    let palette = theme.palette;
+    let hint_area = Rect {
+        y: area.y + area.height - 1,
+        height: 1,
+        ..area
+    };
+    let list_area = Rect {
+        height: area.height - 1,
+        ..area
+    };
+    if list.rows.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "nothing to show",
+                Style::new().fg(palette.text_muted),
+            )),
+            list_area,
+        );
+    } else {
+        let visible = list_area.height as usize;
+        let offset = list
+            .selected
+            .saturating_sub(visible.saturating_sub(1))
+            .min(list.rows.len().saturating_sub(visible));
+        let lines = list
+            .rows
+            .iter()
+            .enumerate()
+            .skip(offset)
+            .take(visible)
+            .map(|(index, row)| {
+                // A read-only list has nothing to select, so it draws no
+                // marker and keeps every row in the same weight.
+                let read_only = list.kind == ListKind::ReadOnly;
+                let selected = !read_only && index == list.selected;
+                let marker = if selected {
+                    "▸ "
+                } else if read_only {
+                    ""
+                } else {
+                    "  "
+                };
+                let style = if selected {
+                    Style::new()
+                        .fg(palette.primary)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::new().fg(palette.text)
+                };
+                let label = clip_cells(&row.label, 0, list_area.width.saturating_sub(2));
+                let used = label
+                    .chars()
+                    .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
+                    .sum::<usize>();
+                let detail = if row.detail.is_empty() {
+                    String::new()
+                } else {
+                    clip_cells(
+                        &format!("   {}", row.detail),
+                        0,
+                        (list_area.width as usize).saturating_sub(used + 2) as u16,
+                    )
+                };
+                Line::from(vec![
+                    Span::styled(format!("{marker}{label}"), style),
+                    Span::styled(detail, Style::new().fg(palette.text_muted)),
+                ])
+            })
+            .collect::<Vec<_>>();
+        frame.render_widget(Paragraph::new(lines), list_area);
+    }
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            list.hint,
+            Style::new().fg(palette.text_muted),
+        ))),
+        hint_area,
+    );
+}
+
+fn render_palette(frame: &mut Frame, area: Rect, palette: &PaletteDialog, theme: &Theme) {
+    let colors = theme.palette;
+    let input_area = Rect { height: 1, ..area };
+    let list_area = Rect {
+        y: area.y + 1,
+        height: area.height.saturating_sub(1),
+        ..area
+    };
+    let text = clip_cells(palette.input.text(), 0, input_area.width.saturating_sub(2));
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("› ", Style::new().fg(colors.primary)),
+            Span::styled(text, Style::new().fg(colors.text)),
+        ])),
+        input_area,
+    );
+    let (_, cells) = palette.input.cursor_position();
+    if input_area.width > 0 {
+        let column = (2 + cells).min(input_area.width as usize - 1) as u16;
+        frame.set_cursor_position(Position::new(input_area.x + column, input_area.y));
+    }
+    if palette.visible.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "no matching command",
+                Style::new().fg(colors.text_muted),
+            )),
+            list_area,
+        );
+        return;
+    }
+    let visible = list_area.height as usize;
+    let offset = palette
+        .selected
+        .saturating_sub(visible.saturating_sub(1))
+        .min(palette.visible.len().saturating_sub(visible));
+    let lines = palette
+        .visible
+        .iter()
+        .enumerate()
+        .skip(offset)
+        .take(visible)
+        .map(|(index, row_index)| {
+            let row = &palette.rows[*row_index];
+            let selected = index == palette.selected;
+            let marker = if selected { "▸ " } else { "  " };
+            let style = if selected {
+                Style::new().fg(colors.primary).add_modifier(Modifier::BOLD)
+            } else {
+                Style::new().fg(colors.text)
+            };
+            let label = clip_cells(&row.label, 0, list_area.width.saturating_sub(2));
+            let used = label
+                .chars()
+                .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
+                .sum::<usize>();
+            let detail = if row.detail.is_empty() {
+                String::new()
+            } else {
+                clip_cells(
+                    &format!("   {}", row.detail),
+                    0,
+                    (list_area.width as usize).saturating_sub(used + 2) as u16,
+                )
+            };
+            Line::from(vec![
+                Span::styled(format!("{marker}{label}"), style),
+                Span::styled(detail, Style::new().fg(colors.text_muted)),
+            ])
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(lines), list_area);
+}
+
+fn render_rename(frame: &mut Frame, area: Rect, input: &crate::editor::Editor, theme: &Theme) {
+    let palette = theme.palette;
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            "title",
+            Style::new().fg(palette.text_muted),
+        ))),
+        Rect { height: 1, ..area },
+    );
+    let input_area = Rect {
+        y: area.y + 1,
+        height: 1,
+        ..area
+    };
+    if input_area.width == 0 {
+        return;
+    }
+    let text = clip_cells(input.text(), 0, input_area.width);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            text,
+            Style::new().fg(palette.text),
+        ))),
+        input_area,
+    );
+    let (_, cells) = input.cursor_position();
+    let column = cells.min(input_area.width as usize - 1) as u16;
+    frame.set_cursor_position(Position::new(input_area.x + column, input_area.y));
+}
+
+fn render_confirm(
+    frame: &mut Frame,
+    area: Rect,
+    confirm: &crate::dialogs::ConfirmDialog,
+    theme: &Theme,
+) {
+    let palette = theme.palette;
+    let button_area = Rect {
+        y: area.y + area.height - 1,
+        height: 1,
+        ..area
+    };
+    let message_area = Rect {
+        height: area.height.saturating_sub(2),
+        ..area
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            confirm.message.clone(),
+            Style::new().fg(palette.text),
+        )))
+        .wrap(Wrap { trim: false }),
+        message_area,
+    );
+    let selected = Style::new()
+        .fg(palette.primary)
+        .add_modifier(Modifier::BOLD);
+    let idle = Style::new().fg(palette.text_muted);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!("{} cancel   ", if confirm.confirmed { " " } else { "▸" }),
+                if confirm.confirmed { idle } else { selected },
+            ),
+            Span::styled(
+                format!("{} delete", if confirm.confirmed { "▸" } else { " " }),
+                if confirm.confirmed {
+                    Style::new().fg(palette.error).add_modifier(Modifier::BOLD)
+                } else {
+                    idle
+                },
+            ),
+        ])),
+        button_area,
+    );
+}
+
+/// A blocking engine decision drawn above the composer. Only one request is
+/// surfaced at a time; the engine serializes them within a Session.
+pub struct Panel {
+    pub kind: PanelKind,
+}
+
+pub enum PanelKind {
+    Approval(ApprovalView),
+    Question(QuestionProgress),
+}
+
+pub struct QuestionProgress {
+    pub view: QuestionView,
+    focus: usize,
+    cursor: Vec<usize>,
+    chosen: Vec<Vec<bool>>,
+}
+
+const PANEL_ROWS: usize = 12;
+
+impl Panel {
+    pub fn approval(view: ApprovalView) -> Self {
+        Self {
+            kind: PanelKind::Approval(view),
+        }
+    }
+
+    pub fn question(view: QuestionView) -> Self {
+        let cursor = vec![0; view.questions.len()];
+        let chosen = view
+            .questions
+            .iter()
+            .map(|question| vec![false; question.options.len()])
+            .collect();
+        Self {
+            kind: PanelKind::Question(QuestionProgress {
+                view,
+                focus: 0,
+                cursor,
+                chosen,
+            }),
+        }
+    }
+
+    /// The engine-side identity of the request being shown.
+    pub fn request_id(&self) -> &str {
+        match &self.kind {
+            PanelKind::Approval(view) => &view.request_id,
+            PanelKind::Question(progress) => &progress.view.question_id,
+        }
+    }
+
+    pub fn approval_view(&self) -> Option<&ApprovalView> {
+        match &self.kind {
+            PanelKind::Approval(view) => Some(view),
+            PanelKind::Question(_) => None,
+        }
+    }
+
+    pub fn height(&self) -> u16 {
+        let rows = match &self.kind {
+            PanelKind::Approval(_) => 4,
+            PanelKind::Question(progress) => {
+                progress.view.questions[progress.focus].options.len() + 4
+            }
+        };
+        (rows.min(PANEL_ROWS) + 2) as u16
+    }
+
+    pub fn move_cursor(&mut self, delta: i32) {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return;
+        };
+        let question = &progress.view.questions[progress.focus];
+        let next = progress.cursor[progress.focus] as i32 + delta;
+        progress.cursor[progress.focus] = next.clamp(0, question.options.len() as i32 - 1) as usize;
+    }
+
+    /// Toggle the focused option for a multi-select question; a single-select
+    /// question just moves the mark.
+    pub fn toggle(&mut self) {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return;
+        };
+        let focus = progress.focus;
+        let cursor = progress.cursor[focus];
+        let multi = progress.view.questions[focus].multi_select;
+        let chosen = &mut progress.chosen[focus];
+        if multi {
+            chosen[cursor] = !chosen[cursor];
+            return;
+        }
+        chosen.iter_mut().for_each(|mark| *mark = false);
+        chosen[cursor] = true;
+    }
+
+    /// Confirm the focused question. Returns the `answer_question` payload once
+    /// every question has at least one label, otherwise advances the focus.
+    pub fn submit(&mut self) -> Option<serde_json::Value> {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return None;
+        };
+        let focus = progress.focus;
+        let cursor = progress.cursor[focus];
+        if !progress.view.questions[focus].multi_select {
+            progress.chosen[focus]
+                .iter_mut()
+                .for_each(|mark| *mark = false);
+            progress.chosen[focus][cursor] = true;
+        }
+        let next = progress
+            .chosen
+            .iter()
+            .enumerate()
+            .skip(focus + 1)
+            .find(|(_, marks)| !marks.iter().any(|mark| *mark))
+            .map(|(index, _)| index);
+        if let Some(index) = next {
+            progress.focus = index;
+            return None;
+        }
+        if progress
+            .chosen
+            .iter()
+            .any(|marks| !marks.iter().any(|mark| *mark))
+        {
+            progress.focus = focus;
+            return None;
+        }
+        let answers = progress
+            .view
+            .questions
+            .iter()
+            .zip(&progress.chosen)
+            .map(|(question, marks)| {
+                question
+                    .options
+                    .iter()
+                    .zip(marks)
+                    .filter(|(_, mark)| **mark)
+                    .map(|(option, _)| option.label.clone())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        Some(progress.view.answer(answers))
+    }
+
+    pub fn rejection(&self) -> Option<serde_json::Value> {
+        match &self.kind {
+            PanelKind::Approval(_) => None,
+            PanelKind::Question(progress) => Some(progress.view.rejection()),
+        }
+    }
+
+    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
+        let palette = theme.palette;
+        let title = match &self.kind {
+            PanelKind::Approval(_) => " approval ",
+            PanelKind::Question(_) => " question ",
+        };
+        let block = Block::bordered()
+            .title(Span::styled(title, Style::new().fg(palette.warning)))
+            .border_style(Style::new().fg(palette.warning))
+            .style(Style::new().bg(palette.background));
+        frame.render_widget(
+            Paragraph::new(panel_lines(self, theme))
+                .block(block)
+                .wrap(Wrap { trim: false }),
+            area,
+        );
+    }
+}
+
+fn panel_lines(panel: &Panel, theme: &Theme) -> Vec<Line<'static>> {
+    let palette = theme.palette;
+    match &panel.kind {
+        PanelKind::Approval(view) => vec![
+            Line::from(vec![
+                Span::styled(view.tool.clone(), Style::new().fg(palette.secondary)),
+                Span::styled(
+                    format!("  {}", compact(&view.resource)),
+                    Style::new().fg(palette.text_muted),
+                ),
+            ]),
+            Line::from(Span::styled(
+                compact(&view.input.to_string()),
+                Style::new().fg(palette.text),
+            )),
+            Line::default(),
+            Line::from(Span::styled(
+                "1 allow once · 2 always allow · 3 deny",
+                Style::new().fg(palette.text_muted),
+            )),
+        ],
+        PanelKind::Question(progress) => {
+            let question = &progress.view.questions[progress.focus];
+            let heading = if question.header.is_empty() {
+                question.question.clone()
+            } else {
+                format!("{} · {}", question.header, question.question)
+            };
+            let mut lines = vec![
+                Line::from(Span::styled(heading, Style::new().fg(palette.text))),
+                Line::default(),
+            ];
+            for (index, option) in question.options.iter().enumerate() {
+                let marked = progress.chosen[progress.focus][index];
+                let focused = index == progress.cursor[progress.focus];
+                let glyph = match (question.multi_select, marked, focused) {
+                    (true, true, true) => "▸ [x] ",
+                    (true, true, false) => "  [x] ",
+                    (true, false, true) => "▸ [ ] ",
+                    (true, false, false) => "  [ ] ",
+                    (false, _, true) => "▸ ",
+                    (false, _, false) => "  ",
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("{glyph}{}", option.label),
+                        if focused {
+                            Style::new()
+                                .fg(palette.primary)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::new().fg(palette.text)
+                        },
+                    ),
+                    Span::styled(
+                        if option.description.is_empty() {
+                            String::new()
+                        } else {
+                            format!("  {}", compact(&option.description))
+                        },
+                        Style::new().fg(palette.text_muted),
+                    ),
+                ]));
+            }
+            let last = progress.focus + 1 == progress.view.questions.len();
+            lines.push(Line::default());
+            lines.push(Line::from(Span::styled(
+                if question.multi_select {
+                    "space toggle · enter continue · esc reject"
+                } else if last {
+                    "enter submit · esc reject"
+                } else {
+                    "enter continue · esc reject"
+                },
+                Style::new().fg(palette.text_muted),
+            )));
+            lines
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::{Choice, QuestionItem};
+
+    fn question(multi: bool) -> QuestionView {
+        QuestionView {
+            question_id: "run-1/call_2".into(),
+            input_hash: "b".repeat(64),
+            questions: vec![QuestionItem {
+                question: "Which files?".into(),
+                header: "Files".into(),
+                options: vec![
+                    Choice {
+                        label: "src".into(),
+                        description: String::new(),
+                    },
+                    Choice {
+                        label: "docs".into(),
+                        description: String::new(),
+                    },
+                ],
+                multi_select: multi,
+            }],
+        }
+    }
+
+    #[test]
+    fn a_single_choice_question_answers_on_enter() {
+        let mut panel = Panel::question(question(false));
+        panel.move_cursor(1);
+        let answer = panel.submit().expect("answer");
+        assert_eq!(answer["question_id"], "run-1/call_2");
+        assert_eq!(answer["input_hash"], "b".repeat(64));
+        assert_eq!(answer["answers"], serde_json::json!([["docs"]]));
+    }
+
+    #[test]
+    fn a_multi_select_question_collects_every_toggled_label() {
+        let mut panel = Panel::question(question(true));
+        assert!(panel.submit().is_none(), "nothing chosen yet");
+        panel.toggle();
+        panel.move_cursor(1);
+        panel.toggle();
+        let answer = panel.submit().expect("answer");
+        assert_eq!(answer["answers"], serde_json::json!([["src", "docs"]]));
+    }
+
+    #[test]
+    fn a_question_panel_rejects_with_its_bound_hash() {
+        let panel = Panel::question(question(false));
+        let rejection = panel.rejection().expect("rejection");
+        assert_eq!(rejection["question_id"], "run-1/call_2");
+        assert_eq!(rejection["input_hash"], "b".repeat(64));
+    }
+
+    #[test]
+    fn an_approval_response_echoes_the_binding_identities() {
+        let view = ApprovalView {
+            request_id: "run-1/call_1".into(),
+            tool: "bash".into(),
+            resource: "ls".into(),
+            input: serde_json::json!({}),
+            input_hash: "c".repeat(64),
+            policy_revision: "rev-2".into(),
+            matcher: Some(serde_json::json!({"kind": "builtin"})),
+            expires_at_ms: None,
+        };
+        let response = view.response("allow");
+        assert_eq!(response["request_id"], "run-1/call_1");
+        assert_eq!(response["decision"], "allow");
+        assert_eq!(response["policy_revision"], "rev-2");
+        assert_eq!(response["matcher"]["kind"], "builtin");
     }
 }

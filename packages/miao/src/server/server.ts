@@ -7,7 +7,7 @@ import { Observability } from "@miao/core/observability"
 import { Logging } from "@miao/core/observability/logging"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionExecutionLocal } from "@miao/core/session/execution/local"
-import { ConfigProvider, Context, Effect, Exit, Layer, Logger, References, Scope } from "effect"
+import { ConfigProvider, Context, Effect, Exit, Layer, Logger, Option, References, Scope } from "effect"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
 import { OpenApi } from "effect/unstable/httpapi"
 import { createServer } from "node:http"
@@ -17,6 +17,9 @@ import { WebSocketTracker } from "./routes/instance/httpapi/websocket-tracker"
 import { PublicApi } from "./routes/instance/httpapi/public"
 import type { CorsOptions } from "@miao/server/cors"
 import type { RuntimeIdentity } from "@miao/core/runtime/identity"
+import { NativeEngine } from "@miao/server/native-engine"
+import { Location } from "@miao/core/location"
+import { AbsolutePath } from "@miao/core/schema"
 import { lazy } from "@/util/lazy"
 import { NativeEngineNode } from "@/engine/native-engine"
 import { admissionReplacements } from "@/engine/admission-binding"
@@ -48,12 +51,19 @@ type ListenOptions = CorsOptions & {
   mdns?: boolean
   mdnsDomain?: string
   runtime?: RuntimeIdentity.Interface
+  /**
+   * A Location whose native owner should start loading as soon as this listener
+   * is up. The first session created there otherwise prepares the owner while
+   * the user waits for the session view to open.
+   */
+  prewarm?: string
 }
 type ListenerState = {
   scope: Scope.Scope
   server: Context.Service.Shape<typeof HttpServer.HttpServer>
   http: ListenerServer
   websockets: WebSocketTracker.Interface
+  warm?: Effect.Effect<void>
 }
 type EffectListener = {
   hostname: string
@@ -106,6 +116,9 @@ export async function listen(opts: ListenOptions): Promise<Listener> {
 const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unknown> = Effect.fn("Server.listen")(
   function* (opts: ListenOptions) {
     const state = yield* startWithPortFallback(opts)
+    // Loading the owner is scheduling work, not answering the caller: the
+    // listener must be reachable while the engine child and its plugins boot.
+    if (state.warm !== undefined) yield* Effect.forkIn(state.warm, state.scope)
     const address = yield* tcpAddress(state)
     const listenerUrl = makeURL(opts.hostname, address.port)
     const unpublishMdns = yield* setupMdns(opts, address.port, state.scope)
@@ -174,14 +187,21 @@ function startListener(opts: ListenOptions, port: number) {
   return Layer.buildWithMemoMap(listenerLayer(opts, port), memoMap, scope).pipe(
     Effect.provide(HttpApiApp.context),
     Effect.onError(() => Scope.close(scope, Exit.void).pipe(Effect.ignore)),
-    Effect.map(
-      (ctx): ListenerState => ({
+    Effect.map((ctx): ListenerState => {
+      const native = Context.getOption(ctx, NativeEngine.Service)
+      return {
         scope,
         server: Context.get(ctx, HttpServer.HttpServer),
         http: Context.get(ctx, ListenerServerService),
         websockets: Context.get(ctx, WebSocketTracker.Service),
-      }),
-    ),
+        warm:
+          opts.prewarm !== undefined && Option.isSome(native) && native.value.warm
+            ? native.value.warm({
+                location: Location.Ref.make({ directory: AbsolutePath.make(opts.prewarm) }),
+              })
+            : undefined,
+      }
+    }),
   )
 }
 

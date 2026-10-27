@@ -257,6 +257,16 @@ impl Policy {
             auto: false,
         })
     }
+    /// The ordered action a tool dispatches under, for rule layers that speak
+    /// the host's action vocabulary rather than tool names.
+    pub(crate) fn bound_action(&self, tool: &str) -> String {
+        self.ordered
+            .as_ref()
+            .and_then(|policy| policy.descriptor().bindings.get(tool))
+            .map_or(tool, |binding| binding.action.as_str())
+            .replace('\\', "/")
+    }
+
     /// Snapshot the same immutable Config whose matchers enforce each tool.
     pub(crate) fn descriptor(&self) -> Value {
         let mut descriptor = serde_json::json!({"semantics":"native-policy-v1","revision":self.revision,"config":self.config,"collaboration_mode":"checked_at_tool_dispatch"});

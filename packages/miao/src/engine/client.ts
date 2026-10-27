@@ -47,6 +47,15 @@ export interface EngineOptions {
    * global `--config-dir`, so project chain and env overrides apply.
    */
   configSources?: string
+<<<<<<< HEAD
+=======
+  /**
+   * The project's saved "always allow" rules as a JSON rule array (S6 step 2).
+   * Projected into the engine store right after connect, before the first
+   * prompt can ask; an import failure fails the owner.
+   */
+  savedRules?: string
+>>>>>>> origin/main
   toolReplayFile?: string
   /** Automatic compaction limits (roadmap §2.13); absent keeps it off. */
   contextLimits?: {
