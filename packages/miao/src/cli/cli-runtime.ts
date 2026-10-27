@@ -23,6 +23,7 @@ import { SessionSchedule } from "@miao/core/session/schedule"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionExecutionLocal } from "@miao/core/session/execution/local"
 import { buildLocationServiceMap, LocationServiceMap } from "@miao/core/location-services"
+import { admissionReplacements } from "@/engine/admission-binding"
 import { Installation } from "@/installation"
 
 /**
@@ -50,7 +51,10 @@ const CliLayer = AppNodeBuilder.build(
     Installation.node,
   ]),
   [
-    [LocationServiceMap.node, buildLocationServiceMap()],
+    // Same replacements as the route assembly: the CLI runtime drains Sessions
+    // through these location graphs, so it must resolve the same graph the
+    // routes answer permissions in. See `admissionReplacements`.
+    [LocationServiceMap.node, buildLocationServiceMap(admissionReplacements)],
     [SessionExecution.node, SessionExecutionLocal.node],
   ],
 ).pipe(Layer.provideMerge(LayerNode.compile(Ripgrep.node)), Layer.provideMerge(Observability.layer))
