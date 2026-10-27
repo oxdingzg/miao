@@ -138,13 +138,34 @@ export function SessionActivity(props: { sessionID: string; compact?: boolean; s
     const current = message()
     return current?.type === "assistant" ? current.content : []
   })
-  const waiting = createMemo(() => {
-    return waitingForResponse({ busy: busy(), blocked: blocked(), message: message(), content: content() })
-  })
   const turnParts = createMemo(() => {
     const list = messages()
     const start = list.findLastIndex((entry) => entry.type === "user")
     return list.slice(start + 1).flatMap((entry) => (entry.type === "assistant" ? entry.content : []))
+  })
+  // A tool call that is still executing is what the turn waits on, and its own
+  // start is the only honest anchor for the live timer: a delegated `task` runs
+  // for as long as its child Session does, so the provider-time base dated
+  // nothing. Naming it also replaces "Waiting for model", which told an
+  // operator a working delegation was an unanswered provider request.
+  const runningTool = createMemo(() => {
+    const running = turnParts().flatMap((part) =>
+      part.type === "tool" && part.state.status === "running" ? [part] : [],
+    )
+    if (running.length === 0) return undefined
+    const times = running
+      .map((part) => part.time.ran ?? part.time.created)
+      .filter((time): time is number => time !== null)
+    return { since: times.length > 0 ? Math.max(...times) : undefined }
+  })
+  const waiting = createMemo(() => {
+    return waitingForResponse({
+      busy: busy(),
+      blocked: blocked(),
+      message: message(),
+      content: content(),
+      running: runningTool() !== undefined,
+    })
   })
   // `working` mirrors Claude Code's live flag: the current step is still
   // streaming, so the summary uses present tense and flips to past between steps.
@@ -164,6 +185,8 @@ export function SessionActivity(props: { sessionID: string; compact?: boolean; s
     if (!active()) return undefined
     const summary = compaction()
     if (summary) return summary.since
+    const running = runningTool()
+    if (running?.since !== undefined) return running.since
     const current = status()
     const since = current?.type === "busy" ? current.since : undefined
     return since ?? lastOutput()
@@ -213,7 +236,9 @@ export function SessionActivity(props: { sessionID: string; compact?: boolean; s
               activity={activity()}
               phase={phase()}
               progress={progress()}
-              base={() => (receipt() ? (receipt()!.since ?? undefined) : elapsedBase())}
+              base={() =>
+                receipt() && !runningTool() ? (receipt()!.since ?? undefined) : elapsedBase()
+              }
               totalBase={turnStartedAt}
               esc={esc()}
               receipt={receipt()}

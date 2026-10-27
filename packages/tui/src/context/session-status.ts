@@ -20,8 +20,16 @@ export function waitingForResponse(input: {
   message?: SessionMessage
   /** The readable assistant content already streamed for `message`. */
   content?: TranscriptAssistantMessage["content"]
+  /**
+   * A tool call inside this turn is still executing. The turn waits on that
+   * tool, not on the provider: a delegated `task` runs for as long as its child
+   * Session does, which is how a working session came to read "Waiting for
+   * model" for eighty minutes.
+   */
+  running?: boolean
 }) {
   if (!input.busy || input.blocked) return false
+  if (input.running) return false
   if (
     !input.message ||
     input.message.type !== "assistant" ||
