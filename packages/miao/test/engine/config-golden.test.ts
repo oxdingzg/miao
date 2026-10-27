@@ -27,11 +27,28 @@ for (const name of cases) {
   test(`golden case ${name} matches the shared expected policy`, async () => {
     const directory = path.join(root, name, "global")
     const entries: Config.Entry[] = []
-    for (const file of Config.fileNames) {
-      const file_ = path.join(directory, file)
-      if (!fs.existsSync(file_)) continue
-      const info = Option.getOrUndefined(Config.decodeDocument(Config.parseJsonc(await Bun.file(file_).text())))
-      if (info) entries.push(new Config.Document({ type: "document", info }))
+    // A sources.json plan drives the same ordered multi-source read the host
+    // forwards as --config-sources; a plain case keeps the single global dir.
+    const sourcesFile = path.join(root, name, "sources.json")
+    if (fs.existsSync(sourcesFile)) {
+      const sources = JSON.parse(fs.readFileSync(sourcesFile, "utf8")) as Array<{ dir?: string; file?: string }>
+      for (const source of sources) {
+        const paths = source.dir
+          ? Config.fileNames.map((file) => path.join(root, name, source.dir!, file))
+          : [path.join(root, name, source.file!)]
+        for (const file of paths) {
+          if (!fs.existsSync(file)) continue
+          const info = Option.getOrUndefined(Config.decodeDocument(Config.parseJsonc(await Bun.file(file).text())))
+          if (info) entries.push(new Config.Document({ type: "document", info }))
+        }
+      }
+    } else {
+      for (const file of Config.fileNames) {
+        const file_ = path.join(directory, file)
+        if (!fs.existsSync(file_)) continue
+        const info = Option.getOrUndefined(Config.decodeDocument(Config.parseJsonc(await Bun.file(file_).text())))
+        if (info) entries.push(new Config.Document({ type: "document", info }))
+      }
     }
     const merged = Option.getOrUndefined(Config.decodeDocument(Config.merge(entries)))
     const environment: Record<string, string | undefined> = {}

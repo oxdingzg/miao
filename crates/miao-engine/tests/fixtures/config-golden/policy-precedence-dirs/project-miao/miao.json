@@ -1,0 +1,4 @@
+{
+  // A project can relax the operator's global default.
+  "sandbox": { "mode": "off" }
+}

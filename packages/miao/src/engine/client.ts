@@ -41,6 +41,12 @@ export interface EngineOptions {
   policyFile?: string
   /** The global config directory; the engine derives the product policy from it. */
   configDir?: string
+  /**
+   * The ordered config source plan this Location resolved (S5): the engine
+   * derives the product policy and LSP servers from it instead of the single
+   * global `--config-dir`, so project chain and env overrides apply.
+   */
+  configSources?: string
   toolReplayFile?: string
   /** Automatic compaction limits (roadmap §2.13); absent keeps it off. */
   contextLimits?: {
@@ -256,6 +262,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.authFile) args.push("--auth-file", options.authFile)
   if (options.policyFile) args.push("--policy", options.policyFile)
   if (options.configDir) args.push("--config-dir", options.configDir)
+  if (options.configSources) args.push("--config-sources", options.configSources)
   if (options.toolReplayFile) args.push("--tool-replay", options.toolReplayFile)
   if (options.contextLimits) args.push("--context-limits", JSON.stringify(options.contextLimits))
   if (options.credentialDatabase) args.push("--credential-db", options.credentialDatabase)
