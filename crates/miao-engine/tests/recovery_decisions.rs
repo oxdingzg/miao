@@ -335,8 +335,9 @@ async fn drain_time_reconciliation_preserves_unknown_listing_across_reopen_and_m
     for id in ["call", "call-secret"] {
         assert_eq!(
             connection
-                .query_row("SELECT state FROM engine_tool WHERE id=?1", [&id], |row| row
-                    .get::<_, String>(0))
+                .query_row("SELECT state FROM engine_tool WHERE id=?1", [&id], |row| {
+                    row.get::<_, String>(0)
+                })
                 .unwrap(),
             "unknown"
         );

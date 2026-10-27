@@ -16,7 +16,11 @@ pub enum Decision {
 }
 
 fn origin(input: &Value) -> &'static str {
-    if input["origin"] == "operator" { "operator" } else { "model" }
+    if input["origin"] == "operator" {
+        "operator"
+    } else {
+        "model"
+    }
 }
 
 const SECRET_KEY_PARTS: &[&str] = &[
