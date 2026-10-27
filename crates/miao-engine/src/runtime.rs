@@ -4394,6 +4394,30 @@ async fn authorize(
             if auto_targets.is_empty() {
                 auto_targets.push(prepared.resource().to_owned());
             }
+            // Projected saved rules (S6 step 2) settle an ask the way the
+            // product's decide() would: a configured deny never reaches this
+            // branch, and a saved "always allow" lifts the remaining ask. The
+            // whole call stays a question unless every target is covered.
+            let saved = inner.store.saved_rules(inner.tools.location().to_string()).await?;
+            if !saved.is_empty() {
+                let action = policy.bound_action(prepared.name());
+                let covered = auto_targets.iter().all(|target| {
+                    matches!(
+                        crate::permission_rules::evaluate(&crate::permission_rules::Request {
+                            actions: vec![action.clone()],
+                            resources: vec![target.clone()],
+                            explicit: false,
+                            configured: Some(Vec::new()),
+                            saved: Some(saved.clone()),
+                        }),
+                        Ok(outcome) if outcome.effect == Decision::Allow
+                    )
+                });
+                if covered {
+                    inner.store.record(session, "permission.saved_allowed", json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"saved":saved.len()})).await?;
+                    return Ok(true);
+                }
+            }
             if policy.auto_settles(
                 prepared.name(),
                 prepared.resource(),
@@ -4414,9 +4438,11 @@ async fn authorize(
         prepared.resource(),
         prepared.input(),
     )?;
+    let saved_authority = inner.store.saved_rules(inner.tools.location().to_string()).await?;
     let authority_revision = crate::permission::digest(&serde_json::to_vec(&json!({
         "semantics":"exact-persistent-authority-v1","policy":policy.revision(),
         "boundary":inner.tools.grant_authority_descriptor(),"access":format!("{:?}",prepared.access()),
+        "saved":saved_authority,
     }))?);
     let mut targets = prepared.targets().to_vec();
     if targets.is_empty() {

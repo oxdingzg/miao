@@ -476,6 +476,10 @@ impl Host {
                 serde_json::to_value(crate::permission_rules::evaluate(&request)?)
                     .map_err(Error::from)
             }
+            Command::PermissionSavedProject { workspace, rules } => {
+                runtime.store().project_saved_rules(workspace, rules).await?;
+                Ok(json!({ "accepted": true }))
+            }
             Command::Approve {
                 session_id,
                 response,
