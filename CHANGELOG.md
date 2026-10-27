@@ -11,6 +11,28 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.11] - 2026-10-27
+
+### Added
+- **tui**: speak the engine's stdio transport (Phase 3 T2) (#1520) (`47c882ee27`)
+- **tui**: scaffold the ratatui shell (Phase 3 T1) (#1503) (`8eea35bb17`)
+
+### Changed
+- **tui**: carry the composer hint on the status line (#1513) (`fd25f5fe8f`)
+
+### Fixed
+- **tui**: stop re-reading the transcript around a prompt (#1525) (`82e0742c14`)
+- **engine**: project a Session snapshot without a per-message journal scan (#1524) (`dc20b4f453`)
+- **engine**: let a slow stdio reader apply backpressure instead of ending the session (#1523) (`3bd1c9b7dc`)
+- **engine**: name the arguments a rejected tool call still needs (#1521) (`59a8535ac9`)
+- **engine**: keep a garbled tool call from ending the run (#1519) (`314442673e`)
+- **tui**: title a Session from its first answer, not only at idle (#1518) (`c9a70a3d4a`)
+- **engine**: bound a delegated child the host left unbounded (#1517) (`29b07d111d`)
+- **tui**: name the tool the turn is waiting on (#1516) (`b263c9b3f2`)
+- **engine**: make a delegated child Session reachable (#1514) (`a754f77e1d`)
+- **engine**: carry large attachments on the stdio transport (#1512) (`128d1efea7`)
+- **engine**: keep a delegated child from delegating again (#1515) (`dbbcf0f867`)
+
 ## [0.3.10] - 2026-10-27
 
 ### Added

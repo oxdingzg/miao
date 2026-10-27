@@ -7,6 +7,7 @@ import type { SessionMessage } from "@miao/schema/session-message"
 import { LocationServiceMap } from "@miao/core/location-service-map"
 import type { LocationServices } from "@miao/core/location-services"
 import { SessionCreate } from "@miao/core/session-create"
+import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { Model } from "@miao/schema/model"
 import { AmbientContext } from "./ambient-context"
@@ -498,6 +499,19 @@ export const fromOwners = (
   return {
     storageRoot,
     catalog: preparation.catalog,
+    // Owners are keyed by storage, so this is the same owner `session.create`
+    // will connect: warming it spawns the engine child and boots the product
+    // context (plugins, routes, tools) off the critical path.
+    warm: (input) =>
+      storageRoot === undefined
+        ? Effect.void
+        : Effect.gen(function* () {
+            const storage = SessionEnginePlacement.storageFor(storageRoot, input.location)
+            yield* connect({ storage, location: input.location })
+          }).pipe(
+            Effect.asVoid,
+            Effect.catchCause((cause) => Effect.logInfo("native engine warm skipped", { cause })),
+          ),
     command: (input) =>
       Effect.gen(function* () {
         if (!preparation.command)
