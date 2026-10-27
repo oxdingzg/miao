@@ -142,7 +142,7 @@ real(
 )
 
 real(
-  "an earlier recovered provider error does not misclassify a later tool correction failure",
+  "an earlier recovered provider error does not misclassify a later correction pause",
   async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "miao-engine-outcome-"))
     const peer = await endpoint([
@@ -152,19 +152,27 @@ real(
       })),
     ])
     try {
-      await expect(
-        runEnginePrompt({
-          binary: binary!,
-          db: path.join(root, "engine.db"),
-          workspace: root,
-          model: "fixture",
-          provider: "openai-chat",
-          endpoint: peer.url,
-          env: { OPENAI_API_KEY: "fixture" },
-          prompt: "answer",
-          timeoutMs: 30_000,
-        }),
-      ).rejects.toMatchObject({ code: "engine_run_failed" })
+      // Exhausting the correction allowance pauses the drain: the third
+      // invalid reply is already settled as a visible error result, so the run
+      // completes with the earlier provider failure still classified as its
+      // own event instead of being folded into a failed run.
+      const result = await runEnginePrompt({
+        binary: binary!,
+        db: path.join(root, "engine.db"),
+        workspace: root,
+        model: "fixture",
+        provider: "openai-chat",
+        endpoint: peer.url,
+        env: { OPENAI_API_KEY: "fixture" },
+        prompt: "answer",
+        timeoutMs: 30_000,
+      })
+      expect(result.events.filter((event) => event.kind === "provider.failed")).toHaveLength(1)
+      expect(result.events.filter((event) => event.kind === "tool.input_recovery.stopped")).toHaveLength(1)
+      expect(result.events.find((event) => event.kind === "message.synthetic")?.data).toMatchObject({
+        source: "engine",
+      })
+      expect(result.events.find((event) => event.kind === "run.finished")?.data).toMatchObject({ reason: "completed" })
       expect(peer.requests).toHaveLength(4)
     } finally {
       await peer.close()
