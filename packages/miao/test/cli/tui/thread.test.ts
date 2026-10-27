@@ -72,16 +72,17 @@ describe("tui thread", () => {
     expect(args.mdns).toBe(false)
   })
 
-  test("starts the TypeScript TUI unless the Rust one is selected", () => {
-    expect(selectedTui({}, {})).toBe("legacy")
-    expect(selectedTui({}, { MIAO_TUI: "rust" })).toBe("rust")
+  test("starts the Rust TUI by default and honours an explicit selection", () => {
+    expect(selectedTui({}, {})).toBe("rust")
+    expect(selectedTui({}, { MIAO_TUI: "legacy" })).toBe("legacy")
+    expect(selectedTui({ tui: "legacy" }, {})).toBe("legacy")
     expect(selectedTui({ tui: "rust" }, { MIAO_TUI: "legacy" })).toBe("rust")
     expect(selectedTui({ tui: "legacy" }, { MIAO_TUI: "rust" })).toBe("legacy")
   })
 
   test("ignores a selection it does not recognise", () => {
-    expect(selectedTui({}, { MIAO_TUI: "ratatui" })).toBe("legacy")
-    expect(selectedTui({ tui: "ratatui" }, {})).toBe("legacy")
+    expect(selectedTui({}, { MIAO_TUI: "ratatui" })).toBe("rust")
+    expect(selectedTui({ tui: "ratatui" }, {})).toBe("rust")
   })
 
   test("prefers MIAO_TUI_BIN over the installed locations", () => {
