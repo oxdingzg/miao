@@ -24,8 +24,8 @@
 | tui.json 未知字段忽略并记录、不崩 | 已对齐 | 未知字段记 warning 到 stderr（config 加载发生在进 raw mode 之前）；损坏文件整份跳过并记录，同 TS 的 catch→log 语义 |
 | 自定义主题 `themes/*.json` | 已对齐（dark 模式） | `theme::custom_themes`：全局配置目录 + 向上每层 `.miao` 的 `themes/*.json`，主题名取文件名，按 TS 的扫描顺序后者覆盖前者；支持 `defs` 引用、`{dark, light}` 取 dark、ANSI 码、`#rgb`/`#rrggbb`(`aa`)；缺必需色或循环引用则整份跳过并告警；同名覆盖内置主题 |
 | keybinds 自定义覆盖 | 未做 | T1 键位固定 |
-| 鼠标捕获（TS 默认开启） | 未做 | T1 不启用 |
-| 光标样式 `cursor.style` | 未做 | 后续切片 |
+| 鼠标捕获（TS 默认开启） | 已对齐 | `config.mouse` 默认 true；滚轮在对话框/会话列表移动选择、在 transcript 滚动 3 行，按键事件忽略（`app::handle_mouse`）；`mouse: false` 不启用捕获 |
+| 光标样式 `cursor.style` | 已对齐 | `cursor.style`（block/underline/line/default）与 `cursor.blinking` 映射到 DECSCUSR（`terminal::cursor_style`），启动、外编返回、panic 恢复都重设/复位；未配置时不发序列 |
 | `miao-tui` 为非默认入口 | 已对齐 | 独立二进制，`--workspace <dir>`（默认 cwd）；`miao` 默认命令仍走 TS TUI，剪彩在 T11 |
 
 ## T2 传输层（crates/miao-tui/src/transport.rs）

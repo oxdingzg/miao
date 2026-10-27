@@ -1,5 +1,5 @@
 use crossterm::event::Event as TerminalEvent;
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyEvent, MouseEvent};
 use serde_json::Value;
 
 use crate::dialogs::{AccountInfo, ModelInfo};
@@ -15,6 +15,8 @@ pub enum AppEvent {
     Paste(String),
     /// Terminal focus change, which gates desktop notifications.
     Focus(bool),
+    /// Wheel and click reports; only wheel movement does anything.
+    Mouse(MouseEvent),
     /// A watched Session event worth telling the user about.
     Attention {
         kind: attention::Kind,
@@ -79,13 +81,13 @@ pub fn bus() -> (Bus, Rx) {
     (Bus { tx }, rx)
 }
 
-pub fn from_terminal(event: TerminalEvent) -> Option<AppEvent> {
+pub fn from_terminal(event: TerminalEvent) -> AppEvent {
     match event {
-        TerminalEvent::Key(key) => Some(AppEvent::Key(key)),
-        TerminalEvent::Paste(text) => Some(AppEvent::Paste(text)),
-        TerminalEvent::FocusGained => Some(AppEvent::Focus(true)),
-        TerminalEvent::FocusLost => Some(AppEvent::Focus(false)),
-        TerminalEvent::Resize(width, height) => Some(AppEvent::Resize { width, height }),
-        _ => None,
+        TerminalEvent::Key(key) => AppEvent::Key(key),
+        TerminalEvent::Paste(text) => AppEvent::Paste(text),
+        TerminalEvent::FocusGained => AppEvent::Focus(true),
+        TerminalEvent::FocusLost => AppEvent::Focus(false),
+        TerminalEvent::Resize(width, height) => AppEvent::Resize { width, height },
+        TerminalEvent::Mouse(mouse) => AppEvent::Mouse(mouse),
     }
 }

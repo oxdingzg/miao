@@ -61,14 +61,25 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         config.attention,
         startup,
     );
-    let mut terminal = terminal::init().inspect_err(|_| terminal::restore())?;
+    let preferences = terminal::Preferences {
+        mouse: config.mouse,
+        cursor: config.cursor,
+    };
+    let mut terminal = terminal::init(preferences).inspect_err(|_| terminal::restore())?;
     terminal::install_panic_hook();
     let (bus, mut events) = event::bus();
     input::spawn(bus.clone());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    let result = runtime.block_on(drive(&mut terminal, &mut app, &mut events, bus, launch));
+    let result = runtime.block_on(drive(
+        &mut terminal,
+        &mut app,
+        &mut events,
+        bus,
+        launch,
+        preferences,
+    ));
     terminal::restore();
     result
 }
@@ -79,6 +90,7 @@ async fn drive(
     events: &mut event::Rx,
     bus: event::Bus,
     launch: Launch,
+    preferences: terminal::Preferences,
 ) -> Result<(), Box<dyn Error>> {
     match engine::settings(
         &launch.workspace,
@@ -113,7 +125,7 @@ async fn drive(
                     if let Some(request) = app.take_editor_request() {
                         terminal::suspend();
                         let result = platform::editor::run(&request);
-                        terminal::resume(terminal)?;
+                        terminal::resume(terminal, preferences)?;
                         app.handle(AppEvent::EditorFinished(result));
                     }
                 }
