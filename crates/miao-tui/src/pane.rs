@@ -7,7 +7,7 @@ use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 
-use crate::dialogs::{Dialog, ListDialog};
+use crate::dialogs::{Dialog, ListDialog, ListKind};
 use crate::editor::Composer;
 use crate::session::{
     ApprovalView, Entry, Part, QuestionView, SessionSummary, ToolPart, Transcript,
@@ -756,8 +756,17 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
             .skip(offset)
             .take(visible)
             .map(|(index, row)| {
-                let selected = index == list.selected;
-                let marker = if selected { "▸ " } else { "  " };
+                // A read-only list has nothing to select, so it draws no
+                // marker and keeps every row in the same weight.
+                let read_only = list.kind == ListKind::ReadOnly;
+                let selected = !read_only && index == list.selected;
+                let marker = if selected {
+                    "▸ "
+                } else if read_only {
+                    ""
+                } else {
+                    "  "
+                };
                 let style = if selected {
                     Style::new()
                         .fg(palette.primary)

@@ -1,8 +1,9 @@
 use crossterm::event::Event as TerminalEvent;
 use crossterm::event::KeyEvent;
 
-use crate::dialogs::ModelInfo;
+use crate::dialogs::{AccountInfo, ModelInfo};
 use crate::session::{SessionState, SessionSummary, Transcript};
+use crate::status::UsageSummary;
 
 #[derive(Debug)]
 pub enum AppEvent {
@@ -19,6 +20,10 @@ pub enum AppEvent {
     Catalog(Vec<SessionSummary>),
     /// The engine's model catalog, one entry per selectable binding.
     Models(Vec<ModelInfo>),
+    /// The selectable accounts named by the same catalog.
+    Accounts(Vec<AccountInfo>),
+    /// The open Session's billed usage, for the status dialog.
+    Usage(UsageSummary),
     /// The Session currently open was deleted.
     SessionRemoved(String),
     /// A fresh projection of the open Session.

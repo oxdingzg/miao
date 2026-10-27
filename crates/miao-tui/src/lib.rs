@@ -7,6 +7,7 @@ pub mod input;
 pub mod pane;
 pub mod session;
 pub mod state;
+pub mod status;
 pub mod terminal;
 pub mod theme;
 pub mod transport;
@@ -58,10 +59,13 @@ async fn drive(
     model: Option<String>,
 ) -> Result<(), Box<dyn Error>> {
     match engine::settings(workspace, db, model) {
-        Ok(settings) => match engine::attach(&settings, bus) {
-            Ok(handle) => app.attach_engine(handle),
-            Err(message) => app.handle(AppEvent::EngineFailure(message)),
-        },
+        Ok(settings) => {
+            app.set_settings(settings.clone());
+            match engine::attach(&settings, bus) {
+                Ok(handle) => app.attach_engine(handle),
+                Err(message) => app.handle(AppEvent::EngineFailure(message)),
+            }
+        }
         Err(message) => app.handle(AppEvent::EngineFailure(message)),
     }
     let mut ticker = tokio::time::interval(Duration::from_millis(100));

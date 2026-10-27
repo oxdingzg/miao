@@ -101,3 +101,17 @@
 | 居中覆盖层先 `Clear` 再画边框 | 已对齐 | `pane.rs:render_dialog`，宽 60%（40–80 列），条目超过 14 行时滚动 |
 | 删除是不可撤销的动作 | 已对齐 | 确认文案说明不可撤销；确认后 `remove` 并回 home（删的是当前会话时） |
 
+
+## T7 状态、账户、调试与 stash
+
+| 行为 | 状态 | 备注 |
+|---|---|---|
+| 状态视图：会话身份、模型绑定、账户、run 状态、排队数 | 已对齐 | `<leader>s`；`app.rs:status_rows` 只呈现 snapshot 已有事实 |
+| 状态视图：turns / partial turns / tokens / cache read / tools / TTFT / lineage | 已对齐 | 读引擎 `usage`；`status.rs:UsageSummary` 缺字段按 0/空处理 |
+| 账户切换：列出 `model_catalog` 中带 `credential_id` 的账户，Enter 发 `select_account` | 已对齐 | `ctrl+o`；同一会话内即时更新标题栏与侧栏的账户钉住状态，下一次快照再校准 |
+| 调试视图：引擎二进制、数据库、模型、workspace、状态目录、主题、版本 | 已对齐 | `<leader>d`；数据库路径从启动参数读回，不维护第二份 |
+| stash：`<leader>P` 存当前草稿并清空输入框；`<leader>p` 列表取回（取回后移除）或 `d` 删除 | 已对齐 | TUI 本地 `stash.json`，最多 50 条、去重置顶；不触碰会话数据 |
+| MCP 列表 | 有意偏离（Phase 4 宿主移植） | 数据来自插件宿主/HTTP API，纯引擎客户端拿不到（计划 §7） |
+| skills 列表 | 有意偏离（Phase 4 宿主移植） | 同上 |
+| workspace 列表/切换 | 有意偏离（Phase 4 宿主移植） | 同上 |
+| provider integrations | 有意偏离（Phase 4 宿主移植） | 同上 |
