@@ -46,6 +46,7 @@ import { readCatalog } from "./catalog"
 import { generatedInputEngineID, messageID, promotedInputMessageID } from "./identity"
 import { makeEngineOwners } from "./owners"
 import { projectInputAdmitted } from "./input-projection"
+import { projectSubagentStarted } from "./subagent-projection"
 import type { EnginePricing } from "./session"
 import { NativeRecovery } from "./recovery"
 import { decodeAttachments } from "./prompt-attachments"
@@ -1023,14 +1024,18 @@ const layer = Layer.effect(
     // per-Location prepare refreshes it whenever an owner connects.
     let locationPricing: EnginePricing | undefined
     // The S2 projection bridge: engine `input.admitted` rows for TS-owned
-    // placements are the only writes `session_input` receives. Projection is
-    // fire-and-forget; the engine journal stays the ordering authority.
-    const projectAdmitted = (event: EngineEvent) => {
-      void projectInputAdmitted(
-        { db: database.db, events, wake: (sessionID) => execution.wake(sessionID) },
-        event,
-      ).pipe(
-        Effect.catchCause((cause) => Effect.logWarning("engine input projection failed", { cause: Cause.pretty(cause) })),
+    // placements are the only writes `session_input` receives, and a delegated
+    // child Session needs a binding before any client can reach it. Projection
+    // is fire-and-forget; the engine journal stays the ordering authority.
+    const projectEngineEvent = (event: EngineEvent) => {
+      void Effect.gen(function* () {
+        yield* projectInputAdmitted(
+          { db: database.db, events, wake: (sessionID) => execution.wake(sessionID) },
+          event,
+        )
+        yield* projectSubagentStarted({ db: database.db, create: creation?.create }, event)
+      }).pipe(
+        Effect.catchCause((cause) => Effect.logWarning("engine projection failed", { cause: Cause.pretty(cause) })),
         Effect.runPromise,
       ).catch(() => undefined)
     }
@@ -1072,7 +1077,7 @@ const layer = Layer.effect(
           },
           refresh: context.refresh,
           pricing: prices && ((model: string) => prices[model]),
-          onEngineEvent: projectAdmitted,
+          onEngineEvent: projectEngineEvent,
           onCredentialExpired: (input: { sessionID: string; id: string; integration: string }) =>
             Effect.runPromise(
               Effect.gen(function* () {
