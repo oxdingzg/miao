@@ -13,6 +13,14 @@ pub const REFERENCE_BYTES: usize = 65536;
 const PROMPT_LIMIT: usize = 65536;
 const MAX_REFERENCE_ID: usize = 128;
 
+/// Tools that reach another Session. A delegated child runs as a leaf, so it
+/// never sees them: recursion multiplies one prompt's cost, and a nested
+/// foreground wait holds its parent's subagent permit until the whole subtree
+/// finishes, which serializes the shared budget into what looks like a hang.
+pub(crate) fn is_delegation_tool(name: &str) -> bool {
+    matches!(name, "task" | "task_list" | "task_result" | "task_cancel")
+}
+
 /// One archived tool output of the delegating Session, named by its handle.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

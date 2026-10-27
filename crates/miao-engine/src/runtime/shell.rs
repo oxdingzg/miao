@@ -1,7 +1,8 @@
 //! Operator shell work shares the Session actor, policy and process owner, but
 //! never fabricates an assistant tool request or starts a provider turn.
 use super::{
-    authorize, keep_lease, DrainingGuard, Inner, LeaseKeepalive, TurnAuthority, SESSION_LEASE_MS,
+    authorize, is_delegated_child, keep_lease, DrainingGuard, Inner, LeaseKeepalive, TurnAuthority,
+    SESSION_LEASE_MS,
 };
 use crate::{
     protocol::{CollaborationMode, Error},
@@ -131,6 +132,7 @@ pub(super) async fn execute_in_run(
                 || manifest.is_some_and(|agent| agent.mode == Some(CollaborationMode::Plan)),
             policy: &policy,
             agent: manifest,
+            delegated: is_delegated_child(inner, session).await?,
         },
     )
     .await?;

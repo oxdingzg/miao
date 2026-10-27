@@ -584,3 +584,144 @@ async fn task_reference_injects_the_archived_window_into_the_child() {
         "{child_input}"
     );
 }
+
+/// A child that tries to delegate again. The child's surface must not carry the
+/// delegation tools, and a call the model invents anyway must be refused, so one
+/// foreground wait can never nest another inside it.
+struct Recursive {
+    child_saw_task: std::sync::atomic::AtomicBool,
+}
+
+#[async_trait]
+impl Provider for Recursive {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let parts: Vec<Value> = request
+            .messages
+            .iter()
+            .flat_map(|message| message.content.as_array().cloned().unwrap_or_default())
+            .collect();
+        let last = request
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == "user")
+            .and_then(|message| {
+                message
+                    .content
+                    .as_array()
+                    .and_then(|parts| parts.iter().find_map(|part| part["text"].as_str()))
+            })
+            .unwrap_or("");
+        let settled = |call: &str| {
+            parts.iter().any(|part| {
+                part["type"] == "tool_result" && part["tool_use_id"].as_str() == Some(call)
+            })
+        };
+        if last.contains("say hello") {
+            if request.tools.iter().any(|tool| tool.name == "task") {
+                self.child_saw_task.store(true, Ordering::SeqCst);
+            }
+            if !settled("nested") {
+                return Ok(Reply {
+                    content: json!([{"type":"tool_use","id":"nested","name":"task","input":{"prompt":"say hello again"}}]),
+                    usage: json!({}),
+                    needs_tools: true,
+                });
+            }
+            return Ok(Reply {
+                content: json!([{"type":"text","text":"child done"}]),
+                usage: json!({}),
+                needs_tools: false,
+            });
+        }
+        if last.contains("delegate") && !settled("d1") {
+            return Ok(Reply {
+                content: json!([{"type":"tool_use","id":"d1","name":"task","input":{"prompt":"say hello"}}]),
+                usage: json!({}),
+                needs_tools: true,
+            });
+        }
+        Ok(Reply {
+            content: json!([{"type":"text","text":"parent done"}]),
+            usage: json!({}),
+            needs_tools: false,
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_delegated_child_cannot_delegate_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let provider = Arc::new(Recursive {
+        child_saw_task: std::sync::atomic::AtomicBool::new(false),
+    });
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(true),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "one".into(),
+                prompt: "delegate this".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if store
+                .events("parent", 0, 500)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "run.finished")
+            {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("parent finished");
+    runtime.shutdown().await;
+    assert!(
+        !provider.child_saw_task.load(Ordering::SeqCst),
+        "a child was offered the task tool"
+    );
+    let child = store
+        .events("parent", 0, 500)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "subagent_start")
+        .and_then(|event| event.data["subagent_id"].as_str().map(str::to_owned))
+        .unwrap();
+    let child_events = store.events(&child, 0, 500).await.unwrap();
+    let denied = child_events
+        .iter()
+        .find(|event| event.kind == "permission_denied")
+        .expect("the invented delegation call was refused");
+    assert_eq!(denied.data["reason"], "nested_delegation");
+    assert!(
+        !child_events
+            .iter()
+            .any(|event| event.kind == "subagent_start"),
+        "the child forked a grandchild"
+    );
+}

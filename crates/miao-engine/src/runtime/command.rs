@@ -1,6 +1,8 @@
 //! Commands are prepared by the serialized Session drain after promotion.
 //! Host resolution captures data; all external effects remain engine-owned.
-use super::{authorize, delegate, validate_agent, Delegation, Inner, TurnAuthority};
+use super::{
+    authorize, delegate, is_delegated_child, validate_agent, Delegation, Inner, TurnAuthority,
+};
 use crate::{
     protocol::{Attachment, CollaborationMode, Error},
     session_agent::AgentManifest,
@@ -148,6 +150,7 @@ impl Context<'_> {
                     plan: self.plan(target.as_ref()).await?,
                     policy: &policy,
                     agent: target.as_ref(),
+                    delegated: is_delegated_child(self.inner, self.session).await?,
                 },
             )
             .await?;
@@ -252,6 +255,7 @@ impl Context<'_> {
                     plan: self.plan(parent.as_ref()).await?,
                     policy: &policy,
                     agent: parent.as_ref(),
+                    delegated: is_delegated_child(self.inner, self.session).await?,
                 },
             )
             .await?;
