@@ -19,11 +19,26 @@ pub struct SessionSummary {
     pub updated_at_ms: Option<u64>,
     pub archived_at_ms: Option<u64>,
     pub directory: Option<String>,
+    /// The Session's explicit model pin, as `model · protocol[ · variant]`.
+    /// `None` means the engine's default.
+    pub model: Option<String>,
+    /// The account every turn of this Session runs on, when one is pinned.
+    pub credential_id: Option<String>,
 }
 
 impl SessionSummary {
     pub fn from_snapshot(snapshot: &Value) -> Option<Self> {
         let id = snapshot.get("session_id")?.as_str()?.to_string();
+        let selection = snapshot.get("model_selection");
+        let model = selection.and_then(|selection| {
+            let protocol = selection.get("protocol")?.as_str()?;
+            let model = selection.get("model")?.as_str()?;
+            let variant = selection.get("variant").and_then(Value::as_str);
+            Some(match variant {
+                Some(variant) => format!("{model} · {protocol} · {variant}"),
+                None => format!("{model} · {protocol}"),
+            })
+        });
         Some(Self {
             id,
             title: text(snapshot.get("title")),
@@ -33,6 +48,12 @@ impl SessionSummary {
             // The engine snapshot carries the workspace root as a string.
             directory: snapshot
                 .get("location")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            model,
+            credential_id: snapshot
+                .get("account_selection")
+                .and_then(|selection| selection.get("credential_id"))
                 .and_then(Value::as_str)
                 .map(str::to_string),
         })
@@ -525,6 +546,21 @@ mod tests {
         ]);
         let ids: Vec<_> = rows.iter().map(|row| row.id.as_str()).collect();
         assert_eq!(ids, ["ses_archived", "ses_a"]);
+    }
+
+    #[test]
+    fn a_summary_carries_the_model_and_account_pins() {
+        let value = json!({
+            "session_id": "ses_a",
+            "model_selection": {"protocol": "chat", "model": "glm-5", "variant": "high"},
+            "account_selection": {"credential_id": "cred_1"},
+        });
+        let row = SessionSummary::from_snapshot(&value).expect("row");
+        assert_eq!(row.model.as_deref(), Some("glm-5 · chat · high"));
+        assert_eq!(row.credential_id.as_deref(), Some("cred_1"));
+        let bare = SessionSummary::from_snapshot(&json!({"session_id": "ses_b"})).expect("row");
+        assert_eq!(bare.model, None);
+        assert_eq!(bare.credential_id, None);
     }
 
     #[test]

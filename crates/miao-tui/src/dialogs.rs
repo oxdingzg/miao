@@ -93,6 +93,51 @@ impl ModelInfo {
     }
 }
 
+/// One selectable account, derived from the entries of `model_catalog` that
+/// name a credential. The credential identity is opaque; the label never
+/// reveals an endpoint or a secret.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountInfo {
+    pub credential_id: String,
+    pub detail: String,
+}
+
+impl AccountInfo {
+    pub fn catalog(value: &Value) -> Vec<Self> {
+        let Some(entries) = value.as_array() else {
+            return Vec::new();
+        };
+        // Catalog order decides the account order; each credential lists the
+        // models it can serve without repeating one.
+        let mut ids: Vec<String> = Vec::new();
+        let mut models: Vec<Vec<String>> = Vec::new();
+        for entry in entries {
+            let Some(credential_id) = entry.get("credential_id").and_then(Value::as_str) else {
+                continue;
+            };
+            let index = match ids.iter().position(|id| id == credential_id) {
+                Some(index) => index,
+                None => {
+                    ids.push(credential_id.to_string());
+                    models.push(Vec::new());
+                    ids.len() - 1
+                }
+            };
+            let model = entry.get("model").and_then(Value::as_str).unwrap_or("");
+            if !model.is_empty() && !models[index].iter().any(|item| item == model) {
+                models[index].push(model.to_string());
+            }
+        }
+        ids.into_iter()
+            .zip(models)
+            .map(|(credential_id, models)| Self {
+                credential_id,
+                detail: models.join(", "),
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Row {
     pub id: String,
@@ -104,18 +149,29 @@ pub struct ListDialog {
     pub title: &'static str,
     pub rows: Vec<Row>,
     pub selected: usize,
-    /// Session rows answer `a`, `r` and `d` in addition to `Enter`.
-    pub sessions: bool,
+    pub kind: ListKind,
     pub hint: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListKind {
+    /// `Enter` returns the selected index.
+    Plain,
+    /// `Enter` opens the Session; `r`/`a`/`d` act on it.
+    Sessions,
+    /// `Enter` restores the prompt; `d` removes it.
+    Stash,
+    /// No selection: `Enter` and `Esc` both close.
+    ReadOnly,
+}
+
 impl ListDialog {
-    pub fn new(title: &'static str, rows: Vec<Row>, sessions: bool, hint: &'static str) -> Self {
+    pub fn new(title: &'static str, rows: Vec<Row>, kind: ListKind, hint: &'static str) -> Self {
         Self {
             title,
             rows,
             selected: 0,
-            sessions,
+            kind,
             hint,
         }
     }
@@ -150,8 +206,19 @@ pub enum Dialog {
     Models(ListDialog),
     Theme(ListDialog),
     Sessions(ListDialog),
-    Rename { session_id: String, input: Editor },
+    Accounts(ListDialog),
+    Stash(ListDialog),
+    Status(ListDialog),
+    Debug(ListDialog),
+    Rename(RenameDialog),
     Confirm(ConfirmDialog),
+}
+
+/// The rename dialog keeps its target beside the editor so a submit needs no
+/// lookup of the row it came from.
+pub struct RenameDialog {
+    pub session_id: String,
+    pub input: Editor,
 }
 
 impl Dialog {
@@ -167,7 +234,7 @@ impl Dialog {
                     detail: model.route_id.clone().unwrap_or_default(),
                 })
                 .collect(),
-            false,
+            ListKind::Plain,
             "enter select · esc close",
         ))
     }
@@ -185,7 +252,7 @@ impl Dialog {
                     detail: String::new(),
                 })
                 .collect(),
-            false,
+            ListKind::Plain,
             "enter apply · esc close",
         );
         list.selected = names.iter().position(|name| *name == current).unwrap_or(0);
@@ -206,18 +273,61 @@ impl Dialog {
                     detail: row.directory.clone().unwrap_or_default(),
                 })
                 .collect(),
-            true,
+            ListKind::Sessions,
             "enter open · r rename · a archive · d delete · esc close",
+        ))
+    }
+
+    pub fn accounts(accounts: &[AccountInfo]) -> Self {
+        Dialog::Accounts(ListDialog::new(
+            "accounts",
+            accounts
+                .iter()
+                .map(|account| Row {
+                    id: account.credential_id.clone(),
+                    label: account.credential_id.clone(),
+                    detail: account.detail.clone(),
+                })
+                .collect(),
+            ListKind::Plain,
+            "enter switch · esc close",
+        ))
+    }
+
+    pub fn stash(rows: Vec<Row>) -> Self {
+        Dialog::Stash(ListDialog::new(
+            "stash",
+            rows,
+            ListKind::Stash,
+            "enter restore · d delete · esc close",
+        ))
+    }
+
+    pub fn status(rows: Vec<Row>) -> Self {
+        Dialog::Status(ListDialog::new(
+            "status",
+            rows,
+            ListKind::ReadOnly,
+            "esc close",
+        ))
+    }
+
+    pub fn debug(rows: Vec<Row>) -> Self {
+        Dialog::Debug(ListDialog::new(
+            "debug",
+            rows,
+            ListKind::ReadOnly,
+            "esc close",
         ))
     }
 
     pub fn rename(session_id: &str, title: &str) -> Self {
         let mut input = Editor::new();
         input.set_text(title);
-        Dialog::Rename {
+        Dialog::Rename(RenameDialog {
             session_id: session_id.to_string(),
             input,
-        }
+        })
     }
 
     pub fn confirm_remove(session_id: &str, title: &str) -> Self {
@@ -234,39 +344,68 @@ impl Dialog {
             return Action::None;
         }
         match self {
-            Dialog::Models(list) | Dialog::Theme(list) | Dialog::Sessions(list) => {
-                handle_list_key(list, key)
-            }
-            Dialog::Rename { input, .. } => handle_rename_key(input, key),
+            Dialog::Models(list)
+            | Dialog::Theme(list)
+            | Dialog::Sessions(list)
+            | Dialog::Accounts(list)
+            | Dialog::Stash(list)
+            | Dialog::Status(list)
+            | Dialog::Debug(list) => handle_list_key(list, key),
+            Dialog::Rename(rename) => handle_rename_key(&mut rename.input, key),
             Dialog::Confirm(confirm) => handle_confirm_key(confirm, key),
         }
     }
 
     pub fn title(&self) -> &'static str {
         match self {
-            Dialog::Models(list) | Dialog::Theme(list) | Dialog::Sessions(list) => list.title,
-            Dialog::Rename { .. } => "rename session",
+            Dialog::Models(list)
+            | Dialog::Theme(list)
+            | Dialog::Sessions(list)
+            | Dialog::Accounts(list)
+            | Dialog::Stash(list)
+            | Dialog::Status(list)
+            | Dialog::Debug(list) => list.title,
+            Dialog::Rename(_) => "rename session",
             Dialog::Confirm(confirm) => confirm.title,
         }
     }
 
     pub fn list(&self) -> Option<&ListDialog> {
         match self {
-            Dialog::Models(list) | Dialog::Theme(list) | Dialog::Sessions(list) => Some(list),
+            Dialog::Models(list)
+            | Dialog::Theme(list)
+            | Dialog::Sessions(list)
+            | Dialog::Accounts(list)
+            | Dialog::Stash(list)
+            | Dialog::Status(list)
+            | Dialog::Debug(list) => Some(list),
             _ => None,
         }
     }
 
     pub fn list_mut(&mut self) -> Option<&mut ListDialog> {
         match self {
-            Dialog::Models(list) | Dialog::Theme(list) | Dialog::Sessions(list) => Some(list),
+            Dialog::Models(list)
+            | Dialog::Theme(list)
+            | Dialog::Sessions(list)
+            | Dialog::Accounts(list)
+            | Dialog::Stash(list)
+            | Dialog::Status(list)
+            | Dialog::Debug(list) => Some(list),
             _ => None,
         }
     }
 
     pub fn rename_input(&self) -> Option<&Editor> {
         match self {
-            Dialog::Rename { input, .. } => Some(input),
+            Dialog::Rename(rename) => Some(&rename.input),
+            _ => None,
+        }
+    }
+
+    pub fn rename_session_id(&self) -> Option<&str> {
+        match self {
+            Dialog::Rename(rename) => Some(&rename.session_id),
             _ => None,
         }
     }
@@ -299,6 +438,9 @@ pub enum Action {
     Remove(String),
     Submit(String),
     Confirmed(ConfirmKind),
+    /// Take one stashed prompt back into the composer.
+    StashRestore(usize),
+    StashRemove(usize),
 }
 
 fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
@@ -307,28 +449,35 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
         KeyCode::Up | KeyCode::Char('k') => list.move_cursor(-1),
         KeyCode::Down | KeyCode::Char('j') => list.move_cursor(1),
         KeyCode::Enter => {
+            if list.kind == ListKind::ReadOnly {
+                return Action::Close;
+            }
             let Some(id) = list.current_id() else {
                 return Action::None;
             };
-            return match list.sessions {
-                true => Action::OpenSession(id),
-                false => Action::Chosen(list.selected),
+            return match list.kind {
+                ListKind::Sessions => Action::OpenSession(id),
+                ListKind::Stash => Action::StashRestore(list.selected),
+                _ => Action::Chosen(list.selected),
             };
         }
-        KeyCode::Char('r') if list.sessions => {
+        KeyCode::Char('r') if list.kind == ListKind::Sessions => {
             if let Some(id) = list.current_id() {
                 return Action::Rename(id);
             }
         }
-        KeyCode::Char('a') if list.sessions => {
+        KeyCode::Char('a') if list.kind == ListKind::Sessions => {
             if let Some(id) = list.current_id() {
                 return Action::ToggleArchive(id);
             }
         }
-        KeyCode::Char('d') if list.sessions => {
+        KeyCode::Char('d') if list.kind == ListKind::Sessions => {
             if let Some(id) = list.current_id() {
                 return Action::Remove(id);
             }
+        }
+        KeyCode::Char('d') if list.kind == ListKind::Stash => {
+            return Action::StashRemove(list.selected);
         }
         _ => {}
     }
@@ -461,6 +610,8 @@ mod tests {
             updated_at_ms: None,
             archived_at_ms: None,
             directory: None,
+            model: None,
+            credential_id: None,
         };
         let mut dialog = Dialog::sessions(&[row]);
         assert!(matches!(
@@ -474,6 +625,61 @@ mod tests {
         assert!(matches!(
             dialog.handle_key(key(KeyCode::Char('d'))),
             Action::Remove(id) if id == "ses_a"
+        ));
+    }
+
+    #[test]
+    fn the_account_catalog_names_each_credential_once() {
+        let accounts = AccountInfo::catalog(&serde_json::json!([
+            {"protocol": "chat", "model": "glm-5", "credential_id": "cred_a"},
+            {"protocol": "chat", "model": "glm-5", "variant": "high", "credential_id": "cred_a"},
+            {"protocol": "responses", "model": "gpt-5", "credential_id": "cred_b"},
+            {"protocol": "responses", "model": "gpt-5"}
+        ]));
+        assert_eq!(accounts.len(), 2);
+        assert_eq!(accounts[0].credential_id, "cred_a");
+        assert_eq!(accounts[0].detail, "glm-5");
+        assert_eq!(accounts[1].credential_id, "cred_b");
+    }
+
+    #[test]
+    fn a_stash_row_restores_on_enter_and_deletes_on_d() {
+        let rows = vec![
+            Row {
+                id: "0".into(),
+                label: "first".into(),
+                detail: String::new(),
+            },
+            Row {
+                id: "1".into(),
+                label: "second".into(),
+                detail: String::new(),
+            },
+        ];
+        let mut dialog = Dialog::stash(rows);
+        dialog.handle_key(key(KeyCode::Down));
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Enter)),
+            Action::StashRestore(1)
+        ));
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('d'))),
+            Action::StashRemove(1)
+        ));
+    }
+
+    #[test]
+    fn a_read_only_list_closes_on_enter() {
+        let rows = vec![Row {
+            id: "turns".into(),
+            label: "turns".into(),
+            detail: "3".into(),
+        }];
+        let mut dialog = Dialog::status(rows);
+        assert_eq!(dialog.title(), "status");
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Enter)),
+            Action::Close
         ));
     }
 

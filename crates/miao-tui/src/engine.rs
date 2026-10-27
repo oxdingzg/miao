@@ -13,11 +13,12 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
-use crate::dialogs::ModelInfo;
+use crate::dialogs::{AccountInfo, ModelInfo};
 use crate::event::{AppEvent, Bus};
 use crate::session::{
     catalog_rows, home_rows, DisplayFile, SessionState, SessionSummary, Transcript,
 };
+use crate::status::UsageSummary;
 use crate::transport::{self, EngineClient, EngineSpawn, TransportEvent};
 
 /// Committed events that change what the transcript shows. Coalesced so one
@@ -59,6 +60,16 @@ pub enum Request {
     SelectModel {
         session_id: String,
         binding: Value,
+    },
+    /// Read the open Session's billed usage for the status dialog.
+    Usage {
+        session_id: String,
+    },
+    /// Pin the account every turn of this Session runs on; `None` restores the
+    /// engine default.
+    SelectAccount {
+        session_id: String,
+        credential_id: Option<String>,
     },
     Rename {
         session_id: String,
@@ -138,6 +149,19 @@ impl Handle {
         let _ = self.tx.send(Request::SelectModel {
             session_id: session_id.to_string(),
             binding,
+        });
+    }
+
+    pub fn usage(&self, session_id: &str) {
+        let _ = self.tx.send(Request::Usage {
+            session_id: session_id.to_string(),
+        });
+    }
+
+    pub fn select_account(&self, session_id: &str, credential_id: Option<&str>) {
+        let _ = self.tx.send(Request::SelectAccount {
+            session_id: session_id.to_string(),
+            credential_id: credential_id.map(str::to_string),
         });
     }
 
@@ -342,7 +366,10 @@ async fn run(
                 }
                 Some(Request::Catalog) => {
                     match client.request("model_catalog", json!({})).await {
-                        Ok(value) => bus.send(AppEvent::Models(ModelInfo::catalog(&value))),
+                        Ok(value) => {
+                            bus.send(AppEvent::Accounts(AccountInfo::catalog(&value)));
+                            bus.send(AppEvent::Models(ModelInfo::catalog(&value)));
+                        }
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("models failed: {error}")))
                         }
@@ -366,6 +393,38 @@ async fn run(
                         }
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("select failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::Usage { session_id }) => {
+                    let result = client
+                        .request("usage", json!({ "session_id": session_id }))
+                        .await;
+                    match result {
+                        Ok(value) => bus.send(AppEvent::Usage(UsageSummary::from_value(&value))),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("usage failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::SelectAccount {
+                    session_id,
+                    credential_id,
+                }) => {
+                    let result = client
+                        .request(
+                            "select_account",
+                            json!({ "session_id": session_id, "credential_id": credential_id }),
+                        )
+                        .await;
+                    match result {
+                        Ok(_) => {
+                            if open.as_ref().is_some_and(|state| state.id == session_id) {
+                                dirty = Some(Instant::now());
+                            }
+                        }
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("account failed: {error}")))
                         }
                     }
                 }

@@ -92,6 +92,8 @@ fn main() {
                     "archived_at_ms": null,
                     "parent_session_id": null,
                     "location": "/tmp",
+                    "model_selection": {"protocol": "chat", "model": "fake/glm"},
+                    "account_selection": {"credential_id": "cred_a"},
                 });
                 if !metadata_only {
                     snapshot["messages"] = json!([
@@ -149,15 +151,35 @@ fn main() {
                 log_action(&frame["params"], "admit");
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
             }
-            // Two catalog entries, the second with variants, so the model
-            // dialog has something to flatten and pick from.
+            // Two catalog entries with two credentials, so both the model
+            // dialog and the account dialog have something to pick from.
             "model_catalog" if sessions => send(
                 &mut out,
                 json!({"id":id,"result":[
-                    {"route_id":"r1","protocol":"chat","model":"fake/glm"},
-                    {"protocol":"responses","model":"fake/gpt","variants":["low","high"]}
+                    {"route_id":"r1","protocol":"chat","model":"fake/glm","credential_id":"cred_a"},
+                    {"protocol":"responses","model":"fake/gpt","variants":["low","high"],"credential_id":"cred_b"}
                 ]}),
             ),
+            "usage" if sessions => send(
+                &mut out,
+                json!({"id":id,"result":{
+                    "providerUsage": {},
+                    "providerDetail": {},
+                    "auxiliary": {},
+                    "turns": 3,
+                    "partialTurns": 1,
+                    "tokens": {"input": 1200, "output": 300, "cacheRead": 900, "cacheWrite": 0, "nonCached": 300},
+                    "cacheDiagnostics": {},
+                    "ttftMs": {"count": 3, "avg": 812, "min": 400, "max": 1200},
+                    "lineage": [{"protocol": "chat", "model": "fake/glm", "turns": 3}],
+                    "tools": {"calls": 5, "failures": 1},
+                    "turnsDetail": []
+                }}),
+            ),
+            "select_account" if sessions => {
+                log_action(&frame["params"], "select_account");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
             "select_model" if sessions => {
                 log_action(&frame["params"], "select_model");
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));

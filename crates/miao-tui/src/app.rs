@@ -3,13 +3,14 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
 
-use crate::dialogs::{Action as DialogAction, ConfirmKind, Dialog, ModelInfo};
+use crate::dialogs::{AccountInfo, Action as DialogAction, ConfirmKind, Dialog, ModelInfo, Row};
 use crate::editor::Action;
 use crate::engine;
 use crate::event::AppEvent;
 use crate::pane::{render_dialog, Home, Pane, Panel, PanelKind, Shell};
 use crate::session::{SessionState, SessionSummary};
-use crate::state;
+use crate::state::{self, StashEntry};
+use crate::status::UsageSummary;
 use crate::theme::{self, Theme};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,11 +32,19 @@ pub struct App {
     dialog: Option<Dialog>,
     /// `Ctrl+X` was pressed; the next key completes the chord.
     leader: bool,
+    workspace: PathBuf,
+    /// What the engine was started with, shown by the debug dialog.
+    settings: Option<engine::Settings>,
     models: Vec<ModelInfo>,
+    accounts: Vec<AccountInfo>,
+    usage: Option<UsageSummary>,
+    stash: Vec<StashEntry>,
     /// Every root Session, archived included, for the Session dialog.
     catalog: Vec<SessionSummary>,
     /// The model dialog waits for the catalog when nothing is cached yet.
     pending_models: bool,
+    /// Same for the account dialog.
+    pending_accounts: bool,
 }
 
 impl App {
@@ -51,14 +60,24 @@ impl App {
             quit: false,
             dialog: None,
             leader: false,
+            workspace,
+            settings: None,
             models: Vec::new(),
+            accounts: Vec::new(),
+            usage: None,
+            stash: Vec::new(),
             catalog: Vec::new(),
             pending_models: false,
+            pending_accounts: false,
         }
     }
 
     pub fn attach_engine(&mut self, engine: engine::Handle) {
         self.engine = Some(engine);
+    }
+
+    pub fn set_settings(&mut self, settings: engine::Settings) {
+        self.settings = Some(settings);
     }
 
     pub fn render(&mut self, frame: &mut Frame) {
@@ -104,7 +123,25 @@ impl App {
                 self.models = models;
                 if self.pending_models {
                     self.pending_models = false;
-                    self.open_dialog(Dialog::models(&self.models));
+                    if self.dialog.is_none() {
+                        self.open_dialog(Dialog::models(&self.models));
+                    }
+                }
+            }
+            AppEvent::Accounts(accounts) => {
+                self.accounts = accounts;
+                if self.pending_accounts {
+                    self.pending_accounts = false;
+                    if self.dialog.is_none() {
+                        self.open_dialog(Dialog::accounts(&self.accounts));
+                    }
+                }
+            }
+            AppEvent::Usage(usage) => {
+                self.usage = Some(usage);
+                if matches!(self.dialog, Some(Dialog::Status(_))) {
+                    let rows = self.status_rows();
+                    self.open_dialog(Dialog::status(rows));
                 }
             }
             AppEvent::SessionRemoved(id) => {
@@ -215,6 +252,10 @@ impl App {
                     engine.new_session();
                 }
             }
+            KeyCode::Char('s') => self.open_status(),
+            KeyCode::Char('d') => self.open_debug(),
+            KeyCode::Char('p') => self.open_stash(),
+            KeyCode::Char('P') => self.stash_current(),
             KeyCode::Char('q') => self.quit = true,
             _ => {}
         }
@@ -271,13 +312,13 @@ impl App {
                 self.open_dialog(Dialog::confirm_remove(&id, &title));
             }
             DialogAction::Submit(title) => {
-                let Some(Dialog::Rename { session_id, .. }) = self.dialog.take() else {
+                let Some(Dialog::Rename(rename)) = self.dialog.take() else {
                     return;
                 };
                 if let Some(engine) = self.engine.as_ref() {
-                    engine.rename(&session_id, &title);
+                    engine.rename(&rename.session_id, &title);
                 }
-                if self.session_id().as_deref() == Some(session_id.as_str()) {
+                if self.session_id().as_deref() == Some(rename.session_id.as_str()) {
                     let mut summary = self.session.clone();
                     if let Some(summary) = summary.as_mut() {
                         summary.title = Some(title.clone());
@@ -293,30 +334,210 @@ impl App {
                     engine.remove(&id);
                 }
             }
+            DialogAction::StashRestore(index) => {
+                self.dialog = None;
+                if let Some(entry) = self.stash.get(index) {
+                    self.shell.composer.editor.set_text(&entry.text);
+                    self.shell.composer.notice = Some("restored from stash".into());
+                }
+                self.stash = state::stash_remove(index);
+            }
+            DialogAction::StashRemove(index) => {
+                self.stash = state::stash_remove(index);
+                let rows = self.stash_rows();
+                self.open_dialog(Dialog::stash(rows));
+            }
         }
     }
 
-    /// The model dialog returns an index into the last catalog; the theme
+    /// The model dialog returns an index into the last catalog, the account
+    /// dialog an index into the accounts the same catalog named, and the theme
     /// dialog an index into the built-in names.
     fn choose(&mut self, index: usize) {
-        let is_theme = matches!(self.dialog, Some(Dialog::Theme(_)));
-        self.dialog = None;
-        if is_theme {
-            let names = theme::names();
-            if let Some(name) = names.get(index) {
-                self.apply_theme(name);
+        match self.dialog.take() {
+            Some(Dialog::Theme(_)) => {
+                if let Some(name) = theme::names().get(index) {
+                    self.apply_theme(name);
+                }
             }
+            Some(Dialog::Models(_)) => {
+                let Some(binding) = self.models.get(index).map(ModelInfo::binding) else {
+                    return;
+                };
+                let Some(session_id) = self.session_id() else {
+                    self.shell.composer.notice = Some("open a Session to select a model".into());
+                    return;
+                };
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.select_model(&session_id, binding);
+                }
+            }
+            Some(Dialog::Accounts(_)) => {
+                let Some(account) = self.accounts.get(index) else {
+                    return;
+                };
+                let credential_id = account.credential_id.clone();
+                let Some(session_id) = self.session_id() else {
+                    self.shell.composer.notice = Some("open a Session to switch accounts".into());
+                    return;
+                };
+                self.pin_account(&session_id, Some(credential_id.clone()));
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.select_account(&session_id, Some(&credential_id));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Keep the open Session and the picker's copy in step until the next
+    /// snapshot carries the engine's own answer.
+    fn pin_account(&mut self, session_id: &str, credential_id: Option<String>) {
+        if let Some(session) = self.session.as_mut() {
+            if session.id == session_id {
+                session.credential_id = credential_id.clone();
+            }
+        }
+        if let Some(row) = self.catalog.iter_mut().find(|row| row.id == session_id) {
+            row.credential_id = credential_id;
+        }
+        self.shell.set_session(self.session.as_ref());
+    }
+
+    fn open_status(&mut self) {
+        let Some(session_id) = self.session_id() else {
+            self.notice("open a Session to see status");
+            return;
+        };
+        self.usage = None;
+        if let Some(engine) = self.engine.as_ref() {
+            engine.usage(&session_id);
+        }
+        let rows = self.status_rows();
+        self.open_dialog(Dialog::status(rows));
+    }
+
+    fn status_rows(&self) -> Vec<Row> {
+        let Some(session) = self.session.as_ref() else {
+            return Vec::new();
+        };
+        let mut rows = vec![
+            row("session", session.label()),
+            row("id", &session.id),
+            row(
+                "model",
+                session.model.as_deref().unwrap_or("engine default"),
+            ),
+            row(
+                "account",
+                session.credential_id.as_deref().unwrap_or("default"),
+            ),
+            row("run", self.state.active_run.as_deref().unwrap_or("idle")),
+            row("queued", &self.state.pending.to_string()),
+        ];
+        let Some(usage) = self.usage.as_ref() else {
+            rows.push(row("usage", "loading…"));
+            return rows;
+        };
+        rows.push(row(
+            "turns",
+            &format!("{} ({} partial)", usage.turns, usage.partial_turns),
+        ));
+        rows.push(row(
+            "tokens",
+            &format!(
+                "in {} · out {} · cache read {}",
+                usage.input_tokens, usage.output_tokens, usage.cache_read_tokens
+            ),
+        ));
+        rows.push(row(
+            "tools",
+            &format!(
+                "{} calls · {} failures",
+                usage.tool_calls, usage.tool_failures
+            ),
+        ));
+        if let Some(ttft) = usage.ttft_avg_ms {
+            rows.push(row("ttft", &format!("avg {ttft} ms")));
+        }
+        if !usage.lineage.is_empty() {
+            rows.push(row("lineage", &usage.lineage.join(", ")));
+        }
+        rows
+    }
+
+    fn open_accounts(&mut self) {
+        if self.session_id().is_none() {
             return;
         }
-        let Some(binding) = self.models.get(index).map(ModelInfo::binding) else {
-            return;
-        };
-        let Some(session_id) = self.session_id() else {
-            self.shell.composer.notice = Some("open a Session to select a model".into());
-            return;
-        };
         if let Some(engine) = self.engine.as_ref() {
-            engine.select_model(&session_id, binding);
+            engine.catalog();
+        }
+        if self.accounts.is_empty() {
+            self.pending_accounts = true;
+            return;
+        }
+        self.open_dialog(Dialog::accounts(&self.accounts));
+    }
+
+    fn open_debug(&mut self) {
+        let mut rows = Vec::new();
+        match &self.settings {
+            Some(settings) => {
+                rows.push(row("engine", &settings.spawn.program.display().to_string()));
+                rows.push(row("database", &db_argument(&settings.spawn.args)));
+                rows.push(row("model", &settings.model));
+            }
+            None => rows.push(row("engine", "not started")),
+        }
+        rows.push(row("workspace", &self.workspace.display().to_string()));
+        rows.push(row("state dir", &state::dir().display().to_string()));
+        rows.push(row("theme", &self.shell.theme().name));
+        rows.push(row("version", env!("CARGO_PKG_VERSION")));
+        self.open_dialog(Dialog::debug(rows));
+    }
+
+    fn open_stash(&mut self) {
+        self.stash = state::stash();
+        let rows = self.stash_rows();
+        self.open_dialog(Dialog::stash(rows));
+    }
+
+    fn stash_rows(&self) -> Vec<Row> {
+        self.stash
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| Row {
+                id: index.to_string(),
+                label: first_line(&entry.text),
+                detail: match entry.text.lines().count() {
+                    0 | 1 => String::new(),
+                    lines => format!("{lines} lines"),
+                },
+            })
+            .collect()
+    }
+
+    /// Set the current draft aside and clear the composer, the same trade a
+    /// stash makes everywhere: the draft is safe, the input is free.
+    fn stash_current(&mut self) {
+        let text = self.shell.composer.editor.text();
+        if text.trim().is_empty() {
+            self.notice("nothing to stash");
+            return;
+        }
+        self.stash = state::stash_push(text);
+        self.shell.composer.editor.clear();
+        self.shell.composer.dismiss_completion();
+        if self.screen == Screen::Session {
+            self.shell.composer.notice = Some("stashed".into());
+        }
+    }
+
+    fn notice(&mut self, message: &str) {
+        match self.screen {
+            Screen::Home => self.home.set_notice(Some(message.to_string())),
+            Screen::Session => self.shell.composer.notice = Some(message.to_string()),
         }
     }
 
@@ -413,6 +634,10 @@ impl App {
                 let dialog = Dialog::rename(&session.id, session.label());
                 self.open_dialog(dialog);
             }
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('o') {
+            self.open_accounts();
             return;
         }
         let ctrl_alt = key.modifiers.contains(KeyModifiers::CONTROL)
@@ -560,6 +785,8 @@ impl App {
         self.screen = Screen::Home;
         self.session = None;
         self.state = SessionState::default();
+        self.usage = None;
+        self.pending_accounts = false;
         self.shell.panel = None;
         self.shell.set_session(None);
         self.shell.title.set_status(None);
@@ -571,6 +798,33 @@ impl App {
             engine.refresh_sessions();
         }
     }
+}
+
+fn row(label: &str, detail: &str) -> Row {
+    Row {
+        id: label.to_string(),
+        label: label.to_string(),
+        detail: detail.to_string(),
+    }
+}
+
+/// The debug dialog reads the database path back out of the engine arguments
+/// rather than keeping a second copy that could disagree.
+fn db_argument(args: &[String]) -> String {
+    args.iter()
+        .position(|arg| arg == "--db")
+        .and_then(|index| args.get(index + 1))
+        .cloned()
+        .unwrap_or_else(|| "(none)".to_string())
+}
+
+fn first_line(text: &str) -> String {
+    let line = text.lines().next().unwrap_or("").trim();
+    let mut label = line.chars().take(60).collect::<String>();
+    if line.chars().count() > 60 {
+        label.push('…');
+    }
+    label
 }
 
 #[cfg(test)]
@@ -613,6 +867,8 @@ mod tests {
             updated_at_ms: Some(updated_at_ms),
             archived_at_ms: None,
             directory: None,
+            model: None,
+            credential_id: None,
         }
     }
 
@@ -767,7 +1023,7 @@ mod tests {
         leader(&mut app, 'l');
         assert!(matches!(app.dialog, Some(Dialog::Sessions(_))));
         app.handle(key(KeyCode::Char('r'), KeyModifiers::NONE));
-        assert!(matches!(app.dialog, Some(Dialog::Rename { .. })));
+        assert!(matches!(app.dialog, Some(Dialog::Rename(_))));
         app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
         assert!(app.dialog.is_none());
         leader(&mut app, 'l');
@@ -787,10 +1043,104 @@ mod tests {
             state: SessionState::default(),
         });
         app.handle(key(KeyCode::Char('r'), KeyModifiers::CONTROL));
-        let Some(Dialog::Rename { session_id, input }) = &app.dialog else {
+        let Some(Dialog::Rename(rename)) = &app.dialog else {
             panic!("expected the rename dialog");
         };
-        assert_eq!(session_id, "ses_a");
-        assert_eq!(input.text(), "ses_a");
+        assert_eq!(rename.session_id, "ses_a");
+        assert_eq!(rename.input.text(), "ses_a");
+    }
+
+    fn open_session(app: &mut App, id: &str) {
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary(id, 10)),
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+    }
+
+    #[test]
+    fn the_leader_s_opens_the_status_dialog_and_usage_fills_it() {
+        let mut app = session_app();
+        open_session(&mut app, "ses_a");
+        leader(&mut app, 's');
+        assert!(matches!(app.dialog, Some(Dialog::Status(_))));
+        let loading = app.dialog.as_ref().and_then(Dialog::list).expect("list");
+        assert!(loading
+            .rows
+            .iter()
+            .any(|row| row.label == "usage" && row.detail == "loading…"));
+        app.handle(AppEvent::Usage(UsageSummary::from_value(
+            &serde_json::json!({
+                "turns": 3,
+                "partialTurns": 1,
+                "tokens": {"input": 1200, "output": 300, "cacheRead": 900},
+                "tools": {"calls": 5, "failures": 1},
+                "ttftMs": {"count": 3, "avg": 812},
+                "lineage": [{"protocol": "chat", "model": "glm-5", "turns": 3}],
+            }),
+        )));
+        let list = app.dialog.as_ref().and_then(Dialog::list).expect("list");
+        assert!(list
+            .rows
+            .iter()
+            .any(|row| row.label == "turns" && row.detail == "3 (1 partial)"));
+        assert!(list
+            .rows
+            .iter()
+            .any(|row| row.label == "ttft" && row.detail == "avg 812 ms"));
+        assert!(list
+            .rows
+            .iter()
+            .any(|row| row.label == "lineage" && row.detail.contains("glm-5 · chat ×3")));
+    }
+
+    #[test]
+    fn ctrl_o_waits_for_the_catalog_and_picks_an_account() {
+        let mut app = session_app();
+        open_session(&mut app, "ses_a");
+        app.handle(key(KeyCode::Char('o'), KeyModifiers::CONTROL));
+        assert!(app.pending_accounts);
+        app.handle(AppEvent::Accounts(vec![
+            AccountInfo {
+                credential_id: "cred_a".into(),
+                detail: "glm-5".into(),
+            },
+            AccountInfo {
+                credential_id: "cred_b".into(),
+                detail: "gpt-5".into(),
+            },
+        ]));
+        assert!(matches!(app.dialog, Some(Dialog::Accounts(_))));
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.dialog.is_none());
+        assert_eq!(
+            app.session
+                .as_ref()
+                .and_then(|s| s.credential_id.as_deref()),
+            Some("cred_b")
+        );
+    }
+
+    #[test]
+    fn the_leader_d_shows_the_engine_settings() {
+        let mut app = app();
+        leader(&mut app, 'd');
+        let list = app.dialog.as_ref().and_then(Dialog::list).expect("list");
+        assert!(list
+            .rows
+            .iter()
+            .any(|row| row.label == "state dir" && !row.detail.is_empty()));
+        assert!(list
+            .rows
+            .iter()
+            .any(|row| row.label == "version" && row.detail == env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn the_leader_p_opens_the_stash_dialog() {
+        let mut app = session_app();
+        leader(&mut app, 'p');
+        assert!(matches!(app.dialog, Some(Dialog::Stash(_))));
     }
 }
