@@ -1315,9 +1315,9 @@ export const {
 
     // A V2 prompt carries only its text: the session runs with the agent and model
     // stored on it. Apply what the footer has selected before sending, or a model
-    // picked after the session started never takes effect. switchModel is a no-op
-    // on the server when nothing changed; switchAgent records an event, so it is
-    // only sent when the agent differs.
+    // picked after the session started never takes effect. Both switches are sent
+    // only when the selection differs: repeating the stored one costs a round trip
+    // on every prompt, and the prompt's admission waits for it.
     async function applySelection(
       input: {
         sessionID: string
@@ -1339,16 +1339,32 @@ export const {
       // TS Sessions must not invoke unsupported switches before admission.
       if (session?.execution?.selection === "operator") return
       if (!input.model) throw new Error("A TypeScript Session requires a selected model")
-      if (input.agent && session?.agent !== input.agent)
+      const agentChanged = Boolean(input.agent) && session?.agent !== input.agent
+      if (agentChanged)
         await sdk.api.sessions.switchAgent({ sessionID: input.sessionID, agent: input.agent }, { signal })
-      if (!input.model.providerID || !input.model.modelID) return
-      await sdk.api.sessions.switchModel(
-        {
-          sessionID: input.sessionID,
-          model: { id: input.model.modelID, providerID: input.model.providerID, variant: input.model.variant },
-        },
-        { signal },
-      )
+      const modelChanged =
+        Boolean(input.model.providerID) &&
+        Boolean(input.model.modelID) &&
+        !(
+          session?.model?.providerID === input.model.providerID &&
+          session.model.id === input.model.modelID &&
+          session.model.variant === input.model.variant
+        )
+      if (modelChanged)
+        await sdk.api.sessions.switchModel(
+          {
+            sessionID: input.sessionID,
+            model: { id: input.model.modelID, providerID: input.model.providerID, variant: input.model.variant },
+          },
+          { signal },
+        )
+      if (!agentChanged && !modelChanged) return
+      // Both switch routes answer NoContent without publishing a catalog update,
+      // so re-read the Session now. Without it the local copy keeps the old
+      // selection and the next prompt repeats the switch it just sent.
+      const fresh = await sdk.api.sessions.get({ sessionID: input.sessionID }, { signal })
+      const updated = search(store.session, input.sessionID, (s) => s.id)
+      if (updated.found) setStore("session", updated.index, reconcile(fresh as Session))
     }
 
     const result = {
@@ -1412,7 +1428,14 @@ export const {
           }).then(
             (response) => {
               pendingPrompts.admit(id)
-              v2Refresh.schedule(input.sessionID)
+              // The admitted input becomes visible through the live
+              // `prompt.admitted` / `prompted` events. Re-reading the whole
+              // transcript here only repeated that work: on a long Session the
+              // read held the TUI for seconds, so the prompt looked ignored while
+              // the engine was already running.
+              void result.session.syncStatus(input.sessionID).catch((error) =>
+                console.error("session status refresh failed", { error: errorMessage(error) }),
+              )
               return response
             },
             (error: unknown) => {
