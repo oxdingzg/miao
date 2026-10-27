@@ -43,3 +43,50 @@ fn lifecycle_vocabulary_is_frozen() {
     assert!(!Lifecycle::SessionStart.tool_scoped());
     assert_eq!(PROTOCOL_VERSION, "engine-stdio-0");
 }
+
+#[test]
+fn permission_evaluate_parses_from_the_wire_and_decides() {
+    use miao_engine::permission::Decision;
+    use miao_engine::permission_rules::{self, Rule};
+    use miao_engine::protocol::Command;
+
+    let wire = serde_json::json!({
+        "method": "permission_evaluate",
+        "params": {
+            "request": {
+                "actions": ["bash"],
+                "resources": ["git push origin"],
+                "configured": [{"action": "bash", "resource": "git push *", "effect": "deny"}],
+                "saved": [{"action": "bash", "resource": "git *", "effect": "allow"}]
+            }
+        }
+    });
+    let Command::PermissionEvaluate { request } = serde_json::from_value(wire).unwrap() else {
+        panic!("wrong variant");
+    };
+    let outcome = permission_rules::evaluate(&request).unwrap();
+    assert_eq!(outcome.effect, Decision::Deny);
+    // A configured deny is reported before saved approvals join.
+    assert_eq!(
+        outcome.rules,
+        vec![Rule {
+            action: "bash".into(),
+            resource: "git push *".into(),
+            effect: Decision::Deny,
+        }]
+    );
+    assert!(!outcome.authority_revision.is_empty());
+
+    // Degenerate queries parse, and the pure evaluator keeps the TypeScript
+    // vacuous semantics; Host::dispatch refuses them before calling it.
+    let Command::PermissionEvaluate { request } = serde_json::from_value(serde_json::json!({
+        "method": "permission_evaluate",
+        "params": {"request": {"actions": ["read"], "resources": []}}
+    }))
+    .unwrap() else {
+        panic!("wrong variant");
+    };
+    assert!(request.resources.is_empty());
+    assert_eq!(request.configured, None);
+    assert!(permission_rules::evaluate(&request).is_ok());
+}
