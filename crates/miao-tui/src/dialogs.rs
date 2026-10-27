@@ -176,7 +176,7 @@ impl ListDialog {
         }
     }
 
-    fn move_cursor(&mut self, delta: i32) {
+    pub(crate) fn move_cursor(&mut self, delta: i32) {
         if self.rows.is_empty() {
             return;
         }

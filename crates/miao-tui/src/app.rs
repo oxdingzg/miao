@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::Frame;
 use serde_json::Value;
 
@@ -194,6 +194,7 @@ impl App {
                 }
             }
             AppEvent::Focus(focused) => self.attention.set_focus(focused),
+            AppEvent::Mouse(mouse) => self.handle_mouse(mouse),
             AppEvent::Attention { kind, id } => self.announce(kind, id),
             AppEvent::Clipboard(content) => {
                 self.clipboard_busy = false;
@@ -330,6 +331,28 @@ impl App {
         match self.screen {
             Screen::Home => self.handle_home_key(key),
             Screen::Session => self.handle_session_key(key),
+        }
+    }
+
+    /// The wheel moves through the open dialog, the Session list, or the
+    /// transcript. Buttons are ignored: text selection stays with the terminal.
+    fn handle_mouse(&mut self, mouse: MouseEvent) {
+        let delta = match mouse.kind {
+            MouseEventKind::ScrollUp => -1,
+            MouseEventKind::ScrollDown => 1,
+            _ => return,
+        };
+        if self.dialog.is_some() {
+            if let Some(list) = self.dialog.as_mut().and_then(Dialog::list_mut) {
+                list.move_cursor(delta);
+            }
+            return;
+        }
+        // A stray wheel event must not leave the leader armed.
+        self.leader = false;
+        match self.screen {
+            Screen::Home => self.home.move_cursor(delta),
+            Screen::Session => self.shell.scroll_transcript(delta * 3),
         }
     }
 
@@ -1207,6 +1230,31 @@ mod tests {
             model: None,
             credential_id: None,
         }
+    }
+
+    fn wheel(kind: MouseEventKind) -> AppEvent {
+        AppEvent::Mouse(MouseEvent {
+            kind,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        })
+    }
+
+    #[test]
+    fn the_wheel_moves_the_home_selection_and_ignores_buttons() {
+        let mut app = app();
+        app.home.rows = vec![summary("a", 2), summary("b", 1)];
+
+        app.handle(wheel(MouseEventKind::ScrollDown));
+        assert_eq!(app.home.selected, 1);
+        app.handle(wheel(MouseEventKind::ScrollDown));
+        assert_eq!(app.home.selected, 1, "the selection stops at the end");
+        app.handle(wheel(MouseEventKind::ScrollUp));
+        assert_eq!(app.home.selected, 0);
+
+        app.handle(wheel(MouseEventKind::Moved));
+        assert_eq!(app.home.selected, 0, "only the wheel does anything");
     }
 
     /// A row that `--continue` must skip.

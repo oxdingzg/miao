@@ -32,9 +32,50 @@ impl Default for AttentionConfig {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub attention: AttentionConfig,
+    /// Capture mouse input for wheel scrolling. Defaults to on, like the
+    /// TypeScript host.
+    pub mouse: bool,
+    /// `None` leaves the terminal's own cursor shape alone.
+    pub cursor: Option<Cursor>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            attention: AttentionConfig::default(),
+            mouse: true,
+            cursor: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CursorShape {
+    Default,
+    #[default]
+    Block,
+    Underline,
+    Line,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Cursor {
+    pub style: Option<CursorShape>,
+    pub blinking: Option<bool>,
+}
+
+impl Cursor {
+    pub fn shape(&self) -> CursorShape {
+        self.style.unwrap_or_default()
+    }
+
+    /// Blinking defaults to on; it has no effect with [`CursorShape::Default`].
+    pub fn blinking(&self) -> bool {
+        self.blinking.unwrap_or(true)
+    }
 }
 
 pub const SOUND_NAMES: &[&str] = &[
@@ -111,7 +152,30 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
             return;
         }
     };
-    let Some(attention) = value.get("attention") else {
+    let Some(object) = value.as_object() else {
+        return;
+    };
+    // The TypeScript host flattens a nested `tui` object; a top-level field
+    // takes precedence over the same name nested under it.
+    let nested = object.get("tui").and_then(serde_json::Value::as_object);
+    let field = |name: &str| {
+        object
+            .get(name)
+            .or_else(|| nested.and_then(|tui| tui.get(name)))
+    };
+    if let Some(mouse) = field("mouse") {
+        match mouse.as_bool() {
+            Some(mouse) => config.mouse = mouse,
+            None => warnings.push(format!(
+                "tui config {}: mouse must be a boolean, ignoring",
+                path.display()
+            )),
+        }
+    }
+    if let Some(cursor) = field("cursor") {
+        merge_cursor(cursor, path, config, warnings);
+    }
+    let Some(attention) = field("attention") else {
         return;
     };
     let Some(attention) = attention.as_object() else {
@@ -155,6 +219,47 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
             "sounds" => merge_sounds(value, base, config, path, warnings),
             other => warnings.push(format!(
                 "tui config {}: ignoring unsupported attention field \"{other}\"",
+                path.display()
+            )),
+        }
+    }
+}
+
+fn merge_cursor(
+    value: &serde_json::Value,
+    path: &Path,
+    config: &mut Config,
+    warnings: &mut Vec<String>,
+) {
+    let Some(object) = value.as_object() else {
+        warnings.push(format!(
+            "tui config {}: cursor must be an object, ignoring",
+            path.display()
+        ));
+        return;
+    };
+    let cursor = config.cursor.get_or_insert_with(Cursor::default);
+    for (key, value) in object {
+        match key.as_str() {
+            "style" => match value.as_str() {
+                Some("default") => cursor.style = Some(CursorShape::Default),
+                Some("block") => cursor.style = Some(CursorShape::Block),
+                Some("underline") => cursor.style = Some(CursorShape::Underline),
+                Some("line") => cursor.style = Some(CursorShape::Line),
+                _ => warnings.push(format!(
+                    "tui config {}: cursor.style must be block, underline, line or default, ignoring",
+                    path.display()
+                )),
+            },
+            "blinking" => match value.as_bool() {
+                Some(blinking) => cursor.blinking = Some(blinking),
+                None => warnings.push(format!(
+                    "tui config {}: cursor.blinking must be a boolean, ignoring",
+                    path.display()
+                )),
+            },
+            other => warnings.push(format!(
+                "tui config {}: ignoring unsupported cursor field \"{other}\"",
                 path.display()
             )),
         }
@@ -247,6 +352,53 @@ mod tests {
         assert!(config.sound);
         assert_eq!(config.volume, 0.4);
         assert!(config.sounds.is_empty());
+        assert!(Config::default().mouse);
+        assert!(Config::default().cursor.is_none());
+    }
+
+    #[test]
+    fn mouse_and_cursor_come_from_the_same_files() {
+        let dir = temp_dir("terminal");
+        let (config, warnings) = merge_at(
+            r#"{"mouse": false, "cursor": {"style": "underline", "blinking": false}}"#,
+            &dir,
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(!config.mouse);
+        let cursor = config.cursor.expect("cursor");
+        assert_eq!(cursor.shape(), CursorShape::Underline);
+        assert!(!cursor.blinking());
+
+        let (config, warnings) = merge_at(r#"{"cursor": {"style": "nope"}, "mouse": "yes"}"#, &dir);
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert!(config.mouse);
+        assert_eq!(
+            config.cursor.map(|cursor| cursor.shape()),
+            Some(CursorShape::Block)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cursor_fields_merge_across_files() {
+        let mut config = Config::default();
+        let mut warnings = Vec::new();
+        merge(
+            r#"{"cursor": {"style": "line"}}"#,
+            Path::new("a/tui.json"),
+            &mut config,
+            &mut warnings,
+        );
+        merge(
+            r#"{"cursor": {"blinking": false}}"#,
+            Path::new("b/tui.json"),
+            &mut config,
+            &mut warnings,
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let cursor = config.cursor.expect("cursor");
+        assert_eq!(cursor.shape(), CursorShape::Line);
+        assert!(!cursor.blinking());
     }
 
     #[test]
