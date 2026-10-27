@@ -193,8 +193,8 @@ const DEFAULTS: &[(Action, &str)] = &[
     (Action::InputDeleteToLineEnd, "ctrl+k"),
     (Action::HistoryPrevious, "up"),
     (Action::HistoryNext, "down"),
-    (Action::PageUp, "pageup"),
-    (Action::PageDown, "pagedown"),
+    (Action::PageUp, "pageup,ctrl+alt+b"),
+    (Action::PageDown, "pagedown,ctrl+alt+f"),
     (Action::LineUp, "ctrl+alt+y"),
     (Action::LineDown, "ctrl+alt+e"),
 ];
