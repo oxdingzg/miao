@@ -342,7 +342,7 @@ fn merge(text: &str, path: &Path, name: &mut String, warnings: &mut Vec<String>)
     }
 }
 
-fn strip_jsonc(input: &str) -> String {
+pub(crate) fn strip_jsonc(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut chars = input.chars().peekable();
     let mut in_string = false;

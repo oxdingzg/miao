@@ -18,23 +18,46 @@ struct Harness {
 
 impl Harness {
     fn spawn(label: &str, inject_panic: bool) -> Self {
-        Self::spawn_with(label, inject_panic, false, false)
+        Self::spawn_with(label, inject_panic, false, false, false)
     }
 
     /// Boot the TUI against the scripted engine so the smoke test can enter a
     /// Session without a database, a provider, or a model.
     fn spawn_engine(label: &str) -> Self {
-        Self::spawn_with(label, false, true, false)
+        Self::spawn_with(label, false, true, false, false)
     }
 
     fn spawn_engine_approval(label: &str) -> Self {
-        Self::spawn_with(label, false, true, true)
+        Self::spawn_with(label, false, true, true, false)
     }
 
-    fn spawn_with(label: &str, inject_panic: bool, engine: bool, approval: bool) -> Self {
+    /// A workspace with one markdown template command, so the slash path can
+    /// be exercised against the engine wire.
+    fn spawn_engine_with_commands(label: &str) -> Self {
+        Self::spawn_with(label, false, true, false, true)
+    }
+
+    fn spawn_with(
+        label: &str,
+        inject_panic: bool,
+        engine: bool,
+        approval: bool,
+        commands: bool,
+    ) -> Self {
         let dir =
             std::env::temp_dir().join(format!("miao-tui-smoke-{}-{label}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("workspace dir");
+        if commands {
+            // Project commands live under `.miao/command(s)/`, the same
+            // directories the host discovers.
+            let commands_dir = dir.join(".miao").join("commands");
+            std::fs::create_dir_all(&commands_dir).expect("commands dir");
+            std::fs::write(
+                commands_dir.join("review.md"),
+                "---\ndescription: Review a path\n---\nReview $1 carefully\n",
+            )
+            .expect("template command");
+        }
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: 24,
@@ -617,6 +640,69 @@ fn a_stashed_draft_comes_back_into_the_composer() {
     assert!(
         recorded.contains("\"method\":\"admit\"") && recorded.contains("stash me"),
         "the restored draft never reached the engine: {recorded}"
+    );
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
+fn the_palette_runs_actions_and_a_template_command_reaches_the_engine() {
+    let mut harness = Harness::spawn_engine_with_commands("commands");
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(2)),
+        "the Session did not open:\n{}",
+        plain(&harness.text())
+    );
+    // Ctrl+P opens the palette; typing narrows it to the help entry.
+    harness.write(b"\x10");
+    assert!(
+        wait_for_plain(&harness, "Select a theme", Duration::from_secs(2)),
+        "the palette did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"keys");
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "/stash-draft", Duration::from_secs(2)),
+        "the palette did not open the help dialog:\n{}",
+        plain(&harness.text())
+    );
+    // A lone Esc needs a pause so it is not read as an Alt chord prefix.
+    harness.write(b"\x1b");
+    std::thread::sleep(Duration::from_millis(200));
+    // The trailing space closes slash completion, so the next Enter submits.
+    harness.write(b"/review src/a.rs");
+    harness.write(b"\r");
+    let log = harness.dir.join("admit.log");
+    let start = Instant::now();
+    let mut recorded = String::new();
+    while start.elapsed() < Duration::from_secs(5) {
+        recorded = std::fs::read_to_string(&log).unwrap_or_default();
+        if recorded.contains("\"name\":\"review\"") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        recorded.contains("\"method\":\"admit\""),
+        "the command never reached the engine: {recorded}"
+    );
+    assert!(
+        recorded.contains("\"name\":\"review\"") && recorded.contains("\"arguments\":\"src/a.rs\""),
+        "the captured command reference is missing: {recorded}"
+    );
+    assert!(
+        recorded.contains("\"prompt\":\"Review src/a.rs carefully\""),
+        "the template was not rendered before admission: {recorded}"
     );
     harness.write(b"\x03");
     let status = wait_exit(&mut harness.child, Duration::from_secs(5))

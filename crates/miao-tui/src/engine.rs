@@ -36,6 +36,15 @@ pub enum Request {
         session_id: String,
         text: String,
     },
+    /// Admit a rendered template command: the engine captures the reference,
+    /// prepares its placeholders after promotion, and records the command.
+    Command {
+        session_id: String,
+        text: String,
+        /// The text the composer held, restored if admission fails.
+        original: String,
+        command: Value,
+    },
     NewSession,
     /// Interrupt the active run; idle Sessions answer `accepted: false`.
     Cancel {
@@ -89,6 +98,16 @@ pub struct Handle {
     tx: mpsc::UnboundedSender<Request>,
 }
 
+#[cfg(test)]
+impl Handle {
+    /// A handle with no engine task behind it. Sends are dropped, which is
+    /// enough for tests that only assert the UI's own state.
+    pub fn inert() -> Self {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        Self { tx }
+    }
+}
+
 impl Handle {
     pub fn refresh_sessions(&self) {
         let _ = self.tx.send(Request::RefreshSessions);
@@ -106,6 +125,22 @@ impl Handle {
         let _ = self.tx.send(Request::Prompt {
             session_id: session_id.to_string(),
             text: text.to_string(),
+        });
+    }
+
+    pub fn command(
+        &self,
+        session_id: &str,
+        prompt: &str,
+        original: &str,
+        name: &str,
+        arguments: &str,
+    ) {
+        let _ = self.tx.send(Request::Command {
+            session_id: session_id.to_string(),
+            text: prompt.to_string(),
+            original: original.to_string(),
+            command: json!({ "name": name, "arguments": arguments }),
         });
     }
 
@@ -312,6 +347,31 @@ async fn run(
                         Err(error) => bus.send(AppEvent::PromptFailed {
                             text,
                             message: format!("send failed: {error}"),
+                        }),
+                    }
+                }
+                Some(Request::Command {
+                    session_id,
+                    text,
+                    original,
+                    command,
+                }) => {
+                    let input = json!({
+                        "session_id": session_id.clone(),
+                        "input_id": new_id("in"),
+                        "prompt": text,
+                        "delivery": "steer",
+                        "command": command,
+                    });
+                    match client.admit(input, true, Vec::new()).await {
+                        Ok(_) => {
+                            if open.as_ref().is_some_and(|state| state.id == session_id) {
+                                dirty = Some(Instant::now());
+                            }
+                        }
+                        Err(error) => bus.send(AppEvent::PromptFailed {
+                            text: original,
+                            message: format!("command failed: {error}"),
                         }),
                     }
                 }
