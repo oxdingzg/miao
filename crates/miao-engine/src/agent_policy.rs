@@ -293,7 +293,7 @@ fn fallback(tool: &str, resource: &str) -> (Decision, RuleMatch) {
 
 /// Same bounded wildcard grammar as the host: separators normalize, * crosses
 /// directories, ? consumes one character, and a trailing " *" allows no args.
-fn wildcard(pattern: &str) -> Result<Regex, Error> {
+pub(crate) fn wildcard(pattern: &str) -> Result<Regex, Error> {
     let normalized = pattern.replace('\\', "/");
     let optional_args = normalized.ends_with(" *");
     let prefix = if optional_args {

@@ -528,6 +528,13 @@ pub enum Command {
     Unsubscribe {
         session_id: String,
     },
+    /// Evaluate layered permission rules (S6 step 1): a pure query carrying no
+    /// Session state. The host aligns against it and later retires its own
+    /// evaluation path; grants derived from an outcome must cite its
+    /// `authority_revision`.
+    PermissionEvaluate {
+        request: crate::permission_rules::Request,
+    },
     Approve {
         session_id: String,
         response: Response,
