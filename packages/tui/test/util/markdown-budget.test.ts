@@ -1,20 +1,34 @@
 import { expect, test } from "bun:test"
 import { createMarkdownBudget, markdownCost } from "../../src/util/markdown-budget"
 
-test("reservations share a limit and release/update without double counting", () => {
+test("the pool is handed out from the newest message backwards", async () => {
   const budget = createMarkdownBudget(100)
-  const a = budget.lease()
-  const b = budget.lease()
-  expect(a.reserve(60)).toBe(true)
-  expect(b.reserve(50)).toBe(false)
-  expect(a.reserve(80)).toBe(true)
-  expect(b.reserve(20)).toBe(true)
-  expect(a.reserve(90)).toBe(false)
-  expect(b.reserve(100)).toBe(true)
-  b.release()
-  b.release()
-  expect(a.reserve(100)).toBe(true)
-  expect(b.reserve(1)).toBe(false)
+  const granted: Record<string, boolean> = {}
+  const older = budget.lease(60, (rich) => (granted.older = rich))
+  budget.lease(60, (rich) => (granted.newer = rich))
+  await Bun.sleep(0)
+  expect(granted).toEqual({ older: false, newer: true })
+  older.release()
+  expect(granted).toEqual({ older: false, newer: true })
+})
+
+test("a cost update re-runs the assignment and a release returns the handles", async () => {
+  const budget = createMarkdownBudget(100)
+  const granted: Record<string, boolean> = {}
+  const older = budget.lease(60, (rich) => (granted.older = rich))
+  const newer = budget.lease(60, (rich) => (granted.newer = rich))
+  await Bun.sleep(0)
+  expect(granted).toEqual({ older: false, newer: true })
+  newer.update(30)
+  await Bun.sleep(0)
+  expect(granted).toEqual({ older: true, newer: true })
+  newer.update(90)
+  await Bun.sleep(0)
+  expect(granted).toEqual({ older: false, newer: true })
+  newer.release()
+  await Bun.sleep(0)
+  expect(granted).toEqual({ older: true, newer: true })
+  older.release()
 })
 
 test("dense tables/lists cost handles but long fenced code and prose do not", () => {
@@ -35,3 +49,10 @@ test("the conservative bound counts CR-only lines, nested markers and escaped ta
 test("an invalid backtick info string cannot hide a costly table from the budget", () => {
   expect(markdownCost("```invalid`info\n" + "|a|b|\n".repeat(1000))).toBeGreaterThan(12000)
 })
+
+test("a prose paragraph is one renderable, whatever its line count", () => {
+  const paragraph = "the same sentence over and over\n".repeat(500)
+  expect(markdownCost(paragraph)).toBeLessThan(100)
+  expect(markdownCost(paragraph.repeat(10))).toBeLessThan(200)
+})
+
