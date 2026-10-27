@@ -6,8 +6,8 @@ use ratatui::Frame;
 use crate::editor::Action;
 use crate::engine;
 use crate::event::AppEvent;
-use crate::pane::{Home, Pane, Shell};
-use crate::session::SessionSummary;
+use crate::pane::{Home, Pane, Panel, PanelKind, Shell};
+use crate::session::{SessionState, SessionSummary};
 use crate::theme::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +24,7 @@ pub struct App {
     pub screen: Screen,
     pub engine: Option<engine::Handle>,
     pub session: Option<SessionSummary>,
+    pub state: SessionState,
     pub quit: bool,
 }
 
@@ -36,6 +37,7 @@ impl App {
             screen: Screen::Home,
             engine: None,
             session: None,
+            state: SessionState::default(),
             quit: false,
         }
     }
@@ -77,11 +79,18 @@ impl App {
             AppEvent::SessionOpened {
                 summary,
                 transcript,
+                state,
             } => {
                 self.session = summary;
+                self.state = state;
                 self.shell.set_session(self.session.as_ref());
                 self.shell.set_transcript(&transcript);
                 self.screen = Screen::Session;
+                self.sync_panel();
+                self.update_status();
+            }
+            AppEvent::ActionFailed(message) => {
+                self.shell.composer.notice = Some(message);
             }
             AppEvent::PromptFailed { text, message } => {
                 self.shell.composer.restore(&text);
@@ -138,9 +147,25 @@ impl App {
 
     fn handle_session_key(&mut self, key: KeyEvent) {
         if key.code == KeyCode::Esc {
-            if !self.shell.composer.dismiss_completion() {
-                self.leave_session();
+            if self.shell.composer.dismiss_completion() {
+                return;
             }
+            if self.reject_question() {
+                return;
+            }
+            if self.state.active_run.is_some() {
+                if let (Some(id), Some(engine)) = (
+                    self.session.as_ref().map(|session| session.id.clone()),
+                    self.engine.as_ref(),
+                ) {
+                    engine.cancel(&id);
+                }
+                return;
+            }
+            if self.shell.panel.is_some() {
+                return;
+            }
+            self.leave_session();
             return;
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
@@ -162,11 +187,122 @@ impl App {
             self.shell.scroll_transcript(5);
             return;
         }
+        if self.handle_panel_key(key) {
+            return;
+        }
         match self.shell.composer.handle_key(key) {
             Action::None => {}
             Action::Quit => self.quit = true,
             Action::Submit(text) => self.submit(text),
         }
+    }
+
+    /// Panel keys are a closed vocabulary: a decision is blocking, so typing
+    /// must not leak into the composer while one is on screen.
+    fn handle_panel_key(&mut self, key: KeyEvent) -> bool {
+        let Some(panel) = self.shell.panel.as_mut() else {
+            return false;
+        };
+        let session_id = self.session.as_ref().map(|session| session.id.clone());
+        match &mut panel.kind {
+            PanelKind::Approval(view) => {
+                let decision = match key.code {
+                    KeyCode::Char('1') => Some(("allow", false)),
+                    KeyCode::Char('2') => Some(("allow", true)),
+                    KeyCode::Char('3') => Some(("deny", false)),
+                    _ => None,
+                };
+                if let Some((decision, persistent)) = decision {
+                    let response = view.response(decision);
+                    if let (Some(session_id), Some(engine)) =
+                        (session_id.as_deref(), self.engine.as_ref())
+                    {
+                        engine.approve(session_id, response, persistent);
+                    }
+                }
+            }
+            PanelKind::Question(_) => match key.code {
+                KeyCode::Up | KeyCode::Char('k') => panel.move_cursor(-1),
+                KeyCode::Down | KeyCode::Char('j') => panel.move_cursor(1),
+                KeyCode::Char(' ') => panel.toggle(),
+                KeyCode::Enter => {
+                    if let Some(answer) = panel.submit() {
+                        if let (Some(session_id), Some(engine)) =
+                            (session_id.as_deref(), self.engine.as_ref())
+                        {
+                            engine.answer(session_id, answer);
+                        }
+                    }
+                }
+                _ => {}
+            },
+        }
+        true
+    }
+
+    /// Rejecting a pending question is the only Esc that is answered locally.
+    fn reject_question(&mut self) -> bool {
+        let Some(rejection) = self.shell.panel.as_ref().and_then(Panel::rejection) else {
+            return false;
+        };
+        if let (Some(id), Some(engine)) = (
+            self.session.as_ref().map(|session| session.id.clone()),
+            self.engine.as_ref(),
+        ) {
+            engine.reject_question(&id, rejection);
+        }
+        true
+    }
+
+    fn sync_panel(&mut self) {
+        let next = self
+            .state
+            .approvals
+            .first()
+            .map(|view| view.request_id.clone())
+            .or_else(|| {
+                self.state
+                    .questions
+                    .first()
+                    .map(|view| view.question_id.clone())
+            });
+        let Some(request_id) = next else {
+            self.shell.panel = None;
+            return;
+        };
+        if self
+            .shell
+            .panel
+            .as_ref()
+            .is_some_and(|panel| panel.request_id() == request_id)
+        {
+            return;
+        }
+        self.shell.panel = self
+            .state
+            .approvals
+            .first()
+            .map(|view| Panel::approval(view.clone()))
+            .or_else(|| {
+                self.state
+                    .questions
+                    .first()
+                    .map(|view| Panel::question(view.clone()))
+            });
+    }
+
+    fn update_status(&mut self) {
+        if self.screen != Screen::Session {
+            self.shell.title.set_status(None);
+            return;
+        }
+        let status = match (&self.state.active_run, self.state.pending) {
+            (Some(_), 0) => "working · Esc interrupt".to_string(),
+            (Some(_), queued) => format!("working · {queued} queued · Esc interrupt"),
+            (None, 0) => "idle".to_string(),
+            (None, queued) => format!("idle · {queued} queued"),
+        };
+        self.shell.title.set_status(Some(status));
     }
 
     fn submit(&mut self, text: String) {
@@ -185,7 +321,10 @@ impl App {
     fn leave_session(&mut self) {
         self.screen = Screen::Home;
         self.session = None;
+        self.state = SessionState::default();
+        self.shell.panel = None;
         self.shell.set_session(None);
+        self.shell.title.set_status(None);
         self.shell.composer.editor.clear();
         self.shell.composer.dismiss_completion();
         if let Some(engine) = self.engine.as_ref() {
@@ -216,6 +355,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
         });
         assert_eq!(app.screen, Screen::Session);
         app
@@ -293,6 +433,53 @@ mod tests {
         assert_eq!(app.home.selected, 1);
         app.handle(key(KeyCode::Char('k'), KeyModifiers::NONE));
         assert_eq!(app.home.selected, 0);
+    }
+
+    fn approval_state() -> SessionState {
+        SessionState {
+            active_run: None,
+            pending: 0,
+            approvals: vec![crate::session::ApprovalView {
+                request_id: "run-1/call_1".into(),
+                tool: "bash".into(),
+                resource: "ls".into(),
+                input: serde_json::json!({"command": "ls"}),
+                input_hash: "a".repeat(64),
+                policy_revision: "rev-1".into(),
+                matcher: None,
+                expires_at_ms: None,
+            }],
+            questions: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_pending_approval_opens_a_panel_and_blocks_typing() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: approval_state(),
+        });
+        assert!(app.shell.panel.is_some());
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::NONE));
+        assert!(app.shell.composer.editor.is_empty());
+    }
+
+    #[test]
+    fn esc_interrupts_an_active_run_instead_of_leaving() {
+        let mut app = session_app();
+        let state = SessionState {
+            active_run: Some("run-1".into()),
+            ..SessionState::default()
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state,
+        });
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Session);
     }
 
     #[test]

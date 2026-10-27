@@ -56,6 +56,173 @@ pub fn home_rows(mut rows: Vec<SessionSummary>) -> Vec<SessionSummary> {
     rows
 }
 
+/// One blocking approval the engine is waiting on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ApprovalView {
+    pub request_id: String,
+    pub tool: String,
+    pub resource: String,
+    pub input: Value,
+    pub input_hash: String,
+    pub policy_revision: String,
+    pub matcher: Option<Value>,
+    pub expires_at_ms: Option<u64>,
+}
+
+impl ApprovalView {
+    pub fn from_value(value: &Value) -> Option<Self> {
+        Some(Self {
+            request_id: value.get("request_id")?.as_str()?.to_string(),
+            tool: value.get("tool")?.as_str()?.to_string(),
+            resource: value
+                .get("resource")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            input: value.get("input").cloned().unwrap_or(Value::Null),
+            input_hash: value.get("input_hash")?.as_str()?.to_string(),
+            policy_revision: value.get("policy_revision")?.as_str()?.to_string(),
+            matcher: value.get("matcher").cloned(),
+            expires_at_ms: value.get("expires_at_ms").and_then(Value::as_u64),
+        })
+    }
+
+    /// The exact response the engine binds to this request.
+    pub fn response(&self, decision: &str) -> Value {
+        let mut response = serde_json::json!({
+            "request_id": self.request_id,
+            "input_hash": self.input_hash,
+            "policy_revision": self.policy_revision,
+            "decision": decision,
+        });
+        if let Some(matcher) = &self.matcher {
+            response["matcher"] = matcher.clone();
+        }
+        response
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Choice {
+    pub label: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuestionItem {
+    pub question: String,
+    pub header: String,
+    pub options: Vec<Choice>,
+    pub multi_select: bool,
+}
+
+/// One pending `question` tool call, projected from `snapshot.questions`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct QuestionView {
+    pub question_id: String,
+    pub input_hash: String,
+    pub questions: Vec<QuestionItem>,
+}
+
+impl QuestionView {
+    pub fn from_value(value: &Value) -> Option<Self> {
+        let input = value.get("input")?;
+        let questions = input
+            .get("questions")?
+            .as_array()?
+            .iter()
+            .filter_map(|item| {
+                Some(QuestionItem {
+                    question: item.get("question")?.as_str()?.to_string(),
+                    header: item
+                        .get("header")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    options: item
+                        .get("options")?
+                        .as_array()?
+                        .iter()
+                        .filter_map(|option| {
+                            Some(Choice {
+                                label: option.get("label")?.as_str()?.to_string(),
+                                description: option
+                                    .get("description")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string(),
+                            })
+                        })
+                        .collect(),
+                    multi_select: item
+                        .get("multiSelect")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                })
+            })
+            .collect::<Vec<_>>();
+        if questions.is_empty() {
+            return None;
+        }
+        Some(Self {
+            question_id: value.get("question_id")?.as_str()?.to_string(),
+            input_hash: value.get("input_hash")?.as_str()?.to_string(),
+            questions,
+        })
+    }
+
+    pub fn answer(&self, answers: Vec<Vec<String>>) -> Value {
+        serde_json::json!({
+            "question_id": self.question_id,
+            "input_hash": self.input_hash,
+            "answers": answers,
+        })
+    }
+
+    pub fn rejection(&self) -> Value {
+        serde_json::json!({
+            "question_id": self.question_id,
+            "input_hash": self.input_hash,
+        })
+    }
+}
+
+/// What the Session is doing and what it is waiting on, re-read from every
+/// snapshot. Action state (which option is highlighted) stays in the UI.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SessionState {
+    pub active_run: Option<String>,
+    pub pending: usize,
+    pub approvals: Vec<ApprovalView>,
+    pub questions: Vec<QuestionView>,
+}
+
+impl SessionState {
+    pub fn from_snapshot(snapshot: &Value) -> Self {
+        Self {
+            active_run: snapshot
+                .get("active_run")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            pending: snapshot
+                .get("pending")
+                .and_then(Value::as_array)
+                .map(Vec::len)
+                .unwrap_or(0),
+            approvals: snapshot
+                .get("approvals")
+                .and_then(Value::as_array)
+                .map(|items| items.iter().filter_map(ApprovalView::from_value).collect())
+                .unwrap_or_default(),
+            questions: snapshot
+                .get("questions")
+                .and_then(Value::as_array)
+                .map(|items| items.iter().filter_map(QuestionView::from_value).collect())
+                .unwrap_or_default(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolPart {
     pub id: String,
@@ -426,6 +593,58 @@ mod tests {
         let files = transcript.displays.get("call_1").expect("display files");
         assert_eq!(files[0].path, "src/lib.rs");
         assert_eq!(files[0].additions, 1);
+    }
+
+    #[test]
+    fn session_state_projects_run_status_and_blocked_requests() {
+        let snapshot = json!({
+            "session_id": "ses_a",
+            "active_run": "run-1",
+            "pending": [{"input_id": "in_1", "delivery": "steer"}],
+            "approvals": [{
+                "request_id": "run-1/call_1",
+                "tool": "bash",
+                "resource": "rm -rf build",
+                "input": {"command": "rm -rf build"},
+                "input_hash": "a".repeat(64),
+                "policy_revision": "rev-1",
+                "matcher": {"kind": "builtin"},
+                "expires_at_ms": 123
+            }, { "tool": "broken" }],
+            "questions": [{
+                "question_id": "run-1/call_2",
+                "input_hash": "b".repeat(64),
+                "input": {"questions": [{
+                    "question": "Proceed?",
+                    "header": "Confirm",
+                    "options": [{"label": "yes"}, {"label": "no", "description": "stop"}],
+                    "multiSelect": false
+                }], "timeout_ms": 60000}
+            }]
+        });
+        let state = SessionState::from_snapshot(&snapshot);
+        assert_eq!(state.active_run.as_deref(), Some("run-1"));
+        assert_eq!(state.pending, 1);
+        assert_eq!(state.approvals.len(), 1, "malformed approvals are skipped");
+        assert_eq!(state.approvals[0].tool, "bash");
+        assert_eq!(state.questions[0].questions[0].header, "Confirm");
+        assert_eq!(state.questions[0].questions[0].options[1].label, "no");
+        assert_eq!(
+            state.approvals[0].response("deny")["decision"],
+            "deny",
+            "the response carries the decision"
+        );
+        assert_eq!(
+            state.questions[0].answer(vec![vec!["yes".into()]])["answers"],
+            json!([["yes"]])
+        );
+        assert_eq!(state.questions[0].rejection()["input_hash"], "b".repeat(64));
+    }
+
+    #[test]
+    fn a_snapshot_without_blocking_state_is_idle() {
+        let state = SessionState::from_snapshot(&json!({"session_id": "ses_a"}));
+        assert_eq!(state, SessionState::default());
     }
 
     #[test]
