@@ -54,7 +54,13 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         continue_last: launch.continue_last,
         prompt: launch.prompt.clone(),
     };
-    let mut app = App::new(workspace.clone(), loaded.theme, config.attention, startup);
+    let mut app = App::new(
+        workspace.clone(),
+        loaded.theme,
+        loaded.catalog,
+        config.attention,
+        startup,
+    );
     let mut terminal = terminal::init().inspect_err(|_| terminal::restore())?;
     terminal::install_panic_hook();
     let (bus, mut events) = event::bus();

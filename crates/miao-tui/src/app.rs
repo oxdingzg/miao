@@ -72,12 +72,15 @@ pub struct App {
     zed_selection_key: Option<String>,
     clipboard_busy: bool,
     startup: Startup,
+    /// Built-in plus custom themes, in menu order.
+    themes: theme::Catalog,
 }
 
 impl App {
     pub fn new(
         workspace: PathBuf,
         theme: Theme,
+        themes: theme::Catalog,
         attention_config: crate::config::AttentionConfig,
         startup: Startup,
     ) -> Self {
@@ -114,6 +117,7 @@ impl App {
             zed_selection_key: None,
             clipboard_busy: false,
             startup,
+            themes,
         }
     }
 
@@ -394,7 +398,7 @@ impl App {
 
     fn open_theme(&mut self) {
         let current = self.shell.theme().name.clone();
-        self.open_dialog(Dialog::theme(&current));
+        self.open_dialog(Dialog::theme(&current, &self.themes));
     }
 
     fn open_sessions(&mut self) {
@@ -545,8 +549,9 @@ impl App {
     fn choose(&mut self, index: usize) {
         match self.dialog.take() {
             Some(Dialog::Theme(_)) => {
-                if let Some(name) = theme::names().get(index) {
-                    self.apply_theme(name);
+                let name = self.themes.names().get(index).map(|name| name.to_string());
+                if let Some(name) = name {
+                    self.apply_theme(&name);
                 }
             }
             Some(Dialog::Models(_)) => {
@@ -802,7 +807,7 @@ impl App {
     }
 
     fn apply_theme(&mut self, name: &str) {
-        let Some(palette) = theme::builtin(name) else {
+        let Some(palette) = self.themes.palette(name) else {
             return;
         };
         state::save_theme(name);
@@ -1170,6 +1175,7 @@ mod tests {
                 name: DEFAULT_THEME.to_string(),
                 palette,
             },
+            theme::Catalog::builtin(),
             crate::config::AttentionConfig::default(),
             startup,
         )

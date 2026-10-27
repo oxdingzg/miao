@@ -18,11 +18,11 @@
 | transcript 渲染 | 未做 | T3；T1 仅占位边框与说明文字 |
 | 右侧侧栏 | 未做 | T3+；T1 在宽度 ≥100 列时渲染占位侧栏 |
 | resize（SIGWINCH / ConPTY resize）自适应不崩 | 已对齐 | crossterm Resize 事件驱动重绘；pty 冒烟覆盖三平台 |
-| `.miao/tui.json` 主题名选择 | 有意偏离（基础版） | 内置 12 个主题名的基础色板（仅 dark 模式，取自 `packages/tui/src/theme/assets/*.json` 的 dark 侧）；34 主题全集与 light 模式后续切片补 |
-| `.miao/tui.json` 多文件合并（全局目录 → MIAO_TUI_CONFIG → 项目链，就近覆盖） | 有意偏离（基础版） | T1 只合并 workspace→root 的 `.miao/tui.json` 链（根优先，就近覆盖，对齐 TS 顺序语义）；全局配置目录与 `MIAO_TUI_CONFIG` 未做 |
+| `.miao/tui.json` 主题名选择 | 已对齐（dark 模式） | `BUILTIN_THEMES` 由 `packages/tui/src/theme/assets/*.json` 的 dark 侧生成，34 个内置主题全在（`every_typescript_theme_is_available` 守住名单）；light 模式与终端背景探测未做 |
+| `.miao/tui.json` 多文件合并（全局目录 → MIAO_TUI_CONFIG → 项目链，就近覆盖） | 已对齐 | `config::files` 是 attention 与 theme 共用的同一条链（全局目录 → `MIAO_TUI_CONFIG` → 项目根-first）；嵌套 `{"tui": {...}}` 按 TS 规则摊平，顶层字段优先 |
 | tui.json 为 JSONC（注释 / 尾逗号容忍） | 已对齐 | 本地剥离注释与尾逗号后 serde_json 解析（`src/theme.rs`） |
 | tui.json 未知字段忽略并记录、不崩 | 已对齐 | 未知字段记 warning 到 stderr（config 加载发生在进 raw mode 之前）；损坏文件整份跳过并记录，同 TS 的 catch→log 语义 |
-| 自定义主题 `themes/*.json` | 未做 | 后续切片 |
+| 自定义主题 `themes/*.json` | 已对齐（dark 模式） | `theme::custom_themes`：全局配置目录 + 向上每层 `.miao` 的 `themes/*.json`，主题名取文件名，按 TS 的扫描顺序后者覆盖前者；支持 `defs` 引用、`{dark, light}` 取 dark、ANSI 码、`#rgb`/`#rrggbb`(`aa`)；缺必需色或循环引用则整份跳过并告警；同名覆盖内置主题 |
 | keybinds 自定义覆盖 | 未做 | T1 键位固定 |
 | 鼠标捕获（TS 默认开启） | 未做 | T1 不启用 |
 | 光标样式 `cursor.style` | 未做 | 后续切片 |
