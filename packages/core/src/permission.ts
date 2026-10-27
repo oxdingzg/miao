@@ -107,6 +107,41 @@ export function merge(...rulesets: Permission.Ruleset[]): Permission.Ruleset {
   return rulesets.flat()
 }
 
+export interface DecideInput {
+  readonly actions: ReadonlyArray<string>
+  readonly resources: ReadonlyArray<string>
+  readonly explicit?: boolean
+  /**
+   * The resolved agent ruleset. Undefined means the agent declares no rules at
+   * all, which denies everything rather than falling through to ask.
+   */
+  readonly configured?: Permission.Ruleset
+  /** Project-level remembered approvals, evaluated after the configured rules. */
+  readonly saved?: Permission.Ruleset
+}
+
+/**
+ * The layered rule decision the permission service performs, pure so the
+ * engine's S6 golden corpus can pin it: a configured deny wins before saved
+ * approvals are consulted, otherwise the last matching rule decides and
+ * anything unresolved asks.
+ */
+export function decide(input: DecideInput): { effect: Permission.Effect; rules: Permission.Ruleset } {
+  const rules = (input.configured ?? missingAgentPermissions).filter(
+    (rule) => !input.explicit || rule.action !== "*",
+  )
+  if (denied(input.actions, input.resources, rules)) return { effect: "deny", rules }
+  const all = [...rules, ...(input.saved ?? [])]
+  const effects = input.resources.map((resource) => evaluate(input.actions, resource, all).effect)
+  if (effects.includes("deny")) return { effect: "deny", rules: all }
+  if (!effects.includes("ask")) return { effect: "allow", rules: all }
+  return { effect: "ask", rules: all }
+}
+
+function denied(names: ReadonlyArray<string>, resources: ReadonlyArray<string>, rules: Permission.Ruleset) {
+  return resources.some((resource) => evaluate(names, resource, rules).effect === "deny")
+}
+
 /**
  * An agent is read-only when its resolved ruleset denies both file edits and
  * shell commands, so it cannot race another agent for the same workspace.
@@ -181,10 +216,6 @@ const layer = Layer.effect(
       return [input.action, ...(input.aliases ?? [])]
     }
 
-    function denied(names: ReadonlyArray<string>, resources: ReadonlyArray<string>, rules: Permission.Ruleset) {
-      return resources.some((resource) => evaluate(names, resource, rules).effect === "deny")
-    }
-
     function relevant(input: AssertInput, rules: Permission.Ruleset) {
       const names = actions(input)
       return rules.filter((rule) => names.some((name) => Wildcard.match(name, rule.action)))
@@ -199,16 +230,19 @@ const layer = Layer.effect(
     })
 
     const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
-      const { rules: agentRules, mode } = yield* configured(input.sessionID, input.agent)
-      const rules = input.explicit ? agentRules.filter((rule) => rule.action !== "*") : agentRules
-      if (denied(actions(input), input.resources, rules)) return { effect: "deny" as const, rules }
-      const all = [...rules, ...(yield* savedRules())]
-      const effects = input.resources.map((resource) => evaluate(actions(input), resource, all).effect)
-      if (effects.includes("deny")) return { effect: "deny" as const, rules: all }
-      if (!effects.includes("ask")) return { effect: "allow" as const, rules: all }
+      const { rules, mode } = yield* configured(input.sessionID, input.agent)
+      const saved = yield* savedRules()
+      const decided = decide({
+        actions: actions(input),
+        resources: input.resources,
+        explicit: input.explicit,
+        configured: rules,
+        saved,
+      })
       // Auto mode settles asks the classifier proves safe; unknown and deny stay asks.
-      if (mode === "auto" && (yield* classify(input)) === "safe") return { effect: "allow" as const, rules: all }
-      return { effect: "ask" as const, rules: all }
+      if (decided.effect === "ask" && mode === "auto" && (yield* classify(input)) === "safe")
+        return { effect: "allow" as const, rules: decided.rules }
+      return decided
     })
 
     function request(input: AssertInput): Request {
