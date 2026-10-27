@@ -13,7 +13,9 @@ import { ProjectV2 } from "@miao/core/project"
 import { ProjectTable } from "@miao/core/project/sql"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
+import { SessionAdmission } from "@miao/core/session/admission"
 import { SessionHeal } from "@miao/core/session/heal"
+import { SessionInput } from "@miao/core/session/input"
 import { SessionInputTable } from "@miao/core/session/sql"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionTable } from "@miao/core/session/sql"
@@ -42,6 +44,10 @@ function fixture(slug: string) {
     const db = (yield* Database.Service).db
     const events = yield* EventV2.Service
     const fsService = yield* FSUtil.Service
+    const admission: SessionAdmission.Interface = {
+      admit: (input) => SessionInput.admit(db, events, input),
+      cancel: (input) => SessionInput.cancel(db, events, input),
+    }
     const insertProject = (id: ProjectV2.ID, worktree: AbsolutePath) =>
       db
         .insert(ProjectTable)
@@ -75,6 +81,7 @@ function fixture(slug: string) {
       db,
       events,
       fsService,
+      admission,
       insertProject,
       insertSession,
       sessionDirectory,
@@ -96,6 +103,7 @@ describe("SessionHeal", () => {
         db: env.db,
         events: env.events,
         fs: env.fsService,
+        admission: env.admission,
         sessionID: session,
         directory: env.missing,
         projectID: project,
@@ -125,6 +133,7 @@ describe("SessionHeal", () => {
         db: env.db,
         events: env.events,
         fs: env.fsService,
+        admission: env.admission,
         sessionID: session,
         directory: env.missing,
         projectID: project,
@@ -155,6 +164,7 @@ describe("SessionHeal", () => {
         db: env.db,
         events: env.events,
         fs: env.fsService,
+        admission: env.admission,
         sessionID: session,
         directory: env.checkout,
         projectID: project,
@@ -177,6 +187,7 @@ describe("SessionHeal", () => {
         db: env.db,
         events: env.events,
         fs: env.fsService,
+        admission: env.admission,
         sessionID: session,
         directory: env.missing,
         projectID: project,

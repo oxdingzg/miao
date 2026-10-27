@@ -24,6 +24,10 @@ export const ModelsCommand = effectCmd({
         describe: "use more verbose model output (includes metadata like costs)",
         type: "boolean",
       })
+      .option("all", {
+        describe: "list the whole catalog, marking models this channel cannot use",
+        type: "boolean",
+      })
       .option("refresh", {
         describe: "refresh the models cache from the catalog",
         type: "boolean",
@@ -40,12 +44,21 @@ export const ModelsCommand = effectCmd({
       // boot barrier the model list is empty (same as `debug v2`).
       yield* Deferred.await((yield* PluginV2.Service).booted)
       const models = yield* catalog.model.all()
-      const grouped = Map.groupBy(models, (model) => model.providerID)
+      // The default listing is what this channel can actually run: a provider
+      // appears once it has a credential or an integration connection. Listing
+      // the whole catalog by default offered ids like `opencode/*` that the TUI
+      // and `miao run` both reject.
+      const available = yield* catalog.model.available()
+      const usable = new Set(available.map((model) => `${model.providerID}/${model.id}`))
+      const listed = args.all ? models : available
+      const grouped = Map.groupBy(listed, (model) => model.providerID)
+      const providers = Map.groupBy(models, (model) => model.providerID)
 
       const print = (providerID: ProviderV2.ID, verbose?: boolean) => {
         const sorted = (grouped.get(providerID) ?? []).sort((a, b) => a.id.localeCompare(b.id))
         for (const model of sorted) {
           process.stdout.write(`${providerID}/${model.id}`)
+          if (!usable.has(`${providerID}/${model.id}`)) process.stdout.write(" (unavailable)")
           process.stdout.write(EOL)
           if (verbose) {
             process.stdout.write(JSON.stringify(model, null, 2))
@@ -56,7 +69,11 @@ export const ModelsCommand = effectCmd({
 
       if (args.provider) {
         const providerID = ProviderV2.ID.make(args.provider)
-        if (!grouped.has(providerID)) return yield* fail(`Provider not found: ${args.provider}`)
+        if (!providers.has(providerID)) return yield* fail(`Provider not found: ${args.provider}`)
+        if (!grouped.has(providerID))
+          return yield* fail(
+            `Provider ${args.provider} is not available here; run \`miao models --all ${args.provider}\` to list its catalog models`,
+          )
         print(providerID, args.verbose)
         return
       }

@@ -28,11 +28,17 @@ has a key in the environment is also picked up without `login`.
 ## List and select models
 
 ```bash
-miao models                     # every provider/model your build knows
+miao models                     # models this channel can run (credential or login present)
 miao models anthropic           # filter to one provider
 miao models --verbose           # include metadata such as costs
 miao models --refresh           # refresh the catalog from mtty.dev first
+miao models --all               # whole catalog, marking what this channel cannot run
 ```
+
+Providers without a credential and models the build disables are left out by
+default, because the TUI and `miao run` reject them. `--all` lists them anyway
+and appends `(unavailable)`, which is the way to browse a provider's model ids
+before logging in.
 
 Inside the TUI, `/model` or `ctrl+x m` switches the model; the last model used
 per agent is remembered. A session without a chosen model uses the `model`
@@ -144,7 +150,8 @@ wins**. The supported action is `provider.use`; `resource` accepts wildcard patt
 - An authentication error names the fix, usually `miao auth login <provider>`;
   re-run `miao providers login` if the stored token expired.
 - A provider that shows no models is usually missing credentials or disabled by
-  policy; `miao models <provider> --verbose` shows what was resolved.
+  policy; `miao models <provider> --all --verbose` shows what the catalog holds
+  and `miao models <provider> --verbose` shows what resolves once it is usable.
 
 See the [guide](guide.en.md) for configuration precedence and the
 [agent workflow comparison](agent-comparison.en.md) for how the provider layer

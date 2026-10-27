@@ -1,8 +1,10 @@
 import { createRoutes as createAssembly, context as assemblyContext, HttpApiAssembly } from "@miao/server/assembly"
 import type { CorsOptions } from "@miao/server/cors"
 import type { RuntimeIdentity } from "@miao/core/runtime/identity"
+import { SessionAdmission } from "@miao/core/session/admission"
 import { memoMap } from "@miao/core/effect/memo-map"
 import { HttpRouter } from "effect/unstable/http"
+import { AdmissionEngine } from "@/engine/admission"
 import { lazy } from "@/util/lazy"
 import { ServerAuth } from "@/server/auth"
 import { Extensions } from "./extensions"
@@ -18,6 +20,9 @@ export function createRoutes(corsOptions?: CorsOptions, runtime?: RuntimeIdentit
     runtime,
     auth: ServerAuth.Config.layer,
     extensions: Extensions.layer,
+    // S2: every Session admits through the engine inbox; Core's default TS
+    // writer stays bound in compositions that do not pass this replacement.
+    replacements: [[SessionAdmission.node, AdmissionEngine.node]],
   })
 }
 

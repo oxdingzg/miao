@@ -514,12 +514,14 @@ export class EngineSession {
     publish: EnginePublish,
     pricing?: EnginePricing,
     onCredentialExpired?: CredentialExpiredTrigger,
+    onEngineEvent?: (event: EngineEvent) => void,
   ) {
     this.#client = client
     this.#translator = new EngineTranslator(publish, pricing)
     this.#onCredentialExpired = onCredentialExpired
     client.onEvent((event) => {
       this.#translator.dispatch(event)
+      onEngineEvent?.(event)
       // Live events only: a replayed failure must never re-trigger a refresh.
       if (
         event.kind === "message.committed" &&
