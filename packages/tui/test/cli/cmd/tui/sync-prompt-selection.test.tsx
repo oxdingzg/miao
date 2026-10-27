@@ -16,6 +16,8 @@ async function sendWith(selection: { agent: string; providerID: string; modelID:
       .then((body) => {
         calls.push({ path: url.pathname, body })
         if (url.pathname.endsWith("/prompt")) return json({ data: { admittedSeq: 1 } })
+        if (url.pathname.endsWith("/status")) return json({ data: { type: "idle" } })
+        if (url.pathname.endsWith("/inputs")) return json({ data: [], hasMore: false })
         return new Response(null, { status: 204 })
       })
   }, tmp.path)
@@ -41,11 +43,16 @@ async function sendWith(selection: { agent: string; providerID: string; modelID:
   }
 }
 
+// Admission refreshes the status and the pending inbox instead of re-reading
+// the transcript, so a send ends on those two reads. The selection still has
+// to reach the server before the prompt itself.
 test("a prompt applies the model picked after the session started before sending", async () => {
   const calls = await sendWith({ agent: "build", providerID: "tencent-token-plan", modelID: "glm-5.3-flash" })
   expect(calls.map((call) => call.path)).toEqual([
     `/api/session/${sessionID}/model`,
     `/api/session/${sessionID}/prompt`,
+    `/api/session/${sessionID}/inputs`,
+    `/api/session/${sessionID}/status`,
   ])
   expect(calls[0].body).toMatchObject({ model: { providerID: "tencent-token-plan", id: "glm-5.3-flash" } })
 })
@@ -54,8 +61,9 @@ test("a prompt switches the agent only when it differs from the session", async 
   const calls = await sendWith({ agent: "plan", providerID: "opencode", modelID: "mimo-v2.6-flash-free" })
   expect(calls.map((call) => call.path)).toEqual([
     `/api/session/${sessionID}/agent`,
-    `/api/session/${sessionID}/model`,
     `/api/session/${sessionID}/prompt`,
+    `/api/session/${sessionID}/inputs`,
+    `/api/session/${sessionID}/status`,
   ])
   expect(calls[0].body).toMatchObject({ agent: "plan" })
 })
