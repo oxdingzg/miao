@@ -19,6 +19,7 @@ import type { CorsOptions } from "@miao/server/cors"
 import type { RuntimeIdentity } from "@miao/core/runtime/identity"
 import { lazy } from "@/util/lazy"
 import { NativeEngineNode } from "@/engine/native-engine"
+import { admissionReplacements } from "@/engine/admission-binding"
 
 // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -143,8 +144,15 @@ function listenerLayer(opts: ListenOptions, port: number) {
   const native = NativeEngineNode.configured()
     ? base.pipe(
         Layer.provideMerge(
+          // The native node resolves LocationServiceMap for its own session
+          // work, so it must describe the same location graph as the routes —
+          // otherwise it builds a second one and its permissions are answered
+          // in a graph no reply route can reach.
           Layer.fresh(
-            AppNodeBuilder.build(NativeEngineNode.node, [[SessionExecution.node, SessionExecutionLocal.node]]),
+            AppNodeBuilder.build(NativeEngineNode.node, [
+              ...admissionReplacements,
+              [SessionExecution.node, SessionExecutionLocal.node],
+            ]),
           ),
         ),
       )
