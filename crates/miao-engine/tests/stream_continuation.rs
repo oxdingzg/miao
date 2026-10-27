@@ -354,13 +354,15 @@ async fn transport_internal_steers_do_not_refill_the_json_correction_budget() {
         )
         .await;
         let events = store.events("s", 0, 1000).await.unwrap();
+        // Exhausting the correction budget pauses the run cleanly; the
+        // transport continuation that ran in between must not have refilled it.
         assert_eq!(
             events
                 .iter()
                 .find(|event| event.kind == "run.finished")
                 .unwrap()
                 .data["reason"],
-            "failed"
+            "completed"
         );
         assert_eq!(
             events
