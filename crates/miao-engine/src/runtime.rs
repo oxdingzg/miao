@@ -2255,7 +2255,10 @@ command: None,
                     } else {
                         let prepared = inner.tools.prepare(name, block_input).await;
                         match prepared {
-                            Err(error) => (json!({"error":error.to_string()}), true),
+                            Err(error) => (
+                                json!({"error":inner.tools.rejection(name, &block["input"], &error)}),
+                                true,
+                            ),
                             Ok(prepared) => {
                                 let allowed = authorize(
                                     inner,
