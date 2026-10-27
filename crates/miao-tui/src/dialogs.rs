@@ -210,8 +210,61 @@ pub enum Dialog {
     Stash(ListDialog),
     Status(ListDialog),
     Debug(ListDialog),
+    Help(ListDialog),
+    Palette(PaletteDialog),
     Rename(RenameDialog),
     Confirm(ConfirmDialog),
+}
+
+/// A filterable list of commands. The filter owns the keyboard while the
+/// palette is open; `Enter` hands the row's id back as the chosen command.
+pub struct PaletteDialog {
+    pub input: Editor,
+    pub rows: Vec<Row>,
+    /// Indices into `rows` that match the filter, in display order.
+    pub visible: Vec<usize>,
+    pub selected: usize,
+}
+
+impl PaletteDialog {
+    pub fn new(rows: Vec<Row>) -> Self {
+        let visible = (0..rows.len()).collect();
+        Self {
+            input: Editor::new(),
+            rows,
+            visible,
+            selected: 0,
+        }
+    }
+
+    fn refilter(&mut self) {
+        let needle = self.input.text().to_lowercase();
+        self.visible = self
+            .rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| {
+                row.label.to_lowercase().contains(&needle)
+                    || row.id.to_lowercase().contains(&needle)
+            })
+            .map(|(index, _)| index)
+            .collect();
+        self.selected = 0;
+    }
+
+    fn move_cursor(&mut self, delta: i32) {
+        if self.visible.is_empty() {
+            return;
+        }
+        let next = self.selected as i32 + delta;
+        self.selected = next.clamp(0, self.visible.len() as i32 - 1) as usize;
+    }
+
+    fn current(&self) -> Option<&Row> {
+        self.visible
+            .get(self.selected)
+            .and_then(|index| self.rows.get(*index))
+    }
 }
 
 /// The rename dialog keeps its target beside the editor so a submit needs no
@@ -321,6 +374,19 @@ impl Dialog {
         ))
     }
 
+    pub fn help(rows: Vec<Row>) -> Self {
+        Dialog::Help(ListDialog::new(
+            "help",
+            rows,
+            ListKind::ReadOnly,
+            "esc close",
+        ))
+    }
+
+    pub fn command_palette(rows: Vec<Row>) -> Self {
+        Dialog::Palette(PaletteDialog::new(rows))
+    }
+
     pub fn rename(session_id: &str, title: &str) -> Self {
         let mut input = Editor::new();
         input.set_text(title);
@@ -350,7 +416,9 @@ impl Dialog {
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
             | Dialog::Status(list)
-            | Dialog::Debug(list) => handle_list_key(list, key),
+            | Dialog::Debug(list)
+            | Dialog::Help(list) => handle_list_key(list, key),
+            Dialog::Palette(palette) => handle_palette_key(palette, key),
             Dialog::Rename(rename) => handle_rename_key(&mut rename.input, key),
             Dialog::Confirm(confirm) => handle_confirm_key(confirm, key),
         }
@@ -364,7 +432,9 @@ impl Dialog {
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
             | Dialog::Status(list)
-            | Dialog::Debug(list) => list.title,
+            | Dialog::Debug(list)
+            | Dialog::Help(list) => list.title,
+            Dialog::Palette(_) => "commands",
             Dialog::Rename(_) => "rename session",
             Dialog::Confirm(confirm) => confirm.title,
         }
@@ -378,7 +448,8 @@ impl Dialog {
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
             | Dialog::Status(list)
-            | Dialog::Debug(list) => Some(list),
+            | Dialog::Debug(list)
+            | Dialog::Help(list) => Some(list),
             _ => None,
         }
     }
@@ -391,7 +462,8 @@ impl Dialog {
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
             | Dialog::Status(list)
-            | Dialog::Debug(list) => Some(list),
+            | Dialog::Debug(list)
+            | Dialog::Help(list) => Some(list),
             _ => None,
         }
     }
@@ -417,7 +489,18 @@ impl Dialog {
         }
     }
 
+    pub fn palette(&self) -> Option<&PaletteDialog> {
+        match self {
+            Dialog::Palette(palette) => Some(palette),
+            _ => None,
+        }
+    }
+
     pub fn height(&self) -> u16 {
+        if let Some(palette) = self.palette() {
+            // Filter line, one row even when nothing matches, and the border.
+            return (palette.visible.len().clamp(1, 12) + 3) as u16;
+        }
         if let Some(list) = self.list() {
             return (list.rows.len().min(14) + 3) as u16;
         }
@@ -441,6 +524,8 @@ pub enum Action {
     /// Take one stashed prompt back into the composer.
     StashRestore(usize),
     StashRemove(usize),
+    /// Run the command the palette selected, by its id.
+    Command(String),
 }
 
 fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
@@ -482,6 +567,89 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
         _ => {}
     }
     Action::None
+}
+
+fn handle_palette_key(palette: &mut PaletteDialog, key: KeyEvent) -> Action {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let alt = key.modifiers.contains(KeyModifiers::ALT);
+    match key.code {
+        KeyCode::Esc => Action::Close,
+        KeyCode::Up => {
+            palette.move_cursor(-1);
+            Action::None
+        }
+        KeyCode::Down => {
+            palette.move_cursor(1);
+            Action::None
+        }
+        KeyCode::Char('n') if ctrl => {
+            palette.move_cursor(1);
+            Action::None
+        }
+        KeyCode::Char('p') if ctrl => {
+            palette.move_cursor(-1);
+            Action::None
+        }
+        KeyCode::Enter => match palette.current() {
+            Some(row) => Action::Command(row.id.clone()),
+            None => Action::None,
+        },
+        KeyCode::Backspace if ctrl || alt => {
+            palette.input.delete_word_backward();
+            palette.refilter();
+            Action::None
+        }
+        KeyCode::Backspace => {
+            palette.input.backspace();
+            palette.refilter();
+            Action::None
+        }
+        KeyCode::Delete => {
+            palette.input.delete_forward();
+            palette.refilter();
+            Action::None
+        }
+        KeyCode::Left => {
+            palette.input.move_left();
+            Action::None
+        }
+        KeyCode::Right => {
+            palette.input.move_right();
+            Action::None
+        }
+        KeyCode::Home => {
+            palette.input.move_line_start();
+            Action::None
+        }
+        KeyCode::End => {
+            palette.input.move_line_end();
+            Action::None
+        }
+        KeyCode::Char('a') if ctrl => {
+            palette.input.move_line_start();
+            Action::None
+        }
+        KeyCode::Char('e') if ctrl => {
+            palette.input.move_line_end();
+            Action::None
+        }
+        KeyCode::Char('u') if ctrl => {
+            palette.input.delete_to_line_start();
+            palette.refilter();
+            Action::None
+        }
+        KeyCode::Char('w') if ctrl => {
+            palette.input.delete_word_backward();
+            palette.refilter();
+            Action::None
+        }
+        KeyCode::Char(c) if !ctrl && !alt => {
+            palette.input.insert_char(c);
+            palette.refilter();
+            Action::None
+        }
+        _ => Action::None,
+    }
 }
 
 fn handle_rename_key(input: &mut Editor, key: KeyEvent) -> Action {
@@ -681,6 +849,52 @@ mod tests {
             dialog.handle_key(key(KeyCode::Enter)),
             Action::Close
         ));
+    }
+
+    #[test]
+    fn the_palette_filters_as_you_type_and_returns_the_chosen_id() {
+        let mut dialog = Dialog::command_palette(vec![
+            Row {
+                id: "model".into(),
+                label: "Select a model".into(),
+                detail: "<leader>m".into(),
+            },
+            Row {
+                id: "theme".into(),
+                label: "Select a theme".into(),
+                detail: "<leader>t".into(),
+            },
+        ]);
+        for c in "theme".chars() {
+            dialog.handle_key(key(KeyCode::Char(c)));
+        }
+        let list = dialog.palette().expect("palette");
+        assert_eq!(list.visible.len(), 1);
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Enter)),
+            Action::Command(id) if id == "theme"
+        ));
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Esc)),
+            Action::Close
+        ));
+    }
+
+    #[test]
+    fn backspace_widens_the_palette_filter_again() {
+        let mut dialog = Dialog::command_palette(vec![Row {
+            id: "model".into(),
+            label: "Select a model".into(),
+            detail: String::new(),
+        }]);
+        dialog.handle_key(key(KeyCode::Char('z')));
+        assert!(dialog.palette().expect("palette").visible.is_empty());
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Enter)),
+            Action::None
+        ));
+        dialog.handle_key(key(KeyCode::Backspace));
+        assert_eq!(dialog.palette().expect("palette").visible.len(), 1);
     }
 
     #[test]
