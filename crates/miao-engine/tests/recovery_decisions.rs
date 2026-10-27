@@ -302,3 +302,69 @@ async fn admission_conflict_rolls_back_the_decision_and_leaves_unknown_unresolve
         .iter()
         .any(|event| event.kind == "tool.recovery.resolved"));
 }
+
+#[tokio::test]
+async fn drain_time_reconciliation_preserves_unknown_listing_across_reopen_and_masks_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("engine.db");
+    let store = Store::open(&path).await.unwrap();
+    seed(&store, dir.path()).await;
+    store
+        .tool_dispatch(
+            "s",
+            "interrupted",
+            "call-secret",
+            "write",
+            json!({"api_key":"sk-supersecretvalue123","command":"publish"}),
+        )
+        .await
+        .unwrap();
+    // Drain-time reconciliation, as the Runtime drain does before opening a run.
+    store.recover_session(Some("s")).await.unwrap();
+    assert_eq!(
+        store
+            .events("s", 0, 100)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind == "tool.dispatched")
+            .count(),
+        2
+    );
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    for id in ["call", "call-secret"] {
+        assert_eq!(
+            connection
+                .query_row("SELECT state FROM engine_tool WHERE id=?1", [&id], |row| row
+                    .get::<_, String>(0))
+                .unwrap(),
+            "unknown"
+        );
+    }
+    drop(connection);
+    let listed = store.recoveries("s", "").await.unwrap();
+    assert_eq!(listed["calls"].as_array().unwrap().len(), 2);
+    assert!(listed["calls"][0]["resolution"].is_null());
+    assert!(listed["calls"][1]["resolution"].is_null());
+    let inspected = store.recovery_get("s", "call-secret").await.unwrap();
+    assert_eq!(inspected["origin"], "model");
+    assert_eq!(inspected["input"]["api_key"], json!("[redacted:22]"));
+    assert_eq!(inspected["input"]["command"], "publish");
+    assert!(matches!(
+        store.recovery_get("s", "missing").await,
+        Err(Error::Invalid(_))
+    ));
+    drop(store);
+    let store = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            match Store::open(&path).await {
+                Ok(store) => break store,
+                Err(Error::Busy) => tokio::task::yield_now().await,
+                Err(error) => panic!("unexpected reopen failure: {error}"),
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(store.recoveries("s", "").await.unwrap(), listed);
+}
