@@ -11,6 +11,20 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-10-27
+
+### Added
+- **tui**: add the command palette, slash commands and templates (Phase 3 T8) (#1532) (`0bc332c499`)
+- **tui**: show status, switch accounts and stash prompts (Phase 3 T7) (#1531) (`cefe189484`)
+- **tui**: open model, theme and session dialogs (Phase 3 T6) (#1540) (`d67bb3376d`)
+- **tui**: interrupt runs and answer approvals (Phase 3 T5) (#1529) (`101980af9f`)
+- **tui**: compose and admit prompts (Phase 3 T4) (#1528) (`3d9765b56e`)
+- **tui**: read Sessions from the engine (Phase 3 T3) (#1527) (`1ca89e64ba`)
+
+### Fixed
+- **engine**: warm a Location's native owner when the listener starts (#1542) (`f111730d79`)
+- **tui**: keep syntax colors in the transcript under the native handle budget (#1541) (`32fafb9ebf`)
+
 ## [0.3.11] - 2026-10-27
 
 ### Added
