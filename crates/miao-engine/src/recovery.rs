@@ -70,11 +70,10 @@ fn redact(value: &mut Value) {
             }
         }
         Value::Array(items) => items.iter_mut().for_each(redact),
-        Value::String(text) => {
-            if credential_like(text) {
-                *text = mask(text);
-            }
+        Value::String(text) if credential_like(text) => {
+            *text = mask(text);
         }
+        Value::String(_) => {}
         _ => {}
     }
 }
