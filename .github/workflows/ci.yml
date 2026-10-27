@@ -15,7 +15,9 @@ permissions:
   checks: write
 jobs:
   policy:
-    runs-on: ubuntu-latest
+    # Pinned until the Ubuntu 26 runner migration settles; the trailing image
+    # drift showed up as annotation noise and shifting performance baselines.
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       engine: ${{ steps.paths.outputs.engine }}
@@ -98,7 +100,7 @@ jobs:
     name: ci-gate
     if: always()
     needs: [policy, unit, typecheck, engine, tui, native, blackbox, e2e, remote, ios, storybook, install, nix]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5

@@ -1,5 +1,17 @@
 # Test Fixtures Guide
 
+## Unit vs Integration Runs
+
+The default `bun run test` (and the CI unit job) runs only pure unit tests;
+`--path-ignore-patterns` excludes `test/engine/**` and `test/acp/**`. Those
+two trees are the integration suites: their tests spawn real processes
+(the `miao-engine` binary behind `MIAO_ENGINE_BIN`, the `engine-fake` wire
+stand-in, or a real `miao serve`). Run them file by file with
+`bun run test:integration` — one bun process per file, 300s per-test timeout,
+one retry in a fresh process, and orphan-process/temp-dir reaping between
+files. New integration tests belong in those two trees; a test that only
+needs the fixtures below stays in the unit run.
+
 ## Temporary Directory Fixture
 
 The `tmpdir` function in `fixture/fixture.ts` creates temporary directories for tests with automatic cleanup.

@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 30
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         shell: bash
@@ -85,6 +85,47 @@ jobs:
       - name: Check generated client
         working-directory: packages/client
         run: bun run check:generated
+
+  integration-tests:
+    # Engine and ACP suites spawn real processes (miao-engine, the engine-fake
+    # wire stand-in, `miao serve`), so they must not share the unit job's
+    # single bun process: leaked fixtures there time out the files scheduled
+    # last. The runner executes one bun process per file with its own timeout
+    # budget, one retry in a fresh process, and reaps orphan engines and temp
+    # dirs between files.
+    name: integration tests (linux)
+    timeout-minutes: 45
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/miao-engine
+
+      - name: Build engine
+        working-directory: crates/miao-engine
+        run: cargo build --locked --bin miao-engine
+
+      - name: Run integration suites
+        working-directory: packages/miao
+        env:
+          MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine
+        timeout-minutes: 40
+        run: bun run test:integration
 
   # The Windows suite has known failures tracked in specs/ci-windows.md, so it is
   # not a merge gate. Its setup dominates the run (~6 minutes), so it stays off
@@ -167,9 +208,9 @@ jobs:
 
   unit:
     name: unit (linux)
-    needs: [changes, unit-tests, window-runtime-windows]
+    needs: [changes, unit-tests, integration-tests, window-runtime-windows]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Enforce required results, including intentionally skipped checks
@@ -181,8 +222,10 @@ jobs:
           # manual dispatch, so its result must be `skipped` everywhere else.
           WINDOWS_RUNS: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
           UNIT: ${{ needs.unit-tests.result }}
+          INTEGRATION: ${{ needs.integration-tests.result }}
           RUNTIME: ${{ needs.window-runtime-windows.result }}
         run: |
           test "$CHANGES" = success
           if [ "$CODE" = true ]; then test "$UNIT" = success; else test "$UNIT" = skipped; fi
+          if [ "$CODE" = true ]; then test "$INTEGRATION" = success; else test "$INTEGRATION" = skipped; fi
           if [ "$WINDOWS" = true ] && [ "$WINDOWS_RUNS" = true ]; then test "$RUNTIME" = success; else test "$RUNTIME" = skipped; fi

@@ -184,6 +184,7 @@ const table = sqliteTable("session", {
 - Avoid mocks as much as possible, you shouldn't be using globalThis.\* at all unless it's the only option.
 - Test actual implementation, do not duplicate logic into tests
 - Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/miao`.
+- `packages/miao` splits its suites: `bun run test` keeps only pure unit tests, while everything that spawns a process (`miao-engine`, the engine-fake wire stand-in, a real `miao serve`) lives under `test/engine` and `test/acp` and runs one file per bun process via `bun run test:integration` (`script/test-integration.sh`), which gives each file its own timeout, one fresh-process retry, and reaps orphan engines and temp dirs between files. Set `MIAO_ENGINE_BIN` to a real engine binary, otherwise the engine-binary files skip themselves.
 
 ## Type Checking
 

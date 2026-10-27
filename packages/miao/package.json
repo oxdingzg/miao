@@ -7,7 +7,8 @@
   "private": true,
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "test": "bun test --timeout 30000 --only-failures",
+    "test": "bun test --timeout 30000 --only-failures --path-ignore-patterns \"test/engine/**\" --path-ignore-patterns \"test/acp/**\"",
+    "test:integration": "bash ../../script/test-integration.sh",
     "bench:test": "bun run script/bench-test-suite.ts",
     "profile:test": "bun run script/profile-test-files.ts",
     "build": "bun run script/build.ts",
