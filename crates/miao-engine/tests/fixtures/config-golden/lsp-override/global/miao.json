@@ -1,0 +1,7 @@
+{
+  "lsp": {
+    "gopls": { "command": ["/custom/gopls", "-remote"], "env": { "GOFLAGS": "-tags=x" }, "initialization": { "settings": {} } },
+    "clangd": { "disabled": true },
+    "tailwind": { "command": ["tw-ls"], "extensions": [".html"] }
+  }
+}

@@ -141,8 +141,18 @@ pub fn documents(
 /// objects merge recursively. Arrays and scalars replace wholesale, matching the
 /// product's whole-key replacement rule for a config section.
 pub fn merge(documents: &[(std::path::PathBuf, serde_json::Value)]) -> serde_json::Value {
+    merge_values(
+        &documents
+            .iter()
+            .map(|(_, value)| value.clone())
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// Merge raw document values in order under the same rules as [`merge`].
+pub fn merge_values(documents: &[serde_json::Value]) -> serde_json::Value {
     let mut merged = serde_json::Value::Object(serde_json::Map::new());
-    for (_, value) in documents {
+    for value in documents {
         merge_into(&mut merged, value);
     }
     merged

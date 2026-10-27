@@ -22,7 +22,9 @@ const local = Schema.decodeUnknownSync(ConfigMCP.Info)({
 test("shared MCP attachment requires explicit native workspace authority", async () => {
   await using tmp = await tmpdir()
   const options = { binary: "unused", model: "unused", db: "unused", workspace: tmp.path, mcpSettings: local }
-  expect(prepareMcpConfig(options)).toBeUndefined()
+  // Without a policy file the engine derives the product policy, which always
+  // opens workspace MCP, so the attachment proceeds on that authority.
+  expect(prepareMcpConfig(options)).toBeDefined()
   const policyFile = path.join(tmp.path, "policy.json")
   await Bun.write(policyFile, JSON.stringify({ mode: "workspace", allow_mcp: false }))
   expect(prepareMcpConfig({ ...options, policyFile })).toBeUndefined()
