@@ -299,7 +299,8 @@ export const TuiThreadCommand = cmd({
       // close-other-windows message (#280) instead of silently joining an
       // older execution build.
       const owned = external ? undefined : await RuntimeHost.start(DatabaseFile.path())
-      const listener = external ? await Server.listen(network) : undefined
+      // The first prompt in this window creates its Session in this directory.
+      const listener = external ? await Server.listen({ ...network, prewarm: cwd }) : undefined
       const reload = () => {
         void (async () => {
           // The server resolves location-scoped services directly, so

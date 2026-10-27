@@ -535,6 +535,12 @@ pub enum Command {
     PermissionEvaluate {
         request: crate::permission_rules::Request,
     },
+    /// Project the product's saved "always allow" rules into the engine store
+    /// (S6 step 2). Idempotent by rule digest; scoped to one workspace.
+    PermissionSavedProject {
+        workspace: String,
+        rules: Vec<crate::permission_rules::Rule>,
+    },
     Approve {
         session_id: String,
         response: Response,

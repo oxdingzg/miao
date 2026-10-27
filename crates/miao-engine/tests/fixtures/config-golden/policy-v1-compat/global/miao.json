@@ -1,0 +1,7 @@
+{
+  "tools": { "bash": true, "write": false },
+  "permission": { "edit": "ask" },
+  "small_model": "anthropic/claude-haiku",
+  "snapshot": true,
+  "sandbox": { "mode": "off" }
+}
