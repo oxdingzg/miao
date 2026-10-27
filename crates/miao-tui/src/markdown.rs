@@ -3,12 +3,14 @@
 //! The TUI is a reading surface: it needs the document structure and emphasis
 //! the model writes, not a full CommonMark parser. Anything unrecognized falls
 //! back to plain text, so no content is dropped. TS renders through opentui's
-//! markdown widget; this is the same reading shape without the syntax layer.
+//! markdown widget; this is the same reading shape, with its own code-block
+//! highlighter.
 
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
+use crate::highlight::Highlighter;
 use crate::theme::Theme;
 
 /// Render a markdown document as styled transcript lines.
@@ -114,6 +116,7 @@ fn push_code(
         Style::new().fg(palette.text_muted),
     )));
     let closing = fence.to_string().repeat(3);
+    let mut highlighter = Highlighter::new(&info, palette);
     let mut index = start + 1;
     while index < source.len() {
         let line = source[index];
@@ -124,10 +127,9 @@ fn push_code(
             )));
             return index + 1;
         }
-        out.push(Line::from(vec![
-            Span::styled("  │ ", Style::new().fg(palette.border)),
-            Span::styled(line.to_string(), Style::new().fg(palette.text)),
-        ]));
+        let mut spans = vec![Span::styled("  │ ", Style::new().fg(palette.border))];
+        spans.extend(highlighter.line(line));
+        out.push(Line::from(spans));
         index += 1;
     }
     // An unterminated fence is a half-written document, not an error; show its
@@ -476,6 +478,31 @@ mod tests {
         assert!(body.contains(&"  │   *not emphasis*".to_string()));
         assert_eq!(lines[0].spans[0].content.as_ref(), "before");
         assert_eq!(body.last().map(String::as_str), Some("after"));
+    }
+
+    #[test]
+    fn a_fence_is_highlighted_by_its_language() {
+        let lines = lines("```rust\nlet x = 1; // note\n```", &theme());
+        let body = &lines[1];
+        assert_eq!(text(body), "  │ let x = 1; // note");
+        let colors: Vec<_> = body.spans.iter().map(|span| span.style.fg).collect();
+        assert!(
+            colors.contains(&Some(theme().palette.secondary)),
+            "{colors:?}"
+        );
+        assert!(
+            colors.contains(&Some(theme().palette.text_muted)),
+            "{colors:?}"
+        );
+    }
+
+    #[test]
+    fn a_fence_without_a_language_stays_plain() {
+        let lines = lines("```\nlet x = 1; // note\n```", &theme());
+        let body = &lines[1];
+        assert_eq!(text(body), "  │ let x = 1; // note");
+        assert_eq!(body.spans.len(), 2);
+        assert_eq!(body.spans[1].style.fg, Some(theme().palette.text));
     }
 
     #[test]

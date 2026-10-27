@@ -5,6 +5,7 @@ pub mod dialogs;
 pub mod editor;
 pub mod engine;
 pub mod event;
+pub mod highlight;
 pub mod input;
 pub mod keybinds;
 pub mod markdown;
