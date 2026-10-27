@@ -1,10 +1,24 @@
 use crossterm::event::Event as TerminalEvent;
 use crossterm::event::KeyEvent;
 
+use crate::session::{SessionSummary, Transcript};
+
 #[derive(Debug)]
 pub enum AppEvent {
     Key(KeyEvent),
-    Resize { width: u16, height: u16 },
+    Resize {
+        width: u16,
+        height: u16,
+    },
+    /// The home list, already filtered and ordered by the engine task.
+    Sessions(Vec<SessionSummary>),
+    /// A fresh projection of the open Session.
+    SessionOpened {
+        summary: Option<SessionSummary>,
+        transcript: Box<Transcript>,
+    },
+    /// A terminal engine failure; the task stops after sending it.
+    EngineFailure(String),
 }
 
 #[derive(Clone)]
