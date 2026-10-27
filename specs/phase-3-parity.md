@@ -45,3 +45,89 @@
 | 显式 `close` 走 `shutdown` 帧，1s 内不退再 kill；不报终态失败 | 已对齐 | 与 TS 的 graceful shutdown 顺序一致 |
 | `initialize` / `admit` / `cancel` / `approve` / `answer_question` / `history` / `snapshot` 便捷方法 | 已对齐 | 参数形状按引擎 `Command` 的 serde 字段名 |
 | 录制 transcript 逐字段、按 seq 序到达 TUI | 已对齐 | `tests/fixtures/events.json` 收录 `bridge.ts` 翻译的 committed 事件（session.initialized → run.finished 共 11 条）；`tests/transport.rs` 断言 session_id/seq/kind/data/recorded_at_ms 全等且 cursor 落在末条 |
+
+## T3 只读会话视图（home + transcript）
+
+| 行为 | 状态 | 备注 |
+|---|---|---|
+| home 列表：root、未归档、按 updated_at_ms 降序，同值时按 id | 已对齐 | `session.rs:home_rows`；引擎 `sessions` 返回裸 id 数组，逐条 `snapshot(metadata_only)` 汇总 |
+| 列表行：标题（无标题显示 untitled）、相对更新时间、目录名、选中标记 | 已对齐 | `pane.rs:Home::render`；相对时间 just now / Nm / Nh / Nd |
+| 空列表与错误提示 | 已对齐 | `pane.rs:Home::render`（`notice` 优先） |
+| 打开会话：全量 `snapshot` + `events` 分页回放 + `subscribe(cursor)` | 已对齐 | `engine.rs:open_session/project`；events 每页 100 条，按 `seq > after` 取 |
+| transcript：user `❯` 前缀、assistant 的 agent·model 头、text、thinking 字符数折叠、工具状态图标与输出前 8 行、diff 前 12 行 | 有意偏离（文本近似） | markdown 与工具专用渲染在 T9；此处只做纯文本陈列 |
+| `tool.completed` 的 display diff 按 call_id 关联，刷新时保留 | 已对齐 | 快照不含 diff，`Opened.displays` 跨投影携带 |
+| 侧栏：会话标题、目录、更新时间（宽度 ≥100 列时显示） | 已对齐 | `pane.rs:SidebarPane` |
+| 自动跟随尾部；手动滚动后脱离跟随 | 已对齐 | `TranscriptPane.follow` |
+| PageUp/PageDown 与 Ctrl+Alt+Y/E 滚动 | 已对齐 | 每次 5 行；逐行/半页细粒度键位未复刻 |
+
+## T4 输入编辑器
+
+| 行为 | 状态 | 备注 |
+|---|---|---|
+| 多行编辑，按显示列（CJK 双宽、tab=4）定位光标 | 已对齐 | `editor.rs` 单测覆盖 CJK、emoji、宽字符与 tab |
+| Enter 提交；Shift/Alt/Ctrl+Enter 与 Ctrl+J 换行 | 已对齐 | `editor.rs:handle_key` |
+| Ctrl+A/E/B/F/W/U/K/D 与 Alt+B/F | 已对齐 | 行首尾、词移动、删词、删到行首/尾、删后一字符 |
+| 上下移动保持列目标 | 已对齐 | `Editor.goal` 在垂直移动时锁定 |
+| bracketed paste 原样进入编辑器（含换行、CJK），不触发提交 | 已对齐 | `terminal.rs` 开关 + `event::Paste`；pty 冒烟断言引擎收到原文 |
+| 粘贴归一化（CRLF → LF、去尾随换行） | 已对齐 | `normalize_paste` |
+| `@` 文件补全：Tab/Enter 接受、Esc 关闭、↑↓ 选择 | 有意偏离（基础版） | 只做子串过滤（非模糊评分），workspace 索引上限 2000 个文件，跳过 .git/target/node_modules；T9 细化 |
+| 输入历史（↑/↓）与草稿恢复 | 已对齐 | `Composer.history`，持久化到 `composer.json`（`MIAO_TUI_STATE_DIR` 可覆盖） |
+| 提交失败把草稿放回输入框 | 已对齐 | `PromptFailed` → `Composer::restore` |
+| Ctrl+C 清空草稿，空输入时退出 | 已对齐 | `app.rs` |
+| 真实终端光标用于 IME 定位 | 已对齐 | `render_composer` 用 `frame.set_cursor_position` 设置行列 |
+
+## T5 流式与打断
+
+| 行为 | 状态 | 备注 |
+|---|---|---|
+| subscribe 增量投影：committed 事件合并 150ms 后重拉快照 | 已对齐 | `engine.rs:REFRESH_DEBOUNCE` 与事件白名单（message/tool/run/approval/question） |
+| run 状态条：working / idle，带 queued 数 | 已对齐 | `app.rs:update_status` |
+| Esc 打断 active run（`cancel`），非运行态才返回 home | 已对齐 | Esc 顺序：关补全 → 拒绝提问 → cancel → 有面板则停留 → 回 home |
+| 审批面板：tool/resource/input；1 allow once、2 always allow、3 deny | 已对齐 | `panel_lines` 与 `app.rs:handle_panel_key`；always 走 `approve_persistent` |
+| 提问面板：单选/多选、↑↓、Space、Enter 逐题推进、Esc reject | 已对齐 | `Panel`；回答与拒绝都回传 question_id + input_hash |
+| 面板模态：按键不进入 composer | 已对齐 | `handle_panel_key` 只要面板存在就消费按键 |
+| 控制动作失败只提示，不结束传输 | 已对齐 | `AppEvent::ActionFailed` 写入 composer notice |
+
+## T6 第一批对话框
+
+| 行为 | 状态 | 备注 |
+|---|---|---|
+| leader 前缀 Ctrl+X，后接 `m`/`t`/`l`/`n`/`q` | 已对齐 | `app.rs:handle_leader`；未知和弦被丢弃，不进入 composer |
+| 模型列表读 `model_catalog`，variant 展开为独立条目，Enter 发 `select_model` | 已对齐 | `dialogs.rs:ModelInfo::catalog`；binding 字段与引擎 `session_model::Binding` 一致（`route_id`/`variant` 省略为空） |
+| 主题列表：Enter 立即应用并写 `preferences.json` | 已对齐 | `app.rs:apply_theme`、`state.rs`；工作区 `.miao/tui.json` 仍优先 |
+| 会话列表含已归档；Enter 打开、r 重命名、a 归档切换、d 删除确认 | 已对齐 | `dialogs.rs` + `engine.rs` 的 `rename`/`archive`/`remove`；删除确认默认焦点在取消 |
+| Ctrl+R 重命名当前会话 | 已对齐 | `app.rs`；预填当前标题 |
+| 对话框模态：Esc 关闭、Ctrl+C 仍退出 | 已对齐 | `app.rs:handle_key` |
+| 居中覆盖层先 `Clear` 再画边框 | 已对齐 | `pane.rs:render_dialog`，宽 60%（40–80 列），条目超过 14 行时滚动 |
+| 删除是不可撤销的动作 | 已对齐 | 确认文案说明不可撤销；确认后 `remove` 并回 home（删的是当前会话时） |
+
+
+## T7 状态、账户、调试与 stash
+
+| 行为 | 状态 | 备注 |
+|---|---|---|
+| 状态视图：会话身份、模型绑定、账户、run 状态、排队数 | 已对齐 | `<leader>s`；`app.rs:status_rows` 只呈现 snapshot 已有事实 |
+| 状态视图：turns / partial turns / tokens / cache read / tools / TTFT / lineage | 已对齐 | 读引擎 `usage`；`status.rs:UsageSummary` 缺字段按 0/空处理 |
+| 账户切换：列出 `model_catalog` 中带 `credential_id` 的账户，Enter 发 `select_account` | 已对齐 | `ctrl+o`；同一会话内即时更新标题栏与侧栏的账户钉住状态，下一次快照再校准 |
+| 调试视图：引擎二进制、数据库、模型、workspace、状态目录、主题、版本 | 已对齐 | `<leader>d`；数据库路径从启动参数读回，不维护第二份 |
+| stash：`<leader>P` 存当前草稿并清空输入框；`<leader>p` 列表取回（取回后移除）或 `d` 删除 | 已对齐 | TUI 本地 `stash.json`，最多 50 条、去重置顶；不触碰会话数据 |
+| MCP 列表 | 有意偏离（Phase 4 宿主移植） | 数据来自插件宿主/HTTP API，纯引擎客户端拿不到（计划 §7） |
+| skills 列表 | 有意偏离（Phase 4 宿主移植） | 同上 |
+| workspace 列表/切换 | 有意偏离（Phase 4 宿主移植） | 同上 |
+| provider integrations | 有意偏离（Phase 4 宿主移植） | 同上 |
+
+## T8 命令面
+
+| 行为 | 状态 | 备注 |
+|---|---|---|
+| 命令 palette：`ctrl+p` 打开，输入过滤，Enter 执行动作 | 已对齐 | TS palette 只列关键动作、不列模板命令；本片同口径，`commands.rs:Builtin` + `dialogs.rs:PaletteDialog` |
+| leader/快捷键动作与 palette 共用一套实现 | 已对齐 | `app.rs:run_builtin`；palette 的 id 就是动作名 |
+| slash 补全只在首词、输入空格后收起 | 已对齐 | `editor.rs:completion_query`；接受后插入 `/name ` |
+| slash 提交：命中命令则渲染模板并捕获 command 引用，否则按普通 prompt 发送 | 已对齐 | `app.rs:submit`、`commands::split`；首行取词规则同 TS prompt |
+| 模板发现：全局目录、`MIAO_CONFIG`、项目配置文档、`.miao`/`.opencode`、`MIAO_CONFIG_DIR`、`MIAO_CONFIG_CONTENT`，低→高覆盖 | 已对齐 | `commands::templates`；顺序对齐 `Config.entries()` |
+| markdown 命令：`{command,commands}/**/*.md`，名字去 `.md` 保留嵌套路径，frontmatter 读 `description` | 已对齐 | `commands::load_directory` / `parse_markdown` |
+| 模板渲染：`$1…$n`（最高位捕获其余）、`$ARGUMENTS`、无占位符追加原始参数、`trim` | 已对齐 | `commands::render_template`；分词含引号与 `[Image N]` |
+| `/help`：列出内置动作、键位、发现的模板命令 | TUI 自有能力 | TS 无对应 slash；便于纯引擎客户端发现命令 |
+| `/init`、`/review` | 有意偏离（Phase 4 宿主移植） | 插件宿主注入，纯引擎客户端拿不到 |
+| 模板的 `agent`/`model`/`variant`/`subtask` 执行默认值 | 有意偏离（Phase 4 宿主移植） | 引擎要求 agent 带捕获 manifest；本片只发 `{name, arguments}` |
+| MCP 命令（`:mcp`）与 skills 来源 | 有意偏离（Phase 4 宿主移植） | 数据来自宿主服务 |
