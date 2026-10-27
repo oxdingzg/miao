@@ -745,18 +745,28 @@ export const fromOwners = (
         // The catalog rides every admission, not only @-mentions: the engine
         // resolves the task tool's named subagents against it.
         const agentReferences = preparation.agents
-          ? yield* preparation.agents(input, mentions, yield* Effect.tryPromise(() => routes(connection)))
+          ? yield* preparation.agents(
+              input,
+              mentions,
+              yield* Effect.tryPromise({ try: () => routes(connection), catch: (error) => error }),
+            )
           : undefined
-        return yield* Effect.tryPromise(() =>
-          connection.session.promptProduct({
-            sessionID: input.sessionID,
-            prompt,
-            id: input.id,
-            delivery: input.delivery,
-            resume: input.resume,
-            agentReferences,
-          }),
-        )
+        // A rejection keeps its identity here: the engine's own failure (a
+        // refused frame, an exited child) must reach the caller. A bare
+        // `tryPromise` wraps it in UnknownError, and the refusal wrapper then
+        // reports only the generic "failed unexpectedly".
+        return yield* Effect.tryPromise({
+          try: () =>
+            connection.session.promptProduct({
+              sessionID: input.sessionID,
+              prompt,
+              id: input.id,
+              delivery: input.delivery,
+              resume: input.resume,
+              agentReferences,
+            }),
+          catch: (error) => error,
+        })
       }).pipe(Effect.mapError((error) => refusal(input.sessionID, error))),
     snapshot: (input) =>
       read<Readonly<Record<string, unknown>>>(input, (connection) =>

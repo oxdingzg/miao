@@ -895,7 +895,21 @@ async fn serve(
         loop {
             tokio::select! {
                 line=read_line(&mut input,&mut bytes)=>{
-                    let Some(line)=line? else { break; };
+                    let line=match line {
+                        Ok(Some(line))=>line,
+                        Ok(None)=>break,
+                        // An oversized frame must not take the engine — and every
+                        // Session in this storage — down with it: drop the rest of
+                        // the frame, answer the id read from its head, and keep
+                        // serving.
+                        Err(error) if error.kind()==io::ErrorKind::InvalidData=>{
+                            let id=leading_request_id(&bytes);
+                            discard_line(&mut input,&mut bytes).await?;
+                            send(&output,json!({"id":id,"error":{"code":"request_too_large","message":error.to_string()}})).await?;
+                            continue;
+                        }
+                        Err(error)=>return Err(error),
+                    };
                     if let Some(duration) = idle {
                         idle_deadline = tokio::time::Instant::now() + duration;
                     }
@@ -985,10 +999,16 @@ async fn signal_exit() {
     tokio::signal::ctrl_c().await.ok();
 }
 
+/// Largest stdio request frame. Attachment bytes ride the admission frame as
+/// base64 and the product admits up to 6 MiB per attachment, so the transport
+/// has to carry a full admission with headroom. A smaller cap turned every
+/// larger PDF or image into an unexplained send failure.
+const MAX_REQUEST_BYTES: usize = 16 * 1024 * 1024;
+
 /// Keep partial input across select cancellation; read_line itself is not
 /// cancellation safe. Refuse an oversized frame before allocating it in full.
-async fn read_line(
-    reader: &mut BufReader<tokio::io::Stdin>,
+async fn read_line<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
     bytes: &mut Vec<u8>,
 ) -> io::Result<Option<Vec<u8>>> {
     loop {
@@ -1005,10 +1025,10 @@ async fn read_line(
         }
         let end = buffer.iter().position(|b| *b == b'\n');
         let n = end.map(|n| n + 1).unwrap_or(buffer.len());
-        if bytes.len() + n > 1024 * 1024 {
+        if bytes.len() + n > MAX_REQUEST_BYTES {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "request exceeds 1 MiB",
+                format!("request exceeds {} MiB", MAX_REQUEST_BYTES / (1024 * 1024)),
             ));
         }
         bytes.extend_from_slice(&buffer[..n]);
@@ -1017,6 +1037,58 @@ async fn read_line(
             return Ok(Some(std::mem::take(bytes)));
         }
     }
+}
+
+/// Consume the remainder of a refused frame so the next request starts on a
+/// frame boundary. `read_line` leaves the oversized prefix in `bytes`; dropping
+/// it is what lets one bad frame be answered instead of ending the process.
+async fn discard_line<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+    bytes: &mut Vec<u8>,
+) -> io::Result<()> {
+    bytes.clear();
+    loop {
+        let buffer = reader.fill_buf().await?;
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        match buffer.iter().position(|b| *b == b'\n') {
+            Some(n) => {
+                reader.consume(n + 1);
+                return Ok(());
+            }
+            None => {
+                let n = buffer.len();
+                reader.consume(n);
+            }
+        }
+    }
+}
+
+/// The request id of a frame refused before it decoded, read from the bytes
+/// already consumed. Answering it fails only the offending call; an `id: null`
+/// answer rejects every request in flight on the same client.
+fn leading_request_id(prefix: &[u8]) -> Value {
+    let text = String::from_utf8_lossy(prefix);
+    let Some(start) = text.find("\"id\"") else {
+        return Value::Null;
+    };
+    let Some(rest) = text[start + 4..].trim_start().strip_prefix(':') else {
+        return Value::Null;
+    };
+    let rest = rest.trim_start();
+    if let Some(rest) = rest.strip_prefix('"') {
+        return match rest.find('"') {
+            Some(end) => Value::String(rest[..end].to_owned()),
+            None => Value::Null,
+        };
+    }
+    rest.chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<String>()
+        .parse::<u64>()
+        .map(Value::from)
+        .unwrap_or(Value::Null)
 }
 
 #[cfg(test)]
@@ -1038,5 +1110,29 @@ mod tests {
         send.await.unwrap();
         assert_eq!(incoming.recv().await, Some(serde_json::json!(2)));
         assert_eq!(incoming.recv().await, Some(serde_json::json!(3)));
+    }
+
+    #[tokio::test]
+    async fn oversized_frame_reports_its_id_and_leaves_the_next_request_parseable() {
+        let oversized = format!(
+            "{{\"id\":4,\"method\":\"admit\",\"pad\":\"{}\"}}\n",
+            "a".repeat(super::MAX_REQUEST_BYTES)
+        );
+        let source = format!("{oversized}{{\"id\":5,\"method\":\"snapshot\"}}\n");
+        let mut reader = tokio::io::BufReader::new(source.as_bytes());
+        let mut bytes = Vec::new();
+        let error = super::read_line(&mut reader, &mut bytes).await.unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        // The id travels in the frame head, before the cap refuses the rest.
+        assert_eq!(super::leading_request_id(&bytes), serde_json::json!(4));
+        super::discard_line(&mut reader, &mut bytes).await.unwrap();
+        let next = super::read_line(&mut reader, &mut bytes)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&next).unwrap()["id"],
+            serde_json::json!(5)
+        );
     }
 }
