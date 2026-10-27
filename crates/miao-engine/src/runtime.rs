@@ -1429,6 +1429,9 @@ async fn execute(
     let mut goal_iterations = 0;
     let mut goal_stalls = 0;
     let mut goal_signature = None;
+    // A Session forked by `task` is a leaf: its lineage is fixed before the
+    // run starts, so one lookup answers every turn.
+    let delegated = is_delegated_child(inner, session).await?;
     loop {
         if cancel.is_cancelled() {
             return Ok(());
@@ -1709,7 +1712,7 @@ async fn execute(
             }
         }
         let named = inner.store.named_agents(session).await?;
-        let mut tools = agent_tools(&inner.tools, agent.as_ref(), &policy);
+        let mut tools = agent_tools(&inner.tools, agent.as_ref(), &policy, delegated);
         for tool in &mut tools {
             if tool.name == "task" && !named.is_empty() {
                 tool.input_schema["properties"]["agent"] = json!({"type":"string","enum":named.iter().map(|agent|&agent.name).collect::<Vec<_>>()});
@@ -2224,6 +2227,7 @@ command: None,
                                         plan,
                                         policy: &policy,
                                         agent: manifest,
+                                        delegated,
                                     },
                                 )
                                 .await?;
@@ -4201,18 +4205,25 @@ async fn cancel_session(inner: &Arc<Inner>, session: &str) -> Result<bool, Error
     result.await.map_err(|_| Error::Closed)
 }
 
+/// Whether this Session was forked by `task` and therefore runs as a leaf.
+async fn is_delegated_child(inner: &Inner, session: &str) -> Result<bool, Error> {
+    Ok(inner.store.lineage_parent(session).await?.is_some())
+}
+
 /// An agent's tool surface: `allow`/`deny` intersect the registered definitions
 /// and never add a capability, because permission evaluation still runs per call.
 fn agent_tools(
     tools: &Tools,
     agent: Option<&(crate::session_agent::AgentManifest, String)>,
     policy: &Policy,
+    delegated: bool,
 ) -> Vec<crate::protocol::ToolDefinition> {
     tools
         .definitions()
         .into_iter()
         .filter(|tool| {
-            agent.is_none_or(|(manifest, _)| manifest.permits(&tool.name))
+            !(delegated && crate::subagent::is_delegation_tool(&tool.name))
+                && agent.is_none_or(|(manifest, _)| manifest.permits(&tool.name))
                 && policy.tool_visible(&tool.name)
         })
         .collect()
@@ -4234,6 +4245,8 @@ struct TurnAuthority<'a> {
     plan: bool,
     policy: &'a Policy,
     agent: Option<&'a crate::session_agent::AgentManifest>,
+    /// This Session is a delegated child, so it may not delegate again.
+    delegated: bool,
 }
 
 async fn authorize(
@@ -4249,10 +4262,17 @@ async fn authorize(
         plan,
         policy,
         agent,
+        delegated,
     } = authority;
     if agent.is_some_and(|agent| !agent.permits(prepared.name())) {
         inner.store.record(session, crate::events::Lifecycle::PermissionDenied.name(),
             json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"agent_tool_surface","policy_revision":policy.revision()})).await?;
+        return Ok(false);
+    }
+    // The surface already withholds delegation from a child; a model that calls
+    // it anyway is refused here rather than forking a grandchild.
+    if delegated && crate::subagent::is_delegation_tool(prepared.name()) {
+        inner.store.record(session,crate::events::Lifecycle::PermissionDenied.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"nested_delegation","policy_revision":policy.revision()})).await?;
         return Ok(false);
     }
     if plan
