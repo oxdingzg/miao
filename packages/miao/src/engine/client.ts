@@ -39,6 +39,8 @@ export interface EngineOptions {
   awsProfile?: string
   authFile?: string
   policyFile?: string
+  /** The global config directory; the engine derives the product policy from it. */
+  configDir?: string
   toolReplayFile?: string
   /** Automatic compaction limits (roadmap §2.13); absent keeps it off. */
   contextLimits?: {
@@ -204,7 +206,9 @@ const INHERITED_ENVIRONMENT = [
   "MIAO_WEBSEARCH_PROVIDER",
   "MIAO_WEB_SEARCH_PROVIDER",
   "MIAO_WEB_SEARCH_ENDPOINT",
-  // Engine deployment knobs.
+  // The engine deployment knobs. `MIAO_SANDBOX` is the operator's OS-sandbox
+  // switch the engine reads itself now that it derives the product policy.
+  "MIAO_SANDBOX",
   "MIAO_ENGINE_VERSION",
   "MIAO_ENGINE_HTTP_TOKEN",
   "MIAO_LLM_FIRST_BYTE_TIMEOUT_MS",
@@ -251,6 +255,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.awsProfile) args.push("--aws-profile", options.awsProfile)
   if (options.authFile) args.push("--auth-file", options.authFile)
   if (options.policyFile) args.push("--policy", options.policyFile)
+  if (options.configDir) args.push("--config-dir", options.configDir)
   if (options.toolReplayFile) args.push("--tool-replay", options.toolReplayFile)
   if (options.contextLimits) args.push("--context-limits", JSON.stringify(options.contextLimits))
   if (options.credentialDatabase) args.push("--credential-db", options.credentialDatabase)

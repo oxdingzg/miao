@@ -10,11 +10,16 @@ import { EngineError } from "./client"
 export const prepare = Effect.fn("Engine.productMcp")(function* (
   options: Pick<EngineOptions, "mcpConfigFile" | "mcpSettings" | "policyFile">,
 ) {
-  if (options.mcpConfigFile || !options.mcpSettings?.servers || !options.policyFile) return {}
-  const policy: unknown = yield* Effect.tryPromise({
-    try: () => Bun.file(options.policyFile!).json(),
-    catch: () => new EngineError("engine_mcp_policy", "could not read native MCP policy"),
-  })
+  if (options.mcpConfigFile || !options.mcpSettings?.servers) return {}
+  // Without an explicit operator policy the engine derives the product policy
+  // (workspace mode, MCP allowed) from the config directory; only a policy
+  // file still needs reading.
+  const policy: unknown = options.policyFile
+    ? yield* Effect.tryPromise({
+        try: () => Bun.file(options.policyFile!).json(),
+        catch: () => new EngineError("engine_mcp_policy", "could not read native MCP policy"),
+      })
+    : { mode: "workspace", allow_mcp: true }
   if (
     typeof policy !== "object" ||
     policy === null ||

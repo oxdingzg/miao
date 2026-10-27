@@ -1,0 +1,4 @@
+[
+  { "name": "gopls", "argv": ["/custom/gopls", "-remote"], "extensions": [".go"], "env": { "GOFLAGS": "-tags=x" }, "initialization": { "settings": {} } },
+  { "name": "tailwind", "argv": ["/tools/tw-ls"], "extensions": [".html"], "env": {}, "initialization": null }
+]

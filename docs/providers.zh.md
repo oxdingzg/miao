@@ -19,11 +19,16 @@ miao providers logout    # 移除保存的凭证
 ## 列出与选择模型
 
 ```bash
-miao models                     # 你的构建所知的全部 provider/model
+miao models                     # 当前 channel 能跑的模型（已有凭证或已登录）
 miao models anthropic           # 只看某个供应商
 miao models --verbose           # 带上成本等元数据
 miao models --refresh           # 先从 mtty.dev 刷新目录
+miao models --all               # 全部目录，并标注当前 channel 跑不了的条目
 ```
+
+没有凭证的供应商、以及被构建禁用的模型默认不列出——TUI 和 `miao run` 都会拒绝
+它们。`--all` 仍会列出并追加 `(unavailable)`，登录前想浏览某个供应商有哪些模型
+时就查它。
 
 在 TUI 里，`/model` 或 `ctrl+x m` 切换模型；每个 agent 上次使用的模型会被记住。没有选定模型的会话使用 `model` 设置，写作 `<provider>/<model>`：
 
@@ -107,6 +112,6 @@ transport 的映射、清单字段、凭证引用，以及明确留在 TypeScrip
 
 - `miao debug config` 查看生效配置，`miao debug info` 查看安装与插件信息；`miao debug` 列出可用子命令。
 - 鉴权错误会指出修复方式，通常是 `miao auth login <provider>`；保存的 token 过期时重跑 `miao providers login`。
-- 供应商不显示任何模型，通常是缺凭证或被策略禁用；`miao models <provider> --verbose` 会显示解析结果。
+- 供应商不显示任何模型，通常是缺凭证或被策略禁用；`miao models <provider> --all --verbose` 列出目录里的条目，`miao models <provider> --verbose` 显示可用时的解析结果。
 
 配置优先级见[使用指南](guide.zh.md)，供应商层的演进见[开源代理对比](agent-comparison.zh.md)。

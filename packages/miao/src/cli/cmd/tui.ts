@@ -6,6 +6,7 @@ import { errorMessage } from "@miao/tui/util/error"
 import { withNetworkOptions, resolveNetworkOptionsNoConfig, hasArg } from "@/cli/network"
 import { Filesystem } from "@/util/filesystem"
 import { validateSession } from "../tui/validate-session"
+import { validateModel } from "../tui/validate-model"
 
 async function input(value?: string) {
   const piped = process.stdin.isTTY ? undefined : await Bun.stdin.text()
@@ -224,6 +225,13 @@ export const TuiThreadCommand = cmd({
           await validateSession({
             url: transport.url,
             sessionID: args.session,
+            directory: cwd,
+
+            headers: transport.headers,
+          })
+          await validateModel({
+            url: transport.url,
+            model: args.model,
             directory: cwd,
 
             headers: transport.headers,

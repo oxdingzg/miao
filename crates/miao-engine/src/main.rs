@@ -177,7 +177,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
         std::process::exit(2);
     }
     let acp = mode == Some("acp");
@@ -193,6 +193,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--fallback-endpoint",
             "--provider",
             "--policy",
+            "--config-dir",
             "--mode",
             "--edit-recovery",
             "--verify-command",
@@ -446,6 +447,15 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             return Err("permission config exceeds 64 KiB".into());
         }
         serde_json::from_slice::<Config>(&bytes)?
+    } else if let Some(directory) = options.get("--config-dir") {
+        // No explicit operator policy: derive the product policy from the
+        // config directory and the environment the host forwarded, the way
+        // the product used to before materializing a temporary file.
+        let sandbox = std::env::var("MIAO_SANDBOX").ok();
+        miao_engine::config_derive::policy_from_directory(
+            std::path::Path::new(directory),
+            sandbox.as_deref(),
+        )?
     } else {
         Config::for_entry(acp)
     };
@@ -666,6 +676,26 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         tools = tools
             .with_protected_resource(&path)
             .with_lsp(Arc::new(registry));
+    } else if let Some(directory) = options.get("--config-dir") {
+        // No explicit LSP manifest: derive the servers from the config
+        // directory the way the product used to before materializing one.
+        let source = miao_engine::config_derive::Source::Dir(directory.into());
+        let documents = miao_engine::config_derive::load(std::slice::from_ref(&source))?;
+        let configured = miao_engine::config_derive::lsp_configured(&documents);
+        let lookup = miao_engine::config_derive::system_lookup();
+        let configs = miao_engine::config_derive::lsp_entries(
+            configured.as_ref(),
+            &miao_engine::config_derive::BUILTIN_SERVERS,
+            &lookup,
+        )?;
+        if !configs.is_empty() {
+            let registry = miao_engine::lsp::Registry::connect(
+                configs,
+                std::path::Path::new(tools.location()),
+            )
+            .await?;
+            tools = tools.with_lsp(Arc::new(registry));
+        }
     }
     let replay = options
         .get("--tool-replay")
