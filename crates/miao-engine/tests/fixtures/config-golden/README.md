@@ -13,3 +13,9 @@ samples: two implementations, one set of inputs and outputs.
 - `env.json` — `{"MIAO_SANDBOX": "1" | "0" | null}`; `null` means unset.
 - `expected-policy.json` — the full derived `permission::Config`; the
   TypeScript side asserts its `sandbox` switch against the same case.
+
+A `policy-*` case may instead carry `sources.json` — the ordered source plan
+the host forwards as `--config-sources`: `[{"dir": …} | {"file": …} |
+{"content": …}]`, lowest priority first, paths relative to the case. Such a
+case proves the project chain and direct files override the global directory
+the way the product applies them.
