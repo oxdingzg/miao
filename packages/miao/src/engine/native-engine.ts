@@ -1248,11 +1248,17 @@ const layer = Layer.effect(
       }),
     ).pipe(Effect.forkScoped)
     const unsubscribeTitle = yield* clients.listen((event) => {
-      if (event.type !== "session.next.status" || event.metadata?.engine === undefined) return Effect.void
+      if (event.metadata?.engine === undefined) return Effect.void
+      if (event.type !== "session.next.text.ended" && event.type !== "session.next.status") return Effect.void
       const data = event.data as { sessionID?: NativeTitleRequest["sessionID"]; status?: { type?: string } }
+      // The first committed assistant text is the earliest moment a title has
+      // something to name, and it is the only one a long run reaches: a turn
+      // that ran for eighty minutes never went idle, so its tab kept the
+      // creation placeholder the whole time. Idle stays a trigger so a title
+      // that failed mid-turn is retried at the boundary.
+      if (event.type === "session.next.status" && data.status?.type !== "idle") return Effect.void
       const storage = engineStorageID(event)
-      if (data.status?.type !== "idle" || data.sessionID === undefined || storage === undefined) return Effect.void
-      if (event.location === undefined) return Effect.void
+      if (data.sessionID === undefined || storage === undefined || event.location === undefined) return Effect.void
       return scheduleTitle({
         sessionID: data.sessionID,
         storage,

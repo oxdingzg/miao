@@ -1,5 +1,23 @@
 import { expect, test } from "bun:test"
-import { terminalTitle } from "../src/util/terminal-title"
+import { tabTitle, terminalTitle } from "../src/util/terminal-title"
+
+test("an untitled Session's tab carries its request until the title arrives", () => {
+  // A generated title needs an auxiliary model call, which a long first turn
+  // never gets to; the request itself is available immediately.
+  expect(tabTitle({ title: "New session - 2026-10-27T06:29:51.376Z", prompt: "复盘一下 roadmap\n再看看昨天" })).toBe(
+    "复盘一下 roadmap 再看看昨天",
+  )
+  expect(tabTitle({ title: "New session", prompt: "fix the tab title" })).toBe("fix the tab title")
+  // Nothing asked yet.
+  expect(tabTitle({ title: "New session", prompt: "" })).toBe("miao")
+  expect(tabTitle({ title: "New session" })).toBe("miao")
+})
+
+test("a generated title outranks the request it was made from", () => {
+  expect(tabTitle({ title: "复盘miao统一Rust单二进制进度", prompt: "复盘一下 roadmap" })).toBe(
+    "复盘miao统一Rust单二进制进度",
+  )
+})
 
 test("preserves Chinese titles whose UTF-8 bytes overlap C1 controls", () => {
   expect(terminalTitle("检查 H3-2 云台相机拍照与照片拉取功能")).toBe("检查 H3-2 云台相机拍照与照片拉取功能")
