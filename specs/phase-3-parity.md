@@ -27,3 +27,21 @@
 | 鼠标捕获（TS 默认开启） | 未做 | T1 不启用 |
 | 光标样式 `cursor.style` | 未做 | 后续切片 |
 | `miao-tui` 为非默认入口 | 已对齐 | 独立二进制，`--workspace <dir>`（默认 cwd）；`miao` 默认命令仍走 TS TUI，剪彩在 T11 |
+
+## T2 传输层（crates/miao-tui/src/transport.rs）
+
+| 行为 | 状态 | 备注 |
+|---|---|---|
+| NDJSON：`{id,method,params}` 请求，`{id,result\|error}` 应答 | 已对齐 | 写线程统一补 `\n`，与引擎 `read_line` 的帧边界一致 |
+| `event` / `progress` / `resync` 三类通知走同一事件通道 | 已对齐 | `resync` 是 stdio 广播滞后的通知（`reason: ephemeral_progress_lagged`），TUI 据此重拉快照 |
+| 每 session 维护 durable cursor，`seq` 取大不前移 | 已对齐 | 与 `packages/miao/src/engine/client.ts` 的订阅语义一致；引擎侧 `events(session, after)` 为 `seq > after` |
+| 断线重连从 cursor 重放订阅 | 已对齐 | `Connection` 的 cursor 表跨进程代际共享；respawn 后逐个 `subscribe(after)`，测试断言重放不重复、不跳号 |
+| 控制面请求 60s 超时 | 已对齐 | `Connection::start(spawn, timeout)` |
+| 只读方法超时只拒绝本次调用，写方法超时退役传输 | 已对齐 | `READ_ONLY_METHODS` 与 TS 同一份列表（snapshot/sessions/history/events/usage/timer_sessions） |
+| 单请求 error 应答不退役传输 | 已对齐 | `TransportError::Rejected`，对应 TS 的逐调用 `EngineError` |
+| 无 id 的 error 帧以一次终态失败结算所有 pending | 已对齐 | 老引擎/坏请求无法回填 id |
+| 反向工具调用（product/hook tool） | 有意偏离 | Rust TUI 不执行产品工具，一律回 `{bridge_id, error}`，避免引擎永久等待；TS host 会代理执行 |
+| 退出分类：`engine_busy` / `engine_closed` | 已对齐 | 读 stderr 尾部 `Error: Busy`；其余带退出状态 |
+| 显式 `close` 走 `shutdown` 帧，1s 内不退再 kill；不报终态失败 | 已对齐 | 与 TS 的 graceful shutdown 顺序一致 |
+| `initialize` / `admit` / `cancel` / `approve` / `answer_question` / `history` / `snapshot` 便捷方法 | 已对齐 | 参数形状按引擎 `Command` 的 serde 字段名 |
+| 录制 transcript 逐字段、按 seq 序到达 TUI | 已对齐 | `tests/fixtures/events.json` 收录 `bridge.ts` 翻译的 committed 事件（session.initialized → run.finished 共 11 条）；`tests/transport.rs` 断言 session_id/seq/kind/data/recorded_at_ms 全等且 cursor 落在末条 |
