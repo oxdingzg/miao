@@ -1,0 +1,4 @@
+{
+  "sandbox": { "mode": "workspace-write", // keep commands confined
+  },
+}

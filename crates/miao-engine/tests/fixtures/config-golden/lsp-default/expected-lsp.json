@@ -1,0 +1,7 @@
+[
+  { "name": "typescript", "argv": ["/tools/typescript-language-server", "--stdio"], "extensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"], "env": {}, "initialization": null },
+  { "name": "gopls", "argv": ["/tools/gopls"], "extensions": [".go"], "env": {}, "initialization": null },
+  { "name": "rust", "argv": ["/tools/rust-analyzer"], "extensions": [".rs"], "env": {}, "initialization": null },
+  { "name": "pyright", "argv": ["/tools/pyright-langserver", "--stdio"], "extensions": [".py", ".pyi"], "env": {}, "initialization": null },
+  { "name": "clangd", "argv": ["/tools/clangd"], "extensions": [".c", ".h", ".cc", ".cpp", ".cxx", ".hpp"], "env": {}, "initialization": null }
+]
