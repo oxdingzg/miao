@@ -725,3 +725,165 @@ async fn a_delegated_child_cannot_delegate_again() {
         "the child forked a grandchild"
     );
 }
+
+/// The child never converges on its own: every real turn calls a fresh tool, so
+/// only a bound can end it. The wrap-up turn is the one where the engine
+/// withholds the tool surface and asks for text only.
+struct Endless {
+    turns: AtomicUsize,
+}
+
+#[async_trait]
+impl Provider for Endless {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let wrap_up = request.messages.iter().any(|message| {
+            message.content.as_array().is_some_and(|parts| {
+                parts.iter().any(|part| {
+                    part["text"]
+                        .as_str()
+                        .is_some_and(|text| text.contains("MAXIMUM STEPS REACHED"))
+                })
+            })
+        });
+        let child = request.messages.iter().any(|message| {
+            message.role == "user" && message.content.to_string().contains("never finish")
+        });
+        if child {
+            if wrap_up {
+                return Ok(Reply {
+                    content: json!([{"type":"text","text":"child summary"}]),
+                    usage: json!({}),
+                    needs_tools: false,
+                });
+            }
+            let turn = self.turns.fetch_add(1, Ordering::SeqCst);
+            return Ok(Reply {
+                content: json!([{"type":"tool_use","id":format!("c{turn}"),"name":"bash","input":{"command":format!("echo {turn}")}}]),
+                usage: json!({}),
+                needs_tools: true,
+            });
+        }
+        let has_result = request.messages.iter().any(|message| {
+            message
+                .content
+                .as_array()
+                .is_some_and(|parts| parts.iter().any(|part| part["type"] == "tool_result"))
+        });
+        if !has_result {
+            return Ok(Reply {
+                content: json!([{"type":"tool_use","id":"d1","name":"task","input":{"prompt":"never finish"}}]),
+                usage: json!({}),
+                needs_tools: true,
+            });
+        }
+        Ok(Reply {
+            content: json!([{"type":"text","text":"parent done"}]),
+            usage: json!({}),
+            needs_tools: false,
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_child_the_host_left_unbounded_closes_itself_and_still_reports() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let provider = Arc::new(Endless {
+        turns: AtomicUsize::new(0),
+    });
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+        Policy::new(Config {
+            mode: Mode::Workspace,
+            allow_subagents: true,
+            max_provider_turns: None,
+            rules: vec![Rule {
+                tool: "*".into(),
+                path: "**".into(),
+                decision: Decision::Allow,
+            }],
+            ..Config::default()
+        })
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "one".into(),
+                prompt: "delegate this".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(120), async {
+        loop {
+            if store
+                .events("parent", 0, 500)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "run.finished")
+            {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the parent finished instead of waiting on an unbounded child");
+    runtime.shutdown().await;
+    let child = store
+        .events("parent", 0, 500)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "subagent_start")
+        .and_then(|event| event.data["subagent_id"].as_str().map(str::to_owned))
+        .unwrap();
+    // The allowance reserves one closing text-only turn, and that turn does not
+    // count as a tool turn.
+    assert_eq!(
+        provider.turns.load(Ordering::SeqCst),
+        miao_engine::subagent::TURN_LIMIT as usize - 1
+    );
+    // Injected context is durable wire history, so the note the child stopped on
+    // is readable after the fact instead of only living in the engine's exit.
+    let child_history = store.history(&child).await.unwrap();
+    assert!(
+        child_history.iter().any(|message| message
+            .content
+            .to_string()
+            .contains("delegated turn allowance")),
+        "the child transcript explains why it stopped"
+    );
+    // The note must not become the child's report: the parent asked for the
+    // work, and the child's own closing text still answers it.
+    assert!(
+        child_history
+            .iter()
+            .any(|message| message.role == "assistant"),
+        "the child still holds its own answer"
+    );
+    let parent_history = store.history("parent").await.unwrap();
+    let report = parent_history
+        .iter()
+        .flat_map(|message| message.content.as_array().into_iter().flatten())
+        .find_map(|part| part["content"].as_str())
+        .and_then(|content| serde_json::from_str::<Value>(content).ok())
+        .unwrap();
+    assert_eq!(report["text"], "child summary", "{report}");
+}
