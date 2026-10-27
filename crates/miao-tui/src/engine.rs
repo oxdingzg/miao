@@ -109,6 +109,13 @@ impl Handle {
         let (tx, _rx) = mpsc::unbounded_channel();
         Self { tx }
     }
+
+    /// A handle that keeps the channel open so a test can assert what the UI
+    /// asked the engine to do.
+    pub fn recording() -> (Self, mpsc::UnboundedReceiver<Request>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (Self { tx }, rx)
+    }
 }
 
 impl Handle {
@@ -238,30 +245,94 @@ pub fn settings(
     workspace: &Path,
     db: Option<PathBuf>,
     model: Option<String>,
+    config_dir: Option<PathBuf>,
 ) -> Result<Settings, String> {
     let db = db
         .or_else(|| std::env::var_os("MIAO_ENGINE_DB").map(PathBuf::from))
         .ok_or("pass --db <engine.db> or set MIAO_ENGINE_DB")?;
-    if !db.is_file() {
-        return Err(format!("engine database not found: {}", db.display()));
-    }
+    // The engine creates and migrates the database on first use. A freshly
+    // installed product has no database yet, and requiring one here would make
+    // the first launch of the Rust TUI fail before the engine can initialize.
     let model = model
         .or_else(|| std::env::var("MIAO_TUI_MODEL").ok())
         .unwrap_or_else(|| "unavailable/model".to_string());
+    let config_dir = config_dir.or_else(crate::config::global_dir);
     let spawn = EngineSpawn {
         program: engine_binary(),
-        args: vec![
-            "serve".into(),
-            "--db".into(),
-            db.display().to_string(),
-            "--workspace".into(),
-            workspace.display().to_string(),
-            "--model".into(),
-            model.clone(),
-        ],
+        args: args(&db, workspace, &model, config_dir.as_deref(), |name| {
+            std::env::var(name).ok()
+        }),
         env: Vec::new(),
     };
     Ok(Settings { spawn, model })
+}
+
+/// The argv the engine is started with. Mirrors the product host's
+/// `engineArgs` and `nativeEngineOptions` mapping: the TypeScript host passes
+/// the configuration directory plus the operator's `MIAO_ENGINE_*` knobs to the
+/// engine, and a Rust-run Session has to read the same configuration or it
+/// would run with a different policy, provider route, or tool set.
+fn args(
+    db: &Path,
+    workspace: &Path,
+    model: &str,
+    config_dir: Option<&Path>,
+    env: impl Fn(&str) -> Option<String>,
+) -> Vec<String> {
+    let mut args = vec![
+        "serve".into(),
+        "--db".into(),
+        db.display().to_string(),
+        "--workspace".into(),
+        workspace.display().to_string(),
+        "--model".into(),
+        model.to_string(),
+    ];
+    if let Some(dir) = config_dir {
+        push(&mut args, "--config-dir", dir.display().to_string());
+    }
+    // Every name in this table is accepted by `miao-engine serve`; a flag the
+    // engine does not know would end the child process at startup.
+    for (variable, flag) in [
+        ("MIAO_ENGINE_PROVIDER", "--provider"),
+        ("MIAO_ENGINE_ENDPOINT", "--endpoint"),
+        ("MIAO_ENGINE_POLICY", "--policy"),
+        ("MIAO_ENGINE_CREDENTIAL_DB", "--credential-db"),
+        ("MIAO_ENGINE_CREDENTIAL_ID", "--credential-id"),
+        (
+            "MIAO_ENGINE_CREDENTIAL_INTEGRATION",
+            "--credential-integration",
+        ),
+        ("MIAO_ENGINE_CONTEXT_CONFIG", "--context-config"),
+        ("MIAO_ENGINE_MCP_CONFIG", "--mcp-config"),
+        ("MIAO_ENGINE_LSP_CONFIG", "--lsp-config"),
+        ("MIAO_ENGINE_FORMATTER_CONFIG", "--formatter-config"),
+        ("MIAO_ENGINE_SKILLS_CONFIG", "--skills-config"),
+        ("MIAO_ENGINE_REFERENCES_CONFIG", "--references-config"),
+        ("MIAO_ENGINE_HOOKS_CONFIG", "--hooks-config"),
+        ("MIAO_ENGINE_FALLBACK_MODEL", "--fallback-model"),
+        ("MIAO_ENGINE_TOOL_DISCLOSURE", "--tool-disclosure"),
+        ("MIAO_ENGINE_PROMPT_CACHE", "--prompt-cache"),
+        ("MIAO_ENGINE_VERIFY_COMMAND", "--verify-command"),
+        ("MIAO_CONTEXT_LIMITS", "--context-limits"),
+    ] {
+        if let Some(value) = env(variable) {
+            push(&mut args, flag, value);
+        }
+    }
+    // The explicit route config wins over the resolved convenience variable,
+    // matching `nativeEngineOptions`.
+    if let Some(routes) =
+        env("MIAO_ENGINE_MODEL_ROUTES_CONFIG").or_else(|| env("MIAO_ENGINE_MODEL_ROUTES"))
+    {
+        push(&mut args, "--model-routes-config", routes);
+    }
+    args
+}
+
+fn push(args: &mut Vec<String>, flag: &str, value: String) {
+    args.push(flag.to_string());
+    args.push(value);
 }
 
 /// `MIAO_ENGINE_BIN` first, then the installed locations the product uses,
@@ -762,4 +833,87 @@ fn new_id(prefix: &str) -> String {
         std::process::id(),
         COUNTER.fetch_add(1, Ordering::Relaxed)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn environment(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let pairs: std::collections::HashMap<String, String> = pairs
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect();
+        move |name| pairs.get(name).cloned()
+    }
+
+    #[test]
+    fn the_engine_argv_carries_the_configuration_directory() {
+        let args = args(
+            Path::new("/data/miao.db"),
+            Path::new("/work"),
+            "openai/gpt-5",
+            Some(Path::new("/config")),
+            environment(&[]),
+        );
+        assert_eq!(
+            args,
+            [
+                "serve",
+                "--db",
+                "/data/miao.db",
+                "--workspace",
+                "/work",
+                "--model",
+                "openai/gpt-5",
+                "--config-dir",
+                "/config",
+            ]
+        );
+    }
+
+    #[test]
+    fn operator_environment_reaches_the_engine_as_flags() {
+        let args = args(
+            Path::new("/data/miao.db"),
+            Path::new("/work"),
+            "openai/gpt-5",
+            None,
+            environment(&[
+                ("MIAO_ENGINE_CREDENTIAL_DB", "/data/miao.db"),
+                ("MIAO_ENGINE_CREDENTIAL_ID", "cred_1"),
+                ("MIAO_ENGINE_PROVIDER", "openai-chat"),
+                ("MIAO_ENGINE_PROMPT_CACHE", "on"),
+                ("MIAO_ENGINE_MODEL_ROUTES", "/routes.json"),
+                ("MIAO_ENGINE_MODEL_ROUTES_CONFIG", "/explicit.json"),
+            ]),
+        );
+        // `serve` is a lone leading word; every option after it is a pair.
+        let pairs: Vec<(&str, &str)> = args[1..]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| (pair[0].as_str(), pair[1].as_str()))
+            .collect();
+        assert!(!pairs.iter().any(|(flag, _)| *flag == "--config-dir"));
+        assert!(pairs.contains(&("--credential-db", "/data/miao.db")));
+        assert!(pairs.contains(&("--credential-id", "cred_1")));
+        assert!(pairs.contains(&("--provider", "openai-chat")));
+        assert!(pairs.contains(&("--prompt-cache", "on")));
+        assert!(pairs.contains(&("--model-routes-config", "/explicit.json")));
+        assert!(!pairs.iter().any(|(flag, _)| *flag == "--model-routes"));
+    }
+
+    #[test]
+    fn unset_options_never_appear() {
+        let args = args(
+            Path::new("/data/miao.db"),
+            Path::new("/work"),
+            "m",
+            None,
+            environment(&[]),
+        );
+        assert_eq!(args.len(), 7);
+        assert!(!args.iter().any(|arg| arg == "--credential-db"));
+    }
 }

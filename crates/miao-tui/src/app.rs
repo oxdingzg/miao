@@ -25,6 +25,16 @@ pub enum Screen {
     Session,
 }
 
+/// What the process should open once the engine is attached. The launch flags
+/// are intents rather than commands: each one is consumed at the point the
+/// engine answers, so a failed `--session` never swallows a later `--prompt`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Startup {
+    pub session: Option<String>,
+    pub continue_last: bool,
+    pub prompt: Option<String>,
+}
+
 pub struct App {
     pub shell: Shell,
     pub home: Home,
@@ -61,6 +71,7 @@ pub struct App {
     /// The Zed selection already sent with an earlier prompt.
     zed_selection_key: Option<String>,
     clipboard_busy: bool,
+    startup: Startup,
 }
 
 impl App {
@@ -68,6 +79,7 @@ impl App {
         workspace: PathBuf,
         theme: Theme,
         attention_config: crate::config::AttentionConfig,
+        startup: Startup,
     ) -> Self {
         let home = Home::new(theme.clone());
         let templates = commands::templates(&workspace);
@@ -101,11 +113,32 @@ impl App {
             notified: Vec::new(),
             zed_selection_key: None,
             clipboard_busy: false,
+            startup,
         }
     }
 
     pub fn set_bus(&mut self, bus: Bus) {
         self.bus = Some(bus);
+    }
+
+    /// Act on the launch flags once the engine is attached. `--session` opens
+    /// that Session directly; `--continue` asks for the catalog because only
+    /// the engine knows which Session was updated last.
+    pub fn start(&mut self) {
+        let Some(engine) = self.engine.clone() else {
+            return;
+        };
+        if let Some(session) = self.startup.session.clone() {
+            engine.open(&session);
+            return;
+        }
+        if self.startup.continue_last {
+            engine.catalog();
+            return;
+        }
+        if self.startup.prompt.is_some() {
+            engine.new_session();
+        }
     }
 
     /// The editor the drive loop should run after suspending the terminal.
@@ -187,6 +220,7 @@ impl App {
                 if matches!(self.dialog, Some(Dialog::Sessions(_))) {
                     self.reopen_sessions_dialog();
                 }
+                self.continue_startup();
             }
             AppEvent::Models(models) => {
                 self.models = models;
@@ -240,6 +274,7 @@ impl App {
                 self.screen = Screen::Session;
                 self.sync_panel();
                 self.update_status();
+                self.continue_prompt();
             }
             AppEvent::ActionFailed(message) => {
                 self.shell.composer.notice = Some(message);
@@ -1001,6 +1036,44 @@ impl App {
         self.shell.title.set_status(Some(status));
     }
 
+    /// `--continue` opens the Session the engine reports as most recently
+    /// updated. The catalog also carries archived Sessions, which "continue"
+    /// must not pick.
+    fn continue_startup(&mut self) {
+        if !self.startup.continue_last || self.screen != Screen::Home || self.dialog.is_some() {
+            return;
+        }
+        self.startup.continue_last = false;
+        match self.catalog.iter().find(|row| row.archived_at_ms.is_none()) {
+            Some(row) => {
+                let id = row.id.clone();
+                if let Some(engine) = self.engine.clone() {
+                    engine.open(&id);
+                }
+            }
+            None => self.start_unsaved(),
+        }
+    }
+
+    /// With no Session to continue, a launch prompt still gets a Session of its
+    /// own; without one the TUI stays on the home list with an explanation.
+    fn start_unsaved(&mut self) {
+        if self.startup.prompt.is_some() {
+            if let Some(engine) = self.engine.clone() {
+                engine.new_session();
+            }
+            return;
+        }
+        self.notice("no Sessions to continue");
+    }
+
+    fn continue_prompt(&mut self) {
+        let Some(text) = self.startup.prompt.take() else {
+            return;
+        };
+        self.submit(text, Vec::new());
+    }
+
     fn submit(&mut self, text: String, attachments: Vec<Value>) {
         let Some(session_id) = self.session.as_ref().map(|session| session.id.clone()) else {
             self.shell.composer.restore_with(&text, attachments);
@@ -1086,6 +1159,10 @@ mod tests {
     use crate::theme::{self, DEFAULT_THEME};
 
     fn app() -> App {
+        app_with(Startup::default())
+    }
+
+    fn app_with(startup: Startup) -> App {
         let palette = theme::builtin(DEFAULT_THEME).expect("default theme is built in");
         App::new(
             PathBuf::from("."),
@@ -1094,6 +1171,7 @@ mod tests {
                 palette,
             },
             crate::config::AttentionConfig::default(),
+            startup,
         )
     }
 
@@ -1123,6 +1201,103 @@ mod tests {
             model: None,
             credential_id: None,
         }
+    }
+
+    /// A row that `--continue` must skip.
+    fn archived(id: &str, updated_at_ms: u64) -> SessionSummary {
+        SessionSummary {
+            archived_at_ms: Some(1),
+            ..summary(id, updated_at_ms)
+        }
+    }
+
+    #[test]
+    fn a_launch_session_opens_directly() {
+        let mut app = app_with(Startup {
+            session: Some("ses_known".into()),
+            ..Startup::default()
+        });
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.start();
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Open(id)) if id == "ses_known"
+        ));
+        assert!(requests.try_recv().is_err(), "nothing else is requested");
+    }
+
+    #[test]
+    fn continue_opens_the_newest_session_that_is_not_archived() {
+        let mut app = app_with(Startup {
+            continue_last: true,
+            ..Startup::default()
+        });
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.start();
+        assert!(matches!(requests.try_recv(), Ok(engine::Request::Catalog)));
+        // The engine answers the catalog most recently updated first, so the
+        // newest unarchived row is the one right after the archived ones.
+        app.handle(AppEvent::Catalog(vec![
+            archived("ses_archived", 300),
+            summary("ses_new", 200),
+            summary("ses_old", 100),
+        ]));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Open(id)) if id == "ses_new"
+        ));
+    }
+
+    #[test]
+    fn continue_without_sessions_explains_instead_of_opening_anything() {
+        let mut app = app_with(Startup {
+            continue_last: true,
+            ..Startup::default()
+        });
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.start();
+        app.handle(AppEvent::Catalog(Vec::new()));
+        assert!(requests.try_recv().is_ok(), "the catalog request");
+        assert!(requests.try_recv().is_err(), "nothing is opened");
+        assert_eq!(
+            app.home.notice().map(str::to_string),
+            Some("no Sessions to continue".into())
+        );
+    }
+
+    #[test]
+    fn a_launch_prompt_creates_a_session_and_is_sent_once_it_opens() {
+        let mut app = app_with(Startup {
+            prompt: Some("hello".into()),
+            ..Startup::default()
+        });
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.start();
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::NewSession)
+        ));
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_new", 1)),
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Prompt { session_id, text, .. })
+                if session_id == "ses_new" && text == "hello"
+        ));
+        // A second open must not resend the launch prompt.
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_other", 2)),
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        assert!(requests.try_recv().is_err());
     }
 
     #[test]

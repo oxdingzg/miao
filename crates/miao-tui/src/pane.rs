@@ -265,6 +265,10 @@ impl Home {
         self.notice = notice;
     }
 
+    pub fn notice(&self) -> Option<&str> {
+        self.notice.as_deref()
+    }
+
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
     }

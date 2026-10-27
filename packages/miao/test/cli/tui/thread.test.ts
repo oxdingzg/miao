@@ -4,7 +4,13 @@ import fs from "fs/promises"
 import path from "path"
 import yargs from "yargs"
 import { tmpdir } from "../../fixture/fixture"
-import { TuiThreadCommand, resolveThreadDirectory } from "../../../src/cli/cmd/tui"
+import {
+  TuiThreadCommand,
+  resolveThreadDirectory,
+  rustTuiBinary,
+  selectedTui,
+  unsupportedByRustTui,
+} from "../../../src/cli/cmd/tui"
 import { cliIt } from "../../lib/cli-process"
 
 describe("tui thread", () => {
@@ -64,6 +70,42 @@ describe("tui thread", () => {
       .parse(["--mdns", "--no-mdns"])
 
     expect(args.mdns).toBe(false)
+  })
+
+  test("starts the TypeScript TUI unless the Rust one is selected", () => {
+    expect(selectedTui({}, {})).toBe("legacy")
+    expect(selectedTui({}, { MIAO_TUI: "rust" })).toBe("rust")
+    expect(selectedTui({ tui: "rust" }, { MIAO_TUI: "legacy" })).toBe("rust")
+    expect(selectedTui({ tui: "legacy" }, { MIAO_TUI: "rust" })).toBe("legacy")
+  })
+
+  test("ignores a selection it does not recognise", () => {
+    expect(selectedTui({}, { MIAO_TUI: "ratatui" })).toBe("legacy")
+    expect(selectedTui({ tui: "ratatui" }, {})).toBe("legacy")
+  })
+
+  test("prefers MIAO_TUI_BIN over the installed locations", () => {
+    expect(rustTuiBinary({ MIAO_TUI_BIN: "/custom/miao-tui" })).toBe("/custom/miao-tui")
+  })
+
+  test("refuses options the Rust TUI does not implement", () => {
+    // `replay: false` means --no-replay, which the Rust TUI also lacks.
+    const unsupported = [
+      { mini: true },
+      { fork: true },
+      { agent: "build" },
+      { auto: true },
+      { yolo: true },
+      { "dangerously-skip-permissions": true },
+      { replay: true },
+      { replay: false },
+      { noReplay: true },
+      { replayLimit: 10 },
+      { demo: true },
+    ]
+
+    for (const args of unsupported) expect(unsupportedByRustTui(args)).toBeDefined()
+    expect(unsupportedByRustTui({})).toBeUndefined()
   })
 
   cliIt.live("rejects mini-only options without --mini", ({ opencode }) =>
