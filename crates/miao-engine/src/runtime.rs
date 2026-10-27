@@ -2166,19 +2166,31 @@ command: None,
                     return Ok(());
                 }
                 if block["input_error"] == "invalid_json" {
-                    if !block["input"].is_null()
-                        || block["provider_executed"] == true
-                        || !inner
-                            .tools
-                            .definitions()
-                            .iter()
-                            .any(|tool| tool.name == name)
-                    {
+                    if !block["input"].is_null() || block["provider_executed"] == true {
                         return Err(Error::Invalid(
                             "unsupported invalid tool input correction".into(),
                         ));
                     }
-                    inner.store.tool_result_fenced(session, run, id, json!({"error":"Invalid JSON tool arguments. This call was not executed. Supply a valid JSON object for this call only; do not repeat completed operations."}), true, lease).await?;
+                    // A name the catalog does not know is still the model's to
+                    // correct. TypeScript settles `Unknown tool: <name>` and
+                    // continues, and a garbled gateways' call must not end the
+                    // run: a MiMo reply whose second call reused stream index
+                    // zero arrived as one call named `write_filewrite_file`
+                    // and terminated the whole Session with "invalid request".
+                    let known = inner
+                        .tools
+                        .definitions()
+                        .iter()
+                        .any(|tool| tool.name == name);
+                    let error = if known {
+                        "Invalid JSON tool arguments. This call was not executed. Supply a valid JSON object for this call only; do not repeat completed operations.".to_string()
+                    } else {
+                        format!("Unknown tool: {name}. Its arguments were also not valid JSON, so nothing was executed. Call an available tool with a valid JSON object; do not repeat completed operations.")
+                    };
+                    inner
+                        .store
+                        .tool_result_fenced(session, run, id, json!({"error": error}), true, lease)
+                        .await?;
                     inner.store.record(session, "tool.input_error", json!({"run_id":run,"step":step,"call_id":id,"tool":name,"reason":"invalid_json","attempt":input_corrections})).await?;
                     continue;
                 }
@@ -2672,11 +2684,23 @@ command: None,
                 )
                 .await?;
         }
+        // The allowance corrects a malformed call twice. A model still writing
+        // unparseable arguments after that will not recover inside this run, so
+        // pause the drain the way an exhausted turn allowance does: the third
+        // invalid reply is already settled as a visible error result, and the
+        // Session stays usable instead of ending in a fatal provider error.
         if invalid_input && input_corrections > 2 {
             inner.store.record(session, "tool.input_recovery.stopped", json!({"run_id":run,"step":step,"reason":"correction_budget","attempts":input_corrections})).await?;
-            return Err(Error::Invalid(
-                "invalid tool JSON correction allowance exceeded".into(),
-            ));
+            inner
+                .store
+                .inject(
+                    session,
+                    &format!("correction-{run}"),
+                    "Stopped after the model repeatedly produced invalid JSON tool arguments. Send a message to continue.",
+                    "engine",
+                )
+                .await?;
+            return Ok(());
         }
         // Boundary reload always follows committed tool results. Steers promote
         // before continuation; queue only when this task would otherwise idle.

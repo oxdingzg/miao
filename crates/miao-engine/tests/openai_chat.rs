@@ -99,6 +99,135 @@ async fn fragmented_tool_input_is_only_published_after_valid_terminal() {
     server.await.unwrap();
 }
 
+/// A gateway that restarts its stream numbering for the second call must not
+/// have its frames appended into the first: that produced one call whose id
+/// was two ids and whose name was `write_filewrite_file`.
+#[tokio::test]
+async fn a_gateway_that_restarts_its_index_keeps_calls_separate() {
+    let body = frames(
+        vec![
+            chunk(
+                json!({"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"one\"}"}}]}),
+                json!(null),
+            ),
+            chunk(
+                json!({"tool_calls":[{"index":0,"id":"call_b","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"two\"}"}}]}),
+                json!(null),
+            ),
+            chunk(json!({}), json!("tool_calls")),
+        ],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(reply.needs_tools);
+    assert_eq!(reply.content[0]["id"], "call_a");
+    assert_eq!(reply.content[0]["input"]["path"], "one");
+    assert_eq!(reply.content[1]["id"], "call_b");
+    assert_eq!(reply.content[1]["input"]["path"], "two");
+    server.await.unwrap();
+}
+
+/// A call preamble repeated on a later frame restates the identity; appending
+/// it would double the name and break the arguments it precedes.
+#[tokio::test]
+async fn a_repeated_call_preamble_does_not_duplicate_the_name() {
+    let body = frames(
+        vec![
+            chunk(
+                json!({"tool_calls":[{"index":0,"id":"call","type":"function","function":{"name":"read_file","arguments":"{\"pa"}}]}),
+                json!(null),
+            ),
+            chunk(
+                json!({"tool_calls":[{"index":0,"id":"call","function":{"name":"read_file","arguments":"th\":\"file\"}"}}]}),
+                json!(null),
+            ),
+            chunk(json!({}), json!("tool_calls")),
+        ],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(reply.content[0]["id"], "call");
+    assert_eq!(reply.content[0]["name"], "read_file");
+    assert_eq!(reply.content[0]["input"]["path"], "file");
+    server.await.unwrap();
+}
+
+/// The gateway serving MiMo lifts small calls out of the model's own
+/// `<tool_call>` text but leaves a large argument object there, emitting the
+/// call with empty arguments. The reply still contains them.
+#[tokio::test]
+async fn arguments_written_as_tool_call_text_are_read_back() {
+    let body = frames(
+        vec![
+            chunk(
+                json!({"content":"Writing it.\n<tool_call>\n<function=write_file>\n<parameter=path>src/main.rs</parameter>\n<parameter=content>fn main() {}</parameter>\n<parameter=input>{\"nested\":[1,2]}</parameter>\n</function>\n</tool_call>"}),
+                json!(null),
+            ),
+            chunk(
+                json!({"tool_calls":[{"index":0,"id":"call","type":"function","function":{"name":"write_file","arguments":""}}]}),
+                json!(null),
+            ),
+            chunk(json!({}), json!("tool_calls")),
+        ],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(reply.content[1]["type"], "tool_use");
+    assert_eq!(
+        reply.content[1]["input"],
+        json!({"path":"src/main.rs","content":"fn main() {}","input":{"nested":[1,2]}})
+    );
+    server.await.unwrap();
+}
+
+/// Only the block naming this call may supply its arguments; borrowing another
+/// function's block would execute a call the model never made.
+#[tokio::test]
+async fn tool_call_text_for_another_function_is_not_borrowed() {
+    let body = frames(
+        vec![
+            chunk(
+                json!({"content":"<tool_call><function=write_file><parameter=path>a</parameter></function></tool_call>"}),
+                json!(null),
+            ),
+            chunk(
+                json!({"tool_calls":[{"index":0,"id":"call","type":"function","function":{"name":"read_file","arguments":""}}]}),
+                json!(null),
+            ),
+            chunk(json!({}), json!("tool_calls")),
+        ],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(reply.content[1]["input"].is_null());
+    assert_eq!(reply.content[1]["input_error"], "invalid_json");
+    server.await.unwrap();
+}
+
 #[tokio::test]
 async fn truncation_refusal_length_and_invalid_shapes_never_complete_or_retry() {
     let bodies = [

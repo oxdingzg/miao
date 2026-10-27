@@ -5,7 +5,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::HashMap, time::Duration};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -336,11 +336,79 @@ struct Call {
     name: String,
     arguments: String,
 }
+
+/// The argument object of a call the model wrote as its native
+/// `<tool_call><function=NAME><parameter=KEY>VALUE</parameter>…` text. Only the
+/// block naming this call is read, and only when the streamed frame carried no
+/// usable arguments of its own.
+fn inline_arguments(text: &str, name: &str) -> Option<Value> {
+    let mut rest = text;
+    while let Some(start) = rest.find("<tool_call>") {
+        let body = &rest[start + "<tool_call>".len()..];
+        let end = body.find("</tool_call>")?;
+        let block = &body[..end];
+        rest = &body[end + "</tool_call>".len()..];
+        let Some(opened) = block
+            .find("<function=")
+            .map(|at| &block[at + "<function=".len()..])
+        else {
+            continue;
+        };
+        let Some(header) = opened.find('>') else {
+            continue;
+        };
+        if opened[..header].trim() != name {
+            continue;
+        }
+        let mut parameters = serde_json::Map::new();
+        let mut inner = &opened[header + 1..];
+        while let Some(at) = inner.find("<parameter=") {
+            let parameter = &inner[at + "<parameter=".len()..];
+            let Some(header) = parameter.find('>') else {
+                break;
+            };
+            let value = &parameter[header + 1..];
+            let Some(end) = value.find("</parameter>") else {
+                break;
+            };
+            parameters.insert(
+                parameter[..header].trim().to_string(),
+                inline_value(&value[..end]),
+            );
+            inner = &value[end + "</parameter>".len()..];
+        }
+        if parameters.is_empty() {
+            continue;
+        }
+        return Some(Value::Object(parameters));
+    }
+    None
+}
+
+/// A parameter arrives as text, with no type of its own. Only the JSON
+/// literals a caller would never mean as text are decoded; everything else
+/// stays a string, so a code body or a numeric-looking path is untouched.
+fn inline_value(raw: &str) -> Value {
+    match raw {
+        "null" => Value::Null,
+        "true" => Value::Bool(true),
+        "false" => Value::Bool(false),
+        _ => match serde_json::from_str::<Value>(raw) {
+            Ok(value) if value.is_object() || value.is_array() => value,
+            _ => Value::String(raw.into()),
+        },
+    }
+}
 #[derive(Default)]
 struct ChatState {
     text: String,
     reasoning: String,
-    calls: BTreeMap<u64, Call>,
+    /// Calls in arrival order. Not keyed by the provider's `index`: a gateway
+    /// that restarts its numbering for a second call would otherwise merge
+    /// two distinct calls into one garbled identity.
+    calls: Vec<Call>,
+    /// The call each provider `index` is currently streaming into.
+    route: HashMap<u64, usize>,
     finish: Option<String>,
     usage: Value,
     done: bool,
@@ -426,11 +494,39 @@ impl Parser for ChatState {
                     .as_u64()
                     .filter(|i| *i < 64)
                     .ok_or_else(invalid)?;
-                let call = self.calls.entry(index).or_default();
-                if let Some(id) = tool["id"].as_str() {
-                    call.id.push_str(id);
+                let id = tool["id"].as_str().filter(|id| !id.is_empty());
+                // A first frame starts a call; so does a frame that names a
+                // different call than the one this index is streaming. Some
+                // gateways restart `index` at zero for every call, and
+                // appending those frames together produced one call whose id
+                // was two ids and whose name was the name twice — a call the
+                // engine could not execute or even report on.
+                let slot = match (self.route.get(&index).copied(), id) {
+                    (Some(slot), Some(id))
+                        if !self.calls[slot].id.is_empty() && self.calls[slot].id != id =>
+                    {
+                        self.calls.push(Call::default());
+                        self.calls.len() - 1
+                    }
+                    (Some(slot), _) => slot,
+                    (None, _) => {
+                        self.calls.push(Call::default());
+                        self.calls.len() - 1
+                    }
+                };
+                self.route.insert(index, slot);
+                let call = &mut self.calls[slot];
+                if let Some(id) = id {
+                    if call.id.is_empty() {
+                        call.id.push_str(id);
+                    }
                 }
                 if let Some(name) = tool["function"]["name"].as_str() {
+                    // A frame that carries the call id restates its name;
+                    // id-less frames only extend a name that streamed in pieces.
+                    if id.is_some() {
+                        call.name.clear();
+                    }
                     call.name.push_str(name);
                 }
                 if let Some(args) = tool["function"]["arguments"].as_str() {
@@ -528,17 +624,28 @@ impl Parser for ChatState {
             content.push(json!({"type":"reasoning","text":self.reasoning}));
         }
         if !self.text.is_empty() {
-            content.push(json!({"type":"text","text":self.text}));
+            content.push(json!({"type":"text","text":self.text.clone()}));
         }
         let mut ids = std::collections::HashSet::new();
-        for call in self.calls.into_values() {
+        for call in self.calls {
             if call.id.is_empty() || call.name.is_empty() || !ids.insert(call.id.clone()) {
                 return Err(ProviderError::Stream("invalid tool identity".into()));
             }
+            // The gateway serving MiMo lifts small calls out of the model's
+            // own `<tool_call>` text but leaves a large argument object in the
+            // text and emits the call with no arguments at all — three times
+            // in one run, which used to end the Session. The arguments are in
+            // the reply either way, so read them back instead of correcting a
+            // call the model did make.
+            let arguments = match serde_json::from_str::<Value>(&call.arguments) {
+                Ok(input) if input.is_object() => call.arguments.clone(),
+                _ => match inline_arguments(&self.text, &call.name) {
+                    Some(recovered) => recovered.to_string(),
+                    None => call.arguments.clone(),
+                },
+            };
             content.push(crate::provider::decode_tool_call(
-                &call.id,
-                &call.name,
-                &call.arguments,
+                &call.id, &call.name, &arguments,
             )?);
         }
         Ok(Reply {

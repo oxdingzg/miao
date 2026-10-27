@@ -281,14 +281,17 @@ async fn changing_invalid_calls_cannot_bypass_the_two_correction_allowance() {
             .await
             .unwrap();
         let events = finished(&store).await;
+        // Exhausting the allowance pauses the drain; it is not a provider
+        // failure, so the Session stays usable and the transcript says why.
         assert_eq!(
             events
                 .iter()
                 .find(|event| event.kind == "run.finished")
                 .unwrap()
                 .data["reason"],
-            "failed"
+            "completed"
         );
+        assert!(!events.iter().any(|event| event.kind == "stop_failure"));
         assert_eq!(
             events
                 .iter()
@@ -299,6 +302,7 @@ async fn changing_invalid_calls_cannot_bypass_the_two_correction_allowance() {
         assert!(events
             .iter()
             .any(|event| event.kind == "tool.input_recovery.stopped"));
+        assert!(events.iter().any(|event| event.kind == "message.synthetic"));
         assert!(!events.iter().any(|event| event.kind == "tool.dispatched"));
         server.await.unwrap();
         let mut count = 0;
@@ -322,57 +326,102 @@ impl Provider for Ineligible {
         _: tokio::sync::mpsc::Sender<Value>,
         _: tokio_util::sync::CancellationToken,
     ) -> Result<miao_engine::provider::Reply, miao_engine::provider::ProviderError> {
-        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(miao_engine::provider::Reply {
-            content: json!([{"type":"tool_use","id":"ineligible","name":if self.hosted{"read_file"}else{"unknown_local_tool"},"input":null,"input_error":"invalid_json","provider_executed":self.hosted}]),
+            content: json!([{"type":"tool_use","id":format!("ineligible-{call}"),"name":if self.hosted{"read_file"}else{"unknown_local_tool"},"input":null,"input_error":"invalid_json","provider_executed":self.hosted}]),
             needs_tools: true,
             usage: json!({}),
         })
     }
 }
 
-#[tokio::test]
-async fn provider_executed_and_unregistered_calls_are_never_corrected_or_dispatched() {
-    for hosted in [false, true] {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-        let provider = Arc::new(Ineligible {
-            hosted,
-            calls: std::sync::atomic::AtomicUsize::new(0),
-        });
-        let runtime = Runtime::new(
-            store.clone(),
-            provider.clone(),
-            Tools::new(dir.path()).await.unwrap(),
+async fn run_ineligible(hosted: bool) -> (Vec<miao_engine::protocol::Event>, usize) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let provider = Arc::new(Ineligible {
+        hosted,
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let runtime = Runtime::new(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "s".into(),
+                input_id: "human".into(),
+                prompt: "read file".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
         )
         .await
         .unwrap();
-        runtime
-            .admit(
-                Input {
-                    agent_references: Default::default(),
-                    command: None,
-                    session_id: "s".into(),
-                    input_id: "human".into(),
-                    prompt: "read file".into(),
-                    delivery: Delivery::Steer,
-                },
-                true,
-            )
-            .await
-            .unwrap();
-        let events = finished(&store).await;
-        assert_eq!(
-            events
-                .iter()
-                .find(|event| event.kind == "run.finished")
-                .unwrap()
-                .data["reason"],
-            "failed"
-        );
-        assert_eq!(provider.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
-        assert!(!events.iter().any(|event| event.kind == "tool.dispatched"
+    let events = finished(&store).await;
+    runtime.shutdown().await;
+    (
+        events,
+        provider.calls.load(std::sync::atomic::Ordering::SeqCst),
+    )
+}
+
+#[tokio::test]
+async fn provider_executed_calls_are_never_corrected_or_dispatched() {
+    let (events, calls) = run_ineligible(true).await;
+    assert_eq!(
+        events
+            .iter()
+            .find(|event| event.kind == "run.finished")
+            .unwrap()
+            .data["reason"],
+        "failed"
+    );
+    assert_eq!(calls, 1);
+    assert!(!events
+        .iter()
+        .any(|event| event.kind == "tool.dispatched"
             || event.kind == "tool.input_recovery.continuation"));
-        runtime.shutdown().await;
-    }
+}
+
+/// A name the catalog does not know is still the model's to correct. A MiMo
+/// gateway reply whose second call reused stream index zero arrived as one
+/// call named `write_filewrite_file`; treating it like a hosted action ended
+/// the Session with "invalid request" on the first slip.
+#[tokio::test]
+async fn unregistered_calls_are_corrected_within_the_same_budget_and_never_dispatched() {
+    let (events, calls) = run_ineligible(false).await;
+    assert_eq!(calls, 3);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "tool.input_error")
+            .count(),
+        3
+    );
+    assert!(events
+        .iter()
+        .any(|event| event.kind == "tool.input_recovery.stopped"));
+    assert!(!events.iter().any(|event| event.kind == "tool.dispatched"));
+    let results = events
+        .iter()
+        .filter(|event| event.kind == "message.committed")
+        .flat_map(|event| {
+            event.data["content"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+        })
+        .filter(|block| block["type"] == "tool_result")
+        .map(|block| block["content"].to_string())
+        .collect::<Vec<_>>();
+    assert!(!results.is_empty());
+    assert!(results
+        .iter()
+        .all(|result| result.contains("Unknown tool: unknown_local_tool")));
 }
