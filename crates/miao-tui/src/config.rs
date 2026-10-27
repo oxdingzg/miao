@@ -85,7 +85,9 @@ fn files(workspace: &Path) -> Vec<PathBuf> {
     files
 }
 
-fn global_dir() -> Option<PathBuf> {
+/// The product's configuration directory: the same answer
+/// `Global.Path.config` gives the TypeScript host.
+pub fn global_dir() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("MIAO_CONFIG_DIR") {
         return Some(PathBuf::from(dir));
     }
