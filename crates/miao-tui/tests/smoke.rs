@@ -18,16 +18,20 @@ struct Harness {
 
 impl Harness {
     fn spawn(label: &str, inject_panic: bool) -> Self {
-        Self::spawn_with(label, inject_panic, false)
+        Self::spawn_with(label, inject_panic, false, false)
     }
 
     /// Boot the TUI against the scripted engine so the smoke test can enter a
     /// Session without a database, a provider, or a model.
     fn spawn_engine(label: &str) -> Self {
-        Self::spawn_with(label, false, true)
+        Self::spawn_with(label, false, true, false)
     }
 
-    fn spawn_with(label: &str, inject_panic: bool, engine: bool) -> Self {
+    fn spawn_engine_approval(label: &str) -> Self {
+        Self::spawn_with(label, false, true, true)
+    }
+
+    fn spawn_with(label: &str, inject_panic: bool, engine: bool, approval: bool) -> Self {
         let dir =
             std::env::temp_dir().join(format!("miao-tui-smoke-{}-{label}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("workspace dir");
@@ -55,6 +59,9 @@ impl Harness {
             );
             cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
             cmd.env("MIAO_TUI_FAKE_ADMIT_LOG", dir.join("admit.log"));
+            if approval {
+                cmd.env("MIAO_TUI_FAKE_APPROVAL", "1");
+            }
             // History lives under the state dir; keep the developer's real
             // composer history out of a test run.
             cmd.env("MIAO_TUI_STATE_DIR", dir.join("state"));
@@ -330,6 +337,54 @@ fn ctrl_c_clears_a_draft_before_it_quits() {
     harness.write(b"\x03");
     let status =
         wait_exit(&mut harness.child, Duration::from_secs(5)).expect("second Ctrl+C must quit");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
+fn an_approval_is_answered_from_the_panel() {
+    let mut harness = Harness::spawn_engine_approval("approval");
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "always allow", Duration::from_secs(3)),
+        "the approval panel did not render:\n{}",
+        plain(&harness.text())
+    );
+    assert!(
+        plain(&harness.text()).contains("ls -la"),
+        "the approval resource is missing"
+    );
+    assert!(
+        plain(&harness.text()).contains("working"),
+        "the status line did not show the active run"
+    );
+    harness.write(b"1");
+    let log = harness.dir.join("admit.log");
+    let start = Instant::now();
+    let mut recorded = String::new();
+    while start.elapsed() < Duration::from_secs(5) {
+        recorded = std::fs::read_to_string(&log).unwrap_or_default();
+        if recorded.contains("\"decision\":\"allow\"") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        recorded.contains("\"decision\":\"allow\""),
+        "approve never reached the engine: {recorded}"
+    );
+    assert!(
+        recorded.contains("run-1/call_1"),
+        "the approval binding was not echoed: {recorded}"
+    );
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("process did not exit after Ctrl+C");
     assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
     harness.shutdown();
 }

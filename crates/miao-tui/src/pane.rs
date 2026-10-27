@@ -8,7 +8,9 @@ use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 
 use crate::editor::Composer;
-use crate::session::{Entry, Part, SessionSummary, ToolPart, Transcript};
+use crate::session::{
+    ApprovalView, Entry, Part, QuestionView, SessionSummary, ToolPart, Transcript,
+};
 use crate::theme::Theme;
 
 /// How many output lines one tool row shows before collapsing. The full output
@@ -28,6 +30,7 @@ pub struct Shell {
     pub title: TitlePane,
     pub transcript: TranscriptPane,
     pub composer: Composer,
+    pub panel: Option<Panel>,
     pub sidebar: Option<SidebarPane>,
 }
 
@@ -42,6 +45,7 @@ impl Shell {
                 follow: true,
             },
             composer: Composer::new(workspace),
+            panel: None,
             sidebar: Some(SidebarPane {
                 theme,
                 session: None,
@@ -83,9 +87,11 @@ impl Shell {
     }
 
     pub fn render(&mut self, frame: &mut Frame) {
-        let [title_area, body_area, composer_area] = Layout::vertical([
+        let panel_height = self.panel.as_ref().map_or(0, Panel::height);
+        let [title_area, body_area, panel_area, composer_area] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(1),
+            Constraint::Length(panel_height),
             Constraint::Length(composer_height(&self.composer)),
         ])
         .areas(frame.area());
@@ -101,12 +107,16 @@ impl Shell {
         } else {
             self.transcript.render(frame, body_area);
         }
+        if let Some(panel) = self.panel.as_ref() {
+            panel.render(frame, panel_area, &self.transcript.theme);
+        }
         render_composer(frame, composer_area, &self.composer, &self.transcript.theme);
     }
 }
 
 pub struct TitlePane {
     label: String,
+    status: Option<String>,
     theme: Theme,
 }
 
@@ -117,7 +127,8 @@ impl TitlePane {
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| workspace.display().to_string());
         Self {
-            label: format!(" miao-tui · {name} · {} ", git_branch(workspace)),
+            label: format!(" miao-tui · {name} · {}", git_branch(workspace)),
+            status: None,
             theme,
         }
     }
@@ -134,16 +145,24 @@ fn git_branch(workspace: &Path) -> String {
         .unwrap_or_else(|| "no git".to_string())
 }
 
+impl TitlePane {
+    pub fn set_status(&mut self, status: Option<String>) {
+        self.status = status;
+    }
+}
+
 impl Pane for TitlePane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let style = Style::new()
-            .fg(self.theme.palette.primary)
-            .bg(self.theme.palette.surface)
-            .bold();
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(self.label.as_str(), style))),
-            area,
-        );
+        let palette = self.theme.palette;
+        let style = Style::new().fg(palette.primary).bg(palette.surface).bold();
+        let mut spans = vec![Span::styled(format!("{} ", self.label), style)];
+        if let Some(status) = &self.status {
+            spans.push(Span::styled(
+                format!("· {status} "),
+                Style::new().fg(palette.text_muted).bg(palette.surface),
+            ));
+        }
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
     }
 }
 
@@ -627,5 +646,335 @@ impl Pane for SidebarPane {
                 .wrap(Wrap { trim: false }),
             area,
         );
+    }
+}
+
+/// A blocking engine decision drawn above the composer. Only one request is
+/// surfaced at a time; the engine serializes them within a Session.
+pub struct Panel {
+    pub kind: PanelKind,
+}
+
+pub enum PanelKind {
+    Approval(ApprovalView),
+    Question(QuestionProgress),
+}
+
+pub struct QuestionProgress {
+    pub view: QuestionView,
+    focus: usize,
+    cursor: Vec<usize>,
+    chosen: Vec<Vec<bool>>,
+}
+
+const PANEL_ROWS: usize = 12;
+
+impl Panel {
+    pub fn approval(view: ApprovalView) -> Self {
+        Self {
+            kind: PanelKind::Approval(view),
+        }
+    }
+
+    pub fn question(view: QuestionView) -> Self {
+        let cursor = vec![0; view.questions.len()];
+        let chosen = view
+            .questions
+            .iter()
+            .map(|question| vec![false; question.options.len()])
+            .collect();
+        Self {
+            kind: PanelKind::Question(QuestionProgress {
+                view,
+                focus: 0,
+                cursor,
+                chosen,
+            }),
+        }
+    }
+
+    /// The engine-side identity of the request being shown.
+    pub fn request_id(&self) -> &str {
+        match &self.kind {
+            PanelKind::Approval(view) => &view.request_id,
+            PanelKind::Question(progress) => &progress.view.question_id,
+        }
+    }
+
+    pub fn approval_view(&self) -> Option<&ApprovalView> {
+        match &self.kind {
+            PanelKind::Approval(view) => Some(view),
+            PanelKind::Question(_) => None,
+        }
+    }
+
+    pub fn height(&self) -> u16 {
+        let rows = match &self.kind {
+            PanelKind::Approval(_) => 4,
+            PanelKind::Question(progress) => {
+                progress.view.questions[progress.focus].options.len() + 4
+            }
+        };
+        (rows.min(PANEL_ROWS) + 2) as u16
+    }
+
+    pub fn move_cursor(&mut self, delta: i32) {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return;
+        };
+        let question = &progress.view.questions[progress.focus];
+        let next = progress.cursor[progress.focus] as i32 + delta;
+        progress.cursor[progress.focus] = next.clamp(0, question.options.len() as i32 - 1) as usize;
+    }
+
+    /// Toggle the focused option for a multi-select question; a single-select
+    /// question just moves the mark.
+    pub fn toggle(&mut self) {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return;
+        };
+        let focus = progress.focus;
+        let cursor = progress.cursor[focus];
+        let multi = progress.view.questions[focus].multi_select;
+        let chosen = &mut progress.chosen[focus];
+        if multi {
+            chosen[cursor] = !chosen[cursor];
+            return;
+        }
+        chosen.iter_mut().for_each(|mark| *mark = false);
+        chosen[cursor] = true;
+    }
+
+    /// Confirm the focused question. Returns the `answer_question` payload once
+    /// every question has at least one label, otherwise advances the focus.
+    pub fn submit(&mut self) -> Option<serde_json::Value> {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return None;
+        };
+        let focus = progress.focus;
+        let cursor = progress.cursor[focus];
+        if !progress.view.questions[focus].multi_select {
+            progress.chosen[focus]
+                .iter_mut()
+                .for_each(|mark| *mark = false);
+            progress.chosen[focus][cursor] = true;
+        }
+        let next = progress
+            .chosen
+            .iter()
+            .enumerate()
+            .skip(focus + 1)
+            .find(|(_, marks)| !marks.iter().any(|mark| *mark))
+            .map(|(index, _)| index);
+        if let Some(index) = next {
+            progress.focus = index;
+            return None;
+        }
+        if progress
+            .chosen
+            .iter()
+            .any(|marks| !marks.iter().any(|mark| *mark))
+        {
+            progress.focus = focus;
+            return None;
+        }
+        let answers = progress
+            .view
+            .questions
+            .iter()
+            .zip(&progress.chosen)
+            .map(|(question, marks)| {
+                question
+                    .options
+                    .iter()
+                    .zip(marks)
+                    .filter(|(_, mark)| **mark)
+                    .map(|(option, _)| option.label.clone())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        Some(progress.view.answer(answers))
+    }
+
+    pub fn rejection(&self) -> Option<serde_json::Value> {
+        match &self.kind {
+            PanelKind::Approval(_) => None,
+            PanelKind::Question(progress) => Some(progress.view.rejection()),
+        }
+    }
+
+    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
+        let palette = theme.palette;
+        let title = match &self.kind {
+            PanelKind::Approval(_) => " approval ",
+            PanelKind::Question(_) => " question ",
+        };
+        let block = Block::bordered()
+            .title(Span::styled(title, Style::new().fg(palette.warning)))
+            .border_style(Style::new().fg(palette.warning))
+            .style(Style::new().bg(palette.background));
+        frame.render_widget(
+            Paragraph::new(panel_lines(self, theme))
+                .block(block)
+                .wrap(Wrap { trim: false }),
+            area,
+        );
+    }
+}
+
+fn panel_lines(panel: &Panel, theme: &Theme) -> Vec<Line<'static>> {
+    let palette = theme.palette;
+    match &panel.kind {
+        PanelKind::Approval(view) => vec![
+            Line::from(vec![
+                Span::styled(view.tool.clone(), Style::new().fg(palette.secondary)),
+                Span::styled(
+                    format!("  {}", compact(&view.resource)),
+                    Style::new().fg(palette.text_muted),
+                ),
+            ]),
+            Line::from(Span::styled(
+                compact(&view.input.to_string()),
+                Style::new().fg(palette.text),
+            )),
+            Line::default(),
+            Line::from(Span::styled(
+                "1 allow once · 2 always allow · 3 deny",
+                Style::new().fg(palette.text_muted),
+            )),
+        ],
+        PanelKind::Question(progress) => {
+            let question = &progress.view.questions[progress.focus];
+            let heading = if question.header.is_empty() {
+                question.question.clone()
+            } else {
+                format!("{} · {}", question.header, question.question)
+            };
+            let mut lines = vec![
+                Line::from(Span::styled(heading, Style::new().fg(palette.text))),
+                Line::default(),
+            ];
+            for (index, option) in question.options.iter().enumerate() {
+                let marked = progress.chosen[progress.focus][index];
+                let focused = index == progress.cursor[progress.focus];
+                let glyph = match (question.multi_select, marked, focused) {
+                    (true, true, true) => "▸ [x] ",
+                    (true, true, false) => "  [x] ",
+                    (true, false, true) => "▸ [ ] ",
+                    (true, false, false) => "  [ ] ",
+                    (false, _, true) => "▸ ",
+                    (false, _, false) => "  ",
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("{glyph}{}", option.label),
+                        if focused {
+                            Style::new()
+                                .fg(palette.primary)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::new().fg(palette.text)
+                        },
+                    ),
+                    Span::styled(
+                        if option.description.is_empty() {
+                            String::new()
+                        } else {
+                            format!("  {}", compact(&option.description))
+                        },
+                        Style::new().fg(palette.text_muted),
+                    ),
+                ]));
+            }
+            let last = progress.focus + 1 == progress.view.questions.len();
+            lines.push(Line::default());
+            lines.push(Line::from(Span::styled(
+                if question.multi_select {
+                    "space toggle · enter continue · esc reject"
+                } else if last {
+                    "enter submit · esc reject"
+                } else {
+                    "enter continue · esc reject"
+                },
+                Style::new().fg(palette.text_muted),
+            )));
+            lines
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::{Choice, QuestionItem};
+
+    fn question(multi: bool) -> QuestionView {
+        QuestionView {
+            question_id: "run-1/call_2".into(),
+            input_hash: "b".repeat(64),
+            questions: vec![QuestionItem {
+                question: "Which files?".into(),
+                header: "Files".into(),
+                options: vec![
+                    Choice {
+                        label: "src".into(),
+                        description: String::new(),
+                    },
+                    Choice {
+                        label: "docs".into(),
+                        description: String::new(),
+                    },
+                ],
+                multi_select: multi,
+            }],
+        }
+    }
+
+    #[test]
+    fn a_single_choice_question_answers_on_enter() {
+        let mut panel = Panel::question(question(false));
+        panel.move_cursor(1);
+        let answer = panel.submit().expect("answer");
+        assert_eq!(answer["question_id"], "run-1/call_2");
+        assert_eq!(answer["input_hash"], "b".repeat(64));
+        assert_eq!(answer["answers"], serde_json::json!([["docs"]]));
+    }
+
+    #[test]
+    fn a_multi_select_question_collects_every_toggled_label() {
+        let mut panel = Panel::question(question(true));
+        assert!(panel.submit().is_none(), "nothing chosen yet");
+        panel.toggle();
+        panel.move_cursor(1);
+        panel.toggle();
+        let answer = panel.submit().expect("answer");
+        assert_eq!(answer["answers"], serde_json::json!([["src", "docs"]]));
+    }
+
+    #[test]
+    fn a_question_panel_rejects_with_its_bound_hash() {
+        let panel = Panel::question(question(false));
+        let rejection = panel.rejection().expect("rejection");
+        assert_eq!(rejection["question_id"], "run-1/call_2");
+        assert_eq!(rejection["input_hash"], "b".repeat(64));
+    }
+
+    #[test]
+    fn an_approval_response_echoes_the_binding_identities() {
+        let view = ApprovalView {
+            request_id: "run-1/call_1".into(),
+            tool: "bash".into(),
+            resource: "ls".into(),
+            input: serde_json::json!({}),
+            input_hash: "c".repeat(64),
+            policy_revision: "rev-2".into(),
+            matcher: Some(serde_json::json!({"kind": "builtin"})),
+            expires_at_ms: None,
+        };
+        let response = view.response("allow");
+        assert_eq!(response["request_id"], "run-1/call_1");
+        assert_eq!(response["decision"], "allow");
+        assert_eq!(response["policy_revision"], "rev-2");
+        assert_eq!(response["matcher"]["kind"], "builtin");
     }
 }

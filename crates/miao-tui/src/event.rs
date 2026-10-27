@@ -1,7 +1,7 @@
 use crossterm::event::Event as TerminalEvent;
 use crossterm::event::KeyEvent;
 
-use crate::session::{SessionSummary, Transcript};
+use crate::session::{SessionState, SessionSummary, Transcript};
 
 #[derive(Debug)]
 pub enum AppEvent {
@@ -18,7 +18,11 @@ pub enum AppEvent {
     SessionOpened {
         summary: Option<SessionSummary>,
         transcript: Box<Transcript>,
+        state: SessionState,
     },
+    /// A control action (cancel, approve, answer) the engine refused. Shown as
+    /// a composer notice; it never ends the transport.
+    ActionFailed(String),
     /// A prompt the engine refused. The UI puts `text` back in the composer so
     /// the draft is never lost.
     PromptFailed {

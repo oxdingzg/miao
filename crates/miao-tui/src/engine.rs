@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use crate::event::{AppEvent, Bus};
-use crate::session::{home_rows, DisplayFile, SessionSummary, Transcript};
+use crate::session::{home_rows, DisplayFile, SessionState, SessionSummary, Transcript};
 use crate::transport::{self, EngineClient, EngineSpawn, TransportEvent};
 
 /// Committed events that change what the transcript shows. Coalesced so one
@@ -33,6 +33,24 @@ pub enum Request {
         text: String,
     },
     NewSession,
+    /// Interrupt the active run; idle Sessions answer `accepted: false`.
+    Cancel {
+        session_id: String,
+    },
+    /// Resolve one pending approval, optionally remembering the decision.
+    Approve {
+        session_id: String,
+        response: Value,
+        persistent: bool,
+    },
+    Answer {
+        session_id: String,
+        answer: Value,
+    },
+    RejectQuestion {
+        session_id: String,
+        rejection: Value,
+    },
 }
 
 #[derive(Clone)]
@@ -62,6 +80,34 @@ impl Handle {
 
     pub fn new_session(&self) {
         let _ = self.tx.send(Request::NewSession);
+    }
+
+    pub fn cancel(&self, session_id: &str) {
+        let _ = self.tx.send(Request::Cancel {
+            session_id: session_id.to_string(),
+        });
+    }
+
+    pub fn approve(&self, session_id: &str, response: Value, persistent: bool) {
+        let _ = self.tx.send(Request::Approve {
+            session_id: session_id.to_string(),
+            response,
+            persistent,
+        });
+    }
+
+    pub fn answer(&self, session_id: &str, answer: Value) {
+        let _ = self.tx.send(Request::Answer {
+            session_id: session_id.to_string(),
+            answer,
+        });
+    }
+
+    pub fn reject_question(&self, session_id: &str, rejection: Value) {
+        let _ = self.tx.send(Request::RejectQuestion {
+            session_id: session_id.to_string(),
+            rejection,
+        });
     }
 }
 
@@ -194,6 +240,55 @@ async fn run(
                         }),
                     }
                 }
+                Some(Request::Cancel { session_id }) => {
+                    match client.cancel(&session_id).await {
+                        Ok(_) => dirty = Some(Instant::now()),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("interrupt failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::Approve {
+                    session_id,
+                    response,
+                    persistent,
+                }) => {
+                    let method = if persistent { "approve_persistent" } else { "approve" };
+                    let result = client
+                        .request(method, json!({ "session_id": session_id, "response": response }))
+                        .await;
+                    match result {
+                        Ok(_) => dirty = Some(Instant::now()),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("approval failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::Answer { session_id, answer }) => {
+                    match client.answer_question(&session_id, answer).await {
+                        Ok(_) => dirty = Some(Instant::now()),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("answer failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::RejectQuestion {
+                    session_id,
+                    rejection,
+                }) => {
+                    let result = client
+                        .request(
+                            "reject_question",
+                            json!({ "session_id": session_id, "rejection": rejection }),
+                        )
+                        .await;
+                    match result {
+                        Ok(_) => dirty = Some(Instant::now()),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("reject failed: {error}")))
+                        }
+                    }
+                }
                 Some(Request::NewSession) => {
                     dirty = None;
                     let id = new_id("ses");
@@ -214,7 +309,22 @@ async fn run(
                 }
                 Some(TransportEvent::Event(event)) => {
                     let watched = open.as_ref().is_some_and(|state| state.id == event.session_id);
-                    if watched && matches!(event.kind.as_str(), "message.committed" | "tool.completed") {
+                    // Anything that changes run status, the transcript, or a
+                    // pending decision settles into the next snapshot.
+                    if watched
+                        && matches!(
+                            event.kind.as_str(),
+                            "message.committed"
+                                | "tool.completed"
+                                | "run.started"
+                                | "run.finished"
+                                | "run.cancel_requested"
+                                | "approval.requested"
+                                | "approval.resolved"
+                                | "question.requested"
+                                | "question.resolved"
+                        )
+                    {
                         dirty = Some(Instant::now());
                     }
                 }
@@ -330,6 +440,7 @@ async fn project(client: &EngineClient, bus: &Bus, state: &mut Opened) {
     bus.send(AppEvent::SessionOpened {
         summary: SessionSummary::from_snapshot(&snapshot),
         transcript: Box::new(transcript),
+        state: SessionState::from_snapshot(&snapshot),
     });
 }
 
