@@ -1,12 +1,19 @@
 use std::path::Path;
 
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph};
+use ratatui::widgets::{Block, Paragraph, Wrap};
 use ratatui::Frame;
 
+use crate::session::{Entry, Part, SessionSummary, ToolPart, Transcript};
 use crate::theme::Theme;
+
+/// How many output lines one tool row shows before collapsing. The full output
+/// stays in the engine; this is a reading surface, not a pager.
+const TOOL_PREVIEW_LINES: usize = 8;
+/// How many diff lines one changed file shows before collapsing.
+const DIFF_PREVIEW_LINES: usize = 12;
 
 const SIDEBAR_MIN_WIDTH: u16 = 100;
 const SIDEBAR_WIDTH: u16 = 24;
@@ -28,12 +35,51 @@ impl Shell {
             title: TitlePane::new(workspace, theme.clone()),
             transcript: TranscriptPane {
                 theme: theme.clone(),
+                lines: vec![Line::from("no Session selected")],
+                scroll: 0,
+                follow: true,
             },
             composer: ComposerPane {
                 input: String::new(),
                 theme: theme.clone(),
             },
-            sidebar: Some(SidebarPane { theme }),
+            sidebar: Some(SidebarPane {
+                theme,
+                session: None,
+            }),
+        }
+    }
+
+    pub fn set_transcript(&mut self, transcript: &Transcript) {
+        self.transcript.lines = transcript_lines(transcript, &self.transcript.theme);
+        let max = self.transcript.lines.len().saturating_sub(1);
+        self.transcript.scroll = self.transcript.scroll.min(max as u16);
+    }
+
+    /// Show one status line instead of a transcript: engine failures and other
+    /// states where there is no Session content to render.
+    pub fn set_message(&mut self, message: &str) {
+        let palette = self.transcript.theme.palette;
+        self.transcript.lines = vec![Line::from(Span::styled(
+            message.to_string(),
+            Style::new().fg(palette.error),
+        ))];
+        self.transcript.scroll = 0;
+        self.transcript.follow = false;
+    }
+
+    pub fn scroll_transcript(&mut self, delta: i32) {
+        // Scrolling up detaches from the bottom; new content then lands above
+        // the viewport instead of pulling it along.
+        self.transcript.follow = false;
+        let max = self.transcript.lines.len().saturating_sub(1);
+        let next = self.transcript.scroll as i32 + delta;
+        self.transcript.scroll = next.clamp(0, max as i32) as u16;
+    }
+
+    pub fn set_session(&mut self, session: Option<&SessionSummary>) {
+        if let Some(sidebar) = self.sidebar.as_mut() {
+            sidebar.session = session.cloned();
         }
     }
 
@@ -104,6 +150,11 @@ impl Pane for TitlePane {
 
 pub struct TranscriptPane {
     theme: Theme,
+    lines: Vec<Line<'static>>,
+    scroll: u16,
+    /// Follow the tail while new projections arrive. Any manual scroll clears
+    /// it, so reading history is not interrupted by committed events.
+    follow: bool,
 }
 
 impl Pane for TranscriptPane {
@@ -116,13 +167,305 @@ impl Pane for TranscriptPane {
             ))
             .border_style(Style::new().fg(palette.border))
             .style(Style::new().bg(palette.background));
+        if self.follow {
+            let viewport = area.height.saturating_sub(2) as usize;
+            self.scroll = self.lines.len().saturating_sub(viewport) as u16;
+        }
         frame.render_widget(
-            Paragraph::new("awaiting engine transport (T2); transcript rendering lands in T3")
-                .style(Style::new().fg(palette.text_muted))
-                .block(block),
+            Paragraph::new(self.lines.clone())
+                .style(Style::new().fg(palette.text))
+                .block(block)
+                .wrap(Wrap { trim: false })
+                .scroll((self.scroll, 0)),
             area,
         );
     }
+}
+
+pub struct Home {
+    pub rows: Vec<SessionSummary>,
+    pub selected: usize,
+    notice: Option<String>,
+    theme: Theme,
+}
+
+impl Home {
+    pub fn new(theme: Theme) -> Self {
+        Self {
+            rows: Vec::new(),
+            selected: 0,
+            notice: None,
+            theme,
+        }
+    }
+
+    pub fn set_notice(&mut self, notice: Option<String>) {
+        self.notice = notice;
+    }
+
+    pub fn set_rows(&mut self, rows: Vec<SessionSummary>) {
+        let selected_id = self.rows.get(self.selected).map(|row| row.id.clone());
+        self.rows = rows;
+        self.selected = selected_id
+            .and_then(|id| self.rows.iter().position(|row| row.id == id))
+            .unwrap_or(0)
+            .min(self.rows.len().saturating_sub(1));
+    }
+
+    pub fn move_cursor(&mut self, delta: i32) {
+        if self.rows.is_empty() {
+            self.selected = 0;
+            return;
+        }
+        let next = self.selected as i32 + delta;
+        self.selected = next.clamp(0, self.rows.len() as i32 - 1) as usize;
+    }
+
+    pub fn current(&self) -> Option<&SessionSummary> {
+        self.rows.get(self.selected)
+    }
+
+    pub fn render(&self, frame: &mut Frame, area: Rect) {
+        let palette = self.theme.palette;
+        let block = Block::bordered()
+            .title(Span::styled(" sessions ", Style::new().fg(palette.primary)))
+            .border_style(Style::new().fg(palette.border))
+            .style(Style::new().bg(palette.background));
+        if self.rows.is_empty() {
+            let message = self
+                .notice
+                .clone()
+                .unwrap_or_else(|| "no sessions in this workspace yet".to_string());
+            frame.render_widget(
+                Paragraph::new(message)
+                    .style(Style::new().fg(palette.text_muted))
+                    .block(block),
+                area,
+            );
+            return;
+        }
+        let notice = self.notice.iter().flat_map(|notice| {
+            [
+                Line::from(Span::styled(notice.clone(), Style::new().fg(palette.error))),
+                Line::default(),
+            ]
+        });
+        let rows = self.rows.iter().enumerate().map(|(index, row)| {
+            let marker = if index == self.selected { "▸ " } else { "  " };
+            let style = if index == self.selected {
+                Style::new()
+                    .fg(palette.primary)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::new().fg(palette.text)
+            };
+            let detail = match (row.directory.as_deref(), row.updated_at_ms) {
+                (Some(directory), Some(updated)) => {
+                    let name = Path::new(directory)
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| directory.to_string());
+                    format!("{}  ·  {}", relative_time(updated), name)
+                }
+                _ => String::new(),
+            };
+            Line::from(vec![
+                Span::styled(format!("{marker}{}", row.label()), style),
+                Span::styled(
+                    if detail.is_empty() {
+                        String::new()
+                    } else {
+                        format!("   {detail}")
+                    },
+                    Style::new().fg(palette.text_muted),
+                ),
+            ])
+        });
+        frame.render_widget(
+            Paragraph::new(notice.chain(rows).collect::<Vec<_>>())
+                .block(block)
+                .wrap(Wrap { trim: false }),
+            area,
+        );
+    }
+}
+
+fn relative_time(updated_at_ms: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(updated_at_ms);
+    let delta_ms = now.saturating_sub(updated_at_ms);
+    let minutes = delta_ms / 60_000;
+    match minutes {
+        0 => "just now".to_string(),
+        1..=59 => format!("{minutes}m ago"),
+        _ => {
+            let hours = minutes / 60;
+            if hours < 24 {
+                format!("{hours}h ago")
+            } else {
+                format!("{}d ago", hours / 24)
+            }
+        }
+    }
+}
+
+fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>> {
+    let palette = theme.palette;
+    let mut lines = Vec::new();
+    for entry in &transcript.entries {
+        match entry {
+            Entry::User { text } => {
+                for line in text.lines() {
+                    lines.push(Line::from(vec![
+                        Span::styled("❯ ", Style::new().fg(palette.primary)),
+                        Span::styled(line.to_string(), Style::new().fg(palette.text)),
+                    ]));
+                }
+                lines.push(Line::default());
+            }
+            Entry::Assistant {
+                agent,
+                model,
+                parts,
+            } => {
+                let label = match (agent.as_deref(), model.as_deref()) {
+                    (Some(agent), Some(model)) => format!("✳ {agent} · {model}"),
+                    (Some(agent), None) => format!("✳ {agent}"),
+                    (None, Some(model)) => format!("✳ {model}"),
+                    (None, None) => "✳ assistant".to_string(),
+                };
+                lines.push(Line::from(Span::styled(
+                    label,
+                    Style::new().fg(palette.text_muted),
+                )));
+                for part in parts {
+                    match part {
+                        Part::Text(text) => {
+                            for line in text.lines() {
+                                lines.push(Line::from(line.to_string()));
+                            }
+                        }
+                        Part::Reasoning(text) => lines.push(Line::from(Span::styled(
+                            format!("▸ thinking · {} chars", text.chars().count()),
+                            Style::new().fg(palette.text_muted),
+                        ))),
+                        Part::Tool(tool) => transparent_tool(&mut lines, tool, transcript, theme),
+                    }
+                }
+                lines.push(Line::default());
+            }
+        }
+    }
+    if lines.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "this Session has no messages yet",
+            Style::new().fg(palette.text_muted),
+        )));
+    }
+    lines
+}
+
+fn transparent_tool(
+    lines: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    transcript: &Transcript,
+    theme: &Theme,
+) {
+    let palette = theme.palette;
+    let (glyph, style) = if tool.failed {
+        ("✗", Style::new().fg(palette.error))
+    } else if tool.output.is_some() {
+        ("✓", Style::new().fg(palette.success))
+    } else {
+        ("·", Style::new().fg(palette.warning))
+    };
+    lines.push(Line::from(vec![
+        Span::styled(format!("{glyph} "), style),
+        Span::styled(tool.name.clone(), Style::new().fg(palette.secondary)),
+        Span::styled(
+            format!("  {}", input_summary(&tool.input)),
+            Style::new().fg(palette.text_muted),
+        ),
+    ]));
+    if let Some(output) = &tool.output {
+        for line in output.lines().take(TOOL_PREVIEW_LINES) {
+            lines.push(Line::from(Span::styled(
+                format!("  │ {line}"),
+                Style::new().fg(if tool.failed {
+                    palette.error
+                } else {
+                    palette.text_muted
+                }),
+            )));
+        }
+        let total = output.lines().count();
+        if total > TOOL_PREVIEW_LINES {
+            lines.push(Line::from(Span::styled(
+                format!("  │ … {} more lines", total - TOOL_PREVIEW_LINES),
+                Style::new().fg(palette.text_muted),
+            )));
+        }
+    }
+    if let Some(files) = transcript.displays.get(&tool.id) {
+        for file in files {
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "  ◆ {} {} +{} −{}",
+                    file.action, file.path, file.additions, file.deletions
+                ),
+                Style::new().fg(palette.accent),
+            )));
+            for line in file.patch.lines().take(DIFF_PREVIEW_LINES) {
+                lines.push(Line::from(Span::styled(
+                    format!("  {line}"),
+                    Style::new().fg(diff_color(line, theme)),
+                )));
+            }
+            let total = file.patch.lines().count();
+            if total > DIFF_PREVIEW_LINES {
+                lines.push(Line::from(Span::styled(
+                    format!("  … {} more diff lines", total - DIFF_PREVIEW_LINES),
+                    Style::new().fg(palette.text_muted),
+                )));
+            }
+        }
+    }
+}
+
+fn diff_color(line: &str, theme: &Theme) -> Color {
+    let palette = theme.palette;
+    if line.starts_with('+') {
+        return palette.success;
+    }
+    if line.starts_with('-') {
+        return palette.error;
+    }
+    if line.starts_with("@@") {
+        return palette.accent;
+    }
+    palette.text_muted
+}
+
+fn input_summary(input: &serde_json::Value) -> String {
+    let candidate = ["command", "path", "pattern", "query", "url", "description"]
+        .iter()
+        .find_map(|key| input.get(key).and_then(serde_json::Value::as_str));
+    match candidate {
+        Some(text) => compact(text),
+        None => compact(&input.to_string()),
+    }
+}
+
+fn compact(text: &str) -> String {
+    let single = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if single.chars().count() <= 80 {
+        return single;
+    }
+    let mut cut = single.chars().take(77).collect::<String>();
+    cut.push('…');
+    cut
 }
 
 pub struct ComposerPane {
@@ -148,19 +491,44 @@ impl Pane for ComposerPane {
 
 pub struct SidebarPane {
     theme: Theme,
+    session: Option<SessionSummary>,
 }
 
 impl Pane for SidebarPane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
         let block = Block::bordered()
-            .title(Span::styled(" sidebar ", Style::new().fg(palette.primary)))
+            .title(Span::styled(" session ", Style::new().fg(palette.primary)))
             .border_style(Style::new().fg(palette.border))
             .style(Style::new().bg(palette.background));
+        let lines = match &self.session {
+            None => vec![Line::from(Span::styled(
+                "no Session selected",
+                Style::new().fg(palette.text_muted),
+            ))],
+            Some(session) => vec![
+                Line::from(Span::styled(
+                    session.label().to_string(),
+                    Style::new().fg(palette.text).add_modifier(Modifier::BOLD),
+                )),
+                Line::default(),
+                Line::from(Span::styled(
+                    session.directory.clone().unwrap_or_default(),
+                    Style::new().fg(palette.text_muted),
+                )),
+                Line::from(Span::styled(
+                    session
+                        .updated_at_ms
+                        .map(|updated| format!("updated {}", relative_time(updated)))
+                        .unwrap_or_default(),
+                    Style::new().fg(palette.text_muted),
+                )),
+            ],
+        };
         frame.render_widget(
-            Paragraph::new("session info lands in T3+")
-                .style(Style::new().fg(palette.text_muted))
-                .block(block),
+            Paragraph::new(lines)
+                .block(block)
+                .wrap(Wrap { trim: false }),
             area,
         );
     }

@@ -1,0 +1,277 @@
+//! The TUI's one engine child and the projection work it asks for.
+//!
+//! The UI thread never awaits the engine: it sends a [`Request`] and receives
+//! [`AppEvent`]s on the same bus as terminal input. A Session is re-projected
+//! from a fresh snapshot after committed activity, so the transcript always
+//! matches the engine's own projection instead of a second reducer.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use serde_json::{json, Value};
+use tokio::sync::mpsc;
+use tokio::time::Instant;
+
+use crate::event::{AppEvent, Bus};
+use crate::session::{home_rows, DisplayFile, SessionSummary, Transcript};
+use crate::transport::{self, EngineClient, EngineSpawn, TransportEvent};
+
+/// Committed events that change what the transcript shows. Coalesced so one
+/// assistant turn does not trigger a snapshot per event.
+const REFRESH_DEBOUNCE: Duration = Duration::from_millis(150);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+const EVENTS_PAGE: usize = 100;
+
+pub enum Request {
+    RefreshSessions,
+    Open(String),
+    Refresh,
+}
+
+#[derive(Clone)]
+pub struct Handle {
+    tx: mpsc::UnboundedSender<Request>,
+}
+
+impl Handle {
+    pub fn refresh_sessions(&self) {
+        let _ = self.tx.send(Request::RefreshSessions);
+    }
+
+    pub fn open(&self, session_id: &str) {
+        let _ = self.tx.send(Request::Open(session_id.to_string()));
+    }
+
+    pub fn refresh(&self) {
+        let _ = self.tx.send(Request::Refresh);
+    }
+}
+
+/// Where the engine binary, its database, and the requested model come from.
+/// The TUI refuses to guess a database: the product's location-hashed storage
+/// path is host-side knowledge and a wrong guess would read another profile.
+#[derive(Debug, Clone)]
+pub struct Settings {
+    pub spawn: EngineSpawn,
+    pub model: String,
+}
+
+pub fn settings(
+    workspace: &Path,
+    db: Option<PathBuf>,
+    model: Option<String>,
+) -> Result<Settings, String> {
+    let db = db
+        .or_else(|| std::env::var_os("MIAO_ENGINE_DB").map(PathBuf::from))
+        .ok_or("pass --db <engine.db> or set MIAO_ENGINE_DB")?;
+    if !db.is_file() {
+        return Err(format!("engine database not found: {}", db.display()));
+    }
+    let model = model
+        .or_else(|| std::env::var("MIAO_TUI_MODEL").ok())
+        .unwrap_or_else(|| "unavailable/model".to_string());
+    let spawn = EngineSpawn {
+        program: engine_binary(),
+        args: vec![
+            "serve".into(),
+            "--db".into(),
+            db.display().to_string(),
+            "--workspace".into(),
+            workspace.display().to_string(),
+            "--model".into(),
+            model.clone(),
+        ],
+        env: Vec::new(),
+    };
+    Ok(Settings { spawn, model })
+}
+
+/// `MIAO_ENGINE_BIN` first, then the installed locations the product uses,
+/// then `PATH`.
+fn engine_binary() -> PathBuf {
+    if let Some(explicit) = std::env::var_os("MIAO_ENGINE_BIN") {
+        return PathBuf::from(explicit);
+    }
+    let name = if cfg!(windows) {
+        "miao-engine.exe"
+    } else {
+        "miao-engine"
+    };
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .into_iter()
+        .flat_map(|home| {
+            [
+                home.join(".miao/bin").join(name),
+                home.join(".local/share/miao-engine/bin").join(name),
+                home.join(".local/bin").join(name),
+            ]
+        })
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| PathBuf::from(name))
+}
+
+pub fn attach(settings: &Settings, bus: Bus) -> Result<Handle, String> {
+    let (client, events) = EngineClient::start(&settings.spawn, REQUEST_TIMEOUT)
+        .map_err(|error| format!("cannot start the engine: {error}"))?;
+    let (tx, rx) = mpsc::unbounded_channel();
+    tokio::spawn(run(client, events, rx, bus));
+    Ok(Handle { tx })
+}
+
+/// What the TUI remembers about the open Session between snapshots: the last
+/// replayed event and the display diffs that only events carry. Message content
+/// is always re-read from the snapshot, so nothing here can drift from the
+/// journal.
+struct Opened {
+    id: String,
+    seen: u64,
+    displays: HashMap<String, Vec<DisplayFile>>,
+}
+
+async fn run(
+    client: EngineClient,
+    mut events: transport::EventRx,
+    mut requests: mpsc::UnboundedReceiver<Request>,
+    bus: Bus,
+) {
+    let mut open: Option<Opened> = None;
+    let mut dirty: Option<Instant> = None;
+    refresh_sessions(&client, &bus).await;
+    loop {
+        let deadline = dirty.map(|start| start + REFRESH_DEBOUNCE);
+        tokio::select! {
+            request = requests.recv() => match request {
+                None => {
+                    client.close().await;
+                    return;
+                }
+                Some(Request::RefreshSessions) => refresh_sessions(&client, &bus).await,
+                Some(Request::Refresh) => {
+                    dirty = None;
+                    if let Some(state) = open.as_mut() {
+                        project(&client, &bus, state).await;
+                    }
+                }
+                Some(Request::Open(session_id)) => {
+                    dirty = None;
+                    if let Some(previous) = open.take() {
+                        let _ = client.unsubscribe(&previous.id).await;
+                    }
+                    let mut state = Opened {
+                        id: session_id,
+                        seen: 0,
+                        displays: HashMap::new(),
+                    };
+                    project(&client, &bus, &mut state).await;
+                    open = Some(state);
+                }
+            },
+            event = events.recv() => match event {
+                None => {
+                    bus.send(AppEvent::EngineFailure("engine transport closed".into()));
+                    return;
+                }
+                Some(TransportEvent::Event(event)) => {
+                    let watched = open.as_ref().is_some_and(|state| state.id == event.session_id);
+                    if watched && matches!(event.kind.as_str(), "message.committed" | "tool.completed") {
+                        dirty = Some(Instant::now());
+                    }
+                }
+                Some(TransportEvent::Failure(failure)) => {
+                    bus.send(AppEvent::EngineFailure(format!(
+                        "engine {}: {}",
+                        failure.code, failure.message
+                    )));
+                    return;
+                }
+                Some(TransportEvent::Resync(_)) | Some(TransportEvent::Progress(_)) => {}
+            },
+            _ = tokio::time::sleep_until(deadline.unwrap_or_else(Instant::now)), if deadline.is_some() => {
+                dirty = None;
+                if let Some(state) = open.as_mut() {
+                    project(&client, &bus, state).await;
+                }
+            }
+        }
+    }
+}
+
+async fn refresh_sessions(client: &EngineClient, bus: &Bus) {
+    let ids = match client.request("sessions", json!({})).await {
+        Ok(Value::Array(ids)) => ids,
+        Ok(_) => {
+            bus.send(AppEvent::EngineFailure(
+                "engine answered sessions with a non-array".into(),
+            ));
+            return;
+        }
+        Err(error) => {
+            bus.send(AppEvent::EngineFailure(error.to_string()));
+            return;
+        }
+    };
+    let mut rows = Vec::new();
+    for id in ids.iter().filter_map(Value::as_str) {
+        let snapshot = client
+            .request(
+                "snapshot",
+                json!({ "session_id": id, "metadata_only": true }),
+            )
+            .await;
+        if let Ok(snapshot) = snapshot {
+            if let Some(row) = SessionSummary::from_snapshot(&snapshot) {
+                rows.push(row);
+            }
+        }
+    }
+    bus.send(AppEvent::Sessions(home_rows(rows)));
+}
+
+/// Re-read the Session snapshot and replay only the events not yet seen. The
+/// snapshot loses display diffs (they live on `tool.completed`, not on message
+/// content), so the previously replayed diffs are carried over instead of
+/// paging the whole journal again on every refresh.
+async fn project(client: &EngineClient, bus: &Bus, state: &mut Opened) {
+    let snapshot = match client.snapshot(&state.id).await {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            bus.send(AppEvent::EngineFailure(error.to_string()));
+            return;
+        }
+    };
+    let mut transcript = Transcript::from_snapshot(&snapshot);
+    transcript.displays = state.displays.clone();
+    loop {
+        let page = client
+            .request(
+                "events",
+                json!({ "session_id": state.id, "after": state.seen }),
+            )
+            .await;
+        let Ok(Value::Array(items)) = page else { break };
+        let Some(last) = items
+            .last()
+            .and_then(|item| item.get("seq"))
+            .and_then(Value::as_u64)
+        else {
+            break;
+        };
+        for item in &items {
+            let kind = item.get("kind").and_then(Value::as_str).unwrap_or_default();
+            transcript.apply_event(kind, item.get("data").unwrap_or(&Value::Null));
+        }
+        state.seen = state.seen.max(last);
+        if items.len() < EVENTS_PAGE {
+            break;
+        }
+    }
+    state.displays = transcript.displays.clone();
+    let cursor = snapshot.get("cursor").and_then(Value::as_u64).unwrap_or(0);
+    let _ = client.subscribe(&state.id, cursor).await;
+    bus.send(AppEvent::SessionOpened {
+        summary: SessionSummary::from_snapshot(&snapshot),
+        transcript: Box::new(transcript),
+    });
+}

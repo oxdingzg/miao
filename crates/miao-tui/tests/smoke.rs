@@ -18,6 +18,16 @@ struct Harness {
 
 impl Harness {
     fn spawn(label: &str, inject_panic: bool) -> Self {
+        Self::spawn_with(label, inject_panic, false)
+    }
+
+    /// Boot the TUI against the scripted engine so the smoke test can enter a
+    /// Session without a database, a provider, or a model.
+    fn spawn_engine(label: &str) -> Self {
+        Self::spawn_with(label, false, true)
+    }
+
+    fn spawn_with(label: &str, inject_panic: bool, engine: bool) -> Self {
         let dir =
             std::env::temp_dir().join(format!("miao-tui-smoke-{}-{label}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("workspace dir");
@@ -35,6 +45,17 @@ impl Harness {
         cmd.env("TERM", "xterm-256color");
         if inject_panic {
             cmd.env("MIAO_TUI_TEST_PANIC", "1");
+        }
+        if engine {
+            let db = dir.join("engine.db");
+            std::fs::write(&db, b"").expect("engine db file");
+            cmd.env(
+                "MIAO_ENGINE_BIN",
+                env!("CARGO_BIN_EXE_miao-tui-fake-engine"),
+            );
+            cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
+            cmd.arg("--db");
+            cmd.arg(&db);
         }
         let child = pair.slave.spawn_command(cmd).expect("spawn miao-tui");
         drop(pair.slave);
@@ -132,10 +153,26 @@ fn wait_exit(child: &mut Box<dyn Child + Send + Sync>, timeout: Duration) -> Opt
 
 #[test]
 fn boots_renders_panes_and_quits_on_q() {
-    let mut harness = Harness::spawn("start", false);
+    let mut harness = Harness::spawn_engine("start");
     assert!(
         wait_for(&harness, "miao-tui-smoke", Duration::from_secs(2)),
         "pane title with workspace name did not render in time:\n{}",
+        harness.text()
+    );
+    assert!(
+        wait_for(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render the Session titles:\n{}",
+        harness.text()
+    );
+    let rendered = harness.text();
+    assert!(
+        rendered.contains("sessions"),
+        "home pane missing:\n{rendered}"
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for(&harness, "hello from the fixture", Duration::from_secs(2)),
+        "the transcript did not render the Session messages:\n{}",
         harness.text()
     );
     let rendered = harness.text();
@@ -156,7 +193,7 @@ fn boots_renders_panes_and_quits_on_q() {
 
 #[test]
 fn resize_keeps_process_alive() {
-    let mut harness = Harness::spawn("resize", false);
+    let mut harness = Harness::spawn_engine("resize");
     assert!(
         wait_for(&harness, "miao-tui-smoke", Duration::from_secs(2)),
         "pane title did not render in time:\n{}",

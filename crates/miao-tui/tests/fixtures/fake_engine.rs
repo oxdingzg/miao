@@ -17,6 +17,10 @@ fn main() {
     let mut session_id = "s".to_string();
     let mut subscribed = false;
     let mut next = 1;
+    // `MIAO_TUI_FAKE_SESSIONS` turns this into a catalog view for the pty
+    // smoke test. Without it `snapshot` stays silent, which is the transport
+    // suite's request-timeout case.
+    let sessions = std::env::var_os("MIAO_TUI_FAKE_SESSIONS").is_some();
 
     for line in stdin.lock().lines() {
         let Ok(line) = line else { return };
@@ -69,6 +73,36 @@ fn main() {
                 );
             }
             // Silent methods: only the request timeout can settle these.
+            "snapshot" if sessions => {
+                let target = frame["params"]["session_id"].as_str().unwrap_or("ses_a");
+                let metadata_only = frame["params"]["metadata_only"].as_bool().unwrap_or(false);
+                let (title, updated) = if target == "ses_a" {
+                    ("Project A", 2_000)
+                } else {
+                    ("Project B", 1_000)
+                };
+                let mut snapshot = json!({
+                    "session_id": target,
+                    "title": title,
+                    "cursor": 2,
+                    "updated_at_ms": updated,
+                    "archived_at_ms": null,
+                    "parent_session_id": null,
+                    "location": "/tmp",
+                });
+                if !metadata_only {
+                    snapshot["messages"] = json!([
+                        {"seq":1,"role":"user","content":"hello from the fixture","checkpoint":null,"recorded_at_ms":null},
+                        {"seq":2,"role":"assistant","content":[{"type":"text","text":"fixture answer"}],"identity":{"agent":"build","provider":{"model":"fake/model"}},"checkpoint":null,"recorded_at_ms":null}
+                    ]);
+                }
+                send(&mut out, json!({"id":id,"result":snapshot}));
+            }
+            "events" if sessions => send(&mut out, json!({"id":id,"result":[]})),
+            "unsubscribe" if sessions => {
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "sessions" if sessions => send(&mut out, json!({"id":id,"result":["ses_a","ses_b"]})),
             "snapshot" | "hang" => {}
             "exit" => return,
             "shutdown" => {
