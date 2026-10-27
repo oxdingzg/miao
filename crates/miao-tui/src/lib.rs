@@ -4,6 +4,7 @@ pub mod input;
 pub mod pane;
 pub mod terminal;
 pub mod theme;
+pub mod transport;
 
 use std::error::Error;
 use std::path::PathBuf;
