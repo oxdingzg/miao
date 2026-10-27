@@ -15,6 +15,7 @@ import { ProductHooks } from "./product-hooks"
 import { PluginHooks } from "./plugin-hooks"
 import { ProductLsp } from "./product-lsp"
 import { ProductFormatter } from "./product-formatter"
+import { ProductPermission } from "./product-permission"
 import { ProductRoutes } from "./product-routes"
 import { ProductMcp } from "./product-mcp"
 import { McpAuth } from "@miao/core/mcp/auth"
@@ -1093,10 +1094,12 @@ const layer = Layer.effect(
               : ownerRouter.get(input),
         }).pipe(Effect.provide(locations.get(location)))
         const pluginHooks = yield* PluginHooks.prepare({ ...configuration, ...productTools }, { store: sessions })
+        const permission = yield* ProductPermission.prepare(location)
         return {
           options: {
             ...routes,
             ...mcp,
+            ...permission,
             ...(configSources ? { configSources } : {}),
             ...context.options,
             ...hooks,

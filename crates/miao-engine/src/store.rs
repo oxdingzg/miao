@@ -262,6 +262,7 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_job(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),request_key TEXT UNIQUE NOT NULL REFERENCES engine_tool(id),state TEXT NOT NULL,input TEXT NOT NULL,result TEXT);
                     CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS engine_lease(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),interval_ms INTEGER NOT NULL,last_ms INTEGER NOT NULL,epoch INTEGER NOT NULL,owner_pid INTEGER);"))?;
                 crate::permission_grant::initialize(&conn)?;
+                crate::permission_saved::initialize(&conn)?;
                 // ADR-0019: content-addressed Session file snapshots and the one
                 // staged revert intent. Blobs live beside the database.
                 conn.execute_batch(
@@ -2197,6 +2198,24 @@ impl Store {
         scope: crate::permission_grant::Scope,
     ) -> Result<bool, Error> {
         self.call(move |conn| crate::permission_grant::contains(conn, &scope))
+            .await
+    }
+
+    /// Project the host's saved permission rules for one workspace (S6 step 2).
+    pub async fn project_saved_rules(
+        &self,
+        workspace: String,
+        rules: Vec<crate::permission_rules::Rule>,
+    ) -> Result<(), Error> {
+        self.call(move |conn| crate::permission_saved::project(conn, &workspace, &rules))
+            .await
+    }
+
+    pub async fn saved_rules(
+        &self,
+        workspace: String,
+    ) -> Result<Vec<crate::permission_rules::Rule>, Error> {
+        self.call(move |conn| crate::permission_saved::rules(conn, &workspace))
             .await
     }
 
