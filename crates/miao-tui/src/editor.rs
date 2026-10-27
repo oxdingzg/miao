@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use serde_json::{json, Value};
 use unicode_width::UnicodeWidthChar;
 
 const HISTORY_LIMIT: usize = 100;
@@ -17,7 +18,10 @@ const TAB_CELLS: usize = 4;
 
 pub enum Action {
     None,
-    Submit(String),
+    Submit {
+        text: String,
+        attachments: Vec<Value>,
+    },
     Quit,
 }
 
@@ -377,6 +381,9 @@ pub struct Composer {
     pub editor: Editor,
     pub completion: Completion,
     pub notice: Option<String>,
+    /// Inline media sent with the prompt. The composer only shows their
+    /// `[Image N]` markers; the bytes travel beside the text.
+    attachments: Vec<Value>,
     history: Vec<String>,
     history_index: Option<usize>,
     draft: String,
@@ -393,6 +400,7 @@ impl Composer {
             editor: Editor::new(),
             completion: Completion::default(),
             notice: None,
+            attachments: Vec::new(),
             history: load_history(&history_path),
             history_index: None,
             draft: String::new(),
@@ -532,6 +540,7 @@ impl Composer {
             return Action::None;
         }
         let text = self.editor.take();
+        let attachments = std::mem::take(&mut self.attachments);
         self.history.push(text.clone());
         if self.history.len() > HISTORY_LIMIT {
             self.history.drain(..self.history.len() - HISTORY_LIMIT);
@@ -540,7 +549,7 @@ impl Composer {
         self.draft.clear();
         self.completion = Completion::default();
         save_history(&self.history_path, &self.history);
-        Action::Submit(text)
+        Action::Submit { text, attachments }
     }
 
     fn history_previous(&mut self) -> bool {
@@ -583,6 +592,34 @@ impl Composer {
         self.refresh_completion();
     }
 
+    /// Show an image as `[Image N] ` and keep its bytes for the next prompt.
+    /// Returns the new attachment count.
+    pub fn attach_image(&mut self, mime: &str, data: &str) -> usize {
+        let count = self
+            .attachments
+            .iter()
+            .filter(|attachment| {
+                attachment
+                    .get("mime")
+                    .and_then(Value::as_str)
+                    .is_some_and(|mime| mime.starts_with("image/"))
+            })
+            .count()
+            + 1;
+        self.editor.insert_str(&format!("[Image {count}] "));
+        self.attachments.push(json!({ "mime": mime, "data": data }));
+        self.refresh_completion();
+        count
+    }
+
+    /// Discard text and its pending attachments together: an attachment whose
+    /// marker is gone must not ride along with an unrelated prompt.
+    pub fn clear(&mut self) {
+        self.editor.clear();
+        self.attachments.clear();
+        self.completion = Completion::default();
+    }
+
     pub fn dismiss_completion(&mut self) -> bool {
         if !self.completion.active() {
             return false;
@@ -593,7 +630,12 @@ impl Composer {
 
     /// Restore a prompt that the engine refused, so the text is not lost.
     pub fn restore(&mut self, text: &str) {
+        self.restore_with(text, Vec::new());
+    }
+
+    pub fn restore_with(&mut self, text: &str, attachments: Vec<Value>) {
         self.editor.set_text(text);
+        self.attachments = attachments;
         self.refresh_completion();
     }
 
@@ -762,6 +804,7 @@ mod tests {
             editor: Editor::new(),
             completion: Completion::default(),
             notice: None,
+            attachments: Vec::new(),
             history: Vec::new(),
             history_index: None,
             draft: String::new(),
@@ -829,6 +872,45 @@ mod tests {
     }
 
     #[test]
+    fn images_become_numbered_markers_and_submit_with_the_prompt() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-attach-{}", std::process::id()));
+        let mut composer = composer(&dir);
+        assert_eq!(composer.attach_image("image/png", "cG5n"), 1);
+        assert_eq!(composer.attach_image("image/png", "cG5n"), 2);
+        assert_eq!(composer.editor.text(), "[Image 1] [Image 2] ");
+        let Action::Submit { text, attachments } = composer.submit() else {
+            panic!("attachments make the composer non-empty");
+        };
+        assert_eq!(text, "[Image 1] [Image 2] ");
+        assert_eq!(attachments.len(), 2);
+        assert_eq!(attachments[0]["mime"], "image/png");
+        assert!(composer.attachments.is_empty(), "submit consumes them");
+    }
+
+    #[test]
+    fn clearing_the_composer_drops_pending_attachments() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-clear-{}", std::process::id()));
+        let mut composer = composer(&dir);
+        composer.attach_image("image/png", "cG5n");
+        composer.clear();
+        assert!(composer.editor.is_empty());
+        assert!(composer.attachments.is_empty());
+    }
+
+    #[test]
+    fn a_refused_prompt_restores_its_attachments() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-restore-{}", std::process::id()));
+        let mut composer = composer(&dir);
+        composer.attach_image("image/png", "cG5n");
+        let Action::Submit { text, attachments } = composer.submit() else {
+            panic!("submit");
+        };
+        composer.restore_with(&text, attachments);
+        assert_eq!(composer.editor.text(), "[Image 1] ");
+        assert_eq!(composer.attachments.len(), 1);
+    }
+
+    #[test]
     fn history_round_trip_restores_the_draft() {
         let dir = std::env::temp_dir().join(format!("miao-tui-editor-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
@@ -836,7 +918,7 @@ mod tests {
         composer.editor.set_text("first");
         assert!(matches!(
             composer.handle_edit_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-            Action::Submit(_)
+            Action::Submit { .. }
         ));
         composer.editor.set_text("draft");
         assert!(composer.history_previous());

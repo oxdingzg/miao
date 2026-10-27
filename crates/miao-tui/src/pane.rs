@@ -58,6 +58,31 @@ impl Shell {
         self.last = Some(transcript.clone());
     }
 
+    /// The text of the newest assistant reply, for the copy-to-clipboard
+    /// action. Tool calls and reasoning are not part of a reply.
+    pub fn last_response(&self) -> Option<String> {
+        let transcript = self.last.as_ref()?;
+        let reply = transcript
+            .entries
+            .iter()
+            .rev()
+            .find_map(|entry| match entry {
+                Entry::Assistant { parts, .. } => {
+                    let text = parts
+                        .iter()
+                        .filter_map(|part| match part {
+                            Part::Text(text) => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+                    (!text.trim().is_empty()).then_some(text)
+                }
+                Entry::User { .. } => None,
+            })?;
+        Some(reply)
+    }
+
     pub fn set_theme(&mut self, theme: Theme) {
         self.title.set_theme(theme.clone());
         self.transcript.theme = theme.clone();
@@ -1120,6 +1145,45 @@ fn panel_lines(panel: &Panel, theme: &Theme) -> Vec<Line<'static>> {
 mod tests {
     use super::*;
     use crate::session::{Choice, QuestionItem};
+
+    #[test]
+    fn the_last_response_is_the_newest_assistant_text() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        let transcript = Transcript {
+            entries: vec![
+                Entry::Assistant {
+                    agent: None,
+                    model: None,
+                    parts: vec![Part::Text("first".into())],
+                },
+                Entry::User {
+                    text: "question".into(),
+                },
+                Entry::Assistant {
+                    agent: None,
+                    model: None,
+                    parts: vec![
+                        Part::Reasoning("thinking".into()),
+                        Part::Text("second".into()),
+                    ],
+                },
+            ],
+            ..Transcript::default()
+        };
+        shell.set_transcript(&transcript);
+        assert_eq!(shell.last_response().as_deref(), Some("second"));
+        assert_eq!(
+            Shell::new(Path::new("."), shell.theme().clone()).last_response(),
+            None
+        );
+    }
 
     fn question(multi: bool) -> QuestionView {
         QuestionView {

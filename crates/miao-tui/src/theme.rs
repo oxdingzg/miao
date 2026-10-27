@@ -334,6 +334,8 @@ fn merge(text: &str, path: &Path, name: &mut String, warnings: &mut Vec<String>)
                     path.display()
                 )),
             },
+            // Read by `config`, not by this loader.
+            "attention" => {}
             other => warnings.push(format!(
                 "tui config {}: ignoring unsupported field \"{other}\"",
                 path.display()

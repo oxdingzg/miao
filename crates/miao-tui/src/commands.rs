@@ -25,12 +25,13 @@ pub enum Builtin {
     Debug,
     Stash,
     StashDraft,
+    Editor,
     Help,
     Quit,
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 12] = [
+    pub const ALL: [Builtin; 13] = [
         Builtin::Models,
         Builtin::Theme,
         Builtin::Sessions,
@@ -41,6 +42,7 @@ impl Builtin {
         Builtin::Debug,
         Builtin::Stash,
         Builtin::StashDraft,
+        Builtin::Editor,
         Builtin::Help,
         Builtin::Quit,
     ];
@@ -58,6 +60,7 @@ impl Builtin {
             Builtin::Debug => "debug",
             Builtin::Stash => "stash",
             Builtin::StashDraft => "stash-draft",
+            Builtin::Editor => "editor",
             Builtin::Help => "help",
             Builtin::Quit => "quit",
         }
@@ -75,6 +78,7 @@ impl Builtin {
             Builtin::Debug => "Engine and workspace details",
             Builtin::Stash => "Restore a stashed prompt",
             Builtin::StashDraft => "Stash the current prompt",
+            Builtin::Editor => "Compose the prompt in $EDITOR",
             Builtin::Help => "Keys and commands",
             Builtin::Quit => "Quit miao",
         }
@@ -93,6 +97,7 @@ impl Builtin {
             Builtin::Debug => "<leader>d",
             Builtin::Stash => "<leader>p",
             Builtin::StashDraft => "<leader>P",
+            Builtin::Editor => "<leader>e",
             Builtin::Help => "",
             Builtin::Quit => "<leader>q",
         }

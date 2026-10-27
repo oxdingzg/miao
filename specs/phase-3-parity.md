@@ -151,3 +151,25 @@
 | task：描述 + 结果摘要 | 有意偏离（后续切片） | 内联子会话 transcript 需要订阅子 Session 的 wire，不在本片 |
 | 工具行展开/折叠（TS 的 click to view） | 有意偏离（交互面） | transcript 当前是只读阅读面；预览行数按折叠态 |
 | transcript 中持久化消息以外的事件类型 | 已对齐 | 仍只由 snapshot 投影消息；`tool.completed` 只补 display diff |
+
+## T10 集成面
+
+| 行为 | 状态 | 备注 |
+|---|---|---|
+| `tui.json` 的 `attention` 段：全局目录 → `MIAO_TUI_CONFIG` → 项目祖先链，就近覆盖，JSONC | 已对齐 | `config.rs:files/merge`；默认值同 `packages/miao/src/config/tui.ts` |
+| 未知键、非法值只告警，坏文件整份跳过 | 已对齐 | `config.rs`；告警在进 raw mode 前写到 stderr |
+| 通知门控：`enabled=false` 默认、焦点未知/聚焦时不发通知、声音不受焦点影响 | 已对齐 | `platform/attention.rs`；对齐 `attention.ts` 的 `focus_unknown` 与 `when:"always"` 声音 |
+| OSC 9（iTerm/WezTerm/Windows Terminal）与 OSC 777，tmux passthrough；80/240 字符截断、剥 ANSI | 已对齐 | `attention::sequence` / `normalize` |
+| 触发点：`approval.requested`、`question.requested`、`run.finished(failed|completed)`，同一 request 只发一次 | 已对齐 | `engine::attention_event` + `App::announce`；只针对当前打开 Session |
+| `run.finished(reason=interrupted)` 不通知 | 有意偏离 | TS 的 abort 会走 `session.error` 发「Session aborted」；Rust 侧静默，避免用户自己按 Esc 后的噪音 |
+| 内置音包（`miao.default` 的 6 个 mp3） | 有意偏离（资源） | 不随二进制打包；配置了 `sounds.<name>` 就播放文件，否则终端铃 |
+| 插件音包注册（`registerPack` / `activate`） | 有意偏离（Phase 4 宿主移植） | 属插件宿主能力 |
+| 剪贴板写入：OSC 52（tmux/ST 透传）+ pbcopy / wl-copy / xclip / xsel / PowerShell | 已对齐 | `platform/clipboard.rs:copy` |
+| 剪贴板读取：`MTTY_CLIPBOARD_FILE`（10 秒、读后消费）→ 平台图片 → 平台文本 | 已对齐 | `clipboard::read`；读取在后台线程，空粘贴与 `Ctrl+V` 触发 |
+| 图片附件：`[Image N] ` 标记 + `{mime,data}` 随 admit 发送，失败随文本恢复 | 已对齐 | `editor::Composer::attach_image` / `restore_with`、`engine::Handle::prompt` |
+| 外编 `<leader>e`：`$VISUAL`/`$EDITOR`、临时 0600 文件、挂起/恢复终端、退出码 0 读回并删除 | 已对齐 | `platform/editor.rs`、`terminal::suspend/resume`、drive 循环 |
+| Zed 选区：`ZED_TERM`/`TERM_PROGRAM=zed` 下读活动编辑器选区，UTF-8 偏移→行列，格式化前缀，同一选区只发一次 | 已对齐 | `platform/zed.rs`；用系统 `sqlite3 -readonly -json`，无 SQLite C 依赖，`sqlite3` 缺失时静默不可用 |
+| 光标无选区时仍提示已打开文件 | 已对齐 | 对齐 `formatEditorContext` 的 opened-file 分支 |
+| Windows 终端：VT 输出 / raw mode / 焦点事件 | 已对齐（依赖 crossterm） | 不写平台代码；Windows CI 构建与冒烟验收 |
+| 鼠标框选复制 | 有意偏离（交互面） | Rust 侧 `Ctrl+Y` 复制最后一条回复；transcript 仍是只读阅读面 |
+| `/remote-control` | 有意偏离（宿主未交付） | `miao-engine serve` 没有 remote 方法；由宿主 Runtime/Hub 提供，见 `specs/remote-control.md` |
