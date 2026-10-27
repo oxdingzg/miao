@@ -370,6 +370,13 @@ fn items(history: &[Message], model: &str) -> Result<Vec<Value>, ProviderError> 
                 ("user" | "assistant", Some("text")) => {
                     items.push(json!({"role":message.role,"content":[{"type":if message.role=="user"{"input_text"}else{"output_text"},"text":block["text"].as_str().ok_or_else(invalid)?}]}));
                 }
+                ("assistant", Some("reasoning")) => {
+                    // Chat Completions thinking (including GLM's preserved
+                    // reasoning) is not a Responses reasoning item. Keep it
+                    // in the transcript, but do not send it as visible text or
+                    // fabricate the encrypted state Responses requires.
+                    block["text"].as_str().ok_or_else(invalid)?;
+                }
                 ("user", Some("file")) => {
                     let mime = block["mime"].as_str().ok_or_else(invalid)?;
                     let data = block["data"].as_str().ok_or_else(invalid)?;
