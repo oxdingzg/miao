@@ -14,7 +14,6 @@ import { children, createEffect, createMemo, onMount, createSignal, onCleanup, o
 import path from "path"
 import { fileURLToPath } from "url"
 import { useLocal } from "../../context/local"
-import { useSessionState } from "../../context/session-state"
 import { Flag } from "@miao/core/flag/flag"
 import { DiagnosticMetrics } from "@miao/core/diagnostic-metrics"
 import { createInputLatency } from "../../context/input-latency"
@@ -42,7 +41,6 @@ import { expandPastedTextPlaceholders, expandTrackedPastedText } from "../../pro
 import { usePromptStash } from "../../prompt/stash"
 import { DialogStash } from "../dialog-stash"
 import { type AutocompleteRef, Autocomplete } from "./autocomplete"
-import { SessionPromptHint } from "./hint"
 import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import type { FilePart, TranscriptAssistantMessage, TranscriptUserMessage } from "@miao/schema/view-models"
 import { Locale } from "../../util/locale"
@@ -169,13 +167,6 @@ export function Prompt(props: PromptProps) {
   const toast = useToast()
   const compaction = createMemo(() => sync.data.session_compaction[props.sessionID ?? ""])
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
-  const sessionState = useSessionState()
-  // Background jobs outlive the turn that started them, so the composer reports
-  // them from the polled activity snapshot rather than from turn status.
-  const runningJobs = createMemo(() => {
-    if (sessionState.data.sessionID !== props.sessionID) return 0
-    return (sessionState.data.snapshot?.activity.jobs ?? []).filter((job) => job.status === "running").length
-  })
   const waitingPrompts = createMemo(() => (props.sessionID ? sync.prompt.waiting(props.sessionID) : []))
   // The footer names the next esc action, the same way the transcript status
   // line does: a waiting prompt is removed before the turn is interrupted.
@@ -1647,8 +1638,9 @@ export function Prompt(props: PromptProps) {
         </box>
         <Show
           when={
+            // The compact footer's own status line carries the permission mode
+            // and the escape action, so a Session needs no row here.
             !props.compactFooter ||
-            props.sessionID ||
             workspace.notice() ||
             workspace.label() ||
             move.progress() ||
@@ -1660,14 +1652,6 @@ export function Prompt(props: PromptProps) {
         >
           <box width="100%" flexDirection="row" justifyContent="space-between">
             <Switch>
-              <Match when={props.compactFooter && props.sessionID}>
-                <SessionPromptHint
-                  permissionMode={local.permission.mode}
-                  runningJobs={runningJobs()}
-                  busy={status().type !== "idle"}
-                  waitingPrompts={waitingPrompts().length}
-                />
-              </Match>
               <Match when={!props.compactFooter && (status().type !== "idle" || compaction())}>
                 <box
                   flexDirection="row"
