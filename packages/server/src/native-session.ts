@@ -344,6 +344,8 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
   directory?: AbsolutePath
   project?: Project.ID
   search?: string
+  /** Leave out subagent Sessions, the same way the catalog's `roots` does. */
+  roots?: boolean
   /** The caller's project service; directories are resolved through it. */
   projects: { resolve: (directory: AbsolutePath) => Effect.Effect<{ id: Project.ID }> }
 }) {
@@ -437,8 +439,11 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
     )
     entries.push(...groupEntries)
   }
+  // A delegated child is a real Session with a binding of its own, so it joins
+  // every listing like any other. `roots` is the catalog's own rule for leaving
+  // the children out, and the native side follows it on the same field.
   const selected = selectNativeSessions({
-    sessions: entries,
+    sessions: input.roots ? entries.filter((entry) => entry.parentID === undefined) : entries,
     order: input.order,
     anchor: input.anchor,
     search: input.search,

@@ -147,3 +147,47 @@ test("a catalog batch lists native Sessions without execution snapshot or usage 
     })
   }).pipe(Effect.provide(Database.layerFromPath(path.join(tmp.path, "product.db"))), Effect.runPromise)
   expect(result.map((session) => session.title)).toEqual(["read only"])})
+
+test("roots leaves delegated child Sessions out of the listing", async () => {
+  await using tmp = await tmpdir()
+  const directory = AbsolutePath.make(tmp.path)
+  const storage = AbsolutePath.make(path.join(tmp.path, "native.db"))
+  const list = (roots?: boolean) =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      for (const id of ["ses_parent", "ses_parent/sub-child"]) {
+        yield* SessionEnginePlacement.claim(database.db, {
+          sessionID: SessionID.make(id),
+          placement: { engine: "rust", storage, location: { directory } },
+        })
+      }
+      return yield* mergeNativeSessions({
+        native: {
+          snapshot: (input) =>
+            Effect.succeed({
+              session_id: input.sessionID,
+              title: input.sessionID,
+              created_at_ms: input.sessionID === "ses_parent" ? 2 : 1,
+              updated_at_ms: 2,
+              ...(input.sessionID === "ses_parent" ? {} : { parent_session_id: "ses_parent" }),
+            }),
+          usage: () => Effect.succeed({}),
+        },
+        db: database.db,
+        sessions: [],
+        limit: 10,
+        order: "desc",
+        ...(roots === undefined ? {} : { roots }),
+        projects: { resolve: () => Effect.succeed({ id: Project.ID.global }) },
+      })
+    }).pipe(Effect.provide(Database.layerFromPath(path.join(tmp.path, "product.db"))), Effect.runPromise)
+
+  expect((await list()).map((session) => session.id)).toEqual([
+    SessionID.make("ses_parent"),
+    SessionID.make("ses_parent/sub-child"),
+  ])
+  expect((await list(true)).map((session) => session.id)).toEqual([SessionID.make("ses_parent")])
+  // The child keeps the parent's identity, so a client can navigate to it by
+  // the binding listed here.
+  expect((await list()).at(1)?.parentID).toBe(SessionID.make("ses_parent"))
+})

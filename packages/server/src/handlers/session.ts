@@ -104,6 +104,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   anchor: "anchor" in query ? query.anchor : undefined,
                   directory: "directory" in query ? query.directory : undefined,
                   project: "project" in query ? query.project : undefined,
+                  roots: query.roots,
                   projects,
                 }).pipe(Effect.orDie)
               : sessions
