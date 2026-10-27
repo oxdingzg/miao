@@ -5,9 +5,20 @@ type Highlights = NonNullable<Awaited<ReturnType<TreeSitterClient["highlightOnce
 type Side = "old" | "new"
 type Source = { side: Side; line: number; text: string; removed?: boolean } | undefined
 
+// A patch reaches this file from a tool result, so it can be malformed — or a
+// caller can hand over a preview that no longer parses. Losing context
+// highlighting is acceptable; throwing out of a render memo is not.
+function parseHunks(patch: string) {
+  try {
+    return parsePatch(patch)[0]?.hunks ?? []
+  } catch {
+    return []
+  }
+}
+
 // Deleted code is shown as plain text; the current side retains syntax colors.
 export function createDiffHighlighter(input: { patch: string; current?: string }) {
-  const views = sourceMaps(parsePatch(input.patch)[0]?.hunks ?? [])
+  const views = sourceMaps(parseHunks(input.patch))
   const base =
     (input.current === undefined ? undefined : createDiffContextHighlighter({ patch: input.patch, current: input.current })) ??
     getTreeSitterClient()
@@ -46,7 +57,7 @@ export function createDiffHighlighter(input: { patch: string; current?: string }
 // no longer matches the patch it returns undefined and the caller keeps the
 // default client.
 export function createDiffContextHighlighter(input: { patch: string; current: string }) {
-  const hunks = parsePatch(input.patch)[0]?.hunks ?? []
+  const hunks = parseHunks(input.patch)
   if (hunks.length === 0) return undefined
   const sources = reconstructSources(hunks, input.current)
   if (!sources) return undefined
