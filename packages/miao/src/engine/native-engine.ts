@@ -15,6 +15,7 @@ import { ProductHooks } from "./product-hooks"
 import { PluginHooks } from "./plugin-hooks"
 import { ProductLsp } from "./product-lsp"
 import { ProductFormatter } from "./product-formatter"
+import { ProductPermission } from "./product-permission"
 import { ProductRoutes } from "./product-routes"
 import { ProductMcp } from "./product-mcp"
 import { McpAuth } from "@miao/core/mcp/auth"
@@ -1072,11 +1073,16 @@ const layer = Layer.effect(
           catch: (error) => new EngineError("engine_incompatible", error instanceof Error ? error.message : String(error)),
         })
         const integrations = yield* Integration.Service
+        // S5: the engine derives policy and LSP from the same ordered source
+        // plan the Config service applied, so project chain and env overrides
+        // reach the engine instead of only the global directory.
+        const config = Option.getOrUndefined(yield* Effect.serviceOption(Config.Service))
+        const configSources = config?.sources ? JSON.stringify(yield* config.sources()) : undefined
         const { prices, ...routes } = yield* ProductRoutes.prepare(location, configuration, compaction).pipe(
           Effect.provideService(Credential.Service, credentials),
         )
         locationPricing = prices && ((model: string) => prices[model])
-        const effective = { ...configuration, ...routes, ...mcp }
+        const effective = { ...configuration, ...routes, ...mcp, ...(configSources ? { configSources } : {}) }
         const context = yield* AmbientContext.prepare(location, effective)
         const hooks = yield* ProductHooks.prepare(location, { ...effective, ...context.options })
         const lsp = yield* ProductLsp.prepare(location, effective)
@@ -1088,10 +1094,13 @@ const layer = Layer.effect(
               : ownerRouter.get(input),
         }).pipe(Effect.provide(locations.get(location)))
         const pluginHooks = yield* PluginHooks.prepare({ ...configuration, ...productTools }, { store: sessions })
+        const permission = yield* ProductPermission.prepare(location)
         return {
           options: {
             ...routes,
             ...mcp,
+            ...permission,
+            ...(configSources ? { configSources } : {}),
             ...context.options,
             ...hooks,
             ...lsp,

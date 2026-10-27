@@ -3,7 +3,7 @@ import { Location } from "@miao/schema/location"
 import { DateTime, Deferred, Effect, Fiber, Queue } from "effect"
 import { Event } from "@miao/schema/event"
 import { SessionID } from "@miao/schema/session-id"
-import { EngineClient, type EngineOptions, type EngineEvent } from "./client"
+import { EngineClient, EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { clientEvent } from "./event"
 import { EngineSession, type CredentialExpiredTrigger, type EnginePricing, type EngineSessionEvent } from "./session"
 
@@ -87,5 +87,23 @@ export const connectEngine = Effect.fn("Engine.connect")(function* (
       Effect.catchCause((cause) => Effect.logError("Native client delivery failed", cause)),
     ),
   )
+  // S6 step 2: the product's saved "always allow" rules must be in the engine
+  // store before the first prompt can ask, so a rule the user already granted
+  // projects here and a failed import refuses the owner instead of asking
+  // twice.
+  if (options.savedRules) {
+    yield* Effect.tryPromise({
+      try: () =>
+        client.request("permission_saved_project", {
+          workspace: options.location.directory,
+          rules: JSON.parse(options.savedRules!),
+        }),
+      catch: (error) =>
+        new EngineError(
+          "engine_saved_rules",
+          error instanceof Error ? error.message : String(error),
+        ),
+    })
+  }
   return { client, session, flush }
 })
