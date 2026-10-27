@@ -6,6 +6,38 @@ use serde_json::Value;
 /// and concurrency are capped and its prompt is bounded.
 pub const DEPTH_LIMIT: u32 = 4;
 pub const CONCURRENCY_LIMIT: usize = 4;
+/// The host policy sets no provider-turn cutoff for the operator's own Session,
+/// which is right: an operator can interrupt and can ask for more. A delegated
+/// child has neither, so a prompt that never converges runs for hours with
+/// nobody able to stop it — one `task` call spent 69 minutes this way. A child
+/// the host left unbounded therefore gets this allowance, and a wall clock,
+/// after which it closes itself and its report returns.
+pub const TURN_LIMIT: u32 = 32;
+pub const TIME_LIMIT_SECS: u64 = 1800;
+pub const TURN_BOUND_NOTE: &str = "Reached the delegated turn allowance for this task. The delegating Session receives the work completed so far.";
+pub const TIME_BOUND_NOTE: &str = "Reached the delegated time limit for this task. The delegating Session receives the work completed so far.";
+
+pub fn turn_limit() -> Option<u32> {
+    match std::env::var("MIAO_SUBAGENT_MAX_TURNS")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+    {
+        Some(0) => None,
+        Some(limit) => Some(limit.min(10_000)),
+        None => Some(TURN_LIMIT),
+    }
+}
+
+pub fn time_limit() -> Option<std::time::Duration> {
+    match std::env::var("MIAO_SUBAGENT_MAX_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        Some(0) => None,
+        Some(seconds) => Some(std::time::Duration::from_secs(seconds.min(86_400))),
+        None => Some(std::time::Duration::from_secs(TIME_LIMIT_SECS)),
+    }
+}
 /// At most this many archived outputs may be referenced by one delegation.
 pub const REFERENCE_LIMIT: usize = 4;
 /// The referenced text injected into the child is bounded to this many bytes.

@@ -1432,8 +1432,28 @@ async fn execute(
     // A Session forked by `task` is a leaf: its lineage is fixed before the
     // run starts, so one lookup answers every turn.
     let delegated = is_delegated_child(inner, session).await?;
+    // Nobody can tell a delegated child to continue, so a host that sets no
+    // cutoff leaves it able to run forever. Bound it here rather than in the
+    // policy, so the operator's own Session keeps its uncut allowance.
+    let delegated_turns = delegated.then(crate::subagent::turn_limit).flatten();
+    let delegated_deadline = delegated
+        .then(crate::subagent::time_limit)
+        .flatten()
+        .map(|limit| std::time::Instant::now() + limit);
     loop {
         if cancel.is_cancelled() {
+            return Ok(());
+        }
+        if delegated_deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline) {
+            inner
+                .store
+                .inject(
+                    session,
+                    &format!("deadline-{run}"),
+                    crate::subagent::TIME_BOUND_NOTE,
+                    "engine",
+                )
+                .await?;
             return Ok(());
         }
         loop {
@@ -1468,6 +1488,11 @@ async fn execute(
                 (None, limit) => limit,
             }
         };
+        // An explicit host limit stays authoritative; only a limit the host
+        // never set is filled for a delegated child.
+        if let (None, Some(turns)) = (allowance, delegated_turns) {
+            allowance = Some(turns);
+        }
         reset_allowance = false;
         // The soft budget is advisory: at the wrap-up share the model is asked
         // to close the turn, and once spent the request goes text-only so the
@@ -1487,7 +1512,11 @@ async fn execute(
                 .inject(
                     session,
                     &format!("allowance-{run}"),
-                    "Reached the provider turn allowance for this prompt. Send a message to continue.",
+                    if delegated {
+                        crate::subagent::TURN_BOUND_NOTE
+                    } else {
+                        "Reached the provider turn allowance for this prompt. Send a message to continue."
+                    },
                     "engine",
                 )
                 .await?;
@@ -3075,12 +3104,18 @@ command: None,
                     .inject(session, &format!("prompt-budget-{run}"), &note, "engine")
                     .await?;
             } else if final_turn {
+                // A delegated child has no operator to send "continue", so its
+                // pause note must not ask for one.
                 inner
                     .store
                     .inject(
                         session,
                         &format!("allowance-{run}"),
-                        "Reached the provider turn allowance for this prompt. Send a message to continue.",
+                        if delegated {
+                            crate::subagent::TURN_BOUND_NOTE
+                        } else {
+                            "Reached the provider turn allowance for this prompt. Send a message to continue."
+                        },
                         "engine",
                     )
                     .await?;
@@ -4122,16 +4157,22 @@ async fn finish_delegation(
         .history(child)
         .await
         .map_err(|_| ToolError::External("subagent history unavailable".into()))?;
+    // A bound that closes the child leaves an engine note as its newest
+    // message; the report the parent asked for is the child's own last
+    // assistant text, so read back to it instead of returning the note.
     let text = history
-        .last()
-        .and_then(|message| {
-            message.content.as_array().and_then(|parts| {
-                parts
-                    .iter()
-                    .find_map(|part| part["text"].as_str())
-                    .map(str::to_owned)
-            })
+        .iter()
+        .rev()
+        .filter_map(|message| {
+            let text = message
+                .content
+                .as_array()?
+                .iter()
+                .find_map(|part| part["text"].as_str())?;
+            Some((message.role.as_str(), text))
         })
+        .find(|(role, _)| *role == "assistant")
+        .map(|(_, text)| text.to_owned())
         .unwrap_or_default();
     let usage = inner
         .store
