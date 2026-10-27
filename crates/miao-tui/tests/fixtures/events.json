@@ -1,0 +1,13 @@
+[
+  {"session_id":"ses_fixture","seq":1,"kind":"session.initialized","data":{"location":"/workspace","title":"Fixture session"},"recorded_at_ms":1793082594401},
+  {"session_id":"ses_fixture","seq":2,"kind":"input.admitted","data":{"input_id":"inp_1","source":"user","text":"hello"},"recorded_at_ms":1793082594500},
+  {"session_id":"ses_fixture","seq":3,"kind":"input.promoted","data":{"input_id":"inp_1","text":"hello"},"recorded_at_ms":1793082594600},
+  {"session_id":"ses_fixture","seq":4,"kind":"run.started","data":{"run_id":"run_1"},"recorded_at_ms":null},
+  {"session_id":"ses_fixture","seq":5,"kind":"provider.request","data":{"run_id":"run_1","step":1,"attempt":1,"phase":"prepared","context_epoch":1,"protocol":"openai-chat"},"recorded_at_ms":1793082594700},
+  {"session_id":"ses_fixture","seq":6,"kind":"assistant.identity","data":{"run_id":"run_1","step":1,"model":"fixture/model","agent":"build"},"recorded_at_ms":1793082594800},
+  {"session_id":"ses_fixture","seq":7,"kind":"message.committed","data":{"role":"assistant","content":[{"type":"text","text":"hi"}]},"recorded_at_ms":1793082594900},
+  {"session_id":"ses_fixture","seq":8,"kind":"tool.planned","data":{"run_id":"run_1","step":1,"call_id":"call_1","tool":"read_file","input":{"path":"README.md"}}},
+  {"session_id":"ses_fixture","seq":9,"kind":"tool.completed","data":{"run_id":"run_1","step":1,"call_id":"call_1","tool":"read_file","result":{"output":"# miao"}},"recorded_at_ms":1793082595100},
+  {"session_id":"ses_fixture","seq":10,"kind":"usage","data":{"run_id":"run_1","step":1,"usage":{"inputTokens":12,"outputTokens":3}},"recorded_at_ms":1793082595200},
+  {"session_id":"ses_fixture","seq":11,"kind":"run.finished","data":{"run_id":"run_1","reason":"completed"},"recorded_at_ms":1793082595300}
+]
