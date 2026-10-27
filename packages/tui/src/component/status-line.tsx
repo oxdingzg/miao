@@ -1,6 +1,6 @@
 import { useCommandShortcut, useOpencodeKeymap } from "../keymap"
 import { Model } from "../util/model"
-import { createMemo, For } from "solid-js"
+import { createMemo, For, Show } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useLocal } from "../context/local"
 import { useSync } from "../context/sync"
@@ -13,7 +13,47 @@ import { statusSegments } from "../util/status-line"
 import { Locale } from "../util/locale"
 import { DialogModel } from "./dialog-model"
 
-export function StatusLine(props: { sessionID?: string; directory?: string; newWorkspace?: boolean }) {
+/**
+ * What the next keypress does: the permission mode, background work that
+ * outlives the turn, and the next escape action. It shares the status row with
+ * the model and the shortcuts so the composer does not spend a second line on
+ * two or three words.
+ */
+export type StatusHint = {
+  permissionMode: "auto" | "normal"
+  runningJobs: number
+  busy: boolean
+  waitingPrompts: number
+}
+
+export type StatusHintItem = { text: string; tone: "warning" | "text" | "muted" }
+
+export function statusHintSegments(source: StatusHint): StatusHintItem[] {
+  return [
+    {
+      text: source.permissionMode === "auto" ? "auto-approve on" : "auto-approve off",
+      tone: source.permissionMode === "auto" ? "warning" : "muted",
+    },
+    ...(source.runningJobs > 0
+      ? [
+          {
+            text: `${source.runningJobs} background ${source.runningJobs === 1 ? "job" : "jobs"} running`,
+            tone: "muted" as const,
+          },
+        ]
+      : []),
+    ...(source.busy
+      ? [{ text: `esc ${source.waitingPrompts > 0 ? "remove prompt" : "interrupt"}`, tone: "text" as const }]
+      : []),
+  ]
+}
+
+export function StatusLine(props: {
+  sessionID?: string
+  directory?: string
+  newWorkspace?: boolean
+  hint?: StatusHint
+}) {
   const local = useLocal()
   const sync = useSync()
   const paths = useTuiPaths()
@@ -50,6 +90,14 @@ export function StatusLine(props: { sessionID?: string; directory?: string; newW
         return status !== undefined && status.type !== "idle"
       }).length,
   )
+  const hint = createMemo<StatusHintItem[]>(() => (props.hint ? statusHintSegments(props.hint) : []))
+  // The hint shares this row, so the model and context must fit in what is left:
+  // the separators are three columns and the trailing one joins the two groups.
+  const hintWidth = createMemo(() =>
+    hint().length === 0
+      ? 0
+      : hint().reduce((total, item) => total + Bun.stringWidth(item.text), 0) + (hint().length - 1) * 3 + 3,
+  )
   const segments = createMemo(() => {
     const directory = props.directory ?? session()?.location.directory ?? (sync.path.directory || paths.cwd)
     return statusSegments(
@@ -68,7 +116,7 @@ export function StatusLine(props: { sessionID?: string; directory?: string; newW
           .filter(Boolean)
           .join(" · "),
       },
-      Math.max(1, dimensions().width - 4),
+      Math.max(1, dimensions().width - 4 - hintWidth()),
     )
   })
   return (
@@ -82,6 +130,22 @@ export function StatusLine(props: { sessionID?: string; directory?: string; newW
       flexShrink={0}
       overflow="hidden"
     >
+      <Show when={hint().length > 0}>
+        <For each={hint()}>
+          {(item, index) => (
+            <>
+              {index() > 0 && <text fg={theme.textMuted}> · </text>}
+              <text
+                wrapMode="none"
+                fg={item.tone === "warning" ? theme.warning : item.tone === "text" ? theme.text : theme.textMuted}
+              >
+                {item.text}
+              </text>
+            </>
+          )}
+        </For>
+        <text fg={theme.textMuted}> · </text>
+      </Show>
       <For each={segments()}>
         {(item, index) => (
           <>

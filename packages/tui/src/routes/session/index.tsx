@@ -43,6 +43,7 @@ import { promptInfoFromUserMessage, toolInput, toolMetadata } from "../../contex
 import type { Provider, SessionStatus } from "@miao/schema/view-models"
 import { SessionTodo } from "@miao/schema/session-todo"
 import { useLocal } from "../../context/local"
+import { useSessionState } from "../../context/session-state"
 import { Locale } from "../../util/locale"
 import { systemReminderLine } from "../../util/transcript"
 import { fileToolSummary, toolDisplay, toolDisplayMetadata, webSearchProviderLabel } from "../../util/tool-display"
@@ -534,6 +535,19 @@ export function Session() {
   }
 
   const local = useLocal()
+
+  // The composer's standing state shares the status row, so the footer under the
+  // input box stays one line: what the next keypress does, beside the model.
+  const sessionState = useSessionState()
+  const statusHint = createMemo(() => ({
+    permissionMode: local.permission.mode,
+    runningJobs:
+      sessionState.data.sessionID === route.sessionID
+        ? (sessionState.data.snapshot?.activity.jobs ?? []).filter((job) => job.status === "running").length
+        : 0,
+    busy: (sync.data.session_status[route.sessionID]?.type ?? "idle") !== "idle",
+    waitingPrompts: sync.prompt.waiting(route.sessionID).length,
+  }))
 
   function enterChild(sessionID: string) {
     navigate({
@@ -1556,7 +1570,7 @@ export function Session() {
             </Switch>
           </Show>
         </box>
-        <StatusLine sessionID={route.sessionID} />
+        <StatusLine sessionID={route.sessionID} hint={statusHint()} />
       </context.Provider>
     </LocationProvider>
   )
