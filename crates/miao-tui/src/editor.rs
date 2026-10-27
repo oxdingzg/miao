@@ -337,8 +337,18 @@ fn index_at_cell(line: &str, base: usize, goal: usize) -> usize {
     base + line.len()
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CompletionKind {
+    /// `@`-prefixed file paths.
+    #[default]
+    File,
+    /// A slash command name; accepting it inserts `/name `.
+    Command,
+}
+
 #[derive(Debug, Default)]
 pub struct Completion {
+    pub kind: CompletionKind,
     pub query: String,
     pub token_start: usize,
     pub items: Vec<String>,
@@ -371,6 +381,7 @@ pub struct Composer {
     history_index: Option<usize>,
     draft: String,
     files: Option<Vec<String>>,
+    commands: Vec<String>,
     workspace: PathBuf,
     history_path: PathBuf,
 }
@@ -386,9 +397,15 @@ impl Composer {
             history_index: None,
             draft: String::new(),
             files: None,
+            commands: Vec::new(),
             workspace: workspace.to_path_buf(),
             history_path,
         }
+    }
+
+    /// Names (without the leading `/`) offered by slash completion.
+    pub fn set_commands(&mut self, commands: Vec<String>) {
+        self.commands = commands;
     }
 
     /// Feed a key to the editor. The caller keeps the keys that mean app
@@ -581,15 +598,21 @@ impl Composer {
     }
 
     fn refresh_completion(&mut self) {
-        let Some((start, query)) = self.editor.completion_query() else {
+        let Some((start, query, kind)) = self.editor.completion_query() else {
             self.completion = Completion::default();
             return;
         };
-        let files = self
-            .files
-            .get_or_insert_with(|| index_files(&self.workspace));
-        let items = filter_files(files, &query);
+        let items = match kind {
+            CompletionKind::Command => filter_commands(&self.commands, &query),
+            CompletionKind::File => {
+                let files = self
+                    .files
+                    .get_or_insert_with(|| index_files(&self.workspace));
+                filter_files(files, &query)
+            }
+        };
         self.completion = Completion {
+            kind,
             query,
             token_start: start,
             items,
@@ -598,20 +621,30 @@ impl Composer {
     }
 
     fn accept_completion(&mut self) {
-        let Some(path) = self.completion.selected_item().cloned() else {
+        let Some(item) = self.completion.selected_item().cloned() else {
             return;
         };
         let start = self.completion.token_start;
         let end = self.editor.cursor();
-        self.editor.replace(start, end, &format!("@{path} "));
+        let replacement = match self.completion.kind {
+            CompletionKind::Command => format!("/{item} "),
+            CompletionKind::File => format!("@{item} "),
+        };
+        self.editor.replace(start, end, &replacement);
         self.completion = Completion::default();
     }
 }
 
 impl Editor {
-    /// The `@token` immediately before the cursor, if any.
-    fn completion_query(&self) -> Option<(usize, String)> {
+    /// The completion token immediately before the cursor: slash commands own
+    /// the first word, `@` mentions can start after any whitespace.
+    fn completion_query(&self) -> Option<(usize, String, CompletionKind)> {
         let text = &self.buffer[..self.cursor];
+        if let Some(name) = text.strip_prefix('/') {
+            if !name.chars().any(char::is_whitespace) {
+                return Some((0, name.to_string(), CompletionKind::Command));
+            }
+        }
         let start = text
             .char_indices()
             .rev()
@@ -619,13 +652,25 @@ impl Editor {
             .map_or(0, |(offset, c)| offset + c.len_utf8());
         let token = &text[start..];
         let query = token.strip_prefix('@')?;
-        Some((start, query.to_string()))
+        Some((start, query.to_string(), CompletionKind::File))
     }
 }
 
 /// Bracketed paste reaches us with either line ending; ConPTY sends CR-only.
 pub fn normalize_paste(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+/// Command names that start with the typed prefix, alphabetically, capped so
+/// the completion list fits the composer.
+fn filter_commands(commands: &[String], query: &str) -> Vec<String> {
+    let needle = query.to_lowercase();
+    let mut matches = commands
+        .iter()
+        .filter(|name| name.to_lowercase().starts_with(&needle))
+        .collect::<Vec<_>>();
+    matches.sort_by_key(|name| name.to_lowercase());
+    matches.into_iter().take(8).cloned().collect()
 }
 
 fn filter_files(files: &[String], query: &str) -> Vec<String> {
@@ -721,6 +766,7 @@ mod tests {
             history_index: None,
             draft: String::new(),
             files: Some(Vec::new()),
+            commands: Vec::new(),
             workspace: dir.to_path_buf(),
             history_path: dir.join("history.json"),
         }
@@ -828,6 +874,37 @@ mod tests {
         assert_eq!(composer.completion.selected, 1);
         // The arrow must not also move the text cursor while the list owns it.
         assert_eq!(composer.editor.cursor(), cursor);
+    }
+
+    #[test]
+    fn slash_completion_offers_commands_and_inserts_the_chosen_one() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-editor-{}-s", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let mut composer = composer(&dir);
+        composer.set_commands(vec!["status".into(), "sessions".into(), "theme".into()]);
+        composer.editor.insert_str("/se");
+        composer.refresh_completion();
+        assert_eq!(composer.completion.kind, CompletionKind::Command);
+        assert_eq!(composer.completion.items, vec!["sessions".to_string()]);
+        composer.accept_completion();
+        assert_eq!(composer.editor.text(), "/sessions ");
+        // A finished first word is no longer a command being completed.
+        composer.refresh_completion();
+        assert!(!composer.completion.active());
+    }
+
+    #[test]
+    fn slash_completion_only_owns_the_first_word() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-editor-{}-t", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let mut composer = composer(&dir);
+        composer.set_commands(vec!["review".into()]);
+        composer.editor.insert_str("/review src/");
+        composer.refresh_completion();
+        assert!(!composer.completion.active());
+        composer.editor.insert_str("@li");
+        composer.refresh_completion();
+        assert_eq!(composer.completion.kind, CompletionKind::File);
     }
 
     #[test]

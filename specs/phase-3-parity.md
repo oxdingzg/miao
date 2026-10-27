@@ -115,3 +115,19 @@
 | skills 列表 | 有意偏离（Phase 4 宿主移植） | 同上 |
 | workspace 列表/切换 | 有意偏离（Phase 4 宿主移植） | 同上 |
 | provider integrations | 有意偏离（Phase 4 宿主移植） | 同上 |
+
+## T8 命令面
+
+| 行为 | 状态 | 备注 |
+|---|---|---|
+| 命令 palette：`ctrl+p` 打开，输入过滤，Enter 执行动作 | 已对齐 | TS palette 只列关键动作、不列模板命令；本片同口径，`commands.rs:Builtin` + `dialogs.rs:PaletteDialog` |
+| leader/快捷键动作与 palette 共用一套实现 | 已对齐 | `app.rs:run_builtin`；palette 的 id 就是动作名 |
+| slash 补全只在首词、输入空格后收起 | 已对齐 | `editor.rs:completion_query`；接受后插入 `/name ` |
+| slash 提交：命中命令则渲染模板并捕获 command 引用，否则按普通 prompt 发送 | 已对齐 | `app.rs:submit`、`commands::split`；首行取词规则同 TS prompt |
+| 模板发现：全局目录、`MIAO_CONFIG`、项目配置文档、`.miao`/`.opencode`、`MIAO_CONFIG_DIR`、`MIAO_CONFIG_CONTENT`，低→高覆盖 | 已对齐 | `commands::templates`；顺序对齐 `Config.entries()` |
+| markdown 命令：`{command,commands}/**/*.md`，名字去 `.md` 保留嵌套路径，frontmatter 读 `description` | 已对齐 | `commands::load_directory` / `parse_markdown` |
+| 模板渲染：`$1…$n`（最高位捕获其余）、`$ARGUMENTS`、无占位符追加原始参数、`trim` | 已对齐 | `commands::render_template`；分词含引号与 `[Image N]` |
+| `/help`：列出内置动作、键位、发现的模板命令 | TUI 自有能力 | TS 无对应 slash；便于纯引擎客户端发现命令 |
+| `/init`、`/review` | 有意偏离（Phase 4 宿主移植） | 插件宿主注入，纯引擎客户端拿不到 |
+| 模板的 `agent`/`model`/`variant`/`subtask` 执行默认值 | 有意偏离（Phase 4 宿主移植） | 引擎要求 agent 带捕获 manifest；本片只发 `{name, arguments}` |
+| MCP 命令（`:mcp`）与 skills 来源 | 有意偏离（Phase 4 宿主移植） | 数据来自宿主服务 |

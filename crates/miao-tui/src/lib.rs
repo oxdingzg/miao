@@ -1,4 +1,5 @@
 pub mod app;
+pub mod commands;
 pub mod dialogs;
 pub mod editor;
 pub mod engine;
