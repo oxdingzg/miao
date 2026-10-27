@@ -54,6 +54,10 @@ impl Harness {
                 env!("CARGO_BIN_EXE_miao-tui-fake-engine"),
             );
             cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
+            cmd.env("MIAO_TUI_FAKE_ADMIT_LOG", dir.join("admit.log"));
+            // History lives under the state dir; keep the developer's real
+            // composer history out of a test run.
+            cmd.env("MIAO_TUI_STATE_DIR", dir.join("state"));
             cmd.arg("--db");
             cmd.arg(&db);
         }
@@ -127,6 +131,40 @@ impl Harness {
     }
 }
 
+/// Strip terminal control sequences so assertions read the cells a person
+/// sees; ratatui emits a cursor motion between separately styled cells (every
+/// freshly typed character), which would otherwise split typed text.
+fn plain(text: &str) -> String {
+    let mut out = String::new();
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            out.push(c);
+            continue;
+        }
+        // CSI runs to a final byte in @..=~; other escapes are two bytes.
+        if chars.next() == Some('[') {
+            for c in chars.by_ref() {
+                if ('@'..='~').contains(&c) {
+                    break;
+                }
+            }
+        }
+    }
+    out
+}
+
+fn wait_for_plain(harness: &Harness, needle: &str, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if plain(&harness.text()).contains(needle) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    plain(&harness.text()).contains(needle)
+}
+
 fn wait_for(harness: &Harness, needle: &str, timeout: Duration) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {
@@ -152,7 +190,7 @@ fn wait_exit(child: &mut Box<dyn Child + Send + Sync>, timeout: Duration) -> Opt
 }
 
 #[test]
-fn boots_renders_panes_and_quits_on_q() {
+fn boots_renders_panes_and_quits_on_ctrl_c() {
     let mut harness = Harness::spawn_engine("start");
     assert!(
         wait_for(&harness, "miao-tui-smoke", Duration::from_secs(2)),
@@ -184,10 +222,10 @@ fn boots_renders_panes_and_quits_on_q() {
         rendered.contains("composer"),
         "composer pane missing:\n{rendered}"
     );
-    harness.write(b"q");
+    harness.write(b"\x03");
     let status = wait_exit(&mut harness.child, Duration::from_secs(5))
-        .expect("process did not exit after q");
-    assert!(status.success(), "q must exit 0, got {status:?}");
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
     harness.shutdown();
 }
 
@@ -207,10 +245,92 @@ fn resize_keeps_process_alive() {
             "process exited during resize to {rows}x{cols}"
         );
     }
-    harness.write(b"q");
+    harness.write(b"\x03");
     let status = wait_exit(&mut harness.child, Duration::from_secs(5))
-        .expect("process did not exit after q");
-    assert!(status.success(), "q must exit 0, got {status:?}");
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
+fn multiline_paste_reaches_the_engine_verbatim() {
+    let mut harness = Harness::spawn_engine("paste");
+    assert!(
+        wait_for(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        harness.text()
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for(&harness, "hello from the fixture", Duration::from_secs(2)),
+        "the Session did not open:\n{}",
+        harness.text()
+    );
+    // A bracketed paste arrives as one event; the editor keeps the line
+    // break instead of treating it as a submit.
+    harness.write("\x1b[200~第一行\n第二行\x1b[201~".as_bytes());
+    assert!(
+        wait_for_plain(&harness, "第一行", Duration::from_secs(2))
+            && plain(&harness.text()).contains("第二行"),
+        "CJK paste did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    let log = harness.dir.join("admit.log");
+    let start = Instant::now();
+    let mut recorded = String::new();
+    while start.elapsed() < Duration::from_secs(5) {
+        recorded = std::fs::read_to_string(&log).unwrap_or_default();
+        if recorded.contains("第一行\\n第二行") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        recorded.contains("第一行\\n第二行"),
+        "admit did not carry the pasted prompt verbatim: {recorded}"
+    );
+    assert!(
+        recorded.contains("\"delivery\":\"steer\""),
+        "the TUI must send steer prompts: {recorded}"
+    );
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
+fn ctrl_c_clears_a_draft_before_it_quits() {
+    let mut harness = Harness::spawn_engine("draft");
+    assert!(
+        wait_for(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        harness.text()
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for(&harness, "hello from the fixture", Duration::from_secs(2)),
+        "the Session did not open:\n{}",
+        harness.text()
+    );
+    harness.write("draft text".as_bytes());
+    assert!(
+        wait_for_plain(&harness, "draft text", Duration::from_secs(2)),
+        "typing did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\x03");
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        harness.child.try_wait().expect("try_wait").is_none(),
+        "the first Ctrl+C must clear the draft, not quit"
+    );
+    harness.write(b"\x03");
+    let status =
+        wait_exit(&mut harness.child, Duration::from_secs(5)).expect("second Ctrl+C must quit");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
     harness.shutdown();
 }
 
