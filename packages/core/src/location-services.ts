@@ -105,15 +105,50 @@ export const locationServices = LayerNode.group([
 export type LocationServices = LayerNode.Output<typeof locationServices>
 export type LocationError = LayerNode.Error<typeof locationServices>
 
-let sharedMap: Layer.Layer<LocationServiceMap.Service> | undefined
+/**
+ * One location service map per replacement configuration. The map is a LayerMap
+ * keyed by directory, so two requests that both resolve a directory must reach
+ * the same LayerMap or the directory gets two full service graphs — two
+ * PermissionV2 services with two pending maps, two `SessionExecution`s, and so
+ * on. A permission asked through one graph is not visible to the other, which
+ * strands the tool call waiting for an answer the reply route cannot find.
+ *
+ * This is why the empty configuration was cached before. A host that passes
+ * replacements (for example the engine admission binding) must be cached the
+ * same way, or its routes and the CLI runtime that owns the drain build against
+ * different maps for the same directory.
+ */
+const maps = new Map<string, Layer.Layer<LocationServiceMap.Service>>()
+const replacementIds = new WeakMap<object, number>()
+let nextReplacementId = 1
+
+/**
+ * The map applies these replacements to every ref regardless of what the caller
+ * passes, so a caller that repeats them is describing the same graph. Keeping
+ * them in the key would hand that caller a second map — the exact split this
+ * cache exists to prevent.
+ */
+const forcedReplacements = new Set([SessionExecution.node.name, Location.node.name])
+
+function replacementKey(replacements: LayerNode.Replacements) {
+  // Key by (source name, replacement identity), not by list order or length:
+  // two callers describing the same graph must land on the same entry.
+  const bySource = new Map<string, string>()
+  for (const [node, replacement] of replacements) {
+    if (forcedReplacements.has(node.name)) continue
+    const known = replacementIds.get(replacement as object) ?? nextReplacementId++
+    replacementIds.set(replacement as object, known)
+    bySource.set(node.name, `${node.name}#${known}`)
+  }
+  return [...bySource.values()].sort().join("|")
+}
+
 export function buildLocationServiceMap(
   replacements: LayerNode.Replacements = [],
 ): Layer.Layer<LocationServiceMap.Service> {
-  // The map with no replacements is the common configuration and is requested
-  // from several places (server routes and legacy service layers). Reuse one
-  // layer instance so it resolves to a single LayerMap: without this the same
-  // directory builds the full location service graph more than once.
-  if (replacements.length === 0 && sharedMap) return sharedMap
+  const key = replacementKey(replacements)
+  const cached = maps.get(key)
+  if (cached) return cached
   const layer = Layer.effect(
     LocationServiceMap.Service,
     LayerMap.make(
@@ -150,7 +185,7 @@ export function buildLocationServiceMap(
       { idleTimeToLive: "60 minutes" },
     ),
   )
-  if (replacements.length === 0) sharedMap = layer
+  maps.set(key, layer)
   return layer
 }
 
