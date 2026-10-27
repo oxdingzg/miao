@@ -25,7 +25,8 @@ import { useSync } from "../../context/sync"
 import { useEvent } from "../../context/event"
 import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
-import { Spinner } from "../../component/spinner"
+import { Spinner, useSecond } from "../../component/spinner"
+import { waitingForResponse } from "../../context/session-status"
 import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "../../context/theme"
 import { BoxRenderable, ScrollBoxRenderable, type Renderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
@@ -1704,6 +1705,31 @@ function AssistantMessage(props: { message: TranscriptAssistantMessage; sessionI
     return props.message.time.completed - props.message.time.created
   })
 
+  const status = createMemo(() => sync.data.session_status[props.sessionID])
+  // The transcript's last step is live while the turn still runs. Keeping its
+  // footer mounted is what lets a reader tell the message being generated from
+  // the ones that finished, without looking down at the composer.
+  const running = createMemo(
+    () =>
+      props.last &&
+      props.message.time.completed === undefined &&
+      !aborted() &&
+      (status()?.type === "busy" || status()?.type === "retry"),
+  )
+  const waiting = createMemo(
+    () =>
+      running() &&
+      (status()?.type === "retry" ||
+        waitingForResponse({
+          busy: status()?.type === "busy",
+          blocked:
+            (sync.data.permission[props.sessionID]?.length ?? 0) > 0 ||
+            (sync.data.question[props.sessionID]?.length ?? 0) > 0,
+          message: props.message,
+          content: props.message.content,
+        })),
+  )
+
   const childShortcut = useCommandShortcut("session.child.first")
   const backgroundShortcut = useCommandShortcut("session.background")
   const tools = createMemo(() => props.message.content.filter((part): part is TranscriptToolPart => part.type === "tool"))
@@ -1787,36 +1813,67 @@ function AssistantMessage(props: { message: TranscriptAssistantMessage; sessionI
       </Show>
       <Switch>
         <Match
-          when={
-            (props.last || final() || aborted()) &&
-            !(props.last && (
-              sync.data.session_status[props.sessionID]?.type === "busy" ||
-              sync.data.session_status[props.sessionID]?.type === "retry" ||
-              sync.data.session_compaction[props.sessionID]
-            ))
-          }
+          when={props.last || final() || aborted()}
         >
           <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={2}>
-            <text marginTop={1} fg={theme.textMuted}>
-              {Locale.titlecase(props.message.agent)}
-              <span style={{ fg: theme.textMuted }}> · {model()}</span>
-              <Show when={ctx.showTimestamps() && props.message.time.completed !== undefined}>
-                <span style={{ fg: theme.textMuted }}>
-                  {" · "}
-                  {aborted() ? "stopped" : "completed"} {Locale.todayTimeOrDateTime(props.message.time.completed!)}
-                </span>
-              </Show>
-              <Show when={duration()}>
-                <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
-              </Show>
-              <Show when={aborted()}>
-                <span style={{ fg: theme.warning }}> · interrupted</span>
-              </Show>
-            </text>
+            <Show
+              when={running()}
+              fallback={
+                <text marginTop={1} fg={theme.textMuted}>
+                  <span style={{ fg: aborted() ? theme.warning : theme.success }}>{aborted() ? "✗" : "✓"}</span>{" "}
+                  {Locale.titlecase(props.message.agent)}
+                  <span style={{ fg: theme.textMuted }}> · {model()}</span>
+                  <Show when={ctx.showTimestamps() && props.message.time.completed !== undefined}>
+                    <span style={{ fg: theme.textMuted }}>
+                      {" · "}
+                      {aborted() ? "stopped" : "completed"} {Locale.todayTimeOrDateTime(props.message.time.completed!)}
+                    </span>
+                  </Show>
+                  <Show when={duration()}>
+                    <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
+                  </Show>
+                  <Show when={aborted()}>
+                    <span style={{ fg: theme.warning }}> · interrupted</span>
+                  </Show>
+                </text>
+              }
+            >
+              <AssistantRunning agent={props.message.agent} model={model()} created={props.message.time.created} waiting={waiting()} />
+            </Show>
           </box>
         </Match>
       </Switch>
     </>
+  )
+}
+
+/**
+ * The live footer under the step being generated. Claude Code keeps one such
+ * line attached to the running turn, so the transcript itself says whether a
+ * message is still working, waiting for the model, or finished; without it the
+ * last message and a settled one render identically until the turn ends.
+ */
+function AssistantRunning(props: {
+  agent: string | null
+  model: string
+  created: number | null
+  waiting: boolean
+}) {
+  const { theme } = useTheme()
+  const seconds = useSecond()
+  const elapsed = createMemo(() => {
+    seconds()
+    return props.created === null ? 0 : Math.max(0, Date.now() - props.created)
+  })
+  return (
+    <text marginTop={1} fg={theme.textMuted}>
+      <span style={{ fg: props.waiting ? theme.warning : theme.accent }}>{props.waiting ? "◐" : "✳"}</span>{" "}
+      {Locale.titlecase(props.agent)}
+      <span style={{ fg: theme.textMuted }}>
+        {" · "}
+        {props.model} · {props.waiting ? "waiting for model" : "working"} · {Locale.duration(elapsed())}
+      </span>
+    </text>
   )
 }
 

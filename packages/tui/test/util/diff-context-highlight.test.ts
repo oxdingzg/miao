@@ -2,7 +2,7 @@ import { addDefaultParsers, getTreeSitterClient } from "@opentui/core"
 import { expect, test } from "bun:test"
 import { createTwoFilesPatch, parsePatch } from "diff"
 import parsers from "../../src/parsers-config"
-import { createDiffContextHighlighter } from "../../src/util/diff-context-highlight"
+import { createDiffContextHighlighter, createDiffHighlighter } from "../../src/util/diff-context-highlight"
 
 addDefaultParsers(parsers.parsers)
 
@@ -77,3 +77,11 @@ test("content that is not one of the diff layouts falls back to plain highlighti
   const result = (await client.highlightOnce("if x:\n    pass", "python")).highlights ?? []
   expect(result.map((h) => h[2])).toContain("keyword")
 }, 60000)
+
+test("a patch no parser accepts costs the context highlighting, not the session", () => {
+  // The renderer builds its highlighter from whatever a tool result carried, so
+  // a malformed or truncated patch must not throw out of a render memo.
+  const truncated = patch.split("\n").slice(0, 8).join("\n")
+  expect(() => createDiffHighlighter({ patch: truncated })).not.toThrow()
+  expect(() => createDiffContextHighlighter({ patch: truncated, current: after })).not.toThrow()
+})

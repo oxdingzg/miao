@@ -11,6 +11,21 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-10-27
+
+### Added
+- **tui**: make the live turn state visible in transcript and composer (#1509) (`d835a5d202`)
+- **engine**: evaluate permission rules in the engine (S6 step 1) (#1499) (`9511331885`)
+- **core**: admit every Session through the engine inbox (S2) (#1501) (`37a0fe7a92`)
+- **engine**: derive product config in the engine (S5 step 2) (#1500) (`7618def1f4`)
+
+### Fixed
+- **tui**: keep a long diff preview parseable so it cannot crash the session (#1506) (`7e5c828917`)
+- **core**: give a directory one location service map per graph (#1507) (`7e3b6c881c`)
+- **engine**: lower GLM thinking history for Responses (#1505) (`aa99d922f9`)
+- **cli**: report an unavailable model instead of falling back silently (#1504) (`ceed8c4e76`)
+- **build**: tolerate a locked probe image when cleaning the smoke directory (#1502) (`dcfacf1a4e`)
+
 ## [0.3.9] - 2026-10-26
 
 ### Added

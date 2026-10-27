@@ -80,6 +80,13 @@ test("composer live line keeps progress and clocks on one row", async () => {
       expect(received).toContain("22.0s")
       expect(received.split("\n").filter((line) => line.trim())).toHaveLength(1)
       if (width > 80) expect(received).toContain("joins next turn")
+      // A receipt must not hide what the turn is doing: the live state stays.
+      expect(received).toContain("reading")
+      setActivity(undefined)
+      await app.renderOnce()
+      const waitingWithReceipt = app.captureCharFrame()
+      expect(waitingWithReceipt).toContain("Received")
+      expect(waitingWithReceipt).toContain("Waiting")
       setReceipt({ delivery: "queue", count: 2, since: null })
       await app.renderOnce()
       const queued = app.captureCharFrame()

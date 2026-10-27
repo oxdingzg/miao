@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { parsePatch } from "diff"
 import { collapseToolOutput, diffPreview } from "../../src/util/collapse-tool-output"
 
 test("preview preserves short output and caps long lines without splitting Unicode", () => {
@@ -21,8 +22,15 @@ test("multi-megabyte output is previewed without materializing its entire conten
 
 test("a diff longer than the budget previews its head and counts the rest", () => {
   expect(diffPreview("+one\n-two", 4)).toBeUndefined()
-  expect(diffPreview("@@\n+one\n-two\n+three\n-four\n+five", 3)).toEqual({
-    patch: "@@\n+one\n-two",
-    hidden: 3,
-  })
+  const patch = `Index: a.txt\n${"=".repeat(67)}\n--- a.txt\n+++ a.txt\n@@ -1,5 +1,6 @@\n one\n-two\n+TWO\n+extra\n three\n four\n`
+  const preview = diffPreview(patch, 9)!
+  expect(preview.hidden).toBe(patch.split("\n").length - 9)
+  expect(preview.patch).toContain("@@ -1,2 +1,3 @@")
+  // The preview is what the diff renderer parses, so a header that promises
+  // lines the slice does not carry would throw there and take the session down.
+  expect(parsePatch(preview.patch)[0]!.hunks[0]).toMatchObject({ oldLines: 2, newLines: 3 })
+})
+
+test("a preview whose hunk body was cut away entirely renders nothing", () => {
+  expect(diffPreview(`Index: a.txt\n${"=".repeat(67)}\n--- a.txt\n+++ a.txt\n@@ -1,3 +1,3 @@\n one\n`, 5)).toBeUndefined()
 })

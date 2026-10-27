@@ -496,29 +496,40 @@ export function SessionWaiting(props: {
 }) {
   const { theme } = useTheme()
   const [width, setWidth] = createSignal(80)
+  // What the turn is doing right now. A receipt (a prompt that joined this
+  // turn) is not a phase: reporting it alone made an active turn read as a
+  // frozen "Received" line while the model was in fact still working.
+  const compactState = createMemo(() => {
+    if (props.phase === "compacting") {
+      if (props.progress?.stages)
+        return width() < 60
+          ? `${props.progress.stage}/${props.progress.stages} compacting`
+          : `Compacting ${props.progress.stage}/${props.progress.stages}`
+      return "Compacting context"
+    }
+    if (props.phase === "queued") return "Queued"
+    if (props.waiting) return width() < 60 ? "Waiting" : "Waiting for model"
+    if (props.activity) return props.activity
+    if (props.phase === "preparing") return width() < 60 ? "Preparing" : "Preparing request"
+    if (props.phase === "streaming") return width() < 60 ? "Streaming" : "Receiving response"
+    if (props.phase === "retrying") return "Retrying"
+    return "Working"
+  })
   // Claude Code keeps the elapsed time on the live status line whether the turn
   // is still reading its first token or already running tools.
   const text = createMemo(() => {
     if (props.compact) {
-      if (props.receipt) {
-        const label = props.receipt.delivery === "queue" ? "Queued" : "Received"
-        if (width() < 60) return props.receipt.count > 1 ? `${props.receipt.count} pending` : label
-        return `${label}${props.receipt.count > 1 ? ` · ${props.receipt.count} pending` : ""} · ${props.receipt.delivery === "queue" ? "starts when idle" : "joins next turn"}`
-      }
-      if (props.phase === "compacting") {
-        if (props.progress?.stages)
-          return width() < 60
-            ? `${props.progress.stage}/${props.progress.stages} compacting`
-            : `Compacting ${props.progress.stage}/${props.progress.stages}`
-        return "Compacting context"
-      }
-      if (!props.waiting && props.activity) return props.activity
-      if (props.phase === "queued") return "Queued"
-      if (props.phase === "preparing") return width() < 60 ? "Preparing" : "Preparing request"
-      if (props.phase === "streaming") return width() < 60 ? "Streaming" : "Receiving response"
-      if (props.phase === "retrying") return "Retrying"
-      if (!props.waiting && !props.phase) return "Working"
-      return width() < 60 ? "Waiting" : "Waiting for model"
+      if (!props.receipt) return compactState()
+      // The receipt says which prompt joined this turn; it must not replace what
+      // the turn is doing, so the live state stays on the line after it.
+      const label = props.receipt.delivery === "queue" ? "Queued" : "Received"
+      const pending = props.receipt.count > 1 ? `${props.receipt.count} pending` : undefined
+      const detail =
+        width() < 60 ? undefined : props.receipt.delivery === "queue" ? "starts when idle" : "joins next turn"
+      const state = compactState()
+      return [label, pending, detail, state === label ? undefined : state]
+        .filter((part): part is string => part !== undefined)
+        .join(" · ")
     }
     if (props.phase === "compacting")
       return waitingText(props.phase, props.elapsed, props.esc ?? "interrupt", props.progress)
