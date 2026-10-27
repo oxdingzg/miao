@@ -2,8 +2,9 @@
 //!
 //! It speaks the same newline-delimited JSON envelope as the real engine, so
 //! the transport can be exercised without a database, a provider, or a model.
-//! Every session holds five durable events (seq 1..=5); `ping` appends one live
-//! event, which is how a test tells replay from the live stream.
+//! Each session holds five durable events (seq 1..=5) unless `--fixture <path>`
+//! supplies a recorded transcript; `ping` appends one live event, which is how
+//! a test tells replay from the live stream.
 
 use std::io::{BufRead, Write};
 
@@ -12,6 +13,8 @@ use serde_json::{json, Value};
 fn main() {
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
+    let durable = durable_events();
+    let mut session_id = "s".to_string();
     let mut subscribed = false;
     let mut next = 1;
 
@@ -25,7 +28,7 @@ fn main() {
             // the ephemeral channel so the test can observe what was sent.
             send(
                 &mut out,
-                json!({"method":"progress","params":{"session_id":"s","refusal":frame}}),
+                json!({"method":"progress","params":{"session_id":session_id,"refusal":frame}}),
             );
             continue;
         };
@@ -33,23 +36,28 @@ fn main() {
         match method {
             "subscribe" => {
                 let after = frame["params"]["after"].as_u64().unwrap_or(0);
+                session_id = frame["params"]["session_id"]
+                    .as_str()
+                    .unwrap_or("s")
+                    .to_string();
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
                 // The cursor the transport asked for, so a reconnect can be
                 // checked without inspecting the child's arguments.
                 send(
                     &mut out,
-                    json!({"method":"progress","params":{"session_id":"s","after":after}}),
+                    json!({"method":"progress","params":{"session_id":session_id,"after":after}}),
                 );
-                for seq in after + 1..=5 {
-                    send(&mut out, event(seq, "replay"));
+                for event in durable.iter().filter(|event| seq(event) > after) {
+                    send(&mut out, json!({"method":"event","params":event}));
                 }
                 subscribed = true;
-                next = 5.max(after) + 1;
+                next = durable.iter().map(seq).max().unwrap_or(0).max(after) + 1;
             }
             "ping" => {
                 send(&mut out, json!({"id":id,"result":{"ok":true}}));
                 if subscribed {
-                    send(&mut out, event(next, "live"));
+                    let live = event(&session_id, next, "live");
+                    send(&mut out, json!({"method":"event","params":live}));
                     next += 1;
                 }
             }
@@ -57,7 +65,7 @@ fn main() {
                 send(&mut out, json!({"id":id,"result":{"ok":true}}));
                 send(
                     &mut out,
-                    json!({"method":"product_tool","bridge_id":7,"params":{"session_id":"s","name":"write_file","input":{}}}),
+                    json!({"method":"product_tool","bridge_id":7,"params":{"session_id":session_id,"name":"write_file","input":{}}}),
                 );
             }
             // Silent methods: only the request timeout can settle these.
@@ -75,8 +83,24 @@ fn main() {
     }
 }
 
-fn event(seq: u64, kind: &str) -> Value {
-    json!({"method":"event","params":{"session_id":"s","seq":seq,"kind":kind,"data":{},"recorded_at_ms":null}})
+/// The session's committed events: a recorded transcript when the test passes
+/// `--fixture <path>`, otherwise five synthetic ones.
+fn durable_events() -> Vec<Value> {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() != Some("--fixture") {
+        return (1..=5).map(|seq| event("s", seq, "replay")).collect();
+    }
+    let path = args.next().expect("--fixture <path>");
+    let json = std::fs::read_to_string(&path).expect("fixture file");
+    serde_json::from_str(&json).expect("fixture json")
+}
+
+fn event(session_id: &str, seq: u64, kind: &str) -> Value {
+    json!({"session_id":session_id,"seq":seq,"kind":kind,"data":{},"recorded_at_ms":null})
+}
+
+fn seq(event: &Value) -> u64 {
+    event["seq"].as_u64().unwrap_or(0)
 }
 
 fn send(out: &mut std::io::Stdout, frame: Value) {

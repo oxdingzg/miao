@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use miao_tui::transport::{Connection, EngineSpawn, EventRx, TransportError, TransportEvent};
-use serde_json::json;
+use serde_json::{json, Value};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -147,5 +147,41 @@ async fn closing_shuts_the_engine_down_without_reporting_a_failure() {
     assert!(
         !matches!(quiet, Ok(Some(TransportEvent::Failure(_)))),
         "an explicit close is not a transport fault"
+    );
+}
+
+/// The recorded transcript is the vocabulary contract shared with the TS host
+/// client (`packages/miao/src/engine/bridge.ts`): every committed event the
+/// bridge translates must reach the TUI bit-for-bit, in seq order, with the
+/// cursor landing on the last one.
+#[tokio::test]
+async fn the_recorded_transcript_reaches_the_tui_unchanged() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/events.json");
+    let expected: Vec<Value> =
+        serde_json::from_str(&std::fs::read_to_string(path).expect("fixture")).expect("json");
+    let spawn = EngineSpawn {
+        args: vec!["--fixture".into(), path.into()],
+        ..fake()
+    };
+    let (mut connection, mut events) = Connection::start(spawn, TIMEOUT).expect("start");
+    let client = connection.connect().await.expect("connect");
+    client.subscribe("ses_fixture", 0).await.expect("subscribe");
+    let mut seen = Vec::new();
+    while seen.len() < expected.len() {
+        if let TransportEvent::Event(event) = next(&mut events).await {
+            seen.push(event);
+        }
+    }
+    for (event, want) in seen.iter().zip(&expected) {
+        assert_eq!(event.session_id, want["session_id"].as_str().unwrap());
+        assert_eq!(event.seq, want["seq"].as_u64().unwrap());
+        assert_eq!(event.kind, want["kind"].as_str().unwrap());
+        assert_eq!(event.data, want["data"]);
+        assert_eq!(event.recorded_at_ms, want["recorded_at_ms"].as_u64());
+    }
+    assert_eq!(
+        client.cursors()["ses_fixture"],
+        expected.len() as u64,
+        "the cursor lands on the last committed event"
     );
 }

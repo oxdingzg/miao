@@ -44,3 +44,4 @@
 | 退出分类：`engine_busy` / `engine_closed` | 已对齐 | 读 stderr 尾部 `Error: Busy`；其余带退出状态 |
 | 显式 `close` 走 `shutdown` 帧，1s 内不退再 kill；不报终态失败 | 已对齐 | 与 TS 的 graceful shutdown 顺序一致 |
 | `initialize` / `admit` / `cancel` / `approve` / `answer_question` / `history` / `snapshot` 便捷方法 | 已对齐 | 参数形状按引擎 `Command` 的 serde 字段名 |
+| 录制 transcript 逐字段、按 seq 序到达 TUI | 已对齐 | `tests/fixtures/events.json` 收录 `bridge.ts` 翻译的 committed 事件（session.initialized → run.finished 共 11 条）；`tests/transport.rs` 断言 session_id/seq/kind/data/recorded_at_ms 全等且 cursor 落在末条 |
