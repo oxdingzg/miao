@@ -511,5 +511,7 @@ async fn a_slow_reader_does_not_kill_the_engine() {
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
     let events = replies.iter().find(|reply| reply["id"] == 999).unwrap();
-    assert_eq!(events["result"].as_array().unwrap().len(), 150);
+    // `events` returns one bounded page; the reply is still far larger than
+    // the pipe buffer and the output queue that the old deadline choked on.
+    assert_eq!(events["result"].as_array().unwrap().len(), 100);
 }
