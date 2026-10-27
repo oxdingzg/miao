@@ -475,6 +475,157 @@ fn the_leader_opens_the_theme_dialog_and_saves_the_choice() {
 }
 
 #[test]
+fn the_status_dialog_shows_the_usage_report_and_the_debug_view() {
+    let mut harness = Harness::spawn_engine("status");
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(2)),
+        "the Session did not open:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\x18s");
+    assert!(
+        wait_for_plain(&harness, "3 (1 partial)", Duration::from_secs(3)),
+        "the status dialog did not render the usage report:\n{}",
+        plain(&harness.text())
+    );
+    let rendered = plain(&harness.text());
+    assert!(
+        rendered.contains("avg 812 ms"),
+        "the status dialog is missing TTFT:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("fake/glm · chat"),
+        "the status dialog is missing the model pin:\n{rendered}"
+    );
+    // Esc closes the read-only dialog; the debug view is one leader away.
+    // Pause so the lone ESC is not read as the prefix of an Alt chord.
+    harness.write(b"\x1b");
+    std::thread::sleep(Duration::from_millis(200));
+    harness.write(b"\x18d");
+    assert!(
+        wait_for_plain(&harness, "state dir", Duration::from_secs(3)),
+        "the debug dialog did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
+fn ctrl_o_switches_the_pinned_account() {
+    let mut harness = Harness::spawn_engine("accounts");
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(2)),
+        "the Session did not open:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\x0f");
+    assert!(
+        wait_for_plain(&harness, "cred_a", Duration::from_secs(3)),
+        "the account dialog did not render the catalog:\n{}",
+        plain(&harness.text())
+    );
+    // The second row is the other credential.
+    harness.write(b"\x1b[B");
+    harness.write(b"\r");
+    let log = harness.dir.join("admit.log");
+    let start = Instant::now();
+    let mut recorded = String::new();
+    while start.elapsed() < Duration::from_secs(5) {
+        recorded = std::fs::read_to_string(&log).unwrap_or_default();
+        if recorded.contains("\"method\":\"select_account\"") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        recorded.contains("\"method\":\"select_account\"") && recorded.contains("cred_b"),
+        "the chosen account was not sent: {recorded}"
+    );
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
+fn a_stashed_draft_comes_back_into_the_composer() {
+    let mut harness = Harness::spawn_engine("stash");
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(2)),
+        "the Session did not open:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"stash me");
+    // Ctrl+X then Shift+P stashes the draft and clears the composer.
+    harness.write(b"\x18P");
+    let stash = harness.dir.join("state").join("stash.json");
+    let start = Instant::now();
+    let mut saved = String::new();
+    while start.elapsed() < Duration::from_secs(5) {
+        saved = std::fs::read_to_string(&stash).unwrap_or_default();
+        if saved.contains("stash me") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        saved.contains("stash me"),
+        "the draft was not stashed: {saved}"
+    );
+    harness.write(b"\x18p");
+    assert!(
+        wait_for_plain(&harness, "stash me", Duration::from_secs(3)),
+        "the stash dialog did not render:\n{}",
+        plain(&harness.text())
+    );
+    // Enter restores the draft, the next Enter submits it.
+    harness.write(b"\r");
+    harness.write(b"\r");
+    let log = harness.dir.join("admit.log");
+    let start = Instant::now();
+    let mut recorded = String::new();
+    while start.elapsed() < Duration::from_secs(5) {
+        recorded = std::fs::read_to_string(&log).unwrap_or_default();
+        if recorded.contains("stash me") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        recorded.contains("\"method\":\"admit\"") && recorded.contains("stash me"),
+        "the restored draft never reached the engine: {recorded}"
+    );
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
 fn panic_restores_terminal() {
     let mut harness = Harness::spawn("panic", true);
     assert!(
