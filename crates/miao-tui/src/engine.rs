@@ -13,8 +13,11 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
+use crate::dialogs::ModelInfo;
 use crate::event::{AppEvent, Bus};
-use crate::session::{home_rows, DisplayFile, SessionState, SessionSummary, Transcript};
+use crate::session::{
+    catalog_rows, home_rows, DisplayFile, SessionState, SessionSummary, Transcript,
+};
 use crate::transport::{self, EngineClient, EngineSpawn, TransportEvent};
 
 /// Committed events that change what the transcript shows. Coalesced so one
@@ -50,6 +53,23 @@ pub enum Request {
     RejectQuestion {
         session_id: String,
         rejection: Value,
+    },
+    /// Read the engine's model catalog for the model dialog.
+    Catalog,
+    SelectModel {
+        session_id: String,
+        binding: Value,
+    },
+    Rename {
+        session_id: String,
+        title: String,
+    },
+    Archive {
+        session_id: String,
+        archived: bool,
+    },
+    Remove {
+        session_id: String,
     },
 }
 
@@ -107,6 +127,37 @@ impl Handle {
         let _ = self.tx.send(Request::RejectQuestion {
             session_id: session_id.to_string(),
             rejection,
+        });
+    }
+
+    pub fn catalog(&self) {
+        let _ = self.tx.send(Request::Catalog);
+    }
+
+    pub fn select_model(&self, session_id: &str, binding: Value) {
+        let _ = self.tx.send(Request::SelectModel {
+            session_id: session_id.to_string(),
+            binding,
+        });
+    }
+
+    pub fn rename(&self, session_id: &str, title: &str) {
+        let _ = self.tx.send(Request::Rename {
+            session_id: session_id.to_string(),
+            title: title.to_string(),
+        });
+    }
+
+    pub fn archive(&self, session_id: &str, archived: bool) {
+        let _ = self.tx.send(Request::Archive {
+            session_id: session_id.to_string(),
+            archived,
+        });
+    }
+
+    pub fn remove(&self, session_id: &str) {
+        let _ = self.tx.send(Request::Remove {
+            session_id: session_id.to_string(),
         });
     }
 }
@@ -289,6 +340,88 @@ async fn run(
                         }
                     }
                 }
+                Some(Request::Catalog) => {
+                    match client.request("model_catalog", json!({})).await {
+                        Ok(value) => bus.send(AppEvent::Models(ModelInfo::catalog(&value))),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("models failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::SelectModel {
+                    session_id,
+                    binding,
+                }) => {
+                    let result = client
+                        .request(
+                            "select_model",
+                            json!({ "session_id": session_id, "binding": binding }),
+                        )
+                        .await;
+                    match result {
+                        Ok(_) => {
+                            if open.as_ref().is_some_and(|state| state.id == session_id) {
+                                dirty = Some(Instant::now());
+                            }
+                        }
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("select failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::Rename { session_id, title }) => {
+                    let result = client
+                        .request(
+                            "rename",
+                            json!({ "session_id": session_id, "title": title }),
+                        )
+                        .await;
+                    match result {
+                        Ok(_) => {
+                            refresh_sessions(&client, &bus).await;
+                            if open.as_ref().is_some_and(|state| state.id == session_id) {
+                                dirty = Some(Instant::now());
+                            }
+                        }
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("rename failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::Archive {
+                    session_id,
+                    archived,
+                }) => {
+                    let result = client
+                        .request(
+                            "archive",
+                            json!({ "session_id": session_id, "archived": archived }),
+                        )
+                        .await;
+                    match result {
+                        Ok(_) => refresh_sessions(&client, &bus).await,
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("archive failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::Remove { session_id }) => {
+                    match client
+                        .request("remove", json!({ "session_id": session_id }))
+                        .await
+                    {
+                        Ok(_) => {
+                            if open.as_ref().is_some_and(|state| state.id == session_id) {
+                                open = None;
+                                bus.send(AppEvent::SessionRemoved(session_id));
+                            }
+                            refresh_sessions(&client, &bus).await;
+                        }
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("delete failed: {error}")))
+                        }
+                    }
+                }
                 Some(Request::NewSession) => {
                     dirty = None;
                     let id = new_id("ses");
@@ -375,6 +508,7 @@ async fn refresh_sessions(client: &EngineClient, bus: &Bus) {
             }
         }
     }
+    bus.send(AppEvent::Catalog(catalog_rows(rows.clone())));
     bus.send(AppEvent::Sessions(home_rows(rows)));
 }
 

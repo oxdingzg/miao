@@ -390,6 +390,91 @@ fn an_approval_is_answered_from_the_panel() {
 }
 
 #[test]
+fn the_leader_opens_the_model_dialog_and_selects_a_binding() {
+    let mut harness = Harness::spawn_engine("models");
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(2)),
+        "the Session did not open:\n{}",
+        plain(&harness.text())
+    );
+    // Ctrl+X is the leader; `m` opens the model dialog once the catalog lands.
+    harness.write(b"\x18m");
+    assert!(
+        wait_for_plain(&harness, "fake/gpt", Duration::from_secs(3)),
+        "the model dialog did not render the catalog:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    let log = harness.dir.join("admit.log");
+    let start = Instant::now();
+    let mut recorded = String::new();
+    while start.elapsed() < Duration::from_secs(5) {
+        recorded = std::fs::read_to_string(&log).unwrap_or_default();
+        if recorded.contains("\"method\":\"select_model\"") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        recorded.contains("\"method\":\"select_model\""),
+        "select_model never reached the engine: {recorded}"
+    );
+    assert!(
+        recorded.contains("\"model\":\"fake/glm\"") && recorded.contains("\"protocol\":\"chat\""),
+        "the selected binding was not sent: {recorded}"
+    );
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
+fn the_leader_opens_the_theme_dialog_and_saves_the_choice() {
+    let mut harness = Harness::spawn_engine("theme");
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\x18t");
+    assert!(
+        wait_for_plain(&harness, "catppuccin-frappe", Duration::from_secs(2)),
+        "the theme dialog did not render:\n{}",
+        plain(&harness.text())
+    );
+    // One row down from the active theme ("miao") lands on "opencode".
+    harness.write(b"\x1b[B");
+    harness.write(b"\r");
+    let preferences = harness.dir.join("state").join("preferences.json");
+    let start = Instant::now();
+    let mut saved = String::new();
+    while start.elapsed() < Duration::from_secs(5) {
+        saved = std::fs::read_to_string(&preferences).unwrap_or_default();
+        if saved.contains("opencode") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        saved.contains("\"theme\":\"opencode\""),
+        "the chosen theme was not saved: {saved}"
+    );
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
 fn panic_restores_terminal() {
     let mut harness = Harness::spawn("panic", true);
     assert!(

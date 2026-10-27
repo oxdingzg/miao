@@ -1,6 +1,7 @@
 use crossterm::event::Event as TerminalEvent;
 use crossterm::event::KeyEvent;
 
+use crate::dialogs::ModelInfo;
 use crate::session::{SessionState, SessionSummary, Transcript};
 
 #[derive(Debug)]
@@ -14,6 +15,12 @@ pub enum AppEvent {
     },
     /// The home list, already filtered and ordered by the engine task.
     Sessions(Vec<SessionSummary>),
+    /// Every root Session, archived included, for the Session dialog.
+    Catalog(Vec<SessionSummary>),
+    /// The engine's model catalog, one entry per selectable binding.
+    Models(Vec<ModelInfo>),
+    /// The Session currently open was deleted.
+    SessionRemoved(String),
     /// A fresh projection of the open Session.
     SessionOpened {
         summary: Option<SessionSummary>,

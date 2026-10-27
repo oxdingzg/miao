@@ -149,6 +149,31 @@ fn main() {
                 log_action(&frame["params"], "admit");
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
             }
+            // Two catalog entries, the second with variants, so the model
+            // dialog has something to flatten and pick from.
+            "model_catalog" if sessions => send(
+                &mut out,
+                json!({"id":id,"result":[
+                    {"route_id":"r1","protocol":"chat","model":"fake/glm"},
+                    {"protocol":"responses","model":"fake/gpt","variants":["low","high"]}
+                ]}),
+            ),
+            "select_model" if sessions => {
+                log_action(&frame["params"], "select_model");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "rename" if sessions => {
+                log_action(&frame["params"], "rename");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "archive" if sessions => {
+                log_action(&frame["params"], "archive");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "remove" if sessions => {
+                log_action(&frame["params"], "remove");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
             "snapshot" | "hang" => {}
             "exit" => return,
             "shutdown" => {

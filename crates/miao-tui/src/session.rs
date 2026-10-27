@@ -48,12 +48,24 @@ impl SessionSummary {
 /// answers `sessions` in id order, which is stable but not what a picker needs.
 pub fn home_rows(mut rows: Vec<SessionSummary>) -> Vec<SessionSummary> {
     rows.retain(|row| row.parent_id.is_none() && row.archived_at_ms.is_none());
+    sort_rows(&mut rows);
+    rows
+}
+
+/// Root Sessions including archived ones, for the Session dialog. Archived
+/// Sessions stay reachable so they can be opened again or un-archived.
+pub fn catalog_rows(mut rows: Vec<SessionSummary>) -> Vec<SessionSummary> {
+    rows.retain(|row| row.parent_id.is_none());
+    sort_rows(&mut rows);
+    rows
+}
+
+fn sort_rows(rows: &mut [SessionSummary]) {
     rows.sort_by(|a, b| {
         b.updated_at_ms
             .cmp(&a.updated_at_ms)
             .then_with(|| a.id.cmp(&b.id))
     });
-    rows
 }
 
 /// One blocking approval the engine is waiting on.
@@ -499,6 +511,20 @@ mod tests {
         assert_eq!(ids, ["ses_b", "ses_a"]);
         assert_eq!(rows[0].label(), "newer");
         assert_eq!(rows[0].directory.as_deref(), Some("/work/miao"));
+    }
+
+    #[test]
+    fn catalog_rows_keep_archived_roots_and_drop_children() {
+        let rows = catalog_rows(vec![
+            SessionSummary::from_snapshot(&snapshot("ses_a", "older", 10, None, None))
+                .expect("row"),
+            SessionSummary::from_snapshot(&snapshot("ses_child", "child", 99, Some("ses_a"), None))
+                .expect("row"),
+            SessionSummary::from_snapshot(&snapshot("ses_archived", "archived", 50, None, Some(5)))
+                .expect("row"),
+        ]);
+        let ids: Vec<_> = rows.iter().map(|row| row.id.as_str()).collect();
+        assert_eq!(ids, ["ses_archived", "ses_a"]);
     }
 
     #[test]

@@ -251,6 +251,11 @@ const BUILTIN_THEMES: &[(&str, Palette)] = &[
 
 pub const DEFAULT_THEME: &str = "miao";
 
+/// Built-in theme names in menu order.
+pub fn names() -> Vec<&'static str> {
+    BUILTIN_THEMES.iter().map(|(name, _)| *name).collect()
+}
+
 pub fn builtin(name: &str) -> Option<Palette> {
     BUILTIN_THEMES
         .iter()
@@ -266,6 +271,10 @@ pub fn load(workspace: &Path) -> Loaded {
             Ok(text) => merge(&text, &path, &mut name, &mut warnings),
             Err(err) => warnings.push(format!("failed to read {}: {err}", path.display())),
         }
+    }
+    if name.is_empty() {
+        // A saved choice only fills in when no config file named a theme.
+        name = crate::state::preferences().theme.unwrap_or_default();
     }
     if name.is_empty() {
         name = DEFAULT_THEME.to_string();
