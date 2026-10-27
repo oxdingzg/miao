@@ -62,11 +62,8 @@ export const decodeDocument = (input: unknown) =>
     ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
     : decodeInfo(input)
 
-<<<<<<< HEAD
 
 
-=======
->>>>>>> origin/main
 /** One ordered configuration source: the shape the engine's `--config-sources` reads. */
 export type Source = { dir: string } | { file: string } | { content: string }
 
