@@ -1314,6 +1314,33 @@ impl Tools {
         })
     }
 
+    /// A settled rejection, in the model's own vocabulary. A bare "invalid
+    /// tool input" leaves nothing to correct, so a model that dropped its
+    /// arguments — glm-5.3-flash sends `{}` — resends the same call. Name the
+    /// required arguments it still has to supply when they are the reason.
+    pub fn rejection(&self, name: &str, input: &Value, error: &ToolError) -> String {
+        let ToolError::InvalidInput = error else {
+            return error.to_string();
+        };
+        let missing: Vec<&str> = self
+            .definitions()
+            .iter()
+            .find(|tool| tool.name == name)
+            .and_then(|tool| tool.input_schema["required"].as_array())
+            .map(|required| {
+                required
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .filter(|field| input.get(*field).is_none())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if missing.is_empty() {
+            return error.to_string();
+        }
+        format!("invalid tool input: {name} requires {}", missing.join(", "))
+    }
+
     pub(crate) async fn execute_background(
         &self,
         prepared: Prepared,
