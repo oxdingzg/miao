@@ -1944,10 +1944,23 @@ async fn execute(
                 ),
             );
             tokio::pin!(response);
+            // A provider that has not produced its first token sends nothing at all:
+            // no journal event and no delta, so a client cannot tell a slow model
+            // from an engine that died. Announce the wait on the ephemeral progress
+            // channel instead. It is not provider output, so it never counts as
+            // `produced` and never disarms the pre-output retry.
+            let mut waiting = tokio::time::interval(std::time::Duration::from_secs(5));
+            waiting.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             let outcome = loop {
                 tokio::select! {
                     _=cancel.cancelled()=>return Ok(()),
                     reply=&mut response=>break reply,
+                    _=waiting.tick(), if !produced => {
+                        let _=inner.progress.send(json!({
+                            "session_id":session,"run_id":run,"step":step,"kind":"provider.waiting",
+                            "attempt":attempts,"elapsed_ms":attempt_started.elapsed().as_millis() as u64,
+                        }));
+                    },
                     Some(delta)=receive.recv()=>{
                         if delta["kind"] == "provider.retry" {
                             // A retry is a durable product fact that survives replay,

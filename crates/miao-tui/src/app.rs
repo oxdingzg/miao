@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::Frame;
@@ -13,7 +14,7 @@ use crate::keybinds::{self, Keymap};
 use crate::pane::{render_dialog, Home, Pane, Panel, PanelKind, Shell};
 use crate::platform::attention::{self, Attention};
 use crate::platform::{clipboard, editor, zed};
-use crate::session::{SessionState, SessionSummary};
+use crate::session::{Entry, SessionState, SessionSummary};
 use crate::state::{self, StashEntry};
 use crate::status::UsageSummary;
 use crate::theme::{self, Theme};
@@ -24,6 +25,106 @@ pub enum Screen {
     Home,
     /// One Session's transcript plus composer.
     Session,
+}
+
+/// How long the engine may stay quiet before the status says so. The engine
+/// heartbeats every five seconds while it waits on a provider, so three missed
+/// frames is a real gap rather than scheduler jitter.
+const LIVE_SILENCE: Duration = Duration::from_secs(15);
+
+/// Where the engine last said an active run was. Ephemeral: a client that
+/// attaches mid-turn learns the run from the snapshot and the rest from the next
+/// frame, so nothing here is persisted.
+#[derive(Debug, Clone)]
+pub struct Live {
+    pub run_id: String,
+    pub phase: LivePhase,
+    /// When the current phase began, for the elapsed part of the status.
+    pub since: Instant,
+    /// The newest frame from the engine, which is the only proof it is working.
+    pub signal: Instant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LivePhase {
+    /// The request is out and no token has come back yet.
+    Waiting,
+    /// A pause before another attempt, announced by the engine.
+    Retrying { attempt: u64 },
+    /// A tool call is executing. The engine is quiet here too, but naming the
+    /// work is what makes a long command differ from a stuck turn.
+    Tool { name: String },
+}
+
+impl Live {
+    /// The engine has not reported anything for long enough that the wait is
+    /// worth calling out. It says the client stopped hearing from the engine; it
+    /// never claims the turn failed. Only a provider wait has a heartbeat to
+    /// miss: a running tool can be silent for minutes by design.
+    fn silent(&self, now: Instant) -> bool {
+        matches!(self.phase, LivePhase::Waiting) && now.duration_since(self.signal) >= LIVE_SILENCE
+    }
+
+    fn describe(&self, now: Instant) -> String {
+        let elapsed = waited(now.duration_since(self.since));
+        match &self.phase {
+            LivePhase::Waiting if self.silent(now) => format!(
+                "waiting for model · {elapsed} · no engine signal {}",
+                waited(now.duration_since(self.signal))
+            ),
+            LivePhase::Waiting => format!("waiting for model · {elapsed}"),
+            LivePhase::Retrying { attempt } => format!("retrying attempt {attempt} · {elapsed}"),
+            LivePhase::Tool { name } => format!("running {name} · {elapsed}"),
+        }
+    }
+}
+
+/// The answer being streamed. V2 commits one assistant message per provider
+/// turn, so without this the transcript would stay silent for the whole stream.
+/// The next projection replaces it with the committed message; it is never
+/// persisted and never copied.
+#[derive(Debug, Default)]
+pub struct Draft {
+    run_id: String,
+    /// Assistant entries committed when the stream started. A projection that
+    /// commits one more is the message this draft was standing in for.
+    committed: usize,
+    text: String,
+    reasoning: String,
+}
+
+impl Draft {
+    fn append(&mut self, delta: &Value) {
+        let text = delta
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        match delta.get("kind").and_then(Value::as_str) {
+            Some("text.delta") => self.text.push_str(text),
+            Some("reasoning.delta") => self.reasoning.push_str(text),
+            // Tool arguments stream too, but they belong to a call the
+            // transcript renders once it is committed.
+            _ => {}
+        }
+    }
+}
+
+/// A tool name is engine-supplied and the status is one line, so keep the first
+/// word of the first line and cap it.
+fn tool_label(name: &str) -> String {
+    let line = name.lines().next().unwrap_or_default().trim();
+    let label = line.split_whitespace().next().unwrap_or("tool");
+    label.chars().take(24).collect()
+}
+
+/// Whole seconds under a minute, then minutes and seconds. A count reads as
+/// movement; a rounded-down minute reads as a stuck status.
+fn waited(duration: Duration) -> String {
+    let seconds = duration.as_secs();
+    if seconds < 60 {
+        return format!("{seconds}s");
+    }
+    format!("{}m {:02}s", seconds / 60, seconds % 60)
 }
 
 /// What the process should open once the engine is attached. The launch flags
@@ -76,6 +177,13 @@ pub struct App {
     startup: Startup,
     /// Built-in plus custom themes, in menu order.
     themes: theme::Catalog,
+    /// Live provider activity for the open Session.
+    live: Option<Live>,
+    /// The answer streaming in ahead of its committed message.
+    draft: Option<Draft>,
+    /// Assistant entries in the last projection, so a draft can name the
+    /// projection that supersedes it.
+    committed: usize,
 }
 
 impl App {
@@ -122,6 +230,9 @@ impl App {
             clipboard_busy: false,
             startup,
             themes,
+            live: None,
+            draft: None,
+            committed: 0,
         }
     }
 
@@ -163,6 +274,9 @@ impl App {
     }
 
     pub fn render(&mut self, frame: &mut Frame) {
+        // The status counts elapsed time, so it is recomputed per frame rather
+        // than only when the projection changes.
+        self.update_status();
         match self.screen {
             Screen::Home => {
                 // The home list keeps the title bar so the workspace under
@@ -200,6 +314,7 @@ impl App {
             AppEvent::Focus(focused) => self.attention.set_focus(focused),
             AppEvent::Mouse(mouse) => self.handle_mouse(mouse),
             AppEvent::Attention { kind, id } => self.announce(kind, id),
+            AppEvent::Provider(frame) => self.provider(frame),
             AppEvent::Clipboard(content) => {
                 self.clipboard_busy = false;
                 match content {
@@ -278,6 +393,28 @@ impl App {
                     }
                 }
                 self.state = state;
+                // A live phase only ever describes the run it was announced for.
+                if self.live.as_ref().is_some_and(|live| {
+                    self.state.active_run.as_deref() != Some(live.run_id.as_str())
+                }) {
+                    self.live = None;
+                }
+                let committed = transcript
+                    .entries
+                    .iter()
+                    .filter(|entry| matches!(entry, Entry::Assistant { .. }))
+                    .count();
+                // The draft is provisional. Only the projection that commits the
+                // next assistant message replaces it — an unrelated projection
+                // in the middle of the stream must not blank the text the user
+                // is reading. A run that is no longer active never commits one.
+                if self.draft.as_ref().is_some_and(|draft| {
+                    committed > draft.committed || self.state.active_run.is_none()
+                }) {
+                    self.draft = None;
+                    self.shell.set_draft("", "");
+                }
+                self.committed = committed;
                 self.shell.set_session(self.session.as_ref());
                 self.shell.set_transcript(&transcript);
                 self.screen = Screen::Session;
@@ -1067,17 +1204,129 @@ impl App {
             });
     }
 
+    /// Fold one ephemeral provider frame into the live status. The transcript
+    /// does not read this: it is replaced by every projection.
+    fn provider(&mut self, frame: Value) {
+        let Some(run_id) = self.state.active_run.clone() else {
+            return;
+        };
+        // A late frame from an earlier run must not refresh the current status.
+        if frame
+            .get("run_id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id != run_id)
+        {
+            return;
+        }
+        let now = Instant::now();
+        let phase = match frame
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+        {
+            // A token reached the stream, so the wait is over and the answer
+            // starts to show before it commits.
+            "provider.delta" => {
+                self.live = None;
+                self.stream(&run_id, frame.get("data").unwrap_or(&Value::Null));
+                return;
+            }
+            // The engine repeats this while it has no first token.
+            "provider.waiting" => LivePhase::Waiting,
+            "provider.retry" => LivePhase::Retrying {
+                attempt: frame.get("attempt").and_then(Value::as_u64).unwrap_or(0) + 1,
+            },
+            // An attempt announcement proves the request is in flight, even
+            // before the first heartbeat or right after a previous step.
+            "provider.attempt" => match self.live.as_ref().map(|live| live.phase.clone()) {
+                Some(phase) => phase,
+                None => LivePhase::Waiting,
+            },
+            // A committed tool call names the work the run is doing.
+            "tool.planned" => LivePhase::Tool {
+                name: tool_label(
+                    frame
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                ),
+            },
+            // The call finished; the run's next phase is not known yet.
+            "tool.completed" => {
+                self.live = None;
+                return;
+            }
+            _ => return,
+        };
+        // Only a phase change restarts the clock; a heartbeat must not restart
+        // the elapsed time the user is already reading.
+        let since = match self.live.as_ref() {
+            Some(live) if live.run_id == run_id && live.phase == phase => live.since,
+            _ => now,
+        };
+        self.live = Some(Live {
+            run_id,
+            phase,
+            since,
+            signal: now,
+        });
+    }
+
+    /// Append one normalized provider delta to the draft the next projection
+    /// will replace.
+    fn stream(&mut self, run_id: &str, frame: &Value) {
+        let delta = frame.get("delta").unwrap_or(&Value::Null);
+        // A delta for a run other than the draft's starts a new draft; frames
+        // for a finished run are filtered above, so this is a newer turn.
+        if self
+            .draft
+            .as_ref()
+            .is_none_or(|draft| draft.run_id != run_id)
+        {
+            self.draft = Some(Draft {
+                run_id: run_id.to_string(),
+                committed: self.committed,
+                ..Draft::default()
+            });
+        }
+        let draft = self.draft.as_mut().expect("draft just ensured");
+        draft.append(delta);
+        self.shell.set_draft(&draft.text, &draft.reasoning);
+    }
+
+    /// Whether the status line has something to count, which is also when the
+    /// drive loop must repaint faster than the minute.
+    pub fn busy(&self) -> bool {
+        self.screen == Screen::Session && self.state.active_run.is_some()
+    }
+
     fn update_status(&mut self) {
         if self.screen != Screen::Session {
             self.shell.title.set_status(None);
+            self.shell.title.set_status_alert(false);
             return;
         }
-        let status = match (&self.state.active_run, self.state.pending) {
-            (Some(_), 0) => "working · Esc interrupt".to_string(),
-            (Some(_), queued) => format!("working · {queued} queued · Esc interrupt"),
-            (None, 0) => "idle".to_string(),
-            (None, queued) => format!("idle · {queued} queued"),
+        let now = Instant::now();
+        let live = self
+            .live
+            .as_ref()
+            .filter(|live| self.state.active_run.as_deref() == Some(live.run_id.as_str()));
+        // Without a frame the run is still starting; saying so with the plain
+        // "working" avoids claiming a phase the engine never announced.
+        let phase = match (self.state.active_run.is_some(), live) {
+            (true, Some(live)) => live.describe(now),
+            (true, None) => "working".to_string(),
+            (false, _) => "idle".to_string(),
         };
+        let status = match (&self.state.active_run, self.state.pending) {
+            (Some(_), 0) => format!("{phase} · Esc interrupt"),
+            (Some(_), queued) => format!("{phase} · {queued} queued · Esc interrupt"),
+            (None, 0) => phase,
+            (None, queued) => format!("{phase} · {queued} queued"),
+        };
+        self.shell
+            .title
+            .set_status_alert(live.is_some_and(|live| live.silent(now)));
         self.shell.title.set_status(Some(status));
     }
 
@@ -1156,6 +1405,10 @@ impl App {
         self.screen = Screen::Home;
         self.session = None;
         self.state = SessionState::default();
+        self.live = None;
+        self.draft = None;
+        self.committed = 0;
+        self.shell.set_draft("", "");
         self.usage = None;
         self.pending_accounts = false;
         self.shell.panel = None;
@@ -1516,6 +1769,257 @@ mod tests {
         });
         app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(app.screen, Screen::Session);
+    }
+
+    fn running_app(run_id: &str) -> App {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: SessionState {
+                active_run: Some(run_id.into()),
+                ..SessionState::default()
+            },
+        });
+        app
+    }
+
+    fn provider_frame(kind: &str) -> AppEvent {
+        AppEvent::Provider(serde_json::json!({
+            "kind": kind,
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "attempt": 1,
+            "elapsed_ms": 0,
+        }))
+    }
+
+    #[test]
+    fn a_waiting_run_counts_the_wait_instead_of_showing_a_static_working() {
+        let mut app = running_app("run-1");
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+        app.handle(provider_frame("provider.waiting"));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("waiting for model · 0s · Esc interrupt")
+        );
+        // A token ends the wait; committed content carries the turn from here.
+        app.handle(provider_frame("provider.delta"));
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+    }
+
+    #[test]
+    fn a_heartbeat_does_not_restart_the_elapsed_time() {
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.waiting"));
+        let since = app.live.as_ref().expect("live wait").since;
+        app.handle(provider_frame("provider.waiting"));
+        assert_eq!(app.live.as_ref().expect("live wait").since, since);
+    }
+
+    #[test]
+    fn an_announced_retry_is_visible_while_it_waits() {
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.retry"));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("retrying attempt 2 · 0s · Esc interrupt")
+        );
+    }
+
+    #[test]
+    fn a_silent_engine_is_called_out_without_claiming_failure() {
+        let mut app = running_app("run-1");
+        let now = Instant::now();
+        app.live = Some(Live {
+            run_id: "run-1".into(),
+            phase: LivePhase::Waiting,
+            since: now - Duration::from_secs(40),
+            signal: now - Duration::from_secs(20),
+        });
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("waiting for model · 40s · no engine signal 20s · Esc interrupt")
+        );
+        assert!(app.shell.title.status_alert());
+    }
+
+    #[test]
+    fn a_frame_from_another_run_does_not_refresh_the_status() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.waiting",
+            "run_id": "run-0",
+        })));
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+    }
+
+    #[test]
+    fn a_projection_for_another_run_drops_the_live_phase() {
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.waiting"));
+        assert!(app.live.is_some());
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: SessionState {
+                active_run: Some("run-2".into()),
+                ..SessionState::default()
+            },
+        });
+        assert!(app.live.is_none());
+    }
+
+    #[test]
+    fn a_running_tool_is_named_in_the_status() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.planned",
+            "run_id": "run-1",
+            "name": "bash",
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("running bash · 0s · Esc interrupt")
+        );
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.completed",
+            "run_id": "run-1",
+        })));
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+    }
+
+    #[test]
+    fn a_running_tool_is_not_reported_as_a_silent_engine() {
+        let mut app = running_app("run-1");
+        let now = Instant::now();
+        app.live = Some(Live {
+            run_id: "run-1".into(),
+            phase: LivePhase::Tool {
+                name: "bash".into(),
+            },
+            since: now - Duration::from_secs(300),
+            signal: now - Duration::from_secs(300),
+        });
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("running bash · 5m 00s · Esc interrupt")
+        );
+        assert!(!app.shell.title.status_alert());
+    }
+
+    #[test]
+    fn a_tool_name_is_one_short_line() {
+        assert_eq!(tool_label("bash"), "bash");
+        assert_eq!(tool_label("read_file\nsecond"), "read_file");
+        assert_eq!(tool_label(&"x".repeat(40)).chars().count(), 24);
+        assert_eq!(tool_label(""), "tool");
+    }
+
+    #[test]
+    fn a_wait_reads_in_seconds_then_minutes() {
+        assert_eq!(waited(Duration::from_secs(9)), "9s");
+        assert_eq!(waited(Duration::from_secs(65)), "1m 05s");
+    }
+
+    fn delta_frame(run_id: &str, kind: &str, text: &str) -> AppEvent {
+        AppEvent::Provider(serde_json::json!({
+            "kind": "provider.delta",
+            "session_id": "ses_1",
+            "run_id": run_id,
+            "data": {"kind": "delta", "delta": {"kind": kind, "text": text}},
+        }))
+    }
+
+    fn drafted(app: &App) -> String {
+        app.shell
+            .draft()
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn opened(transcript: Transcript, active_run: Option<&str>) -> AppEvent {
+        AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(transcript),
+            state: SessionState {
+                active_run: active_run.map(str::to_string),
+                ..SessionState::default()
+            },
+        }
+    }
+
+    #[test]
+    fn a_streamed_answer_appears_before_the_turn_commits() {
+        let mut app = running_app("run-1");
+        app.handle(delta_frame("run-1", "text.delta", "Hel"));
+        app.handle(delta_frame("run-1", "text.delta", "lo"));
+        let draft = app.draft.as_ref().expect("a streaming draft");
+        assert_eq!(draft.text, "Hello");
+        assert!(
+            drafted(&app).contains("Hello"),
+            "the transcript shows the streamed answer: {:?}",
+            drafted(&app)
+        );
+    }
+
+    #[test]
+    fn reasoning_and_text_stream_into_separate_channels() {
+        let mut app = running_app("run-1");
+        app.handle(delta_frame("run-1", "reasoning.delta", "weighing"));
+        let draft = app.draft.as_ref().expect("a streaming draft");
+        assert_eq!(draft.reasoning, "weighing");
+        assert!(draft.text.is_empty(), "reasoning is not the answer");
+        assert_eq!(drafted(&app), "▸ thinking · 8 chars");
+        app.handle(delta_frame("run-1", "text.delta", "the answer"));
+        let shown = drafted(&app);
+        assert!(shown.starts_with("▸ thinking · 8 chars"));
+        assert!(shown.contains("the answer"));
+    }
+
+    #[test]
+    fn only_the_projection_that_commits_the_answer_replaces_the_draft() {
+        let mut app = running_app("run-1");
+        app.handle(delta_frame("run-1", "text.delta", "Hello"));
+        // A snapshot taken for an unrelated event carries no new message, so
+        // the stream keeps showing rather than blinking away mid-answer.
+        app.handle(opened(Transcript::default(), Some("run-1")));
+        assert!(app
+            .draft
+            .as_ref()
+            .is_some_and(|draft| draft.text == "Hello"));
+        assert!(drafted(&app).contains("Hello"));
+        let committed = Transcript::from_snapshot(&serde_json::json!({
+            "messages": [{"role": "assistant", "content": [{"type": "text", "text": "Hello"}]}],
+        }));
+        app.handle(opened(committed, Some("run-1")));
+        assert!(app.draft.is_none());
+        assert!(app.shell.draft().is_empty());
+    }
+
+    #[test]
+    fn a_finished_run_drops_an_uncommitted_draft() {
+        let mut app = running_app("run-1");
+        app.handle(delta_frame("run-1", "text.delta", "partial"));
+        app.handle(opened(Transcript::default(), None));
+        assert!(app.draft.is_none());
+        assert!(app.shell.draft().is_empty());
     }
 
     #[test]
