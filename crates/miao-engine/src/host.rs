@@ -486,6 +486,18 @@ impl Host {
                 serde_json::to_value(crate::permission_rules::evaluate(&request)?)
                     .map_err(Error::from)
             }
+            Command::PermissionPatternList => runtime
+                .permission_patterns(&self.controller)
+                .await
+                .and_then(|patterns| serde_json::to_value(patterns).map_err(Error::from)),
+            Command::PermissionPatternPut(input) => runtime
+                .put_permission_pattern(&self.controller, input.rule)
+                .await
+                .and_then(|pattern| serde_json::to_value(pattern).map_err(Error::from)),
+            Command::PermissionPatternRemove(input) => runtime
+                .remove_permission_pattern(&self.controller, input.rule_id)
+                .await
+                .map(|removed| json!({"removed":removed})),
             Command::PermissionSavedProject { workspace, rules } => {
                 runtime
                     .store()

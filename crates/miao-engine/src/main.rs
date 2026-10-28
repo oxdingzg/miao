@@ -59,6 +59,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "routes_schema": miao_engine::model_routes::SCHEMA,
                 "catalog": 1,
                 "product_permission_evaluation": 1,
+                "permission_patterns": 1,
             })
         );
         return Ok(());

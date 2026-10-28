@@ -263,6 +263,7 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS engine_lease(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),interval_ms INTEGER NOT NULL,last_ms INTEGER NOT NULL,epoch INTEGER NOT NULL,owner_pid INTEGER);"))?;
                 crate::permission_grant::initialize(&conn)?;
                 crate::permission_saved::initialize(&conn)?;
+                crate::permission_patterns::initialize(&conn)?;
                 // ADR-0019: content-addressed Session file snapshots and the one
                 // staged revert intent. Blobs live beside the database.
                 conn.execute_batch(
