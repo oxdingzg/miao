@@ -486,6 +486,22 @@ impl Host {
                 serde_json::to_value(crate::permission_rules::evaluate(&request)?)
                     .map_err(Error::from)
             }
+            Command::ProductPermissionAdmit { source, input } => runtime
+                .admit_product_permission(&self.controller, &source, input)
+                .await
+                .and_then(|record| serde_json::to_value(record).map_err(Error::from)),
+            Command::ProductPermissionStatus { source, request_id } => runtime
+                .product_permission_status(&self.controller, &source, request_id)
+                .await
+                .and_then(|record| serde_json::to_value(record).map_err(Error::from)),
+            Command::ProductPermissionReply { source, response } => runtime
+                .reply_product_permission(&self.controller, &source, response)
+                .await
+                .and_then(|record| serde_json::to_value(record).map_err(Error::from)),
+            Command::ProductPermissionPending { session_id } => runtime
+                .pending_product_permissions(&self.controller, session_id)
+                .await
+                .and_then(|records| serde_json::to_value(records).map_err(Error::from)),
             Command::PermissionPatternList => runtime
                 .permission_patterns(&self.controller)
                 .await

@@ -95,3 +95,18 @@ configured deny仍先于两类saved allow。SQLite插入约束覆盖两种来源
 这只是原生规则写入前置。绑定pending子请求的always答复、原生变更事件的产品投影、
 完整快照刷新配对验收（#1643）、宿主第二判定删除及§4询问次数验收仍未完成。
 不能因为原生表已有写入API而把产品表当成已切换为只读投影。
+
+### 7.2 宿主子请求的原生持久化前置
+
+`product_permission_requests: 1` 为活跃产品工具提供 admit/status/reply/pending RPC。
+每次不同断言用独立 request ID；相同 ID 只接受完整输入与来源完全匹配的重试。
+记录绑定 Runtime owner、规范 workspace、Session、bridge、源工具、message、输入摘要
+及捕获的 authority revision。桥连接和源槽位锁覆盖 SQL 提交；源工具结束、取消和
+崩溃恢复会在同一事务清理 pending，不能借旧回复写入 always 规则。
+
+always 仅保存调用方明确声明的 save 模式，和单次答复一起原子提交；空 save 不记忆。
+答复前重新检查当前 saved deny；模式写入失败整体回滚。它不制造精确 grant，
+也不执行宿主动作。宿主仍须遵守取消信号及原生能力边界。
+
+这一切片尚未启用产品兼容适配器，也未实现同级 pending 的批量答复语义、产品事件投影
+或删除 TS evaluator。必须继续完成这些门禁并通过 §4 验收，不能将前置能力当成 S6 完成。
