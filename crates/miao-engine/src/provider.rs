@@ -9,7 +9,7 @@ use std::{
     collections::BTreeMap,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex, OnceLock,
     },
     time::Duration,
 };
@@ -192,8 +192,17 @@ const MAX_REQUEST_ATTEMPTS: usize = 25;
 const ROUTED_ATTEMPTS: usize = 3;
 
 pub(crate) struct Budget {
-    pub deadline: tokio::time::Instant,
+    /// How long the turn may keep retrying once an attempt has failed.
+    window: Duration,
+    /// When the retry window ends. Unarmed until the first failure: a first
+    /// attempt that is slow on its own is bounded by the watchdogs, not by the
+    /// retry window, or one slow response spends the whole budget and leaves no
+    /// room for the retry the window exists to grant.
+    deadline: OnceLock<tokio::time::Instant>,
     attempts: AtomicUsize,
+    /// The last failure this turn saw, kept so a window that expires before
+    /// another request can still report why the turn failed.
+    failure: Mutex<Option<String>>,
 }
 impl Budget {
     pub fn new() -> Arc<Self> {
@@ -203,9 +212,43 @@ impl Budget {
     /// schedule can be observed without waiting out the real budget.
     fn with_deadline(window: Duration) -> Arc<Self> {
         Arc::new(Self {
-            deadline: tokio::time::Instant::now() + window,
+            window,
+            deadline: OnceLock::new(),
             attempts: AtomicUsize::new(0),
+            failure: Mutex::new(None),
         })
+    }
+    /// Ends any attempt that is itself a retry; idempotent, so the first
+    /// failure of the turn fixes the window's end.
+    fn arm(&self) -> tokio::time::Instant {
+        *self
+            .deadline
+            .get_or_init(|| tokio::time::Instant::now() + self.window)
+    }
+    fn deadline(&self) -> Option<tokio::time::Instant> {
+        self.deadline.get().copied()
+    }
+    fn expired(&self) -> bool {
+        self.deadline()
+            .is_some_and(|deadline| tokio::time::Instant::now() >= deadline)
+    }
+    fn note_failure(&self, reason: &str) {
+        *self.failure.lock().unwrap_or_else(|held| held.into_inner()) = Some(reason.to_owned());
+    }
+    fn failure(&self) -> Option<String> {
+        self.failure
+            .lock()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone()
+    }
+    /// The error a spent window reports: the generic fact plus the failure
+    /// that left it no room, which is the only part an operator can act on.
+    fn spent(&self) -> ProviderError {
+        let spent = "the turn's retry window was spent before another request";
+        match self.failure() {
+            Some(reason) => ProviderError::Transport(format!("{spent} (last attempt: {reason})")),
+            None => ProviderError::Transport(spent.into()),
+        }
     }
     pub fn used(&self) -> usize {
         self.attempts.load(Ordering::Relaxed)
@@ -252,15 +295,15 @@ pub(crate) fn transport_attempt() -> Result<(tokio::time::Instant, usize), Provi
             cap: ROUTED_ATTEMPTS,
             requests: 3,
         });
-    if scope.limit == 0
-        || tokio::time::Instant::now() >= scope.budget.deadline
-        || !scope.budget.take(scope.limit)
-    {
+    // A reconnect is itself a retry, so it opens the window when the stream's
+    // first attempt did not need to.
+    let deadline = scope.budget.arm();
+    if scope.limit == 0 || scope.budget.expired() || !scope.budget.take(scope.limit) {
         return Err(ProviderError::Transport(
             "the turn's retry window was spent before another stream attempt".into(),
         ));
     }
-    Ok((scope.budget.deadline, scope.budget.used()))
+    Ok((deadline, scope.budget.used()))
 }
 pub(crate) async fn scoped<F: std::future::Future<Output = Result<Reply, ProviderError>>>(
     budget: Arc<Budget>,
@@ -998,16 +1041,13 @@ pub(crate) async fn request_with_retry(
             cap: MAX_REQUEST_ATTEMPTS,
             requests: MAX_REQUEST_ATTEMPTS,
         });
-    let deadline = scope.budget.deadline;
     // A rejected request earns one extra attempt outside the schedule; every
     // other decision below is bounded by the turn's retry window, so the
     // attempt cap is only a runaway guard that the window normally wins.
     let mut self_healed = false;
     for attempt in 0..scope.requests {
-        if tokio::time::Instant::now() >= deadline || !scope.budget.take(scope.cap) {
-            return Err(ProviderError::Transport(
-                "the turn's retry window was spent before another request".into(),
-            ));
+        if scope.budget.expired() || !scope.budget.take(scope.cap) {
+            return Err(scope.budget.spent());
         }
         let request = request
             .try_clone()
@@ -1018,16 +1058,21 @@ pub(crate) async fn request_with_retry(
             .and_then(|body| body.as_bytes())
             .map_or(0, <[u8]>::len);
         let watchdogs = crate::first_event::Watchdogs::at(request_bytes);
-        let request_deadline = watchdogs
-            .header_deadline()
-            .map_or(deadline, |header| deadline.min(header));
+        // Both bounds can be absent — a turn whose first attempt has not yet
+        // armed the window, with the first-byte watchdog disabled — and then
+        // only the caller's cancellation ends the wait.
+        let request_deadline = scope
+            .budget
+            .deadline()
+            .into_iter()
+            .chain(watchdogs.header_deadline())
+            .min();
         let response = tokio::select! {
             _=cancel.cancelled()=>Err(ProviderError::Interrupted),
-            result=tokio::time::timeout_at(request_deadline,client.execute(request))=>match result {
-                Ok(Ok(mut response))=>{ response.extensions_mut().insert(watchdogs); Ok(response) },
-                Ok(Err(error))=>Err(ProviderError::from(error)),
-                Err(_)=>Err(ProviderError::Transport("no response headers before the request deadline".into())),
-            },
+            result=dispatch(client, request, request_deadline)=>result.map(|mut response|{
+                response.extensions_mut().insert(watchdogs);
+                response
+            }),
         };
         let (status, outcome) = match &response {
             Ok(response) => (Some(response.status().as_u16()), "headers_received"),
@@ -1069,8 +1114,15 @@ pub(crate) async fn request_with_retry(
                 ProviderError::Http(status)
             }
             Err(error) => {
-                crate::runtime_profile::result(request_seq, status, outcome, None).await?;
-                announce(progress, protocol, attempt, status, outcome, None);
+                // `transport_reason` keeps the request URL out, so the cause is
+                // safe to record and is the only way to tell a header that never
+                // arrived from a connection the peer reset.
+                let detail = match &error {
+                    ProviderError::Transport(reason) => Some(reason.as_str()),
+                    _ => None,
+                };
+                crate::runtime_profile::result(request_seq, status, outcome, detail).await?;
+                announce(progress, protocol, attempt, status, outcome, detail);
                 error
             }
         };
@@ -1088,6 +1140,12 @@ pub(crate) async fn request_with_retry(
             ProviderError::Http(status) => (error.to_string(), Some(*status)),
             other => (other.to_string(), None),
         };
+        // The window starts at the first failure, so a slow first attempt is
+        // charged to the watchdogs rather than to the retries that follow.
+        if retryable || matches!(error, ProviderError::Http(400)) {
+            scope.budget.note_failure(&reason);
+            scope.budget.arm();
+        }
         if !retryable {
             // A request the endpoint rejected (HTTP 400) is normally
             // deterministic, but a gateway also wraps a transient upstream
@@ -1109,7 +1167,7 @@ pub(crate) async fn request_with_retry(
             }
             return Err(error);
         }
-        if tokio::time::Instant::now() >= deadline
+        if scope.budget.expired()
             || attempt + 1 >= scope.requests
             || scope.budget.used() >= scope.cap
         {
@@ -1118,9 +1176,33 @@ pub(crate) async fn request_with_retry(
         let pause = retry_pause(attempt, requested);
         announce_retry(progress, cancel, attempt + 1, &reason, status, pause).await?;
     }
-    Err(ProviderError::Transport(
-        "no attempt produced a response within the turn's request budget".into(),
-    ))
+    Err(match scope.budget.failure() {
+        Some(reason) => ProviderError::Transport(format!(
+            "no attempt produced a response within the turn's request budget (last attempt: {reason})"
+        )),
+        None => ProviderError::Transport(
+            "no attempt produced a response within the turn's request budget".into(),
+        ),
+    })
+}
+
+/// Sends one request bounded by `deadline` when the turn has one. Both a header
+/// watchdog and the retry window supply that bound, so an unarmed window on a
+/// turn that disabled the watchdog reaches here with none.
+async fn dispatch(
+    client: &reqwest::Client,
+    request: reqwest::Request,
+    deadline: Option<tokio::time::Instant>,
+) -> Result<reqwest::Response, ProviderError> {
+    let Some(deadline) = deadline else {
+        return client.execute(request).await.map_err(ProviderError::from);
+    };
+    match tokio::time::timeout_at(deadline, client.execute(request)).await {
+        Ok(result) => result.map_err(ProviderError::from),
+        Err(_) => Err(ProviderError::Transport(
+            "no response headers before the request deadline".into(),
+        )),
+    }
 }
 
 /// Announce the next attempt, then wait for it. A cancelled wait reports the
@@ -1412,12 +1494,16 @@ mod retry_tests {
         let started = std::time::Instant::now();
         let (outcome, notices) = drive(&endpoint, Duration::from_millis(1_500)).await;
         // Whichever end of the loop notices the spent window reports the last
-        // rejection: the loop top sees only the deadline and reports the
-        // transport failure the attempt count implies.
-        assert!(matches!(
-            outcome,
-            Err(ProviderError::Transport(_)) | Err(ProviderError::Http(503))
-        ));
+        // rejection: the loop top knows only the deadline, so it reads the
+        // failure that spent it.
+        match &outcome {
+            Err(ProviderError::Transport(message)) => assert!(
+                message.contains("last attempt: provider HTTP 503"),
+                "the spent window lost the rejection that spent it: {message}"
+            ),
+            Err(ProviderError::Http(503)) => {}
+            other => panic!("unexpected outcome: {other:?}"),
+        }
         for (attempt, delay) in delays(&notices).into_iter().enumerate() {
             let (low, high) = backoff_window(attempt);
             assert!(
@@ -1433,6 +1519,68 @@ mod retry_tests {
             "the window, not the schedule, ended the retries"
         );
         server.abort();
+    }
+
+    /// A first attempt that is slow on its own must not spend the retry window:
+    /// the window exists to grant a retry, and a turn whose endpoint took most
+    /// of it to fail used to be reported as having spent it before retrying.
+    #[tokio::test]
+    async fn the_retry_window_starts_at_the_first_failure() {
+        let budget = Budget::with_deadline(Duration::from_millis(50));
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        assert!(
+            !budget.expired(),
+            "an unarmed window must not end the first attempt"
+        );
+        budget.arm();
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        assert!(budget.expired(), "the armed window must end the retries");
+    }
+
+    #[tokio::test]
+    async fn a_spent_window_names_the_failure_that_spent_it() {
+        let budget = Budget::with_deadline(Duration::ZERO);
+        assert!(
+            !budget.spent().to_string().contains("last attempt"),
+            "a window that no attempt failed has no last attempt to name"
+        );
+        budget.note_failure("provider HTTP 503");
+        budget.arm();
+        let message = budget.spent().to_string();
+        assert!(
+            message.contains("last attempt: provider HTTP 503"),
+            "unexpected spent-window message: {message}"
+        );
+    }
+
+    /// A transport failure has no status and no body, so the cause the socket
+    /// gave is the only thing an operator can act on — and it must reach the
+    /// attempt notice without the request URL, which can carry a credential.
+    #[tokio::test]
+    async fn a_transport_failure_announces_its_cause() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let (outcome, notices) = drive(
+            &format!("http://127.0.0.1:{port}/?api-key=sk-secret"),
+            Duration::from_secs(1),
+        )
+        .await;
+        assert!(matches!(outcome, Err(ProviderError::Transport(_))));
+        let attempt = notices
+            .iter()
+            .find(|notice| notice["kind"] == "provider.attempt")
+            .expect("the attempt was not announced");
+        assert_eq!(attempt["outcome"], "transport_unknown");
+        let detail = attempt["detail"].as_str().unwrap_or_default();
+        assert!(
+            detail.contains("connect failed"),
+            "the socket's reason is missing: {detail}"
+        );
+        assert!(
+            !detail.contains("sk-secret"),
+            "the URL's query reached the notice: {detail}"
+        );
     }
 }
 
