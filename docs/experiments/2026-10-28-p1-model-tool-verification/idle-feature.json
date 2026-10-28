@@ -1,0 +1,197 @@
+{
+  "source_commit": "ce391d2764",
+  "artifact": "public 0.3.14 CLI/engine plus feature TUI",
+  "scenario": "idle empty home list, isolated XDG, no model calls",
+  "samples": [
+    {
+      "elapsed_seconds": 0.0,
+      "processes": [
+        {
+          "component": "miao",
+          "rss_kib": 229648,
+          "ps_cpu_percent": 17.7,
+          "cpu_time": "0:00.76"
+        },
+        {
+          "component": "miao-tui",
+          "rss_kib": 3504,
+          "ps_cpu_percent": 1.1,
+          "cpu_time": "0:00.01"
+        },
+        {
+          "component": "miao-engine",
+          "rss_kib": 14496,
+          "ps_cpu_percent": 4.3,
+          "cpu_time": "0:00.02"
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 0.515,
+      "processes": [
+        {
+          "component": "miao",
+          "rss_kib": 229648,
+          "ps_cpu_percent": 6.7,
+          "cpu_time": "0:00.78"
+        },
+        {
+          "component": "miao-tui",
+          "rss_kib": 3504,
+          "ps_cpu_percent": 0.1,
+          "cpu_time": "0:00.01"
+        },
+        {
+          "component": "miao-engine",
+          "rss_kib": 14496,
+          "ps_cpu_percent": 0.6,
+          "cpu_time": "0:00.02"
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 1.026,
+      "processes": [
+        {
+          "component": "miao",
+          "rss_kib": 229648,
+          "ps_cpu_percent": 0.8,
+          "cpu_time": "0:00.78"
+        },
+        {
+          "component": "miao-tui",
+          "rss_kib": 3504,
+          "ps_cpu_percent": 0.0,
+          "cpu_time": "0:00.01"
+        },
+        {
+          "component": "miao-engine",
+          "rss_kib": 14496,
+          "ps_cpu_percent": 0.0,
+          "cpu_time": "0:00.02"
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 1.539,
+      "processes": [
+        {
+          "component": "miao",
+          "rss_kib": 229648,
+          "ps_cpu_percent": 0.5,
+          "cpu_time": "0:00.79"
+        },
+        {
+          "component": "miao-tui",
+          "rss_kib": 3504,
+          "ps_cpu_percent": 0.0,
+          "cpu_time": "0:00.01"
+        },
+        {
+          "component": "miao-engine",
+          "rss_kib": 14496,
+          "ps_cpu_percent": 0.0,
+          "cpu_time": "0:00.02"
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 2.055,
+      "processes": [
+        {
+          "component": "miao",
+          "rss_kib": 229648,
+          "ps_cpu_percent": 0.1,
+          "cpu_time": "0:00.79"
+        },
+        {
+          "component": "miao-tui",
+          "rss_kib": 3504,
+          "ps_cpu_percent": 0.0,
+          "cpu_time": "0:00.01"
+        },
+        {
+          "component": "miao-engine",
+          "rss_kib": 14496,
+          "ps_cpu_percent": 0.0,
+          "cpu_time": "0:00.02"
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 2.571,
+      "processes": [
+        {
+          "component": "miao",
+          "rss_kib": 229648,
+          "ps_cpu_percent": 0.5,
+          "cpu_time": "0:00.79"
+        },
+        {
+          "component": "miao-tui",
+          "rss_kib": 3504,
+          "ps_cpu_percent": 0.0,
+          "cpu_time": "0:00.01"
+        },
+        {
+          "component": "miao-engine",
+          "rss_kib": 14496,
+          "ps_cpu_percent": 0.0,
+          "cpu_time": "0:00.02"
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 3.088,
+      "processes": [
+        {
+          "component": "miao",
+          "rss_kib": 229648,
+          "ps_cpu_percent": 0.1,
+          "cpu_time": "0:00.79"
+        },
+        {
+          "component": "miao-tui",
+          "rss_kib": 3504,
+          "ps_cpu_percent": 0.0,
+          "cpu_time": "0:00.01"
+        },
+        {
+          "component": "miao-engine",
+          "rss_kib": 14496,
+          "ps_cpu_percent": 0.0,
+          "cpu_time": "0:00.03"
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 3.603,
+      "processes": [
+        {
+          "component": "miao",
+          "rss_kib": 228704,
+          "ps_cpu_percent": 0.8,
+          "cpu_time": "0:00.80"
+        },
+        {
+          "component": "miao-tui",
+          "rss_kib": 3504,
+          "ps_cpu_percent": 0.0,
+          "cpu_time": "0:00.01"
+        },
+        {
+          "component": "miao-engine",
+          "rss_kib": 14496,
+          "ps_cpu_percent": 0.0,
+          "cpu_time": "0:00.03"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "8 short samples, not a soak or leak test",
+    "ps CPU is an OS moving average",
+    "RSS sum may double-count shared pages",
+    "No broker/LSP/worker was active; FD counts not measured"
+  ]
+}
