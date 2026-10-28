@@ -33,6 +33,15 @@ export class Info extends Schema.Class<Info>("Engine.ProductPermissionRequest")(
   reply: Schema.optional(Schema.NullOr(Permission.Reply)),
   reason: Schema.optional(Schema.NullOr(Schema.String)),
   feedback: Schema.optional(Schema.NullOr(Schema.String)),
+  denial: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        effect: Schema.Literal("deny"),
+        rules: Permission.Ruleset,
+        authority_revision: Schema.String,
+      }),
+    ),
+  ),
 }) {}
 
 export function parse(value: unknown, sessionID: string) {
@@ -50,6 +59,7 @@ export function parse(value: unknown, sessionID: string) {
     info.source.message_seq <= 0 ||
     !/^[a-f0-9]{64}$/.test(info.input_hash) ||
     !/^[a-f0-9]{64}$/.test(info.authority_revision) ||
+    (info.denial != null && !/^[a-f0-9]{64}$/.test(info.denial.authority_revision)) ||
     info.request.facts.actions.length === 0 ||
     info.request.facts.resources.length === 0
   )

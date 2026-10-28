@@ -860,3 +860,15 @@ hashes when replying; `product_permission_evaluate` remains the rule-only query
 and does not substitute for full admission. Classification does not execute an
 operation or replace the executor's filesystem/capability checks. The product
 permission adapter and complete S6 acceptance remain outstanding.
+
+#### Policy denial evidence
+
+`product_permission_diagnostics: 1` adds optional `denial` to records whose
+reason is `policy_denied`. It is the actual native outcome (`effect: deny`,
+effective `rules`, `authority_revision`) captured when admission or reply-time
+rechecking denies the assertion. Later saved-rule changes do not rewrite it.
+A reply-time denial can have a different diagnostic authority revision from the
+record's admission binding; the latter stays unchanged for exact reply retries.
+User rejection, cancellation and allowance do not manufacture policy evidence.
+Legacy records without `denial` decode as unknown evidence and omit the field.
+These are engine-produced diagnostics, not caller-provided policy or a new grant.

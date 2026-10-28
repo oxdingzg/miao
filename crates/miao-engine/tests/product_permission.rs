@@ -1242,6 +1242,8 @@ async fn assertion_wire_refuses_caller_authority_and_unbounded_inputs() {
         "auto",
         "host_context",
         "cwd",
+        "denial",
+        "rules",
     ] {
         let mut input = serde_json::to_value(assertion("invalid", "public")).unwrap();
         input[field] = json!([]);
@@ -1995,5 +1997,186 @@ async fn withdrawing_an_assertion_rolls_back_if_its_resolution_event_cannot_comm
             .unwrap()["state"],
         "cancelled"
     );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn policy_denial_keeps_the_actual_native_outcome_when_later_rules_change() {
+    let (_directory, store, runtime, source) = running().await;
+    let original = runtime
+        .evaluate_product_permission(&runtime.controller(), &source, request("secret"))
+        .await
+        .unwrap();
+    let denied = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("denial-admit", "secret"),
+        )
+        .await
+        .unwrap();
+    let wire = serde_json::to_value(&denied).unwrap();
+    assert_eq!(
+        wire["denial"]["rules"],
+        serde_json::to_value(&original.rules).unwrap()
+    );
+    assert_eq!(wire["denial"]["effect"], "deny");
+    assert_eq!(
+        wire["denial"]["authority_revision"],
+        wire["authority_revision"]
+    );
+    let workspace = store.location("s").await.unwrap().unwrap();
+    store
+        .project_saved_rules(
+            workspace,
+            vec![permission_rules::Rule {
+                action: "read".into(),
+                resource: "other".into(),
+                effect: Decision::Allow,
+            }],
+        )
+        .await
+        .unwrap();
+    let later = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("denial-later", "secret"),
+        )
+        .await
+        .unwrap();
+    assert_ne!(denied.authority_revision, later.authority_revision);
+    let historical = runtime
+        .product_permission_status(&runtime.controller(), &source, denied.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(historical).unwrap()["denial"],
+        wire["denial"]
+    );
+    // Rows written before this additive diagnostic field still decode honestly.
+    let mut legacy = wire.clone();
+    legacy.as_object_mut().unwrap().remove("denial");
+    let legacy: miao_engine::product_permission_request::Record =
+        serde_json::from_value(legacy).unwrap();
+    assert!(serde_json::to_value(legacy)
+        .unwrap()
+        .get("denial")
+        .is_none());
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn reply_time_policy_denial_records_the_recheck_without_changing_the_reply_binding() {
+    use miao_engine::product_permission_request::Reply;
+    let (_directory, store, runtime, source) = running().await;
+    let pending = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("denial-reply", "public"),
+        )
+        .await
+        .unwrap();
+    assert!(serde_json::to_value(&pending)
+        .unwrap()
+        .get("denial")
+        .is_none());
+    let workspace = store.location("s").await.unwrap().unwrap();
+    store
+        .project_saved_rules(
+            workspace,
+            vec![permission_rules::Rule {
+                action: "read".into(),
+                resource: "public".into(),
+                effect: Decision::Deny,
+            }],
+        )
+        .await
+        .unwrap();
+    let recheck = runtime
+        .evaluate_product_permission(&runtime.controller(), &source, request("public"))
+        .await
+        .unwrap();
+    let denied = runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&pending, Reply::Always),
+        )
+        .await
+        .unwrap();
+    let wire = serde_json::to_value(&denied).unwrap();
+    assert_eq!(wire["reason"], "policy_denied");
+    assert_eq!(
+        wire["denial"]["rules"],
+        serde_json::to_value(recheck.rules).unwrap()
+    );
+    assert_eq!(wire["denial"]["effect"], "deny");
+    let current = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("denial-current", "public"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        wire["denial"]["authority_revision"],
+        current.authority_revision
+    );
+    assert_ne!(
+        wire["denial"]["authority_revision"],
+        wire["authority_revision"]
+    );
+    assert_eq!(wire["authority_revision"], pending.authority_revision);
+    assert_eq!(
+        serde_json::to_value(
+            runtime
+                .reply_product_permission(
+                    &runtime.controller(),
+                    &source,
+                    response(&pending, Reply::Always)
+                )
+                .await
+                .unwrap()
+        )
+        .unwrap(),
+        wire
+    );
+    assert!(runtime
+        .permission_patterns(&runtime.controller())
+        .await
+        .unwrap()
+        .is_empty());
+    let event = store
+        .events("s", 0, 1000)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "product.permission.resolved" && event.data["id"] == denied.id)
+        .unwrap();
+    assert_eq!(event.data["denial"], wire["denial"]);
+    let rejected = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("denial-user", "other"),
+        )
+        .await
+        .unwrap();
+    let rejected = runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&rejected, Reply::Reject),
+        )
+        .await
+        .unwrap();
+    assert_eq!(rejected.reason.as_deref(), Some("user_rejected"));
+    assert!(serde_json::to_value(rejected)
+        .unwrap()
+        .get("denial")
+        .is_none());
     runtime.shutdown().await;
 }
