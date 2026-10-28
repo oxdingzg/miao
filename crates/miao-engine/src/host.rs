@@ -473,6 +473,10 @@ impl Host {
                 self.subscriptions.remove(&session_id);
                 Ok(json!({ "accepted": true }))
             }
+            Command::ProductPermissionEvaluate { source, request } => runtime
+                .evaluate_product_permission(&self.controller, &source, request)
+                .await
+                .and_then(|outcome| serde_json::to_value(outcome).map_err(Error::from)),
             Command::PermissionEvaluate { request } => {
                 if request.actions.is_empty() || request.resources.is_empty() {
                     return Err(Error::Invalid(

@@ -32,6 +32,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `request_compact` | `session_id` | `{accepted:true, duplicate, pending}` |
 | `select_agent` | `session_id`, `agent` | `{agent_hash, changed}` |
 | `select_account` | `session_id`, `credential_id` (string or null) | `{binding, account, changed}` |
+| `product_permission_evaluate` | `source`, `request` (active reverse-call facts) | `{effect, rules, authority_revision}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id`, `metadata_only?` | committed Session snapshot; metadata-only replies omit `messages` |
 | `sessions` | — | `string[]` (Session ids) |
@@ -422,6 +423,39 @@ restart and are reusable across Sessions in the same workspace. They never
 become wildcard rules or TypeScript permission rules. Caller-owned extension
 transports use per-instance identity so grants cannot outlive that boundary.
 The Store also exposes exact revocation primitives.
+
+### Rule queries bound to a product-tool call
+
+`product_permission_evaluation: 1` in `--capabilities` advertises
+`product_permission_evaluate`. The controller copies `session_id`, `bridge_id`,
+`call_id` and `message_seq` from its current `product_tool` reverse frame into
+`source`. `request` contains nonempty `actions`, nonempty `resources`, and an
+optional `explicit` flag. Both objects reject unknown fields; clients cannot
+supply configured/saved rules or select another workspace.
+
+```json
+{"id":41,"method":"product_permission_evaluate","params":{"source":{"session_id":"s","bridge_id":1,"call_id":"host-call","message_seq":7},"request":{"actions":["read"],"resources":["public"]}}}
+```
+
+The Runtime captures the turn's resolved ordered agent rules and effective
+policy revision when dispatching the host call. A later agent selection does
+not rewrite that call's snapshot. Saved rules come from the attached canonical
+workspace. Configured deny precedes saved allow. The returned authority revision
+binds the workspace, captured policy/agent, native boundary descriptor and
+layered rules; it is not an action token.
+
+The source must still be pending on this controller's product connection, its
+run must be running and its tool dispatched in the same workspace. Other
+Sessions/calls/messages, replied or cancelled calls, replaced connections and
+already-settled tools are refused. Hook frames and calls lacking Runtime-captured
+authority cannot borrow this query.
+
+This is a pattern-rule query only: it executes no action and creates no approval,
+grant or remembered pattern. It does not replace capability/plan checks, host
+cancellation handling or durable approval lifetimes. Product adapters must also
+require saved-rule snapshot refresh before using the result for S6 migration;
+the older additive projection cannot communicate revocation. Unsupported engines
+must be rejected rather than falling back to caller-supplied rule evaluation.
 
 ### Captured commands and named agent references
 

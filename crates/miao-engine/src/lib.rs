@@ -93,3 +93,4 @@ pub mod model_catalog;
 pub mod model_routes;
 mod monitor;
 pub mod product;
+pub mod product_permission;

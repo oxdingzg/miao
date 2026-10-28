@@ -40,7 +40,7 @@ impl Marker {
 /// can name a real permission source (`message_seq` + `call_id`) instead of a
 /// standing-policy guess. `message_seq` is the assistant message's durable seq;
 /// the host derives its product message id from it.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CallContext {
     pub message_seq: u64,
     pub call_id: String,
@@ -50,6 +50,7 @@ pub(crate) struct Pending {
     session: String,
     method: String,
     reply: oneshot::Sender<Value>,
+    permission: Option<crate::product_permission::Authority>,
 }
 
 /// Host-provided product tool set plus the reverse bridge. Held behind an
@@ -94,6 +95,35 @@ impl Bridge {
         input: Value,
         context: CallContext,
     ) -> Result<Value, crate::tools::ToolError> {
+        self.call_with_authority(session, name, input, context, None)
+            .await
+    }
+
+    pub(crate) async fn call_authorized(
+        &self,
+        session: &str,
+        name: &str,
+        input: Value,
+        authority: crate::product_permission::Authority,
+    ) -> Result<Value, crate::tools::ToolError> {
+        self.call_with_authority(
+            session,
+            name,
+            input,
+            authority.context.clone(),
+            Some(authority),
+        )
+        .await
+    }
+
+    async fn call_with_authority(
+        &self,
+        session: &str,
+        name: &str,
+        input: Value,
+        context: CallContext,
+        authority: Option<crate::product_permission::Authority>,
+    ) -> Result<Value, crate::tools::ToolError> {
         self.settle(
             session,
             "product_tool",
@@ -106,6 +136,7 @@ impl Bridge {
             }),
             "product bridge",
             "product tool",
+            authority,
         )
         .await
     }
@@ -127,8 +158,15 @@ impl Bridge {
                 object.insert(key.clone(), value.clone());
             }
         }
-        self.settle(session, "hook_tool", params, "hook bridge", "tool hook")
-            .await
+        self.settle(
+            session,
+            "hook_tool",
+            params,
+            "hook bridge",
+            "tool hook",
+            None,
+        )
+        .await
     }
 
     async fn settle(
@@ -138,6 +176,7 @@ impl Bridge {
         params: Value,
         closed: &str,
         failed: &str,
+        permission: Option<crate::product_permission::Authority>,
     ) -> Result<Value, crate::tools::ToolError> {
         let id = self.next.fetch_add(1, Ordering::SeqCst);
         let (reply, reply_rx) = oneshot::channel();
@@ -147,6 +186,7 @@ impl Bridge {
                 session: session.to_owned(),
                 method: method.to_owned(),
                 reply,
+                permission,
             },
         );
         let request = serde_json::json!({"bridge_id": id, "method": method, "params": params});
@@ -170,6 +210,30 @@ impl Bridge {
             )));
         }
         Ok(response.get("result").cloned().unwrap_or(Value::Null))
+    }
+
+    pub(crate) fn permission_authority(
+        &self,
+        source: &crate::product_permission::Source,
+    ) -> Option<crate::product_permission::Authority> {
+        self.pending
+            .lock()
+            .unwrap()
+            .get(&source.bridge_id)
+            .filter(|pending| {
+                pending.session == source.session_id && pending.method == "product_tool"
+            })
+            .and_then(|pending| pending.permission.as_ref())
+            .filter(|authority| {
+                authority.context.call_id == source.call_id
+                    && authority.context.message_seq == source.message_seq
+                    && !authority.cancel.is_cancelled()
+            })
+            .cloned()
+    }
+
+    pub(crate) fn same_connection(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.pending, &other.pending)
     }
 
     /// Cancel every pending product-tool bridge call for one Session. Each
