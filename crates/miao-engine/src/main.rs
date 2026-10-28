@@ -62,6 +62,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "permission_patterns": 1,
                 "product_permission_requests": 1,
                 "product_permission_replies": 1,
+                "product_permission_auto": 1,
             })
         );
         return Ok(());
@@ -934,6 +935,14 @@ async fn serve(
             miao_engine::product::Bridge::new(output.clone()),
             plugin_hooks,
         );
+        if let Some(context) = manifest.get("host_context") {
+            runtime
+                .set_product_context(
+                    serde_json::from_value(context.clone()).map_err(io::Error::other)?,
+                )
+                .await
+                .map_err(io::Error::other)?;
+        }
     }
     let writer_stop = tokio_util::sync::CancellationToken::new();
     let stop_output = writer_stop.clone();

@@ -31,6 +31,8 @@ pub(crate) struct Authority {
     pub context: CallContext,
     pub policy_revision: String,
     pub configured: Option<Vec<Rule>>,
+    pub auto: bool,
+    pub host: crate::product::HostContext,
     pub cancel: CancellationToken,
 }
 

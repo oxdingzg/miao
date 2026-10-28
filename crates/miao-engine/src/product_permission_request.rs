@@ -123,7 +123,8 @@ impl Store {
                 return Ok(record);
             }
             let outcome = evaluate(transaction, &context, &input.facts)?;
-            let state = match outcome.effect { Decision::Allow => State::Allowed, Decision::Deny => State::Denied, Decision::Ask => State::Pending };
+            let auto = outcome.effect == Decision::Ask && context.authority.auto && classify(&context, &input);
+            let state = if auto { State::Allowed } else { match outcome.effect { Decision::Allow => State::Allowed, Decision::Deny => State::Denied, Decision::Ask => State::Pending } };
             if state == State::Pending {
                 let pending: usize = transaction.query_row("SELECT COUNT(*) FROM engine_product_permission_request WHERE session_id=?1 AND state='pending'", [&context.source.session_id], |row| row.get(0))?;
                 if pending >= MAX_PENDING { return Err(Error::Invalid("product permission pending budget exceeded".into())); }
@@ -133,7 +134,7 @@ impl Store {
                 id: input.request_id.clone(), source: context.source.clone(), workspace: context.workspace.clone(),
                 expires_at_ms: input.timeout_ms.map(|timeout| now.saturating_add(timeout)), request: input,
                 input_hash: hash, authority_revision: outcome.authority_revision, created_at_ms: now, state,
-                reply: None, reason: (state == State::Denied).then(|| "policy_denied".into()), feedback: None,
+                reply: None, reason: if auto { Some("auto_allowed".into()) } else { (state == State::Denied).then(|| "policy_denied".into()) }, feedback: None,
             };
             transaction.execute("INSERT INTO engine_product_permission_request(id,session_id,run_id,call_id,workspace,owner,state,data) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![record.id, context.source.session_id, context.authority.run_id, format!("{}/{}",context.authority.run_id,context.source.call_id), context.workspace,context.owner,state_name(state),serde_json::to_string(&record)?])?;
             if state == State::Pending { append(transaction, &context.source.session_id, "product.permission.requested", serde_json::to_value(&record)?)?; }
@@ -448,9 +449,30 @@ fn evaluate(connection: &Connection, context: &Context, facts: &Request) -> Resu
         )?),
     })?;
     outcome.authority_revision = digest(&serde_json::to_vec(
-        &json!({"semantics":"product-permission-authority-v1","workspace":context.workspace,"policy":context.authority.policy_revision,"boundary":context.boundary,"rules":outcome.authority_revision}),
+        &json!({"semantics":"product-permission-authority-v2","workspace":context.workspace,"policy":context.authority.policy_revision,"boundary":context.boundary,"host":context.authority.host,"auto":context.authority.auto,"rules":outcome.authority_revision}),
     )?);
     Ok(outcome)
+}
+
+fn classify(context: &Context, input: &Input) -> bool {
+    use crate::agent_classifier::{bash, host_edit, Verdict};
+    match input.facts.actions.first().map(String::as_str) {
+        Some("edit") => host_edit(&input.facts.resources, &context.authority.host) == Verdict::Safe,
+        Some("bash")
+            if input
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("stdin"))
+                .is_none() =>
+        {
+            input
+                .facts
+                .resources
+                .iter()
+                .all(|command| bash(command) == Verdict::Safe)
+        }
+        _ => false,
+    }
 }
 
 fn expire(transaction: &Transaction<'_>, record: &mut Record) -> Result<bool, Error> {

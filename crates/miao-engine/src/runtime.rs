@@ -379,6 +379,33 @@ impl Runtime {
         state.marker = plugin_hooks;
     }
 
+    /// Bind the host's path spelling to this Runtime's actual Location. This
+    /// startup context is captured by each source, never supplied by an ask.
+    pub async fn set_product_context(
+        &self,
+        context: crate::product::HostContext,
+    ) -> Result<(), Error> {
+        let bounded = |path: &str| {
+            !path.is_empty()
+                && path.len() <= 4096
+                && !path.contains('\0')
+                && std::path::Path::new(path).is_absolute()
+        };
+        if !bounded(&context.directory) || context.cwd.as_ref().is_some_and(|cwd| !bounded(cwd)) {
+            return Err(Error::Invalid("invalid product host path context".into()));
+        }
+        let directory = tokio::fs::canonicalize(&context.directory)
+            .await
+            .map_err(|_| Error::Invalid("invalid product host directory".into()))?;
+        if directory != std::path::Path::new(self.inner.tools.location()) {
+            return Err(Error::Invalid(
+                "product host directory does not match Location".into(),
+            ));
+        }
+        self.inner.product.write().unwrap().host_context = Some(context);
+        Ok(())
+    }
+
     /// Route a host reply for a product-tool bridge call.
     pub fn deliver_product_reply(&self, bridge_id: u64, value: Value) -> bool {
         match self
@@ -3082,12 +3109,13 @@ command: None,
                                 }
                                 name if inner.product.read().unwrap().has(name) => {
                                     let input = prepared.input().clone();
-                                    let bridge = inner
-                                        .product
-                                        .read()
-                                        .unwrap()
-                                        .bridge
-                                        .clone();
+                                    let (bridge, host) = {
+                                        let product = inner.product.read().unwrap();
+                                        (product.bridge.clone(), product.host_context.clone().unwrap_or_else(|| crate::product::HostContext {
+                                            directory: inner.tools.location().into(),
+                                            cwd: std::env::current_dir().ok().and_then(|cwd| cwd.to_str().map(str::to_owned)),
+                                        }))
+                                    };
                                     match bridge {
                                         Some(bridge) => {
                                             // The host names a real permission source from
@@ -3111,6 +3139,8 @@ command: None,
                                                     configured: manifest.and_then(|agent| agent.ordered_permissions.as_ref()).map(|ordered| ordered.rules.iter().map(|rule| crate::permission_rules::Rule {
                                                         action: rule.action.clone(), resource: rule.resource.clone(), effect: rule.effect,
                                                     }).collect()),
+                                                    auto: manifest.is_some_and(|agent| agent.permission_mode == Some(crate::session_agent::PermissionMode::Auto)),
+                                                    host,
                                                     cancel: cancel.clone(),
                                                 }) => match outcome {
                                                     Ok(output) => {
