@@ -9,17 +9,24 @@ half-switched state that double-writes or reads intermittently.
 
 ## Current topology
 
+Snapshot: `b093631182` (2026-10-28). The staged V1 cutover history below does not
+claim that the later TypeScript V2 executor or product host has been retired.
+
 - V1 has been removed from the runtime: `packages/miao/src/session`, `packages/miao/src/tool`,
   and the legacy `/session/*`, `/permission/*`, `/question/*`, and `/sync/*` route groups and
   handlers are gone.
-- The V2 engine (`packages/core/src/session/runner/llm.ts`) writes `session_message`; every
-  shipped client — TUI, `--mini`, ACP, `miao run`, the web/desktop app, the native app — reads
-  and writes through `/api/session/*`.
-- Compatibility that remains is data-only: `packages/core/src/session/{backfill,compact,v1-read,legacy-tables,restore}.ts`
-  migrate and read databases written before V2, and `packages/core/src/v1/config` still reads
-  old-shape configuration.
-- Non-session legacy routes (`/config`, `/mcp`, `/lsp`, …) are still served and are being migrated
-  to `/api/*`; see `docs/roadmap.md` (P7 inventory archived at `docs/archive/p7-non-session-routes.md`).
+- V2 is the Session protocol generation, not the name of a single executor.
+  Rust-owned Sessions execute in `miao-engine`; TypeScript-owned compatibility
+  Sessions still use `packages/core/src/session/runner/llm.ts`. Durable placement
+  selects ownership. Shipped TS-facing clients use `/api/session/*`; the Rust TUI
+  also has a direct engine transport through the product's `__engine-shim`.
+- V1 compatibility is data-only, including legacy history and configuration
+  readers. That does not mean the TypeScript V2 runner has been removed. The
+  remaining TS executor and product control plane have their own migration
+  boundary and [Rust retirement gates](../rust-retirement-gates.md).
+- Product non-Session APIs, including `/api/config`, `/api/mcp`, and `/api/lsp`,
+  remain in the TypeScript protocol/server control plane. The archived P7 route
+  inventory describes an earlier migration, not the current route topology.
 
 The pre-removal topology (V1 and V2 mounted side by side in the release assembly) is described in
 the git history before this change.
@@ -32,7 +39,10 @@ The cutover must flip engine, routes, and clients together, per surface, with a 
 first. V1 may only be deleted after `specs/v2/session.md` reaches parity and no shipped client
 calls `/session/*`.
 
-## Stages
+## Historical V1 cutover stages
+
+The progress notes below record the V1→V2 cutover. They are not a current Rust
+retirement or client acceptance checklist.
 
 **Stage 0 — design (this document).**
 
@@ -59,11 +69,9 @@ aggregate's events.
 `revert` / `unrevert` aliases are not needed: V2 already exposes `revert.stage` / `revert.clear` /
 `revert.commit`, which is what the clients call.
 
-Stage 2 is complete. Stages 3, 4, and 5 have landed: the runtime is V2-only. The remaining work is
-the legacy JS SDK (P5) and the non-session legacy routes (P7).
-
-The app already reaches these through `packages/app/src/utils/server-compat.ts` while they are
-missing, so the cutover (Stage 3–4) can proceed without them and they can be filled in behind it.
+Stage 2 is complete. Stages 3, 4, and 5 landed the V2-only Session runtime.
+The former P5/P7 follow-ups belong to that historical plan; current product
+control-plane responsibilities and Rust retirement need separate evidence.
 
 **Stage 3 — old-session visibility (revised).** The original "dual-read shadow" is not viable:
 V2 reads only `session_message`, while existing sessions live in V1's `message` / `part`
@@ -129,13 +137,13 @@ writes no V1 durable event. The V1 projector remains only to read/backfill older
 `/question/*`, and `/sync/*` route groups and handlers, and the `MIAO_TUI_V2=0` / `?protocol=v1`
 rollbacks are removed. `packages/core/v1` (config, permission, session) and the core session
 migration readers remain deliberately: they are needed for backward-compatible reads and
-`miao db backfill` / `compact` / `restore`. The legacy JS SDK package and the non-session legacy
-routes are the remaining P5/P7 work.
+`miao db backfill` / `compact` / `restore`. These data readers are independent
+of deleting the TypeScript V2 executor.
 
-## Client-side follow-ups
+## Historical client-side follow-ups
 
-These ride the retirement but live in the clients; tracked in `docs/roadmap.md` (§1.2 for the
-app, §1.3 for the TUI).
+These notes describe the client work identified during the V1 cutover. Reconcile
+them against current code and the Project before treating them as open tasks.
 
 **App transcript retype.** The app timeline is a hybrid: `SessionMessageInfo` provides the turn
 skeleton while `Message` / `Part` lookups provide rendered content, fed by the V1-shaped synthetic
