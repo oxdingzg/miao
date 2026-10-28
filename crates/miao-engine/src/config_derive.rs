@@ -101,7 +101,7 @@ fn validate_sandbox(origin: &str, sandbox: &serde_json::Value) -> Result<(), Str
     if let Some(roots) = sandbox.get("writable_roots") {
         if roots
             .as_array()
-            .map_or(true, |roots| roots.iter().any(|root| !root.is_string()))
+            .is_none_or(|roots| roots.iter().any(|root| !root.is_string()))
         {
             return Err(format!(
                 "{origin}: sandbox.writable_roots must be an array of strings"
@@ -150,7 +150,7 @@ fn validate_lsp(origin: &str, lsp: &serde_json::Value) -> Result<(), String> {
         if let Some(extensions) = entry.get("extensions") {
             if extensions
                 .as_array()
-                .map_or(true, |items| items.iter().any(|item| !item.is_string()))
+                .is_none_or(|items| items.iter().any(|item| !item.is_string()))
             {
                 return Err(format!(
                     "{origin}: lsp.{id}.extensions must be an array of strings"
