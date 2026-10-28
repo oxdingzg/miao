@@ -1,10 +1,14 @@
 use miao_engine::{
-    protocol::{Delivery, Input},
+    host::Host,
+    protocol::{Command, Delivery, Input, ModelRequest},
+    provider::{Provider, ProviderError, Reply},
     recall::Query,
+    runtime::Runtime,
     store::Store,
     tools::Tools,
 };
-use serde_json::json;
+use serde_json::{json, Value};
+use std::sync::Arc;
 fn query(text: &str, limit: usize, before: Option<u64>) -> Query {
     Query {
         query: text.into(),
@@ -373,4 +377,102 @@ async fn archived_handle_scan_resumes_after_compaction_and_reopen() {
         .await
         .unwrap()["text"]
         .is_null());
+}
+
+struct NoProvider;
+#[async_trait::async_trait]
+impl Provider for NoProvider {
+    async fn stream(
+        &self,
+        _: ModelRequest,
+        _: tokio::sync::mpsc::Sender<Value>,
+        _: tokio_util::sync::CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        panic!("history recall must not invoke a provider")
+    }
+}
+
+#[tokio::test]
+async fn recall_rpc_restores_archived_windows_and_preserves_search_requests() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store
+        .admit(Input {
+            agent_references: Default::default(),
+            command: None,
+            session_id: "s".into(),
+            input_id: "one".into(),
+            prompt: "original needle".into(),
+            delivery: Delivery::Steer,
+        })
+        .await
+        .unwrap();
+    store.promote("s", true).await.unwrap();
+    store
+        .message(
+            "s",
+            "assistant",
+            json!([{"type":"tool_use","id":"call-archive","name":"read","input":{}}]),
+        )
+        .await
+        .unwrap();
+    let original = format!("{}MIDDLE{}", "左".repeat(13000), "右".repeat(13000));
+    store.message("s", "user", json!([{"type":"tool_result","tool_use_id":"call-archive","content":original,"is_error":false}])).await.unwrap();
+    let runtime = Runtime::new(
+        store,
+        Arc::new(NoProvider),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    let mut host = Host::new(runtime.clone());
+    let search = host
+        .dispatch(
+            serde_json::from_value(
+                json!({"method":"recall","params":{"session_id":"s","query":"needle","limit":1}}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(search["matches"].as_array().unwrap().len(), 1);
+    let mut restored = String::new();
+    let mut offset = 0;
+    for page in 0..4 {
+        let output = host.dispatch(serde_json::from_value(json!({"method":"recall","params":{"session_id":"s","tool_use_id":"call-archive","offset":offset}})).expect("handle-only recall must decode")).await.unwrap();
+        assert_eq!(output["offset"], offset);
+        restored.push_str(output["text"].as_str().unwrap());
+        if let Some(next) = output["next_offset"].as_u64() {
+            assert!(next > offset);
+            offset = next;
+            continue;
+        }
+        assert!(page > 0, "fixture must span multiple output windows");
+        break;
+    }
+    assert_eq!(restored, original);
+    let missing = host.dispatch(serde_json::from_value(json!({"method":"recall","params":{"session_id":"other","tool_use_id":"call-archive"}})).unwrap()).await.unwrap();
+    assert!(missing["text"].is_null());
+    for params in [
+        json!({"session_id":"s"}),
+        json!({"session_id":"s","tool_use_id":"call-archive","query":"needle"}),
+        json!({"session_id":"s","tool_use_id":""}),
+        json!({"session_id":"s","tool_use_id":"call-archive","offset":67108865}),
+    ] {
+        assert!(host
+            .dispatch(serde_json::from_value(json!({"method":"recall","params":params})).unwrap())
+            .await
+            .is_err());
+    }
+    let before = host.dispatch(serde_json::from_value(json!({"method":"recall","params":{"session_id":"s","tool_use_id":"call-archive","before_message_seq":0}})).unwrap()).await.unwrap();
+    assert!(before["text"].is_null());
+    for params in [
+        json!({"session_id":"s","tool_use_id":"call-archive","offset":-1}),
+        json!({"session_id":"s","tool_use_id":"call-archive","before_message_seq":-1}),
+    ] {
+        assert!(
+            serde_json::from_value::<Command>(json!({"method":"recall","params":params})).is_err()
+        );
+    }
+    runtime.shutdown().await;
 }
