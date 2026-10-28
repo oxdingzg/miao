@@ -283,6 +283,30 @@ impl LspOrigin {
             ))?),
         }
     }
+
+    /// The files a reload would read, for a cheap change check. Inline
+    /// `Content` sources have no file and never change on disk.
+    pub fn files(&self) -> Vec<PathBuf> {
+        match self {
+            LspOrigin::Manifest(path) => vec![path.clone()],
+            LspOrigin::Directory(directory) => files_in(directory),
+            LspOrigin::Sources(sources) => sources
+                .iter()
+                .flat_map(|source| match source {
+                    Source::Dir(directory) => files_in(directory),
+                    Source::File(path) => vec![path.clone()],
+                    Source::Content(_) => Vec::new(),
+                })
+                .collect(),
+        }
+    }
+}
+
+fn files_in(directory: &std::path::Path) -> Vec<PathBuf> {
+    config_scope::FILE_NAMES
+        .iter()
+        .map(|name| directory.join(name))
+        .collect()
 }
 
 fn lsp_from_documents(documents: &[Document]) -> Result<Vec<lsp::Config>, String> {
@@ -991,5 +1015,28 @@ mod tests {
         let missing = vec![Source::File(root.join("absent.json"))];
         assert!(load(&missing).is_err());
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn an_origin_names_the_files_a_reload_reads() {
+        let manifest = LspOrigin::Manifest(PathBuf::from("/host/lsp.json"));
+        assert_eq!(manifest.files(), vec![PathBuf::from("/host/lsp.json")]);
+
+        let directory = LspOrigin::Directory(PathBuf::from("/config"));
+        assert_eq!(directory.files().len(), config_scope::FILE_NAMES.len());
+        assert!(directory
+            .files()
+            .iter()
+            .all(|path| path.starts_with("/config")));
+
+        // Inline content has no file to watch and must not add a phantom path.
+        let sources = LspOrigin::Sources(vec![
+            Source::Dir(PathBuf::from("/config")),
+            Source::File(PathBuf::from("/project/miao.json")),
+            Source::Content("{}".to_string()),
+        ]);
+        let files = sources.files();
+        assert_eq!(files.len(), config_scope::FILE_NAMES.len() + 1);
+        assert_eq!(files.last(), Some(&PathBuf::from("/project/miao.json")));
     }
 }

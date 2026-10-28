@@ -499,6 +499,12 @@ the running configuration stays as it was. A Session that never had an LSP
 registry at startup (`unsupported` contains `lsp`) cannot gain one without
 restarting the engine.
 
+The standalone entry has no host to call the command, so it polls the same
+sources every two seconds (`mtime` plus size, not an OS watcher) and runs the
+same reconcile. A tick that lands while a Session is draining is skipped, so no
+turn observes half a change; a failed derivation is reported once and retried
+only when a file changes again.
+
 ### Injected context
 
 `{"type":"inject","session_id":"...","input_id":"optional-retry-key","text":"...","source":"skill:name"}` commits one `message.synthetic` history fact. The source is a bounded attribution label, not a command or credential. Injection creates no inbox row and does not start a provider turn. The host may request advisory `wake` afterwards; this drains eligible pending inbox work without forcing continuation. Unlike explicit `resume`, `wake` leaves an idle Session with no eligible input idle. An exact retry with the same Session and input identity reconciles; changed text/source conflicts. Forks preserve the synthetic record and original timestamp rather than promoting it as an operator prompt. Text is bounded to 1 MiB.
