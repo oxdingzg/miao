@@ -8,7 +8,7 @@ import type { Location } from "@miao/schema/location"
 import { SessionInfo } from "@miao/schema/session-info"
 import { SessionID } from "@miao/schema/session-id"
 import { ModelV2 } from "@miao/core/model"
-import { SessionRunnerCost } from "@miao/core/session/runner/cost"
+import { SessionCost } from "@miao/core/session/cost"
 import { Cause, DateTime, Deferred, Effect, Option, Schema } from "effect"
 import { Database } from "@miao/core/database/database"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
@@ -199,7 +199,7 @@ export function nativeSessionUsage(input: {
       lastTurnMs: 0,
     }
     group.turns += 1
-    group.cost += SessionRunnerCost.ofTurn(costs, billed)
+    group.cost += SessionCost.ofTurn(costs, billed)
     group.tokens.input += count(billed.inputTokens)
     group.tokens.output += count(billed.outputTokens)
     group.tokens.reasoning += count(billed.reasoningTokens)
