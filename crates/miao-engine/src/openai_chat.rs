@@ -399,6 +399,19 @@ fn inline_value(raw: &str) -> Value {
         },
     }
 }
+
+/// The offending frame, bounded so a malformed response stays diagnosable
+/// after the fact without writing a whole reply into the durable event log.
+fn frame_excerpt(event: &Value) -> String {
+    const LIMIT: usize = 400;
+    let rendered = event.to_string();
+    let excerpt: String = rendered.chars().take(LIMIT).collect();
+    match excerpt.len() < rendered.len() {
+        true => format!("{excerpt}… ({} bytes)", rendered.len()),
+        false => excerpt,
+    }
+}
+
 #[derive(Default)]
 struct ChatState {
     text: String,
@@ -416,13 +429,21 @@ struct ChatState {
 
 impl Parser for ChatState {
     fn frame(&mut self, frame: &Frame) -> Result<(), ProviderError> {
-        let invalid = || ProviderError::Stream("invalid Chat Completions frame".into());
         let event = match frame {
             Frame::Done => {
                 self.done = true;
                 return Ok(());
             }
             Frame::Json(value) => value,
+        };
+        // The durable event keeps this message but not the response bytes, so a
+        // bare "invalid frame" left every occurrence of this failure
+        // undiagnosable after the fact. Carry a bounded copy of the frame.
+        let invalid = || {
+            ProviderError::Stream(format!(
+                "invalid Chat Completions frame: {}",
+                frame_excerpt(event)
+            ))
         };
         if let Some(error) = event.get("error") {
             if !error.is_object() {
@@ -448,14 +469,21 @@ impl Parser for ChatState {
         if let Some(usage) = event.get("usage").filter(|v| v.is_object()) {
             self.usage = usage.clone();
         }
-        let choices = event["choices"].as_array().ok_or_else(invalid)?;
-        if choices.is_empty() {
+        // A stream may close with a usage-only frame that carries no choices
+        // at all rather than an empty array. It adds nothing to the reply, and
+        // failing a turn that already streamed every token would lose an
+        // answer the user can already see.
+        let choices = match &event["choices"] {
+            Value::Null => return Ok(()),
+            value => value.as_array().ok_or_else(invalid)?,
+        };
+        // `n` is 1, so the first choice is the answer; anything after it is a
+        // gateway duplicate. The TypeScript protocol reads `choices[0]` the
+        // same way and models no `index` at all, so a gateway that omits or
+        // renumbers it is not a malformed reply.
+        let Some(choice) = choices.first() else {
             return Ok(());
-        }
-        if choices.len() != 1 || choices[0]["index"] != 0 {
-            return Err(invalid());
-        }
-        let choice = &choices[0];
+        };
         let delta = &choice["delta"];
         if delta.get("refusal").is_some_and(|v| !v.is_null()) {
             return Err(ProviderError::Stream("model refused the request".into()));
@@ -472,12 +500,6 @@ impl Parser for ChatState {
             if let Some(text) = delta[field].as_str() {
                 self.reasoning.push_str(text);
             }
-        }
-        if self.finish.is_some()
-            && (delta.get("content").is_some_and(|v| !v.is_null())
-                || delta.get("tool_calls").is_some())
-        {
-            return Err(invalid());
         }
         if let Some(text) = delta["content"].as_str() {
             self.text.push_str(text);
@@ -534,10 +556,10 @@ impl Parser for ChatState {
                 }
             }
         }
+        // A gateway that repeats the terminal reason on a later frame names the
+        // same stop again; the TypeScript protocol lets the newest one win
+        // rather than failing a reply that already streamed.
         if let Some(reason) = choice["finish_reason"].as_str() {
-            if self.finish.is_some() {
-                return Err(invalid());
-            }
             self.finish = Some(reason.into());
         }
         Ok(())
