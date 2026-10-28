@@ -2,9 +2,9 @@ import { expect, test } from "bun:test"
 import path from "node:path"
 import { Effect } from "effect"
 import { AbsolutePath } from "@miao/schema/schema"
-import { moveEngine } from "../../src/engine/transfer"
-import { messageID } from "../../src/engine/identity"
-import { tmpdir } from "../fixture/fixture"
+import { moveEngine } from "../src/engine/transfer"
+import { messageID } from "../src/engine/identity"
+import { tmpdir } from "./fixture/fixture"
 
 for (const outcome of ["stable", "changed", "pending"] as const)
   test(`native move archives the source projection with outcome=${outcome}`, async () => {
