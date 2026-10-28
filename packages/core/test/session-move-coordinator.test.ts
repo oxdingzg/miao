@@ -16,10 +16,7 @@ import { SessionExecution } from "../src/session/execution"
 import { AbsolutePath } from "../src/schema"
 import { tmpdir } from "./fixture/tmpdir"
 
-const run = <A, E>(
-  storage: string,
-  body: Effect.Effect<A, E, Database.Service | SessionV2.Service>,
-) =>
+const run = <A, E>(storage: string, body: Effect.Effect<A, E, Database.Service | SessionV2.Service>) =>
   Effect.runPromise(
     body.pipe(
       Effect.provide(
@@ -50,7 +47,12 @@ const fakeEngine = (sessionID: string, digest = "digest1") => {
     activate: (input) => {
       calls.push("activate")
       expect(input.bundleSHA256).toBe(input.bundleSHA256)
-      return Effect.succeed({ bundle_sha256: input.bundleSHA256, state: "active" })
+      return Effect.succeed({
+        id: input.importID,
+        session_id: sessionID,
+        bundle_sha256: input.bundleSHA256,
+        state: "active",
+      })
     },
   }
   return { calls, engine }
@@ -103,9 +105,21 @@ test("a rust move fences the placement, then stages and activates at the destina
       expect(placement.storage).toBe(target.storage)
       expect(placement.location).toEqual(target.location)
       const migration = yield* SessionMigration.find(database.db, "move-1")
-      expect(migration?.state).toBe("switched")
+      expect(migration?.state).toBe("completed")
       expect(migration?.direction).toBe("rust_to_rust")
       expect(migration?.bundle_sha256).toBe("digest1")
+      expect(yield* SessionMigration.active(database.db, sessionID)).toBeUndefined()
+      yield* SessionMoveCoordinator.moveRust({
+        database: database.db,
+        id: "move-1",
+        sessionID,
+        source,
+        target,
+        bundleFile: AbsolutePath.make(path.join(tmp.path, "bundle.json")),
+        productDatabase: AbsolutePath.make(storage),
+        engine,
+      })
+      expect(calls).toEqual(["stage", "activate"])
     }),
   ).catch((error: unknown) => {
     const cause = (error as { cause?: { toString?: () => string } }).cause
@@ -181,6 +195,8 @@ test("a fenced move resumes: the fence adopts the matching record and completes"
       const placement = yield* SessionEnginePlacement.find(database.db, sessionID)
       if (placement?.engine !== "rust") throw new Error("placement must be rust")
       expect(placement.storage).toBe(target.storage)
+      expect((yield* SessionMigration.find(database.db, "move-1"))?.state).toBe("completed")
+      expect(yield* SessionMigration.active(database.db, sessionID)).toBeUndefined()
     }),
   )
 })
@@ -236,3 +252,73 @@ test("a move whose source placement does not match is refused before the fence",
     }),
   )
 })
+
+for (const mismatch of ["digest", "session", "import", "placement", "migration-location"] as const)
+  test(`a move retains its freeze when activation has a mismatched ${mismatch}`, async () => {
+    await using tmp = await tmpdir()
+    const storage = path.join(tmp.path, "product.db")
+    const sessionID = SessionV2.ID.create()
+    const source = {
+      engine: "rust" as const,
+      storage: AbsolutePath.make(path.join(tmp.path, "source.db")),
+      location: { directory: AbsolutePath.make(path.join(tmp.path, "checkout")) },
+    }
+    const target = {
+      engine: "rust" as const,
+      storage: AbsolutePath.make(path.join(tmp.path, "destination.db")),
+      location: { directory: AbsolutePath.make(path.join(tmp.path, "worktree")) },
+    }
+    await run(
+      storage,
+      Effect.gen(function* () {
+        const database = yield* Database.Service
+        const sessions = yield* SessionV2.Service
+        yield* sessions.create({ id: sessionID, location: source.location })
+        yield* database.db
+          .update(SessionEnginePlacementTable)
+          .set({ engine: "rust", native_storage: source.storage, location: source.location })
+          .where(eq(SessionEnginePlacementTable.session_id, sessionID))
+          .run()
+          .pipe(Effect.orDie)
+        const fixture = fakeEngine(sessionID)
+        const engine = {
+          ...fixture.engine,
+          activate: () =>
+            Effect.gen(function* () {
+              if (mismatch === "placement")
+                yield* database.db
+                  .update(SessionEnginePlacementTable)
+                  .set({ native_storage: source.storage })
+                  .where(eq(SessionEnginePlacementTable.session_id, sessionID))
+                  .run()
+                  .pipe(Effect.orDie)
+              if (mismatch === "migration-location")
+                yield* database.db
+                  .update(SessionMigrationTable)
+                  .set({ location: source.location })
+                  .where(eq(SessionMigrationTable.id, "move-1"))
+                  .run()
+                  .pipe(Effect.orDie)
+              return {
+                state: "active",
+                session_id: mismatch === "session" ? "another-session" : sessionID,
+                bundle_sha256: mismatch === "digest" ? "another-digest" : "digest1",
+              }
+            }),
+        }
+        const exit = yield* SessionMoveCoordinator.moveRust({
+          database: database.db,
+          id: "move-1",
+          sessionID,
+          source,
+          target,
+          bundleFile: AbsolutePath.make(path.join(tmp.path, "bundle.json")),
+          productDatabase: AbsolutePath.make(storage),
+          engine,
+        }).pipe(Effect.exit)
+        expect(exit._tag).toBe("Failure")
+        expect((yield* SessionMigration.find(database.db, "move-1"))?.state).toBe("switched")
+        expect(yield* SessionMigration.active(database.db, sessionID)).toBeDefined()
+      }),
+    )
+  })
