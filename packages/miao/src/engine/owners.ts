@@ -1,6 +1,6 @@
 import { Location } from "@miao/schema/location"
 import { ClientEvents } from "@miao/server/client-events"
-import { Effect, Scope, Semaphore } from "effect"
+import { Effect, Exit, Scope, Semaphore } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { connectEngine } from "./connection"
 import type { CredentialExpiredTrigger, EnginePricing } from "./session"
@@ -32,6 +32,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
       refresh: Effect.Effect<void, EngineError>
       pricing?: EnginePricing
       onCredentialExpired?: CredentialExpiredTrigger
+      scope: Scope.Closeable
       connection: Effect.Success<ReturnType<typeof connectEngine>>
     }
   >()
@@ -84,33 +85,49 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
             return existing.connection
           }
           owners.delete(input.storage)
+          yield* Scope.close(existing.scope, Exit.void)
         }
-        const context = prepare
-          ? yield* prepare(input.location).pipe(Effect.provideService(Scope.Scope, scope))
-          : { options: {}, refresh: Effect.void }
-        const connection = yield* connectEngine(
-          {
-            ...configuration,
-            ...context.options,
-            db: input.storage,
-            workspace: input.location.directory,
-            engineID: input.engineID,
-            location: input.location,
-          },
-          context.pricing,
-          context.onCredentialExpired,
-          context.onEngineEvent,
-        ).pipe(Effect.provideService(Scope.Scope, scope), Effect.provideService(ClientEvents.Service, clients))
-        owners.set(input.storage, {
-          input,
-          refresh: context.refresh,
-          engineID: input.engineID,
-          location: { ...input.location },
-          pricing: context.pricing,
-          onCredentialExpired: context.onCredentialExpired,
-          connection,
-        })
-        return connection
+        return yield* Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            const ownerScope = yield* Scope.fork(scope, "sequential")
+            const ready = yield* restore(
+              Effect.gen(function* () {
+                const context = prepare
+                  ? yield* prepare(input.location).pipe(Effect.provideService(Scope.Scope, ownerScope))
+                  : { options: {}, refresh: Effect.void }
+                const connection = yield* connectEngine(
+                  {
+                    ...configuration,
+                    ...context.options,
+                    db: input.storage,
+                    workspace: input.location.directory,
+                    engineID: input.engineID,
+                    location: input.location,
+                  },
+                  context.pricing,
+                  context.onCredentialExpired,
+                  context.onEngineEvent,
+                ).pipe(
+                  Effect.provideService(Scope.Scope, ownerScope),
+                  Effect.provideService(ClientEvents.Service, clients),
+                )
+                return { context, connection }
+              }),
+            ).pipe(Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(ownerScope, exit) : Effect.void)))
+            // Publish a fully prepared owner atomically with respect to interruption.
+            owners.set(input.storage, {
+              input,
+              refresh: ready.context.refresh,
+              engineID: input.engineID,
+              location: { ...input.location },
+              pricing: ready.context.pricing,
+              onCredentialExpired: ready.context.onCredentialExpired,
+              scope: ownerScope,
+              connection: ready.connection,
+            })
+            return ready.connection
+          }),
+        )
       }),
     )
   })
@@ -156,12 +173,13 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
           continue
         }
         yield* gate.withPermit(
-          Effect.sync(() => {
+          Effect.gen(function* () {
             // get() may replace the dead connection while this sweep waits
             // for the registry permit. Only release the snapshotted owner.
             if (owners.get(storage) !== owner) return
             owners.delete(storage)
             timerMemory.delete(storage)
+            yield* Scope.close(owner.scope, Exit.void)
           }),
         )
         continue
