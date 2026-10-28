@@ -146,12 +146,16 @@ fn derived_lsp_matches_every_golden_case() {
 
 /// Origins arrive as absolute paths; the samples are shared with the TypeScript
 /// reference, so every reader reports them relative to its own case directory.
+/// Compare path components instead of a string prefix so a Windows origin
+/// (`D:\...\case\project\miao.json`) matches on either separator, and emit the
+/// separators the samples use.
 fn relativize(value: &Value, case: &Path) -> Value {
     match value {
         Value::String(text) => Value::String(
-            text.strip_prefix(&format!("{}/", case.display()))
-                .unwrap_or(text)
-                .to_string(),
+            Path::new(text)
+                .strip_prefix(case)
+                .map(|rest| rest.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_else(|_| text.clone()),
         ),
         Value::Array(items) => {
             Value::Array(items.iter().map(|item| relativize(item, case)).collect())
