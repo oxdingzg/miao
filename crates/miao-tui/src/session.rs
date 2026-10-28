@@ -18,6 +18,9 @@ pub struct SessionSummary {
     pub parent_id: Option<String>,
     pub updated_at_ms: Option<u64>,
     pub archived_at_ms: Option<u64>,
+    /// When the operator pinned this Session. The engine owns the timestamp so
+    /// every client sorts the same shared catalog the same way.
+    pub pinned_at_ms: Option<u64>,
     pub directory: Option<String>,
     /// The Session's explicit model pin, as `model · protocol[ · variant]`.
     /// `None` means the engine's default.
@@ -45,6 +48,7 @@ impl SessionSummary {
             parent_id: text(snapshot.get("parent_session_id")),
             updated_at_ms: snapshot.get("updated_at_ms").and_then(Value::as_u64),
             archived_at_ms: snapshot.get("archived_at_ms").and_then(Value::as_u64),
+            pinned_at_ms: snapshot.get("pinned_at_ms").and_then(Value::as_u64),
             // The engine snapshot carries the workspace root as a string.
             directory: snapshot
                 .get("location")
@@ -65,8 +69,9 @@ impl SessionSummary {
     }
 }
 
-/// Only root, unarchived Sessions, most recently updated first. The engine
-/// answers `sessions` in id order, which is stable but not what a picker needs.
+/// Only root, unarchived Sessions, pinned first and then most recently updated.
+/// The engine answers `sessions` in id order, which is stable but not what a
+/// picker needs.
 pub fn home_rows(mut rows: Vec<SessionSummary>) -> Vec<SessionSummary> {
     rows.retain(|row| row.parent_id.is_none() && row.archived_at_ms.is_none());
     sort_rows(&mut rows);
@@ -82,9 +87,14 @@ pub fn catalog_rows(mut rows: Vec<SessionSummary>) -> Vec<SessionSummary> {
 }
 
 fn sort_rows(rows: &mut [SessionSummary]) {
+    // A pin is an explicit list preference, so it outranks recency even for a
+    // Session that has not been touched in days; within each group the most
+    // recently updated Session comes first.
     rows.sort_by(|a, b| {
-        b.updated_at_ms
-            .cmp(&a.updated_at_ms)
+        a.pinned_at_ms
+            .is_none()
+            .cmp(&b.pinned_at_ms.is_none())
+            .then_with(|| b.updated_at_ms.cmp(&a.updated_at_ms))
             .then_with(|| a.id.cmp(&b.id))
     });
 }
@@ -705,6 +715,39 @@ mod tests {
         assert_eq!(ids, ["ses_b", "ses_a"]);
         assert_eq!(rows[0].label(), "newer");
         assert_eq!(rows[0].directory.as_deref(), Some("/work/miao"));
+    }
+
+    #[test]
+    fn a_pin_outranks_recency_in_both_lists() {
+        let pinned = |id: &str, updated: u64, pinned: Option<u64>| {
+            SessionSummary::from_snapshot(&json!({
+                "session_id": id,
+                "title": id,
+                "updated_at_ms": updated,
+                "pinned_at_ms": pinned,
+            }))
+            .expect("row")
+        };
+        let rows = home_rows(vec![
+            pinned("ses_newer", 900, None),
+            pinned("ses_pinned_old", 10, Some(1)),
+            pinned("ses_pinned_new", 20, Some(2)),
+        ]);
+        let ids: Vec<_> = rows.iter().map(|row| row.id.as_str()).collect();
+        // The pin groups come first, newest pin first; an unpinned, fresher
+        // Session stays below them.
+        assert_eq!(ids, ["ses_pinned_new", "ses_pinned_old", "ses_newer"]);
+        let catalog = catalog_rows(vec![
+            pinned("ses_newer", 900, None),
+            pinned("ses_pinned_old", 10, Some(1)),
+        ]);
+        assert_eq!(
+            catalog
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
+            ["ses_pinned_old", "ses_newer"]
+        );
     }
 
     #[test]

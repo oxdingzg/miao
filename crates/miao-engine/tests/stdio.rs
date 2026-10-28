@@ -213,6 +213,11 @@ fn archive_and_remove_are_wire_commands_with_a_durable_effect() {
         json!({"id":4,"method":"archive","params":{"session_id":"s","archived":false}}),
         json!({"id":5,"method":"snapshot","params":{"session_id":"s"}}),
         json!({"id":6,"method":"archive","params":{"session_id":"missing","archived":true}}),
+        json!({"id":11,"method":"pin","params":{"session_id":"s","pinned":true}}),
+        json!({"id":12,"method":"snapshot","params":{"session_id":"s"}}),
+        json!({"id":13,"method":"pin","params":{"session_id":"s","pinned":false}}),
+        json!({"id":14,"method":"snapshot","params":{"session_id":"s"}}),
+        json!({"id":15,"method":"pin","params":{"session_id":"missing","pinned":true}}),
         json!({"id":16,"method":"revert_preview","params":{"session_id":"s","boundary_seq":1}}),
         json!({"id":17,"method":"revert_stage","params":{"session_id":"s","boundary_seq":1}}),
         json!({"id":18,"method":"revert_stage","params":{"session_id":"s","boundary_seq":1,"files":false}}),
@@ -249,6 +254,15 @@ fn archive_and_remove_are_wire_commands_with_a_durable_effect() {
     assert!(result(5)["archived_at_ms"].is_null());
     // Archiving never invents a Session, so the wire reports a refusal instead.
     assert!(reply(6)["error"].is_object(), "{replies:?}");
+    assert_eq!(result(11), json!({"accepted": true, "pinned": true}));
+    assert!(result(12)["pinned_at_ms"].is_number(), "{replies:?}");
+    // A pin is a list preference, not activity: the update time stays put.
+    // Compared with the snapshot taken just before the pin, since archiving
+    // above legitimately moved that timestamp.
+    assert_eq!(result(12)["updated_at_ms"], result(5)["updated_at_ms"]);
+    assert_eq!(result(13), json!({"accepted": true, "pinned": false}));
+    assert!(result(14)["pinned_at_ms"].is_null());
+    assert!(reply(15)["error"].is_object(), "{replies:?}");
     // Revert vocabulary: the preview is a read, a file stage refuses when no
     // snapshot exists, and the explicit history-only stage still records the
     // intent so the conversation can be rewound without touching files.

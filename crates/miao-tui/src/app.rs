@@ -674,6 +674,17 @@ impl App {
                     engine.archive(&id, !archived);
                 }
             }
+            DialogAction::TogglePin(id) => {
+                let pinned = self
+                    .catalog
+                    .iter()
+                    .find(|row| row.id == id)
+                    .is_some_and(|row| row.pinned_at_ms.is_some());
+                self.dialog = None;
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.pin(&id, !pinned);
+                }
+            }
             DialogAction::Remove(id) => {
                 let title = self.title_of(&id);
                 self.open_dialog(Dialog::confirm_remove(&id, &title));
@@ -1597,6 +1608,7 @@ mod tests {
             parent_id: None,
             updated_at_ms: Some(updated_at_ms),
             archived_at_ms: None,
+            pinned_at_ms: None,
             directory: None,
             model: None,
             credential_id: None,
@@ -1691,6 +1703,32 @@ mod tests {
             app.home.notice().map(str::to_string),
             Some("no Sessions to continue".into())
         );
+    }
+
+    #[test]
+    fn pin_toggles_the_engine_owned_pin() {
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.catalog = vec![summary("ses_a", 10)];
+        app.dialog = Some(Dialog::sessions(&app.catalog));
+        app.dialog_action(DialogAction::TogglePin("ses_a".into()));
+        assert!(app.dialog.is_none(), "the list closes on the action");
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Pin { session_id, pinned })
+                if session_id == "ses_a" && pinned
+        ));
+        // The same key unpins a Session the engine already reports as pinned.
+        let mut pinned = summary("ses_a", 10);
+        pinned.pinned_at_ms = Some(5);
+        app.catalog = vec![pinned];
+        app.dialog = Some(Dialog::sessions(&app.catalog));
+        app.dialog_action(DialogAction::TogglePin("ses_a".into()));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Pin { pinned: false, .. })
+        ));
     }
 
     #[test]

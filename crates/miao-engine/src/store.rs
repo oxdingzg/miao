@@ -23,13 +23,13 @@ use tokio::sync::{mpsc, oneshot, watch};
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 // Older readers do not understand inactive semantic imports and could execute
 // a destination before its host has switched the authoritative placement.
-pub const SCHEMA_VERSION: u32 = 21;
+pub const SCHEMA_VERSION: u32 = 22;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
 /// The catalog columns a listing needs, in query order; a store written before
 /// one of them existed reads that column as NULL.
-type CatalogFields = (String, Option<i64>, Option<i64>, Option<i64>);
+type CatalogFields = (String, Option<i64>, Option<i64>, Option<i64>, Option<i64>);
 
 /// A durable, fenced claim on one Session's execution. Every claim advances
 /// `epoch`, so a writer whose ownership was superseded is rejected even while
@@ -148,20 +148,20 @@ impl Store {
                 let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
                 rows.collect::<Result<HashSet<_>, _>>()?
             };
-            let fields = ["title", "created_at_ms", "updated_at_ms", "archived_at_ms"].map(|name| {
+            let fields = ["title", "created_at_ms", "updated_at_ms", "archived_at_ms", "pinned_at_ms"].map(|name| {
                 if columns.contains(name) { name } else if name == "title" { "''" } else { "NULL" }
             });
             let row: Option<CatalogFields> = tx.query_row(
                 &format!("SELECT {} FROM engine_session WHERE id=?1", fields.join(",")), [&session],
-                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)),
             ).optional()?;
-            let Some((title, created, updated, archived)) = row else { return Ok(None) };
+            let Some((title, created, updated, archived, pinned)) = row else { return Ok(None) };
             let parent: Option<String> = tx.query_row("SELECT parent_session_id FROM engine_lineage WHERE session_id=?1", [&session], |row| row.get(0)).optional()?;
             let model = crate::session_model::selected(&tx, &session)?;
             let account = crate::session_account::selected_at(&tx, &session, i64::MAX as u64)?;
             let agent = crate::session_agent::selected(&tx, &session)?.map(|(agent, _)| json!({"name":agent.name}));
             tx.commit()?;
-            Ok(Some(json!({"session_id":session,"title":title,"created_at_ms":created,"updated_at_ms":updated,"archived_at_ms":archived,"parent_session_id":parent,"model_selection":model,"account_selection":account,"agent":agent})))
+            Ok(Some(json!({"session_id":session,"title":title,"created_at_ms":created,"updated_at_ms":updated,"archived_at_ms":archived,"pinned_at_ms":pinned,"parent_session_id":parent,"model_selection":model,"account_selection":account,"agent":agent})))
         }).await
     }
 
@@ -288,8 +288,13 @@ impl Store {
                     )?;
                 }
                 // Nullable on purpose: sessions that predate the columns keep an
-                // unknown creation/update time instead of a fabricated one.
-                for column in ["created_at_ms", "updated_at_ms", "archived_at_ms"] {
+                // unknown creation/update/pin time instead of a fabricated one.
+                for column in [
+                    "created_at_ms",
+                    "updated_at_ms",
+                    "archived_at_ms",
+                    "pinned_at_ms",
+                ] {
                     let has_time:bool=conn.query_row(
                         "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name=?1)",
                         [column],|r|r.get(0))?;
@@ -793,6 +798,38 @@ impl Store {
         .await
     }
 
+    /// Set or clear a Session's pin timestamp.
+    ///
+    /// Like archiving, a pin is a catalog fact: it changes no message, run or
+    /// inbox row, so it is legal while a drain is active and reversible with
+    /// `pinned: false`. Unlike `rename` it never initializes a Session, because
+    /// pinning an identity that was never created would invent product state.
+    /// It deliberately leaves `updated_at_ms` alone: a pin is a list preference,
+    /// not activity, and a pin must not read as the Session having been used.
+    pub async fn set_pinned(&self, session: &str, pinned: bool) -> Result<Value, Error> {
+        let (session, pinned) = (session.to_owned(), pinned);
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(Error::Invalid("Session does not exist".into()));
+            }
+            let now = now_ms() as i64;
+            tx.execute(
+                "UPDATE engine_session SET pinned_at_ms=?2 WHERE id=?1",
+                params![session, pinned.then_some(now)],
+            )?;
+            append(&tx, &session, "session.pinned", json!({"pinned": pinned}))?;
+            tx.commit()?;
+            Ok(json!({"accepted": true, "pinned": pinned}))
+        })
+        .await
+    }
+
     /// Delete every row a Session owns, in foreign-key order.
     ///
     /// There is no tombstone: the conversation, inbox, runs, tools, approvals,
@@ -1262,15 +1299,15 @@ impl Store {
             let account_selection=crate::session_account::selected_at(&tx,&session,i64::MAX as u64)?;
             let agent=crate::session_agent::selected(&tx,&session)?.map(|(agent,hash)|json!({"name":agent.name,"semantics":agent.semantics,"agent_hash":hash}));
             let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.unwrap_or_else(||"build".into());
-            let (title,created_at_ms,updated_at_ms,archived_at_ms):(String,Option<i64>,Option<i64>,Option<i64>)=tx.query_row(
-                "SELECT title,created_at_ms,updated_at_ms,archived_at_ms FROM engine_session WHERE id=?1",
-                [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
+            let (title,created_at_ms,updated_at_ms,archived_at_ms,pinned_at_ms):(String,Option<i64>,Option<i64>,Option<i64>,Option<i64>)=tx.query_row(
+                "SELECT title,created_at_ms,updated_at_ms,archived_at_ms,pinned_at_ms FROM engine_session WHERE id=?1",
+                [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)),
             )?;
             let staged_revert:Option<(i64,String)>=tx.query_row("SELECT boundary_seq,snapshot_id FROM engine_staged_revert WHERE session_id=?1",[&session],|r|Ok((r.get(0)?,crate::snapshot::id_text(r.get(1)?)?))).optional()?;
             let staged_revert=staged_revert.map(|(boundary_seq,snapshot_id)|json!({"boundary_seq":boundary_seq,"snapshot_id":snapshot_id}));
             let event_base:u64=tx.query_row("SELECT CASE WHEN json_extract(bundle,'$.source.engine')='rust' THEN COALESCE(json_extract(bundle,'$.source.sequence'),0) ELSE 0 END FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?.unwrap_or(0);
             let transfer_import:Option<String>=tx.query_row("SELECT id FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?;
-            let mut snapshot=json!({"event_base":event_base,"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"message_count":message_count,"reverted_count":reverted_count,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
+            let mut snapshot=json!({"event_base":event_base,"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"message_count":message_count,"reverted_count":reverted_count,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"pinned_at_ms":pinned_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
             if metadata_only {
                 snapshot.as_object_mut().unwrap().remove("messages");
             }
