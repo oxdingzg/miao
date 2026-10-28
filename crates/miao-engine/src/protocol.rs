@@ -580,6 +580,10 @@ pub enum Command {
         source: crate::product_permission::Source,
         request: crate::product_permission::Request,
     },
+    /// Standing allow patterns owned by this Runtime's canonical workspace.
+    PermissionPatternList,
+    PermissionPatternPut(crate::permission_patterns::Put),
+    PermissionPatternRemove(crate::permission_patterns::Remove),
     /// Project the product's saved "always allow" rules into the engine store
     /// (S6 step 2). Idempotent by rule digest; scoped to one workspace.
     PermissionSavedProject {

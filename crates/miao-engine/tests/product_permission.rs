@@ -337,3 +337,165 @@ async fn owner_controllers_and_authority_revisions_do_not_cross_workspaces() {
     first.shutdown().await;
     other.shutdown().await;
 }
+
+#[tokio::test]
+async fn native_patterns_are_live_revocable_and_separate_from_projection_and_exact_grants() {
+    let (directory, store, runtime, source) = running().await;
+    let mut host = Host::new(runtime.clone());
+    let rule = permission_rules::Rule {
+        action: "read".into(),
+        resource: "*".into(),
+        effect: Decision::Allow,
+    };
+    let before = runtime
+        .evaluate_product_permission(&runtime.controller(), &source, request("public"))
+        .await
+        .unwrap();
+    assert_eq!(before.effect, Decision::Ask);
+    let put = || {
+        serde_json::from_value(json!({"method":"permission_pattern_put","params":{"rule":rule}}))
+            .unwrap()
+    };
+    let stored = host.dispatch(put()).await.unwrap();
+    assert_eq!(stored["source"], "native");
+    assert_eq!(
+        stored["workspace"],
+        store.location("s").await.unwrap().unwrap()
+    );
+    assert_eq!(host.dispatch(put()).await.unwrap(), stored);
+    let listed = host
+        .dispatch(serde_json::from_value(json!({"method":"permission_pattern_list"})).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    let allowed = runtime
+        .evaluate_product_permission(&runtime.controller(), &source, request("public"))
+        .await
+        .unwrap();
+    assert_eq!(allowed.effect, Decision::Allow);
+    assert_ne!(before.authority_revision, allowed.authority_revision);
+    assert_eq!(
+        runtime
+            .evaluate_product_permission(&runtime.controller(), &source, request("secret"))
+            .await
+            .unwrap()
+            .effect,
+        Decision::Deny
+    );
+    let workspace = store.location("s").await.unwrap().unwrap();
+    store
+        .project_saved_rules(
+            workspace.clone(),
+            vec![permission_rules::Rule {
+                action: "read".into(),
+                resource: "legacy".into(),
+                effect: Decision::Allow,
+            }],
+        )
+        .await
+        .unwrap();
+    let removed = host
+        .dispatch(
+            serde_json::from_value(
+                json!({"method":"permission_pattern_remove","params":{"rule_id":stored["id"]}}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(removed["removed"], true);
+    assert_eq!(
+        runtime
+            .evaluate_product_permission(&runtime.controller(), &source, request("public"))
+            .await
+            .unwrap()
+            .effect,
+        Decision::Ask
+    );
+    assert_eq!(
+        runtime
+            .evaluate_product_permission(&runtime.controller(), &source, request("legacy"))
+            .await
+            .unwrap()
+            .effect,
+        Decision::Allow
+    );
+    assert_eq!(store.saved_rules(workspace).await.unwrap().len(), 1);
+    let connection = rusqlite::Connection::open(directory.path().join("engine.db")).unwrap();
+    assert_eq!(
+        connection
+            .query_row::<u64, _, _>("SELECT COUNT(*) FROM engine_permission_grant", [], |row| {
+                row.get(0)
+            })
+            .unwrap(),
+        0
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn pattern_control_is_runtime_scoped_and_cannot_select_a_workspace_or_origin() {
+    let (_first, _store, runtime, _source) = running().await;
+    let (_other, _other_store, other, _other_source) = running().await;
+    let rule = permission_rules::Rule {
+        action: "read".into(),
+        resource: "*".into(),
+        effect: Decision::Allow,
+    };
+    let stored = runtime
+        .put_permission_pattern(&runtime.controller(), rule.clone())
+        .await
+        .unwrap();
+    assert!(runtime
+        .permission_patterns(&other.controller())
+        .await
+        .is_err());
+    assert!(runtime
+        .put_permission_pattern(&other.controller(), rule.clone())
+        .await
+        .is_err());
+    assert!(runtime
+        .remove_permission_pattern(&other.controller(), stored.id.clone())
+        .await
+        .is_err());
+    assert!(!other
+        .remove_permission_pattern(&other.controller(), stored.id.clone())
+        .await
+        .unwrap());
+    let second = other
+        .put_permission_pattern(&other.controller(), rule.clone())
+        .await
+        .unwrap();
+    assert_ne!(stored.id, second.id);
+    assert_eq!(
+        runtime
+            .permission_patterns(&runtime.controller())
+            .await
+            .unwrap(),
+        vec![stored]
+    );
+    for extra in [
+        json!({"workspace":"/foreign"}),
+        json!({"source":"projection"}),
+        json!({"configured":[]}),
+    ] {
+        let mut params = extra;
+        params["rule"] = json!(rule);
+        assert!(serde_json::from_value::<miao_engine::protocol::Command>(
+            json!({"method":"permission_pattern_put","params":params})
+        )
+        .is_err());
+    }
+    assert!(runtime
+        .put_permission_pattern(
+            &runtime.controller(),
+            permission_rules::Rule {
+                effect: Decision::Deny,
+                ..rule
+            }
+        )
+        .await
+        .is_err());
+    runtime.shutdown().await;
+    other.shutdown().await;
+}

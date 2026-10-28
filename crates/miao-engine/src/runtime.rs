@@ -401,6 +401,47 @@ impl Runtime {
         }
     }
 
+    pub async fn permission_patterns(
+        &self,
+        controller: &Controller,
+    ) -> Result<Vec<crate::permission_patterns::Pattern>, Error> {
+        self.inner
+            .store
+            .permission_patterns(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn put_permission_pattern(
+        &self,
+        controller: &Controller,
+        rule: crate::permission_rules::Rule,
+    ) -> Result<crate::permission_patterns::Pattern, Error> {
+        self.inner
+            .store
+            .put_permission_pattern(self.permission_pattern_workspace(controller)?, rule)
+            .await
+    }
+
+    pub async fn remove_permission_pattern(
+        &self,
+        controller: &Controller,
+        id: String,
+    ) -> Result<bool, Error> {
+        self.inner
+            .store
+            .remove_permission_pattern(self.permission_pattern_workspace(controller)?, id)
+            .await
+    }
+
+    fn permission_pattern_workspace(&self, controller: &Controller) -> Result<String, Error> {
+        if controller.runtime_id != self.inner.id {
+            return Err(Error::Invalid(
+                "permission pattern controller mismatch".into(),
+            ));
+        }
+        Ok(self.inner.tools.location().into())
+    }
+
     /// Evaluate against the authority captured by the active reverse call.
     /// This is a bounded query, not an execution or persistent-approval ticket.
     pub async fn evaluate_product_permission(

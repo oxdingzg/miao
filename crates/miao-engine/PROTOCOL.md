@@ -35,6 +35,9 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `select_agent` | `session_id`, `agent` | `{agent_hash, changed}` |
 | `select_account` | `session_id`, `credential_id` (string or null) | `{binding, account, changed}` |
 | `product_permission_evaluate` | `source`, `request` (active reverse-call facts) | `{effect, rules, authority_revision}` |
+| `permission_pattern_list` | — | native-owned standing patterns for this Runtime's workspace |
+| `permission_pattern_put` | `rule` (allow only) | persisted pattern with ID, workspace, source and timestamp |
+| `permission_pattern_remove` | `rule_id` | `{removed:bool}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id`, `metadata_only?` | committed Session snapshot; metadata-only replies omit `messages` |
 | `sessions` | — | `string[]` (Session ids) |
@@ -723,3 +726,23 @@ Generation overrides support bounded `inferenceConfig` and
 Host-declared prompt caching adds SDK cache points to the system prefix and
 latest user message. Native engine release archives include the AWS dependency
 notice and Apache 2.0 license alongside the project license.
+
+### Native-owned standing permission patterns
+
+`permission_patterns: 1` advertises the three pattern methods. They are
+controller operations bound to the Runtime's canonical workspace; callers cannot
+choose a workspace or provenance in their payload. IDs bind the workspace and
+rule content, repeated puts preserve identity/timestamp, and removing an absent
+ID is idempotent. Only allow rules are accepted; configured deny still wins.
+
+Native rows live separately from the host projection in the additive optional
+`engine_owned_permission_rule` table. They join saved rules during evaluation;
+removal does not delete projected rows or exact-call grants. A compatible older
+read-only database without this optional table has no native-owned patterns.
+Writes validate the combined saved-rule budget transactionally. Capability
+negotiation, not a guessed version string, identifies support.
+
+These methods provide standing-policy storage and explicit controller editing.
+They do not turn a rule query into an execution ticket, bind an `always` answer
+to a pending subrequest, project changes into the product database, or retire
+the existing TypeScript permission evaluator. Those S6 integration gates remain.
