@@ -483,7 +483,8 @@ recorded. The `snapshot` reply reports the staged revert when one exists.
 
 `config_reload` re-derives the configuration sections the engine owns from the
 same origin startup used (`--policy`, `--config-sources` or `--config-dir` for
-the policy; `--lsp-config`, `--config-sources` or `--config-dir` for LSP) and
+the policy; `--lsp-config`, `--config-sources` or `--config-dir` for LSP;
+`--mcp-config` for MCP; `--model-routes-config` for the model catalog) and
 reconciles the ones this build can swap in place. The reply is
 `{generation, changed, unchanged, unsupported, …}`: `generation` advances only
 when a section changed, `changed`/`unchanged` name top-level sections, and
@@ -529,6 +530,19 @@ authority revision) are refused before anything is touched, and a derivation
 error (invalid JSON, unknown key) fails the command with every section as it
 was. A Session started without `--mcp-config` (`unsupported` contains `mcp`)
 cannot gain MCP servers without restarting the engine.
+
+The model catalog is rebuilt from `--model-routes-config` layered over the base
+provider startup built from the operator's transport flags. The derived catalog
+and its per-model context limits are compared with what is running and swapped
+only when they differ; `models` appears in `changed`/`unchanged` with no
+per-route sub-object. Session model bindings are durable facts and are not
+rewritten: a binding whose route the new catalog no longer registers fails its
+next turn with an explicit error instead of silently falling back to another
+model. A malformed manifest names its file, changes nothing and fails the
+reload, so the previous catalog keeps serving. A Session started without
+`--model-routes-config` (`unsupported` contains `models`) cannot gain routes
+without restarting the engine, and the manifest path joins the standalone
+poller's watched set.
 
 The standalone entry has no host to call the command, so it polls the same
 sources every two seconds (`mtime` plus size, not an OS watcher) and runs the

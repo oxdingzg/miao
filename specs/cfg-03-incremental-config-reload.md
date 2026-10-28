@@ -158,7 +158,15 @@
    验证：`tests/config_reload_mcp.rs` 4 个用例（连接计数证明未变 server 不重连、换配置只重建该
    server、失败保留旧连接仍可调用、非法清单不改动任何状态）；`cargo test` 全量通过；
    `cargo clippy --all-targets -- -D warnings` 与 `cargo fmt --check` 在构建机通过。
-4. **Provider 路由替换**：模型目录与路由表的换代。
+4. **Provider 路由替换（已实现）**：`Inner.provider` 改为 `RwLock<Arc<dyn Provider>>`，每 turn 取
+   一次快照；启动时把**未路由的 base provider** 与 `--model-routes-config` 路径、工作区一并记为
+   `model_routes::Origin`。`config_reload` 用同一 base 重新叠加清单，得到新目录与
+   `RouteLimits`，与运行中的目录逐项比较（`model_catalog()` + 限额），只有真变化才换入；
+   限额先换、目录后换，避免"新容量配旧限额"。派生失败（含文件名）整份拒绝，旧目录继续服务；
+   Session 的绑定是持久事实，`session_model::select` 在新目录里找不到 route 时该 turn 显式报错，
+   不静默回退。standalone 轮询文件并集加入清单路径。验证：`tests/config_reload_models.rs`
+   覆盖"同内容不换代 / 增删 route 换代且目录即时可见 / 畸形清单报文件名且旧目录仍在 /
+   失败后恢复原清单不推进 generation"。
 5. **context / hooks / skills / references**：各自载体的换代。
 6. **standalone 轮询**：`--config-dir` 模式的 mtime 观察。
 7. **宿主接线**：TS 与 Rust TUI 在配置写入后调用 `config_reload`，并把报告显示为一行状态。
