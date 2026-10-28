@@ -185,3 +185,23 @@ async fn the_recorded_transcript_reaches_the_tui_unchanged() {
         "the cursor lands on the last committed event"
     );
 }
+
+/// The engine's `Command` enum is adjacently tagged, so a unit command takes no
+/// `params` key; the fake answers the engine's `invalid_request` when one is
+/// present, which is what a TUI that sent `params: {}` used to collect.
+#[tokio::test]
+async fn a_unit_command_is_sent_without_a_params_key() {
+    let spawn = EngineSpawn {
+        env: vec![("MIAO_TUI_FAKE_SESSIONS".into(), "1".into())],
+        ..fake()
+    };
+    let (mut connection, _events) = Connection::start(spawn, TIMEOUT).expect("start");
+    let client = connection.connect().await.expect("connect");
+    let sessions = client.command("sessions").await.expect("sessions");
+    assert_eq!(sessions, json!(["ses_a", "ses_b"]));
+    let catalog = client
+        .command("model_catalog")
+        .await
+        .expect("model_catalog");
+    assert_eq!(catalog.as_array().map(Vec::len), Some(2));
+}

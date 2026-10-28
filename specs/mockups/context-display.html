@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{
+    --bg:#101012; --panel:#17171b; --panel2:#1c1c21; --border:#2a2a30;
+    --text:#e8e8ec; --weak:#9a9aa3; --faint:#6b6b74;
+    --info:#4c8dff; --success:#3fb96f; --property:#c586f7; --warning:#e0a34c;
+    --comment:#6b6b74; --error:#e5534b; --amber:#e0a34c;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,"PingFang SC","Segoe UI",sans-serif; padding:28px 32px;}
+  h1{font-size:20px; font-weight:650; margin-bottom:4px;}
+  .sub{color:var(--weak); font-size:12.5px; margin-bottom:22px;}
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:18px;}
+  .card{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px 18px;}
+  .card.wide{grid-column:1 / -1;}
+  h2{font-size:14.5px; font-weight:640; margin-bottom:2px;}
+  .cap{color:var(--weak); font-size:11.5px; margin-bottom:12px;}
+  .cap b{color:var(--text); font-weight:600;}
+  .legend{display:flex; gap:14px; flex-wrap:wrap; margin-top:8px; font-size:11.5px; color:var(--weak);}
+  .legend i{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; vertical-align:-1px;}
+  svg{display:block;}
+  .tui{background:#0c0c0e; border:1px solid var(--border); border-radius:8px; padding:12px 14px; font:12px/1.9 "SF Mono",Menlo,monospace; white-space:pre; overflow-x:auto;}
+  .note{margin-top:10px; color:var(--faint); font-size:11px; line-height:1.7;}
+  .tag{display:inline-block; border:1px solid var(--border); border-radius:4px; padding:0 6px; font-size:10.5px; color:var(--weak); margin-right:6px;}
+</style>
+</head>
+<body>
+<h1>miao 上下文展示优化 · 效果图</h1>
+<div class="sub">依据 specs/context-management-reference.md 第七节 · 数据源:session_turn_usage(已持久化)+ context.pruned 事件 · 2026-10-25</div>
+
+<div class="grid">
+
+<div class="card wide">
+  <h2>① 会话上下文 / 缓存时间线(app · context tab 新增区块)</h2>
+  <div class="cap">每 turn 一根柱,堆叠 = <b>cache read + cache write + 新 input</b>;按"上下文窗口变化"分段,<b>每段独立 y 轴</b>;窗口在轴内画虚线,远超轴时离轴标注;压缩事件画竖标记。悬停出明细(ttft/cost 来自 session_turn_usage)。</div>
+  <div id="timeline"></div>
+  <div class="legend">
+    <span><i style="background:var(--info)"></i>cache read</span>
+    <span><i style="background:var(--property)"></i>cache write</span>
+    <span><i style="background:var(--success)"></i>新 input</span>
+    <span><i style="background:var(--warning)"></i>&ge;60% 压力</span>
+    <span><i style="background:var(--error)"></i>&ge;85% 压力</span>
+    <span><i style="background:none;border-top:2px dashed var(--weak);height:0;width:14px"></i>窗口上限</span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>② TUI 状态行 · 压力分色上下文条</h2>
+  <div class="cap">字符条 <b>█/·</b>,60%/85% 阈值分色;<b>永不裸百分比</b>(必须 "X% of Nk window");空闲显示 <b>idle</b>,不显示 "−0%"。</div>
+  <div class="tui" id="tui-status"></div>
+  <div class="note">无窗口数据时:显示 <span style="color:var(--weak)">92.4k tok</span> 绝对值,不出百分比;被拒请求沿用现有口径显示 "request failed",不沿用上一 turn 计数。</div>
+</div>
+
+<div class="card">
+  <h2>③ TUI · 压缩结算卡片(transcript 内可折叠块)</h2>
+  <div class="cap">数据源 = context.pruned / compaction 结算事件:<b>触发原因 · 覆盖范围 · before→after · 净省</b>。区段缩减百分比与整窗占用<b>不同框出现</b>,避免 97% 挨着 13% 的误读(dcp issue #1)。</div>
+  <div class="tui" id="tui-card"></div>
+</div>
+
+<div class="card wide">
+  <h2>④ breakdown 随时间堆叠(app · "什么在吃上下文")</h2>
+  <div class="cap">system / user / assistant / tool 分类占比随 turn 演变,颜色沿用现有 BREAKDOWN_COLOR;压缩后 tool 带明显回落。</div>
+  <div id="breakdown"></div>
+  <div class="legend">
+    <span><i style="background:var(--info)"></i>system</span>
+    <span><i style="background:var(--success)"></i>user</span>
+    <span><i style="background:var(--property)"></i>assistant</span>
+    <span><i style="background:var(--warning)"></i>tool</span>
+    <span><i style="background:var(--comment)"></i>other</span>
+  </div>
+</div>
+
+<div class="card wide">
+  <h2>⑤ 右侧面板紧凑版(app side panel · 按真实 ~380px 宽渲染)</h2>
+  <div class="cap">侧栏空间有限,信息按密度分层:<b>一行状态</b>(占用+迷你条)&rarr; <b>迷你时间线</b>(64px 高,无逐柱标注,窗口线/压缩刻度保留)&rarr; <b>压缩记录单行列表</b>(点开才展开) &rarr; <b>breakdown 压成单行 100% 条</b>。全尺寸图放在 context tab 展开态,侧栏只保留结论。</div>
+  <div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap">
+    <div id="sidepanel"></div>
+    <div style="flex:1; min-width:280px; font-size:12px; color:var(--weak); line-height:2.0">
+      <b style="color:var(--text)">紧凑化规则</b><br>
+      · 时间线:柱宽 5px、高 64px;y 轴只留一个最大值刻度,窗口线配 3 字标签("200k"/"1M")<br>
+      · 分段不画两个坐标系:换窗口处画 6px 竖向留白 + 段标签右移,替代独立 y 轴(数字看悬停)<br>
+      · 压缩标记保留(2px 橙刻度),悬停出 before/after;列表行点开才展开摘要<br>
+      · breakdown:单行 100% 堆叠条 + 行内图例,高度 10px,替代大图<br>
+      · 全部数字沿用既有口径:request failed / compacted 态不显示过期 budget
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+/* ---------- ① timeline ---------- */
+const T = [];
+// segment 1: 200k window, turns 1-20, compaction at 14
+const s1 = [
+  [12,2,8],[19,3,10],[27,4,11],[34,4,12],[41,5,13],[48,5,12],[55,6,14],[62,6,13],
+  [70,7,19],[78,7,15],[86,8,14],[95,8,29],            // T12 = 132k amber
+  [104,9,17],[60,9,14],                                // T13 peak; T14 post-compact
+  [66,10,13],[73,10,14],[80,11,15],[88,11,16],[96,12,17],[104,12,18]
+];
+// segment 2: 1M window, turns 21-34 (model switch), own y-axis
+const s2 = [
+  [118,13,19],[132,14,21],[147,15,22],[161,16,24],[176,17,26],[190,18,28],
+  [205,19,30],[219,20,31],[233,21,33],[246,22,34],[258,23,36],[269,24,38],
+  [279,25,40],[288,26,42]
+];
+const SEGS = [
+  {label:"claude-sonnet-4-5 · window 200k", window:200, unit:"k", data:s1, axis:230, compactionAt:14},
+  {label:"gemini-2.5-pro · window 1M",      window:1000,unit:"k", data:s2, axis:400, compactionAt:null, offscale:true}
+];
+const COLORS = {read:"#4c8dff", write:"#c586f7", fresh:"#3fb96f", amber:"#e0a34c", red:"#e5534b", faint:"#6b6b74", weak:"#9a9aa3", grid:"#232329", text:"#e8e8ec"};
+
+function timeline(){
+  const W=1460, rowH=210, gap=30, padL=52, padR=16, padT=26;
+  const H = padT + SEGS.length*(rowH+gap) + 8;
+  let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="-apple-system,'PingFang SC',sans-serif">`;
+  SEGS.forEach((seg,si)=>{
+    const y0 = padT + si*(rowH+gap);
+    const plotW = W-padL-padR, plotH = rowH-34;
+    const n = seg.data.length;
+    const bw = Math.min(26, plotW/n*0.62);
+    const step = plotW/n;
+    const axis = seg.axis;
+    const y = v => y0+plotH - (v/axis)*plotH;
+    // panel frame
+    svg += `<text x="${padL}" y="${y0-8}" fill="${COLORS.weak}" font-size="12">段 ${si+1} · ${seg.label}</text>`;
+    svg += `<line x1="${padL}" y1="${y0+plotH}" x2="${padL+plotW}" y2="${y0+plotH}" stroke="${COLORS.grid}"/>`;
+    // y ticks (own axis)
+    [0, axis/2, axis].forEach(v=>{
+      svg += `<line x1="${padL}" y1="${y(v)}" x2="${padL+plotW}" y2="${y(v)}" stroke="${COLORS.grid}" stroke-dasharray="${v===axis?'':'3 4'}"/>`;
+      svg += `<text x="${padL-8}" y="${y(v)+4}" fill="${COLORS.faint}" font-size="10.5" text-anchor="end">${v}${seg.unit}</text>`;
+    });
+    // window line or off-scale label
+    if(!seg.offscale){
+      svg += `<line x1="${padL}" y1="${y(seg.window)}" x2="${padL+plotW}" y2="${y(seg.window)}" stroke="${COLORS.weak}" stroke-dasharray="6 5" stroke-width="1.4"/>`;
+      svg += `<text x="${padL+plotW}" y="${y(seg.window)-6}" fill="${COLORS.weak}" font-size="10.5" text-anchor="end">窗口 200k</text>`;
+    } else {
+      svg += `<text x="${padL+plotW}" y="${y0-8}" fill="${COLORS.weak}" font-size="10.5" text-anchor="end">窗口 1M ▸ 超出轴,不缩柱(magic-context #173)</text>`;
+    }
+    // 60/85 threshold
+    [60,85].forEach(p=>{
+      const v = seg.window*p/100; if(v>axis) return;
+      svg += `<line x1="${padL}" y1="${y(v)}" x2="${padL+plotW}" y2="${y(v)}" stroke="${p===60?COLORS.amber:COLORS.red}" stroke-opacity=".35" stroke-dasharray="2 5"/>`;
+    });
+    seg.data.forEach((d,i)=>{
+      const [read,write,fresh] = d;
+      const total = read+write+fresh;
+      const pct = Math.round(total/seg.window*100);
+      const x = padL + i*step + (step-bw)/2;
+      const pressure = pct>=85?COLORS.red : pct>=60?COLORS.amber : null;
+      const yRead=y(read), yWrite=y(read+write), yFresh=y(total);
+      svg += `<rect x="${x}" y="${yRead}" width="${bw}" height="${y0+plotH-yRead}" fill="${COLORS.read}" rx="1.5"/>`;
+      svg += `<rect x="${x}" y="${yWrite}" width="${bw}" height="${yRead-yWrite}" fill="${COLORS.write}" rx="1.5"/>`;
+      svg += `<rect x="${x}" y="${yFresh}" width="${bw}" height="${yWrite-yFresh}" fill="${pressure||COLORS.fresh}" rx="1.5"/>`;
+      if(pressure){ svg += `<rect x="${x-1}" y="${yFresh-2}" width="${bw+2}" height="2" fill="${pressure}"/>`; }
+      if(i%4===0) svg += `<text x="${x+bw/2}" y="${y0+plotH+14}" fill="${COLORS.faint}" font-size="10" text-anchor="middle">T${i+1+si*20}</text>`;
+      // compaction marker
+      if(seg.compactionAt===i+1){
+        const mx = x+bw/2;
+        svg += `<line x1="${mx}" y1="${y0-2}" x2="${mx}" y2="${y0+plotH}" stroke="${COLORS.amber}" stroke-width="1.6"/>`;
+        svg += `<text x="${mx-8}" y="${y0+10}" fill="${COLORS.amber}" font-size="10.5" text-anchor="end">compact · 214.2k→41.0k · 净省 173.2k</text>`;
+      }
+      // hover callout on T12 (segment 1)
+      if(si===0 && i===11){
+        const cx=x+bw+10, cy=y(total)-14;
+        svg += `<line x1="${x+bw}" y1="${yFresh}" x2="${cx-4}" y2="${cy+10}" stroke="${COLORS.faint}"/>`;
+        svg += `<rect x="${cx}" y="${cy-8}" width="270" height="64" rx="6" fill="#1f1f26" stroke="#34343c"/>`;
+        svg += `<text x="${cx+10}" y="${cy+8}" fill="${COLORS.text}" font-size="11">T12 · 132.4k(66% of 200k window)</text>`;
+        svg += `<text x="${cx+10}" y="${cy+24}" fill="${COLORS.weak}" font-size="10.5">read 95k · write 8k · 新 input 29.4k</text>`;
+        svg += `<text x="${cx+10}" y="${cy+40}" fill="${COLORS.weak}" font-size="10.5">ttft 1.9s · $0.86 · 14 msgs ↑</text>`;
+      }
+    });
+  });
+  svg += `</svg>`;
+  document.getElementById("timeline").innerHTML = svg;
+}
+
+/* ---------- ② TUI status ---------- */
+function statusline(){
+  const bar = (pct, color, width=16) => {
+    const f = Math.round(pct/100*width);
+    return `<span style="color:${color}">${"█".repeat(f)}</span><span style="color:#3a3a40">${"·".repeat(width-f)}</span>`;
+  };
+  const rows = [
+    ["46%", bar(46,"#8a8a93"), "#8a8a93", "92.4k (46% of 200k window)"],
+    ["67%", bar(67,"#e0a34c"), "#e0a34c", "134k (67% of 200k window)"],
+    ["88%", bar(88,"#e5534b"), "#e5534b", "176k (88% of 200k window)"],
+  ];
+  let html = "";
+  rows.forEach(([tag,b,c,label])=>{
+    html += `<div>● fix/context-display  sonnet-4-5  <span style="color:${c}">${label}</span>  ${b}</div>`;
+  });
+  html += `<div style="color:#6b6b74">● fix/context-display  sonnet-4-5  92.4k (46% of 200k window)  idle</div>`;
+  html += `<div style="color:#6b6b74">● fix/context-display  sonnet-4-5  92.4k tok  <span title>无窗口数据:仅绝对值,不出百分比</span></div>`;
+  document.getElementById("tui-status").innerHTML = html;
+}
+
+/* ---------- ③ compression card ---------- */
+function card(){
+  const row = (l,r,extra="") => `<div style="display:flex;gap:14px;padding:3px 0"><span style="color:#9a9aa3;min-width:3em">${l}</span><span ${extra}>${r}</span></div>`;
+  document.getElementById("tui-card").innerHTML =
+`<div style="border:1px solid #3a3a42;border-radius:8px;padding:10px 14px;font:12px/1.8 'SF Mono',Menlo,monospace">
+  <div style="color:#e0a34c;font-weight:600;margin-bottom:4px">◼ compaction</div>
+  ${row("触发","automatic · 71% of window")}
+  ${row("覆盖","14 messages · 6 个工具输出")}
+  ${row("前后","<span style='color:#e8e8ec'>214.2k → 41.0k</span>")}
+  ${row("净省","<span style='color:#3fb96f'>173.2k(该区段 81%)</span>")}
+  <div style="color:#9a9aa3;padding:3px 0;border-top:1px dashed #2e2e36;margin-top:4px">摘要:context_trigger gates ①-④ 重构、prune_history 预算选择、recall 恢复路径;遗留:T12 hover 字号待定</div>
+</div>
+<div style="margin-top:8px"><span class="tag">可折叠</span><span class="tag">展开显示被压缩区段的 recall 句柄</span><span class="tag">数据:context.pruned 事件</span></div>`;
+}
+
+/* ---------- ④ breakdown ---------- */
+function breakdown(){
+  // per-turn shares (sum=100): system / user / assistant / tool / other
+  const rows = [
+    [38,10,22,26,4],[36,10,22,28,4],[35,9,23,29,4],[34,9,24,29,4],[33,9,24,30,4],
+    [32,9,25,30,4],[31,9,25,31,4],[30,9,26,31,4],[29,9,27,31,4],[28,9,27,32,4],
+    [27,9,28,32,4],[26,9,29,32,4],[25,9,29,33,4],[46,14,24,12,4],[45,14,25,12,4],
+    [44,13,26,13,4],[43,13,26,14,4],[42,13,27,14,4],[41,13,27,15,4],[40,13,28,15,4],
+    [39,12,28,17,4],[38,12,29,17,4],[37,12,29,18,4],[36,12,30,18,4],[35,12,30,19,4],
+    [34,12,31,19,4],[33,12,31,20,4],[32,12,32,20,4],[31,12,32,21,4],[30,12,33,21,4]
+  ];
+  const colors = ["#4c8dff","#3fb96f","#c586f7","#e0a34c","#6b6b74"];
+  const names  = ["system","user","assistant","tool","other"];
+  const W=1460, H=250, padL=52, padR=16, padT=18, plotH=H-padT-30;
+  let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="-apple-system,'PingFang SC',sans-serif">`;
+  const step=(W-padL-padR)/rows.length;
+  // compaction band
+  svg += `<rect x="${padL+13*step}" y="${padT-6}" width="${step}" height="${plotH+6}" fill="#e0a34c" opacity=".08"/>`;
+  svg += `<text x="${padL+13*step+6}" y="${padT+10}" fill="#e0a34c" font-size="10.5">compact</text>`;
+  rows.forEach((r,i)=>{
+    let acc=0;
+    r.forEach((v,k)=>{
+      const h=v/100*plotH;
+      svg += `<rect x="${padL+i*step}" y="${padT+plotH-acc-h}" width="${step-1.5}" height="${h}" fill="${colors[k]}"/>`;
+      acc+=h;
+    });
+    if(i%5===0) svg += `<text x="${padL+i*step+step/2}" y="${H-12}" fill="${COLORS.faint}" font-size="10" text-anchor="middle">T${i+1}</text>`;
+  });
+  // y axis as shares
+  [0,50,100].forEach(v=>{
+    const yy = padT+plotH - v/100*plotH;
+    svg += `<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="${COLORS.grid}" stroke-dasharray="3 4"/>`;
+    svg += `<text x="${padL-8}" y="${yy+4}" fill="${COLORS.faint}" font-size="10.5" text-anchor="end">${v}%</text>`;
+  });
+  svg += `<text x="${padL}" y="${padT-4}" fill="${COLORS.weak}" font-size="12">每 turn 的上下文构成(估算;压缩后 tool 带回落,system 缓慢爬升)</text>`;
+  svg += `</svg>`;
+  document.getElementById("breakdown").innerHTML = svg;
+}
+
+function sidepanel(){
+  const el = document.getElementById("sidepanel");
+  const W=380;
+  // mini bar for header
+  const bar = (pct,color,w=54,h=8)=>{
+    const f=Math.round(pct/100*w);
+    return `<span style="display:inline-block;width:${w}px;height:${h}px;border-radius:3px;overflow:hidden;vertical-align:-1px;background:#2a2a30"><span style="display:block;width:${f}px;height:100%;background:${color}"></span></span>`;
+  };
+  // mini timeline svg
+  const s1=[[12,2,8],[19,3,10],[27,4,11],[34,4,12],[41,5,13],[48,5,12],[55,6,14],[62,6,13],[70,7,19],[78,7,15],[86,8,14],[95,8,29],[104,9,17],[60,9,14],[66,10,13],[73,10,14],[80,11,15],[88,11,16]];
+  const s2=[[118,13,19],[132,14,21],[147,15,22],[161,16,24],[176,17,26],[190,18,28]];
+  const colors={read:"#4c8dff",write:"#c586f7",fresh:"#3fb96f",amber:"#e0a34c",faint:"#6b6b74",weak:"#9a9aa3",grid:"#232329"};
+  const H=118, plotH=64, y0=18, axis=230, win=200;
+  const y=v=>y0+plotH-(v/axis)*plotH;
+  let svg=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="-apple-system,'PingFang SC',sans-serif">`;
+  // window line + right mini label
+  svg+=`<line x1="30" y1="${y(win)}" x2="${W-26}" y2="${y(win)}" stroke="#9a9aa3" stroke-dasharray="4 4" stroke-width="1"/>`;
+  svg+=`<text x="${W-24}" y="${y(win)+3.5}" fill="#9a9aa3" font-size="9.5">200k</text>`;
+  // one y tick
+  svg+=`<text x="26" y="${y0+4}" fill="#6b6b74" font-size="9.5" text-anchor="end">230k</text>`;
+  svg+=`<line x1="30" y1="${y0}" x2="30" y2="${y0+plotH}" stroke="#232329"/>`;
+  const draw=(data,startIdx,gapAt)=>{
+    const step=(W-56-gapAt)/34, bw=5;
+    data.forEach((d,i)=>{
+      const [r,w,f]=d, tot=r+w+f, x=32+i*step+(gapAt&&i+startIdx>=20?gapAt:0);
+      const pct=Math.round(tot/win*100), pc=pct>=85?"#e5534b":pct>=60?colors.amber:null;
+      const yr=y(r),yw=y(r+w),yf=y(tot);
+      svg+=`<rect x="${x}" y="${yr}" width="${bw}" height="${y0+plotH-yr}" fill="${colors.read}"/>`;
+      svg+=`<rect x="${x}" y="${yw}" width="${bw}" height="${yr-yw}" fill="${colors.write}"/>`;
+      svg+=`<rect x="${x}" y="${yf}" width="${bw}" height="${yw-yf}" fill="${pc||colors.fresh}"/>`;
+      if(startIdx===0&&i===13){ svg+=`<rect x="${x-1.5}" y="${y0-4}" width="2.5" height="${plotH+4}" fill="${colors.amber}"/>`; }
+    });
+  };
+  draw(s1,0,0);
+  // segment gap + label
+  const gx=32+20*((W-56)/34)+3;
+  svg+=`<rect x="${gx}" y="${y0}" width="6" height="${plotH}" fill="#101012"/>`;
+  svg+=`<line x1="${gx+3}" y1="${y0}" x2="${gx+3}" y2="${y0+plotH}" stroke="#3a3a40" stroke-dasharray="1 3"/>`;
+  svg+=`<text x="${gx+3}" y="${y0-6}" fill="#9a9aa3" font-size="9.5" text-anchor="middle">1M</text>`;
+  // redraw s2 shifted: simpler—explicit
+  const step=(W-56)/34;
+  const y2=v=>y0+plotH-(v/400)*plotH;   // segment 2 keeps its own implicit scale (numbers on hover)
+  s2.forEach((d,j)=>{
+    const i=20+j, [r,w,f]=d, tot=r+w+f, x=32+i*step+6;
+    const pct=Math.round(tot/1000*100), pc=pct>=85?"#e5534b":pct>=60?colors.amber:null;
+    const yr=y2(r),yw=y2(r+w),yf=y2(tot);
+    svg+=`<rect x="${x}" y="${yr}" width="5" height="${y0+plotH-yr}" fill="${colors.read}"/>`;
+    svg+=`<rect x="${x}" y="${yw}" width="5" height="${yr-yw}" fill="${colors.write}"/>`;
+    svg+=`<rect x="${x}" y="${yf}" width="5" height="${yw-yf}" fill="${pc||colors.fresh}"/>`;
+  });
+  svg+=`<text x="32" y="${H-6}" fill="#6b6b74" font-size="9.5">T1</text>`;
+  svg+=`<text x="${W-26}" y="${H-6}" fill="#6b6b74" font-size="9.5" text-anchor="end">T26</text>`;
+  svg+=`</svg>`;
+  el.innerHTML = `
+  <div style="width:${W}px;background:#0c0c0e;border:1px solid #2a2a30;border-radius:10px;padding:12px 14px;font:12px -apple-system,'PingFang SC',sans-serif">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span style="color:#e8e8ec;font-weight:600">上下文</span>
+      <span style="color:#9a9aa3;font-size:11px">46% of 200k</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      ${bar(46, "#8a8a93")}
+      <span style="color:#3fb96f;font-size:11px">净省 173.2k</span>
+    </div>
+    ${svg}
+    <div style="margin-top:8px;color:#6b6b74;font-size:10.5px">T14 压缩刻度 · 换窗口处虚线留白,段标签 "1M"</div>
+    <div style="border-top:1px solid #232329;margin:10px 0 6px"></div>
+    <div style="color:#9a9aa3;font-size:11px;margin-bottom:4px">最近压缩</div>
+    <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:#e8e8ec">T14 · 自动</span><span style="color:#3fb96f">−173.2k</span></div>
+    <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:#e8e8ec">T28 · 手动 /prune</span><span style="color:#3fb96f">−18.4k</span></div>
+    <div style="margin-top:8px;color:#6b6b74;font-size:10.5px">构成</div>
+    <div style="display:flex;height:10px;border-radius:3px;overflow:hidden;margin-top:4px">
+      <span style="width:38%;background:#4c8dff"></span><span style="width:12%;background:#3fb96f"></span><span style="width:29%;background:#c586f7"></span><span style="width:17%;background:#e0a34c"></span><span style="width:4%;background:#6b6b74"></span>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:5px;color:#9a9aa3;font-size:10px">
+      <span><span style="color:#4c8dff">■</span> system 38</span><span><span style="color:#3fb96f">■</span> user 12</span><span><span style="color:#c586f7">■</span> asst 29</span><span><span style="color:#e0a34c">■</span> tool 17</span><span><span style="color:#6b6b74">■</span> 4</span>
+    </div>
+  </div>`;
+}
+timeline(); statusline(); card(); breakdown(); sidepanel();
+</script>
+</body>
+</html>

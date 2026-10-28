@@ -290,6 +290,25 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         ),
     )
     .add(
+      HttpApiEndpoint.get("session.recovery", "/api/session/:sessionID/recovery/:callID", {
+        params: {
+          sessionID: Session.ID,
+          callID: Schema.String.check(Schema.isMinLength(1)),
+        },
+        success: Schema.Struct({ data: SessionRecovery.Inspection }),
+        error: [ConflictError, SessionNotFoundError, ServiceUnavailableError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.recovery",
+            summary: "Inspect one interrupted tool outcome",
+            description:
+              "Fetch a single unknown tool outcome with its sanitized input for a Rust-owned Session. Read-only.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.resolveRecovery", "/api/session/:sessionID/recovery", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({
