@@ -129,8 +129,11 @@ fn validate_lsp(origin: &str, lsp: &serde_json::Value) -> Result<(), String> {
         if entry.get("disabled") == Some(&serde_json::Value::Bool(true)) {
             continue;
         }
+        // The product schema's Server variant requires a command; only the
+        // Disabled variant may omit it, so a command-less entry refuses the
+        // same way the schema decode does.
         let Some(command) = entry.get("command") else {
-            continue;
+            return Err(format!("{origin}: lsp.{id}.command must be an array of strings"));
         };
         if !command.is_array()
             || command.as_array().unwrap().is_empty()
@@ -536,6 +539,7 @@ mod validate_tests {
     #[test]
     fn lsp_entries_without_a_command_stay_valid_but_mistyped_commands_refuse() {
         assert!(validated(serde_json::json!({"lsp": {"gopls": {"disabled": true}}})).is_ok());
+        assert!(validated(serde_json::json!({"lsp": {"gopls": {}}})).is_err());
         assert!(validated(serde_json::json!({"lsp": {"gopls": {"command": ["gopls"], "extensions": [".go"]}}})).is_ok());
         assert!(validated(serde_json::json!({"lsp": {"gopls": {"command": "gopls"}}})).is_err());
         assert!(validated(serde_json::json!({"lsp": {"gopls": 3}})).is_err());
