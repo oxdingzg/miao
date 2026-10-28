@@ -19,7 +19,6 @@ import { prepareMcpConfig } from "./mcp-config"
 import { compactionSettings, engineSettings, nativeEngineOptions } from "./native-engine"
 import { ProductFormatter } from "./product-formatter"
 import { ProductHooks } from "./product-hooks"
-import { ProductLsp } from "./product-lsp"
 import { ProductMcp } from "./product-mcp"
 import { ProductRoutes } from "./product-routes"
 
@@ -101,13 +100,11 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   const effective = { ...configuration, ...routes, ...mcp, ...(configSources ? { configSources } : {}) }
   const context = yield* AmbientContext.prepare(ref, effective)
   const hooks = yield* ProductHooks.prepare(ref, { ...effective, ...context.options })
-  const lsp = yield* ProductLsp.prepare(ref, effective)
   const formatter = yield* ProductFormatter.prepare(ref, effective)
   const options: EngineOptions = {
     ...effective,
     ...context.options,
     ...hooks,
-    ...lsp,
     ...formatter,
     db: input.database,
     workspace: input.workspace,
