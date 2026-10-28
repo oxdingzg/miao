@@ -90,7 +90,12 @@ test.skipIf(!binary)(
           await expect(admit({ ...input, facts: { ...facts, resources: ["different"] } })).rejects.toBeInstanceOf(Error)
           expect(await client.request("product_permission_pending", { session_id: call.sessionID })).toEqual([pending])
           expect(await client.request("product_permission_status", { source, request_id: pending.id })).toEqual(pending)
+          const sibling = await admit({ request_id: "peer", facts })
           expect(await reply(pending, "always")).toMatchObject({ state: "allowed", reply: "always" })
+          expect(await client.request("product_permission_status", { source, request_id: sibling.id })).toMatchObject({
+            state: "allowed",
+            reply: "always",
+          })
           expect(await reply(pending, "always")).toMatchObject({ state: "allowed" })
           expect(await client.request("permission_pattern_list")).toMatchObject([
             { source: "native", rule: { action: "read", resource: "public", effect: "allow" } },
@@ -165,7 +170,7 @@ test.skipIf(!binary)(
       }[]
       expect(
         events.filter((event) => event.kind === "product.permission.resolved").map((event) => event.data.state),
-      ).toEqual(["allowed", "cancelled"])
+      ).toEqual(["allowed", "allowed", "cancelled"])
     } finally {
       client.offEvent(onFinished)
       release.resolve()
