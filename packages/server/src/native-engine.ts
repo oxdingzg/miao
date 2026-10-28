@@ -299,6 +299,7 @@ export interface Interface {
     location: Location.Ref
     requestID: Permission.ID
     reply: Permission.Reply
+    message?: string
   }) => Effect.Effect<void, ConflictError>
   readonly questions: (input: {
     sessionID: SessionID
