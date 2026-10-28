@@ -316,18 +316,26 @@ impl Dialog {
         Dialog::Sessions(ListDialog::new(
             "sessions",
             rows.iter()
-                .map(|row| Row {
-                    id: row.id.clone(),
-                    label: if row.archived_at_ms.is_some() {
-                        format!("{} (archived)", row.label())
-                    } else {
-                        row.label().to_string()
-                    },
-                    detail: row.directory.clone().unwrap_or_default(),
+                .map(|row| {
+                    // Both marks are suffixes so a row can honestly show that it
+                    // is pinned and archived at once; neither affects the order,
+                    // which the caller already handed over pinned-first.
+                    let mut label = row.label().to_string();
+                    if row.pinned_at_ms.is_some() {
+                        label.push_str(" (pinned)");
+                    }
+                    if row.archived_at_ms.is_some() {
+                        label.push_str(" (archived)");
+                    }
+                    Row {
+                        id: row.id.clone(),
+                        label,
+                        detail: row.directory.clone().unwrap_or_default(),
+                    }
                 })
                 .collect(),
             ListKind::Sessions,
-            "enter open · r rename · a archive · d delete · esc close",
+            "enter open · r rename · p pin · a archive · d delete · esc close",
         ))
     }
 
@@ -518,6 +526,7 @@ pub enum Action {
     OpenSession(String),
     Rename(String),
     ToggleArchive(String),
+    TogglePin(String),
     Remove(String),
     Submit(String),
     Confirmed(ConfirmKind),
@@ -549,6 +558,11 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
         KeyCode::Char('r') if list.kind == ListKind::Sessions => {
             if let Some(id) = list.current_id() {
                 return Action::Rename(id);
+            }
+        }
+        KeyCode::Char('p') if list.kind == ListKind::Sessions => {
+            if let Some(id) = list.current_id() {
+                return Action::TogglePin(id);
             }
         }
         KeyCode::Char('a') if list.kind == ListKind::Sessions => {
@@ -770,21 +784,27 @@ mod tests {
     }
 
     #[test]
-    fn session_rows_answer_rename_archive_and_delete() {
+    fn session_rows_answer_rename_pin_archive_and_delete() {
         let row = SessionSummary {
             id: "ses_a".into(),
             title: Some("A".into()),
             parent_id: None,
             updated_at_ms: None,
             archived_at_ms: None,
+            pinned_at_ms: None,
             directory: None,
             model: None,
             credential_id: None,
         };
         let mut dialog = Dialog::sessions(&[row]);
+        assert_eq!(dialog.list().expect("list").rows[0].label, "A");
         assert!(matches!(
             dialog.handle_key(key(KeyCode::Char('r'))),
             Action::Rename(id) if id == "ses_a"
+        ));
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('p'))),
+            Action::TogglePin(id) if id == "ses_a"
         ));
         assert!(matches!(
             dialog.handle_key(key(KeyCode::Char('a'))),
