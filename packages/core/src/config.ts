@@ -16,6 +16,7 @@ export { Directory, Document, type Entry, Info } from "@miao/schema/config"
 import { ConfigMigrateV1 } from "./v1/config/migrate"
 import { ConfigErrorV1 } from "./v1/config/error"
 import { ConfigExplain } from "./config/explain"
+import { ConfigDiagnostics } from "./config/diagnostics"
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -92,6 +93,10 @@ const layer = Layer.effect(
     const location = yield* Location.Service
     const policy = yield* Policy.Service
 
+    // A `Document` is a schema class, so loader-only facts (which keys the
+    // strict decode refused) are kept beside the entry rather than on it.
+    const diagnostics = new WeakMap<object, readonly ConfigDiagnostics.Diagnostic[]>()
+
     const loadFile = Effect.fnUntraced(function* (filepath: string) {
       const text = yield* fs.readFileString(filepath).pipe(
         // A missing file is the normal end of discovery; an unreadable one is
@@ -128,7 +133,22 @@ const layer = Layer.effect(
               invalid,
             )
           : Effect.mapError(Schema.decodeUnknownEffect(Info, decodeOptions)(input), invalid)
-        return new Document({ type: "document", path: filepath, info })
+        const document = new Document({ type: "document", path: filepath, info })
+        // The tolerant decode above stays authoritative: an unknown key never
+        // stops this location from opening. The strict pass only records which
+        // keys were ignored, so the report can name the file, the key path and
+        // the value instead of dropping them silently. V1 documents are probed
+        // after migration, the same transform the load path applies, so their
+        // own keys are not mistaken for unknown ones.
+        const probed = ConfigMigrateV1.isV1(input)
+          ? decodeV1Info(input).pipe(
+              Option.map(ConfigMigrateV1.migrate),
+              Option.getOrElse(() => input),
+            )
+          : input
+        const found = ConfigDiagnostics.of(probed)
+        if (found.length) diagnostics.set(document, found)
+        return document
       })
 
     const loadDirectory = Effect.fnUntraced(function* (directory: AbsolutePath) {
@@ -195,6 +215,7 @@ const layer = Layer.effect(
       ...(content ? [{ entry: content, scope: "env" as const }] : []),
     ]
     const configs = scoped.map((item) => item.entry)
+    const explained = scoped.map((item) => ({ ...item, diagnostics: diagnostics.get(item.entry) }))
     // Rules use the opposite order so a user-global rule can override a
     // repository rule. Statement order inside each file stays unchanged.
     yield* policy.load(
@@ -224,7 +245,7 @@ const layer = Layer.effect(
         return sources
       }),
       explain: Effect.fn("Config.explain")(function* () {
-        return ConfigExplain.explain(scoped)
+        return ConfigExplain.explain(explained)
       }),
     })
   }).pipe(
