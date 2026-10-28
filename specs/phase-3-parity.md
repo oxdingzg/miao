@@ -12,21 +12,22 @@
 | panic 时恢复终端状态 | 已对齐 | panic hook 先 restore 再走默认 hook；`MIAO_TUI_TEST_PANIC` 注入钩子由 pty 测试覆盖 |
 | Ctrl+C 在输入行非空时清空输入、为空时退出 | 已对齐 | 对齐 `packages/tui/src/config/keybind.ts:164`（input_clear=ctrl+c）与 `packages/tui/src/app.tsx:1238`（app_exit 仅输入空时生效） |
 | ctrl+d 退出（仅输入空时） | 已对齐 | 同 app_exit 键位 |
-| `<leader>q` 退出 | 有意偏离（基础版） | T1 用裸 `q` 直接退出；T4 输入编辑器落地时改为 leader chord，避免与打字冲突（`src/app.rs` 注释） |
+| `<leader>q` 退出 | 已对齐 | app_exit 去掉裸 `q`，由 `<leader>q`、ctrl+c（输入为空）、ctrl+d 触发，且都走 keymap（`src/app.rs:handle_home_key/handle_session_key`） |
 | 标题栏显示 workspace 与分支名 | 已对齐（T1 占位） | 分支来自 `git rev-parse --abbrev-ref HEAD`，无 git 时显示 no git |
 | composer 提示符与输入回显 | 有意偏离（基础版） | 单行 `> ` 回显；多行编辑、CJK/IME、粘贴、历史归 T4 |
-| transcript 渲染 | 未做 | T3；T1 仅占位边框与说明文字 |
-| 右侧侧栏 | 未做 | T3+；T1 在宽度 ≥100 列时渲染占位侧栏 |
+| transcript 渲染 | 已对齐（T3） | T1 的占位边框由 T3 的真实 transcript 取代，逐行条目见 T3 节 |
+| 右侧侧栏 | 已对齐（T3） | `pane.rs:SidebarPane`，宽度 ≥100 列时显示，见 T3 节 |
 | resize（SIGWINCH / ConPTY resize）自适应不崩 | 已对齐 | crossterm Resize 事件驱动重绘；pty 冒烟覆盖三平台 |
-| `.miao/tui.json` 主题名选择 | 有意偏离（基础版） | 内置 12 个主题名的基础色板（仅 dark 模式，取自 `packages/tui/src/theme/assets/*.json` 的 dark 侧）；34 主题全集与 light 模式后续切片补 |
-| `.miao/tui.json` 多文件合并（全局目录 → MIAO_TUI_CONFIG → 项目链，就近覆盖） | 有意偏离（基础版） | T1 只合并 workspace→root 的 `.miao/tui.json` 链（根优先，就近覆盖，对齐 TS 顺序语义）；全局配置目录与 `MIAO_TUI_CONFIG` 未做 |
+| `.miao/tui.json` 主题名选择 | 已对齐（dark 模式） | `BUILTIN_THEMES` 由 `packages/tui/src/theme/assets/*.json` 的 dark 侧生成，34 个内置主题全在（`every_typescript_theme_is_available` 守住名单）；light 模式见下一行 |
+| light 模式 / 终端背景探测 | 有意偏离 | Rust TUI 恒用 dark 侧调色板；TS 的 store 默认也是 dark，只有探测到浅色终端时才切 light（`packages/tui/src/context/theme.tsx:95`），未探测时两者一致 |
+| `.miao/tui.json` 多文件合并（全局目录 → MIAO_TUI_CONFIG → 项目链，就近覆盖） | 已对齐 | `config::files` 是 attention 与 theme 共用的同一条链（全局目录 → `MIAO_TUI_CONFIG` → 项目根-first）；嵌套 `{"tui": {...}}` 按 TS 规则摊平，顶层字段优先 |
 | tui.json 为 JSONC（注释 / 尾逗号容忍） | 已对齐 | 本地剥离注释与尾逗号后 serde_json 解析（`src/theme.rs`） |
 | tui.json 未知字段忽略并记录、不崩 | 已对齐 | 未知字段记 warning 到 stderr（config 加载发生在进 raw mode 之前）；损坏文件整份跳过并记录，同 TS 的 catch→log 语义 |
-| 自定义主题 `themes/*.json` | 未做 | 后续切片 |
-| keybinds 自定义覆盖 | 未做 | T1 键位固定 |
-| 鼠标捕获（TS 默认开启） | 未做 | T1 不启用 |
-| 光标样式 `cursor.style` | 未做 | 后续切片 |
-| `miao-tui` 为非默认入口 | 已对齐 | 独立二进制，`--workspace <dir>`（默认 cwd）；`miao` 默认命令仍走 TS TUI，剪彩在 T11 |
+| 自定义主题 `themes/*.json` | 已对齐（dark 模式） | `theme::custom_themes`：全局配置目录 + 向上每层 `.miao` 的 `themes/*.json`，主题名取文件名，按 TS 的扫描顺序后者覆盖前者；支持 `defs` 引用、`{dark, light}` 取 dark、ANSI 码、`#rgb`/`#rrggbb`(`aa`)；缺必需色或循环引用则整份跳过并告警；同名覆盖内置主题 |
+| keybinds 自定义覆盖 | 已对齐 | `config.keybinds` 解析 `string`/`string[]`/`false`/`"none"`（`merge_keybinds`），`keybinds::Keymap` 按 TS `keybind.ts` 的默认值建表并被覆盖；未知 action 静默丢弃、坏 stroke 忽略；`<leader>` 前缀与 leader 键本身都可改，`input_*` 全部走表（含新增 `delete_word_forward`）；命令面板/帮助里的键位提示仍显示默认值 |
+| 鼠标捕获（TS 默认开启） | 已对齐 | `config.mouse` 默认 true；滚轮在对话框/会话列表移动选择、在 transcript 滚动 3 行，按键事件忽略（`app::handle_mouse`）；`mouse: false` 不启用捕获 |
+| 光标样式 `cursor.style` | 已对齐 | `cursor.style`（block/underline/line/default）与 `cursor.blinking` 映射到 DECSCUSR（`terminal::cursor_style`），启动、外编返回、panic 恢复都重设/复位；未配置时不发序列 |
+| `miao-tui` 为默认入口 | 已对齐 | 独立二进制，`--workspace <dir>`（默认 cwd）；`miao` 默认走 Rust TUI，`--tui legacy` 或 `MIAO_TUI=legacy` 回退；显式选 Rust 但二进制缺失时报告安装不完整，默认路径缺二进制时告警并回退到 TS TUI（`selectedTui`/`rustTuiBinary`） |
 
 ## T2 传输层（crates/miao-tui/src/transport.rs）
 
@@ -131,3 +132,45 @@
 | `/init`、`/review` | 有意偏离（Phase 4 宿主移植） | 插件宿主注入，纯引擎客户端拿不到 |
 | 模板的 `agent`/`model`/`variant`/`subtask` 执行默认值 | 有意偏离（Phase 4 宿主移植） | 引擎要求 agent 带捕获 manifest；本片只发 `{name, arguments}` |
 | MCP 命令（`:mcp`）与 skills 来源 | 有意偏离（Phase 4 宿主移植） | 数据来自宿主服务 |
+
+## T9 渲染对齐
+
+| 行为 | 状态 | 备注 |
+|---|---|---|
+| assistant 文本按 markdown 渲染：标题、强调、行内代码、围栏、列表、引用、分隔线、表格 | 已对齐 | `markdown.rs`；围栏内不做行内解析，未闭合围栏保留正文 |
+| 语法高亮（代码块与 diff 的 tree-sitter 着色） | 有意偏离（依赖） | Rust 侧按主题色区分 `+`/`-`/`@@` 与代码块底纹，不引入 tree-sitter |
+| 引擎工具名投影为产品词汇（`read_file`→`read` 等） | 已对齐 | `tool::product_name`；子集同 `bridge.ts:TOOL_IDS` |
+| 引擎输入字段投影（`path`→`filePath`、`text`→`content`、argv→command、task 描述） | 已对齐 | `tool::product_input` |
+| shell 结果投影：stdout+stderr+`[exit code N]`/超时/信号/未执行，拒绝原因只显示错误文本 | 已对齐 | `tool::shell_text`；ANSI 序列先剥离 |
+| bash 行：命令首行 + 输出前 6 行折叠 | 已对齐 | TS 折叠态同 6 行 |
+| read 行：路径 + `Read N lines`/`Read image`/`Read N entries`（truncated 注明） | 已对齐 | 读引擎结果里的 `text`/`entries` |
+| glob/grep 行：pattern（含 path）+ 匹配数 | 已对齐 | 匹配数来自结果 `matches` |
+| write/edit/apply_patch：文件摘要 + 每个文件的 `◆ action +N −M` 与 12 行 diff | 已对齐 | diff 来自已提交的 `tool.completed.display`；跳过 `Index:`/`---`/`+++` 头 |
+| todowrite：`[✓] id: content ← deps`，in_progress warning、其余 muted | 已对齐 | todo 取自输入的 `todos`；结果 `{value:{todos}}` 兜底 |
+| question：每个问题 + 答案（无答案 `(no answer)`） | 已对齐 | 答案来自结果 `answers` |
+| webfetch/websearch/skill：单行，不显示正文 | 已对齐 | 与 TS 折叠态一致 |
+| task：描述 + 结果摘要 | 有意偏离（后续切片） | 内联子会话 transcript 需要订阅子 Session 的 wire，不在本片 |
+| 工具行展开/折叠（TS 的 click to view） | 有意偏离（交互面） | transcript 当前是只读阅读面；预览行数按折叠态 |
+| transcript 中持久化消息以外的事件类型 | 已对齐 | 仍只由 snapshot 投影消息；`tool.completed` 只补 display diff |
+
+## T10 集成面
+
+| 行为 | 状态 | 备注 |
+|---|---|---|
+| `tui.json` 的 `attention` 段：全局目录 → `MIAO_TUI_CONFIG` → 项目祖先链，就近覆盖，JSONC | 已对齐 | `config.rs:files/merge`；默认值同 `packages/miao/src/config/tui.ts` |
+| 未知键、非法值只告警，坏文件整份跳过 | 已对齐 | `config.rs`；告警在进 raw mode 前写到 stderr |
+| 通知门控：`enabled=false` 默认、焦点未知/聚焦时不发通知、声音不受焦点影响 | 已对齐 | `platform/attention.rs`；对齐 `attention.ts` 的 `focus_unknown` 与 `when:"always"` 声音 |
+| OSC 9（iTerm/WezTerm/Windows Terminal）与 OSC 777，tmux passthrough；80/240 字符截断、剥 ANSI | 已对齐 | `attention::sequence` / `normalize` |
+| 触发点：`approval.requested`、`question.requested`、`run.finished(failed|completed)`，同一 request 只发一次 | 已对齐 | `engine::attention_event` + `App::announce`；只针对当前打开 Session |
+| `run.finished(reason=interrupted)` 不通知 | 有意偏离 | TS 的 abort 会走 `session.error` 发「Session aborted」；Rust 侧静默，避免用户自己按 Esc 后的噪音 |
+| 内置音包（`miao.default` 的 6 个 mp3） | 有意偏离（资源） | 不随二进制打包；配置了 `sounds.<name>` 就播放文件，否则终端铃 |
+| 插件音包注册（`registerPack` / `activate`） | 有意偏离（Phase 4 宿主移植） | 属插件宿主能力 |
+| 剪贴板写入：OSC 52（tmux/ST 透传）+ pbcopy / wl-copy / xclip / xsel / PowerShell | 已对齐 | `platform/clipboard.rs:copy` |
+| 剪贴板读取：`MTTY_CLIPBOARD_FILE`（10 秒、读后消费）→ 平台图片 → 平台文本 | 已对齐 | `clipboard::read`；读取在后台线程，空粘贴与 `Ctrl+V` 触发 |
+| 图片附件：`[Image N] ` 标记 + `{mime,data}` 随 admit 发送，失败随文本恢复 | 已对齐 | `editor::Composer::attach_image` / `restore_with`、`engine::Handle::prompt` |
+| 外编 `<leader>e`：`$VISUAL`/`$EDITOR`、临时 0600 文件、挂起/恢复终端、退出码 0 读回并删除 | 已对齐 | `platform/editor.rs`、`terminal::suspend/resume`、drive 循环 |
+| Zed 选区：`ZED_TERM`/`TERM_PROGRAM=zed` 下读活动编辑器选区，UTF-8 偏移→行列，格式化前缀，同一选区只发一次 | 已对齐 | `platform/zed.rs`；用系统 `sqlite3 -readonly -json`，无 SQLite C 依赖，`sqlite3` 缺失时静默不可用 |
+| 光标无选区时仍提示已打开文件 | 已对齐 | 对齐 `formatEditorContext` 的 opened-file 分支 |
+| Windows 终端：VT 输出 / raw mode / 焦点事件 | 已对齐（依赖 crossterm） | 不写平台代码；Windows CI 构建与冒烟验收 |
+| 鼠标框选复制 | 有意偏离（交互面） | Rust 侧 `Ctrl+Y` 复制最后一条回复；transcript 仍是只读阅读面 |
+| `/remote-control` | 有意偏离（宿主未交付） | `miao-engine serve` 没有 remote 方法；由宿主 Runtime/Hub 提供，见 `specs/remote-control.md` |

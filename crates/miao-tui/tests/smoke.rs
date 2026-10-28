@@ -260,6 +260,47 @@ fn boots_renders_panes_and_quits_on_ctrl_c() {
 }
 
 #[test]
+fn the_transcript_renders_markdown_and_tool_rows() {
+    let mut harness = Harness::spawn_engine("render");
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        plain(&harness.text())
+    );
+    // Rows sort by recency: ses_a is first, and ses_b carries the renderer
+    // fixture (markdown document plus one completed read).
+    harness.write(b"\x1b[B");
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "Fixture Notes", Duration::from_secs(2)),
+        "the markdown heading did not render:\n{}",
+        plain(&harness.text())
+    );
+    assert!(
+        wait_for_plain(&harness, "Read 2 lines", Duration::from_secs(2)),
+        "the tool summary did not render:\n{}",
+        plain(&harness.text())
+    );
+    let rendered = plain(&harness.text());
+    for expected in [
+        "• bold and code",
+        "name │ value",
+        "✓ read  src/lib.rs",
+        "⎿ Read 2 lines",
+    ] {
+        assert!(
+            rendered.contains(expected),
+            "transcript is missing {expected:?}:\n{rendered}"
+        );
+    }
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
 fn resize_keeps_process_alive() {
     let mut harness = Harness::spawn_engine("resize");
     assert!(
@@ -468,8 +509,10 @@ fn the_leader_opens_the_theme_dialog_and_saves_the_choice() {
         plain(&harness.text())
     );
     harness.write(b"\x18t");
+    // The menu holds every built-in theme and opens around the active one, so
+    // the first visible window is the end of the list rather than its head.
     assert!(
-        wait_for_plain(&harness, "catppuccin-frappe", Duration::from_secs(2)),
+        wait_for_plain(&harness, "everforest", Duration::from_secs(2)),
         "the theme dialog did not render:\n{}",
         plain(&harness.text())
     );

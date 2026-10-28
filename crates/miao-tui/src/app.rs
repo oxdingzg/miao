@@ -1,14 +1,18 @@
 use std::path::PathBuf;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::Frame;
+use serde_json::Value;
 
 use crate::commands::{self, Builtin};
 use crate::dialogs::{AccountInfo, Action as DialogAction, ConfirmKind, Dialog, ModelInfo, Row};
 use crate::editor::Action;
 use crate::engine;
-use crate::event::AppEvent;
+use crate::event::{AppEvent, Bus};
+use crate::keybinds::{self, Keymap};
 use crate::pane::{render_dialog, Home, Pane, Panel, PanelKind, Shell};
+use crate::platform::attention::{self, Attention};
+use crate::platform::{clipboard, editor, zed};
 use crate::session::{SessionState, SessionSummary};
 use crate::state::{self, StashEntry};
 use crate::status::UsageSummary;
@@ -22,6 +26,16 @@ pub enum Screen {
     Session,
 }
 
+/// What the process should open once the engine is attached. The launch flags
+/// are intents rather than commands: each one is consumed at the point the
+/// engine answers, so a failed `--session` never swallows a later `--prompt`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Startup {
+    pub session: Option<String>,
+    pub continue_last: bool,
+    pub prompt: Option<String>,
+}
+
 pub struct App {
     pub shell: Shell,
     pub home: Home,
@@ -33,6 +47,7 @@ pub struct App {
     dialog: Option<Dialog>,
     /// `Ctrl+X` was pressed; the next key completes the chord.
     leader: bool,
+    keys: Keymap,
     workspace: PathBuf,
     /// What the engine was started with, shown by the debug dialog.
     settings: Option<engine::Settings>,
@@ -49,10 +64,29 @@ pub struct App {
     /// Template commands discovered at startup; a slash prompt naming one is
     /// rendered and admitted as a command instead of plain text.
     templates: Vec<commands::Template>,
+    attention: Attention,
+    /// Set once the engine is attached; clipboard reads report back through it.
+    bus: Option<Bus>,
+    pending_editor: Option<editor::Request>,
+    /// Approval and question ids already announced.
+    notified: Vec<String>,
+    /// The Zed selection already sent with an earlier prompt.
+    zed_selection_key: Option<String>,
+    clipboard_busy: bool,
+    startup: Startup,
+    /// Built-in plus custom themes, in menu order.
+    themes: theme::Catalog,
 }
 
 impl App {
-    pub fn new(workspace: PathBuf, theme: Theme) -> Self {
+    pub fn new(
+        workspace: PathBuf,
+        theme: Theme,
+        themes: theme::Catalog,
+        keys: Keymap,
+        attention_config: crate::config::AttentionConfig,
+        startup: Startup,
+    ) -> Self {
         let home = Home::new(theme.clone());
         let templates = commands::templates(&workspace);
         let mut shell = Shell::new(&workspace, theme);
@@ -69,6 +103,7 @@ impl App {
             quit: false,
             dialog: None,
             leader: false,
+            keys,
             workspace,
             settings: None,
             models: Vec::new(),
@@ -79,7 +114,44 @@ impl App {
             pending_models: false,
             pending_accounts: false,
             templates,
+            attention: Attention::new(attention_config),
+            bus: None,
+            pending_editor: None,
+            notified: Vec::new(),
+            zed_selection_key: None,
+            clipboard_busy: false,
+            startup,
+            themes,
         }
+    }
+
+    pub fn set_bus(&mut self, bus: Bus) {
+        self.bus = Some(bus);
+    }
+
+    /// Act on the launch flags once the engine is attached. `--session` opens
+    /// that Session directly; `--continue` asks for the catalog because only
+    /// the engine knows which Session was updated last.
+    pub fn start(&mut self) {
+        let Some(engine) = self.engine.clone() else {
+            return;
+        };
+        if let Some(session) = self.startup.session.clone() {
+            engine.open(&session);
+            return;
+        }
+        if self.startup.continue_last {
+            engine.catalog();
+            return;
+        }
+        if self.startup.prompt.is_some() {
+            engine.new_session();
+        }
+    }
+
+    /// The editor the drive loop should run after suspending the terminal.
+    pub fn take_editor_request(&mut self) -> Option<editor::Request> {
+        self.pending_editor.take()
     }
 
     pub fn attach_engine(&mut self, engine: engine::Handle) {
@@ -115,9 +187,38 @@ impl App {
             AppEvent::Key(key) => self.handle_key(key),
             AppEvent::Paste(text) => {
                 if self.screen == Screen::Session {
-                    self.shell.composer.paste(&text);
+                    // Windows Terminal can surface an image-only clipboard as an
+                    // empty bracketed paste; reading the clipboard is the only
+                    // way to find out what it held.
+                    if text.is_empty() {
+                        self.read_clipboard();
+                    } else {
+                        self.shell.composer.paste(&text);
+                    }
                 }
             }
+            AppEvent::Focus(focused) => self.attention.set_focus(focused),
+            AppEvent::Mouse(mouse) => self.handle_mouse(mouse),
+            AppEvent::Attention { kind, id } => self.announce(kind, id),
+            AppEvent::Clipboard(content) => {
+                self.clipboard_busy = false;
+                match content {
+                    Some(clipboard::Content::Image { mime, data }) => {
+                        let count = self.shell.composer.attach_image(&mime, &data);
+                        self.notice(&format!("attached image {count}"));
+                    }
+                    Some(clipboard::Content::Text(text)) => self.shell.composer.paste(&text),
+                    None => self.notice("the clipboard is empty"),
+                }
+            }
+            AppEvent::EditorFinished(result) => match result {
+                Ok(Some(text)) => {
+                    self.shell.composer.restore(&text);
+                    self.shell.composer.notice = None;
+                }
+                Ok(None) => {}
+                Err(message) => self.notice(&message),
+            },
             AppEvent::Resize { .. } => {}
             AppEvent::Sessions(rows) => {
                 self.home.set_rows(rows);
@@ -128,6 +229,7 @@ impl App {
                 if matches!(self.dialog, Some(Dialog::Sessions(_))) {
                     self.reopen_sessions_dialog();
                 }
+                self.continue_startup();
             }
             AppEvent::Models(models) => {
                 self.models = models;
@@ -181,12 +283,17 @@ impl App {
                 self.screen = Screen::Session;
                 self.sync_panel();
                 self.update_status();
+                self.continue_prompt();
             }
             AppEvent::ActionFailed(message) => {
                 self.shell.composer.notice = Some(message);
             }
-            AppEvent::PromptFailed { text, message } => {
-                self.shell.composer.restore(&text);
+            AppEvent::PromptFailed {
+                text,
+                attachments,
+                message,
+            } => {
+                self.shell.composer.restore_with(&text, attachments);
                 self.shell.composer.notice = Some(message);
             }
             AppEvent::EngineFailure(message) => {
@@ -205,7 +312,7 @@ impl App {
         if self.dialog.is_some() {
             // Dialogs are modal: nothing reaches the page below, and Esc
             // closes the top layer. Ctrl+C still quits.
-            if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            if self.keys.matches(keybinds::Action::InputClear, &key) {
                 self.quit = true;
                 return;
             }
@@ -217,17 +324,39 @@ impl App {
             self.handle_leader(key);
             return;
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('x') {
+        if self.keys.is_leader(&key) {
             self.leader = true;
             return;
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('p') {
+        if self.keys.matches(keybinds::Action::CommandList, &key) {
             self.open_palette();
             return;
         }
         match self.screen {
             Screen::Home => self.handle_home_key(key),
             Screen::Session => self.handle_session_key(key),
+        }
+    }
+
+    /// The wheel moves through the open dialog, the Session list, or the
+    /// transcript. Buttons are ignored: text selection stays with the terminal.
+    fn handle_mouse(&mut self, mouse: MouseEvent) {
+        let delta = match mouse.kind {
+            MouseEventKind::ScrollUp => -1,
+            MouseEventKind::ScrollDown => 1,
+            _ => return,
+        };
+        if self.dialog.is_some() {
+            if let Some(list) = self.dialog.as_mut().and_then(Dialog::list_mut) {
+                list.move_cursor(delta);
+            }
+            return;
+        }
+        // A stray wheel event must not leave the leader armed.
+        self.leader = false;
+        match self.screen {
+            Screen::Home => self.home.move_cursor(delta),
+            Screen::Session => self.shell.scroll_transcript(delta * 3),
         }
     }
 
@@ -240,16 +369,18 @@ impl App {
     }
 
     fn handle_leader(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Char('m') => self.run_builtin(Builtin::Models),
-            KeyCode::Char('t') => self.run_builtin(Builtin::Theme),
-            KeyCode::Char('l') => self.run_builtin(Builtin::Sessions),
-            KeyCode::Char('n') => self.run_builtin(Builtin::NewSession),
-            KeyCode::Char('s') => self.run_builtin(Builtin::Status),
-            KeyCode::Char('d') => self.run_builtin(Builtin::Debug),
-            KeyCode::Char('p') => self.run_builtin(Builtin::Stash),
-            KeyCode::Char('P') => self.run_builtin(Builtin::StashDraft),
-            KeyCode::Char('q') => self.run_builtin(Builtin::Quit),
+        match self.keys.leader_action(&key) {
+            Some(keybinds::Action::ModelList) => self.run_builtin(Builtin::Models),
+            Some(keybinds::Action::ThemeList) => self.run_builtin(Builtin::Theme),
+            Some(keybinds::Action::SessionList) => self.run_builtin(Builtin::Sessions),
+            Some(keybinds::Action::SessionNew) => self.run_builtin(Builtin::NewSession),
+            Some(keybinds::Action::StatusView) => self.run_builtin(Builtin::Status),
+            Some(keybinds::Action::DebugView) => self.run_builtin(Builtin::Debug),
+            Some(keybinds::Action::Stash) => self.run_builtin(Builtin::Stash),
+            Some(keybinds::Action::StashDraft) => self.run_builtin(Builtin::StashDraft),
+            Some(keybinds::Action::EditorOpen) => self.run_builtin(Builtin::Editor),
+            Some(keybinds::Action::CopyMessage) => self.copy_last_response(),
+            Some(keybinds::Action::AppExit) => self.run_builtin(Builtin::Quit),
             _ => {}
         }
     }
@@ -276,6 +407,7 @@ impl App {
             Builtin::Debug => self.open_debug(),
             Builtin::Stash => self.open_stash(),
             Builtin::StashDraft => self.stash_current(),
+            Builtin::Editor => self.open_editor(),
             Builtin::Help => self.open_help(),
             Builtin::Quit => self.quit = true,
         }
@@ -294,7 +426,7 @@ impl App {
 
     fn open_theme(&mut self) {
         let current = self.shell.theme().name.clone();
-        self.open_dialog(Dialog::theme(&current));
+        self.open_dialog(Dialog::theme(&current, &self.themes));
     }
 
     fn open_sessions(&mut self) {
@@ -445,8 +577,9 @@ impl App {
     fn choose(&mut self, index: usize) {
         match self.dialog.take() {
             Some(Dialog::Theme(_)) => {
-                if let Some(name) = theme::names().get(index) {
-                    self.apply_theme(name);
+                let name = self.themes.names().get(index).map(|name| name.to_string());
+                if let Some(name) = name {
+                    self.apply_theme(&name);
                 }
             }
             Some(Dialog::Models(_)) => {
@@ -631,8 +764,78 @@ impl App {
         }
     }
 
+    /// Tell the user about a Session event, at most once per pending request.
+    fn announce(&mut self, kind: attention::Kind, id: Option<String>) {
+        if let Some(id) = id {
+            if self.notified.contains(&id) {
+                return;
+            }
+            self.notified.push(id);
+            if self.notified.len() > 64 {
+                self.notified.remove(0);
+            }
+        }
+        let title = self
+            .session
+            .as_ref()
+            .map(|session| session.label().to_string())
+            .unwrap_or_else(|| "miao".to_string());
+        self.attention.notify(kind, &title);
+    }
+
+    /// Read the clipboard off the UI thread. Text goes into the composer; an
+    /// image becomes a numbered attachment.
+    fn read_clipboard(&mut self) {
+        if self.clipboard_busy {
+            return;
+        }
+        let Some(bus) = self.bus.clone() else {
+            return;
+        };
+        self.clipboard_busy = true;
+        let host_file = std::env::var_os("MTTY_CLIPBOARD_FILE").map(PathBuf::from);
+        std::thread::spawn(move || {
+            let content = clipboard::read(host_file.as_deref());
+            bus.send(AppEvent::Clipboard(content));
+        });
+    }
+
+    fn copy_last_response(&mut self) {
+        let Some(text) = self.shell.last_response() else {
+            self.notice("there is no response to copy");
+            return;
+        };
+        clipboard::copy(&text);
+        self.notice("copied the last response");
+    }
+
+    fn open_editor(&mut self) {
+        if self.screen != Screen::Session {
+            self.notice("open a Session to compose a prompt");
+            return;
+        }
+        let text = self.shell.composer.editor.text().to_string();
+        match editor::request(&self.workspace, text) {
+            Ok(request) => self.pending_editor = Some(request),
+            Err(message) => self.notice(&message),
+        }
+    }
+
+    /// Prepend the current Zed selection once per selection. The engine sees
+    /// one prompt string, so the context travels as text rather than a part.
+    fn zed_context(&mut self) -> Option<String> {
+        let selection = zed::selection(&self.workspace)?;
+        let context = zed::context(&selection)?;
+        let key = zed::key(&selection);
+        if self.zed_selection_key.as_deref() == Some(key.as_str()) {
+            return None;
+        }
+        self.zed_selection_key = Some(key);
+        Some(context)
+    }
+
     fn apply_theme(&mut self, name: &str) {
-        let Some(palette) = theme::builtin(name) else {
+        let Some(palette) = self.themes.palette(name) else {
             return;
         };
         state::save_theme(name);
@@ -658,9 +861,11 @@ impl App {
     }
 
     fn handle_home_key(&mut self, key: KeyEvent) {
+        if self.keys.matches(keybinds::Action::AppExit, &key) {
+            self.quit = true;
+            return;
+        }
         match (key.code, key.modifiers) {
-            (KeyCode::Char('c' | 'd'), KeyModifiers::CONTROL) => self.quit = true,
-            (KeyCode::Char('q'), KeyModifiers::NONE) => self.quit = true,
             (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
                 self.home.move_cursor(1);
             }
@@ -688,7 +893,8 @@ impl App {
     }
 
     fn handle_session_key(&mut self, key: KeyEvent) {
-        if key.code == KeyCode::Esc {
+        let action = |action| self.keys.matches(action, &key);
+        if action(keybinds::Action::SessionInterrupt) {
             if self.shell.composer.dismiss_completion() {
                 return;
             }
@@ -710,43 +916,60 @@ impl App {
             self.leave_session();
             return;
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
-            if self.shell.composer.editor.is_empty() {
-                self.quit = true;
-                return;
-            }
+        if action(keybinds::Action::InputClear) && !self.shell.composer.editor.is_empty() {
             self.shell.composer.editor.clear();
             self.shell.composer.dismiss_completion();
             return;
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('r') {
+        // `app_exit` shares `ctrl+d` with `input_delete`; like the TypeScript
+        // host it only exits while the composer is empty, so `ctrl+d` still
+        // deletes forward when there is a draft.
+        if action(keybinds::Action::AppExit) && self.shell.composer.editor.is_empty() {
+            self.quit = true;
+            return;
+        }
+        if action(keybinds::Action::SessionRename) {
             if let Some(session) = self.session.as_ref() {
                 let dialog = Dialog::rename(&session.id, session.label());
                 self.open_dialog(dialog);
             }
             return;
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('o') {
+        if action(keybinds::Action::Accounts) {
             self.open_accounts();
             return;
         }
-        let ctrl_alt = key.modifiers.contains(KeyModifiers::CONTROL)
-            && key.modifiers.contains(KeyModifiers::ALT);
-        if matches!(key.code, KeyCode::PageUp) || (ctrl_alt && key.code == KeyCode::Char('y')) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('v') {
+            self.read_clipboard();
+            return;
+        }
+        if action(keybinds::Action::CopyMessage) {
+            self.copy_last_response();
+            return;
+        }
+        if action(keybinds::Action::PageUp) {
             self.shell.scroll_transcript(-5);
             return;
         }
-        if matches!(key.code, KeyCode::PageDown) || (ctrl_alt && key.code == KeyCode::Char('e')) {
+        if action(keybinds::Action::PageDown) {
             self.shell.scroll_transcript(5);
+            return;
+        }
+        if action(keybinds::Action::LineUp) {
+            self.shell.scroll_transcript(-1);
+            return;
+        }
+        if action(keybinds::Action::LineDown) {
+            self.shell.scroll_transcript(1);
             return;
         }
         if self.handle_panel_key(key) {
             return;
         }
-        match self.shell.composer.handle_key(key) {
+        match self.shell.composer.handle_key(key, &self.keys) {
             Action::None => {}
             Action::Quit => self.quit = true,
-            Action::Submit(text) => self.submit(text),
+            Action::Submit { text, attachments } => self.submit(text, attachments),
         }
     }
 
@@ -858,13 +1081,51 @@ impl App {
         self.shell.title.set_status(Some(status));
     }
 
-    fn submit(&mut self, text: String) {
+    /// `--continue` opens the Session the engine reports as most recently
+    /// updated. The catalog also carries archived Sessions, which "continue"
+    /// must not pick.
+    fn continue_startup(&mut self) {
+        if !self.startup.continue_last || self.screen != Screen::Home || self.dialog.is_some() {
+            return;
+        }
+        self.startup.continue_last = false;
+        match self.catalog.iter().find(|row| row.archived_at_ms.is_none()) {
+            Some(row) => {
+                let id = row.id.clone();
+                if let Some(engine) = self.engine.clone() {
+                    engine.open(&id);
+                }
+            }
+            None => self.start_unsaved(),
+        }
+    }
+
+    /// With no Session to continue, a launch prompt still gets a Session of its
+    /// own; without one the TUI stays on the home list with an explanation.
+    fn start_unsaved(&mut self) {
+        if self.startup.prompt.is_some() {
+            if let Some(engine) = self.engine.clone() {
+                engine.new_session();
+            }
+            return;
+        }
+        self.notice("no Sessions to continue");
+    }
+
+    fn continue_prompt(&mut self) {
+        let Some(text) = self.startup.prompt.take() else {
+            return;
+        };
+        self.submit(text, Vec::new());
+    }
+
+    fn submit(&mut self, text: String, attachments: Vec<Value>) {
         let Some(session_id) = self.session.as_ref().map(|session| session.id.clone()) else {
-            self.shell.composer.restore(&text);
+            self.shell.composer.restore_with(&text, attachments);
             return;
         };
         let Some(engine) = self.engine.clone() else {
-            self.shell.composer.restore(&text);
+            self.shell.composer.restore_with(&text, attachments);
             return;
         };
         self.shell.composer.notice = None;
@@ -882,7 +1143,13 @@ impl App {
                 return;
             }
         }
-        engine.prompt(&session_id, &text);
+        // Editor context is a prompt prefix rather than a wire field: the
+        // engine admits one text string, and the TS client does the same.
+        let text = match self.zed_context() {
+            Some(context) => format!("{context}\n\n{text}"),
+            None => text,
+        };
+        engine.prompt(&session_id, &text, attachments);
     }
 
     fn leave_session(&mut self) {
@@ -894,8 +1161,7 @@ impl App {
         self.shell.panel = None;
         self.shell.set_session(None);
         self.shell.title.set_status(None);
-        self.shell.composer.editor.clear();
-        self.shell.composer.dismiss_completion();
+        self.shell.composer.clear();
         self.dialog = None;
         self.leader = false;
         if let Some(engine) = self.engine.as_ref() {
@@ -938,6 +1204,10 @@ mod tests {
     use crate::theme::{self, DEFAULT_THEME};
 
     fn app() -> App {
+        app_with(Startup::default())
+    }
+
+    fn app_with(startup: Startup) -> App {
         let palette = theme::builtin(DEFAULT_THEME).expect("default theme is built in");
         App::new(
             PathBuf::from("."),
@@ -945,6 +1215,10 @@ mod tests {
                 name: DEFAULT_THEME.to_string(),
                 palette,
             },
+            theme::Catalog::builtin(),
+            Keymap::default(),
+            crate::config::AttentionConfig::default(),
+            startup,
         )
     }
 
@@ -976,6 +1250,128 @@ mod tests {
         }
     }
 
+    fn wheel(kind: MouseEventKind) -> AppEvent {
+        AppEvent::Mouse(MouseEvent {
+            kind,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        })
+    }
+
+    #[test]
+    fn the_wheel_moves_the_home_selection_and_ignores_buttons() {
+        let mut app = app();
+        app.home.rows = vec![summary("a", 2), summary("b", 1)];
+
+        app.handle(wheel(MouseEventKind::ScrollDown));
+        assert_eq!(app.home.selected, 1);
+        app.handle(wheel(MouseEventKind::ScrollDown));
+        assert_eq!(app.home.selected, 1, "the selection stops at the end");
+        app.handle(wheel(MouseEventKind::ScrollUp));
+        assert_eq!(app.home.selected, 0);
+
+        app.handle(wheel(MouseEventKind::Moved));
+        assert_eq!(app.home.selected, 0, "only the wheel does anything");
+    }
+
+    /// A row that `--continue` must skip.
+    fn archived(id: &str, updated_at_ms: u64) -> SessionSummary {
+        SessionSummary {
+            archived_at_ms: Some(1),
+            ..summary(id, updated_at_ms)
+        }
+    }
+
+    #[test]
+    fn a_launch_session_opens_directly() {
+        let mut app = app_with(Startup {
+            session: Some("ses_known".into()),
+            ..Startup::default()
+        });
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.start();
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Open(id)) if id == "ses_known"
+        ));
+        assert!(requests.try_recv().is_err(), "nothing else is requested");
+    }
+
+    #[test]
+    fn continue_opens_the_newest_session_that_is_not_archived() {
+        let mut app = app_with(Startup {
+            continue_last: true,
+            ..Startup::default()
+        });
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.start();
+        assert!(matches!(requests.try_recv(), Ok(engine::Request::Catalog)));
+        // The engine answers the catalog most recently updated first, so the
+        // newest unarchived row is the one right after the archived ones.
+        app.handle(AppEvent::Catalog(vec![
+            archived("ses_archived", 300),
+            summary("ses_new", 200),
+            summary("ses_old", 100),
+        ]));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Open(id)) if id == "ses_new"
+        ));
+    }
+
+    #[test]
+    fn continue_without_sessions_explains_instead_of_opening_anything() {
+        let mut app = app_with(Startup {
+            continue_last: true,
+            ..Startup::default()
+        });
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.start();
+        app.handle(AppEvent::Catalog(Vec::new()));
+        assert!(requests.try_recv().is_ok(), "the catalog request");
+        assert!(requests.try_recv().is_err(), "nothing is opened");
+        assert_eq!(
+            app.home.notice().map(str::to_string),
+            Some("no Sessions to continue".into())
+        );
+    }
+
+    #[test]
+    fn a_launch_prompt_creates_a_session_and_is_sent_once_it_opens() {
+        let mut app = app_with(Startup {
+            prompt: Some("hello".into()),
+            ..Startup::default()
+        });
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.start();
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::NewSession)
+        ));
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_new", 1)),
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Prompt { session_id, text, .. })
+                if session_id == "ses_new" && text == "hello"
+        ));
+        // A second open must not resend the launch prompt.
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_other", 2)),
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        assert!(requests.try_recv().is_err());
+    }
+
     #[test]
     fn ctrl_c_clears_non_empty_input_before_quitting() {
         let mut app = session_app();
@@ -988,11 +1384,51 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_d_deletes_forward_before_it_quits() {
+        let mut app = session_app();
+        app.handle(key(KeyCode::Char('h'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('i'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Left, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('d'), KeyModifiers::CONTROL));
+        assert!(!app.quit);
+        assert_eq!(app.shell.composer.editor.text(), "h");
+        app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('d'), KeyModifiers::CONTROL));
+        assert!(app.quit);
+    }
+
+    #[test]
     fn typing_q_goes_into_the_composer_instead_of_quitting() {
         let mut app = session_app();
         app.handle(key(KeyCode::Char('q'), KeyModifiers::NONE));
         assert!(!app.quit);
         assert_eq!(app.shell.composer.editor.text(), "q");
+    }
+
+    #[test]
+    fn a_configured_keybind_replaces_the_default_stroke() {
+        let mut app = app_with(Startup::default());
+        app.keys = Keymap::from_overrides(&std::collections::BTreeMap::from([(
+            "command_list".to_string(),
+            Some(vec!["ctrl+space".to_string()]),
+        )]));
+        app.handle(key(KeyCode::Char('p'), KeyModifiers::CONTROL));
+        assert!(app.dialog.is_none());
+        app.handle(key(KeyCode::Char(' '), KeyModifiers::CONTROL));
+        assert!(app.dialog.is_some());
+    }
+
+    #[test]
+    fn a_configured_leader_chord_runs_its_action() {
+        let mut app = app();
+        app.keys = Keymap::from_overrides(&std::collections::BTreeMap::from([(
+            "theme_list".to_string(),
+            Some(vec!["<leader>c".to_string()]),
+        )]));
+        leader(&mut app, 't');
+        assert!(app.dialog.is_none());
+        leader(&mut app, 'c');
+        assert!(app.dialog.is_some());
     }
 
     #[test]

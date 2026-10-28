@@ -2,19 +2,41 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 const USAGE: &str =
-    "usage: miao-tui [--workspace <dir>] [--db <engine.db>] [--model <provider/model>]";
+    "usage: miao-tui [--workspace <dir>] [--db <engine.db>] [--model <provider/model>]
+                  [--config-dir <dir>] [--session <id>] [--continue] [--prompt <text>]";
+
+/// The release build injects the product version; a source build falls back to
+/// the crate's own version.
+const VERSION: &str = match option_env!("MIAO_TUI_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
 
 struct Options {
     workspace: PathBuf,
     db: Option<PathBuf>,
     model: Option<String>,
+    config_dir: Option<PathBuf>,
+    session: Option<String>,
+    continue_last: bool,
+    prompt: Option<String>,
+}
+
+enum Invocation {
+    Run(Options),
+    Help,
+    Version,
 }
 
 fn main() -> ExitCode {
     match parse(std::env::args().skip(1)) {
-        Ok(Some(options)) => launch(options),
-        Ok(None) => {
+        Ok(Invocation::Run(options)) => launch(options),
+        Ok(Invocation::Help) => {
             println!("{USAGE}");
+            ExitCode::SUCCESS
+        }
+        Ok(Invocation::Version) => {
+            println!("miao-tui {VERSION}");
             ExitCode::SUCCESS
         }
         Err(message) => {
@@ -24,34 +46,57 @@ fn main() -> ExitCode {
     }
 }
 
-fn parse(args: impl Iterator<Item = String>) -> Result<Option<Options>, String> {
+fn parse(mut args: impl Iterator<Item = String>) -> Result<Invocation, String> {
     let mut workspace: Option<PathBuf> = None;
     let mut db: Option<PathBuf> = None;
     let mut model: Option<String> = None;
-    let mut args = args;
+    let mut config_dir: Option<PathBuf> = None;
+    let mut session: Option<String> = None;
+    let mut continue_last = false;
+    let mut prompt: Option<String> = None;
     while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "-h" | "--help" => return Ok(None),
-            "--workspace" => {
-                let value = args.next().ok_or("--workspace requires a directory")?;
-                workspace = Some(PathBuf::from(value));
-            }
-            "--db" => {
-                let value = args.next().ok_or("--db requires a database path")?;
-                db = Some(PathBuf::from(value));
-            }
-            "--model" => {
-                let value = args.next().ok_or("--model requires a provider/model")?;
-                model = Some(value);
+        // Both `--flag value` and `--flag=value` are accepted; the CLI passes
+        // the former, a person typing the command often uses the latter.
+        let (name, inline) = match arg.split_once('=') {
+            Some((name, value)) => (name.to_string(), Some(value.to_string())),
+            None => (arg, None),
+        };
+        let mut value = |name: &str| {
+            inline
+                .clone()
+                .or_else(|| args.next())
+                .ok_or_else(|| format!("{name} requires a value"))
+        };
+        match name.as_str() {
+            "-h" | "--help" => return Ok(Invocation::Help),
+            "-v" | "--version" => return Ok(Invocation::Version),
+            "--workspace" => workspace = Some(PathBuf::from(value("--workspace")?)),
+            "--db" => db = Some(PathBuf::from(value("--db")?)),
+            "--model" => model = Some(value("--model")?),
+            "--config-dir" => config_dir = Some(PathBuf::from(value("--config-dir")?)),
+            "--session" => session = Some(value("--session")?),
+            "--prompt" => prompt = Some(value("--prompt")?),
+            "--continue" => {
+                if inline.is_some() {
+                    return Err("--continue takes no value".into());
+                }
+                continue_last = true;
             }
             other => return Err(format!("unexpected argument \"{other}\"")),
         }
     }
-    Ok(workspace.map(|workspace| Options {
-        workspace,
-        db,
-        model,
-    }))
+    Ok(match workspace {
+        Some(workspace) => Invocation::Run(Options {
+            workspace,
+            db,
+            model,
+            config_dir,
+            session,
+            continue_last,
+            prompt,
+        }),
+        None => Invocation::Help,
+    })
 }
 
 fn launch(options: Options) -> ExitCode {
@@ -61,7 +106,15 @@ fn launch(options: Options) -> ExitCode {
         return ExitCode::from(2);
     }
     let workspace = std::fs::canonicalize(&workspace).unwrap_or(workspace);
-    match miao_tui::run(workspace, options.db, options.model) {
+    match miao_tui::run(miao_tui::Launch {
+        workspace,
+        db: options.db,
+        model: options.model,
+        config_dir: options.config_dir,
+        session: options.session,
+        continue_last: options.continue_last,
+        prompt: options.prompt,
+    }) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("miao-tui: {err}");
