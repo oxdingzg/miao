@@ -1163,6 +1163,24 @@ mod tests {
     use crate::session::{Choice, QuestionItem};
 
     #[test]
+    fn a_failed_turn_renders_its_message_as_an_error_line() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let transcript = Transcript {
+            entries: vec![Entry::Error {
+                message: "provider unavailable".into(),
+            }],
+            ..Transcript::default()
+        };
+        let lines = transcript_lines(&transcript, &theme);
+        assert_eq!(lines[0].to_string(), "✗ provider unavailable");
+        assert_eq!(lines[0].spans[0].style.fg, Some(theme.palette.error));
+    }
+
+    #[test]
     fn the_last_response_is_the_newest_assistant_text() {
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let mut shell = Shell::new(
