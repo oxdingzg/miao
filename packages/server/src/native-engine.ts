@@ -5,6 +5,7 @@ import type { Agent } from "@miao/schema/agent"
 import { Context, Effect } from "effect"
 import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import type { Permission } from "@miao/schema/permission"
+import type { PermissionSaved } from "@miao/schema/permission-saved"
 import type { Question } from "@miao/schema/question"
 import type { ConflictError } from "@miao/protocol/errors"
 import type { Location } from "@miao/schema/location"
@@ -267,6 +268,14 @@ export interface Interface {
     storage: AbsolutePath
     location: Location.Ref
     title: string
+  }) => Effect.Effect<void, ConflictError>
+  readonly savedPermissions?: (input: {
+    location: Location.Ref
+    projectID: PermissionSaved.Info["projectID"]
+  }) => Effect.Effect<readonly PermissionSaved.Info[], ConflictError>
+  readonly removeSavedPermission?: (input: {
+    location: Location.Ref
+    id: PermissionSaved.ID
   }) => Effect.Effect<void, ConflictError>
   readonly permissions: (input: {
     sessionID: SessionID

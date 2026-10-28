@@ -180,3 +180,15 @@ Core 的 PermissionSource 保存 Location 内的活跃 `(Session, message, call)
 
 本切片仍不代表 S6 完成：原生 standing-rule 的产品投影、撤销入口和 §4 脚本验收尚待完成；
 兼容阶段也不能据此声明所有 TS 判定路径已经退役。
+
+### 7.9 原生持续规则的产品查询与撤销
+
+saved-permission API 合并旧产品规则与当前目录引擎的原生模式规则。原生行使用独立
+psv_native_ 标识，并携带 origin=native、规范目录 scope；查询其他 project 不把当前目录
+规则伪装成该 project 的授权。产品只投影查询结果，不把原生行写回旧表，所以旧快照导入
+不会重复导入原生规则或改变合并规则预算。
+
+撤销根据当前目录的引擎重新查询绑定后调用 permission_pattern_remove，不信任客户端
+提供的工作目录或原生 ID。重复撤销幂等，不会撤销另一目录的规则；旧产品规则保持独立。
+不能控制原生规则的 TS 模式返回明确 Conflict，而不是假装撤销成功。该切片提供 API 和
+生成 SDK 的投影/撤销能力；管理界面、事件驱动的持久投影与完整 S6 验收仍待收口。

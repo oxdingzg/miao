@@ -142,6 +142,7 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
       normalized: undefined,
       accepted: true,
     },
+    { wire: { permission_patterns: 1 }, normalized: undefined, accepted: true },
     { wire: { routesSchema: 2 }, normalized: 2, accepted: true },
     { wire: { routes_schema: 2, routesSchema: 2 }, normalized: 2, accepted: true },
   ]) {
@@ -149,6 +150,7 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
     await chmod(binary, 0o755)
     expect(capabilities(binary)?.routesSchema).toBe(input.normalized)
     if ("catalog" in input.wire) expect(capabilities(binary)).toHaveProperty("catalog", 1)
+    if ("permission_patterns" in input.wire) expect(capabilities(binary)).toHaveProperty("permissionPatterns", 1)
     if ("product_permission_requests" in input.wire) {
       expect(capabilities(binary)).toHaveProperty("productPermissionRequests", 1)
       expect(capabilities(binary)).toHaveProperty("productPermissionReplies", 1)
@@ -161,6 +163,7 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
       expect(() => resolveEngine({ environment: { MIAO_ENGINE_BIN: binary } })).toThrow("route schema")
   }
   for (const wire of [
+    { permission_patterns: "1" },
     { product_permission_requests: "1" },
     { product_permission_cancel: "1" },
     { product_permission_diagnostics: false },
