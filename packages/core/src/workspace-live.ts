@@ -1,6 +1,6 @@
 export * as WorkspaceLive from "./workspace-live"
 
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { DateTime, Effect, Layer } from "effect"
 import { Database } from "./database/database"
 import { WorkspaceTable } from "./control-plane/workspace.sql"
@@ -65,8 +65,13 @@ const layer = Layer.effect(
       return { projectID: scope.projectID, checkout: scope.directory, git: resolved.vcs !== undefined }
     })
 
-    const get = Effect.fn("Workspace.get")(function* (id: WorkspaceV2.ID) {
-      const row = yield* db.select().from(WorkspaceTable).where(eq(WorkspaceTable.id, id)).get().pipe(Effect.orDie)
+    const get = Effect.fn("Workspace.get")(function* (id: WorkspaceV2.ID, scope: WorkspaceV2.Scope) {
+      const row = yield* db
+        .select()
+        .from(WorkspaceTable)
+        .where(and(eq(WorkspaceTable.id, id), eq(WorkspaceTable.project_id, scope.projectID)))
+        .get()
+        .pipe(Effect.orDie)
       if (!row) return
       return fromRow(row)
     })
@@ -82,8 +87,9 @@ const layer = Layer.effect(
         .sort((a, b) => a.id.localeCompare(b.id))
     })
 
-    const status = Effect.fn("Workspace.status")(function* (_scope: WorkspaceV2.Scope) {
-      return [...connections.values()]
+    const status = Effect.fn("Workspace.status")(function* (scope: WorkspaceV2.Scope) {
+      const ids = new Set((yield* list(scope)).map((workspace) => workspace.id))
+      return [...connections.values()].filter((connection) => ids.has(connection.workspaceID))
     })
 
     const adapters = Effect.fn("Workspace.adapters")(function* (_scope: WorkspaceV2.Scope) {
@@ -160,11 +166,13 @@ const layer = Layer.effect(
     })
 
     const remove = Effect.fn("Workspace.remove")(function* (id: WorkspaceV2.ID, scope: WorkspaceV2.Scope) {
+      const info = yield* get(id, scope)
+      if (!info) return
       const worktreeTarget = yield* target(scope)
       const rows = yield* db
         .select({ id: SessionTable.id, parentID: SessionTable.parent_id })
         .from(SessionTable)
-        .where(eq(SessionTable.workspace_id, id))
+        .where(and(eq(SessionTable.workspace_id, id), eq(SessionTable.project_id, scope.projectID)))
         .all()
         .pipe(Effect.orDie)
       const ids = new Set(rows.map((row) => row.id))
@@ -174,10 +182,7 @@ const layer = Layer.effect(
         { discard: true },
       )
 
-      const row = yield* db.select().from(WorkspaceTable).where(eq(WorkspaceTable.id, id)).get().pipe(Effect.orDie)
-      if (!row) return
       connections.delete(id)
-      const info = fromRow(row)
       if (info.directory) {
         yield* fromWorktree(worktrees.remove(worktreeTarget, { directory: info.directory })).pipe(
           Effect.catchCause(() =>
@@ -185,11 +190,18 @@ const layer = Layer.effect(
           ),
         )
       }
-      yield* db.delete(WorkspaceTable).where(eq(WorkspaceTable.id, id)).run().pipe(Effect.orDie)
+      yield* db
+        .delete(WorkspaceTable)
+        .where(and(eq(WorkspaceTable.id, id), eq(WorkspaceTable.project_id, scope.projectID)))
+        .run()
+        .pipe(Effect.orDie)
       return info
     })
 
-    const setWorkspace = Effect.fnUntraced(function* (sessionID: SessionSchema.ID, workspaceID: WorkspaceV2.ID | undefined) {
+    const setWorkspace = Effect.fnUntraced(function* (
+      sessionID: SessionSchema.ID,
+      workspaceID: WorkspaceV2.ID | undefined,
+    ) {
       const info = yield* sessions.get(sessionID).pipe(Effect.orDie)
       yield* events.publish(SessionEvent.Moved, {
         sessionID,
@@ -213,25 +225,27 @@ const layer = Layer.effect(
       return [tracked, ...untracked].filter(Boolean).join("\n")
     })
 
-    const warp = Effect.fn("Workspace.warp")(function* (input: WorkspaceV2.WarpInput, _scope: WorkspaceV2.Scope) {
+    const warp = Effect.fn("Workspace.warp")(function* (input: WorkspaceV2.WarpInput, scope: WorkspaceV2.Scope) {
       const sessionID = SessionSchema.ID.make(input.sessionID)
       const current = yield* db
         .select({ workspaceID: SessionTable.workspace_id })
         .from(SessionTable)
-        .where(eq(SessionTable.id, sessionID))
+        .where(and(eq(SessionTable.id, sessionID), eq(SessionTable.project_id, scope.projectID)))
         .get()
         .pipe(Effect.orDie)
 
-      const previous = current?.workspaceID ? yield* get(current.workspaceID) : undefined
-      if (current?.workspaceID && previous) {
+      if (!current) return yield* unsupported(`Session not found: ${sessionID}`)
+      const previous = current.workspaceID ? yield* get(current.workspaceID, scope) : undefined
+      if (current.workspaceID && !previous) return yield* unsupported(`Workspace not found: ${current.workspaceID}`)
+      const next = input.id ? yield* get(input.id, scope) : undefined
+      if (input.id && !next) return yield* unsupported(`Workspace not found: ${input.id}`)
+      if (current.workspaceID && previous) {
         // "claim" the session so events from the old workspace no longer apply to it.
         yield* events.claim(sessionID, input.id ?? previous.projectID)
       }
 
-      const sourcePatch =
-        input.copyChanges && previous?.directory ? yield* patchRaw(previous.directory) : ""
+      const sourcePatch = input.copyChanges && previous?.directory ? yield* patchRaw(previous.directory) : ""
       if (sourcePatch) {
-        const next = input.id ? yield* get(input.id) : undefined
         if (!next?.directory) return yield* unsupported(`Workspace not found: ${input.id}`)
         const applied = yield* cli.applyPatch(next.directory, sourcePatch)
         if (applied.exitCode !== 0) return yield* unsupported("Patch can't be applied")
@@ -242,8 +256,6 @@ const layer = Layer.effect(
         return
       }
 
-      const space = yield* get(input.id)
-      if (!space) return yield* unsupported(`Workspace not found: ${input.id}`)
       yield* setWorkspace(sessionID, input.id)
     })
 
