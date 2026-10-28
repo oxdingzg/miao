@@ -1,0 +1,83 @@
+name: roadmap-status
+
+# The project board tracks its work as draft issues, which no pull request can
+# close, so nothing moved their Status on its own. This workflow advances them
+# from two repository facts, both read by script/github/roadmap-status.ts:
+#
+# - a merged pull request whose title names a roadmap code (or whose body names
+#   one through an explicit `miao-roadmap:` marker) moves that item from Todo
+#   to In Progress and records the pull request as evidence;
+# - a committed `roadmap: CFG-02 done in v0.3.16` record moves it to Done, once
+#   that version has a published release. A merge never does.
+#
+# ROADMAP_TOKEN must be a token that can write this user project; the workflow's
+# own GITHUB_TOKEN cannot. Without it the steps skip instead of failing.
+
+on:
+  pull_request:
+    types: [closed]
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "specs/**"
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roadmap-status
+  cancel-in-progress: false
+
+jobs:
+  progress:
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: latest
+
+      - name: Advance the roadmap items the pull request names
+        env:
+          ROADMAP_TOKEN: ${{ secrets.ROADMAP_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$ROADMAP_TOKEN" ]; then
+            echo "ROADMAP_TOKEN is not configured; skipping the board update"
+            exit 0
+          fi
+          bun script/github/roadmap-status.ts progress --pr "$PR_NUMBER"
+
+  acceptance:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: latest
+
+      - name: Mark the accepted roadmap items Done
+        env:
+          ROADMAP_TOKEN: ${{ secrets.ROADMAP_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$ROADMAP_TOKEN" ]; then
+            echo "ROADMAP_TOKEN is not configured; skipping the board update"
+            exit 0
+          fi
+          bun script/github/roadmap-status.ts acceptance
