@@ -224,12 +224,19 @@ export const TuiThreadCommand = cmd({
           return
         }
         const cwd = Filesystem.resolve(process.cwd())
-        const { DatabaseFile } = await import("@miao/core/database/file")
         const { Global } = await import("@miao/core/global")
         const prompt = await input(args.prompt)
-        // The Rust TUI spawns the engine itself, so it needs the same database,
-        // configuration directory, and tool bin the TypeScript host would use.
-        const argv = [binary, "--workspace", cwd, "--db", DatabaseFile.path(), "--config-dir", Global.Path.config]
+        // The Rust TUI spawns the engine itself, so it needs the engine's own
+        // database, configuration directory, and tool bin. The product database
+        // is not one: `miao-engine serve` refuses it outright ("not a
+        // miao-engine database"), which ends the child before it can answer.
+        const db = await rustEngineDatabase(Global.Path.config, cwd)
+        if (!db) {
+          UI.error("The Rust TUI needs native engine storage; start the TypeScript TUI with --tui legacy")
+          process.exitCode = 1
+          return
+        }
+        const argv = [binary, "--workspace", cwd, "--db", db, "--config-dir", Global.Path.config]
         if (args.model) argv.push("--model", args.model)
         if (args.session) argv.push("--session", args.session)
         else if (args.continue) argv.push("--continue")
@@ -405,3 +412,22 @@ export const TuiThreadCommand = cmd({
     }
   },
 })
+
+/// The database the Rust TUI's engine opens. A native Session's store is a pure
+/// function of its Location, so the launcher derives the same path the server
+/// and the migration CLI use; the product database is a different schema and
+/// `miao-engine serve` ends at startup when handed one.
+export async function rustEngineDatabase(
+  configDir: string,
+  cwd: string,
+  environment: Record<string, string | undefined> = process.env,
+): Promise<string | undefined> {
+  const { engineSettings, engineStorageRoot } = await import("@/engine/native-engine")
+  const { SessionEnginePlacement } = await import("@miao/core/session/engine-placement")
+  const { Global } = await import("@miao/core/global")
+  const { AbsolutePath } = await import("@miao/core/schema")
+  const settings = await engineSettings(configDir).catch(() => undefined)
+  const root = engineStorageRoot(environment, settings, path.join(Global.Path.data, "engines"))
+  if (!root) return undefined
+  return SessionEnginePlacement.storageFor(root, { directory: AbsolutePath.make(cwd) })
+}

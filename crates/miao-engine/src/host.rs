@@ -140,6 +140,10 @@ impl Host {
                     .resolve_recovery(&session_id, &call_id, &operation_id, decision, resume)
                     .await
             }
+            Command::RecoveryGet {
+                session_id,
+                call_id,
+            } => runtime.store().recovery_get(&session_id, &call_id).await,
             Command::Mode { session_id, mode } => runtime
                 .set_mode(&session_id, mode)
                 .await

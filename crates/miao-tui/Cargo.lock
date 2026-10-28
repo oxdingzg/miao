@@ -659,6 +659,7 @@ dependencies = [
 name = "miao-tui"
 version = "0.0.1"
 dependencies = [
+ "base64",
  "crossterm",
  "portable-pty",
  "ratatui",

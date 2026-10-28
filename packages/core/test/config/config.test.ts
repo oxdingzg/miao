@@ -1,7 +1,7 @@
 import path from "path"
 import fs from "fs/promises"
 import { describe, expect } from "bun:test"
-import { Effect, Layer, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import { FastCheck } from "effect/testing"
 import { Config } from "@miao/core/config"
 import { ConfigProvider } from "@miao/core/config/provider"
@@ -769,7 +769,7 @@ describe("Config", () => {
     ),
   )
 
-  it.live("ignores an invalid file while loading valid config values", () =>
+  it.live("fails a location whose config file does not parse, naming the file", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
@@ -782,12 +782,19 @@ describe("Config", () => {
               fs.writeFile(path.join(tmp.path, "miao.jsonc"), "{ invalid"),
             ]),
           )
-          return yield* Effect.gen(function* () {
-            const config = yield* Config.Service
-            const documents = (yield* config.entries()).filter((entry) => entry.type === "document")
-
-            expect(documents.map((document) => document.info.$schema)).toEqual(["base"])
-          }).pipe(Effect.provide(testLayer(tmp.path)))
+          // The engine refuses a document it cannot parse (S5 failure
+          // strategy); the product must not stay silent either.
+          const exit = yield* Effect.exit(
+            Effect.gen(function* () {
+              const config = yield* Config.Service
+              return yield* config.entries()
+            }).pipe(Effect.provide(testLayer(tmp.path))),
+          )
+          expect(Exit.isFailure(exit)).toBe(true)
+          if (Exit.isFailure(exit)) {
+            expect(Cause.pretty(exit.cause)).toContain("ConfigJsonError")
+            expect(JSON.stringify(exit.cause)).toContain("miao.jsonc")
+          }
         }),
       ),
     ),

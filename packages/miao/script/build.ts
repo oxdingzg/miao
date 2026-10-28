@@ -356,16 +356,20 @@ for (const item of targets) {
   binaries[name] = Script.version
 }
 
-const hostOs = () =>
-  ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string | undefined>)[process.platform]
+// Function declarations hoist: the build loop above calls into these during
+// module evaluation, so a `const` here is still in its temporal dead zone.
+function hostOs() {
+  return ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string | undefined>)[process.platform]
+}
 
 /// The static Linux target for this architecture. The CLI archive can rely on
 /// the runner's glibc because it is a Bun executable, but a native binary
 /// linked against a newer runner glibc refuses to start on the LTS
 /// distributions many users run. musl also makes one archive work across glibc
 /// versions and distributions.
-const linuxMuslTarget = (arch: string) =>
-  arch === "arm64" ? "aarch64-unknown-linux-musl" : "x86_64-unknown-linux-musl"
+function linuxMuslTarget(arch: string) {
+  return arch === "arm64" ? "aarch64-unknown-linux-musl" : "x86_64-unknown-linux-musl"
+}
 
 /// The target/arch pairs a native build produces on this host. The darwin
 /// build produces both architectures on one runner, so the archive set does
