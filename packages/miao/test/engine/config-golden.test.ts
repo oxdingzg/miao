@@ -3,6 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { Option } from "effect"
 import { Config } from "@miao/core/config"
+import { LSPServer } from "@miao/core/lsp/server"
 import { SandboxPolicy } from "@miao/core/sandbox/policy"
 
 /**
@@ -22,6 +23,77 @@ const cases = fs
 test("the golden cases are present", () => {
   expect(cases.length).toBeGreaterThanOrEqual(5)
 })
+
+const lspCases = fs
+  .readdirSync(root)
+  .filter((name) => fs.existsSync(path.join(root, name, "expected-lsp.json")))
+  .sort()
+
+// The engine derives LSP servers from the config plan once the product stops
+// materializing a manifest; the TypeScript reference derivation must produce
+// the same entries from the same cases.
+for (const name of lspCases) {
+  test(`golden case ${name} matches the shared expected lsp config`, async () => {
+    const directory = path.join(root, name, "global")
+    const environment = JSON.parse(fs.readFileSync(path.join(root, name, "env.json"), "utf8")) as {
+      installed?: string[]
+    }
+    const installed = new Set(environment.installed ?? [])
+    type Server = {
+      id: string
+      command: readonly string[]
+      extensions: readonly string[]
+      env?: Record<string, string>
+      initialization?: Record<string, unknown>
+    }
+    const servers = new Map<string, Server>(
+      LSPServer.servers.map((server) => [server.id, { ...server, env: server.environment }]),
+    )
+    const configured = (
+      await Promise.all(
+        Config.fileNames.map(async (file) => {
+          const file_ = path.join(directory, file)
+          if (!fs.existsSync(file_)) return undefined
+          const info = Option.getOrUndefined(Config.decodeDocument(Config.parseJsonc(await Bun.file(file_).text())))
+          return info?.lsp
+        }),
+      )
+    ).filter((lsp) => lsp !== undefined).at(-1)
+    if (configured === false) {
+      servers.clear()
+    } else if (configured !== true && configured !== undefined) {
+      for (const [id, override] of Object.entries(configured)) {
+        if (override.disabled === true) {
+          servers.delete(id)
+          continue
+        }
+        if (!("command" in override)) continue
+        servers.set(id, {
+          id,
+          command: override.command,
+          extensions: override.extensions ?? servers.get(id)?.extensions ?? [],
+          env: override.env ?? servers.get(id)?.env,
+          initialization: override.initialization ?? servers.get(id)?.initialization,
+        })
+      }
+    }
+    const resolve = (command: string) =>
+      command.startsWith("/") ? command : installed.has(command) ? `/tools/${command}` : undefined
+    const entries = Array.from(servers.values()).flatMap((server) => {
+      const argv0 = resolve(server.command[0])
+      if (argv0 === undefined) return []
+      return [{
+        name: server.id,
+        argv: [argv0, ...server.command.slice(1)],
+        extensions: server.extensions,
+        env: server.env ?? {},
+        initialization: server.initialization ?? null,
+      }]
+    })
+    const expected = JSON.parse(fs.readFileSync(path.join(root, name, "expected-lsp.json"), "utf8"))
+    expect(entries).toEqual(expected)
+  })
+}
 
 for (const name of cases) {
   test(`golden case ${name} matches the shared expected policy`, async () => {
