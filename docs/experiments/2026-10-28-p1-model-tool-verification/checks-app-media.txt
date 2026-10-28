@@ -1,0 +1,27 @@
+Source: 4f49325f7d5f6eebd3a8787f393410519bf157dd
+Remote: cargo test --locked --test media --test pdf; cargo test --locked --test media actual_video_skill_bash_frame_and_provider_pixels_workflow -- --ignored
+
+running 7 tests
+test actual_video_skill_bash_frame_and_provider_pixels_workflow ... ignored, requires ffmpeg; run explicitly on a build host
+test image_reader_bounds_files_and_rejects_non_images ... ok
+test project_skills_load_by_name_and_list_sampled_files ... ok
+test attachment_is_part_of_the_admission_identity_and_validated ... ok
+test image_only_input_keeps_metadata_in_promotion_history_and_retry_identity ... ok
+test anthropic_and_chat_encode_image_attachments_and_commit_them ... ok
+test local_image_tool_attaches_pixels_to_all_provider_protocols ... ok
+test result: ok. 6 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.16s
+running 3 tests
+test page_selections_reject_out_of_range_input ... ok
+test page_selections_parse_ranges_and_report_the_continuation ... ok
+test reads_text_pages_and_renders_pages_without_a_text_layer ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 1 test
+test actual_video_skill_bash_frame_and_provider_pixels_workflow ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 2.36s
+
+PDF caveat: ps2pdf unavailable; the end-to-end PDF case returns early before its assertions even though the harness reports it as passed. Only two PDF page-selection cases execute fully. Poppler and ffmpeg are available. The ignored video case was explicitly run and passed.
+
+Product ACP prompt-content subprocess: 1 passed, 11 assertions.
+Native image/birth/HTTP-client through per-file runner: 8 passed, 69 assertions, 3 files, 0 failures/retries.
+Remote-control package: pairing, grants, device-roster, hub-tickets, hub-browser, remote-rpc, push-api, hub-push-delivery: 26 passed, 187 assertions.
+App browser-conditioned timeline model/projection/measure and workspace controller: 21 passed, 43 assertions (happy-dom, not a real browser).
