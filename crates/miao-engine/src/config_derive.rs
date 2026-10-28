@@ -574,6 +574,128 @@ mod validate_tests {
     }
 }
 
+/// The merged configuration as a tree, so a leaf can name the document that
+/// won it. An object holds its children; an array or scalar is a leaf, because
+/// a higher-priority file replaces those whole.
+enum Tree {
+    Leaf {
+        value: Value,
+        origin: String,
+        overridden: Vec<Value>,
+    },
+    Object(Vec<(String, Tree)>),
+}
+
+/// One effective leaf: the value the merged configuration reads, the document
+/// that won it, and the values it replaced.
+///
+/// The product reports the same shape from `Config.explain`, and the shared
+/// golden cases pin both readers to one answer so the engine and the TUI cannot
+/// drift on which file a setting came from.
+pub fn explain(documents: &[Document]) -> Value {
+    let mut tree = Tree::Object(Vec::new());
+    for document in documents {
+        tree = merge_tree(tree, &document.value, &document.origin);
+    }
+    let mut keys = Vec::new();
+    flatten(&tree, &mut Vec::new(), &mut keys);
+    let sources = documents
+        .iter()
+        .map(|document| {
+            let mut defined = Vec::new();
+            collect_defined(&document.value, &mut Vec::new(), &mut defined);
+            serde_json::json!({ "origin": document.origin, "keys": defined })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({ "sources": sources, "keys": keys })
+}
+
+/// Applies one document under the same rules as [`merge_values`]. A leaf that
+/// records the value it replaced is an override; a leaf replacing an object, or
+/// an object replacing a leaf, discards the previous value entirely, so there
+/// is no override chain to report.
+fn merge_tree(current: Tree, value: &Value, origin: &str) -> Tree {
+    let Value::Object(map) = value else {
+        let overridden = match current {
+            Tree::Leaf {
+                value: previous,
+                origin: previous_origin,
+                overridden: mut chain,
+            } => {
+                chain.push(serde_json::json!({ "value": previous, "origin": previous_origin }));
+                chain
+            }
+            Tree::Object(_) => Vec::new(),
+        };
+        return Tree::Leaf {
+            value: value.clone(),
+            origin: origin.to_string(),
+            overridden,
+        };
+    };
+    let entries = match current {
+        Tree::Object(entries) => entries,
+        Tree::Leaf { .. } => Vec::new(),
+    };
+    // Keys the current document does not mention keep the value the earlier
+    // documents gave them; only the keys it does mention are merged or
+    // replaced. Building the result from this document alone would drop them.
+    let mut merged: Vec<(String, Tree)> = entries;
+    for (key, item) in map {
+        let existing = merged
+            .iter()
+            .position(|(name, _)| name == key)
+            .map(|index| merged.remove(index).1);
+        let child = match existing {
+            Some(existing) => merge_tree(existing, item, origin),
+            None => merge_tree(Tree::Object(Vec::new()), item, origin),
+        };
+        merged.push((key.clone(), child));
+    }
+    Tree::Object(merged)
+}
+
+fn flatten(tree: &Tree, prefix: &mut Vec<String>, out: &mut Vec<Value>) {
+    match tree {
+        Tree::Leaf {
+            value,
+            origin,
+            overridden,
+        } => out.push(serde_json::json!({
+            "path": prefix.clone(),
+            "value": value,
+            "origin": origin,
+            "overridden": overridden,
+        })),
+        Tree::Object(entries) => {
+            for (key, child) in entries {
+                prefix.push(key.clone());
+                flatten(child, prefix, out);
+                prefix.pop();
+            }
+        }
+    }
+}
+
+/// The leaf paths a single document defines, in document order.
+fn collect_defined(value: &Value, prefix: &mut Vec<String>, out: &mut Vec<Value>) {
+    match value {
+        Value::Object(map) => {
+            for (key, item) in map {
+                prefix.push(key.clone());
+                collect_defined(item, prefix, out);
+                prefix.pop();
+            }
+        }
+        _ => out.push(Value::Array(
+            prefix
+                .iter()
+                .map(|part| Value::String(part.clone()))
+                .collect(),
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

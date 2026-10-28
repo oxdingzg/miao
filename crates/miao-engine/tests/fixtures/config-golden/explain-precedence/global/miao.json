@@ -1,0 +1,22 @@
+{
+  "lsp": {
+    "gopls": {
+      "command": [
+        "gopls"
+      ]
+    }
+  },
+  "model": "global/model",
+  "providers": {
+    "demo": {
+      "name": "Demo",
+      "request": {
+        "body": {
+          "apiKey": "global-key",
+          "timeout": 100
+        }
+      }
+    }
+  },
+  "shell": "/bin/zsh"
+}

@@ -1,0 +1,147 @@
+{
+  "keys": [
+    {
+      "path": [
+        "lsp"
+      ],
+      "value": true,
+      "origin": "project/miao.json",
+      "overridden": []
+    },
+    {
+      "path": [
+        "model"
+      ],
+      "value": "local/model",
+      "origin": "local/miao.jsonc",
+      "overridden": [
+        {
+          "value": "global/model",
+          "origin": "global/miao.json"
+        },
+        {
+          "value": "project/model",
+          "origin": "project/miao.json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "providers",
+        "demo",
+        "name"
+      ],
+      "value": "Demo",
+      "origin": "global/miao.json",
+      "overridden": []
+    },
+    {
+      "path": [
+        "providers",
+        "demo",
+        "request",
+        "body",
+        "apiKey"
+      ],
+      "value": "project-key",
+      "origin": "project/miao.json",
+      "overridden": [
+        {
+          "value": "global-key",
+          "origin": "global/miao.json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "providers",
+        "demo",
+        "request",
+        "body",
+        "timeout"
+      ],
+      "value": 100,
+      "origin": "global/miao.json",
+      "overridden": []
+    },
+    {
+      "path": [
+        "shell"
+      ],
+      "value": "/bin/fish",
+      "origin": "local/miao.jsonc",
+      "overridden": [
+        {
+          "value": "/bin/zsh",
+          "origin": "global/miao.json"
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "origin": "global/miao.json",
+      "keys": [
+        [
+          "lsp",
+          "gopls",
+          "command"
+        ],
+        [
+          "model"
+        ],
+        [
+          "providers",
+          "demo",
+          "name"
+        ],
+        [
+          "providers",
+          "demo",
+          "request",
+          "body",
+          "apiKey"
+        ],
+        [
+          "providers",
+          "demo",
+          "request",
+          "body",
+          "timeout"
+        ],
+        [
+          "shell"
+        ]
+      ]
+    },
+    {
+      "origin": "project/miao.json",
+      "keys": [
+        [
+          "lsp"
+        ],
+        [
+          "model"
+        ],
+        [
+          "providers",
+          "demo",
+          "request",
+          "body",
+          "apiKey"
+        ]
+      ]
+    },
+    {
+      "origin": "local/miao.jsonc",
+      "keys": [
+        [
+          "model"
+        ],
+        [
+          "shell"
+        ]
+      ]
+    }
+  ]
+}

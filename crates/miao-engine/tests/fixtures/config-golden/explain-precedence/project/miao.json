@@ -1,0 +1,5 @@
+{
+  "lsp": true,
+  "model": "project/model",
+  "providers": { "demo": { "request": { "body": { "apiKey": "project-key" } } } }
+}
