@@ -78,7 +78,7 @@ impl Shell {
                         .join("\n\n");
                     (!text.trim().is_empty()).then_some(text)
                 }
-                Entry::User { .. } => None,
+                Entry::User { .. } | Entry::Error { .. } => None,
             })?;
         Some(reply)
     }
@@ -426,6 +426,18 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>
                             theme,
                         )),
                     }
+                }
+                lines.push(Line::default());
+            }
+            Entry::Error { message } => {
+                for (index, line) in message.lines().enumerate() {
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            if index == 0 { "✗ " } else { "  " },
+                            Style::new().fg(palette.error),
+                        ),
+                        Span::styled(line.to_string(), Style::new().fg(palette.error)),
+                    ]));
                 }
                 lines.push(Line::default());
             }
@@ -1149,6 +1161,24 @@ fn panel_lines(panel: &Panel, theme: &Theme) -> Vec<Line<'static>> {
 mod tests {
     use super::*;
     use crate::session::{Choice, QuestionItem};
+
+    #[test]
+    fn a_failed_turn_renders_its_message_as_an_error_line() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let transcript = Transcript {
+            entries: vec![Entry::Error {
+                message: "provider unavailable".into(),
+            }],
+            ..Transcript::default()
+        };
+        let lines = transcript_lines(&transcript, &theme);
+        assert_eq!(lines[0].to_string(), "✗ provider unavailable");
+        assert_eq!(lines[0].spans[0].style.fg, Some(theme.palette.error));
+    }
 
     #[test]
     fn the_last_response_is_the_newest_assistant_text() {
