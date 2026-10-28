@@ -2,6 +2,15 @@ use miao_engine::store::Store;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+struct Kill(Child);
+
+impl Drop for Kill {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 #[tokio::test]
 async fn startup_recovery_skips_sessions_with_a_live_lease() {
     let dir = tempfile::tempdir().unwrap();
@@ -94,17 +103,17 @@ fn a_second_process_can_open_the_same_database() {
     let db = dir.path().join("engine.db");
     let workspace = dir.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
-    let mut first = spawn_engine(&db, &workspace);
-    wait_ready(&mut first);
+    let mut first = Kill(spawn_engine(&db, &workspace));
+    wait_ready(&mut first.0);
     // The store is shared: a second runtime must not die with `Busy`.
-    let mut second = spawn_engine(&db, &workspace);
-    wait_ready(&mut second);
+    let mut second = Kill(spawn_engine(&db, &workspace));
+    wait_ready(&mut second.0);
     assert!(
-        first.try_wait().unwrap().is_none(),
+        first.0.try_wait().unwrap().is_none(),
         "the first runtime must keep serving"
     );
     assert!(
-        second.try_wait().unwrap().is_none(),
+        second.0.try_wait().unwrap().is_none(),
         "the second runtime must keep serving"
     );
 }
@@ -117,13 +126,6 @@ async fn concurrent_admits_from_two_processes_do_not_lock() {
     let db = dir.path().join("engine.db");
     let workspace = dir.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
-    struct Kill(Child);
-    impl Drop for Kill {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
-    }
     let mut first = Kill(spawn_engine(&db, &workspace));
     let url_a = wait_ready(&mut first.0);
     let mut second = Kill(spawn_engine(&db, &workspace));
