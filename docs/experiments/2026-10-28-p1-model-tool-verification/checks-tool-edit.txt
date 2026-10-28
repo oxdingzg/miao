@@ -1,0 +1,48 @@
+Source: main 4f49325f7d5f6eebd3a8787f393410519bf157dd
+
+Command (executed on a build host):
+cargo test --test apply_patch --test mutations --test mutation_writes --test stale_edit --test lsp --test formatter --test output_guard --test web
+
+test patch_parsing_is_strict_and_bounded ... ok
+test patch_permission_is_a_single_capability_and_deny_has_no_effects ... ok
+test context_mismatch_aborts_the_whole_patch_without_side_effects ... ok
+test patch_adds_updates_and_deletes_in_one_transaction ... ok
+test bom_and_crlf_are_preserved_through_updates ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+test formatter_timeout_preserves_committed_mutation_and_final_hash ... ok
+test formatters_run_after_write_edit_and_patch_and_report_final_fingerprint ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.03s
+test real_rust_analyzer_observes_edited_document ... ignored, requires installed rust-analyzer; run explicitly on a build host
+test lsp_query_rejects_missing_positions_and_foreign_parameters ... ok
+test lsp_tools_are_absent_without_a_registry ... ok
+test edited_documents_refresh_diagnostics_and_queries_without_reopening ... ok
+test read_file_warms_the_language_server_for_the_next_edit ... ok
+test lsp_tools_query_a_language_server ... ok
+test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.24s
+test snapshot_and_model_readers_do_not_take_the_host_write_reservation ... ok
+test model_selection_queues_on_the_host_write_reservation ... ok
+test state_updates_queue_on_the_host_write_reservation ... ok
+test recovery_decisions_queue_on_the_host_write_reservation ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+test cancel_pending_write_has_no_filesystem_effect ... ok
+test exact_edit_preserves_bom_crlf_and_permissions ... ok
+test workspace_write_waits_for_approval_then_commits_with_fingerprint ... ok
+test stale_fingerprint_and_create_only_never_clobber_existing_file ... ok
+test anchor_form_replaces_the_unique_fragment_and_rejects_ambiguous_or_mixed_forms ... ok
+test model_spellings_of_absent_hashes_and_mixed_anchor_pairs_still_apply ... ok
+test ambiguous_edits_require_replace_all_and_external_change_invalidates_expected_hash ... ok
+test readonly_or_deny_and_invalid_parent_paths_cannot_mutate_files ... ok
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+test a_stopped_loop_fails_the_turn_without_retrying_or_dispatching ... ok
+test an_earlier_loop_is_neutralized_in_the_provider_request_only ... ok
+test the_guard_stops_a_looping_provider_stream_before_a_late_tool_call ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+test stale_edit_rejection_carries_fingerprint_and_settles_as_error ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+test cancellation_drops_an_inflight_web_response ... ok
+test redirects_are_reauthorized_and_denied_targets_receive_no_request ... ok
+test search_redirects_never_forward_credentials_and_errors_hide_provider_bodies ... ok
+test searches_use_their_native_wire_contract_and_never_return_the_key ... ok
+test fetch_renders_real_html_and_declared_text_encoding_and_bounds_output ... ok
+test runtime_fetch_waits_for_bound_controller_approval_before_any_http_request ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s

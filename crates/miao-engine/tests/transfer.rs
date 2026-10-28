@@ -173,3 +173,88 @@ async fn malformed_or_conflicting_import_never_changes_existing_destination() {
     store.admit(input("s")).await.unwrap();
     store.close().await.unwrap();
 }
+
+#[tokio::test]
+async fn native_display_archive_pages_canonical_messages_and_remaps_context_cuts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let storage = tmp.path().join("engine.db");
+    let store = Store::open(&storage).await.unwrap();
+    let mut source: serde_json::Value = serde_json::from_str(&bundle("s")).unwrap();
+    source["source"]["engine"] = json!("rust");
+    source["timeline"] = json!([
+        {"id":"msg_2","role":"user","content":[{"type":"text","text":"prompt"}]},
+        {"id":"msg_5","role":"assistant","content":[{"type":"text","text":"answer"}]}
+    ]);
+    source["context_ids"] = json!(["msg_2", "msg_5"]);
+    source["display_timeline"] = json!([
+        {"id":"msg_original_prompt","type":"user","text":"prompt","time":{"created":123}},
+        {"id":"msg_original_answer","type":"assistant","content":[{"type":"text","id":"t","text":"answer"}],"time":{"created":124},"agent":null,"model":null}
+    ]);
+    source["display_context_ids"] = json!(["msg_original_prompt", "msg_original_answer"]);
+    source["display_sources"] =
+        json!({"msg_original_prompt":"msg_2","msg_original_answer":"msg_5"});
+    let encoded = source.to_string();
+    store
+        .stage_session_transfer("transfer", encoded.clone(), &digest(&encoded))
+        .await
+        .unwrap();
+    {
+        let connection = rusqlite::Connection::open(&storage).unwrap();
+        connection.execute("INSERT INTO engine_transfer_message(import_id,source_message_id,seq) VALUES('transfer','msg_2',11),('transfer','msg_5',15)",[]).unwrap();
+        connection.execute("INSERT INTO engine_compaction(id,session_id,through_seq,summary,created_seq) VALUES('cut','s',11,'earlier prompt',20)",[]).unwrap();
+    }
+    let full = store.transfer_messages("s", 0, false, 20).await.unwrap();
+    assert_eq!(full["messages"], source["display_timeline"]);
+    assert_eq!(
+        full["sequences"],
+        json!({"msg_original_prompt":11,"msg_original_answer":15})
+    );
+    let before = store.transfer_messages("s", 0, true, 19).await.unwrap();
+    assert_eq!(before["messages"], source["display_timeline"]);
+    let after = store.transfer_messages("s", 0, true, 20).await.unwrap();
+    assert_eq!(after["messages"], json!([source["display_timeline"][1]]));
+    assert_eq!(after["sequences"], json!({"msg_original_answer":15}));
+    store.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn display_archive_rejects_unknown_source_ids_before_staging_a_session() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = Store::open(tmp.path().join("engine.db")).await.unwrap();
+    let mut source: serde_json::Value = serde_json::from_str(&bundle("s")).unwrap();
+    source["display_timeline"] = json!([{"id":"msg_display","type":"user","text":"unrelated"}]);
+    source["display_context_ids"] = json!(["msg_display"]);
+    source["display_sources"] = json!({"msg_display":"missing-source"});
+    let encoded = source.to_string();
+    assert!(store
+        .stage_session_transfer("transfer", encoded.clone(), &digest(&encoded))
+        .await
+        .is_err());
+    assert!(store.snapshot("s").await.is_err());
+    store.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_missing_journal_prefix_is_not_reclassified_as_a_move_base() {
+    let tmp = tempfile::tempdir().unwrap();
+    let storage = tmp.path().join("engine.db");
+    let store = Store::open(&storage).await.unwrap();
+    store
+        .initialize("s", "ordinary Session", tmp.path().to_str().unwrap())
+        .await
+        .unwrap();
+    store.record("s", "fixture", json!({})).await.unwrap();
+    {
+        let connection = rusqlite::Connection::open(&storage).unwrap();
+        connection
+            .execute(
+                "DELETE FROM engine_event WHERE session_id='s' AND seq=1",
+                [],
+            )
+            .unwrap();
+    }
+    let snapshot = store.snapshot("s").await.unwrap();
+    assert_eq!(snapshot["event_base"], 0);
+    assert!(snapshot["cursor"].as_u64().unwrap() > 1);
+    store.close().await.unwrap();
+}

@@ -1,0 +1,137 @@
+{
+  "date": "2026-10-28",
+  "reference_commit": "4f49325f7d5f6eebd3a8787f393410519bf157dd",
+  "scope": "HIS-06 and DATA-01..05 source/offline verification, not completed product acceptance",
+  "checks": {
+    "rust_passed": 21,
+    "miao_passed": 5,
+    "miao_assertions": 31,
+    "core_passed": 29,
+    "core_assertions": 76,
+    "receipt": "checks-data.txt"
+  },
+  "items": [
+    {
+      "code": "HIS-06",
+      "result": "needs_work",
+      "observed": [
+        "Product export supports JSON/JSONL and --sanitize; sanitizer drops the verbatim projection and redacts transcript/file fields. Five actual archive tests preserve parts, round-trip without legacy tables, import V1, map compaction summaries and reject unsupported archive versions.",
+        "Native CLI export is a separate committed-events JSONL surface with explicit database/session/cursor."
+      ],
+      "remaining": [
+        "The product command only exposes json/jsonl, so the requested full Markdown export is not supplied by that command.",
+        "Executed archive tests do not exercise the sanitizer or prove no sensitive fields leak through every part variant.",
+        "Current native-archive import/export UX, large-attachment omission notices and unknown-billing/protected-content labeling need explicit acceptance."
+      ],
+      "evidence": [
+        "packages/miao/src/cli/cmd/export.ts",
+        "packages/miao/src/cli/cmd/import.ts",
+        "packages/miao/test/cli/export.test.ts",
+        "crates/miao-engine/src/main.rs",
+        "crates/miao-engine/src/export.rs"
+      ]
+    },
+    {
+      "code": "DATA-01",
+      "result": "needs_product_and_upgrade_acceptance",
+      "observed": [
+        "The engine serializes schema migration using a filesystem lock and SQLite transaction, distinguishes its application ID, and refuses a schema newer than SCHEMA_VERSION. Concurrent-open tests cover two live processes and concurrent admission, plus recovery respecting a live lease.",
+        "Product database tests cover initialization serialization, waiting for running windows during upgrade, peer migration observation and tracked/legacy migration identities."
+      ],
+      "remaining": [
+        "These selected tests do not establish interrupted schema-migration recovery across all historical versions.",
+        "An end-to-end pre-upgrade backup/verification plus upgrade/downgrade/re-upgrade exercise on current release artifacts remains missing.",
+        "The native concurrent-open baseline left two child processes after one case; this was reproduced, its own children reaped, and a shared RAII cleanup fix is in PR #1578. That test cleanup issue is not a schema-ownership failure."
+      ],
+      "evidence": [
+        "crates/miao-engine/src/store.rs",
+        "crates/miao-engine/tests/concurrent_open.rs",
+        "crates/miao-engine/tests/migration.rs",
+        "packages/core/test/database-migration.test.ts",
+        "https://github.com/oxdingzg/miao/pull/1578"
+      ]
+    },
+    {
+      "code": "DATA-02",
+      "result": "needs_current_move_and_attachment_acceptance",
+      "observed": [
+        "Native migration/transfer suites exercise staged/active authority, identity/checksum checks, incompatible or corrupted bundles, exact retries and move into a fresh location.",
+        "PRs #1568/#1569/#1573 separately repair freeze completion, implicit model binding and canonical/native history mapping. Their feature regression receipts are distinct from this exact-main baseline."
+      ],
+      "remaining": [
+        "The complete current-client TS-to-native/native-workspace/fork/large-attachment matrix is not established.",
+        "Move fixes remain open PRs; tests against main do not imply those fixes are merged or released.",
+        "The feature intentionally retains non-overwrite rejection when returning to a store already retaining the Session."
+      ],
+      "evidence": [
+        "crates/miao-engine/tests/migration.rs",
+        "crates/miao-engine/tests/transfer.rs",
+        "crates/miao-engine/tests/transfer_history.rs",
+        "crates/miao-engine/tests/transfer_activation.rs",
+        "crates/miao-engine/tests/transfer_move.rs",
+        "https://github.com/oxdingzg/miao/pull/1568",
+        "https://github.com/oxdingzg/miao/pull/1569",
+        "https://github.com/oxdingzg/miao/pull/1573"
+      ]
+    },
+    {
+      "code": "DATA-03",
+      "result": "needs_work",
+      "observed": [
+        "The TypeScript product db command retains stats, backfill, vacuum, compact, restore, externalize-blobs, gc-blobs and retention. Destructive compact/GC require flags; backfill/restore/externalization support dry-run, and retention is report-only.",
+        "Native standalone CLI has doctor/catalog/export plus serve/ACP, rather than an equivalent db maintenance command family."
+      ],
+      "remaining": [
+        "The eight requested maintenance operations are still TS-hosted and have not been migrated to a complete Rust product service/CLI.",
+        "Target database/reference/impact presentation and safe dry-run behavior require a command-by-command current-client matrix.",
+        "No maintenance was performed on real user databases; the executed tests used fixture databases."
+      ],
+      "evidence": [
+        "packages/miao/src/cli/cmd/db.ts",
+        "crates/miao-engine/src/main.rs",
+        "packages/core/test/session-restore.test.ts",
+        "packages/core/test/session-compact.test.ts",
+        "packages/core/test/session-blob-gc.test.ts"
+      ]
+    },
+    {
+      "code": "DATA-04",
+      "result": "needs_work",
+      "observed": [
+        "Blob GC scans references conservatively and has a grace window. Tests retain referenced blobs and young orphans, remove unreferenced old blobs, and preserve restore rows.",
+        "SessionRetention.plan and the db retention command explicitly report candidates only; deletion remains disabled while history/diff/event readers still need the log."
+      ],
+      "remaining": [
+        "Snapshot-then-truncate is not implemented by the report-only retention path.",
+        "Native and TS/shared-channel blob reference coverage, bounded per-message rather than per-delta growth, and vacuum/disk-reclamation curves need separate measurement.",
+        "Passing the selected GC tests does not prove complete active-native-reference safety or long-running storage bounds."
+      ],
+      "evidence": [
+        "packages/core/src/session/blob-gc.ts",
+        "packages/core/src/session/retention.ts",
+        "packages/miao/src/cli/cmd/db.ts",
+        "packages/core/test/session-blob-gc.test.ts",
+        "packages/core/test/session-restore.test.ts"
+      ]
+    },
+    {
+      "code": "DATA-05",
+      "result": "needs_corruption_and_restore_acceptance",
+      "observed": [
+        "Native doctor opens the database read-only, checks application/schema identity and SQLite quick_check, reports counts/states, and can run during ownership without reconciling work. Tests reject unrelated, future and missing databases.",
+        "Fixture restore tests merge absent sessions/events, advance sequence watermarks, and avoid overwriting existing rows."
+      ],
+      "remaining": [
+        "The doctor report does not establish the complete WAL/missing-blob/incomplete-transfer/corrupted-index diagnostic matrix.",
+        "An actual backup/restore exercise verifying Session history, attachments, permissions and usage is still required.",
+        "Read-only diagnosis is distinct from repair; no repair or user-history deletion was performed."
+      ],
+      "evidence": [
+        "crates/miao-engine/src/doctor.rs",
+        "crates/miao-engine/tests/doctor.rs",
+        "packages/core/src/session/restore.ts",
+        "packages/core/test/session-restore.test.ts"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "date": "2026-10-28",
+  "reference_commit": "4f49325f7d5f6eebd3a8787f393410519bf157dd",
+  "scope": "QA-04, VAL-05 and REL-05 source/evidence review; no completed product, platform or license-distribution acceptance is claimed.",
+  "checks": {
+    "python_policy_tests_passed": 12,
+    "receipt": "checks-governance-ci.txt"
+  },
+  "items": [
+    {
+      "code": "QA-04",
+      "result": "partial_needs_isolation_and_platform_acceptance",
+      "observed": [
+        "ci-gate rejects failed, cancelled, skipped or missing required jobs; release-ci requires the latest successful main push run for the exact release commit. Twelve policy tests pass.",
+        "The Linux integration job builds a real engine and supplies MIAO_ENGINE_BIN; specialist engine jobs check the binary exists and its version before native contracts.",
+        "The default package suite excludes engine/ACP process suites. test-integration.sh runs each file in its own process with bounded wall time, one retry, and attempt-private temp/process-group cleanup."
+      ],
+      "remaining": [
+        "engine.yml still invokes native-*.test.ts together in one Bun process, independently of the per-file integration runner. The per-file isolation contract is not universal.",
+        "Without MIAO_ENGINE_BIN the standalone integration runner prints a warning and native files can skip. CI supplies the binary, but manual invocations do not fail closed at that entry point.",
+        "Windows unit tests are schedule/manual only and continue-on-error. Windows runtime/engine/TUI gating depends on event conditions; a green PR does not establish Windows acceptance."
+      ],
+      "evidence": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/test.yml",
+        ".github/workflows/engine.yml",
+        ".github/workflows/tui.yml",
+        ".github/scripts/ci-gate.py",
+        ".github/scripts/check-release-ci.py",
+        "script/test-integration.sh",
+        "packages/miao/package.json"
+      ]
+    },
+    {
+      "code": "VAL-05",
+      "result": "partial_needs_complete_backlog_reconciliation",
+      "observed": [
+        "PR #1574 retains exact source commits and test receipts while labeling missing product and benefit acceptance explicitly. PRs #1570/#1571/#1575 retain architectural responsibilities and older acceptance evidence separately.",
+        "On 2026-10-28, 25 Project items received dated progress, PR links and remaining gaps; 22 Todo entries moved to In Progress. Read-back verified all 25 bodies and fields. Done remained 13, rather than equating audit progress with product completion."
+      ],
+      "remaining": [
+        "This records a limited set of backlog evidence; it does not reconcile all 151 Project items or 305 recovered historical todo records.",
+        "Current compiled-client and paid-benefit results remain absent for multiple items. Open PRs, locally installed previews and draft releases are not publication."
+      ],
+      "evidence": [
+        "https://github.com/users/oxdingzg/projects/1/views/1",
+        "https://github.com/oxdingzg/miao/pull/1570",
+        "https://github.com/oxdingzg/miao/pull/1571",
+        "https://github.com/oxdingzg/miao/pull/1574",
+        "https://github.com/oxdingzg/miao/pull/1575"
+      ]
+    },
+    {
+      "code": "REL-05",
+      "result": "partial_needs_documentation_and_distribution_audit",
+      "observed": [
+        "The root LICENSE retains MIT plus both the miao authors and opencode copyright notices.",
+        "AGENTS.md states the Project execution/PR rules, permissive-upstream-license check, generated-client procedure, component boundaries and source-version policy.",
+        "The engine roadmap labels its 2026-10-12 snapshot and a 2026-10-23 supersession note; #1575 separately corrects Phase 2/S6 progress."
+      ],
+      "remaining": [
+        "The engine roadmap still calls itself the unified current-progress entry while the live Project is the execution source. Repository-wide entry points and stale snapshots are not fully reconciled.",
+        "Checking the root LICENSE is not proof that all bundled/distributed third-party code retains the necessary notices. No complete dependency-license/distribution audit is claimed.",
+        "Recovery/cost/config/plugin/platform-limit documentation coverage has not been exercised as an end-user acceptance matrix."
+      ],
+      "evidence": [
+        "LICENSE",
+        "AGENTS.md",
+        "README.md",
+        "README.zh.md",
+        "crates/miao-engine/docs/roadmap.md",
+        "specs/rust-phase-2.md",
+        "specs/s6-permission-ownership.md",
+        "https://github.com/oxdingzg/miao/pull/1575"
+      ]
+    }
+  ]
+}

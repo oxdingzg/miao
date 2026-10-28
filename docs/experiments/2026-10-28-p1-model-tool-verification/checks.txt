@@ -1,0 +1,47 @@
+Source: main 4f49325f7d5f6eebd3a8787f393410519bf157dd
+
+Commands (executed on a build host):
+cargo test provider:: --lib
+cargo test --test model_catalog --test variant_fallback --test transport_retry --test read_range --test read_batch --test accuracy
+
+test provider::retry_tests::the_pause_is_exponential_capped_jittered_and_raised_by_retry_after ... ok
+test provider::retry_tests::retry_after_accepts_both_header_forms_and_prefers_milliseconds ... ok
+test provider::image_parse_retry_tests::a_recurring_400_stays_terminal_after_its_single_replay ... ok
+test provider::route_header_tests::gateway_headers_follow_actual_session_across_protocols_and_model_selection ... ok
+test provider::retry_tests::a_rejected_request_gets_exactly_one_immediate_replay ... ok
+test provider::input_watchdog_tests::tool_deadline_interrupts_silence_pings_and_progress_backpressure ... ok
+test provider::image_parse_retry_tests::transient_image_parse_400_replays_the_request ... ok
+test provider::retry_tests::a_rate_limit_pause_is_honoured_instead_of_the_short_backoff ... ok
+test provider::retry_tests::a_persistent_failure_retries_on_the_schedule_until_the_window_ends ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 161 filtered out; finished in 2.27s
+test read_only_tool_schema_contract ... ok
+test denied_write_has_no_filesystem_effect ... ok
+test product_fix_has_correct_files_replay_and_model_contract ... ok
+test seeded_admission_sequences_preserve_delivery_and_exact_retry ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s
+test catalogs_reject_ambiguous_ids_and_protect_all_registered_credentials ... ok
+test an_inflight_opaque_reply_cannot_cross_a_later_selected_route ... ok
+test registered_routes_bind_real_endpoints_and_credentials_even_for_identical_model_names ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+test cancellation_settles_every_dispatched_read_without_unknown_results ... ok
+test a_declared_write_conflicts_with_the_batch_and_stays_serial ... ok
+test batch_membership_follows_declarations_not_names ... ok
+test denied_read_keeps_policy_result_and_serial_admission ... ok
+test batched_reads_settle_and_report_the_identical_bound_without_stopping_the_run ... ok
+test runtime_owned_session_reads_are_barriers_not_local_executor_batch_members ... ok
+test partitions_a_mixed_turn_into_a_read_prefix_and_a_serial_tail ... ok
+test mixed_turn_keeps_write_then_read_barrier ... ok
+test native_reads_dispatch_together_and_project_results_in_call_order ... ok
+test long_read_prefixes_keep_the_bounded_parallel_prefix_and_ordered_remainder ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+test zero_offset_or_limit_is_rejected ... ok
+test a_line_window_returns_only_that_range_with_whole_file_metadata ... ok
+test a_large_file_is_readable_through_a_window_but_not_wholesale ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test a_transport_failure_keeps_the_underlying_cause ... ok
+test post_output_transport_failure_is_not_replayed ... ok
+test pre_output_transport_failure_is_retried ... ok
+test a_routed_transport_failure_is_reported_as_unavailable ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test configured_default_and_explicit_variants_preserve_fallback_authority_and_options ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s

@@ -13,7 +13,6 @@ import { Model } from "@miao/schema/model"
 import { AmbientContext } from "./ambient-context"
 import { ProductHooks } from "./product-hooks"
 import { PluginHooks } from "./plugin-hooks"
-import { ProductLsp } from "./product-lsp"
 import { ProductFormatter } from "./product-formatter"
 import { ProductPermission } from "./product-permission"
 import { ProductRoutes } from "./product-routes"
@@ -1094,7 +1093,6 @@ const layer = Layer.effect(
         const effective = { ...configuration, ...routes, ...mcp, ...(configSources ? { configSources } : {}) }
         const context = yield* AmbientContext.prepare(location, effective)
         const hooks = yield* ProductHooks.prepare(location, { ...effective, ...context.options })
-        const lsp = yield* ProductLsp.prepare(location, effective)
         const formatter = yield* ProductFormatter.prepare(location, effective)
         const productTools = yield* ProductTools.prepare(configuration, creation, {
           get: (input) =>
@@ -1112,7 +1110,6 @@ const layer = Layer.effect(
             ...(configSources ? { configSources } : {}),
             ...context.options,
             ...hooks,
-            ...lsp,
             ...formatter,
             ...productTools,
             ...pluginHooks,

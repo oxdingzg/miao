@@ -1,0 +1,96 @@
+{
+  "date": "2026-10-28",
+  "reference_commit": "4f49325f7d5f6eebd3a8787f393410519bf157dd",
+  "scope": "Four extension/skill verification items; current-client/product and benefit acceptance remain open",
+  "checks": {
+    "rust_passed": 36,
+    "rust_ignored": 1,
+    "core_passed": 38,
+    "core_assertions": 90,
+    "receipt": "checks-extensions.txt"
+  },
+  "items": [
+    {
+      "code": "CAT-04",
+      "result": "needs_current_client_acceptance",
+      "observed": [
+        "Native skill discovery publishes only name/description/source metadata; selected bodies are loaded on demand from host-selected directories with authority and file-policy checks. Five native skill tests include denied file/frontmatter and invalid-directory cases.",
+        "Product skill/discovery tests exercise loading and discovery behavior rather than inferring it from file presence."
+      ],
+      "remaining": [
+        "Current-client browsing, explicit invocation, source/enabled-state presentation and conflict/incompatibility explanation still require an interaction matrix.",
+        "These fixtures do not measure whether model skill selection reduces task cost or avoids excess resource loading on a real task baseline."
+      ],
+      "evidence": [
+        "crates/miao-engine/src/context.rs",
+        "crates/miao-engine/tests/skills.rs",
+        "packages/core/src/skill.ts",
+        "packages/core/src/tool/skill.ts",
+        "packages/core/test/skill-discovery.test.ts",
+        "packages/core/test/tool-skill.test.ts"
+      ]
+    },
+    {
+      "code": "EXT-03",
+      "result": "needs_work",
+      "observed": [
+        "Compact disclosure offers bounded literal tool_search and stable top-level tool definitions. Catalog tests cover exact matching, bounded result schemas and unchanged stable surface.",
+        "MCP list_changed coalesces a 500ms refresh; fixtures cover catalog changes, reconnect/cancellation behavior and retaining a previous catalog after failed refresh. Registration/authority metadata binds grants."
+      ],
+      "remaining": [
+        "Connection registration still fetches complete tool schema pages (bounded to four pages and 128 tools), rather than loading only the schemas selected by a very large catalog query. Model disclosure savings do not establish host-side lazy schema loading.",
+        "An explicit cache TTL/staleness and permission-change invalidation contract, plus current-client visibility, needs acceptance; list_changed refresh alone is not that whole contract."
+      ],
+      "evidence": [
+        "crates/miao-engine/src/tool_catalog.rs",
+        "crates/miao-engine/src/mcp.rs",
+        "crates/miao-engine/tests/mcp.rs",
+        "crates/miao-engine/tests/mcp_http.rs",
+        "crates/miao-engine/tests/mcp_resources.rs"
+      ]
+    },
+    {
+      "code": "EXT-04",
+      "result": "needs_real_oauth_client_acceptance",
+      "observed": [
+        "Product OAuth provider exposes CIMD metadata URLs, pre-registered and stored/dynamic client information, pending-token commit and issuer attribution. Callback tests reject a mismatching issuer and explicitly accept matching or absent iss.",
+        "Native HTTP fixtures cover host-provisioned refresh-token exchange, explicit generic failures, header authority, no credential-forwarding redirects and grants tied to registration metadata."
+      ],
+      "remaining": [
+        "The native refresh-grant path delegates browser registration/discovery to the host; it is not a complete Rust-owned login workflow.",
+        "Fixture coverage does not establish the live authorization-server matrix across CIMD, pre-registration, dynamic registration and manual setup.",
+        "Current-client login, enable/disable, tool cancellation/reconnection and issuer-scoped grant reuse/rotation need live acceptance with supported servers."
+      ],
+      "evidence": [
+        "packages/core/src/mcp/oauth-provider.ts",
+        "packages/core/src/mcp/oauth-callback.ts",
+        "packages/core/test/mcp/oauth-provider.test.ts",
+        "packages/core/test/mcp/oauth-callback.test.ts",
+        "packages/core/test/mcp-oauth.test.ts",
+        "packages/core/test/mcp-oauth-fetch.test.ts",
+        "crates/miao-engine/src/mcp.rs",
+        "crates/miao-engine/tests/mcp_http.rs"
+      ]
+    },
+    {
+      "code": "EXT-07",
+      "result": "needs_real_server_lifecycle_acceptance",
+      "observed": [
+        "Native fixtures exercise LSP query validation, hover/definition/reference responses, edited-document diagnostics and read-triggered warmup. Formatter tests run after write/edit/patch and retain the final fingerprint even on timeout.",
+        "PR #1557 moves LSP configuration off temporary host materialization; PR #1572 pins formatter Location and CLI argument contracts. Both are pending, rather than included in this exact-main run."
+      ],
+      "remaining": [
+        "The real_rust_analyzer_observes_edited_document case remains explicitly ignored; fake-server success cannot replace real-server acceptance.",
+        "Complete language/root/environment configuration, current-client cancellation/restart, failure isolation and stale file-version behavior still need an end-to-end real-server matrix."
+      ],
+      "evidence": [
+        "crates/miao-engine/tests/lsp.rs",
+        "crates/miao-engine/tests/formatter.rs",
+        "crates/miao-engine/src/lsp.rs",
+        "crates/miao-engine/src/formatter.rs",
+        "https://github.com/oxdingzg/miao/pull/1557",
+        "https://github.com/oxdingzg/miao/pull/1572"
+      ]
+    }
+  ]
+}

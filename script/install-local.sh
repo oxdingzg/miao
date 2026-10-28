@@ -5,16 +5,37 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 BIN_DIR="${MIAO_PREVIEW_INSTALL_DIR:-${HOME}/.local/share/miao/bin}"
 LINK="${MIAO_PREVIEW_LINK:-${HOME}/.local/bin/miao-preview}"
-if [[ "${1:-}" != "--binary" || -z "${2:-}" || ( $# != 2 && $# != 4 ) || ( $# == 4 && "${3:-}" != "--engine-binary" ) ]]; then
-  echo 'Usage: ./script/install-local.sh --binary /path/to/prebuilt/miao [--engine-binary /path/to/prebuilt/miao-engine]' >&2
+usage() {
+  echo 'Usage: ./script/install-local.sh --binary /path/to/prebuilt/miao [--engine-binary /path/to/prebuilt/miao-engine] [--tui-binary /path/to/prebuilt/miao-tui]' >&2
   exit 1
-fi
+}
+if [[ "${1:-}" != "--binary" || -z "${2:-}" ]]; then usage; fi
 SRC="$2"
+shift 2
+ENGINE=""
+TUI=""
+while [[ $# -gt 0 ]]; do
+  [[ $# -ge 2 && -n "$2" ]] || usage
+  case "$1" in
+    --engine-binary)
+      [[ -z "$ENGINE" ]] || usage
+      ENGINE="$2"
+      ;;
+    --tui-binary)
+      [[ -z "$TUI" ]] || usage
+      TUI="$2"
+      ;;
+    *) usage ;;
+  esac
+  shift 2
+done
 VERSION="$("$SRC" --version)"
-ENGINE="${4:-}"
 if [[ -n "$ENGINE" ]]; then
   [[ "$("$ENGINE" --version)" == "miao-engine $VERSION" ]] || { echo 'Preview CLI and engine versions must match' >&2; exit 1; }
   "$ENGINE" --capabilities >/dev/null
+fi
+if [[ -n "$TUI" ]]; then
+  [[ "$("$TUI" --version)" == "miao-tui $VERSION" ]] || { echo 'Preview CLI and TUI versions must match' >&2; exit 1; }
 fi
 mkdir -p "$BIN_DIR" "$(dirname "$LINK")"
 if [[ -e "$LINK" ]]; then
@@ -24,16 +45,19 @@ if [[ -e "$LINK" ]]; then
 fi
 MIAO_INSTALL_DIR="$BIN_DIR" bash "$REPO/install" --binary "$SRC" --no-modify-path
 TARGET="$(readlink "$BIN_DIR/miao")"
-if [[ -n "$ENGINE" ]]; then
-  PAIRED="$(dirname "$TARGET")/miao-engine"
-  STAGED="${PAIRED}.new-$$"
-  cp "$ENGINE" "$STAGED"
-  chmod 755 "$STAGED"
-  if ! ln "$STAGED" "$PAIRED" 2>/dev/null; then
-    cmp -s "$STAGED" "$PAIRED" || { rm -f "$STAGED"; echo 'Conflicting engine for retained preview build' >&2; exit 1; }
+pair_binary() {
+  local name="$1" source="$2"
+  local paired="$(dirname "$TARGET")/$name"
+  local staged="${paired}.new-$$"
+  cp "$source" "$staged"
+  chmod 755 "$staged"
+  if ! ln "$staged" "$paired" 2>/dev/null; then
+    cmp -s "$staged" "$paired" || { rm -f "$staged"; echo "Conflicting $name for retained preview build" >&2; exit 1; }
   fi
-  rm -f "$STAGED"
-fi
+  rm -f "$staged"
+}
+if [[ -n "$ENGINE" ]]; then pair_binary miao-engine "$ENGINE"; fi
+if [[ -n "$TUI" ]]; then pair_binary miao-tui "$TUI"; fi
 ln -s "$TARGET" "${LINK}.new-$$"
 mv -f "${LINK}.new-$$" "$LINK"
 echo "Installed miao-preview $VERSION at $LINK"

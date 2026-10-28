@@ -1,0 +1,13 @@
+$ python3 test_ci_gate.py (from .github/scripts)
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.004s
+
+OK
+
+$ python3 test_release_ci.py (from .github/scripts)
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.001s
+
+OK

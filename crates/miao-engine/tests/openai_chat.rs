@@ -569,3 +569,119 @@ async fn gateway_rate_limit_is_a_provider_rejection_not_an_invalid_stream() {
     assert!(requests.recv().await.is_some());
     server.await.unwrap();
 }
+
+/// `n` is 1, so the first choice is the answer. The TypeScript protocol reads
+/// `choices[0]` the same way and models no `index` at all, so a gateway that
+/// omits or renumbers the index — or duplicates the choice — is not a
+/// malformed reply.
+#[tokio::test]
+async fn a_choice_index_and_extra_choices_are_not_fatal() {
+    let body = frames(
+        vec![
+            json!({"choices":[{"delta":{"role":"assistant","content":"first"}}]}),
+            json!({"choices":[
+                {"index":3,"delta":{"content":" second"},"finish_reason":null},
+                {"index":4,"delta":{"content":" duplicate"}}
+            ]}),
+            chunk(json!({}), json!("stop")),
+        ],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(reply.content[0]["text"], "first second");
+    server.await.unwrap();
+}
+
+/// Some gateways flush one more frame after the terminal one. Its text belongs
+/// to the same reply, so it is appended instead of failing a turn that already
+/// streamed.
+#[tokio::test]
+async fn content_after_the_terminal_frame_is_kept() {
+    let body = frames(
+        vec![
+            chunk(json!({"content":"answer"}), json!("stop")),
+            chunk(json!({"content":" tail"}), json!(null)),
+        ],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(reply.content[0]["text"], "answer tail");
+    server.await.unwrap();
+}
+
+/// A gateway that repeats the terminal reason names the same stop again; the
+/// newest reason wins, exactly as the TypeScript protocol reads it.
+#[tokio::test]
+async fn a_repeated_finish_reason_does_not_fail_the_turn() {
+    let body = frames(
+        vec![
+            chunk(json!({"content":"answer"}), json!("stop")),
+            chunk(json!({"content":""}), json!("stop")),
+        ],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(reply.content[0]["text"], "answer");
+    server.await.unwrap();
+}
+
+/// An invalid frame names its own shape: the durable failure record keeps the
+/// message but not the response bytes, so the excerpt is the only evidence a
+/// later investigation gets.
+#[tokio::test]
+async fn an_invalid_frame_names_the_frame_it_rejected() {
+    let body = frames(vec![json!({"choices":{"0":{}}})], true);
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let error = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, ProviderError::Stream(message) if message.contains("invalid Chat Completions frame") && message.contains("choices")),
+        "unexpected error: {error:?}"
+    );
+    server.await.unwrap();
+}
+
+/// Some gateways close with a usage-only frame that has no `choices` key at
+/// all. It adds nothing to a reply that already streamed, and failing the turn
+/// there would throw away an answer the user can already see.
+#[tokio::test]
+async fn a_usage_only_frame_without_choices_is_not_fatal() {
+    let body = frames(
+        vec![
+            chunk(json!({"content":"answer"}), json!("stop")),
+            json!({"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}),
+        ],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(reply.content[0]["text"], "answer");
+    server.await.unwrap();
+}

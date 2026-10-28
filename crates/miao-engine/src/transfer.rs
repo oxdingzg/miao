@@ -73,20 +73,22 @@ impl Store {
             ).optional()?;
             let (id,digest) = header.ok_or_else(|| Error::Invalid("Session has no semantic import".into()))?;
             let mut stmt = tx.prepare(
-                "SELECT t.key,t.value FROM engine_transfer_import i,json_each(i.bundle,'$.timeline') t
+                "SELECT t.key,t.value,(SELECT MAX(m.seq) FROM engine_transfer_message m WHERE m.import_id=i.id AND m.source_message_id=COALESCE((SELECT a.value FROM json_each(i.bundle,'$.display_sources') a WHERE a.key=json_extract(t.value,'$.id')),json_extract(t.value,'$.id')))
+                 FROM engine_transfer_import i,json_each(i.bundle,CASE WHEN json_type(i.bundle,'$.display_timeline')='array' THEN '$.display_timeline' ELSE '$.timeline' END) t
                  WHERE i.session_id=?1 AND t.key>=?2 AND (?3=0 OR (json_extract(t.value,'$.id') IN
-                    (SELECT value FROM json_each(i.bundle,'$.context_ids'))
+                    (SELECT value FROM json_each(i.bundle,CASE WHEN json_type(i.bundle,'$.display_timeline')='array' THEN '$.display_context_ids' ELSE '$.context_ids' END))
                     AND (NOT EXISTS(SELECT 1 FROM engine_compaction c WHERE c.session_id=i.session_id AND c.created_seq<=?4)
-                    OR EXISTS(SELECT 1 FROM engine_transfer_message m WHERE m.import_id=i.id AND m.source_message_id=json_extract(t.value,'$.id')
+                    OR EXISTS(SELECT 1 FROM engine_transfer_message m WHERE m.import_id=i.id AND m.source_message_id=COALESCE((SELECT a.value FROM json_each(i.bundle,'$.display_sources') a WHERE a.key=json_extract(t.value,'$.id')),json_extract(t.value,'$.id'))
                         AND m.seq>(SELECT c.through_seq FROM engine_compaction c WHERE c.session_id=i.session_id AND c.created_seq<=?4 ORDER BY c.created_seq DESC LIMIT 1)))))
                  ORDER BY t.key LIMIT 101"
             )?;
-            let rows = stmt.query_map(params![session,after,selected,cursor.min(i64::MAX as u64)], |row| Ok((row.get::<_,usize>(0)?,row.get::<_,String>(1)?)))?;
+            let rows = stmt.query_map(params![session,after,selected,cursor.min(i64::MAX as u64)], |row| Ok((row.get::<_,usize>(0)?,row.get::<_,String>(1)?,row.get::<_,Option<u64>>(2)?)))?;
             let mut messages = Vec::new();
+            let mut sequences = serde_json::Map::new();
             let mut bytes = 0;
             let mut next = None;
             for row in rows {
-                let (offset,raw) = row?;
+                let (offset,raw,seq) = row?;
                 // A single canonical message remains indivisible. Its maximum
                 // size is already bounded by the validated source bundle.
                 if !messages.is_empty() && (messages.len()==100 || bytes+raw.len()>2*1024*1024) {
@@ -94,11 +96,15 @@ impl Store {
                     break;
                 }
                 bytes += raw.len();
-                messages.push(serde_json::from_str::<Value>(&raw)?);
+                let message = serde_json::from_str::<Value>(&raw)?;
+                if let (Some(id),Some(seq)) = (message["id"].as_str(),seq) {
+                    sequences.insert(id.to_owned(),json!(seq));
+                }
+                messages.push(message);
             }
             drop(stmt);
             tx.commit()?;
-            Ok(json!({"id":id,"bundle_sha256":digest,"after":after,"next":next,"messages":messages}))
+            Ok(json!({"id":id,"bundle_sha256":digest,"after":after,"next":next,"messages":messages,"sequences":sequences}))
         }).await
     }
 
@@ -229,6 +235,50 @@ impl Store {
                 ));
             }
         }
+        if let Some(display) = source.get("display_timeline") {
+            let display = display
+                .as_array()
+                .ok_or_else(|| Error::Invalid("invalid display timeline".into()))?;
+            let mut displayed = HashSet::new();
+            for message in display {
+                let id = field(message, "id")?;
+                let source_id = source["display_sources"][id]
+                    .as_str()
+                    .ok_or_else(|| Error::Invalid("missing display source identity".into()))?;
+                if !displayed.insert(id) || !identities.contains(source_id) {
+                    return Err(Error::Invalid(
+                        "display timeline does not match native history".into(),
+                    ));
+                }
+            }
+            let context = source["display_context_ids"]
+                .as_array()
+                .ok_or_else(|| Error::Invalid("missing display context".into()))?;
+            let mut selected_display = HashSet::new();
+            for id in context {
+                let id = id
+                    .as_str()
+                    .ok_or_else(|| Error::Invalid("invalid display context identity".into()))?;
+                if !displayed.contains(id) || !selected_display.insert(id) {
+                    return Err(Error::Invalid(
+                        "display context does not match timeline".into(),
+                    ));
+                }
+            }
+        }
+        // Keep future native message anchors above those retained in the
+        // canonical display archive. The journal starts at this explicit base.
+        let event_base = if source["source"]["engine"] == "rust" {
+            i64::try_from(match source["source"].get("sequence") {
+                None => 0,
+                Some(sequence) => sequence
+                    .as_u64()
+                    .ok_or_else(|| Error::Invalid("invalid native source cursor".into()))?,
+            })
+            .map_err(|_| Error::Invalid("invalid native source cursor".into()))?
+        } else {
+            0
+        };
         let id = id.to_owned();
         self.call(move |conn| {
             let tx = write_tx(conn)?;
@@ -256,8 +306,8 @@ impl Store {
                 return Err(Error::Conflict);
             }
             tx.execute(
-                "INSERT INTO engine_session(id,title,created_at_ms,updated_at_ms) VALUES(?1,?2,?3,?4)",
-                params![session,title,created,updated],
+                "INSERT INTO engine_session(id,title,created_at_ms,updated_at_ms,next_seq) VALUES(?1,?2,?3,?4,?5)",
+                params![session,title,created,updated,event_base],
             )?;
             tx.execute("INSERT INTO engine_location(session_id,root) VALUES(?1,?2)", params![session,root])?;
             append(&tx, &session, "session.transfer.staged", json!({"id":id,"bundle_sha256":digest}))?;
@@ -541,8 +591,23 @@ impl Store {
                     |row| row.get(0),
                 )?;
                 let watermark = watermark_i64.max(0) as u64;
+                let cursor: u64 = tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|row| row.get(0))?;
                 let agent = crate::session_agent::selected_at(&tx, &session, watermark)?;
                 let binding = crate::session_model::selected_at(&tx, &session, watermark)?;
+                // A Session on the default route has no explicit model
+                // selection. Recover its trusted serving identity from the
+                // committed assistant boundary so the destination can replay
+                // the same protocol/model rather than receiving a null binding.
+                let binding = match binding {
+                    Some(binding) => Some(binding),
+                    None => tx.query_row(
+                        "SELECT json_extract(data,'$.provider.protocol'),json_extract(data,'$.provider.model') FROM engine_event WHERE session_id=?1 AND kind='assistant.identity' AND json_extract(data,'$.assistant_seq')<=?2 ORDER BY seq DESC LIMIT 1",
+                        params![session, watermark],
+                        |row| Ok(crate::session_model::Binding {
+                            protocol: row.get(0)?, model: row.get(1)?, route_id: None, variant: None,
+                        }),
+                    ).optional()?,
+                };
                 let account = crate::session_account::selected_at(&tx, &session, watermark)?;
                 let state = crate::state::projection(&tx, &session, watermark)?;
                 let mut timeline = Vec::new();
@@ -636,7 +701,7 @@ impl Store {
                     .transpose()?;
                 let bundle_payload = json!({
                     "format":"miao.session.transfer.v1",
-                    "source":{"engine":"rust","storage":product_storage,"moved":true,"location":{"directory":target}},
+                    "source":{"engine":"rust","storage":product_storage,"moved":true,"sequence":cursor,"location":{"directory":target}},
                     "session":{
                         "id":session,
                         "title":title,

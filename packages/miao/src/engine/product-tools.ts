@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { AgentV2 } from "@miao/core/agent"
@@ -33,7 +33,7 @@ import { ToolRegistry } from "@miao/core/tool/registry"
 import { ToolFailure, type ToolCall } from "@miao/llm"
 import type { Location } from "@miao/schema/location"
 import { AbsolutePath } from "@miao/core/schema"
-import { DateTime, Effect, Option, Schema } from "effect"
+import { Cause, DateTime, Effect, Option, Schema } from "effect"
 import { EngineError, type EngineOptions } from "./client"
 import type { EngineClient, EngineEvent } from "./client"
 import { messageID } from "./identity"
@@ -110,6 +110,7 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
   const options: Partial<EngineOptions> = {}
   if (configuration.productToolsFile) return options
   const database = yield* Database.Service
+  const scope = yield* Effect.scope
   const db = database.db
   // Engine-owned worktree moves land in the same per-Location storage layout
   // the server derives for newborn native Sessions.
@@ -291,15 +292,22 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
           engineID: destinationPath,
           location: destination,
         })
-        const engines = moveEngine(source.client)
+        const engines = moveEngine(source.client, found)
         const destinationEngines = moveEngine(destinationOwner.client)
+        const temporary = yield* Effect.acquireRelease(
+          Effect.tryPromise({
+            try: () => mkdtemp(path.join(os.tmpdir(), "miao-workspace-move-")),
+            catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
+          }),
+          (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true })),
+        )
         yield* SessionMoveCoordinator.moveRust({
           database: db,
           id: crypto.randomUUID(),
           sessionID,
           source: { engine: "rust", storage: found.storage, location: found.location },
           target: { engine: "rust", storage: destinationPath, location: destination },
-          bundleFile: AbsolutePath.make(path.join(os.tmpdir(), `worktree-move-${crypto.randomUUID()}.json`)),
+          bundleFile: AbsolutePath.make(path.join(temporary, "bundle.json")),
           productDatabase: AbsolutePath.make(database.storage),
           routeID: undefined,
           engine: {
@@ -308,7 +316,7 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
             activate: destinationEngines.activate,
           },
         })
-      })
+      }).pipe(Effect.scoped)
     const remind = (text: string) =>
       peers
         .admit({
@@ -320,6 +328,109 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
         })
         .pipe(Effect.catch(() => Effect.void))
     return {
+      switch_workspace: Tool.make({
+        description:
+          "Switch this Session to an existing local directory when the user explicitly asks to work there or provides a repository path to modify. Use this before accessing paths outside the current workspace instead of asking the user to reopen the Session. Call it alone, then continue after the workspace-switch reminder. History and todos follow the Session; source files stay in place.",
+        input: Schema.Struct({ directory: Schema.String }),
+        output: Schema.Struct({
+          moved: Schema.Boolean,
+          pending: Schema.Boolean,
+          directory: Schema.String,
+        }),
+        toModelOutput: ({ output }) => [
+          {
+            type: "text" as const,
+            text: output.pending
+              ? `Workspace switch scheduled to ${output.directory}`
+              : `Already working in ${output.directory}`,
+          },
+        ],
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            const found = yield* placement(sessionID).pipe(
+              Effect.mapError(asMoveFailure("Unable to locate the Session placement")),
+            )
+            if (found?.engine !== "rust")
+              return yield* new ToolFailure({ message: "switch_workspace needs an engine-owned Session" })
+            const directory = yield* Effect.tryPromise({
+              try: async () => {
+                const expanded =
+                  input.directory === "~"
+                    ? os.homedir()
+                    : input.directory.startsWith("~/")
+                      ? path.join(os.homedir(), input.directory.slice(2))
+                      : input.directory
+                const resolved = await realpath(path.resolve(found.location.directory, expanded))
+                if (!(await stat(resolved)).isDirectory()) throw new Error("Workspace must be an existing directory")
+                return AbsolutePath.make(resolved)
+              },
+              catch: asMoveFailure("Unable to resolve the workspace directory"),
+            })
+            if (directory === found.location.directory) return { moved: false, pending: false, directory }
+            yield* permission
+              .assert({
+                action: "external_directory",
+                resources: [directory],
+                sessionID,
+                agent: context.agent,
+                source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+              })
+              .pipe(Effect.mapError(asMoveFailure("Workspace switch was not authorized")))
+            const source = yield* owner(found).pipe(
+              Effect.mapError(asMoveFailure("Unable to locate the source engine")),
+            )
+            yield* Effect.tryPromise({
+              try: () => source.session.watch(sessionID),
+              catch: asMoveFailure("Unable to observe the source Session"),
+            })
+            const snapshot = yield* Effect.tryPromise({
+              try: async () =>
+                Schema.decodeUnknownSync(Schema.Struct({ active_run: Schema.String }))(
+                  await source.client.request("snapshot", { session_id: sessionID, metadata_only: true }),
+                ),
+              catch: asMoveFailure("Unable to identify the current Session run"),
+            })
+            // Export requires a drained Session. Subscribe before returning the
+            // moved marker: the engine commits this tool result and finishes
+            // the source run before the scoped handoff exports its history.
+            yield* Effect.callback<void, ToolFailure>((resume) => {
+              const handler = (event: EngineEvent) => {
+                if (event.session_id !== sessionID || event.kind !== "run.finished") return
+                const data = asRecord(event.data)
+                if (data?.["run_id"] !== snapshot.active_run) return
+                source.client.offEvent(handler)
+                resume(data["reason"] === "completed" ? Effect.void : Effect.interrupt)
+              }
+              source.client.onEvent(handler)
+              return Effect.sync(() => source.client.offEvent(handler))
+            }).pipe(
+              Effect.andThen(() => move(found, { ...found.location, directory })),
+              Effect.andThen(() =>
+                Effect.gen(function* () {
+                  yield* events.publish(SessionEvent.Moved, {
+                    sessionID,
+                    location: { ...found.location, directory },
+                    timestamp: yield* DateTime.now,
+                  })
+                }),
+              ),
+              Effect.andThen(() =>
+                remind(
+                  `The Session workspace is now "${directory}". All subsequent file and process tools use that directory. Read its AGENTS.md and continue the user's task there.`,
+                ),
+              ),
+              Effect.catchCause((cause) =>
+                Cause.hasInterrupts(cause)
+                  ? Effect.void
+                  : remind(
+                      `Workspace switch to "${directory}" failed: ${Cause.pretty(cause)}. Check the current Session placement before continuing.`,
+                    ),
+              ),
+              Effect.forkIn(scope, { startImmediately: true }),
+            )
+            return { moved: true, pending: true, directory }
+          }),
+      }),
       enter_worktree: Tool.make({
         description:
           "Move this Session into a git worktree of its project. Every tool call afterwards runs in that directory; commit anything that matters before leaving with exit_worktree.",

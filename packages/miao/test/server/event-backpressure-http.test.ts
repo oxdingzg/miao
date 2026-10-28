@@ -147,9 +147,26 @@ it.live(
 )
 
 it.live(
-  "a real HTTP durable subscriber resumes strictly after its cursor and follows new commits",
+  "a real HTTP durable subscriber resumes a TypeScript-owned session after its cursor and follows new commits",
   () =>
     Effect.gen(function* () {
+      // This fixture exercises the TypeScript durable event store. An installed
+      // native engine must not change session placement or require a model.
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          const previous = process.env.MIAO_ENGINE_STORAGE
+          process.env.MIAO_ENGINE_STORAGE = ""
+          return previous
+        }),
+        (previous) =>
+          Effect.sync(() => {
+            if (previous === undefined) {
+              delete process.env.MIAO_ENGINE_STORAGE
+              return
+            }
+            process.env.MIAO_ENGINE_STORAGE = previous
+          }),
+      )
       const tmp = yield* tmpdirScoped({ git: true })
       const server = yield* Effect.promise(() => Server.listen({ port: 0, hostname: "127.0.0.1" }))
       const abort = new AbortController()

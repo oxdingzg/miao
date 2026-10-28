@@ -1,0 +1,149 @@
+{
+  "date": "2026-10-28",
+  "reference_commit": "4f49325f7d5f6eebd3a8787f393410519bf157dd",
+  "scope": "CLI-01/03/04/05 and QA-01/02; fixture/native/editors/current publication are distinct evidence",
+  "checks": {
+    "rust_passed": 21,
+    "native_product_passed": 17,
+    "native_product_assertions": 143,
+    "headless_passed": 19,
+    "headless_assertions": 35,
+    "server_initial_passed": 19,
+    "server_initial_failed": 1,
+    "server_initial_assertions": 215,
+    "explicit_ts_control_passed": 2,
+    "explicit_ts_control_assertions": 135,
+    "receipt": "checks-clients-replay.txt"
+  },
+  "items": [
+    {
+      "code": "CLI-01",
+      "result": "needs_full_entrypoint_option_acceptance",
+      "observed": [
+        "Headless/session-replay fixtures cover settled output, JSON event ordering, error propagation, explicit model refusal and replay semantics (19 tests). Native/TS actual HTTP both finish the same 26-read task.",
+        "The default Rust TUI startup and Chinese composer were separately exercised on feature preview #1577; its unsupported-option validation runs before terminal initialization."
+      ],
+      "remaining": [
+        "Default Rust TUI explicitly rejects multiple options supported by the legacy interface, including agent/fork/mini/replay-related combinations; complete same-behavior coverage across all entry points is not established.",
+        "The stdin/initial prompt/continue/session/fork/model/agent matrix must be exercised against the current compiled entrypoints.",
+        "The main TUI test contains an implicit-default expectation fixed by #1577; the feature result is not part of released main."
+      ],
+      "evidence": [
+        "packages/miao/src/cli/cmd/tui.ts",
+        "packages/miao/test/cli/run/headless.test.ts",
+        "packages/miao/test/cli/run/session-replay.test.ts",
+        "packages/miao/test/engine/native-default-parity-http.test.ts",
+        "https://github.com/oxdingzg/miao/pull/1577"
+      ]
+    },
+    {
+      "code": "CLI-03",
+      "result": "needs_current_real_editor_acceptance",
+      "observed": [
+        "Independent ACP SDK fixtures cover native capability round trips, authenticate/load replay/list/close idempotence, missing resume and process reconnect; Rust ACP peers cover provider failure, cancellation and slow stdio.",
+        "Historical real Zed UI approval/reject/Stop/reopen receipts exist on engine 0.2.25. Neovim 0.12.6/CodeCompanion 20.0.1 has three actual UI interactions on candidate 0.3.7 (95fc78a62a), with strict JSON-RPC frames and clean teardown."
+      ],
+      "remaining": [
+        "Those editor receipts do not verify the published 0.3.14 artifact or all current terminal/config/usage contracts.",
+        "The second editor is no longer absent, but its candidate record is distinct from final merged-artifact load/resume acceptance.",
+        "Real-provider/quota/credential-expiry acceptance remains owner/budget dependent."
+      ],
+      "evidence": [
+        "packages/miao/test/engine/native-acp-sdk.test.ts",
+        "packages/miao/test/engine/native-acp-lifecycle.test.ts",
+        "packages/miao/test/engine/native-acp-capabilities.test.ts",
+        "packages/miao/test/engine/native-acp-reconnect.test.ts",
+        "crates/miao-engine/tests/acp_client_matrix.rs",
+        "crates/miao-engine/docs/zed-acp-ui-acceptance-2026-10-23.md",
+        "crates/miao-engine/docs/codecompanion-acp-ui-acceptance-2026-10-25.en.md",
+        "https://github.com/oxdingzg/miao/issues/1267"
+      ]
+    },
+    {
+      "code": "CLI-04",
+      "result": "needs_multi_engine_location_acceptance",
+      "observed": [
+        "Native HTTP lease fixtures keep another window alive after one detaches, retain running work without UI leases and close idle event streams. HTTP SSE verifies ordered durable cursors; ACP process reconnect retains conversation once.",
+        "Runtime/location API fixtures verify identity/auth, path/config/provider operations and EventV2 location payloads. The paused TCP subscriber fixture leaves a healthy peer and reconnect functioning."
+      ],
+      "remaining": [
+        "These checks do not prove two simultaneously active, distinct engine/Location/storage instances never mix events, permission or usage attribution.",
+        "The newly reproduced workspace service scope issue is addressed only by open PR #1579, not the released baseline.",
+        "The durable replay fixture has backend-selection environment sensitivity; see the initial failed invocation and explicit TS control in the receipt."
+      ],
+      "evidence": [
+        "crates/miao-engine/tests/http_leases.rs",
+        "crates/miao-engine/tests/http_sse.rs",
+        "packages/miao/test/engine/native-acp-reconnect.test.ts",
+        "packages/miao/test/server/httpapi-runtime.test.ts",
+        "packages/miao/test/server/httpapi-v2-location.test.ts",
+        "packages/miao/test/server/event-backpressure-http.test.ts",
+        "https://github.com/oxdingzg/miao/pull/1579"
+      ]
+    },
+    {
+      "code": "CLI-05",
+      "result": "needs_full_control_plane_retirement_acceptance",
+      "observed": [
+        "The old packages/miao/src/effect/app-runtime.ts path no longer exists. Current product HTTP assembly delegates to packages/server/src/assembly.ts and typed /api groups, plus host OpenAPI/UI extensions.",
+        "The current location API fixture successfully writes global config visible to an open location, stores a key for a just-defined provider, initializes/lists projects, reports paths and creates/resets/removes worktrees."
+      ],
+      "remaining": [
+        "Non-Session control-plane services remain TypeScript-hosted in the shared assembly, with public/legacy schema projections and generated compatibility types still retained. Absence of one obsolete file is not complete retirement.",
+        "A complete consumer/caller map and real-client directory selection/custom-provider/global-config acceptance remain open; #1570 records responsibility boundaries.",
+        "This audit does not authorize deleting compatibility types or remaining services before their replacement API is accepted."
+      ],
+      "evidence": [
+        "packages/miao/src/server/routes/instance/httpapi/server.ts",
+        "packages/miao/src/server/routes/instance/httpapi/public.ts",
+        "packages/miao/src/server/routes/instance/httpapi/public-schemas.ts",
+        "packages/server/src/assembly.ts",
+        "packages/protocol/src/api.ts",
+        "packages/miao/test/server/httpapi-v2-location.test.ts",
+        "https://github.com/oxdingzg/miao/pull/1570"
+      ]
+    },
+    {
+      "code": "QA-01",
+      "result": "needs_complete_fault_and_cross_engine_acceptance",
+      "observed": [
+        "Actual native-tool replay removes the recorded output file, stops the live upstream, replays the receipts and verifies no file is recreated and no additional upstream requests occur.",
+        "Rust accuracy/differential fixtures validate actual patch behavior against the reference/product contract and unchanged workspaces after rejected mutations. HTTP/ACP fixtures cover cancellation, reconnect, durable cursor order and bounded slow-reader behavior."
+      ],
+      "remaining": [
+        "The full pre/post-dispatch crash, normalized partial-stream/tool-result substitution and SQLite contention matrix across actual TS/Rust boundaries is not completed by this selected set.",
+        "Native default parity is one 26-read task, not the full paid-model task baseline or all accepted semantic differences.",
+        "The unconfigured durable-replay server invocation failed due to native backend selection; its explicit TS control passes but the fixture isolation follow-up remains open."
+      ],
+      "evidence": [
+        "packages/miao/test/engine/native-tool-replay.test.ts",
+        "packages/miao/test/engine/native-replay.test.ts",
+        "packages/miao/test/engine/native-default-parity-http.test.ts",
+        "crates/miao-engine/tests/accuracy.rs",
+        "crates/miao-engine/tests/differential.rs",
+        "crates/miao-engine/tests/acp_client_matrix.rs",
+        "packages/miao/test/server/event-backpressure-http.test.ts"
+      ]
+    },
+    {
+      "code": "QA-02",
+      "result": "needs_current_client_and_platform_matrix",
+      "observed": [
+        "This takeover exercised default Rust TUI in tmux, Session listing/creation, Chinese text rendering and clean exit on a macOS preview. Native SDK/ACP/HTTP, TS headless and slow-reader fixtures have passing receipts.",
+        "Existing real-editor receipts identify their actual versions and candidate artifacts instead of being relabeled as current release acceptance."
+      ],
+      "remaining": [
+        "The full current TUI/mini/SDK/Web/Desktop/ACP/remote user-path matrix remains open.",
+        "Chinese text rendered via tmux is not physical CJK IME composition or human usability acceptance. Current narrow-screen, Windows Terminal and real-device interaction records are still needed.",
+        "Headless/fake-provider success and old editor receipts do not replace current manual-client acceptance."
+      ],
+      "evidence": [
+        "https://github.com/oxdingzg/miao/pull/1577",
+        "packages/miao/test/cli/run/headless.test.ts",
+        "packages/miao/test/engine/native-acp-sdk.test.ts",
+        "crates/miao-engine/docs/zed-acp-ui-acceptance-2026-10-23.md",
+        "crates/miao-engine/docs/codecompanion-acp-ui-acceptance-2026-10-25.en.md"
+      ]
+    }
+  ]
+}

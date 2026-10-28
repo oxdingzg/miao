@@ -150,3 +150,39 @@ test("caught-up idle polling does not reread a long journal", async () => {
   expect(methods).toEqual(["snapshot"])
   expect(page).toEqual({ events: [], cursor: 2500, hasMore: false })
 })
+
+test("moved journals replay from their explicit base and still reject gaps", async () => {
+  for (const gap of [false, true]) {
+    const operation = replayJournal({
+      sessionID,
+      location,
+      engineID: "destination",
+      after: 0,
+      request: async (method, params) => {
+        if (method === "snapshot") return { session_id: sessionID, cursor: 102, event_base: 100 }
+        expect(params.after).toBe(100)
+        return gap ? [row(102, "gap")] : [row(101, "first moved event"), row(102, "next moved event")]
+      },
+    })
+    if (gap) {
+      await expect(operation).rejects.toThrow("invalid or discontinuous")
+      continue
+    }
+    const result = await operation
+    expect(result.cursor).toBe(102)
+    expect(result.events.some((event) => JSON.stringify(event).includes("first moved event"))).toBe(true)
+  }
+})
+
+for (const event_base of [-1, 1.5, 3, "0", null])
+  test(`journal rejects invalid event_base ${JSON.stringify(event_base)}`, async () => {
+    await expect(
+      replayJournal({
+        sessionID,
+        location,
+        engineID: "destination",
+        after: 0,
+        request: async () => ({ session_id: sessionID, cursor: 2, event_base }),
+      }),
+    ).rejects.toThrow("invalid journal base")
+  })
