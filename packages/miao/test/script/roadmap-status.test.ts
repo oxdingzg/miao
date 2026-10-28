@@ -50,9 +50,9 @@ test("recording the same pull request twice leaves the body alone", () => {
   expect(withEvidence(once, { number: 1591, url: "https://github.com/oxdingzg/miao/pull/1591" })).toBe(once)
 })
 
-test("a body without an evidence line is left alone", () => {
+test("a body without a fixed evidence line receives the merged PR link", () => {
   expect(withEvidence("### 接手进展\n\n状态：进行中。", { number: 1, url: "https://x/1" })).toBe(
-    "### 接手进展\n\n状态：进行中。",
+    "### 接手进展\n\n状态：进行中。\n\n关联证据：[#1](https://x/1)。",
   )
 })
 
@@ -63,4 +63,18 @@ test("acceptance records are read from committed documents", () => {
   expect(acceptanceRecords("roadmap: CFG-02 done in 0.3.16\n")).toEqual([{ code: "CFG-02", version: "0.3.16" }])
   expect(acceptanceRecords("roadmap: CFG-02 in progress\n")).toEqual([])
   expect(acceptanceRecords("- roadmap: CFG-02 done in v0.3.16 and more\n")).toEqual([])
+})
+
+test("new evidence preserves acceptance checkboxes and remains idempotent", () => {
+  const original = "## 待验收\n\n- [ ] 真实客户端与旧数据待验收。\n\n"
+  const reference = { number: 1613, url: "https://github.com/oxdingzg/miao/pull/1613" }
+  const recorded = withEvidence(original, reference)
+  expect(recorded).toStartWith("## 待验收\n\n- [ ] 真实客户端与旧数据待验收。\n\n")
+  expect(recorded).toContain("关联证据：[#1613](https://github.com/oxdingzg/miao/pull/1613)。")
+  expect(recorded).not.toContain("- [x]")
+  expect(withEvidence(recorded, reference)).toBe(recorded)
+})
+
+test("an empty draft receives a usable evidence line", () => {
+  expect(withEvidence("", { number: 1, url: "https://x/1" })).toBe("关联证据：[#1](https://x/1)。")
 })
