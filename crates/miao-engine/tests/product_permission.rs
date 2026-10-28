@@ -46,7 +46,13 @@ fn request(resource: &str) -> Request {
     }
 }
 
-async fn running() -> (tempfile::TempDir, Store, Runtime, Source) {
+async fn running_with_sources() -> (
+    tempfile::TempDir,
+    Store,
+    Runtime,
+    Source,
+    mpsc::Receiver<Value>,
+) {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().join("workspace");
     std::fs::create_dir(&root).unwrap();
@@ -119,8 +125,12 @@ async fn running() -> (tempfile::TempDir, Store, Runtime, Source) {
         call_id: frame["params"]["call_id"].as_str().unwrap().into(),
         message_seq: frame["params"]["message_seq"].as_u64().unwrap(),
     };
-    // Keep the receiver alive while the pending call waits; cancellation may
-    // send its notice without requiring a cooperative host response.
+    (directory, store, runtime, source, receive)
+}
+
+async fn running() -> (tempfile::TempDir, Store, Runtime, Source) {
+    let (directory, store, runtime, source, mut receive) = running_with_sources().await;
+    // Cancellation can send a notice without a cooperative host response.
     tokio::spawn(async move { while receive.recv().await.is_some() {} });
     (directory, store, runtime, source)
 }
@@ -1239,5 +1249,288 @@ async fn assertion_wire_refuses_caller_authority_and_unbounded_inputs() {
         .unwrap()
         .iter()
         .any(|event| event.kind == "product.permission.requested"));
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn rejecting_a_host_assertion_rejects_only_already_pending_session_siblings() {
+    use miao_engine::product_permission_request::{Reply, State};
+    let (_directory, store, runtime, source) = running().await;
+    let first = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("reject-first", "public"),
+        )
+        .await
+        .unwrap();
+    let sibling = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("reject-sibling", "other"),
+        )
+        .await
+        .unwrap();
+    runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&first, Reply::Reject),
+        )
+        .await
+        .unwrap();
+    let rejected = runtime
+        .product_permission_status(&runtime.controller(), &source, sibling.id.clone())
+        .await
+        .unwrap();
+    assert_eq!(rejected.state, State::Denied);
+    assert_eq!(rejected.reply, Some(Reply::Reject));
+    assert!(runtime
+        .pending_product_permissions(&runtime.controller(), "s".into())
+        .await
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        runtime
+            .admit_product_permission(
+                &runtime.controller(),
+                &source,
+                assertion("after-reject", "other")
+            )
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    assert_eq!(
+        store
+            .events("s", 0, 1000)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind == "product.permission.resolved")
+            .count(),
+        2
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn always_releases_matching_pending_assertions_across_live_session_sources() {
+    use miao_engine::product_permission_request::{Reply, State};
+    let (_directory, _store, runtime, source, mut receive) = running_with_sources().await;
+    runtime
+        .admit(
+            Input {
+                session_id: "other-session".into(),
+                input_id: "other-input".into(),
+                prompt: "call host".into(),
+                delivery: Delivery::Steer,
+                agent_references: Default::default(),
+                command: None,
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    runtime.set_agent("other-session", serde_json::from_value(json!({"name":"other-agent","ordered_permissions":{"semantics":"ordered-wildcard-v1","rules":[
+        {"action":"*","resource":"*","effect":"allow"},
+        {"action":"read","resource":"*","effect":"ask"},
+        {"action":"read","resource":"blocked","effect":"deny"}
+    ]}})).unwrap()).await.unwrap();
+    runtime.resume("other-session").await.unwrap();
+    let frame = tokio::time::timeout(std::time::Duration::from_secs(5), receive.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(frame["method"], "product_tool");
+    let other = Source {
+        session_id: "other-session".into(),
+        bridge_id: frame["bridge_id"].as_u64().unwrap(),
+        call_id: frame["params"]["call_id"].as_str().unwrap().into(),
+        message_seq: frame["params"]["message_seq"].as_u64().unwrap(),
+    };
+    tokio::spawn(async move { while receive.recv().await.is_some() {} });
+    let mut input = assertion("always-first", "public");
+    input.save = Some(vec!["public".into(), "blocked".into()]);
+    let first = runtime
+        .admit_product_permission(&runtime.controller(), &source, input)
+        .await
+        .unwrap();
+    let sibling = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("same-source", "public"),
+        )
+        .await
+        .unwrap();
+    let cross_session = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &other,
+            assertion("cross-session", "public"),
+        )
+        .await
+        .unwrap();
+    let unmatched = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &other,
+            assertion("unmatched", "different"),
+        )
+        .await
+        .unwrap();
+    // A new selected agent belongs to a later turn, not either live source.
+    runtime.set_agent("other-session", serde_json::from_value(json!({"name":"later-agent","ordered_permissions":{"semantics":"ordered-wildcard-v1","rules":[{"action":"*","resource":"*","effect":"deny"}]}})).unwrap()).await.unwrap();
+    runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&first, Reply::Always),
+        )
+        .await
+        .unwrap();
+    for (source, record) in [(&source, sibling), (&other, cross_session)] {
+        let allowed = runtime
+            .product_permission_status(&runtime.controller(), source, record.id)
+            .await
+            .unwrap();
+        assert_eq!(allowed.state, State::Allowed);
+        assert_eq!(allowed.reply, Some(Reply::Always));
+    }
+    assert_eq!(
+        runtime
+            .product_permission_status(&runtime.controller(), &other, unmatched.id)
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    assert_eq!(
+        runtime
+            .admit_product_permission(
+                &runtime.controller(),
+                &other,
+                assertion("blocked", "blocked")
+            )
+            .await
+            .unwrap()
+            .state,
+        State::Denied
+    );
+    for pattern in runtime
+        .permission_patterns(&runtime.controller())
+        .await
+        .unwrap()
+    {
+        runtime
+            .remove_permission_pattern(&runtime.controller(), pattern.id)
+            .await
+            .unwrap();
+    }
+    let fresh = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("after-revoke", "public"),
+        )
+        .await
+        .unwrap();
+    runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&first, Reply::Always),
+        )
+        .await
+        .unwrap();
+    assert!(runtime
+        .permission_patterns(&runtime.controller())
+        .await
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        runtime
+            .product_permission_status(&runtime.controller(), &source, fresh.id)
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    let reject = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("local-reject", "different"),
+        )
+        .await
+        .unwrap();
+    runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&reject, Reply::Reject),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        runtime
+            .pending_product_permissions(&runtime.controller(), "other-session".into())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn failed_always_does_not_partially_release_sibling_assertions() {
+    use miao_engine::product_permission_request::{Reply, State};
+    let (_directory, store, runtime, source) = running().await;
+    let mut input = assertion("atomic-first", "public");
+    input.save = Some(vec!["public".into()]);
+    let first = runtime
+        .admit_product_permission(&runtime.controller(), &source, input)
+        .await
+        .unwrap();
+    let sibling = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("atomic-sibling", "public"),
+        )
+        .await
+        .unwrap();
+    let connection = rusqlite::Connection::open(store.path()).unwrap();
+    connection.execute_batch("CREATE TRIGGER fail_sibling_resolution BEFORE UPDATE ON engine_product_permission_request WHEN NEW.id='atomic-sibling' BEGIN SELECT RAISE(ABORT,'fixture sibling fault'); END;").unwrap();
+    assert!(runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&first, Reply::Always)
+        )
+        .await
+        .is_err());
+    for record in [&first, &sibling] {
+        assert_eq!(
+            runtime
+                .product_permission_status(&runtime.controller(), &source, record.id.clone())
+                .await
+                .unwrap()
+                .state,
+            State::Pending
+        );
+    }
+    assert!(runtime
+        .permission_patterns(&runtime.controller())
+        .await
+        .unwrap()
+        .is_empty());
+    connection
+        .execute_batch("DROP TRIGGER fail_sibling_resolution")
+        .unwrap();
     runtime.shutdown().await;
 }

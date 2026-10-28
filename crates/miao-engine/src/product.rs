@@ -228,21 +228,46 @@ impl Bridge {
         execute: impl FnOnce(&crate::product_permission::Authority) -> Result<T, crate::protocol::Error>,
     ) -> Result<T, crate::protocol::Error> {
         let pending = self.pending.lock().unwrap();
-        let authority = pending
-            .get(&source.bridge_id)
-            .filter(|pending| {
-                pending.session == source.session_id && pending.method == "product_tool"
-            })
-            .and_then(|pending| pending.permission.as_ref())
-            .filter(|authority| {
-                authority.context.call_id == source.call_id
-                    && authority.context.message_seq == source.message_seq
-                    && !authority.cancel.is_cancelled()
-            })
-            .ok_or_else(|| {
-                crate::protocol::Error::Invalid("inactive product permission source".into())
-            })?;
+        let authority = permission_authority(&pending, source)?;
         execute(authority)
+    }
+
+    /// Keep every candidate source slot stable while one standing-policy reply
+    /// reevaluates its peers. Borrow authorities instead of cloning all rules.
+    pub(crate) fn with_permission_sources<T>(
+        &self,
+        source: &crate::product_permission::Source,
+        execute: impl FnOnce(
+            &[(
+                crate::product_permission::Source,
+                &crate::product_permission::Authority,
+            )],
+        ) -> Result<T, crate::protocol::Error>,
+    ) -> Result<T, crate::protocol::Error> {
+        let pending = self.pending.lock().unwrap();
+        permission_authority(&pending, source)?;
+        let sources = pending
+            .iter()
+            .filter_map(|(id, pending)| {
+                if pending.method != "product_tool" {
+                    return None;
+                }
+                let authority = pending.permission.as_ref()?;
+                if authority.cancel.is_cancelled() {
+                    return None;
+                }
+                Some((
+                    crate::product_permission::Source {
+                        session_id: pending.session.clone(),
+                        bridge_id: *id,
+                        call_id: authority.context.call_id.clone(),
+                        message_seq: authority.context.message_seq,
+                    },
+                    authority,
+                ))
+            })
+            .collect::<Vec<_>>();
+        execute(&sources)
     }
 
     pub(crate) fn same_connection(&self, other: &Self) -> bool {
@@ -294,4 +319,20 @@ pub(crate) fn deliver(
         .unwrap()
         .remove(&bridge_id)
         .is_some_and(|call| call.reply.send(value).is_ok())
+}
+
+fn permission_authority<'a>(
+    pending: &'a HashMap<u64, Pending>,
+    source: &crate::product_permission::Source,
+) -> Result<&'a crate::product_permission::Authority, crate::protocol::Error> {
+    pending
+        .get(&source.bridge_id)
+        .filter(|pending| pending.session == source.session_id && pending.method == "product_tool")
+        .and_then(|pending| pending.permission.as_ref())
+        .filter(|authority| {
+            authority.context.call_id == source.call_id
+                && authority.context.message_seq == source.message_seq
+                && !authority.cancel.is_cancelled()
+        })
+        .ok_or_else(|| crate::protocol::Error::Invalid("inactive product permission source".into()))
 }

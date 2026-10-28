@@ -95,7 +95,9 @@ pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
            data TEXT NOT NULL
          );
          CREATE INDEX IF NOT EXISTS engine_product_permission_pending
-         ON engine_product_permission_request(session_id,state);",
+         ON engine_product_permission_request(session_id,state);
+         CREATE INDEX IF NOT EXISTS engine_product_permission_owner_pending
+         ON engine_product_permission_request(owner,workspace,state);",
     )?;
     Ok(())
 }
@@ -157,7 +159,7 @@ impl Store {
         response: Response,
     ) -> Result<Record, Error> {
         self.call(move |connection| {
-            with_source(connection, &context, |transaction| {
+            with_sources(connection, &context, |transaction, sources| {
                 let (owner, mut record) = load(transaction, &response.request_id)?
                     .ok_or_else(|| Error::Invalid("product permission request not found".into()))?;
                 require_binding(&context, &owner, &record)?;
@@ -210,6 +212,7 @@ impl Store {
                     .into()
                 });
                 resolve(transaction, &record)?;
+                resolve_siblings(transaction, &context, sources, &record)?;
                 Ok(record)
             })
         })
@@ -263,6 +266,14 @@ fn with_source<T>(
     context: &Context,
     execute: impl FnOnce(&Transaction<'_>) -> Result<T, Error>,
 ) -> Result<T, Error> {
+    with_sources(connection, context, |transaction, _| execute(transaction))
+}
+
+fn with_sources<T>(
+    connection: &mut Connection,
+    context: &Context,
+    execute: impl FnOnce(&Transaction<'_>, &[(Source, &Authority)]) -> Result<T, Error>,
+) -> Result<T, Error> {
     // Lock order matches bridge replacement/reply delivery: product then call.
     // Both remain held through the SQL commit so an acknowledged cancellation
     // or source replacement cannot precede a later authorization mutation.
@@ -276,10 +287,10 @@ fn with_source<T>(
     }
     context
         .bridge
-        .with_permission_authority(&context.source, |_| {
+        .with_permission_sources(&context.source, |sources| {
             let transaction = crate::store::write_tx(connection)?;
             require_active(&transaction, context)?;
-            let result = execute(&transaction)?;
+            let result = execute(&transaction, sources)?;
             require_active(&transaction, context)?;
             transaction.commit()?;
             Ok(result)
@@ -317,9 +328,88 @@ fn require_binding(context: &Context, owner: &str, record: &Record) -> Result<()
 }
 
 fn require_active(connection: &Connection, context: &Context) -> Result<(), Error> {
-    let active: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM engine_tool t JOIN engine_run r ON r.id=t.run_id JOIN engine_location l ON l.session_id=r.session_id WHERE t.id=?1 AND t.state='dispatched' AND r.id=?2 AND r.session_id=?3 AND r.state='running' AND l.root=?4)",params![format!("{}/{}",context.authority.run_id,context.source.call_id),context.authority.run_id,context.source.session_id,context.workspace],|row|row.get(0))?;
-    if !active || context.authority.cancel.is_cancelled() {
+    if !source_active(connection, context)? {
         return Err(Error::Invalid("inactive product permission source".into()));
+    }
+    Ok(())
+}
+
+fn source_active(connection: &Connection, context: &Context) -> Result<bool, Error> {
+    let active: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM engine_tool t JOIN engine_run r ON r.id=t.run_id JOIN engine_location l ON l.session_id=r.session_id WHERE t.id=?1 AND t.state='dispatched' AND r.id=?2 AND r.session_id=?3 AND r.state='running' AND l.root=?4)",params![format!("{}/{}",context.authority.run_id,context.source.call_id),context.authority.run_id,context.source.session_id,context.workspace],|row|row.get(0))?;
+    Ok(active && !context.authority.cancel.is_cancelled())
+}
+
+fn resolve_siblings(
+    transaction: &Transaction<'_>,
+    context: &Context,
+    sources: &[(Source, &Authority)],
+    resolved: &Record,
+) -> Result<(), Error> {
+    let reject = resolved.reply == Some(Reply::Reject);
+    let remember = resolved.state == State::Allowed
+        && resolved.reply == Some(Reply::Always)
+        && resolved
+            .request
+            .save
+            .as_ref()
+            .is_some_and(|save| !save.is_empty());
+    if !reject && !remember {
+        return Ok(());
+    }
+    // Snapshot before settling peers: a later assertion must not inherit a
+    // rejection of the requests that were already waiting alongside this one.
+    let records = {
+        let mut statement = transaction.prepare("SELECT data FROM engine_product_permission_request WHERE owner=?1 AND workspace=?2 AND state='pending' AND id!=?3 AND (?4 IS NULL OR session_id=?4) ORDER BY id")?;
+        let rows = statement.query_map(
+            params![
+                context.owner,
+                context.workspace,
+                resolved.id,
+                reject.then_some(&context.source.session_id)
+            ],
+            |row| row.get::<_, String>(0),
+        )?;
+        rows.map(|row| serde_json::from_str::<Record>(&row?).map_err(Error::from))
+            .collect::<Result<Vec<_>, Error>>()?
+    };
+    for mut record in records {
+        if expire(transaction, &mut record)? {
+            continue;
+        }
+        let authority = sources
+            .iter()
+            .find_map(|(source, authority)| (source == &record.source).then_some(*authority));
+        let Some(authority) = authority else {
+            record.state = State::Cancelled;
+            record.reason = Some("source_finished".into());
+            resolve(transaction, &record)?;
+            continue;
+        };
+        let sibling = Context {
+            source: record.source.clone(),
+            authority: authority.clone(),
+            ..context.clone()
+        };
+        require_binding(&sibling, &context.owner, &record)?;
+        if !source_active(transaction, &sibling)? {
+            record.state = State::Cancelled;
+            record.reason = Some("source_finished".into());
+            resolve(transaction, &record)?;
+            continue;
+        }
+        if !reject
+            && evaluate(transaction, &sibling, &record.request.facts)?.effect != Decision::Allow
+        {
+            continue;
+        }
+        record.state = if reject {
+            State::Denied
+        } else {
+            State::Allowed
+        };
+        record.reply = Some(if reject { Reply::Reject } else { Reply::Always });
+        record.reason = reject.then(|| "user_rejected".into());
+        resolve(transaction, &record)?;
     }
     Ok(())
 }

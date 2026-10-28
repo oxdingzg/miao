@@ -668,6 +668,22 @@ payloads are bounded to 16 KiB. The additive optional request table leaves the
 existing schema version unchanged.
 
 This is the durable backend for host subrequests. The product compatibility
-adapter, sibling-request reply semantics, product event projection, and removal
+adapter, corrected-rejection feedback, product event projection, and removal
 of the TypeScript evaluator remain separate S6 gates. Existing host tools do
 not switch permission ownership merely because the capability is present.
+
+#### Replies and already-pending peers
+
+A reject resolves this request and the already-pending requests in the same
+Session. It does not reject another Session or a request admitted afterwards.
+An allowed `always` with nonempty save patterns rechecks pending requests owned
+by this Runtime in the same canonical workspace, including other Sessions.
+Each live source uses its own captured agent/authority and the newly saved
+rules: only allow results resolve; unmatched asks and configured denies are
+preserved. Expired or inactive sources cannot inherit approval.
+
+The bridge's source slots remain locked through the shared SQL transaction.
+Patterns, the selected reply, peer resolutions, and their events commit or roll
+back together. An exact retry of an already-resolved reply performs no sweep and
+does not restore rules removed since that reply. These semantics match the host
+permission service without enabling the product compatibility adapter.
