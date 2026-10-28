@@ -335,8 +335,8 @@ fn push(args: &mut Vec<String>, flag: &str, value: String) {
     args.push(value);
 }
 
-/// `MIAO_ENGINE_BIN` first, then the installed locations the product uses,
-/// then `PATH`.
+/// Prefer the operator override, then the engine retained beside this TUI,
+/// then installed locations and `PATH`.
 fn engine_binary() -> PathBuf {
     if let Some(explicit) = std::env::var_os("MIAO_ENGINE_BIN") {
         return PathBuf::from(explicit);
@@ -346,6 +346,13 @@ fn engine_binary() -> PathBuf {
     } else {
         "miao-engine"
     };
+    if let Some(paired) = std::env::current_exe()
+        .ok()
+        .and_then(|executable| executable.parent().map(|dir| dir.join(name)))
+        .filter(|candidate| candidate.is_file())
+    {
+        return paired;
+    }
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .into_iter()
