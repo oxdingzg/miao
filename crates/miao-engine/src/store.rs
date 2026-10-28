@@ -2176,6 +2176,7 @@ impl Store {
                 completed["display"] = display;
             }
             cancel_approvals(&tx, &session, &run, Some(&key))?;
+            crate::question::cancel_pending(&tx, &session, &run, Some(&id))?;
             append(&tx,&session,"tool.completed",completed)?;
             let mut content = vec![json!({"type":"tool_result","tool_use_id":id,"content":serde_json::to_string(&result)?,"is_error":is_error})];
             content.extend(attachments);
