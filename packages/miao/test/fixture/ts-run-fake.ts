@@ -13,20 +13,19 @@ const bundle = {
   format: "miao-blackbox" as const,
   version: 1 as const,
   metadata: {},
-  interactions: [
-    {
-      lane: "llm",
-      ordinal: 0,
-      request: {
-        model: { id: "fixture-model" },
-        execution: { agentManifestHash: "b".repeat(64), permissionHash: "c".repeat(64) },
-        tools: [],
-      },
-      frames: [{ elapsedMs: 1, value: { type: "finish", usage: { inputTokens: 120, outputTokens: 12 } } }],
-      outcome: "complete" as const,
-      endElapsedMs: 2,
+  interactions: [0, ...(Bun.argv.includes("fixture-profile-drift") ? [1] : [])].map((ordinal) => ({
+    lane: "llm",
+
+    ordinal,
+    request: {
+      model: { id: "fixture-model" },
+      execution: { agentManifestHash: "b".repeat(64), permissionHash: "c".repeat(64) },
+      tools: ordinal === 0 ? [] : [{ name: "additional-tool", inputSchema: { type: "object" } }],
     },
-  ],
+    frames: [{ elapsedMs: 1, value: { type: "finish", usage: { inputTokens: 120, outputTokens: 12 } } }],
+    outcome: "complete" as const,
+    endElapsedMs: 2,
+  })),
   trace: [],
 }
 

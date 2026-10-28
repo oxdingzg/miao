@@ -267,7 +267,10 @@ test("rejects samples whose provider receipts disagree on the effective profile"
     event(8, "stop", { run_id: "run" }),
   ])
   expect(result.sample).toBeNull()
-  expect(result.rejection).toBe("missing effective profile fingerprint from provider receipts")
+  expect(result.evidence.profileReceipts).toBe(2)
+  expect(result.rejection).toBe("conflicting effective profiles in provider receipts")
+  expect(result.evidence.profileDiagnostics).toMatchObject({ reason: "conflicting", requests: 2, invalidReceipts: 0 })
+  expect(result.evidence.profileDiagnostics?.variants.map((item) => item.receipts)).toEqual([1, 1])
 })
 
 test("rejects a run with no terminal outcome instead of inventing a verdict", async () => {
@@ -422,4 +425,43 @@ test("records every input's provider interactions on a multi-input task", async 
   expect(result.evidence.attempts).toHaveLength(5)
   expect(result.evidence.profileReceipts).toBe(5)
   expect(result.evidence.attempts.map((attempt) => attempt.inputTokens)).toEqual(Array(5).fill(120))
+})
+
+test("an unprofiled provider request cannot disappear between valid receipts", async () => {
+  await using tmp = await tmpdir()
+  const result = await run(tmp.path, "read-only", [
+    ...base,
+    event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
+    event(5, "provider.request", { run_id: "run", step: 1, attempt: 1 }),
+    event(6, "provider.request", { run_id: "run", step: 2, attempt: 1, profile: profile() }),
+    event(7, "usage", { run_id: "run", step: 2, usage: { inputTokens: 10, outputTokens: 1 } }),
+    event(8, "message.committed", {
+      role: "assistant",
+      content: [{ type: "text", text: "src/catalog.ts configureRelay capacity 7" }],
+    }),
+    event(9, "run.finished", { run_id: "run", reason: "completed" }),
+    event(10, "stop", { run_id: "run" }),
+  ])
+  expect(result.sample).toBeNull()
+  expect(result.rejection).toBe("invalid or missing effective profiles in provider receipts")
+  expect(result.evidence.profileReceipts).toBe(2)
+  expect(result.evidence.profileDiagnostics).toMatchObject({ reason: "invalid", requests: 3, invalidReceipts: 1 })
+  expect(result.evidence.profileDiagnostics?.variants.map((item) => item.receipts)).toEqual([2])
+})
+
+test("TypeScript profile drift retains every observation while rejecting the sample", async () => {
+  await using tmp = await tmpdir()
+  const result = await runBaselineTs({
+    revision,
+    root: path.join(tmp.path, "typescript-drift"),
+    task: "read-only",
+    repetition: 0,
+    model: "fixture-profile-drift",
+    entry: path.join(import.meta.dir, "..", "fixture", "ts-run-fake.ts"),
+  })
+  expect(result.sample).toBeNull()
+  expect(result.rejection).toBe("conflicting effective profiles in provider receipts")
+  expect(result.evidence.profileReceipts).toBe(2)
+  expect(result.evidence.profileDiagnostics).toMatchObject({ reason: "conflicting", requests: 2, invalidReceipts: 0 })
+  expect(result.evidence.profileDiagnostics?.variants.map((item) => item.receipts)).toEqual([1, 1])
 })
