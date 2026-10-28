@@ -658,14 +658,19 @@ async fn run(
                         if let Some((kind, id)) = attention_event(&event) {
                             bus.send(AppEvent::Attention { kind, id });
                         }
-                        // A retry is durable, so it reaches the live status from
-                        // the journal rather than the ephemeral progress channel.
-                        if event.kind == "provider.retry" {
-                            bus.send(AppEvent::Provider(json!({
-                                "kind": "provider.retry",
-                                "run_id": event.data.get("run_id").cloned().unwrap_or(Value::Null),
-                                "attempt": event.data.get("attempt").cloned().unwrap_or(Value::Null),
-                            })));
+                        // Retries and tool calls are durable, so the live status
+                        // reads them from the journal rather than the ephemeral
+                        // progress channel.
+                        match event.kind.as_str() {
+                            "provider.retry" | "tool.planned" | "tool.completed" => {
+                                bus.send(AppEvent::Provider(json!({
+                                    "kind": event.kind.as_str(),
+                                    "run_id": event.data.get("run_id").cloned().unwrap_or(Value::Null),
+                                    "attempt": event.data.get("attempt").cloned().unwrap_or(Value::Null),
+                                    "name": event.data.get("name").cloned().unwrap_or(Value::Null),
+                                })));
+                            }
+                            _ => {}
                         }
                     }
                     // Anything that changes run status, the transcript, or a

@@ -45,33 +45,46 @@ pub struct Live {
     pub signal: Instant,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LivePhase {
     /// The request is out and no token has come back yet.
     Waiting,
     /// A pause before another attempt, announced by the engine.
     Retrying { attempt: u64 },
+    /// A tool call is executing. The engine is quiet here too, but naming the
+    /// work is what makes a long command differ from a stuck turn.
+    Tool { name: String },
 }
 
 impl Live {
     /// The engine has not reported anything for long enough that the wait is
     /// worth calling out. It says the client stopped hearing from the engine; it
-    /// never claims the turn failed.
+    /// never claims the turn failed. Only a provider wait has a heartbeat to
+    /// miss: a running tool can be silent for minutes by design.
     fn silent(&self, now: Instant) -> bool {
-        now.duration_since(self.signal) >= LIVE_SILENCE
+        matches!(self.phase, LivePhase::Waiting) && now.duration_since(self.signal) >= LIVE_SILENCE
     }
 
     fn describe(&self, now: Instant) -> String {
         let elapsed = waited(now.duration_since(self.since));
-        match self.phase {
+        match &self.phase {
             LivePhase::Waiting if self.silent(now) => format!(
-                "waiting for model {elapsed} · no engine signal {}",
+                "waiting for model · {elapsed} · no engine signal {}",
                 waited(now.duration_since(self.signal))
             ),
-            LivePhase::Waiting => format!("waiting for model {elapsed}"),
+            LivePhase::Waiting => format!("waiting for model · {elapsed}"),
             LivePhase::Retrying { attempt } => format!("retrying attempt {attempt} · {elapsed}"),
+            LivePhase::Tool { name } => format!("running {name} · {elapsed}"),
         }
     }
+}
+
+/// A tool name is engine-supplied and the status is one line, so keep the first
+/// word of the first line and cap it.
+fn tool_label(name: &str) -> String {
+    let line = name.lines().next().unwrap_or_default().trim();
+    let label = line.split_whitespace().next().unwrap_or("tool");
+    label.chars().take(24).collect()
 }
 
 /// Whole seconds under a minute, then minutes and seconds. A count reads as
@@ -1171,10 +1184,24 @@ impl App {
             },
             // An attempt announcement proves the request is in flight, even
             // before the first heartbeat or right after a previous step.
-            "provider.attempt" => match self.live.as_ref().map(|live| live.phase) {
+            "provider.attempt" => match self.live.as_ref().map(|live| live.phase.clone()) {
                 Some(phase) => phase,
                 None => LivePhase::Waiting,
             },
+            // A committed tool call names the work the run is doing.
+            "tool.planned" => LivePhase::Tool {
+                name: tool_label(
+                    frame
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                ),
+            },
+            // The call finished; the run's next phase is not known yet.
+            "tool.completed" => {
+                self.live = None;
+                return;
+            }
             _ => return,
         };
         // Only a phase change restarts the clock; a heartbeat must not restart
@@ -1697,7 +1724,7 @@ mod tests {
         app.update_status();
         assert_eq!(
             app.shell.title.status(),
-            Some("waiting for model 0s · Esc interrupt")
+            Some("waiting for model · 0s · Esc interrupt")
         );
         // A token ends the wait; committed content carries the turn from here.
         app.handle(provider_frame("provider.delta"));
@@ -1738,7 +1765,7 @@ mod tests {
         app.update_status();
         assert_eq!(
             app.shell.title.status(),
-            Some("waiting for model 40s · no engine signal 20s · Esc interrupt")
+            Some("waiting for model · 40s · no engine signal 20s · Esc interrupt")
         );
         assert!(app.shell.title.status_alert());
     }
@@ -1768,6 +1795,55 @@ mod tests {
             },
         });
         assert!(app.live.is_none());
+    }
+
+    #[test]
+    fn a_running_tool_is_named_in_the_status() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.planned",
+            "run_id": "run-1",
+            "name": "bash",
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("running bash · 0s · Esc interrupt")
+        );
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.completed",
+            "run_id": "run-1",
+        })));
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+    }
+
+    #[test]
+    fn a_running_tool_is_not_reported_as_a_silent_engine() {
+        let mut app = running_app("run-1");
+        let now = Instant::now();
+        app.live = Some(Live {
+            run_id: "run-1".into(),
+            phase: LivePhase::Tool {
+                name: "bash".into(),
+            },
+            since: now - Duration::from_secs(300),
+            signal: now - Duration::from_secs(300),
+        });
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("running bash · 5m 00s · Esc interrupt")
+        );
+        assert!(!app.shell.title.status_alert());
+    }
+
+    #[test]
+    fn a_tool_name_is_one_short_line() {
+        assert_eq!(tool_label("bash"), "bash");
+        assert_eq!(tool_label("read_file\nsecond"), "read_file");
+        assert_eq!(tool_label(&"x".repeat(40)).chars().count(), 24);
+        assert_eq!(tool_label(""), "tool");
     }
 
     #[test]

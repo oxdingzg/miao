@@ -1182,9 +1182,9 @@ mod tests {
                 palette,
             },
         );
-        shell
-            .title
-            .set_status(Some("waiting for model 40s · no engine signal 20s".into()));
+        shell.title.set_status(Some(
+            "waiting for model · 40s · no engine signal 20s".into(),
+        ));
         shell.title.set_status_alert(true);
         let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 1))
             .expect("test terminal");
