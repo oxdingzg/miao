@@ -705,3 +705,29 @@ with no correction, and records without a correction omit the field. Consumers
 must check this capability before sending message-bearing responses. The
 capability does not activate the product adapter or turn a reply into an action
 execution ticket.
+
+#### Host auto-mode classification
+
+`product_permission_auto: 1` advertises classification during host permission
+admission. The dispatched source captures its agent's auto flag; selecting a
+new agent or mode cannot change an already-running source. Configured denies
+remain denied. Only an ask proven safe by the deterministic edit/bash classifier
+becomes allowed, with reason `auto_allowed`; no standing pattern or exact grant
+is written. Any defined `metadata.stdin`, including null, keeps bash an ask.
+Other actions and unknown operations keep asking. Bash stays unknown on Windows.
+
+A product-tool manifest may include `host_context: { directory, cwd }`. Directory
+must canonicalize to the Runtime's Location; cwd, when present, must be absolute.
+The host supplies its Location spelling and process cwd at startup so relative
+edit resources resolve as they do in the host. Each source captures that context.
+An absent context uses the native Location and native process cwd. No permission
+request can override mode, cwd, workspace or this context. Rules continue matching
+the original resources; only classification resolves paths lexically. The root
+itself, escaping paths and sensitive paths remain unknown. Sensitive raw and
+resolved paths are both checked conservatively.
+
+Admission authority hashes bind captured mode and path context. Echo the record's
+hashes when replying; `product_permission_evaluate` remains the rule-only query
+and does not substitute for full admission. Classification does not execute an
+operation or replace the executor's filesystem/capability checks. The product
+permission adapter and complete S6 acceptance remain outstanding.

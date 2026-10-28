@@ -132,3 +132,19 @@ feedback 保存到当前请求与结算事件，reason 为 user_corrected；同�
 精确回复重试还须匹配规范化后的纠正消息，不能借重试修改历史反馈。缺少 feedback 的旧记录
 按无反馈读取，无反馈时不输出该字段。产品必须协商能力后才发送带 message 的回复；
 仍待兼容适配器消费、事件投影、自动分类模式核对及 §4 完整问询次数验收。
+
+### 7.5 宿主 auto 模式
+
+原生子请求准入捕获派发 turn 的 agent auto 标志；切换 agent/mode 不追溯改变活跃来源。
+configured deny 不进入分类器；仅将 edit/bash 中可证明安全的 ask 改为 allow，记录
+reason=auto_allowed，不保存模式规则或精确 grant。stdin 字段存在（包括 null）时 bash
+仍需询问；未知动作/操作继续 ask，Windows bash 不自动放行。
+
+产品工具 manifest 的 host_context 携带 Location 路径拼写及宿主 cwd，directory 须规范化为
+同一原生 Location，cwd 若存在须为绝对路径。它在启动时校验、每个来源捕获，不能由单次请求
+覆盖。规则仍匹配原资源，分类才按宿主 cwd 作词法解析；根目录自身、越界路径及敏感路径
+不自动放行。原始/解析后敏感路径均保守检查，不替代实际执行器的文件系统与能力上限。
+
+product_permission_auto:1 为单独门禁，准入 authority hash 绑定模式及路径上下文；rule-only
+查询不等于完整准入。仍须用真实 TS 分类器对照自动/手动模式、相对路径与 stdin，再完成
+产品适配、事件投影和 §4 总体验收，不能将后端能力当成 TS 判定已退役。

@@ -53,6 +53,18 @@ async fn running_with_sources() -> (
     Source,
     mpsc::Receiver<Value>,
 ) {
+    running_with_mode(None).await
+}
+
+async fn running_with_mode(
+    mode: Option<&str>,
+) -> (
+    tempfile::TempDir,
+    Store,
+    Runtime,
+    Source,
+    mpsc::Receiver<Value>,
+) {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().join("workspace");
     std::fs::create_dir(&root).unwrap();
@@ -102,13 +114,15 @@ async fn running_with_sources() -> (
     runtime
         .set_agent(
             "s",
-            serde_json::from_value(json!({"name":"fixture","ordered_permissions":{
-                "semantics":"ordered-wildcard-v1","rules":[
-                    {"action":"*","resource":"*","effect":"allow"},
-                    {"action":"read","resource":"*","effect":"ask"},
-                    {"action":"read","resource":"secret","effect":"deny"}
-                ]
-            }}))
+            serde_json::from_value(
+                json!({"name":"fixture","permission_mode":mode,"ordered_permissions":{
+                    "semantics":"ordered-wildcard-v1","rules":[
+                        {"action":"*","resource":"*","effect":"allow"},
+                        {"action":"read","resource":"*","effect":"ask"},
+                        {"action":"read","resource":"secret","effect":"deny"}
+                    ]
+                }}),
+            )
             .unwrap(),
         )
         .await
@@ -1220,7 +1234,15 @@ async fn competing_host_replies_have_one_durable_outcome() {
 #[tokio::test]
 async fn assertion_wire_refuses_caller_authority_and_unbounded_inputs() {
     let (_directory, store, runtime, source) = running().await;
-    for field in ["configured", "saved", "workspace", "owner"] {
+    for field in [
+        "configured",
+        "saved",
+        "workspace",
+        "owner",
+        "auto",
+        "host_context",
+        "cwd",
+    ] {
         let mut input = serde_json::to_value(assertion("invalid", "public")).unwrap();
         input[field] = json!([]);
         assert!(serde_json::from_value::<miao_engine::protocol::Command>(json!({"method":"product_permission_admit","params":{"source":source,"input":input}})).is_err(), "{field}");
@@ -1688,5 +1710,140 @@ async fn reply_feedback_bounds_and_empty_message_match_the_host_contract() {
         .unwrap();
     assert_eq!(allowed["state"], "allowed");
     assert!(allowed.get("feedback").is_none());
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn host_auto_mode_uses_the_captured_agent_and_never_lifts_denies_or_stdin() {
+    use miao_engine::product_permission_request::State;
+    let (_directory, _store, runtime, source, mut receive) = running_with_mode(Some("auto")).await;
+    tokio::spawn(async move { while receive.recv().await.is_some() {} });
+    // This mode change belongs to the next turn, not the active callback.
+    runtime.set_agent("s", serde_json::from_value(json!({"name":"later","ordered_permissions":{"semantics":"ordered-wildcard-v1","rules":[{"action":"*","resource":"*","effect":"deny"}]}})).unwrap()).await.unwrap();
+    let root = runtime.store().location("s").await.unwrap().unwrap();
+    let mut input = assertion("safe-edit", &format!("{root}/src/file.rs"));
+    input.facts.actions = vec!["edit".into()];
+    // The fixture's wildcard allows edit; use explicit to skip that wildcard
+    // and exercise the auto classifier on an actual ask.
+    input.facts.explicit = true;
+    let allowed = runtime
+        .admit_product_permission(&runtime.controller(), &source, input.clone())
+        .await
+        .unwrap();
+    assert_eq!(allowed.state, State::Allowed);
+    assert_eq!(allowed.reason.as_deref(), Some("auto_allowed"));
+    input.request_id = "protected-edit".into();
+    input.facts.resources = vec![format!("{root}/.env")];
+    assert_eq!(
+        runtime
+            .admit_product_permission(&runtime.controller(), &source, input)
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    let mut bash = assertion("readonly-bash", "git status");
+    bash.facts.actions = vec!["bash".into()];
+    bash.facts.explicit = true;
+    assert_eq!(
+        runtime
+            .admit_product_permission(&runtime.controller(), &source, bash.clone())
+            .await
+            .unwrap()
+            .state,
+        if cfg!(windows) {
+            State::Pending
+        } else {
+            State::Allowed
+        }
+    );
+    bash.request_id = "stdin-bash".into();
+    bash.metadata = Some(json!({"stdin":null}));
+    assert_eq!(
+        runtime
+            .admit_product_permission(&runtime.controller(), &source, bash)
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    assert_eq!(
+        runtime
+            .admit_product_permission(
+                &runtime.controller(),
+                &source,
+                assertion("deny-still-wins", "secret")
+            )
+            .await
+            .unwrap()
+            .state,
+        State::Denied
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn changing_to_auto_does_not_retroactively_change_a_manual_source() {
+    use miao_engine::product_permission_request::State;
+    let (_directory, _store, runtime, source) = running().await;
+    runtime.set_agent("s", serde_json::from_value(json!({"name":"later-auto","permission_mode":"auto","ordered_permissions":{"semantics":"ordered-wildcard-v1","rules":[]}})).unwrap()).await.unwrap();
+    let root = runtime.store().location("s").await.unwrap().unwrap();
+    let mut input = assertion("manual-edit", &format!("{root}/src/file.rs"));
+    input.facts.actions = vec!["edit".into()];
+    input.facts.explicit = true;
+    assert_eq!(
+        runtime
+            .admit_product_permission(&runtime.controller(), &source, input)
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn host_path_context_is_location_bound_and_cannot_change_a_live_source() {
+    use miao_engine::product::HostContext;
+    let (directory, store, runtime, source) = running().await;
+    let root = store.location("s").await.unwrap().unwrap();
+    let before = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("before-context", "public"),
+        )
+        .await
+        .unwrap();
+    assert!(runtime
+        .set_product_context(HostContext {
+            directory: directory.path().to_string_lossy().into(),
+            cwd: None
+        })
+        .await
+        .is_err());
+    assert!(runtime
+        .set_product_context(HostContext {
+            directory: root.clone(),
+            cwd: Some("relative".into())
+        })
+        .await
+        .is_err());
+    runtime
+        .set_product_context(HostContext {
+            directory: root,
+            cwd: None,
+        })
+        .await
+        .unwrap();
+    let after = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("after-context", "public"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(before.authority_revision, after.authority_revision);
     runtime.shutdown().await;
 }

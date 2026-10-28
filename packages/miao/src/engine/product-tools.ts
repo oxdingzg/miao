@@ -31,7 +31,7 @@ import { ToolPlugins } from "@miao/core/tool/plugins"
 import { PushNotificationTool } from "@miao/core/tool/push-notification"
 import { ToolRegistry } from "@miao/core/tool/registry"
 import { ToolFailure, type ToolCall } from "@miao/llm"
-import type { Location } from "@miao/schema/location"
+import { Location } from "@miao/core/location"
 import { AbsolutePath } from "@miao/core/schema"
 import { Cause, DateTime, Effect, Option, Schema } from "effect"
 import { EngineError, type EngineOptions } from "./client"
@@ -117,6 +117,7 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
 ) {
   const options: Partial<EngineOptions> = {}
   if (configuration.productToolsFile) return options
+  const location = yield* Location.Service
   const database = yield* Database.Service
   const scope = yield* Effect.scope
   const db = database.db
@@ -852,7 +853,12 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
   )
   const file = path.join(directory, "product-tools.json")
   yield* Effect.tryPromise({
-    try: () => writeFile(file, JSON.stringify({ tools }), { mode: 0o600 }),
+    try: () =>
+      writeFile(
+        file,
+        JSON.stringify({ tools, host_context: { directory: location.directory, cwd: process.cwd() } }),
+        { mode: 0o600 },
+      ),
     catch: () => new EngineError("engine_product_tools_io", "could not write native product-tools manifest"),
   })
   options.productToolsFile = file

@@ -46,6 +46,16 @@ pub struct CallContext {
     pub call_id: String,
 }
 
+/// Host path spelling and working directory used by its edit classifier.
+/// The Runtime validates directory identity before accepting this startup data.
+#[derive(Clone, Debug, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostContext {
+    pub directory: String,
+    #[serde(default)]
+    pub cwd: Option<String>,
+}
+
 pub(crate) struct Pending {
     session: String,
     method: String,
@@ -60,6 +70,7 @@ pub struct State {
     pub tools: Vec<ToolDefinition>,
     pub bridge: Option<Bridge>,
     pub marker: Option<Marker>,
+    pub host_context: Option<HostContext>,
 }
 impl State {
     pub fn has(&self, name: &str) -> bool {
