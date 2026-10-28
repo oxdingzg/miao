@@ -7,9 +7,10 @@
  * repository facts are enough to drive both directions.
  *
  * progress:   run after a pull request merges. Every roadmap code the pull
- *             request names (`miao-roadmap:CFG-02`, `[CFG-02]`, `(CFG-02)`)
- *             that the board tracks moves that item from Todo to In Progress,
- *             and the pull request is appended to the item's 关联证据 line.
+ *             request names in its title, or in its body through an explicit
+ *             `miao-roadmap:CFG-02` marker, that the board tracks moves that
+ *             item from Todo to In Progress, and the pull request is appended
+ *             to the item's 关联证据 line.
  * acceptance: every committed record line `roadmap: CFG-02 done in v0.3.16`
  *             marks that item Done, provided the version has a published
  *             release. A merge never marks an item Done: an item is Done when a
@@ -23,11 +24,20 @@
  */
 
 const CODE = /\b[A-Z]{2,5}-\d{2}\b/g
+const MARKER = /miao-roadmap:\s*([A-Z]{2,5}-\d{2})/g
 const ACCEPTANCE = /^\s*roadmap:\s*([A-Z]{2,5}-\d{2})\s+done\s+in\s+v?(\d+\.\d+\.\d+)\s*$/
 
-/** The roadmap codes a pull request names that the board actually tracks. */
-export function roadmapCodes(text: string, known: ReadonlySet<string>) {
-  const codes = new Set(text.match(CODE) ?? [])
+/**
+ * The roadmap codes a pull request names that the board tracks: any code in the
+ * title, and only an explicit `miao-roadmap:` marker in the body, where a bare
+ * code is usually a mention of related work rather than this pull request's own.
+ */
+export function roadmapCodes(pull: { title: string; body?: string | null }, known: ReadonlySet<string>) {
+  const codes = new Set(pull.title.match(CODE) ?? [])
+  for (const match of (pull.body ?? "").matchAll(MARKER)) {
+    const code = match[1]
+    if (code) codes.add(code)
+  }
   return [...codes].filter((code) => known.has(code))
 }
 
@@ -238,7 +248,7 @@ async function progress(connection: Connection, number: number) {
 
   const project = await board(connection)
   const known = new Set(project.items.flatMap((item) => itemCode(item.title) ?? []))
-  const codes = roadmapCodes(`${pull.title}\n${pull.body ?? ""}`, known)
+  const codes = roadmapCodes(pull, known)
   if (codes.length === 0) {
     console.log(`#${pull.number} names no tracked roadmap code; nothing to update`)
     return

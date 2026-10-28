@@ -4,8 +4,9 @@ name: roadmap-status
 # close, so nothing moved their Status on its own. This workflow advances them
 # from two repository facts, both read by script/github/roadmap-status.ts:
 #
-# - a merged pull request that names a roadmap code moves that item from Todo to
-#   In Progress and records the pull request as evidence;
+# - a merged pull request whose title names a roadmap code (or whose body names
+#   one through an explicit `miao-roadmap:` marker) moves that item from Todo
+#   to In Progress and records the pull request as evidence;
 # - a committed `roadmap: CFG-02 done in v0.3.16` record moves it to Done, once
 #   that version has a published release. A merge never does.
 #

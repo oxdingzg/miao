@@ -9,9 +9,15 @@ import {
 const tracked = new Set(["CFG-02", "RUN-04"])
 
 test("a pull request only advances codes the board tracks", () => {
-  expect(roadmapCodes("feat(tui): inspect recovery (RUN-04) and MOD-05", tracked)).toEqual(["RUN-04"])
-  expect(roadmapCodes("docs: record CTX-04 acceptance", tracked)).toEqual([])
-  expect(roadmapCodes("<!-- miao-roadmap:CFG-02 -->", tracked)).toEqual(["CFG-02"])
+  expect(roadmapCodes({ title: "feat(tui): inspect recovery (RUN-04)" }, tracked)).toEqual(["RUN-04"])
+  expect(roadmapCodes({ title: "docs: record CTX-04 acceptance" }, tracked)).toEqual([])
+  expect(roadmapCodes({ title: "fix(engine): retry", body: "<!-- miao-roadmap:CFG-02 -->" }, tracked)).toEqual([
+    "CFG-02",
+  ])
+})
+
+test("a body mention alone does not claim an item", () => {
+  expect(roadmapCodes({ title: "fix(tui): retry", body: "Follow-up work remains for MOD-05." }, tracked)).toEqual([])
 })
 
 test("a board item is identified by the code its title opens with", () => {
