@@ -18,8 +18,8 @@ export async function verifyEmbeddedPairing() {
     windowsCommand(String.raw`
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-Add-Type -TypeDefinition 'public class OldEngine { public static void Main(string[] args) { if (args.Length > 0 && args[0] == "--hold") { System.Console.WriteLine("ready"); System.Threading.Thread.Sleep(60000); return; } System.Console.WriteLine("{\"name\":\"miao-engine\",\"version\":\"0.3.6\",\"protocol\":2,\"schema\":21,\"routesSchema\":2}"); } }' -OutputAssembly $env:PAIR_OLD -OutputType ConsoleApplication
-Add-Type -TypeDefinition 'public class NewEngine { public static void Main(string[] args) { System.Console.WriteLine("{\"name\":\"miao-engine\",\"version\":\"0.3.7\",\"protocol\":2,\"schema\":21,\"routesSchema\":2}"); } }' -OutputAssembly $env:PAIR_NEW -OutputType ConsoleApplication
+Add-Type -TypeDefinition 'public class OldEngine { public static void Main(string[] args) { if (args.Length > 0 && args[0] == "--hold") { System.Console.WriteLine("ready"); System.Threading.Thread.Sleep(60000); return; } System.Console.WriteLine("{\"name\":\"miao-engine\",\"version\":\"0.3.6\",\"protocol\":2,\"schema\":21,\"routesSchema\":2,\"saved_rules_snapshot\":1}"); } }' -OutputAssembly $env:PAIR_OLD -OutputType ConsoleApplication
+Add-Type -TypeDefinition 'public class NewEngine { public static void Main(string[] args) { System.Console.WriteLine("{\"name\":\"miao-engine\",\"version\":\"0.3.7\",\"protocol\":2,\"schema\":21,\"routesSchema\":2,\"saved_rules_snapshot\":1}"); } }' -OutputAssembly $env:PAIR_NEW -OutputType ConsoleApplication
 `),
     {
       env: { ...process.env, PAIR_OLD: oldEngine, PAIR_NEW: newEngine },

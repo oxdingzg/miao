@@ -143,7 +143,7 @@ fn bounded(items: &[String], count: usize, bytes: usize) -> bool {
             .all(|item| !item.contains('\0') && item.len() <= bytes)
 }
 
-fn bounded_rule(rule: &Rule) -> bool {
+pub(crate) fn bounded_rule(rule: &Rule) -> bool {
     !rule.action.contains('\0')
         && !rule.resource.contains('\0')
         && rule.action.len() <= MAX_ACTION_BYTES

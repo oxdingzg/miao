@@ -1072,9 +1072,16 @@ const layer = Layer.effect(
       Effect.gen(function* () {
         // A shared transport must not probe or reject binaries for TS-only
         // Sessions. Validate when an actual native owner is opened.
+        const permission = yield* ProductPermission.prepare(location)
         yield* Effect.try({
-          try: () => resolveEngine({ environment: { MIAO_ENGINE_BIN: configuration.binary } }),
-          catch: (error) => new EngineError("engine_incompatible", error instanceof Error ? error.message : String(error)),
+          try: () =>
+            resolveEngine({
+              environment: { MIAO_ENGINE_BIN: configuration.binary },
+              requireSavedRulesSnapshot:
+                permission.options.savedRules !== undefined || configuration.savedRules !== undefined,
+            }),
+          catch: (error) =>
+            new EngineError("engine_incompatible", error instanceof Error ? error.message : String(error)),
         })
         const integrations = yield* Integration.Service
         // S5: the engine derives policy and LSP from the same ordered source
@@ -1097,12 +1104,11 @@ const layer = Layer.effect(
               : ownerRouter.get(input),
         }).pipe(Effect.provide(locations.get(location)))
         const pluginHooks = yield* PluginHooks.prepare({ ...configuration, ...productTools }, { store: sessions })
-        const permission = yield* ProductPermission.prepare(location)
         return {
           options: {
             ...routes,
             ...mcp,
-            ...permission,
+            ...permission.options,
             ...(configSources ? { configSources } : {}),
             ...context.options,
             ...hooks,
@@ -1111,6 +1117,7 @@ const layer = Layer.effect(
             ...pluginHooks,
           },
           refresh: context.refresh,
+          refreshPermissions: permission.refresh,
           pricing: prices && ((model: string) => prices[model]),
           onEngineEvent: projectEngineEvent,
           onCredentialExpired: (input: { sessionID: string; id: string; integration: string }) =>
