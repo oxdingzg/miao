@@ -17,6 +17,7 @@ import { ProductFormatter } from "./product-formatter"
 import { ProductPermission } from "./product-permission"
 import { ProductRoutes } from "./product-routes"
 import { ProductMcp } from "./product-mcp"
+import { WorkerConfig } from "./worker-config"
 import { McpAuth } from "@miao/core/mcp/auth"
 import { PromptMaterialization } from "./prompt-materialization"
 import { Blob } from "@miao/core/blob"
@@ -26,7 +27,6 @@ import { Credential } from "@miao/core/credential"
 import { Integration } from "@miao/core/integration"
 import { GoogleAccount } from "@miao/core/google-account"
 import { CredentialDaemon } from "@miao/core/credential/daemon"
-import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
 import { SandboxPolicy } from "@miao/core/sandbox/policy"
@@ -1045,11 +1045,7 @@ const layer = Layer.effect(
       // engine. The config lives outside any model-writable workspace (tmp),
       // and its argv is static because the engine names the workspace in the
       // `hello` handshake.
-      const workerConfigFile = path.join(os.tmpdir(), "miao-engine-worker-config.json")
-      const host = path.resolve(import.meta.dir, "worker-host.ts")
-      yield* Effect.promise(() => Bun.write(workerConfigFile, JSON.stringify({ argv: [process.execPath, host] })))
-      configuration.workerConfigFile = workerConfigFile
-      yield* Effect.logInfo("[worker-host] config written:", workerConfigFile)
+      configuration.workerConfigFile = yield* WorkerConfig.prepare().pipe(Effect.orDie)
     }
     const mcp = yield* ProductMcp.prepare(configuration).pipe(Effect.provideService(McpAuth.Service, mcpAuth))
     let ownerRouter: Owners | undefined
