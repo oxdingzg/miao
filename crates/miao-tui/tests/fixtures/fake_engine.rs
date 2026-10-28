@@ -142,7 +142,7 @@ fn main() {
             "unsubscribe" if sessions => {
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
             }
-            "sessions" if sessions => send(&mut out, json!({"id":id,"result":["ses_a","ses_b"]})),
+            "sessions" if sessions => unit_command(&mut out, id, &frame, json!(["ses_a", "ses_b"])),
             // Accepted writes are logged verbatim so the smoke test can assert
             // exactly what the composer sent.
             "initialize" if sessions => {
@@ -167,12 +167,14 @@ fn main() {
             }
             // Two catalog entries with two credentials, so both the model
             // dialog and the account dialog have something to pick from.
-            "model_catalog" if sessions => send(
+            "model_catalog" if sessions => unit_command(
                 &mut out,
-                json!({"id":id,"result":[
+                id,
+                &frame,
+                json!([
                     {"route_id":"r1","protocol":"chat","model":"fake/glm","credential_id":"cred_a"},
                     {"protocol":"responses","model":"fake/gpt","variants":["low","high"],"credential_id":"cred_b"}
-                ]}),
+                ]),
             ),
             "usage" if sessions => send(
                 &mut out,
@@ -257,6 +259,20 @@ fn log_action(params: &Value, method: &str) {
             .open(path)
             .and_then(|mut file| writeln!(file, "{line}"));
     }
+}
+
+/// A command the engine declares as a unit variant. Its envelope is adjacently
+/// tagged, so the `params` key must be absent: a client that sends `params: {}`
+/// gets the same `invalid_request` the engine answers instead of a result.
+fn unit_command(out: &mut std::io::Stdout, id: u64, frame: &Value, result: Value) {
+    if frame.get("params").is_some() {
+        send(
+            out,
+            json!({"id":id,"error":{"code":"invalid_request","message":"expected an id and a typed method/params request"}}),
+        );
+        return;
+    }
+    send(out, json!({"id":id,"result":result}));
 }
 
 fn send(out: &mut std::io::Stdout, frame: Value) {
