@@ -15,6 +15,73 @@ pub enum Decision {
     Retry,
 }
 
+fn origin(input: &Value) -> &'static str {
+    if input["origin"] == "operator" {
+        "operator"
+    } else {
+        "model"
+    }
+}
+
+const SECRET_KEY_PARTS: &[&str] = &[
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "api_key",
+    "apikey",
+    "authorization",
+    "credential",
+    "access_key",
+    "private_key",
+];
+
+fn mask(text: &str) -> String {
+    format!("[redacted:{}]", text.len())
+}
+
+fn mask_strings(value: &mut Value) {
+    match value {
+        Value::Object(map) => map.values_mut().for_each(mask_strings),
+        Value::Array(items) => items.iter_mut().for_each(mask_strings),
+        Value::String(text) => *text = mask(text),
+        _ => {}
+    }
+}
+
+fn credential_like(text: &str) -> bool {
+    if text.contains("Bearer ") || (text.starts_with("sk-") && text.len() >= 10) {
+        return true;
+    }
+    text.len() >= 24
+        && !text.chars().any(char::is_whitespace)
+        && text.chars().any(|c| c.is_ascii_alphabetic())
+        && text.chars().any(|c| c.is_ascii_digit())
+}
+
+fn redact(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, item) in map {
+                if SECRET_KEY_PARTS
+                    .iter()
+                    .any(|part| key.to_ascii_lowercase().contains(part))
+                {
+                    mask_strings(item);
+                } else {
+                    redact(item);
+                }
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(redact),
+        Value::String(text) if credential_like(text) => {
+            *text = mask(text);
+        }
+        Value::String(_) => {}
+        _ => {}
+    }
+}
+
 impl Store {
     /// List unknown outcomes, including prior controller resolutions. Neither
     /// discovery nor a decision changes the historical outcome to "completed".
@@ -35,13 +102,49 @@ impl Store {
             for row in rows {
                 let (id, run, name, resolution,input) = row?;
                 let input:Value=serde_json::from_str(&input)?;
-                calls.push(json!({"call_id":id,"run_id":run,"tool":name,"origin":if input["origin"]=="operator" {"operator"} else {"model"},"outcome":"unknown",
+                calls.push(json!({"call_id":id,"run_id":run,"tool":name,"origin":origin(&input),"outcome":"unknown",
                     "resolution":resolution.map(|value| serde_json::from_str::<Value>(&value)).transpose()?}));
             }
             let more = calls.len() > 100;
             calls.truncate(100);
             Ok(json!({"calls":calls,"has_more":more}))
         }).await
+    }
+
+    /// One unknown outcome with its credential-redacted original input. The
+    /// listing stays argument-free by design; only this inspection reads input.
+    pub async fn recovery_get(&self, session: &str, call: &str) -> Result<Value, Error> {
+        let (session, call) = (session.to_owned(), call.to_owned());
+        self.call(move |conn| {
+            let row = conn
+                .query_row(
+                    "SELECT t.id,t.run_id,t.name,t.input,
+                        (SELECT e.data FROM engine_event e WHERE e.session_id=r.session_id
+                         AND e.kind='tool.recovery.resolved' AND json_extract(e.data,'$.call_id')=t.id LIMIT 1)
+                     FROM engine_tool t JOIN engine_run r ON r.id=t.run_id
+                     WHERE t.id=?1 AND r.session_id=?2 AND t.state='unknown'",
+                    params![call, session],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(3)?,
+                            row.get::<_, Option<String>>(4)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            let (id, run, name, input, resolution) = row.ok_or_else(|| {
+                Error::Invalid("no unknown tool outcome with this call id in this Session".into())
+            })?;
+            let mut input: Value = serde_json::from_str(&input)?;
+            let kind = origin(&input);
+            redact(&mut input);
+            Ok(json!({"call_id":id,"run_id":run,"tool":name,"origin":kind,"outcome":"unknown",
+                "resolution":resolution.map(|value| serde_json::from_str::<Value>(&value)).transpose()?,"input":input}))
+        })
+        .await
     }
 
     /// Atomically bind one decision to one unknown call and admit the operator
