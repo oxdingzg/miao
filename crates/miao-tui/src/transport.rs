@@ -9,10 +9,10 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -386,6 +386,8 @@ fn spawn_engine(
         outbound: outbound_tx.clone(),
     };
     let reader_reap = reap.clone();
+    let reader_child = child.clone();
+    let reader_tail = stderr_tail.clone();
     tokio::spawn(async move {
         let mut lines = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = lines.next_line().await {
@@ -393,13 +395,12 @@ fn spawn_engine(
                 reap.dispatch(&line);
             }
         }
-        // EOF can precede the exit status; only a still-live child that
-        // closed its output counts here. The reaper below classifies a child
-        // that actually exited, including its storage-fence reason.
-        reap.publish(EngineFailure {
-            code: "engine_closed".into(),
-            message: "miao-engine output stream closed".into(),
-        });
+        // EOF usually means the child exited, and its status plus stderr name
+        // the reason. Wait briefly for that status so the message reports the
+        // engine's own words instead of losing a race with the stream closing.
+        // A child that closed its output but keeps running is still a failure.
+        let status = exit_status(&reader_child, EXIT_STATUS_GRACE).await;
+        reap.publish(engine_failure(status, &reader_tail));
     });
 
     let tail = stderr_tail.clone();
@@ -424,22 +425,7 @@ fn spawn_engine(
                 guard.try_wait().ok().flatten()
             };
             if let Some(status) = status {
-                // `Error: Busy` on stderr means another engine owns this
-                // storage; the exit code alone cannot tell the two apart.
-                let busy = stderr_tail
-                    .lock()
-                    .expect("stderr tail")
-                    .lines()
-                    .any(|line| line.trim() == "Error: Busy");
-                reader_reap.publish(EngineFailure {
-                    code: if busy { "engine_busy" } else { "engine_closed" }.into(),
-                    message: if busy {
-                        "miao-engine exited: native storage is owned by another running engine"
-                            .into()
-                    } else {
-                        format!("miao-engine exited ({status})")
-                    },
-                });
+                reader_reap.publish(engine_failure(Some(status), &stderr_tail));
                 let _ = exited_tx.send(true);
                 break;
             }
@@ -460,6 +446,79 @@ fn spawn_engine(
         exited: exited_rx,
     };
     Ok((client, events_rx))
+}
+
+/// How long the reader waits for the exit status once the engine's output
+/// closes. The child normally exits just before EOF, so this covers the gap.
+const EXIT_STATUS_GRACE: Duration = Duration::from_millis(500);
+
+/// The most stderr to quote back in one status line.
+const STDERR_DETAIL_CHARS: usize = 300;
+
+/// The last few non-empty stderr lines, joined into one bounded line.
+fn stderr_detail(tail: &Mutex<String>) -> String {
+    let buffer = tail.lock().expect("stderr tail");
+    let lines: Vec<&str> = buffer
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let detail = lines[lines.len().saturating_sub(3)..].join(" | ");
+    let length = detail.chars().count();
+    if length <= STDERR_DETAIL_CHARS {
+        return detail;
+    }
+    detail.chars().skip(length - STDERR_DETAIL_CHARS).collect()
+}
+
+/// Why the engine stopped, in the words the user needs. The exit code alone
+/// cannot tell a storage fence from a refusal to start, and off the engine's
+/// own stderr every startup failure reads as a bare stream closure.
+fn engine_failure(status: Option<ExitStatus>, stderr_tail: &Mutex<String>) -> EngineFailure {
+    // `Error: Busy` on stderr means another engine owns this storage.
+    let busy = stderr_tail
+        .lock()
+        .expect("stderr tail")
+        .lines()
+        .any(|line| line.trim() == "Error: Busy");
+    if busy {
+        return EngineFailure {
+            code: "engine_busy".into(),
+            message: "miao-engine exited: native storage is owned by another running engine"
+                .into(),
+        };
+    }
+    let detail = stderr_detail(stderr_tail);
+    let reason = match status {
+        Some(status) => format!("miao-engine exited ({status})"),
+        None => "miao-engine output stream closed".into(),
+    };
+    EngineFailure {
+        code: "engine_closed".into(),
+        message: if detail.is_empty() {
+            reason
+        } else {
+            format!("{reason}: {detail}")
+        },
+    }
+}
+
+/// Poll for the child's exit status for at most `within`.
+async fn exit_status(child: &Mutex<Child>, within: Duration) -> Option<ExitStatus> {
+    let deadline = Instant::now() + within;
+    loop {
+        let status = {
+            let mut guard = child.lock().expect("child lock");
+            guard.try_wait().ok().flatten()
+        };
+        if status.is_some() {
+            return status;
+        }
+        if Instant::now() >= deadline {
+            return None;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 /// Frame routing plus the terminal-failure bookkeeping shared by the reader
