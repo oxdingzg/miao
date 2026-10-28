@@ -469,17 +469,26 @@ mod tests {
     #[test]
     fn attention_fields_merge_and_sounds_resolve_relative_to_the_file() {
         let dir = temp_dir("merge");
+        // An absolute path must survive untouched, so the sample has to be
+        // absolute on the platform under test: a leading slash carries no drive
+        // letter on Windows and would be resolved against `dir` instead.
+        #[cfg(windows)]
+        let absolute = "C:\\error.wav";
+        #[cfg(not(windows))]
+        let absolute = "/tmp/error.wav";
         let (config, warnings) = merge_at(
-            r#"{
-                "attention": {
+            &format!(
+                r#"{{
+                "attention": {{
                     "enabled": true,
                     "notifications": false,
                     "sound": false,
                     "volume": 0.25,
                     "sound_pack": "custom",
-                    "sounds": { "done": "sounds/done.mp3", "error": "/tmp/error.wav" }
-                }
-            }"#,
+                    "sounds": {{ "done": "sounds/done.mp3", "error": {absolute:?} }}
+                }}
+            }}"#
+            ),
             &dir,
         );
         assert!(warnings.is_empty(), "{warnings:?}");
@@ -493,7 +502,7 @@ mod tests {
         );
         assert_eq!(
             config.attention.sounds.get("error").map(String::as_str),
-            Some("/tmp/error.wav")
+            Some(absolute)
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
