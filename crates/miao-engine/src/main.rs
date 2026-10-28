@@ -79,7 +79,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                         if input.len() > 1024 * 1024 {
                             return Err("config source plan exceeds 1 MiB".into());
                         }
-                        String::from_utf8(input)?
+                        String::from_utf8(input).map_err(|_| "config source plan must be UTF-8")?
                     } else {
                         plan.clone()
                     };

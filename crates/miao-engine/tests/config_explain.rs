@@ -112,3 +112,68 @@ fn invalid_command_options_are_rejected() {
             .contains("Usage: miao-engine config explain"));
     }
 }
+
+#[test]
+fn stdin_and_report_size_bounds_fail_before_writing_output() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args(["config", "explain", "--config-sources", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&vec![b' '; 1024 * 1024 + 1])
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8(output.stderr)
+        .unwrap()
+        .contains("config source plan exceeds 1 MiB"));
+
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("miao.json");
+    std::fs::write(
+        &file,
+        json!({"blob":"x".repeat(8 * 1024 * 1024)}).to_string(),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args(["config", "explain", "--config-dir"])
+        .arg(root.path())
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8(output.stderr)
+        .unwrap()
+        .contains("config explanation exceeds 8 MiB"));
+}
+
+#[test]
+fn malformed_utf8_reports_a_safe_error_instead_of_debugging_input_bytes() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args(["config", "explain", "--config-sources", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"private-input-value\xff")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(error.contains("config source plan must be UTF-8"));
+    assert!(!error.contains("private-input-value"));
+    assert!(!error.contains("bytes"));
+}
