@@ -556,7 +556,7 @@ mod validate_tests {
     }
 
     #[test]
-    fn lsp_entries_without_a_command_stay_valid_but_mistyped_commands_refuse() {
+    fn lsp_entries_require_a_command_unless_disabled() {
         assert!(validated(serde_json::json!({"lsp": {"gopls": {"disabled": true}}})).is_ok());
         assert!(validated(serde_json::json!({"lsp": {"gopls": {}}})).is_err());
         assert!(validated(

@@ -131,6 +131,12 @@ export interface Interface {
     location: Location.Ref
     after?: string
   }) => Effect.Effect<SessionRecovery.Page, ConflictError>
+  readonly recovery: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    callID: string
+  }) => Effect.Effect<SessionRecovery.Inspection, ConflictError>
   readonly resolveRecovery: (input: {
     sessionID: SessionID
     storage: AbsolutePath

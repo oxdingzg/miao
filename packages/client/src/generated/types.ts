@@ -872,6 +872,7 @@ export type SessionsRecoveriesOutput = {
       readonly runID: string
       readonly tool: string
       readonly outcome: "unknown"
+      readonly origin?: "model" | "operator"
       readonly resolution: {
         readonly operationID: string
         readonly callID: string
@@ -883,6 +884,31 @@ export type SessionsRecoveriesOutput = {
       } | null
     }>
     readonly hasMore: boolean
+  }
+}["data"]
+
+export type SessionsRecoveryInput = {
+  readonly sessionID: { readonly sessionID: string; readonly callID: string }["sessionID"]
+  readonly callID: { readonly sessionID: string; readonly callID: string }["callID"]
+}
+
+export type SessionsRecoveryOutput = {
+  readonly data: {
+    readonly callID: string
+    readonly runID: string
+    readonly tool: string
+    readonly outcome: "unknown"
+    readonly origin?: "model" | "operator"
+    readonly resolution: {
+      readonly operationID: string
+      readonly callID: string
+      readonly runID: string
+      readonly decision: "retry" | "abandon"
+      readonly inputID: string
+      readonly admittedSeq: number
+      readonly outcome: "unknown"
+    } | null
+    readonly input: JsonValue
   }
 }["data"]
 
