@@ -66,9 +66,17 @@ export interface Router {
   }) => Effect.Effect<Owner, unknown>
 }
 
-const Snapshot = Schema.Struct({
-  title: Schema.optional(Schema.String),
-  updated_at_ms: Schema.optional(Schema.Number),
+/**
+ * The engine's session snapshot. Exported so the decode contract is testable
+ * against the shapes the engine actually emits.
+ */
+export const Snapshot = Schema.Struct({
+  // The engine serialises `Option` as JSON `null`, so every field it can leave
+  // unset has to accept null as well as being absent. `title` and
+  // `updated_at_ms` were the two that did not, and a single unset one failed
+  // the whole decode below, taking the tool call with it.
+  title: Schema.optional(Schema.NullOr(Schema.String)),
+  updated_at_ms: Schema.optional(Schema.NullOr(Schema.Number)),
   active_run: Schema.optional(Schema.NullOr(Schema.String)),
   pending: Schema.optional(Schema.Array(Schema.Unknown)),
   state: Schema.optional(
@@ -177,8 +185,10 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
           objective:
             goal?.objective ?? list.find((todo) => todo.status !== "completed" && todo.status !== "cancelled")?.content,
           active: busy || unfinished,
-          ...(snapshot.title === undefined ? {} : { title: snapshot.title }),
-          ...(snapshot.updated_at_ms === undefined ? {} : { lastActivity: snapshot.updated_at_ms }),
+          // The engine reports an unset field as null, which belongs with an
+          // absent one here: `Work` carries no value rather than a null one.
+          ...(snapshot.title == null ? {} : { title: snapshot.title }),
+          ...(snapshot.updated_at_ms == null ? {} : { lastActivity: snapshot.updated_at_ms }),
         }
       }).pipe(
         Effect.catch(() =>
