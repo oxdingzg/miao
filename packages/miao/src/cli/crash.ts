@@ -26,16 +26,33 @@ export function recordCrash(kind: "uncaughtException" | "unhandledRejection", er
 }
 
 /**
+ * A `write` that failed because the terminal or the pipe on the other end is
+ * gone. Bun reports this after `write()` has returned, so the caller's
+ * try/catch never sees it and the error arrives as an uncaught exception.
+ * Nothing about the process is unknown in that case: a closed window or a
+ * dropped reader says nothing about the Session's durable work, and exiting
+ * here would turn a detached terminal into a mid-turn crash.
+ */
+export function closedStreamWrite(error: unknown) {
+  if (!(error instanceof Error)) return false
+  const { code, syscall } = error as { code?: unknown; syscall?: unknown }
+  return (code === "EPIPE" || code === "EIO") && syscall === "write"
+}
+
+/**
  * Bun's default is to print an uncaught error or rejection and exit(1). The
  * TUI's console is the in-app console, so that print is lost and a flash exit
  * leaves no trace: record both to disk instead. An uncaught exception leaves
  * the process in an unknown state and still exits. An unhandled rejection is
  * a missed error handler, not a corrupt process, so after recording it the
  * process keeps running — one dangling promise must not take down a
- * long-running TUI or the server its windows attach to.
+ * long-running TUI or the server its windows attach to. A write to a closed
+ * stream is handled the same way, and is not recorded: it is an expected end
+ * of a terminal, not a crash worth diagnosing.
  */
 export function installFatalHandlers() {
   process.on("uncaughtException", (error) => {
+    if (closedStreamWrite(error)) return
     recordCrash("uncaughtException", error)
     process.exit(1)
   })

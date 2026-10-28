@@ -205,3 +205,35 @@ async fn a_unit_command_is_sent_without_a_params_key() {
         .expect("model_catalog");
     assert_eq!(catalog.as_array().map(Vec::len), Some(2));
 }
+
+/// A startup refusal has to reach the user. The engine says why on stderr and
+/// nowhere else, so the terminal failure quotes it instead of reporting a bare
+/// stream closure.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_startup_refusal_reports_the_engines_own_stderr() {
+    let spawn = EngineSpawn {
+        program: "/bin/sh".into(),
+        args: vec![
+            "-c".into(),
+            "printf 'Error: \"unknown or duplicate option\"\\n' >&2; exit 7".into(),
+        ],
+        env: Vec::new(),
+    };
+    let (_connection, mut events) = Connection::start(spawn, TIMEOUT).expect("start");
+    let failure = match next(&mut events).await {
+        TransportEvent::Failure(failure) => failure,
+        other => panic!("expected a failure, got {other:?}"),
+    };
+    assert_eq!(failure.code, "engine_closed");
+    assert!(
+        failure.message.contains("unknown or duplicate option"),
+        "the engine's own stderr is missing: {}",
+        failure.message
+    );
+    assert!(
+        failure.message.contains("exit status"),
+        "the exit status is missing: {}",
+        failure.message
+    );
+}
