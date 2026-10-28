@@ -4,7 +4,7 @@ import { Effect } from "effect"
 import { Credential } from "@miao/core/credential"
 import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { it } from "./lib/effect"
 import { exchange, sse } from "./lib/llm-wire"
 
@@ -53,7 +53,7 @@ describe("Azure OpenAI V2 route", () => {
   it.effect("builds the v1 Responses URL from the resource name with an api-key header", () =>
     Effect.gen(function* () {
       // The V2 Azure plugin writes the resource name into the request body.
-      const model = yield* SessionRunnerModel.fromCatalogModel(azure({ body: { resourceName: "contoso" } }), key)
+      const model = yield* SessionModel.fromCatalogModel(azure({ body: { resourceName: "contoso" } }), key)
       const { wire, response } = yield* exchange(LLM.request({ model, prompt: "Hello" }), responsesStream)
 
       expect(wire.url).toBe("https://contoso.openai.azure.com/openai/v1/responses?api-version=v1")
@@ -68,7 +68,7 @@ describe("Azure OpenAI V2 route", () => {
 
   it.effect("honours apiVersion and useCompletionUrls from the migrated provider settings", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         azure({ settings: { resourceName: "contoso", apiVersion: "2025-04-01-preview", useCompletionUrls: true } }),
         key,
       )
@@ -84,7 +84,7 @@ describe("Azure OpenAI V2 route", () => {
 
   it.effect("addresses a deployment when deployment URLs are requested", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         azure({
           id: "my-deployment",
           settings: {
@@ -105,7 +105,7 @@ describe("Azure OpenAI V2 route", () => {
 
   it.effect("uses a configured base URL as-is", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         azure({ url: "https://gateway.example/openai/v1" }),
         key,
       )
@@ -116,7 +116,7 @@ describe("Azure OpenAI V2 route", () => {
 
   it.effect("sends a configured Entra bearer token instead of an api-key", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         azure({ settings: { resourceName: "contoso" }, headers: { Authorization: "Bearer entra-token" } }),
       )
       const { wire } = yield* exchange(LLM.request({ model, prompt: "Hello" }), responsesStream)
@@ -128,7 +128,7 @@ describe("Azure OpenAI V2 route", () => {
 
   it.effect("expands the resource template of Azure AI Foundry models", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         azure({
           id: "claude-sonnet-5",
           package: "@ai-sdk/anthropic",
@@ -157,7 +157,7 @@ describe("Azure OpenAI V2 route", () => {
       process.env.AZURE_RESOURCE_NAME = "contoso"
       process.env.AZURE_API_KEY = "real-azure-key"
       // models.dev lists AZURE_RESOURCE_NAME first, so the env connection resolves to it.
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         azure({}),
         Credential.Key.make({ type: "key", key: "contoso" }),
       )
@@ -176,10 +176,10 @@ describe("Azure OpenAI V2 route", () => {
     Effect.gen(function* () {
       const previous = process.env.AZURE_RESOURCE_NAME
       delete process.env.AZURE_RESOURCE_NAME
-      const failure = yield* SessionRunnerModel.fromCatalogModel(azure({}), key).pipe(Effect.flip)
+      const failure = yield* SessionModel.fromCatalogModel(azure({}), key).pipe(Effect.flip)
       if (previous !== undefined) process.env.AZURE_RESOURCE_NAME = previous
       expect(failure._tag).toBe("SessionRunnerModel.UnsupportedApiError")
-      expect(SessionRunnerModel.supported(azure({ settings: { resourceName: "contoso" } }))).toBe(true)
+      expect(SessionModel.supported(azure({ settings: { resourceName: "contoso" } }))).toBe(true)
     }),
   )
 })

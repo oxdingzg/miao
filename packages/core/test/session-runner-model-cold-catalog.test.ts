@@ -13,7 +13,7 @@ import { Policy } from "@miao/core/policy"
 import { ProviderV2 } from "@miao/core/provider"
 import { ProjectV2 } from "@miao/core/project"
 import { AbsolutePath } from "@miao/core/schema"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { SessionV2 } from "@miao/core/session"
 import { location } from "./fixture/location"
 import { it } from "./lib/effect"
@@ -74,7 +74,7 @@ const layer = () =>
         EventV2.node,
         Integration.node,
         Policy.node,
-        SessionRunnerModel.node,
+        SessionModel.node,
       ]),
       [
         [
@@ -90,7 +90,7 @@ describe("model resolve against a booting catalog", () => {
   it.live(
     "waits for the plugin boot before reporting a pinned model unavailable",
     Effect.gen(function* () {
-      const models = yield* SessionRunnerModel.Service
+      const models = yield* SessionModel.Service
       const catalog = yield* Catalog.Service
       const fiber = yield* models.resolve(session({ providerID, id: modelID })).pipe(Effect.forkScoped)
       yield* Effect.sleep("100 millis")
@@ -106,7 +106,7 @@ describe("model resolve against a booting catalog", () => {
   it.live(
     "resolves a session without a model once the boot fills the catalog",
     Effect.gen(function* () {
-      const models = yield* SessionRunnerModel.Service
+      const models = yield* SessionModel.Service
       const catalog = yield* Catalog.Service
       const fiber = yield* models.resolve(session(undefined)).pipe(Effect.forkScoped)
       yield* Effect.sleep("100 millis")
@@ -122,7 +122,7 @@ describe("model resolve against a booting catalog", () => {
   it.live(
     "reports a pinned model unavailable at once once the boot has completed",
     Effect.gen(function* () {
-      const models = yield* SessionRunnerModel.Service
+      const models = yield* SessionModel.Service
       if (!gate.current) throw new Error("missing the boot gate")
       yield* Deferred.succeed(gate.current, undefined)
       const rejected = yield* models.resolve(session({ providerID, id: modelID })).pipe(Effect.flip)

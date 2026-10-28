@@ -33,7 +33,7 @@ import { QuestionV2 } from "./question"
 import { Reference } from "./reference"
 import { ReferenceGuidance } from "./reference/guidance"
 import * as SessionRunnerLLM from "./session/runner/llm"
-import { SessionRunnerModel } from "./session/runner/model"
+import { SessionModel } from "./session/model"
 import { SessionExecution } from "./session/execution"
 import { SessionExecutionLocal } from "./session/execution/local"
 import { SessionSchedule } from "./session/schedule"
@@ -97,7 +97,7 @@ export const locationServices = LayerNode.group([
   ReadToolFileSystem.node,
   BuiltInTools.node,
   CustomTools.node,
-  SessionRunnerModel.node,
+  SessionModel.node,
   Snapshot.node,
   SessionRunnerLLM.node,
 ])

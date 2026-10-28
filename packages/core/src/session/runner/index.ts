@@ -5,14 +5,14 @@ import { Context, Effect } from "effect"
 import type { BusyPhase } from "@miao/schema/session-event"
 import { SessionSchema } from "../schema"
 import type { ContextSnapshotDecodeError, LegacyNotMigratedError, MessageDecodeError } from "../error"
-import { SessionRunnerModel } from "./model"
+import { SessionModel } from "../model"
 import type { SystemContext } from "../../system-context/index"
 import type { ToolOutputStore } from "../../tool-output-store"
 import type { SessionDelegation } from "../delegation"
 
 export type RunError =
   | LLMError
-  | SessionRunnerModel.Error
+  | SessionModel.Error
   | MessageDecodeError
   | ContextSnapshotDecodeError
   | LegacyNotMigratedError

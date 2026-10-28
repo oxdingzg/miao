@@ -8,7 +8,7 @@ import { Integration } from "@miao/core/integration"
 import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
 import { ProjectV2 } from "@miao/core/project"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { SessionV2 } from "@miao/core/session"
 import { AbsolutePath } from "@miao/core/schema"
 import { it } from "./lib/effect"
@@ -60,7 +60,7 @@ describe("SessionRunnerModel", () => {
           },
         },
       })
-      const resolved = yield* SessionRunnerModel.fromCatalogModel(catalog)
+      const resolved = yield* SessionModel.fromCatalogModel(catalog)
       expect(resolved.route.defaults.http?.body).toEqual({ custom_extension: { enabled: true } })
       const prepared = yield* LLMClient.prepare(LLM.request({ model: resolved, system: "stable", prompt: "question" }))
       expect(prepared.body).toMatchObject({ prompt_cache_options: { mode: "implicit", ttl: "30m" } })
@@ -80,7 +80,7 @@ describe("SessionRunnerModel", () => {
         ],
       ] as const) {
         const base = model(api)
-        const error = yield* SessionRunnerModel.fromCatalogModel(
+        const error = yield* SessionModel.fromCatalogModel(
           ModelV2.Info.make({
             ...base,
             request: { ...base.request, body: { responsesCache: capability } },
@@ -108,7 +108,7 @@ describe("SessionRunnerModel", () => {
           },
         },
       })
-      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+      const resolved = yield* SessionModel.fromCatalogModel(
         catalog,
         Credential.OAuth.make({
           type: "oauth",
@@ -126,7 +126,7 @@ describe("SessionRunnerModel", () => {
   it.effect("keeps generation-free prewarming out of normal model defaults", () =>
     Effect.gen(function* () {
       const base = model({ type: "aisdk", package: "@ai-sdk/openai" })
-      const error = yield* SessionRunnerModel.fromCatalogModel(
+      const error = yield* SessionModel.fromCatalogModel(
         ModelV2.Info.make({
           ...base,
           request: {
@@ -162,19 +162,19 @@ describe("SessionRunnerModel", () => {
         time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
         location: { directory: AbsolutePath.make("/project") },
       })
-      const resolved = yield* SessionRunnerModel.resolve(session, catalog)
+      const resolved = yield* SessionModel.resolve(session, catalog)
       expect(resolved.route.defaults.http?.body).toMatchObject({ reasoning: { effort: "medium" } })
     }),
   )
 
   it.effect("routes gateway-only providers through the OpenAI-compatible chat endpoint", () =>
     Effect.gen(function* () {
-      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+      const resolved = yield* SessionModel.fromCatalogModel(
         model({ type: "native", url: "https://gateway.test/v1", settings: {} }),
       )
       expect(resolved.route.endpoint.baseURL).toBe("https://gateway.test/v1")
       expect(resolved.route.defaults.headers).toMatchObject({ "x-test": "header" })
-      const missing = yield* SessionRunnerModel.fromCatalogModel(model({ type: "native", settings: {} })).pipe(
+      const missing = yield* SessionModel.fromCatalogModel(model({ type: "native", settings: {} })).pipe(
         Effect.flip,
       )
       expect(missing.message).toBe("Unsupported API for test-provider/test-model: native")
@@ -188,7 +188,7 @@ describe("SessionRunnerModel", () => {
         providerID: ProviderV2.ID.openai,
         request: { headers: {}, body: { reasoning: { effort: "medium" } } },
       })
-      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+      const resolved = yield* SessionModel.fromCatalogModel(
         catalog,
         Credential.OAuth.make({
           type: "oauth",
@@ -216,7 +216,7 @@ describe("SessionRunnerModel", () => {
         api: { ...base.api, id: ModelV2.ID.make("gpt-6.1-sol") },
         request: { headers: {}, body: { reasoningEffort: "high" } },
       })
-      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+      const resolved = yield* SessionModel.fromCatalogModel(
         catalog,
         Credential.OAuth.make({
           type: "oauth",
@@ -240,7 +240,7 @@ describe("SessionRunnerModel", () => {
 
   it.effect("maps catalog OpenAI AI SDK models into native Responses routes", () =>
     Effect.gen(function* () {
-      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+      const resolved = yield* SessionModel.fromCatalogModel(
         model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" }),
       )
 
@@ -259,7 +259,7 @@ describe("SessionRunnerModel", () => {
 
   it.effect("keeps catalog apiKey credentials out of provider JSON", () =>
     Effect.gen(function* () {
-      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+      const resolved = yield* SessionModel.fromCatalogModel(
         model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" }),
       )
       const prepared = yield* LLMClient.prepare(LLM.request({ model: resolved, prompt: "Hello" }))
@@ -271,7 +271,7 @@ describe("SessionRunnerModel", () => {
 
   it.effect("uses merged API settings for OpenAI-compatible auth and request defaults", () =>
     Effect.gen(function* () {
-      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+      const resolved = yield* SessionModel.fromCatalogModel(
         ModelV2.Info.make({
           ...model({
             type: "aisdk",
@@ -325,7 +325,7 @@ describe("SessionRunnerModel", () => {
         location: { directory: AbsolutePath.make("/project") },
       })
 
-      const resolved = yield* SessionRunnerModel.resolve(session, catalog)
+      const resolved = yield* SessionModel.resolve(session, catalog)
 
       expect(resolved.route.defaults.headers).toMatchObject({ "x-test": "header", "x-variant": "high" })
       expect(resolved.route.defaults.http?.body).toEqual({
@@ -361,7 +361,7 @@ describe("SessionRunnerModel", () => {
         location: { directory: AbsolutePath.make("/project") },
       })
 
-      const resolved = yield* SessionRunnerModel.resolve(session, catalog)
+      const resolved = yield* SessionModel.resolve(session, catalog)
 
       expect(resolved.route.defaults.http?.body).toEqual({
         custom_extension: { enabled: true },
@@ -389,7 +389,7 @@ describe("SessionRunnerModel", () => {
         location: { directory: AbsolutePath.make("/project") },
       })
 
-      const failure = yield* SessionRunnerModel.resolve(session, catalog).pipe(Effect.flip)
+      const failure = yield* SessionModel.resolve(session, catalog).pipe(Effect.flip)
 
       expect(failure).toMatchObject({
         _tag: "SessionRunnerModel.VariantUnavailableError",
@@ -421,7 +421,7 @@ describe("SessionRunnerModel", () => {
         location: { directory: AbsolutePath.make("/project") },
       })
 
-      const resolved = yield* SessionRunnerModel.resolve(session, catalog)
+      const resolved = yield* SessionModel.resolve(session, catalog)
 
       expect(resolved.route.defaults.http?.body).toEqual({
         custom_extension: { enabled: true },
@@ -432,7 +432,7 @@ describe("SessionRunnerModel", () => {
 
   it.effect("maps catalog Anthropic AI SDK models into native routes", () =>
     Effect.gen(function* () {
-      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+      const resolved = yield* SessionModel.fromCatalogModel(
         model({ type: "aisdk", package: "@ai-sdk/anthropic", url: "https://anthropic.example/v1" }),
       )
 
@@ -445,7 +445,7 @@ describe("SessionRunnerModel", () => {
 
   it.effect("uses resolved credentials for bearer auth", () =>
     Effect.gen(function* () {
-      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+      const resolved = yield* SessionModel.fromCatalogModel(
         ModelV2.Info.make({
           ...model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" }),
           request: { headers: {}, body: {} },
@@ -468,7 +468,7 @@ describe("SessionRunnerModel", () => {
   it.effect("prefers stored credentials over configured auth", () =>
     Effect.gen(function* () {
       const credential = Credential.Key.make({ type: "key", key: "stored-secret", metadata: { tenant: "work" } })
-      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+      const resolved = yield* SessionModel.fromCatalogModel(
         ModelV2.Info.make({
           ...model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" }),
           request: { headers: {}, body: { apiKey: "configured-secret" } },
@@ -490,7 +490,7 @@ describe("SessionRunnerModel", () => {
 
   it.effect("does not project OAuth account metadata into the request body", () =>
     Effect.gen(function* () {
-      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+      const resolved = yield* SessionModel.fromCatalogModel(
         ModelV2.Info.make({
           ...model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" }),
           request: { headers: {}, body: {} },
@@ -511,7 +511,7 @@ describe("SessionRunnerModel", () => {
 
   it.effect("rejects catalog APIs without a native route", () =>
     Effect.gen(function* () {
-      const failure = yield* SessionRunnerModel.fromCatalogModel(
+      const failure = yield* SessionModel.fromCatalogModel(
         model({ type: "aisdk", package: "@ai-sdk/cohere" }),
       ).pipe(Effect.flip)
 
@@ -528,18 +528,18 @@ describe("SessionRunnerModel", () => {
   it.effect("reports whether a catalog model has a supported native route", () =>
     Effect.sync(() => {
       expect(
-        SessionRunnerModel.supported(
+        SessionModel.supported(
           model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" }),
         ),
       ).toBe(true)
       expect(
-        SessionRunnerModel.supported(
+        SessionModel.supported(
           model({ type: "aisdk", package: "@ai-sdk/google", url: "https://google.example/v1" }),
         ),
       ).toBe(true)
-      expect(SessionRunnerModel.supported(model({ type: "aisdk", package: "@ai-sdk/groq" }))).toBe(true)
-      expect(SessionRunnerModel.supported(model({ type: "aisdk", package: "@ai-sdk/cohere" }))).toBe(false)
-      expect(SessionRunnerModel.supported(model({ type: "native", settings: {} }))).toBe(false)
+      expect(SessionModel.supported(model({ type: "aisdk", package: "@ai-sdk/groq" }))).toBe(true)
+      expect(SessionModel.supported(model({ type: "aisdk", package: "@ai-sdk/cohere" }))).toBe(false)
+      expect(SessionModel.supported(model({ type: "native", settings: {} }))).toBe(false)
     }),
   )
 })
