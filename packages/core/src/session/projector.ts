@@ -73,11 +73,7 @@ function sessionRow(info: SessionV1.SessionInfo): typeof SessionTable.$inferInse
   }
 }
 
-function sessionRowFromInfo(
-  info: SessionSchema.Info,
-  slug: string,
-  version: string,
-): typeof SessionTable.$inferInsert {
+function sessionRowFromInfo(info: SessionSchema.Info, slug: string, version: string): typeof SessionTable.$inferInsert {
   return {
     id: info.id,
     project_id: info.projectID,
@@ -114,7 +110,6 @@ function partData(part: (typeof SessionV1.Event.PartUpdated.Type)["data"]["part"
   const { id: _, messageID: __, sessionID: ___, ...rest } = part
   return rest as DeepMutable<typeof rest>
 }
-
 
 type RunCache = {
   readonly assistantByID: Map<SessionMessage.ID, SessionMessage.Assistant>
@@ -153,7 +148,11 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
       const { id, type, ...data } = encoded
       return db
         .update(SessionMessageTable)
-        .set({ type, time_created: message.time.created === null ? null : DateTime.toEpochMillis(message.time.created), data })
+        .set({
+          type,
+          time_created: message.time.created === null ? null : DateTime.toEpochMillis(message.time.created),
+          data,
+        })
         .where(
           and(
             eq(SessionMessageTable.id, SessionMessage.ID.make(id)),
@@ -167,7 +166,18 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
     const adapter: SessionMessageUpdater.Adapter = {
       getUser(messageID) {
         return Effect.gen(function* () {
-          const row = yield* db.select().from(SessionMessageTable).where(and(eq(SessionMessageTable.id, messageID), eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "user"))).get().pipe(Effect.orDie)
+          const row = yield* db
+            .select()
+            .from(SessionMessageTable)
+            .where(
+              and(
+                eq(SessionMessageTable.id, messageID),
+                eq(SessionMessageTable.session_id, sessionID),
+                eq(SessionMessageTable.type, "user"),
+              ),
+            )
+            .get()
+            .pipe(Effect.orDie)
           if (!row) return
           const message = decodeRow(row)
           return message.type === "user" ? message : undefined
@@ -330,9 +340,7 @@ const layer = Layer.effectDiscard(
               location: event.data.info.location,
             }
           : { engine: "ts" as const }
-        yield* SessionEnginePlacement.claim(db, { sessionID: event.data.info.id, placement }).pipe(
-          Effect.orDie,
-        )
+        yield* SessionEnginePlacement.claim(db, { sessionID: event.data.info.id, placement }).pipe(Effect.orDie)
         const stored = yield* db
           .insert(SessionTable)
           .values(sessionRowFromInfo(event.data.info, event.data.slug, event.data.version))
@@ -381,6 +389,9 @@ const layer = Layer.effectDiscard(
           ...(event.data.title !== undefined ? { title: event.data.title } : {}),
           ...(event.data.archived !== undefined
             ? { time_archived: event.data.archived ? DateTime.toEpochMillis(event.data.timestamp) : null }
+            : {}),
+          ...(event.data.pinned !== undefined
+            ? { time_pinned: event.data.pinned ? DateTime.toEpochMillis(event.data.timestamp) : null }
             : {}),
           time_updated: DateTime.toEpochMillis(event.data.timestamp),
         })
@@ -544,9 +555,7 @@ const layer = Layer.effectDiscard(
     yield* events.project(SessionEvent.ContextUpdated, (event) => run(db, event))
     yield* events.project(SessionEvent.DelegationStarted, (event) => SessionDelegationStore.projectStarted(db, event))
     yield* events.project(SessionEvent.DelegationEnded, (event) => SessionDelegationStore.projectEnded(db, event))
-    yield* events.project(SessionEvent.DelegationReported, (event) =>
-      SessionDelegationStore.projectReported(db, event),
-    )
+    yield* events.project(SessionEvent.DelegationReported, (event) => SessionDelegationStore.projectReported(db, event))
     yield* events.project(SessionEvent.NotificationAdmitted, (event) =>
       SessionDelegationStore.projectNotificationAdmitted(db, event),
     )
@@ -558,7 +567,10 @@ const layer = Layer.effectDiscard(
     yield* events.project(SessionEvent.Step.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Step.Ended, (event) =>
       Effect.gen(function* () {
-        yield* SessionUsageStore.applyUsageWithAncestors(db, event.data.sessionID, { cost: event.data.cost, tokens: event.data.tokens })
+        yield* SessionUsageStore.applyUsageWithAncestors(db, event.data.sessionID, {
+          cost: event.data.cost,
+          tokens: event.data.tokens,
+        })
         yield* run(db, event)
         yield* SessionUsageStore.projectStepEnded(db, event)
       }),
@@ -637,7 +649,12 @@ const layer = Layer.effectDiscard(
         for (const row of removed) {
           const message = decodeMessage({ ...row.data, id: row.id, type: row.type })
           if (message.type === "assistant" && message.cost !== undefined && message.tokens !== undefined)
-            yield* SessionUsageStore.applyUsageWithAncestors(db, event.data.sessionID, { cost: message.cost, tokens: message.tokens }, -1)
+            yield* SessionUsageStore.applyUsageWithAncestors(
+              db,
+              event.data.sessionID,
+              { cost: message.cost, tokens: message.tokens },
+              -1,
+            )
         }
         yield* db
           .delete(SessionMessageTable)

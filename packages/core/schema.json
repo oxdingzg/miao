@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "97000bb1-774c-4eef-97d6-2ff62f1b45f0",
+  "id": "5711317a-e729-4ddf-bf5c-07fa1861c8c5",
   "prevIds": [
-    "39bf0b1c-dd50-4d16-9492-2f3d89377c66"
+    "97000bb1-774c-4eef-97d6-2ff62f1b45f0"
   ],
   "ddl": [
     {
@@ -1841,6 +1841,16 @@
       "default": null,
       "generated": null,
       "name": "time_archived",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_pinned",
       "entityType": "columns",
       "table": "session"
     },

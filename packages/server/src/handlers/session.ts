@@ -896,6 +896,25 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.pin",
+        Effect.fn(function* (ctx) {
+          // A native Session keeps its own authority; the pin is a list
+          // preference the catalog owns, so it is recorded the same way an
+          // accepted native archive is, without claiming TypeScript execution.
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.pin")
+          yield* session.pin({ sessionID: ctx.params.sessionID, pinned: ctx.payload.pinned }).pipe(
+            Effect.catchTag("Session.NotFoundError", (error) =>
+              Effect.fail(
+                new SessionNotFoundError({
+                  sessionID: error.sessionID,
+                  message: `Session not found: ${error.sessionID}`,
+                }),
+              ),
+            ),
+          )
+        }),
+      )
+      .handle(
         "session.remove",
         Effect.fn(function* (ctx) {
           const native = yield* Effect.serviceOption(NativeEngine.Service)

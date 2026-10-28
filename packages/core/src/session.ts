@@ -207,6 +207,7 @@ export interface Interface {
   }) => Effect.Effect<void, NotFoundError | PromptConflictError | LegacyNotMigratedError>
   readonly rename: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
   readonly archive: (input: { sessionID: SessionSchema.ID; archived: boolean }) => Effect.Effect<void, NotFoundError>
+  readonly pin: (input: { sessionID: SessionSchema.ID; pinned: boolean }) => Effect.Effect<void, NotFoundError>
   readonly remove: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
   readonly context: (
     sessionID: SessionSchema.ID,
@@ -381,6 +382,10 @@ const layer = Layer.effect(
           .from(SessionTable)
           .where(conditions.length > 0 ? and(...conditions) : undefined)
           .orderBy(
+            // Pinned Sessions lead the list in either direction: SQLite sorts a
+            // NULL last, so ordering on `IS NULL` first puts every pinned row
+            // above the unpinned ones before the requested order applies.
+            sql`(${SessionTable.time_pinned} IS NULL)`,
             order === "asc" ? asc(sortColumn) : desc(sortColumn),
             order === "asc" ? asc(SessionTable.id) : desc(SessionTable.id),
           )
@@ -479,6 +484,15 @@ const layer = Layer.effect(
           sessionID: session.id,
           timestamp: yield* DateTime.now,
           archived: input.archived,
+        })
+      }),
+      pin: Effect.fn("V2Session.pin")(function* (input) {
+        yield* ownership.claim(input.sessionID)
+        const session = yield* result.get(input.sessionID)
+        yield* events.publish(SessionEvent.Info.Updated, {
+          sessionID: session.id,
+          timestamp: yield* DateTime.now,
+          pinned: input.pinned,
         })
       }),
       remove: Effect.fn("V2Session.remove")(function* (sessionID) {
@@ -712,18 +726,20 @@ const layer = Layer.effect(
             const messageID = input.id ?? SessionMessage.ID.create()
             const delivery = input.delivery ?? "steer"
             const expected = { sessionID: input.sessionID, messageID, prompt, delivery }
-            const admitted = yield* admission.admit({
-              id: messageID,
-              sessionID: input.sessionID,
-              prompt,
-              delivery,
-            }).pipe(
-              Effect.catchDefect((defect) =>
-                defect instanceof SessionInput.LifecycleConflict
-                  ? new PromptConflictError({ sessionID: input.sessionID, messageID })
-                  : Effect.die(defect),
-              ),
-            )
+            const admitted = yield* admission
+              .admit({
+                id: messageID,
+                sessionID: input.sessionID,
+                prompt,
+                delivery,
+              })
+              .pipe(
+                Effect.catchDefect((defect) =>
+                  defect instanceof SessionInput.LifecycleConflict
+                    ? new PromptConflictError({ sessionID: input.sessionID, messageID })
+                    : Effect.die(defect),
+                ),
+              )
             if (!SessionInput.equivalent(admitted, expected))
               return yield* new PromptConflictError({ sessionID: input.sessionID, messageID })
             // A person asked for this run, so the machine gets its wake allowance

@@ -507,6 +507,18 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         .annotateMerge(OpenApi.annotations({ identifier: "v2.session.archive", summary: "Archive session" })),
     )
     .add(
+      HttpApiEndpoint.post("session.pin", "/api/session/:sessionID/pin", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ pinned: Schema.Boolean }),
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({ identifier: "v2.session.pin", summary: "Pin session to the top of the list" }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.remove", "/api/session/:sessionID/remove", {
         params: { sessionID: Session.ID },
         success: HttpApiSchema.NoContent,
