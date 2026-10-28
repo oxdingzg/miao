@@ -447,10 +447,20 @@ impl Host {
             Command::RevertStage {
                 session_id,
                 boundary_seq,
+                files,
             } => {
                 runtime
                     .store()
-                    .revert_stage(&session_id, boundary_seq)
+                    .revert_stage(&session_id, boundary_seq, files)
+                    .await
+            }
+            Command::RevertPreview {
+                session_id,
+                boundary_seq,
+            } => {
+                runtime
+                    .store()
+                    .revert_preview(&session_id, boundary_seq)
                     .await
             }
             Command::RevertClear { session_id } => runtime.store().revert_clear(&session_id).await,

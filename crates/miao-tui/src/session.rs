@@ -228,6 +228,9 @@ pub struct SessionState {
     pub pending: usize,
     pub approvals: Vec<ApprovalView>,
     pub questions: Vec<QuestionView>,
+    /// Messages a redo would restore. The engine keeps reverted rows in its
+    /// ledger, so this count is the durable answer to "can I redo?".
+    pub reverted: usize,
 }
 
 impl SessionState {
@@ -252,7 +255,118 @@ impl SessionState {
                 .and_then(Value::as_array)
                 .map(|items| items.iter().filter_map(QuestionView::from_value).collect())
                 .unwrap_or_default(),
+            reverted: snapshot
+                .get("reverted_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
         }
+    }
+}
+
+/// What a revert at one boundary would change, projected from the engine's
+/// `revert_preview`. The engine decides every path; the TUI only says what it
+/// was told and asks before touching the workspace.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RevertPlan {
+    /// False when the boundary has no recorded file state. The revert is then
+    /// history-only, which the engine still performs.
+    pub available: bool,
+    /// Why a file plan is missing, as the engine names it.
+    pub reason: String,
+    pub restore: Vec<String>,
+    pub remove: Vec<String>,
+    /// Paths whose disk content differs from what the Session last recorded.
+    /// Restoring them overwrites an edit this Session did not make.
+    pub conflicts: Vec<String>,
+}
+
+impl RevertPlan {
+    pub fn from_value(value: &Value) -> Self {
+        let available = value
+            .get("available")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let paths = |field: &str| {
+            value
+                .get(field)
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        Self {
+            available,
+            reason: value
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            restore: paths("restore"),
+            remove: paths("remove"),
+            conflicts: value
+                .get("conflicts")
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| {
+                            let path = item.get("path")?.as_str()?;
+                            let disk = item
+                                .get("disk")
+                                .and_then(Value::as_str)
+                                .unwrap_or("modified");
+                            Some(format!("{path} ({disk})"))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }
+    }
+
+    /// One sentence for the confirm dialog. The dialog renders a single
+    /// wrapped line, so this stays a paragraph rather than a list.
+    pub fn summary(&self) -> String {
+        let head = "Revert to this message: it and everything after it leave the transcript.";
+        if !self.available {
+            return format!(
+                "{head} The Session recorded no file changes at this boundary, so the workspace stays as it is. Shell commands and other side effects cannot be undone."
+            );
+        }
+        let mut text = format!(
+            "{head} Restore {} file(s), remove {}.",
+            self.restore.len(),
+            self.remove.len()
+        );
+        if !self.conflicts.is_empty() {
+            text.push_str(&format!(
+                " {} path(s) changed outside this Session will be overwritten: {}.",
+                self.conflicts.len(),
+                listed(&self.conflicts)
+            ));
+        }
+        text.push_str(" Shell commands and other side effects cannot be undone.");
+        text
+    }
+
+    /// Whether the staged revert should restore files. The engine refuses a
+    /// file revert at a boundary that has no file record.
+    pub fn files(&self) -> bool {
+        self.available
+    }
+}
+
+/// At most three names, so one outside edit does not push the rest of the
+/// message out of the dialog.
+fn listed(paths: &[String]) -> String {
+    let shown = paths.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
+    match paths.len() {
+        0..=3 => shown,
+        _ => format!("{shown}, and {} more", paths.len() - 3),
     }
 }
 
@@ -278,6 +392,9 @@ pub enum Part {
 pub enum Entry {
     User {
         text: String,
+        /// The message's sequence, which is the revert boundary that removes it
+        /// and everything after it.
+        seq: u64,
     },
     Assistant {
         agent: Option<String>,
@@ -287,9 +404,7 @@ pub enum Entry {
     /// A drain that ended in failure. A failed turn commits no assistant
     /// message, so the snapshot cannot project this: it comes from the
     /// `stop_failure` event and is carried across refreshes like `displays`.
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -362,7 +477,8 @@ impl Transcript {
                 (!joined.is_empty()).then_some(joined)
             });
         if let Some(text) = text.filter(|text| !text.is_empty()) {
-            self.entries.push(Entry::User { text });
+            let seq = message.get("seq").and_then(Value::as_u64).unwrap_or(0);
+            self.entries.push(Entry::User { text, seq });
         }
         for block in blocks {
             if block.get("type").and_then(Value::as_str) != Some("tool_result") {
@@ -468,6 +584,21 @@ impl Transcript {
             "tool.completed" => self.push_display(data),
             _ => {}
         }
+    }
+
+    /// The user turns this transcript can rewind to, oldest first. Reverting at
+    /// a boundary removes that message and everything after it, so the newest
+    /// boundary is "undo the last turn".
+    pub fn boundaries(&self) -> Vec<(u64, String)> {
+        self.entries
+            .iter()
+            .filter_map(|entry| match entry {
+                // A projected user message without a sequence cannot be named
+                // as a boundary, so it is not offered as one.
+                Entry::User { text, seq } if *seq > 0 => Some((*seq, text.clone())),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Append the failure once the snapshot and the replayed events are folded
@@ -633,7 +764,8 @@ mod tests {
         assert_eq!(
             transcript.entries[0],
             Entry::User {
-                text: "hello".into()
+                text: "hello".into(),
+                seq: 0
             }
         );
         let Entry::Assistant {
@@ -794,10 +926,66 @@ mod tests {
         assert_eq!(
             transcript.entries,
             vec![Entry::User {
-                text: "try again".into()
+                text: "try again".into(),
+                seq: 12
             }],
             "the retry has already moved past the old failure"
         );
+    }
+
+    #[test]
+    fn boundaries_are_the_user_turns_the_session_can_rewind_to() {
+        let transcript = Transcript::from_snapshot(&json!({
+            "session_id": "ses_a",
+            "messages": [
+                { "seq": 2, "role": "user", "content": "first" },
+                { "seq": 3, "role": "assistant", "content": [{ "type": "text", "text": "answer" }] },
+                // A projected message without a sequence cannot name a
+                // boundary, so it is not offered as one.
+                { "role": "user", "content": "unanchored" },
+                { "seq": 8, "role": "user", "content": "second" }
+            ]
+        }));
+        assert_eq!(
+            transcript.boundaries(),
+            vec![(2, "first".to_string()), (8, "second".to_string())]
+        );
+        assert_eq!(transcript.boundaries().last().map(|(seq, _)| *seq), Some(8));
+    }
+
+    #[test]
+    fn a_revert_plan_names_the_paths_an_outside_edit_loses() {
+        let plan = RevertPlan::from_value(&json!({
+            "available": true,
+            "boundary_seq": 8,
+            "restore": ["a.txt", "b.txt"],
+            "remove": ["c.txt"],
+            "conflicts": [{ "path": "a.txt", "action": "restore", "disk": "modified" }]
+        }));
+        assert!(plan.files());
+        let summary = plan.summary();
+        assert!(summary.contains("Restore 2 file(s), remove 1"));
+        assert!(summary.contains("a.txt (modified)"), "got {summary}");
+        assert!(summary.contains("cannot be undone"), "got {summary}");
+    }
+
+    #[test]
+    fn a_boundary_without_a_file_record_reverts_history_only() {
+        let plan = RevertPlan::from_value(&json!({
+            "available": false,
+            "reason": "no-file-snapshot"
+        }));
+        assert!(!plan.files(), "the engine would refuse a file revert");
+        assert!(plan.summary().contains("workspace stays as it is"));
+    }
+
+    #[test]
+    fn the_snapshot_reverted_count_says_whether_a_redo_is_possible() {
+        assert_eq!(
+            SessionState::from_snapshot(&json!({ "reverted_count": 3 })).reverted,
+            3
+        );
+        assert_eq!(SessionState::from_snapshot(&json!({})).reverted, 0);
     }
 
     #[test]

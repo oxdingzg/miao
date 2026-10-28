@@ -17,7 +17,7 @@ use crate::dialogs::{AccountInfo, ModelInfo};
 use crate::event::{AppEvent, Bus};
 use crate::platform::attention;
 use crate::session::{
-    catalog_rows, home_rows, DisplayFile, SessionState, SessionSummary, Transcript,
+    catalog_rows, home_rows, DisplayFile, RevertPlan, SessionState, SessionSummary, Transcript,
 };
 use crate::status::UsageSummary;
 use crate::transport::{self, EngineClient, EngineSpawn, TransportEvent};
@@ -91,6 +91,22 @@ pub enum Request {
     Archive {
         session_id: String,
         archived: bool,
+    },
+    /// Ask what a revert at this boundary would change, without changing it.
+    RevertPreview {
+        session_id: String,
+        boundary_seq: u64,
+    },
+    /// Stage and commit a revert: the file set (when the engine has one) and
+    /// the conversation rewind land together.
+    Revert {
+        session_id: String,
+        boundary_seq: u64,
+        files: bool,
+    },
+    /// Restore the messages the last revert hid.
+    Redo {
+        session_id: String,
     },
     Remove {
         session_id: String,
@@ -228,6 +244,27 @@ impl Handle {
 
     pub fn remove(&self, session_id: &str) {
         let _ = self.tx.send(Request::Remove {
+            session_id: session_id.to_string(),
+        });
+    }
+
+    pub fn revert_preview(&self, session_id: &str, boundary_seq: u64) {
+        let _ = self.tx.send(Request::RevertPreview {
+            session_id: session_id.to_string(),
+            boundary_seq,
+        });
+    }
+
+    pub fn revert(&self, session_id: &str, boundary_seq: u64, files: bool) {
+        let _ = self.tx.send(Request::Revert {
+            session_id: session_id.to_string(),
+            boundary_seq,
+            files,
+        });
+    }
+
+    pub fn redo(&self, session_id: &str) {
+        let _ = self.tx.send(Request::Redo {
             session_id: session_id.to_string(),
         });
     }
@@ -641,6 +678,78 @@ async fn run(
                         }
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("delete failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::RevertPreview {
+                    session_id,
+                    boundary_seq,
+                }) => {
+                    let result = client
+                        .request(
+                            "revert_preview",
+                            json!({ "session_id": session_id, "boundary_seq": boundary_seq }),
+                        )
+                        .await;
+                    match result {
+                        Ok(value) => bus.send(AppEvent::RevertPreview {
+                            session_id,
+                            boundary_seq,
+                            plan: RevertPlan::from_value(&value),
+                        }),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("preview failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::Revert {
+                    session_id,
+                    boundary_seq,
+                    files,
+                }) => {
+                    let staged = client
+                        .request(
+                            "revert_stage",
+                            json!({
+                                "session_id": session_id,
+                                "boundary_seq": boundary_seq,
+                                "files": files,
+                            }),
+                        )
+                        .await;
+                    // A stage that never commits would leave the workspace
+                    // restored with no visible rewind, so the two land
+                    // together or not at all.
+                    let result = match staged {
+                        Ok(_) => client
+                            .request("revert_commit", json!({ "session_id": session_id }))
+                            .await
+                            .map(|_| ()),
+                        Err(error) => Err(error),
+                    };
+                    match result {
+                        Ok(_) => {
+                            if open.as_ref().is_some_and(|state| state.id == session_id) {
+                                dirty.get_or_insert_with(Instant::now);
+                            }
+                        }
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("revert failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::Redo { session_id }) => {
+                    let result = client
+                        .request("unrevert", json!({ "session_id": session_id }))
+                        .await;
+                    match result {
+                        Ok(_) => {
+                            if open.as_ref().is_some_and(|state| state.id == session_id) {
+                                dirty.get_or_insert_with(Instant::now);
+                            }
+                        }
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("redo failed: {error}")))
                         }
                     }
                 }

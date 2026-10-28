@@ -213,6 +213,13 @@ fn archive_and_remove_are_wire_commands_with_a_durable_effect() {
         json!({"id":4,"method":"archive","params":{"session_id":"s","archived":false}}),
         json!({"id":5,"method":"snapshot","params":{"session_id":"s"}}),
         json!({"id":6,"method":"archive","params":{"session_id":"missing","archived":true}}),
+        json!({"id":16,"method":"revert_preview","params":{"session_id":"s","boundary_seq":1}}),
+        json!({"id":17,"method":"revert_stage","params":{"session_id":"s","boundary_seq":1}}),
+        json!({"id":18,"method":"revert_stage","params":{"session_id":"s","boundary_seq":1,"files":false}}),
+        json!({"id":19,"method":"revert_commit","params":{"session_id":"s"}}),
+        json!({"id":20,"method":"snapshot","params":{"session_id":"s"}}),
+        json!({"id":21,"method":"unrevert","params":{"session_id":"s"}}),
+        json!({"id":22,"method":"snapshot","params":{"session_id":"s"}}),
         json!({"id":7,"method":"remove","params":{"session_id":"s"}}),
         json!({"id":8,"method":"sessions"}),
         json!({"id":9,"method":"remove","params":{"session_id":"s"}}),
@@ -242,6 +249,20 @@ fn archive_and_remove_are_wire_commands_with_a_durable_effect() {
     assert!(result(5)["archived_at_ms"].is_null());
     // Archiving never invents a Session, so the wire reports a refusal instead.
     assert!(reply(6)["error"].is_object(), "{replies:?}");
+    // Revert vocabulary: the preview is a read, a file stage refuses when no
+    // snapshot exists, and the explicit history-only stage still records the
+    // intent so the conversation can be rewound without touching files.
+    assert_eq!(
+        result(16),
+        json!({"available": false, "reason": "no-file-snapshot"})
+    );
+    assert!(reply(17)["error"].is_object(), "{replies:?}");
+    assert_eq!(result(18)["restored"], json!([]));
+    assert_eq!(result(18)["removed"], json!([]));
+    assert!(result(19)["seq"].is_number(), "{replies:?}");
+    assert_eq!(result(20)["reverted_count"], result(19)["reverted"]);
+    assert_eq!(result(21)["restored"], result(19)["reverted"]);
+    assert_eq!(result(22)["reverted_count"], json!(0));
     assert_eq!(result(7), json!({"accepted": true}));
     assert_eq!(result(8), json!([]));
     assert_eq!(result(9), json!({"accepted": false, "reason": "unknown"}));

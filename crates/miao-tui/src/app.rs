@@ -422,6 +422,19 @@ impl App {
                 self.update_status();
                 self.continue_prompt();
             }
+            AppEvent::RevertPreview {
+                session_id,
+                boundary_seq,
+                plan,
+            } => {
+                // The engine answered a question asked about a Session that
+                // may already have been left; a stale dialog is worse than
+                // none.
+                if self.session_id().as_deref() != Some(session_id.as_str()) {
+                    return;
+                }
+                self.open_dialog(Dialog::confirm_revert(boundary_seq, &plan));
+            }
             AppEvent::ActionFailed(message) => {
                 self.shell.composer.notice = Some(message);
             }
@@ -544,6 +557,9 @@ impl App {
             Builtin::Debug => self.open_debug(),
             Builtin::Stash => self.open_stash(),
             Builtin::StashDraft => self.stash_current(),
+            Builtin::Timeline => self.open_timeline(),
+            Builtin::Undo => self.undo(),
+            Builtin::Redo => self.redo(),
             Builtin::Editor => self.open_editor(),
             Builtin::Help => self.open_help(),
             Builtin::Quit => self.quit = true,
@@ -679,11 +695,27 @@ impl App {
                 }
             }
             DialogAction::Confirmed(kind) => {
-                let ConfirmKind::RemoveSession(id) = kind;
                 self.dialog = None;
-                if let Some(engine) = self.engine.as_ref() {
-                    engine.remove(&id);
+                let Some(engine) = self.engine.clone() else {
+                    return;
+                };
+                match kind {
+                    ConfirmKind::RemoveSession(id) => engine.remove(&id),
+                    ConfirmKind::Revert {
+                        boundary_seq,
+                        files,
+                    } => {
+                        let Some(session_id) = self.session_id() else {
+                            return;
+                        };
+                        engine.revert(&session_id, boundary_seq, files);
+                        self.notice(&format!("reverted to #{boundary_seq}"));
+                    }
                 }
+            }
+            DialogAction::Revert(boundary_seq) => {
+                self.dialog = None;
+                self.preview_revert(boundary_seq);
             }
             DialogAction::StashRestore(index) => {
                 self.dialog = None;
@@ -891,6 +923,74 @@ impl App {
         self.shell.composer.dismiss_completion();
         if self.screen == Screen::Session {
             self.shell.composer.notice = Some("stashed".into());
+        }
+    }
+
+    /// List the Session's user turns, newest first, so the nearest undo is the
+    /// first row. The engine owns what each boundary restores; choosing a row
+    /// only asks it to preview the change.
+    fn open_timeline(&mut self) {
+        let Some(transcript) = self.shell.transcript() else {
+            self.notice("open a Session to see its timeline");
+            return;
+        };
+        let mut rows = transcript
+            .boundaries()
+            .into_iter()
+            .rev()
+            .map(|(seq, text)| Row {
+                id: seq.to_string(),
+                label: first_line(&text),
+                detail: format!("#{seq}"),
+            })
+            .collect::<Vec<_>>();
+        if rows.is_empty() {
+            self.notice("this Session has no message to rewind to");
+            return;
+        }
+        rows.truncate(50);
+        self.open_dialog(Dialog::timeline(rows));
+    }
+
+    /// Undo the last turn by rewinding to its user message, which removes that
+    /// message and the work it started.
+    fn undo(&mut self) {
+        let Some(transcript) = self.shell.transcript() else {
+            self.notice("open a Session to undo a turn");
+            return;
+        };
+        let Some((boundary_seq, _)) = transcript.boundaries().last().cloned() else {
+            self.notice("this Session has no turn to undo");
+            return;
+        };
+        self.preview_revert(boundary_seq);
+    }
+
+    fn redo(&mut self) {
+        let Some(session_id) = self.session_id() else {
+            self.notice("open a Session to redo");
+            return;
+        };
+        if self.state.reverted == 0 {
+            self.notice("nothing to redo");
+            return;
+        }
+        if let Some(engine) = self.engine.as_ref() {
+            engine.redo(&session_id);
+        }
+    }
+
+    fn preview_revert(&mut self, boundary_seq: u64) {
+        let Some(session_id) = self.session_id() else {
+            self.notice("open a Session to revert it");
+            return;
+        };
+        if self.state.active_run.is_some() {
+            self.notice("stop the running turn before reverting");
+            return;
+        }
+        if let Some(engine) = self.engine.as_ref() {
+            engine.revert_preview(&session_id, boundary_seq);
         }
     }
 
@@ -1453,7 +1553,7 @@ fn first_line(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::Transcript;
+    use crate::session::{Entry, RevertPlan, Transcript};
     use crate::theme::{self, DEFAULT_THEME};
 
     fn app() -> App {
@@ -1739,6 +1839,7 @@ mod tests {
                 expires_at_ms: None,
             }],
             questions: Vec::new(),
+            reverted: 0,
         }
     }
 
@@ -2256,5 +2357,161 @@ mod tests {
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         assert!(app.dialog.is_none());
         assert!(app.shell.composer.editor.is_empty());
+    }
+
+    /// An open Session whose transcript holds two user turns, with a handle
+    /// that records what the UI asks the engine to do.
+    fn revert_session_app() -> (App, tokio::sync::mpsc::UnboundedReceiver<engine::Request>) {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_a", 10)),
+            transcript: Box::new(Transcript {
+                entries: vec![
+                    Entry::User {
+                        text: "first".into(),
+                        seq: 3,
+                    },
+                    Entry::User {
+                        text: "second".into(),
+                        seq: 9,
+                    },
+                ],
+                ..Transcript::default()
+            }),
+            state: SessionState::default(),
+        });
+        let (handle, requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        (app, requests)
+    }
+
+    #[test]
+    fn undo_previews_the_newest_user_turn() {
+        let (mut app, mut requests) = revert_session_app();
+        app.run_builtin(Builtin::Undo);
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::RevertPreview {
+                boundary_seq: 9,
+                ..
+            })
+        ));
+        assert!(app.dialog.is_none(), "the preview opens the dialog");
+    }
+
+    #[test]
+    fn undo_waits_for_the_running_turn_to_stop() {
+        let (mut app, mut requests) = revert_session_app();
+        app.state.active_run = Some("run-1".into());
+        app.run_builtin(Builtin::Undo);
+        assert!(requests.try_recv().is_err());
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("stop the running turn before reverting")
+        );
+    }
+
+    #[test]
+    fn the_timeline_lists_turns_newest_first_and_previews_the_chosen_one() {
+        let (mut app, mut requests) = revert_session_app();
+        app.run_builtin(Builtin::Timeline);
+        let Some(Dialog::Timeline(list)) = &app.dialog else {
+            panic!("expected a timeline dialog");
+        };
+        assert_eq!(list.rows[0].detail, "#9");
+        assert_eq!(list.rows[1].detail, "#3");
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.dialog.is_none());
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::RevertPreview {
+                boundary_seq: 3,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_revert_confirm_names_the_outside_edits_it_overwrites() {
+        let (mut app, mut requests) = revert_session_app();
+        app.handle(AppEvent::RevertPreview {
+            session_id: "ses_a".into(),
+            boundary_seq: 9,
+            plan: RevertPlan::from_value(&serde_json::json!({
+                "available": true,
+                "restore": ["a.txt"],
+                "remove": [],
+                "conflicts": [{ "path": "a.txt", "action": "restore", "disk": "modified" }]
+            })),
+        });
+        let Some(Dialog::Confirm(confirm)) = &app.dialog else {
+            panic!("expected a confirm dialog");
+        };
+        assert_eq!(confirm.action_label(), "revert");
+        assert!(
+            confirm.message.contains("a.txt (modified)"),
+            "{}",
+            confirm.message
+        );
+        app.handle(key(KeyCode::Char('y'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.dialog.is_none());
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Revert {
+                boundary_seq: 9,
+                files: true,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_revert_without_a_file_record_leaves_the_workspace_alone() {
+        let (mut app, mut requests) = revert_session_app();
+        app.handle(AppEvent::RevertPreview {
+            session_id: "ses_a".into(),
+            boundary_seq: 9,
+            plan: RevertPlan::from_value(&serde_json::json!({
+                "available": false,
+                "reason": "no-file-snapshot"
+            })),
+        });
+        app.handle(key(KeyCode::Char('y'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Revert { files: false, .. })
+        ));
+    }
+
+    #[test]
+    fn a_preview_for_a_session_that_is_no_longer_open_is_dropped() {
+        let (mut app, _requests) = revert_session_app();
+        app.handle(AppEvent::RevertPreview {
+            session_id: "ses_other".into(),
+            boundary_seq: 9,
+            plan: RevertPlan::default(),
+        });
+        assert!(app.dialog.is_none());
+    }
+
+    #[test]
+    fn redo_only_asks_the_engine_when_something_is_hidden() {
+        let (mut app, mut requests) = revert_session_app();
+        app.run_builtin(Builtin::Redo);
+        assert!(requests.try_recv().is_err());
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("nothing to redo")
+        );
+
+        app.state.reverted = 2;
+        app.run_builtin(Builtin::Redo);
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Redo { session_id }) if session_id == "ses_a"
+        ));
     }
 }
