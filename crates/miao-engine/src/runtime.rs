@@ -1910,10 +1910,21 @@ async fn execute(
                 }
             }
             match outcome {
-                Err(ProviderError::Transport(_)) | Err(ProviderError::ResponseTransport)
+                Err(error @ (ProviderError::Transport(_) | ProviderError::ResponseTransport))
                     if !produced && attempts < 2 =>
                 {
                     attempts += 1;
+                    // A replayed turn is a retry the product can see, like the
+                    // request-level ones: without this record a turn that only
+                    // recovered here looks like it failed outright.
+                    let replay = json!({
+                        "run_id":run,"step":step,"scope":"turn","attempt":attempts,
+                        "reason":error.to_string(),"status":null,"delay_ms":0,
+                    });
+                    inner
+                        .store
+                        .record(session, "provider.retry", replay)
+                        .await?;
                     continue;
                 }
                 other => break other,
@@ -2075,9 +2086,13 @@ command: None,
                     None => error.to_string(),
                 };
                 if error.unavailable() {
-                    return Err(Error::Provider(format!(
-                        "the model endpoint kept failing after retries: {message}"
-                    )));
+                    // Say how many replays actually happened: a first attempt
+                    // that failed on its own was never retried, and claiming
+                    // otherwise sends the operator looking for a retry bug.
+                    return Err(Error::Provider(match attempts {
+                        0 => format!("the model endpoint failed: {message}"),
+                        _ => format!("the model endpoint kept failing after retries: {message}"),
+                    }));
                 }
                 return Err(Error::Invalid(message));
             }

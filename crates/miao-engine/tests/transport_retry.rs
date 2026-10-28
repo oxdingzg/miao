@@ -107,12 +107,23 @@ async fn pre_output_transport_failure_is_retried() {
     );
     let history = store.history("s").await.unwrap();
     assert_eq!(history.last().unwrap().content[0]["text"], "recovered");
-    assert!(!store
-        .events("s", 0, 1000)
-        .await
-        .unwrap()
+    let events = store.events("s", 0, 1000).await.unwrap();
+    assert!(!events.iter().any(|event| event.kind == "provider.failed"));
+    // The replay is a durable retry like the request-level ones, so the turn
+    // that recovered here is still visible as one that needed a retry.
+    let replay = events
         .iter()
-        .any(|event| event.kind == "provider.failed"));
+        .find(|event| event.kind == "provider.retry")
+        .expect("the replay was not recorded");
+    assert_eq!(replay.data["scope"], "turn");
+    assert_eq!(replay.data["attempt"], 1);
+    assert!(
+        replay.data["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("the primary endpoint is unreachable")),
+        "the replay lost the transport reason: {}",
+        replay.data["reason"]
+    );
 }
 
 #[tokio::test]
@@ -221,9 +232,15 @@ async fn a_routed_transport_failure_is_reported_as_unavailable() {
         .find(|event| event.kind == "stop_failure")
         .unwrap();
     let message = failure.data["message"].as_str().unwrap();
+    // A routed failure never reaches the turn-level replay, so the line must
+    // not claim retries that did not happen; it still has to name availability.
     assert!(
-        message.starts_with("provider unavailable: the model endpoint kept failing after retries"),
+        message.starts_with("provider unavailable: the model endpoint failed"),
         "unexpected failure message: {message}"
+    );
+    assert!(
+        message.contains("the model endpoint is unreachable"),
+        "the route's reason is missing: {message}"
     );
     runtime.shutdown().await;
 }
