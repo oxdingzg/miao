@@ -668,35 +668,30 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .with_protected_resource(&path)
             .with_formatter(Arc::new(registry));
     }
+    // The origin a reload re-derives from. Every branch below records one, so
+    // `config_reload` reads exactly the files startup read.
+    let mut lsp_origin = None;
     if let Some(path) = options.get("--lsp-config") {
         let path = tokio::fs::canonicalize(path).await?;
         if path.starts_with(std::path::Path::new(tools.location())) {
             return Err("LSP host config must be outside model-writable workspace".into());
         }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("LSP config exceeds 64 KiB".into());
-        }
-        let configs = serde_json::from_slice::<Vec<miao_engine::lsp::Config>>(&bytes)
-            .map_err(|_| "invalid LSP host config")?;
-        let registry =
-            miao_engine::lsp::Registry::connect(configs, std::path::Path::new(tools.location()))
-                .await?;
+        let origin = miao_engine::config_derive::LspOrigin::Manifest(path.clone());
+        let registry = miao_engine::lsp::Registry::connect(
+            origin.derive()?,
+            std::path::Path::new(tools.location()),
+        )
+        .await?;
         tools = tools
             .with_protected_resource(&path)
             .with_lsp(Arc::new(registry));
+        lsp_origin = Some(origin);
     } else if let Some(json) = options.get("--config-sources") {
         // Derive the servers from the same ordered plan the policy used, so
         // project-level `lsp` sections override the global directory.
-        let sources = miao_engine::config_derive::plan(json)?;
-        let documents = miao_engine::config_derive::load(&sources)?;
-        let configured = miao_engine::config_derive::lsp_configured(&documents);
-        let lookup = miao_engine::config_derive::system_lookup();
-        let configs = miao_engine::config_derive::lsp_entries(
-            configured.as_ref(),
-            &miao_engine::config_derive::BUILTIN_SERVERS,
-            &lookup,
-        )?;
+        let origin =
+            miao_engine::config_derive::LspOrigin::Sources(miao_engine::config_derive::plan(json)?);
+        let configs = origin.derive()?;
         if !configs.is_empty() {
             let registry = miao_engine::lsp::Registry::connect(
                 configs,
@@ -705,18 +700,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
             tools = tools.with_lsp(Arc::new(registry));
         }
+        lsp_origin = Some(origin);
     } else if let Some(directory) = options.get("--config-dir") {
         // No explicit LSP manifest: derive the servers from the config
         // directory the way the product used to before materializing one.
-        let source = miao_engine::config_derive::Source::Dir(directory.into());
-        let documents = miao_engine::config_derive::load(std::slice::from_ref(&source))?;
-        let configured = miao_engine::config_derive::lsp_configured(&documents);
-        let lookup = miao_engine::config_derive::system_lookup();
-        let configs = miao_engine::config_derive::lsp_entries(
-            configured.as_ref(),
-            &miao_engine::config_derive::BUILTIN_SERVERS,
-            &lookup,
-        )?;
+        let origin = miao_engine::config_derive::LspOrigin::Directory(directory.into());
+        let configs = origin.derive()?;
         if !configs.is_empty() {
             let registry = miao_engine::lsp::Registry::connect(
                 configs,
@@ -725,6 +714,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
             tools = tools.with_lsp(Arc::new(registry));
         }
+        lsp_origin = Some(origin);
     }
     let replay = options
         .get("--tool-replay")
@@ -751,6 +741,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     if let Some(limits) = context_limits {
         runtime.set_context_limits(Some(limits)).await;
+    }
+    if let Some(origin) = lsp_origin {
+        runtime.set_lsp_origin(origin).await;
     }
     runtime.set_route_limits(route_limits).await;
     let roles = miao_engine::roles::Bindings {
