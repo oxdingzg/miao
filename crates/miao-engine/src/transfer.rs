@@ -543,6 +543,20 @@ impl Store {
                 let watermark = watermark_i64.max(0) as u64;
                 let agent = crate::session_agent::selected_at(&tx, &session, watermark)?;
                 let binding = crate::session_model::selected_at(&tx, &session, watermark)?;
+                // A Session on the default route has no explicit model
+                // selection. Recover its trusted serving identity from the
+                // committed assistant boundary so the destination can replay
+                // the same protocol/model rather than receiving a null binding.
+                let binding = match binding {
+                    Some(binding) => Some(binding),
+                    None => tx.query_row(
+                        "SELECT json_extract(data,'$.provider.protocol'),json_extract(data,'$.provider.model') FROM engine_event WHERE session_id=?1 AND kind='assistant.identity' AND json_extract(data,'$.assistant_seq')<=?2 ORDER BY seq DESC LIMIT 1",
+                        params![session, watermark],
+                        |row| Ok(crate::session_model::Binding {
+                            protocol: row.get(0)?, model: row.get(1)?, route_id: None, variant: None,
+                        }),
+                    ).optional()?,
+                };
                 let account = crate::session_account::selected_at(&tx, &session, watermark)?;
                 let state = crate::state::projection(&tx, &session, watermark)?;
                 let mut timeline = Vec::new();
