@@ -24,6 +24,17 @@ export interface BaselineAttempt {
   cacheWriteTokens: number | null
   reasoningTokens: number | null
   cost: number | null
+  /** Auxiliary calls use a separate model and can fail before reporting usage. */
+  source?: {
+    kind: "auxiliary"
+    role: string | null
+    protocol: string | null
+    model: string | null
+    receiptSeq: number | null
+    recordedAtMs: number | null
+    accepted: boolean | null
+    providerSuccess: boolean | null
+  }
 }
 
 export interface BaselinePhase {
@@ -389,9 +400,7 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
     await stdout
     stderrText = await stderr
     bundles.push(
-      session
-        ? await BlackboxTape.load(path.join(recording, `${session}.json`)).catch(() => undefined)
-        : undefined,
+      session ? await BlackboxTape.load(path.join(recording, `${session}.json`)).catch(() => undefined) : undefined,
     )
     if (exit !== 0) break
   }
@@ -592,10 +601,12 @@ function committedText(events: EngineEvent[]) {
 }
 
 function usageAttempt(event: EngineEvent): BaselineAttempt[] {
-  if (event.kind !== "usage") return []
+  if (event.kind !== "usage" && event.kind !== "role.provider.completed") return []
   const data = BlackboxTape.json(event.data)
-  if (!BlackboxTape.isObject(data) || !BlackboxTape.isObject(data.usage)) return []
-  const usage = data.usage
+  if (!BlackboxTape.isObject(data)) return []
+  if (event.kind === "usage" && !BlackboxTape.isObject(data.usage)) return []
+  const usage = BlackboxTape.isObject(data.usage) ? data.usage : {}
+  const identity = BlackboxTape.isObject(data.identity) ? data.identity : {}
   return [
     {
       inputTokens: numberOrNull(usage.inputTokens),
@@ -604,6 +615,20 @@ function usageAttempt(event: EngineEvent): BaselineAttempt[] {
       cacheWriteTokens: numberOrNull(usage.cacheWriteInputTokens),
       reasoningTokens: numberOrNull(usage.reasoningTokens),
       cost: null,
+      ...(event.kind === "role.provider.completed"
+        ? {
+            source: {
+              kind: "auxiliary" as const,
+              role: typeof data.role === "string" ? data.role : null,
+              protocol: typeof identity.protocol === "string" ? identity.protocol : null,
+              model: typeof identity.model === "string" ? identity.model : null,
+              receiptSeq: Number.isSafeInteger(event.seq) && event.seq >= 0 ? event.seq : null,
+              recordedAtMs: numberOrNull(event.recorded_at_ms),
+              accepted: typeof data.accepted === "boolean" ? data.accepted : null,
+              providerSuccess: typeof data.providerSuccess === "boolean" ? data.providerSuccess : null,
+            },
+          }
+        : {}),
     },
   ]
 }

@@ -23,3 +23,10 @@ reconciliation or evidence that either engine is cheaper or more capable.
 
 Verification uses local fixtures only. Real repository quality acceptance and
 paid provider comparisons require their own evidence and remain separate gates.
+
+Rust evidence also retains `role.provider.completed` calls alongside primary
+usage rows. Auxiliary rows identify the role, model, protocol, receipt sequence,
+recorded time, provider success and semantic acceptance when reported. Failed
+calls without usage retain null axes and cost. These are auxiliary calls observed
+on the subscribed Session; this does not establish complete child-Session retry
+coverage, role-profile comparability or historical price attribution.

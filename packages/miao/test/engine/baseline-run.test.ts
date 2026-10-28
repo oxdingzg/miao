@@ -28,6 +28,72 @@ const base = [
   event(3, "run.started", { run_id: "run" }),
 ]
 
+test("auxiliary role calls retain usage and failed unknowns alongside primary attempts", async () => {
+  await using tmp = await tmpdir()
+  const result = await run(tmp.path, "read-only", [
+    ...base,
+    event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
+    event(5, "usage", { run_id: "run", step: 0, usage: { inputTokens: 120, outputTokens: 30 } }),
+    event(6, "role.provider.completed", {
+      run_id: "run",
+      role: "summarize",
+      accepted: true,
+      providerSuccess: true,
+      identity: { protocol: "openai-chat", model: "small-model" },
+      usage: { inputTokens: 12, outputTokens: 5, cacheReadInputTokens: 0 },
+    }),
+    event(7, "role.provider.completed", {
+      run_id: "run",
+      role: "verify",
+      accepted: false,
+      providerSuccess: false,
+      identity: { protocol: "openai-chat", model: "verify-model" },
+    }),
+    event(8, "message.committed", {
+      role: "assistant",
+      content: [{ type: "text", text: "src/catalog.ts exports configureRelay with capacity 7" }],
+    }),
+    event(9, "run.finished", { run_id: "run", reason: "completed" }),
+    event(10, "stop", { run_id: "run" }),
+  ])
+  expect(result.sample?.outcome).toBe("passed")
+  expect(result.evidence.attempts).toHaveLength(3)
+  expect(result.evidence.attempts[1]).toMatchObject({
+    inputTokens: 12,
+    outputTokens: 5,
+    cacheReadTokens: 0,
+    cacheWriteTokens: null,
+    cost: null,
+    source: {
+      kind: "auxiliary",
+      role: "summarize",
+      model: "small-model",
+      protocol: "openai-chat",
+      receiptSeq: 6,
+      accepted: true,
+      providerSuccess: true,
+    },
+  })
+  expect(result.evidence.attempts[2]).toMatchObject({
+    inputTokens: null,
+    outputTokens: null,
+    cost: null,
+    source: {
+      kind: "auxiliary",
+      role: "verify",
+      model: "verify-model",
+      receiptSeq: 7,
+      accepted: false,
+      providerSuccess: false,
+    },
+  })
+  expect(result.sample?.attempts).toEqual([
+    { inputTokens: 120, outputTokens: 30, cost: null },
+    { inputTokens: 12, outputTokens: 5, cost: null },
+    { inputTokens: null, outputTokens: null, cost: null },
+  ])
+})
+
 async function script(root: string, steps: unknown[], cancelSteps?: unknown[]) {
   const file = path.join(root, "script.json")
   await Bun.write(file, JSON.stringify({ steps, cancelSteps }))
