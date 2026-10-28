@@ -64,8 +64,15 @@ drains, and deterministic providers. It covers boundary timing, duplicate reads,
 parallel settlement, Runtime/Store reopen, the commit-before-context-selection
 cut, fork inheritance, Session/Location isolation, failed and denied reads,
 external references/symlinks, and context budgets. The ledger-cut and foreign
-Location cases construct durable journal fixtures; they do not claim an OS-level
-crash or a live cross-machine migration drill.
+Location cases construct durable journal fixtures.
+
+`native-read-context-restart.test.ts` additionally kills a real engine with
+SIGKILL after a committed file read and instruction selection, while the next
+provider request is unfinished. Reopening the same Store does not retry that
+request. An explicit new prompt retains the settled read result, refreshes the
+selected instruction from its changed on-disk body, and completes without
+re-reading the now-deleted target. This is a local process-crash drill; a live
+cross-machine migration drill remains separate.
 
 The new receipt fields are additive Rust ledger metadata. No HTTP API or
 generated SDK schema changes are required. This slice does not implement live
