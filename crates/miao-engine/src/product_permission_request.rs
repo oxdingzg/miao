@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use std::sync::{Arc, RwLock};
 
 const MAX_PENDING: usize = 64;
+const MAX_FEEDBACK_BYTES: usize = 4096;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -53,6 +54,8 @@ pub struct Response {
     pub input_hash: String,
     pub authority_revision: String,
     pub reply: Reply,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -69,6 +72,8 @@ pub struct Record {
     pub state: State,
     pub reply: Option<Reply>,
     pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<String>,
 }
 
 #[derive(Clone)]
@@ -128,7 +133,7 @@ impl Store {
                 id: input.request_id.clone(), source: context.source.clone(), workspace: context.workspace.clone(),
                 expires_at_ms: input.timeout_ms.map(|timeout| now.saturating_add(timeout)), request: input,
                 input_hash: hash, authority_revision: outcome.authority_revision, created_at_ms: now, state,
-                reply: None, reason: (state == State::Denied).then(|| "policy_denied".into()),
+                reply: None, reason: (state == State::Denied).then(|| "policy_denied".into()), feedback: None,
             };
             transaction.execute("INSERT INTO engine_product_permission_request(id,session_id,run_id,call_id,workspace,owner,state,data) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![record.id, context.source.session_id, context.authority.run_id, format!("{}/{}",context.authority.run_id,context.source.call_id), context.workspace,context.owner,state_name(state),serde_json::to_string(&record)?])?;
             if state == State::Pending { append(transaction, &context.source.session_id, "product.permission.requested", serde_json::to_value(&record)?)?; }
@@ -158,6 +163,21 @@ impl Store {
         context: Context,
         response: Response,
     ) -> Result<Record, Error> {
+        if response
+            .message
+            .as_ref()
+            .is_some_and(|message| message.len() > MAX_FEEDBACK_BYTES || message.contains('\0'))
+        {
+            return Err(Error::Invalid(
+                "permission reply feedback must be at most 4096 UTF-8 bytes and contain no NUL"
+                    .into(),
+            ));
+        }
+        // The host only interprets a message on reject, and an empty message
+        // means ordinary decline. Ignored presentation must not affect retries.
+        let feedback = response
+            .message
+            .filter(|message| response.reply == Reply::Reject && !message.is_empty());
         self.call(move |connection| {
             with_sources(connection, &context, |transaction, sources| {
                 let (owner, mut record) = load(transaction, &response.request_id)?
@@ -171,7 +191,7 @@ impl Store {
                     ));
                 }
                 if record.state != State::Pending {
-                    if record.reply == Some(response.reply) {
+                    if record.reply == Some(response.reply) && record.feedback == feedback {
                         return Ok(record);
                     }
                     return Err(Error::Invalid(
@@ -203,11 +223,12 @@ impl Store {
                     State::Allowed
                 };
                 record.reply = Some(response.reply);
+                record.feedback = feedback;
                 record.reason = denied.then(|| {
-                    if response.reply == Reply::Reject {
-                        "user_rejected"
-                    } else {
-                        "policy_denied"
+                    match response.reply {
+                        Reply::Reject if record.feedback.is_some() => "user_corrected",
+                        Reply::Reject => "user_rejected",
+                        _ => "policy_denied",
                     }
                     .into()
                 });
@@ -409,6 +430,7 @@ fn resolve_siblings(
         };
         record.reply = Some(if reject { Reply::Reject } else { Reply::Always });
         record.reason = reject.then(|| "user_rejected".into());
+        record.feedback = None;
         resolve(transaction, &record)?;
     }
     Ok(())
