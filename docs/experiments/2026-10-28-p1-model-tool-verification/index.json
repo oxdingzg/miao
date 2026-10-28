@@ -1,0 +1,303 @@
+{
+  "date": "2026-10-28",
+  "reference_commit": "4f49325f7d5f6eebd3a8787f393410519bf157dd",
+  "audit_items": 48,
+  "product_acceptance_completed_by_this_audit": 0,
+  "notes": [
+    "Audit completion is distinct from implementation, product, benefit and publication acceptance.",
+    "Fixtures use no paid provider calls. A local fixture supplied five startup replies.",
+    "One unconfigured durable-replay server invocation failed; its explicit TS control passed.",
+    "One PDF integration body returned early due to missing ps2pdf despite a framework pass.",
+    "Open feature PR results are kept separate from exact-main and public 0.3.14 evidence."
+  ],
+  "items": [
+    {
+      "code": "AGT-02",
+      "result": "needs_product_acceptance",
+      "report": "runtime-jobs-messaging.json",
+      "product_complete": false
+    },
+    {
+      "code": "AGT-05",
+      "result": "needs_work",
+      "report": "runtime-jobs-messaging.json",
+      "product_complete": false
+    },
+    {
+      "code": "APP-01",
+      "result": "needs_current_cross_client_acceptance",
+      "report": "app-media.json",
+      "product_complete": false
+    },
+    {
+      "code": "APP-02",
+      "result": "needs_current_remote_client_acceptance",
+      "report": "app-media.json",
+      "product_complete": false
+    },
+    {
+      "code": "APP-03",
+      "result": "needs_real_device_and_resume_acceptance",
+      "report": "app-media.json",
+      "product_complete": false
+    },
+    {
+      "code": "APP-04",
+      "result": "needs_browser_workspace_and_disconnect_acceptance",
+      "report": "app-media.json",
+      "product_complete": false
+    },
+    {
+      "code": "CAT-04",
+      "result": "needs_current_client_acceptance",
+      "report": "extensions-skills.json",
+      "product_complete": false
+    },
+    {
+      "code": "CLI-01",
+      "result": "needs_full_entrypoint_option_acceptance",
+      "report": "clients-replay.json",
+      "product_complete": false
+    },
+    {
+      "code": "CLI-03",
+      "result": "needs_current_real_editor_acceptance",
+      "report": "clients-replay.json",
+      "product_complete": false
+    },
+    {
+      "code": "CLI-04",
+      "result": "needs_multi_engine_location_acceptance",
+      "report": "clients-replay.json",
+      "product_complete": false
+    },
+    {
+      "code": "CLI-05",
+      "result": "needs_full_control_plane_retirement_acceptance",
+      "report": "clients-replay.json",
+      "product_complete": false
+    },
+    {
+      "code": "COST-04",
+      "result": "needs_work",
+      "report": "runtime-jobs-messaging.json",
+      "product_complete": false
+    },
+    {
+      "code": "COST-05",
+      "result": "needs_product_and_overhead_acceptance",
+      "report": "runtime-jobs-messaging.json",
+      "product_complete": false
+    },
+    {
+      "code": "DATA-01",
+      "result": "needs_product_and_upgrade_acceptance",
+      "report": "data-history.json",
+      "product_complete": false
+    },
+    {
+      "code": "DATA-02",
+      "result": "needs_current_move_and_attachment_acceptance",
+      "report": "data-history.json",
+      "product_complete": false
+    },
+    {
+      "code": "DATA-03",
+      "result": "needs_work",
+      "report": "data-history.json",
+      "product_complete": false
+    },
+    {
+      "code": "DATA-04",
+      "result": "needs_work",
+      "report": "data-history.json",
+      "product_complete": false
+    },
+    {
+      "code": "DATA-05",
+      "result": "needs_corruption_and_restore_acceptance",
+      "report": "data-history.json",
+      "product_complete": false
+    },
+    {
+      "code": "EXT-03",
+      "result": "needs_work",
+      "report": "extensions-skills.json",
+      "product_complete": false
+    },
+    {
+      "code": "EXT-04",
+      "result": "needs_real_oauth_client_acceptance",
+      "report": "extensions-skills.json",
+      "product_complete": false
+    },
+    {
+      "code": "EXT-07",
+      "result": "needs_real_server_lifecycle_acceptance",
+      "report": "extensions-skills.json",
+      "product_complete": false
+    },
+    {
+      "code": "HIS-06",
+      "result": "needs_work",
+      "report": "data-history.json",
+      "product_complete": false
+    },
+    {
+      "code": "JOB-04",
+      "result": "needs_product_acceptance",
+      "report": "runtime-jobs-messaging.json",
+      "product_complete": false
+    },
+    {
+      "code": "JOB-05",
+      "result": "needs_product_acceptance",
+      "report": "runtime-jobs-messaging.json",
+      "product_complete": false
+    },
+    {
+      "code": "JOB-06",
+      "result": "needs_stress_acceptance",
+      "report": "runtime-jobs-messaging.json",
+      "product_complete": false
+    },
+    {
+      "code": "MEDIA-01",
+      "result": "needs_complete_uri_provider_and_pdf_acceptance",
+      "report": "app-media.json",
+      "product_complete": false
+    },
+    {
+      "code": "MOD-05",
+      "result": "needs_work",
+      "report": "verification.json",
+      "product_complete": false
+    },
+    {
+      "code": "MOD-06",
+      "result": "needs_product_acceptance",
+      "report": "verification.json",
+      "product_complete": false
+    },
+    {
+      "code": "PERF-02",
+      "result": "needs_work",
+      "report": "performance-benefit.json",
+      "product_complete": false
+    },
+    {
+      "code": "PERF-03",
+      "result": "needs_startup_optimization_and_full_matrix",
+      "report": "performance-benefit.json",
+      "product_complete": false
+    },
+    {
+      "code": "PERF-04",
+      "result": "needs_soak_and_complete_process_tree_acceptance",
+      "report": "performance-benefit.json",
+      "product_complete": false
+    },
+    {
+      "code": "PERF-05",
+      "result": "needs_work",
+      "report": "performance-benefit.json",
+      "product_complete": false
+    },
+    {
+      "code": "QA-01",
+      "result": "needs_complete_fault_and_cross_engine_acceptance",
+      "report": "clients-replay.json",
+      "product_complete": false
+    },
+    {
+      "code": "QA-02",
+      "result": "needs_current_client_and_platform_matrix",
+      "report": "clients-replay.json",
+      "product_complete": false
+    },
+    {
+      "code": "QA-04",
+      "result": "partial_needs_isolation_and_platform_acceptance",
+      "report": "governance-ci.json",
+      "product_complete": false
+    },
+    {
+      "code": "REL-02",
+      "result": "needs_cross_platform_update_acceptance",
+      "report": "workspace-release.json",
+      "product_complete": false
+    },
+    {
+      "code": "REL-03",
+      "result": "needs_upgrade_rollback_and_database_acceptance",
+      "report": "workspace-release.json",
+      "product_complete": false
+    },
+    {
+      "code": "REL-05",
+      "result": "partial_needs_documentation_and_distribution_audit",
+      "report": "governance-ci.json",
+      "product_complete": false
+    },
+    {
+      "code": "TOOL-01",
+      "result": "needs_benefit_acceptance",
+      "report": "verification.json",
+      "product_complete": false
+    },
+    {
+      "code": "TOOL-02",
+      "result": "needs_product_acceptance",
+      "report": "tool-edit-diagnostics-output.json",
+      "product_complete": false
+    },
+    {
+      "code": "TOOL-04",
+      "result": "needs_product_acceptance",
+      "report": "tool-edit-diagnostics-output.json",
+      "product_complete": false
+    },
+    {
+      "code": "TOOL-05",
+      "result": "needs_work",
+      "report": "tool-edit-diagnostics-output.json",
+      "product_complete": false
+    },
+    {
+      "code": "TOOL-06",
+      "result": "verified_offline_needs_current_client_acceptance",
+      "report": "runtime-jobs-messaging.json",
+      "product_complete": false
+    },
+    {
+      "code": "TOOL-07",
+      "result": "needs_benefit_acceptance",
+      "report": "runtime-jobs-messaging.json",
+      "product_complete": false
+    },
+    {
+      "code": "VAL-04",
+      "result": "needs_ablation_baseline_and_budget",
+      "report": "performance-benefit.json",
+      "product_complete": false
+    },
+    {
+      "code": "VAL-05",
+      "result": "partial_needs_complete_backlog_reconciliation",
+      "report": "governance-ci.json",
+      "product_complete": false
+    },
+    {
+      "code": "WSP-01",
+      "result": "needs_work",
+      "report": "workspace-release.json",
+      "product_complete": false
+    },
+    {
+      "code": "WSP-04",
+      "result": "needs_work",
+      "report": "workspace-release.json",
+      "product_complete": false
+    }
+  ]
+}
