@@ -7,9 +7,9 @@
 //! `tests/fixtures/config-golden`, which the TypeScript suite also reads: two
 //! implementations, one set of samples.
 
-use crate::{config_scope, lsp, mcp, permission};
+use crate::{config_scope, context, formatter, hooks, lsp, mcp, permission, tools};
 use serde_json::Value;
-use std::path::PathBuf;
+use std::{path::Path, path::PathBuf, sync::Arc};
 
 /// One ordered configuration source from the host, lowest priority first.
 #[derive(Clone)]
@@ -298,6 +298,172 @@ impl McpOrigin {
             McpOrigin::Manifest(path) => vec![path.clone()],
         }
     }
+}
+
+/// Where the engine read the context-carrying host configuration from. Each
+/// part is independent — the operator may supply any subset of the five host
+/// files — and a part no operator supplied cannot appear on reload.
+#[derive(Clone, Default)]
+pub struct ContextOrigin {
+    pub sources: Option<PathBuf>,
+    pub skills: Option<PathBuf>,
+    pub references: Option<PathBuf>,
+    pub hooks: Option<PathBuf>,
+    pub formatter: Option<PathBuf>,
+}
+
+/// The context configuration, derived part by part. `None` means the operator
+/// supplied no file for that part; an empty list means they supplied one that
+/// selects nothing.
+pub struct ContextParts {
+    pub sources: Option<Vec<context::Source>>,
+    pub skills: Option<Vec<context::SkillDirectory>>,
+    /// References with the read scope they resolve to, so replacing them can
+    /// never pair one list with another's scope.
+    pub references: Option<(Vec<context::Reference>, Vec<PathBuf>)>,
+    pub hooks: Option<Vec<hooks::Hook>>,
+    pub formatter: Option<Arc<formatter::Registry>>,
+}
+
+impl ContextOrigin {
+    /// Read and validate every configured part. Nothing is applied here, so a
+    /// malformed file fails the whole reload with its own name and leaves the
+    /// running configuration untouched.
+    pub fn derive(&self, workspace: &Path) -> Result<ContextParts, String> {
+        Ok(ContextParts {
+            sources: match &self.sources {
+                Some(path) => {
+                    let sources: Vec<context::Source> = read_part(path, "Context", workspace)?;
+                    context::validate(&sources).map_err(|error| invalid(path, &error))?;
+                    Some(sources)
+                }
+                None => None,
+            },
+            skills: match &self.skills {
+                Some(path) => {
+                    let skills: Vec<context::SkillDirectory> =
+                        read_part(path, "Skills", workspace)?;
+                    context::validate_skills(&skills).map_err(|error| invalid(path, &error))?;
+                    Some(skills)
+                }
+                None => None,
+            },
+            references: match &self.references {
+                Some(path) => {
+                    let references: Vec<context::Reference> =
+                        read_part(path, "References", workspace)?;
+                    let resolved = tools::resolve_references(references)
+                        .map_err(|error| invalid(path, &error))?;
+                    Some(resolved)
+                }
+                None => None,
+            },
+            hooks: match &self.hooks {
+                Some(path) => {
+                    let hooks: Vec<hooks::Hook> = read_part(path, "Hooks", workspace)?;
+                    hooks::validate(&hooks).map_err(|error| invalid(path, &error))?;
+                    Some(hooks)
+                }
+                None => None,
+            },
+            formatter: match &self.formatter {
+                Some(path) => {
+                    let configs: Vec<formatter::Config> = read_part(path, "formatter", workspace)?;
+                    let registry = formatter::Registry::new(configs, workspace)
+                        .map_err(|error| invalid(path, &error))?;
+                    Some(Arc::new(registry))
+                }
+                None => None,
+            },
+        })
+    }
+
+    /// The files a reload would read, for a cheap change check.
+    pub fn files(&self) -> Vec<PathBuf> {
+        [
+            &self.sources,
+            &self.skills,
+            &self.references,
+            &self.hooks,
+            &self.formatter,
+        ]
+        .into_iter()
+        .flatten()
+        .cloned()
+        .collect()
+    }
+}
+
+impl ContextParts {
+    /// Swap the parts that differ from the running `Tools` and report each one,
+    /// so the reload report can name them. Everything was validated when this
+    /// was derived, so the swap itself cannot fail; a part whose content did
+    /// not change is not touched at all.
+    pub fn apply(self, tools: &tools::Tools) -> Vec<(&'static str, bool)> {
+        let mut outcome = Vec::new();
+        if let Some(sources) = self.sources {
+            let changed = sources != *tools.context_sources();
+            if changed {
+                tools.set_context_sources(sources);
+            }
+            outcome.push(("sources", changed));
+        }
+        if let Some(skills) = self.skills {
+            let changed = skills != *tools.skill_directories();
+            if changed {
+                tools.set_skill_directories(skills);
+            }
+            outcome.push(("skills", changed));
+        }
+        if let Some((references, roots)) = self.references {
+            let changed = references != *tools.references();
+            if changed {
+                tools.set_references(references, roots);
+            }
+            outcome.push(("references", changed));
+        }
+        if let Some(hooks) = self.hooks {
+            let changed = hooks != *tools.hooks();
+            if changed {
+                tools.set_hooks(hooks);
+            }
+            outcome.push(("hooks", changed));
+        }
+        if let Some(formatter) = self.formatter {
+            let changed = Some(formatter.descriptor())
+                != tools.formatter().map(|registry| registry.descriptor());
+            if changed {
+                tools.set_formatter(formatter);
+            }
+            outcome.push(("formatter", changed));
+        }
+        outcome
+    }
+}
+
+/// Read one host file for a context part. The boundary and size limits mirror
+/// startup's, so a reload accepts exactly the files startup would.
+fn read_part<T: serde::de::DeserializeOwned>(
+    path: &Path,
+    label: &str,
+    workspace: &Path,
+) -> Result<T, String> {
+    if path.starts_with(workspace) {
+        return Err(format!(
+            "{}: {label} host config must be outside model-writable workspace",
+            path.display()
+        ));
+    }
+    let bytes = std::fs::read(path).map_err(|error| invalid(path, &error))?;
+    if bytes.len() > 65536 {
+        return Err(format!("{}: {label} config exceeds 64 KiB", path.display()));
+    }
+    serde_json::from_slice(&bytes)
+        .map_err(|error| format!("{}: invalid {label} host config: {error}", path.display()))
+}
+
+fn invalid(path: &Path, error: &impl std::fmt::Display) -> String {
+    format!("{}: {error}", path.display())
 }
 
 impl LspOrigin {

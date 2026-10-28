@@ -35,7 +35,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id`, `metadata_only?` | committed Session snapshot; metadata-only replies omit `messages` |
 | `sessions` | — | `string[]` (Session ids) |
-| `config_reload` | — | `{generation, changed, unchanged, unsupported, lsp?, mcp?}` |
+| `config_reload` | — | `{generation, changed, unchanged, unsupported, lsp?, mcp?, context?}` |
 | `fork` | `session_id`, `target_session_id`, `message_seq?` | `{target_session_id}` |
 | `revert` | `session_id`, `checkpoint` | `{checkpoint, from_seq, reverted}` |
 | `unrevert` | `session_id` | `{restored}` |
@@ -484,7 +484,9 @@ recorded. The `snapshot` reply reports the staged revert when one exists.
 `config_reload` re-derives the configuration sections the engine owns from the
 same origin startup used (`--policy`, `--config-sources` or `--config-dir` for
 the policy; `--lsp-config`, `--config-sources` or `--config-dir` for LSP;
-`--mcp-config` for MCP; `--model-routes-config` for the model catalog) and
+`--mcp-config` for MCP; `--model-routes-config` for the model catalog;
+`--context-config`, `--skills-config`, `--references-config`, `--hooks-config`
+and `--formatter-config` for the context carriers) and
 reconciles the ones this build can swap in place. The reply is
 `{generation, changed, unchanged, unsupported, …}`: `generation` advances only
 when a section changed, `changed`/`unchanged` name top-level sections, and
@@ -543,6 +545,21 @@ reload, so the previous catalog keeps serving. A Session started without
 `--model-routes-config` (`unsupported` contains `models`) cannot gain routes
 without restarting the engine, and the manifest path joins the standalone
 poller's watched set.
+
+The context section re-reads the five host files that carry instruction
+sources, skill directories, read-only references, lifecycle hooks and the
+formatter registry. Each part is compared with what is running and swapped
+through `Tools` only when it differs, so an edit to one file does not rebuild
+the others; a reference edit moves the read scope it grants in the same swap.
+The `context` object lists the exact `changed` and `unchanged` part names
+(`sources`, `skills`, `references`, `hooks`, `formatter`), and `context` also
+appears in the top-level lists. A part the operator never supplied cannot
+appear on reload. A file that fails to parse, violates its bounds, or names a
+reference that cannot be resolved fails the command with its own path in the
+error and leaves every section as it was. A turn that already assembled its
+context, read its hooks or formatted a file keeps the snapshot it took; the
+next one sees the edit. The five paths join the standalone poller's watched
+set.
 
 The standalone entry has no host to call the command, so it polls the same
 sources every two seconds (`mtime` plus size, not an OS watcher) and runs the

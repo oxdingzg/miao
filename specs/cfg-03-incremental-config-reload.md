@@ -167,6 +167,18 @@
    不静默回退。standalone 轮询文件并集加入清单路径。验证：`tests/config_reload_models.rs`
    覆盖"同内容不换代 / 增删 route 换代且目录即时可见 / 畸形清单报文件名且旧目录仍在 /
    失败后恢复原清单不推进 generation"。
-5. **context / hooks / skills / references**：各自载体的换代。
+5. **context / hooks / skills / references / formatter（已实现）**：`Tools` 的五个载体
+   （`context_sources`、`skill_directories`、`references`+`read_roots`、`hooks`、`formatter`）改为
+   `Arc<StdRwLock<Arc<Vec<_>>>>`，每 turn 取一次快照。启动时把五个宿主文件的规范路径记为
+   `config_derive::ContextOrigin`（`--context-config` / `--skills-config` / `--references-config` /
+   `--hooks-config` / `--formatter-config`，各自独立，可为空）。`config_reload` 用
+   `ContextOrigin::derive` 一次性读取、解析并**逐项校验**（含 references 的 canonicalize），
+   任何一项失败都在换入前终止并报出该文件的路径；随后 `ContextParts::apply` 只替换内容真正变化的
+   项，reference 换代时同一 swap 里换掉它授予的读范围。报告里 `context` 是一个
+   `{changed, unchanged}` 子对象，列出 `sources`/`skills`/`references`/`hooks`/`formatter` 中
+   实际移动的项；顶层 `context` 只要有任一项变化就进入 `changed`。未提供的文件不会在 reload 时
+   冒出来；五个路径并入 standalone 轮询的观察集合。验证：`tests/config_reload_context.rs`
+   覆盖"首轮装载五项 / 同内容不换代 / 单项变化只报该项 / reference 换代后读范围即时移动 /
+   畸形文件报文件名且不换任何项 / 无法 canonicalize 的 reference 报文件名且旧范围仍在"。
 6. **standalone 轮询**：`--config-dir` 模式的 mtime 观察。
 7. **宿主接线**：TS 与 Rust TUI 在配置写入后调用 `config_reload`，并把报告显示为一行状态。

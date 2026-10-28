@@ -525,52 +525,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         tools = tools.with_protected_resource(path);
     }
-    if let Some(path) = options.get("--context-config") {
-        let path = tokio::fs::canonicalize(path).await?;
-        if path.starts_with(std::path::Path::new(tools.location())) {
-            return Err("Context host config must be outside model-writable workspace".into());
-        }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("Context config exceeds 64 KiB".into());
-        }
-        let sources = serde_json::from_slice::<Vec<miao_engine::context::Source>>(&bytes)
-            .map_err(|_| "invalid Context host config")?;
-        tools = tools
-            .with_protected_resource(&path)
-            .with_context_sources(sources)?;
+    // The five host files that carry context sources, skills, references,
+    // hooks and formatters. One origin records their canonical paths, so a
+    // reload reads exactly what startup read; one derive validates all of them
+    // before any is applied.
+    let context_origin = miao_engine::config_derive::ContextOrigin {
+        sources: canonical_option(&options, "--context-config").await?,
+        skills: canonical_option(&options, "--skills-config").await?,
+        references: canonical_option(&options, "--references-config").await?,
+        hooks: canonical_option(&options, "--hooks-config").await?,
+        formatter: canonical_option(&options, "--formatter-config").await?,
+    };
+    for path in context_origin.files() {
+        tools = tools.with_protected_resource(&path);
     }
-    if let Some(path) = options.get("--skills-config") {
-        let path = tokio::fs::canonicalize(path).await?;
-        if path.starts_with(std::path::Path::new(tools.location())) {
-            return Err("Skills host config must be outside model-writable workspace".into());
-        }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("Skills config exceeds 64 KiB".into());
-        }
-        let directories =
-            serde_json::from_slice::<Vec<miao_engine::context::SkillDirectory>>(&bytes)
-                .map_err(|_| "invalid Skills host config")?;
-        tools = tools
-            .with_protected_resource(&path)
-            .with_skill_directories(directories)?;
-    }
-    if let Some(path) = options.get("--references-config") {
-        let path = tokio::fs::canonicalize(path).await?;
-        if path.starts_with(std::path::Path::new(tools.location())) {
-            return Err("References host config must be outside model-writable workspace".into());
-        }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("References config exceeds 64 KiB".into());
-        }
-        let references = serde_json::from_slice::<Vec<miao_engine::context::Reference>>(&bytes)
-            .map_err(|_| "invalid References host config")?;
-        tools = tools
-            .with_protected_resource(&path)
-            .with_references(references)?;
-    }
+    context_origin
+        .derive(std::path::Path::new(tools.location()))?
+        .apply(&tools);
     tools =
         tools.with_compact_disclosure(match options.get("--tool-disclosure").map(String::as_str) {
             None | Some("full") => false,
@@ -593,19 +564,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(registry) => tools = tools.with_worker(Arc::new(registry)),
             Err(error) => eprintln!("miao-engine extension worker unavailable: {error}; built-in tools remain available"),
         }
-    }
-    if let Some(path) = options.get("--hooks-config") {
-        let path = tokio::fs::canonicalize(path).await?;
-        if path.starts_with(std::path::Path::new(tools.location())) {
-            return Err("Hooks host config must be outside model-writable workspace".into());
-        }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("Hooks config exceeds 64 KiB".into());
-        }
-        let hooks = serde_json::from_slice::<Vec<miao_engine::hooks::Hook>>(&bytes)
-            .map_err(|_| "invalid hooks host config")?;
-        tools = tools.with_protected_resource(&path).with_hooks(hooks)?;
     }
     let mut plugin_hooks = None;
     if let Some(path) = options.get("--plugin-hooks") {
@@ -644,23 +602,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         registry.start_watchers();
         tools = tools.with_protected_resource(&path).with_mcp(registry);
         mcp_origin = Some(origin);
-    }
-    if let Some(path) = options.get("--formatter-config") {
-        let path = tokio::fs::canonicalize(path).await?;
-        if path.starts_with(std::path::Path::new(tools.location())) {
-            return Err("formatter host config must be outside model-writable workspace".into());
-        }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("formatter config exceeds 64 KiB".into());
-        }
-        let configs = serde_json::from_slice::<Vec<miao_engine::formatter::Config>>(&bytes)
-            .map_err(|_| "invalid formatter host config")?;
-        let registry =
-            miao_engine::formatter::Registry::new(configs, std::path::Path::new(tools.location()))?;
-        tools = tools
-            .with_protected_resource(&path)
-            .with_formatter(Arc::new(registry));
     }
     // The origin a reload re-derives from. Every branch below records one, so
     // `config_reload` reads exactly the files startup read.
@@ -742,6 +683,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(origin) = &mcp_origin {
         runtime.set_mcp_origin(origin.clone()).await;
     }
+    // The origin is recorded even when it names no file: the context section
+    // is then supported and simply has nothing to derive.
+    runtime.set_context_origin(context_origin.clone()).await;
     if let Some(origin) = &model_origin {
         runtime.set_model_origin(origin.clone()).await?;
     }
@@ -760,6 +704,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(origin) = &model_origin {
             files.push(origin.path.clone());
         }
+        files.extend(context_origin.files());
         files.sort();
         files.dedup();
         files
@@ -850,6 +795,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("miao-engine stdio: {error}");
     }
     std::process::exit(if result.is_ok() { 0 } else { 1 });
+}
+
+/// Canonicalize one optional path flag. A context origin records canonical
+/// paths, so a reload re-reads exactly the file startup read.
+async fn canonical_option(
+    options: &HashMap<String, String>,
+    name: &str,
+) -> Result<Option<std::path::PathBuf>, Box<dyn std::error::Error>> {
+    match options.get(name) {
+        Some(path) => Ok(Some(tokio::fs::canonicalize(path).await?)),
+        None => Ok(None),
+    }
 }
 
 /// Standalone config reload. A hosted engine learns about a configuration

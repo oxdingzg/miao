@@ -76,6 +76,8 @@ struct Inner {
     lsp_origin: Mutex<Option<crate::config_derive::LspOrigin>>,
     /// Where the MCP server list was derived from at startup.
     mcp_origin: Mutex<Option<crate::config_derive::McpOrigin>>,
+    /// Where the context-carrying host files were read from at startup.
+    context_origin: Mutex<Option<crate::config_derive::ContextOrigin>>,
     /// Where the model route manifest lives and the base provider it layers
     /// over, so a reload rebuilds the same catalog from the same sources.
     model_origin: Mutex<Option<crate::model_routes::Origin>>,
@@ -258,6 +260,7 @@ impl Runtime {
                 route_limits: Mutex::new(crate::model_routes::RouteLimits::default()),
                 lsp_origin: Mutex::new(None),
                 mcp_origin: Mutex::new(None),
+                context_origin: Mutex::new(None),
                 model_origin: Mutex::new(None),
                 model_digest: Mutex::new(None),
                 policy_origin: Mutex::new(None),
@@ -413,6 +416,13 @@ impl Runtime {
         *self.inner.mcp_origin.lock().await = Some(origin);
     }
 
+    /// Record where startup read the context-carrying host files. The origin
+    /// is recorded even when the operator supplied none: the section is then
+    /// supported and simply has nothing to derive.
+    pub async fn set_context_origin(&self, origin: crate::config_derive::ContextOrigin) {
+        *self.inner.context_origin.lock().await = Some(origin);
+    }
+
     /// Record the route manifest and the base provider startup layered it
     /// over, so `config_reload` rebuilds the catalog those produced. The
     /// manifest is fingerprinted now, so a later reload can tell an edit from
@@ -457,8 +467,12 @@ impl Runtime {
     /// implies. Gates go first because they can only add a refusal ahead of the
     /// new policy, never permit a call the old one denied; a turn that already
     /// took its policy snapshot keeps it, and the next turn reads the new one.
+    ///
+    /// The context section swaps each host file's content through `Tools`, so
+    /// a turn already reading its instructions or hooks finishes on the
+    /// snapshot it took and the next one sees the edit.
     pub async fn reload_config(&self) -> Result<Value, Error> {
-        let mut unsupported = vec!["context", "tools"];
+        let mut unsupported = vec!["tools"];
         // The LSP registry only exists when startup found at least one server;
         // a plan that starts empty cannot grow without rebuilding Tools, so
         // that case is reported rather than silently accepted. The MCP
@@ -481,6 +495,7 @@ impl Runtime {
             .zip(self.inner.tools.mcp_registry().cloned());
         let model_origin = self.inner.model_origin.lock().await.clone();
         let model_digest = self.inner.model_digest.lock().await.clone();
+        let context_origin = self.inner.context_origin.lock().await.clone();
         if policy_origin.is_none() {
             unsupported.insert(0, "policy");
         }
@@ -492,6 +507,9 @@ impl Runtime {
         }
         if model_origin.is_none() {
             unsupported.insert(0, "models");
+        }
+        if context_origin.is_none() {
+            unsupported.insert(0, "context");
         }
         // Derive every section before touching any of them, then validate, then
         // apply: a derivation or boundary error leaves every section as it was.
@@ -542,6 +560,17 @@ impl Runtime {
             }
             None => false,
         };
+        // Every context part is read and validated here, so a malformed host
+        // file fails the reload before any carrier — including the LSP and MCP
+        // reconciles below — is touched.
+        let context = match &context_origin {
+            Some(origin) => Some(
+                origin
+                    .derive(std::path::Path::new(self.inner.tools.location()))
+                    .map_err(Error::Invalid)?,
+            ),
+            None => None,
+        };
         let reconciled = match (configs, &lsp_origin) {
             (Some(configs), Some((_, registry))) => Some(registry.reconcile(configs).await?),
             _ => None,
@@ -559,6 +588,10 @@ impl Runtime {
             self.inner.set_provider(provider);
             *self.inner.model_digest.lock().await = Some(fingerprint);
         }
+        let context = context.map(|parts| parts.apply(&self.inner.tools));
+        let context_changed = context
+            .as_ref()
+            .is_some_and(|outcome| outcome.iter().any(|(_, changed)| *changed));
         if let Some(policy) = policy {
             self.inner
                 .tools
@@ -583,6 +616,7 @@ impl Runtime {
             ("models", models_changed, model_origin.is_some()),
             ("lsp", lsp_changed, lsp_origin.is_some()),
             ("mcp", mcp_changed, mcp_origin.is_some()),
+            ("context", context_changed, context_origin.is_some()),
         ] {
             if !supported {
                 continue;
@@ -619,6 +653,12 @@ impl Runtime {
                     "server": failure.server,
                     "error": failure.error,
                 })).collect::<Vec<_>>(),
+            });
+        }
+        if let Some(outcome) = &context {
+            report["context"] = json!({
+                "changed": outcome.iter().filter(|(_, changed)| *changed).map(|(part, _)| *part).collect::<Vec<_>>(),
+                "unchanged": outcome.iter().filter(|(_, changed)| !*changed).map(|(part, _)| *part).collect::<Vec<_>>(),
             });
         }
         Ok(report)
