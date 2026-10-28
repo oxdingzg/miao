@@ -11,6 +11,12 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.15] - 2026-10-28
+
+### Fixed
+- **miao**: do not exit when a stream write fails (#1582) (`849f71f34c`)
+- **tui**: report why the engine exited instead of a bare stream closure (#1580) (`66918eda4a`)
+
 ## [0.3.14] - 2026-10-28
 
 ### Added
