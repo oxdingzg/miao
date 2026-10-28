@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-28",
+  "project_item": "CFG-06",
+  "base_commit": "4f49325f7d5f6eebd3a8787f393410519bf157dd",
+  "runtime": "Bun 1.3.14",
+  "test_file_sha256": "d338803d132c48e69851075aa348f44c29802c11599a38b168b9efcfe732a678",
+  "windows_baseline": {
+    "files": ["test/location-filesystem.test.ts", "test/database-migration.test.ts"],
+    "passed": 24,
+    "assertions": 61
+  },
+  "windows_added": {
+    "file": "test/location-filesystem-windows.test.ts",
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0,
+    "assertions": 11,
+    "cases": [
+      "Windows location reads preserve Unicode through drive and case aliases",
+      "Windows location keeps distinct Unicode-normalization filenames distinct",
+      "Windows location allows a junction whose target remains inside the location",
+      "Windows location rejects reads and listings through an escaping junction",
+      "Windows location reads a file beyond the legacy 260-character path limit",
+      "Windows location accepts an extended-length drive root",
+      "Windows location reads through an actual UNC share"
+    ],
+    "unc": "Existing writable loopback SMB share; no share, firewall, registry, or filesystem policy was created or changed."
+  },
+  "local_macos": {
+    "typecheck": "passed",
+    "existing_filesystem_tests_passed": 3,
+    "windows_only_tests_skipped": 7
+  },
+  "ci": {
+    "suite": "window runtime (windows)",
+    "new_tests": "Six automatic physical-filesystem cases; actual UNC case explicitly skips unless MIAO_TEST_UNC_ROOT names an existing writable test share."
+  },
+  "initial_attempt": {
+    "passed": 5,
+    "failed": 1,
+    "skipped": 1,
+    "cause": "The test incorrectly expected realpath casing to be canonical. Windows path resolution preserves caller casing. Removed that string comparison; the actual file-read assertion still verifies mixed-case access."
+  },
+  "limits": [
+    "This verifies Core FileSystem reads/listings, not every Git, TUI, session-storage, or transport path consumer.",
+    "UNC verification used a loopback share, not remote network latency, offline shares, or alternative SMB servers.",
+    "Product acceptance for CFG-06 remains open."
+  ]
+}
