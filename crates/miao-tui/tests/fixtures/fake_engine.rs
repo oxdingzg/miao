@@ -97,6 +97,15 @@ fn main() {
                     next += 1;
                 }
             }
+            // A reload the host did not ask for is announced process-wide; the
+            // TUI shows it as a composer notice rather than a Session event.
+            "reload" => {
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+                send(
+                    &mut out,
+                    json!({"method":"config","params":{"generation":2,"changed":["policy","context"],"unchanged":[],"unsupported":["tools"]}}),
+                );
+            }
             "product_tool" => {
                 send(&mut out, json!({"id":id,"result":{"ok":true}}));
                 send(
