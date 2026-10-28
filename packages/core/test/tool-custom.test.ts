@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import path from "node:path"
-import { Effect, Exit, Layer, Scope } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect"
 import { tool } from "@miao/plugin/tool"
 import { AgentV2 } from "@miao/core/agent"
 import { Config } from "@miao/core/config"
@@ -212,5 +212,101 @@ describe("CustomTools", () => {
         expect(yield* names(registry)).toEqual([])
       }),
     ),
+  )
+})
+;(["pending", "late"] as const).forEach((timing) => {
+  it.live(
+    `interrupts a plugin permission promise when the ask is ${timing}`,
+    () =>
+      withCustomTools(
+        [],
+        (registry) =>
+          Effect.gen(function* () {
+            const plugins = yield* ToolPlugins.Service
+            const permission = yield* PermissionV2.Service
+            const events = yield* EventV2.Service
+            const entered = Promise.withResolvers<AbortSignal>()
+            const release = Promise.withResolvers<void>()
+            const completed = Promise.withResolvers<void>()
+            const asked = yield* Deferred.make<PermissionV2.Request>()
+            const replied = yield* Deferred.make<PermissionV2.ReplyInput>()
+            const executed: string[] = []
+            const unsubscribe = yield* events.listen((event) => {
+              if (event.type === PermissionV2.Event.Asked.type)
+                return Deferred.succeed(asked, event.data as PermissionV2.Request).pipe(Effect.asVoid)
+              if (event.type === PermissionV2.Event.Replied.type)
+                return Deferred.succeed(replied, event.data as PermissionV2.ReplyInput).pipe(Effect.asVoid)
+              return Effect.void
+            })
+            yield* Effect.addFinalizer(() => unsubscribe)
+            yield* Effect.addFinalizer(() =>
+              Effect.sync(() => release.resolve()).pipe(
+                Effect.andThen(permission.forSession(sessionID)),
+                Effect.flatMap((requests) =>
+                  Effect.forEach(
+                    requests,
+                    (request) => permission.reply({ requestID: request.id, reply: "reject" }).pipe(Effect.ignore),
+                    { discard: true },
+                  ),
+                ),
+              ),
+            )
+            yield* plugins.provide({
+              "plugin-ask": tool({
+                description: "Ask before acting",
+                args: {},
+                execute: async (_args, context) => {
+                  entered.resolve(context.abort)
+                  if (timing === "late") await release.promise
+                  try {
+                    await context.ask({
+                      permission: "nested.permission",
+                      patterns: ["private"],
+                      always: ["private"],
+                      metadata: {},
+                    })
+                    executed.push("acted")
+                    return "acted"
+                  } finally {
+                    completed.resolve()
+                  }
+                },
+              }),
+            })
+            const fiber = yield* run(registry, "plugin-ask").pipe(Effect.forkScoped)
+            const signal = yield* Effect.promise(() => entered.promise).pipe(Effect.timeout("2 seconds"))
+            if (timing === "pending") yield* Deferred.await(asked).pipe(Effect.timeout("2 seconds"))
+            yield* Fiber.interrupt(fiber)
+            expect(signal.aborted).toBe(true)
+            release.resolve()
+            yield* Effect.promise(() => completed.promise).pipe(
+              Effect.timeoutOrElse({
+                duration: "2 seconds",
+                orElse: () =>
+                  permission
+                    .forSession(sessionID)
+                    .pipe(
+                      Effect.flatMap((requests) =>
+                        Effect.die(
+                          new Error(
+                            `Plugin ask survived tool interruption: ${requests.length} permission request(s) still pending`,
+                          ),
+                        ),
+                      ),
+                    ),
+              }),
+            )
+            if (timing === "pending") {
+              const request = yield* Deferred.await(asked)
+              const reply = yield* Deferred.await(replied).pipe(Effect.timeout("2 seconds"))
+              expect(reply).toMatchObject({ requestID: request.id, reply: "reject" })
+            }
+            if (timing === "late") expect(yield* Deferred.isDone(asked)).toBe(false)
+            expect(yield* permission.forSession(sessionID)).toEqual([])
+            expect(executed).toEqual([])
+          }),
+        [...allowAll, { action: "nested.permission", resource: "*", effect: "ask" }],
+      ),
+    10_000,
   )
 })
