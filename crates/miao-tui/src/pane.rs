@@ -157,6 +157,9 @@ impl Shell {
 pub struct TitlePane {
     label: String,
     status: Option<String>,
+    /// The status reports a problem with the run (for example, the engine
+    /// stopped reporting) rather than routine activity.
+    status_alert: bool,
     theme: Theme,
 }
 
@@ -169,6 +172,7 @@ impl TitlePane {
         Self {
             label: format!(" miao-tui · {name} · {}", git_branch(workspace)),
             status: None,
+            status_alert: false,
             theme,
         }
     }
@@ -190,6 +194,20 @@ impl TitlePane {
         self.status = status;
     }
 
+    pub fn set_status_alert(&mut self, alert: bool) {
+        self.status_alert = alert;
+    }
+
+    #[cfg(test)]
+    pub fn status(&self) -> Option<&str> {
+        self.status.as_deref()
+    }
+
+    #[cfg(test)]
+    pub fn status_alert(&self) -> bool {
+        self.status_alert
+    }
+
     fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
     }
@@ -201,9 +219,13 @@ impl Pane for TitlePane {
         let style = Style::new().fg(palette.primary).bg(palette.surface).bold();
         let mut spans = vec![Span::styled(format!("{} ", self.label), style)];
         if let Some(status) = &self.status {
+            let color = match self.status_alert {
+                true => palette.warning,
+                false => palette.text_muted,
+            };
             spans.push(Span::styled(
                 format!("· {status} "),
-                Style::new().fg(palette.text_muted).bg(palette.surface),
+                Style::new().fg(color).bg(palette.surface),
             ));
         }
         frame.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -1149,6 +1171,35 @@ fn panel_lines(panel: &Panel, theme: &Theme) -> Vec<Line<'static>> {
 mod tests {
     use super::*;
     use crate::session::{Choice, QuestionItem};
+
+    #[test]
+    fn an_alerting_status_is_painted_in_the_warning_color() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        shell
+            .title
+            .set_status(Some("waiting for model 40s · no engine signal 20s".into()));
+        shell.title.set_status_alert(true);
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 1))
+            .expect("test terminal");
+        terminal
+            .draw(|frame| shell.title.render(frame, frame.area()))
+            .expect("draw");
+        let cells = &terminal.backend().buffer().content;
+        assert!(cells.iter().any(|cell| cell.fg == palette.warning));
+        shell.title.set_status_alert(false);
+        terminal
+            .draw(|frame| shell.title.render(frame, frame.area()))
+            .expect("draw");
+        let cells = &terminal.backend().buffer().content;
+        assert!(cells.iter().all(|cell| cell.fg != palette.warning));
+    }
 
     #[test]
     fn the_last_response_is_the_newest_assistant_text() {

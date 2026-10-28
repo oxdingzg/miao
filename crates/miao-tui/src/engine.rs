@@ -658,6 +658,15 @@ async fn run(
                         if let Some((kind, id)) = attention_event(&event) {
                             bus.send(AppEvent::Attention { kind, id });
                         }
+                        // A retry is durable, so it reaches the live status from
+                        // the journal rather than the ephemeral progress channel.
+                        if event.kind == "provider.retry" {
+                            bus.send(AppEvent::Provider(json!({
+                                "kind": "provider.retry",
+                                "run_id": event.data.get("run_id").cloned().unwrap_or(Value::Null),
+                                "attempt": event.data.get("attempt").cloned().unwrap_or(Value::Null),
+                            })));
+                        }
                     }
                     // Anything that changes run status, the transcript, or a
                     // pending decision settles into the next snapshot.
@@ -685,7 +694,16 @@ async fn run(
                     )));
                     return;
                 }
-                Some(TransportEvent::Resync(_)) | Some(TransportEvent::Progress(_)) => {}
+                Some(TransportEvent::Progress(params)) => {
+                    // Ephemeral provider progress is what keeps a waiting status
+                    // honest; a frame for another Session has no status to update.
+                    if open.as_ref().is_some_and(|state| {
+                        state.id == params.get("session_id").and_then(Value::as_str).unwrap_or_default()
+                    }) {
+                        bus.send(AppEvent::Provider(params));
+                    }
+                }
+                Some(TransportEvent::Resync(_)) => {}
             },
             _ = tokio::time::sleep_until(deadline.unwrap_or_else(Instant::now)), if deadline.is_some() => {
                 dirty = None;

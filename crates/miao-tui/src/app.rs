@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::Frame;
@@ -24,6 +25,63 @@ pub enum Screen {
     Home,
     /// One Session's transcript plus composer.
     Session,
+}
+
+/// How long the engine may stay quiet before the status says so. The engine
+/// heartbeats every five seconds while it waits on a provider, so three missed
+/// frames is a real gap rather than scheduler jitter.
+const LIVE_SILENCE: Duration = Duration::from_secs(15);
+
+/// Where the engine last said an active run was. Ephemeral: a client that
+/// attaches mid-turn learns the run from the snapshot and the rest from the next
+/// frame, so nothing here is persisted.
+#[derive(Debug, Clone)]
+pub struct Live {
+    pub run_id: String,
+    pub phase: LivePhase,
+    /// When the current phase began, for the elapsed part of the status.
+    pub since: Instant,
+    /// The newest frame from the engine, which is the only proof it is working.
+    pub signal: Instant,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LivePhase {
+    /// The request is out and no token has come back yet.
+    Waiting,
+    /// A pause before another attempt, announced by the engine.
+    Retrying { attempt: u64 },
+}
+
+impl Live {
+    /// The engine has not reported anything for long enough that the wait is
+    /// worth calling out. It says the client stopped hearing from the engine; it
+    /// never claims the turn failed.
+    fn silent(&self, now: Instant) -> bool {
+        now.duration_since(self.signal) >= LIVE_SILENCE
+    }
+
+    fn describe(&self, now: Instant) -> String {
+        let elapsed = waited(now.duration_since(self.since));
+        match self.phase {
+            LivePhase::Waiting if self.silent(now) => format!(
+                "waiting for model {elapsed} · no engine signal {}",
+                waited(now.duration_since(self.signal))
+            ),
+            LivePhase::Waiting => format!("waiting for model {elapsed}"),
+            LivePhase::Retrying { attempt } => format!("retrying attempt {attempt} · {elapsed}"),
+        }
+    }
+}
+
+/// Whole seconds under a minute, then minutes and seconds. A count reads as
+/// movement; a rounded-down minute reads as a stuck status.
+fn waited(duration: Duration) -> String {
+    let seconds = duration.as_secs();
+    if seconds < 60 {
+        return format!("{seconds}s");
+    }
+    format!("{}m {:02}s", seconds / 60, seconds % 60)
 }
 
 /// What the process should open once the engine is attached. The launch flags
@@ -76,6 +134,8 @@ pub struct App {
     startup: Startup,
     /// Built-in plus custom themes, in menu order.
     themes: theme::Catalog,
+    /// Live provider activity for the open Session.
+    live: Option<Live>,
 }
 
 impl App {
@@ -122,6 +182,7 @@ impl App {
             clipboard_busy: false,
             startup,
             themes,
+            live: None,
         }
     }
 
@@ -163,6 +224,9 @@ impl App {
     }
 
     pub fn render(&mut self, frame: &mut Frame) {
+        // The status counts elapsed time, so it is recomputed per frame rather
+        // than only when the projection changes.
+        self.update_status();
         match self.screen {
             Screen::Home => {
                 // The home list keeps the title bar so the workspace under
@@ -200,6 +264,7 @@ impl App {
             AppEvent::Focus(focused) => self.attention.set_focus(focused),
             AppEvent::Mouse(mouse) => self.handle_mouse(mouse),
             AppEvent::Attention { kind, id } => self.announce(kind, id),
+            AppEvent::Provider(frame) => self.provider(frame),
             AppEvent::Clipboard(content) => {
                 self.clipboard_busy = false;
                 match content {
@@ -278,6 +343,12 @@ impl App {
                     }
                 }
                 self.state = state;
+                // A live phase only ever describes the run it was announced for.
+                if self.live.as_ref().is_some_and(|live| {
+                    self.state.active_run.as_deref() != Some(live.run_id.as_str())
+                }) {
+                    self.live = None;
+                }
                 self.shell.set_session(self.session.as_ref());
                 self.shell.set_transcript(&transcript);
                 self.screen = Screen::Session;
@@ -1067,17 +1138,92 @@ impl App {
             });
     }
 
+    /// Fold one ephemeral provider frame into the live status. The transcript
+    /// does not read this: it is replaced by every projection.
+    fn provider(&mut self, frame: Value) {
+        let Some(run_id) = self.state.active_run.clone() else {
+            return;
+        };
+        // A late frame from an earlier run must not refresh the current status.
+        if frame
+            .get("run_id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id != run_id)
+        {
+            return;
+        }
+        let now = Instant::now();
+        let phase = match frame
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+        {
+            // A token reached the stream, so the wait is over. Committed content
+            // is what the transcript shows from here.
+            "provider.delta" => {
+                self.live = None;
+                return;
+            }
+            // The engine repeats this while it has no first token.
+            "provider.waiting" => LivePhase::Waiting,
+            "provider.retry" => LivePhase::Retrying {
+                attempt: frame.get("attempt").and_then(Value::as_u64).unwrap_or(0) + 1,
+            },
+            // An attempt announcement proves the request is in flight, even
+            // before the first heartbeat or right after a previous step.
+            "provider.attempt" => match self.live.as_ref().map(|live| live.phase) {
+                Some(phase) => phase,
+                None => LivePhase::Waiting,
+            },
+            _ => return,
+        };
+        // Only a phase change restarts the clock; a heartbeat must not restart
+        // the elapsed time the user is already reading.
+        let since = match self.live.as_ref() {
+            Some(live) if live.run_id == run_id && live.phase == phase => live.since,
+            _ => now,
+        };
+        self.live = Some(Live {
+            run_id,
+            phase,
+            since,
+            signal: now,
+        });
+    }
+
+    /// Whether the status line has something to count, which is also when the
+    /// drive loop must repaint faster than the minute.
+    pub fn busy(&self) -> bool {
+        self.screen == Screen::Session && self.state.active_run.is_some()
+    }
+
     fn update_status(&mut self) {
         if self.screen != Screen::Session {
             self.shell.title.set_status(None);
+            self.shell.title.set_status_alert(false);
             return;
         }
-        let status = match (&self.state.active_run, self.state.pending) {
-            (Some(_), 0) => "working · Esc interrupt".to_string(),
-            (Some(_), queued) => format!("working · {queued} queued · Esc interrupt"),
-            (None, 0) => "idle".to_string(),
-            (None, queued) => format!("idle · {queued} queued"),
+        let now = Instant::now();
+        let live = self
+            .live
+            .as_ref()
+            .filter(|live| self.state.active_run.as_deref() == Some(live.run_id.as_str()));
+        // Without a frame the run is still starting; saying so with the plain
+        // "working" avoids claiming a phase the engine never announced.
+        let phase = match (self.state.active_run.is_some(), live) {
+            (true, Some(live)) => live.describe(now),
+            (true, None) => "working".to_string(),
+            (false, _) => "idle".to_string(),
         };
+        let status = match (&self.state.active_run, self.state.pending) {
+            (Some(_), 0) => format!("{phase} · Esc interrupt"),
+            (Some(_), queued) => format!("{phase} · {queued} queued · Esc interrupt"),
+            (None, 0) => phase,
+            (None, queued) => format!("{phase} · {queued} queued"),
+        };
+        self.shell
+            .title
+            .set_status_alert(live.is_some_and(|live| live.silent(now)));
         self.shell.title.set_status(Some(status));
     }
 
@@ -1156,6 +1302,7 @@ impl App {
         self.screen = Screen::Home;
         self.session = None;
         self.state = SessionState::default();
+        self.live = None;
         self.usage = None;
         self.pending_accounts = false;
         self.shell.panel = None;
@@ -1516,6 +1663,117 @@ mod tests {
         });
         app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(app.screen, Screen::Session);
+    }
+
+    fn running_app(run_id: &str) -> App {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: SessionState {
+                active_run: Some(run_id.into()),
+                ..SessionState::default()
+            },
+        });
+        app
+    }
+
+    fn provider_frame(kind: &str) -> AppEvent {
+        AppEvent::Provider(serde_json::json!({
+            "kind": kind,
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "attempt": 1,
+            "elapsed_ms": 0,
+        }))
+    }
+
+    #[test]
+    fn a_waiting_run_counts_the_wait_instead_of_showing_a_static_working() {
+        let mut app = running_app("run-1");
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+        app.handle(provider_frame("provider.waiting"));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("waiting for model 0s · Esc interrupt")
+        );
+        // A token ends the wait; committed content carries the turn from here.
+        app.handle(provider_frame("provider.delta"));
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+    }
+
+    #[test]
+    fn a_heartbeat_does_not_restart_the_elapsed_time() {
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.waiting"));
+        let since = app.live.as_ref().expect("live wait").since;
+        app.handle(provider_frame("provider.waiting"));
+        assert_eq!(app.live.as_ref().expect("live wait").since, since);
+    }
+
+    #[test]
+    fn an_announced_retry_is_visible_while_it_waits() {
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.retry"));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("retrying attempt 2 · 0s · Esc interrupt")
+        );
+    }
+
+    #[test]
+    fn a_silent_engine_is_called_out_without_claiming_failure() {
+        let mut app = running_app("run-1");
+        let now = Instant::now();
+        app.live = Some(Live {
+            run_id: "run-1".into(),
+            phase: LivePhase::Waiting,
+            since: now - Duration::from_secs(40),
+            signal: now - Duration::from_secs(20),
+        });
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("waiting for model 40s · no engine signal 20s · Esc interrupt")
+        );
+        assert!(app.shell.title.status_alert());
+    }
+
+    #[test]
+    fn a_frame_from_another_run_does_not_refresh_the_status() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.waiting",
+            "run_id": "run-0",
+        })));
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+    }
+
+    #[test]
+    fn a_projection_for_another_run_drops_the_live_phase() {
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.waiting"));
+        assert!(app.live.is_some());
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: SessionState {
+                active_run: Some("run-2".into()),
+                ..SessionState::default()
+            },
+        });
+        assert!(app.live.is_none());
+    }
+
+    #[test]
+    fn a_wait_reads_in_seconds_then_minutes() {
+        assert_eq!(waited(Duration::from_secs(9)), "9s");
+        assert_eq!(waited(Duration::from_secs(65)), "1m 05s");
     }
 
     #[test]
