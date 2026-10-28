@@ -18,16 +18,16 @@ pub const FILE_NAMES: [&str; 4] = ["miao.json", "miao.jsonc", "opencode.json", "
 /// string state and escapes; a `//` inside a URL or a `/*` inside a glob stays.
 pub fn strip_jsonc(text: &str) -> Result<String, String> {
     let bytes = text.as_bytes();
-    let mut out = String::with_capacity(text.len());
+    let mut out = Vec::with_capacity(text.len());
     let mut index = 0;
     let mut in_string = false;
     while index < bytes.len() {
         let byte = bytes[index];
         if in_string {
-            out.push(byte as char);
+            out.push(byte);
             if byte == b'\\' && index + 1 < bytes.len() {
                 index += 1;
-                out.push(bytes[index] as char);
+                out.push(bytes[index]);
             } else if byte == b'"' {
                 in_string = false;
             }
@@ -37,7 +37,7 @@ pub fn strip_jsonc(text: &str) -> Result<String, String> {
         match byte {
             b'"' => {
                 in_string = true;
-                out.push('"');
+                out.push(b'"');
                 index += 1;
             }
             b'/' if index + 1 < bytes.len() && bytes[index + 1] == b'/' => {
@@ -57,27 +57,26 @@ pub fn strip_jsonc(text: &str) -> Result<String, String> {
                 index += 2;
             }
             _ => {
-                out.push(byte as char);
+                out.push(byte);
                 index += 1;
             }
         }
     }
-    Ok(strip_trailing_commas(&out))
+    String::from_utf8(strip_trailing_commas(&out)).map_err(|error| error.to_string())
 }
 
 /// Drop a comma that is followed only by whitespace and a closing bracket.
-fn strip_trailing_commas(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = String::with_capacity(text.len());
+fn strip_trailing_commas(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
     let mut in_string = false;
     let mut index = 0;
     while index < bytes.len() {
         let byte = bytes[index];
         if in_string {
-            out.push(byte as char);
+            out.push(byte);
             if byte == b'\\' && index + 1 < bytes.len() {
                 index += 1;
-                out.push(bytes[index] as char);
+                out.push(bytes[index]);
             } else if byte == b'"' {
                 in_string = false;
             }
@@ -86,7 +85,7 @@ fn strip_trailing_commas(text: &str) -> String {
         }
         if byte == b'"' {
             in_string = true;
-            out.push('"');
+            out.push(b'"');
             index += 1;
             continue;
         }
@@ -100,7 +99,7 @@ fn strip_trailing_commas(text: &str) -> String {
                 continue;
             }
         }
-        out.push(byte as char);
+        out.push(byte);
         index += 1;
     }
     out
@@ -190,6 +189,26 @@ mod tests {
         assert_eq!(value["endpoint"], "https://example.test/v1/chat");
         assert_eq!(value["glob"], "src/*.rs");
         assert_eq!(value["escaped"], "quote \" // still a string");
+    }
+
+    #[test]
+    fn unicode_keys_and_values_survive_both_jsonc_passes() {
+        let text = r#"{
+          // 中文注释 🐱
+          "代理": "中文 café café 🐱",
+          "路径": "C:\\项目\\文件",
+          "markers": "中文 // /* café */ 🐱",
+          "escaped": "中文 \" // 仍是字符串",
+          "encoded": "\u4e2d\u6587 \ud83d\udc31",
+          "nested": ["目录", { "键": "值", }, ], /* 注释 */
+        }"#;
+        let value = parse_document(text).unwrap();
+        assert_eq!(value["代理"], "中文 café café 🐱");
+        assert_eq!(value["路径"], "C:\\项目\\文件");
+        assert_eq!(value["markers"], "中文 // /* café */ 🐱");
+        assert_eq!(value["escaped"], "中文 \" // 仍是字符串");
+        assert_eq!(value["encoded"], "中文 🐱");
+        assert_eq!(value["nested"], serde_json::json!(["目录", {"键": "值"}]));
     }
 
     #[test]
