@@ -155,3 +155,49 @@ test("worker configuration diagnostics leave stdout available for protocols", as
   expect(JSON.parse(stdout)).toContain("--worker-config")
   expect(stderr).toBe("")
 })
+
+test("the host configuration surface keeps each manifest in its own argv token", () => {
+  const options = {
+    ...base,
+    configDir: "/config with spaces",
+    configSources: JSON.stringify([{ type: "content", content: '{"model":"fixture"}' }]),
+    policyFile: "/private/policy.json",
+    mcpConfigFile: "/private/mcp.json",
+    lspConfigFile: "/private/lsp.json",
+    formatterConfigFile: "/private/formatter.json",
+    contextConfigFile: "/private/context.json",
+    skillsConfigFile: "/private/skills.json",
+    referencesConfigFile: "/private/references.json",
+    hooksConfigFile: "/private/hooks.json",
+    modelRoutesConfigFile: "/private/routes.json",
+    productToolsFile: "/private/tools.json",
+    pluginHooksFile: "/private/plugin-hooks.json",
+    workerConfigFile: "/private/worker.json",
+    workspaceInstructions: false,
+  }
+  const args = engineArgs(options)
+  const pairs = [
+    ["--config-dir", options.configDir],
+    ["--config-sources", options.configSources],
+    ["--policy", options.policyFile],
+    ["--mcp-config", options.mcpConfigFile],
+    ["--lsp-config", options.lspConfigFile],
+    ["--formatter-config", options.formatterConfigFile],
+    ["--context-config", options.contextConfigFile],
+    ["--skills-config", options.skillsConfigFile],
+    ["--references-config", options.referencesConfigFile],
+    ["--hooks-config", options.hooksConfigFile],
+    ["--model-routes-config", options.modelRoutesConfigFile],
+    ["--product-tools", options.productToolsFile],
+    ["--plugin-hooks", options.pluginHooksFile],
+    ["--worker-config", options.workerConfigFile],
+    ["--workspace-instructions", "false"],
+  ]
+  expect(args.slice(0, 7)).toEqual(["serve", "--db", "db", "--workspace", "/ws", "--model", "m"])
+  expect(args).toHaveLength(7 + 2 * pairs.length)
+  for (const [flag, value] of pairs) {
+    expect(args.filter((arg) => arg === flag)).toHaveLength(1)
+    expect(args[args.indexOf(flag) + 1]).toBe(value)
+    expect(engineArgs(base)).not.toContain(flag)
+  }
+})
