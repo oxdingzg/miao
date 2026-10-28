@@ -38,6 +38,7 @@ impl Shell {
             transcript: TranscriptPane {
                 theme: theme.clone(),
                 lines: vec![Line::from("no Session selected")],
+                draft: Vec::new(),
                 scroll: 0,
                 follow: true,
             },
@@ -56,6 +57,20 @@ impl Shell {
         let max = self.transcript.lines.len().saturating_sub(1);
         self.transcript.scroll = self.transcript.scroll.min(max as u16);
         self.last = Some(transcript.clone());
+    }
+
+    /// Show what the model is streaming before its message commits. Empty
+    /// strings clear it.
+    pub fn set_draft(&mut self, text: &str, reasoning: &str) {
+        self.transcript.draft = match text.is_empty() && reasoning.is_empty() {
+            true => Vec::new(),
+            false => draft_lines(text, reasoning, &self.transcript.theme),
+        };
+    }
+
+    #[cfg(test)]
+    pub fn draft(&self) -> &[Line<'static>] {
+        &self.transcript.draft
     }
 
     /// The text of the newest assistant reply, for the copy-to-clipboard
@@ -235,6 +250,9 @@ impl Pane for TitlePane {
 pub struct TranscriptPane {
     theme: Theme,
     lines: Vec<Line<'static>>,
+    /// The streamed answer that the next projection replaces. Kept apart from
+    /// `lines` so a projection can drop it in one assignment.
+    draft: Vec<Line<'static>>,
     scroll: u16,
     /// Follow the tail while new projections arrive. Any manual scroll clears
     /// it, so reading history is not interrupted by committed events.
@@ -251,12 +269,14 @@ impl Pane for TranscriptPane {
             ))
             .border_style(Style::new().fg(palette.border))
             .style(Style::new().bg(palette.background));
+        let mut lines = self.lines.clone();
+        lines.extend(self.draft.iter().cloned());
         if self.follow {
             let viewport = area.height.saturating_sub(2) as usize;
-            self.scroll = self.lines.len().saturating_sub(viewport) as u16;
+            self.scroll = lines.len().saturating_sub(viewport) as u16;
         }
         frame.render_widget(
-            Paragraph::new(self.lines.clone())
+            Paragraph::new(lines)
                 .style(Style::new().fg(palette.text))
                 .block(block)
                 .wrap(Wrap { trim: false })
@@ -404,6 +424,23 @@ fn relative_time(updated_at_ms: u64) -> String {
             }
         }
     }
+}
+
+/// The streamed answer, rendered like the assistant entry it will become: the
+/// provisional block gains its header when the committed message arrives.
+fn draft_lines(text: &str, reasoning: &str, theme: &Theme) -> Vec<Line<'static>> {
+    let palette = theme.palette;
+    let mut lines = Vec::new();
+    if !reasoning.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("▸ thinking · {} chars", reasoning.chars().count()),
+            Style::new().fg(palette.text_muted),
+        )));
+    }
+    if !text.is_empty() {
+        lines.extend(markdown::lines(text, theme));
+    }
+    lines
 }
 
 fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>> {
@@ -1199,6 +1236,35 @@ mod tests {
             .expect("draw");
         let cells = &terminal.backend().buffer().content;
         assert!(cells.iter().all(|cell| cell.fg != palette.warning));
+    }
+
+    #[test]
+    fn the_draft_shows_the_answer_before_it_is_committed() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        shell.set_draft("streamed words", "considering");
+        let draft = shell
+            .draft()
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(draft.starts_with("▸ thinking · 11 chars"));
+        assert!(draft.contains("streamed words"));
+        // A projection, or a run that ends, clears it in one assignment.
+        shell.set_draft("", "");
+        assert!(shell.draft().is_empty());
     }
 
     #[test]
