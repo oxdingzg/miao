@@ -1,0 +1,41 @@
+Source: 4f49325f7d5f6eebd3a8787f393410519bf157dd
+Remote cargo test --locked --test http_transport --test http_sse --test http_leases --test acp_client_matrix --test accuracy --test differential
+
+running 4 tests
+test read_only_tool_schema_contract ... ok
+test denied_write_has_no_filesystem_effect ... ok
+test product_fix_has_correct_files_replay_and_model_contract ... ok
+test seeded_admission_sequences_preserve_delivery_and_exact_retry ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.71s
+running 4 tests
+test provider_failure_settles_and_the_session_accepts_a_later_prompt ... ok
+test cancellation_settles_a_stalled_provider_and_allows_continuation ... ok
+test reconnect_resumes_the_same_session_without_replaying_old_output ... ok
+test a_slow_stdio_reader_receives_the_complete_answer_once ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.15s
+running 2 tests
+test rejected_patches_leave_the_workspace_unchanged ... ok
+test patch_matches_reference_or_explicit_product_contract ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+running 5 tests
+test an_unowned_durable_run_does_not_keep_an_idle_runtime_alive ... ok
+test unauthenticated_or_invalid_clients_cannot_keep_an_idle_engine_alive ... ok
+test running_work_outlives_all_ui_leases ... ok
+test idle_shutdown_closes_existing_event_streams ... ok
+test one_window_detaching_does_not_stop_another_window ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.59s
+running 2 tests
+test events_requires_bearer ... ok
+test streams_committed_events_with_a_durable_cursor ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
+running 4 tests
+test rejects_missing_and_wrong_bearer_token ... ok
+test rejects_unknown_method_and_unknown_protocol ... ok
+test lists_sessions_over_http ... ok
+test serves_the_command_table_and_committed_history ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+Native product files through per-file runner: native-acp-sdk, native-acp-capabilities, native-acp-reconnect, native-acp-lifecycle, native-default-parity-http, native-replay, native-tool-replay: 17 passed, 143 assertions, 7 files, 0 retries/failures. Engine: locally run remote-built main 0.3.14.
+Headless/session-replay: 19 passed, 35 assertions.
+Server runtime/location/backpressure initial invocation: 19 passed, 1 failed, 215 assertions. Failure: durable event replay fixture selected an installed native engine without an available product model.
+Explicit TS control: MIAO_ENGINE_STORAGE='' bun test test/server/event-backpressure-http.test.ts: 2 passed, 135 assertions. This does not erase the unconfigured invocation failure or fix its environment sensitivity.
