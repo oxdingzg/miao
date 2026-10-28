@@ -309,6 +309,68 @@ fn files_in(directory: &std::path::Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// Where the engine derives its base permission policy from. Kept for the
+/// process lifetime so a reload derives exactly the way startup did instead of
+/// guessing at a source the operator never named.
+#[derive(Clone)]
+pub enum PolicyOrigin {
+    /// `--policy`: a host-materialized permission config.
+    File(PathBuf),
+    /// `--config-sources`: the host's ordered source plan.
+    Sources(Vec<Source>),
+    /// `--config-dir`: one directory, the standalone entry.
+    Directory(PathBuf),
+    /// No operator source: the entry's own default. `acp` selects which.
+    Entry { acp: bool },
+}
+
+impl PolicyOrigin {
+    /// Re-derive the policy from the sources. `mode` is the operator's
+    /// `--mode` override, applied last because it wins over both the entry
+    /// default and a policy file. The sandbox switch is re-read from the
+    /// environment, which cannot change inside a running process.
+    pub fn derive(&self, mode: Option<permission::Mode>) -> Result<permission::Config, String> {
+        let sandbox = std::env::var("MIAO_SANDBOX").ok();
+        let mut config = match self {
+            PolicyOrigin::File(path) => {
+                let bytes =
+                    std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
+                if bytes.len() > 65536 {
+                    return Err("permission config exceeds 64 KiB".into());
+                }
+                serde_json::from_slice(&bytes)
+                    .map_err(|error| format!("{}: {error}", path.display()))?
+            }
+            PolicyOrigin::Sources(sources) => policy_from_sources(sources, sandbox.as_deref())?,
+            PolicyOrigin::Directory(directory) => {
+                policy_from_directory(directory, sandbox.as_deref())?
+            }
+            PolicyOrigin::Entry { acp } => permission::Config::for_entry(*acp),
+        };
+        if let Some(mode) = mode {
+            config.mode = mode;
+        }
+        Ok(config)
+    }
+
+    /// The files a reload would read, for a cheap change check.
+    pub fn files(&self) -> Vec<PathBuf> {
+        match self {
+            PolicyOrigin::File(path) => vec![path.clone()],
+            PolicyOrigin::Directory(directory) => files_in(directory),
+            PolicyOrigin::Sources(sources) => sources
+                .iter()
+                .flat_map(|source| match source {
+                    Source::Dir(directory) => files_in(directory),
+                    Source::File(path) => vec![path.clone()],
+                    Source::Content(_) => Vec::new(),
+                })
+                .collect(),
+            PolicyOrigin::Entry { .. } => Vec::new(),
+        }
+    }
+}
+
 fn lsp_from_documents(documents: &[Document]) -> Result<Vec<lsp::Config>, String> {
     let configured = lsp_configured(documents);
     lsp_entries(configured.as_ref(), &BUILTIN_SERVERS, &system_lookup())
