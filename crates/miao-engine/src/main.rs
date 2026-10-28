@@ -867,7 +867,10 @@ fn watch_config(runtime: Runtime, files: Vec<std::path::PathBuf>) {
                     eprintln!("miao-engine configuration reloaded: {}", report["changed"]);
                 }
                 Ok(_) => {}
-                Err(error) => eprintln!("miao-engine configuration reload failed: {error}"),
+                Err(error) => {
+                    eprintln!("miao-engine configuration reload failed: {error}");
+                    runtime.announce_config_failure(&error.to_string());
+                }
             }
         }
     });
@@ -960,6 +963,7 @@ async fn serve(
     let mut input = BufReader::new(tokio::io::stdin());
     let mut bytes = Vec::new();
     let mut progress = runtime.progress();
+    let mut config_events = runtime.config_events();
     let mut poll = tokio::time::interval(Duration::from_millis(100));
     // Host-death watchdog: stdin EOF is unreliable because grandchild
     // processes (LSP servers, MCP workers) inherit the pipe write end, and
@@ -1043,6 +1047,15 @@ async fn serve(
                 notice=progress.recv()=>match notice {
                     Ok(notice)=>{if notice["session_id"].as_str().is_some_and(|s|host.subscribed(s)) {send(&output,json!({"method":"progress","params":notice})).await?;}},
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>send(&output,json!({"method":"resync","params":{"reason":"ephemeral_progress_lagged"}})).await?,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed)=>break,
+                },
+                report=config_events.recv()=>match report {
+                    // A reloaded configuration is process-wide, not
+                    // Session-scoped, so every subscriber is told. A lagged
+                    // listener skipped a notice it cannot replay; the next
+                    // reload still reports its own generation.
+                    Ok(report)=>send(&output,json!({"method":"config","params":report})).await?,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>{},
                     Err(tokio::sync::broadcast::error::RecvError::Closed)=>break,
                 },
                 _=signal_exit()=>{ break; },

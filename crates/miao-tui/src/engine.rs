@@ -860,6 +860,13 @@ async fn run(
                         bus.send(AppEvent::Provider(params));
                     }
                 }
+                Some(TransportEvent::Config(report)) => {
+                    // The engine reloads its own files in standalone mode, so
+                    // this arrives without any user action.
+                    if let Some(notice) = config_notice(&report) {
+                        bus.send(AppEvent::Notice(notice));
+                    }
+                }
                 Some(TransportEvent::Resync(_)) => {}
             },
             _ = tokio::time::sleep_until(deadline.unwrap_or_else(Instant::now)), if deadline.is_some() => {
@@ -870,6 +877,20 @@ async fn run(
             }
         }
     }
+}
+
+/// What a `config` frame means for the user: the sections that moved, or why
+/// the engine refused the reload. A frame with nothing changed says nothing.
+fn config_notice(report: &Value) -> Option<String> {
+    if let Some(error) = report.get("error").and_then(Value::as_str) {
+        return Some(format!("configuration reload failed: {error}"));
+    }
+    let changed = report.get("changed")?.as_array()?;
+    let names = changed.iter().filter_map(Value::as_str).collect::<Vec<_>>();
+    if names.is_empty() {
+        return None;
+    }
+    Some(format!("configuration reloaded: {}", names.join(", ")))
 }
 
 async fn refresh_sessions(client: &EngineClient, bus: &Bus) {
