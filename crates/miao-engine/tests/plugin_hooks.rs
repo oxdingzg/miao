@@ -74,6 +74,11 @@ async fn workspace(work: &str) -> (tempfile::TempDir, Store, Runtime, mpsc::Rece
             after: false,
             definition: false,
         }),
+        "after" => Some(Marker {
+            before: false,
+            after: true,
+            definition: false,
+        }),
         "both" => Some(Marker {
             before: true,
             after: true,
@@ -275,4 +280,98 @@ async fn plugin_definition_hooks_review_the_tool_surface() {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
     runtime.shutdown().await;
+}
+
+// A host can stay connected without answering a plugin callback. Cancelling
+// the native Session must then settle independently of a cooperative reply.
+async fn cancelled_hook(work: &str) {
+    let (_dir, store, runtime, mut bridge_rx) = workspace(work).await;
+    let (bridge_id, params) = next_request(&mut bridge_rx).await;
+    assert_eq!(params["kind"], work);
+    assert!(runtime.cancel("s").await.unwrap());
+    let finished = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            if store
+                .events("s", 0, 1000)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "run.finished")
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await;
+    // Keep the regression's failing path bounded too: release the outstanding
+    // call and close its receiver before asserting, so old code cannot leave
+    // a hanging Runtime behind when this test fails.
+    if finished.is_err() {
+        runtime.deliver_product_reply(bridge_id, json!({"error":"fixture cleanup"}));
+    }
+    drop(bridge_rx);
+    tokio::time::timeout(std::time::Duration::from_secs(5), runtime.shutdown())
+        .await
+        .unwrap();
+    assert!(
+        finished.is_ok(),
+        "cancel waited for the unanswered {work} hook"
+    );
+    assert!(!runtime.deliver_product_reply(bridge_id, json!({"result":{}})));
+    let events = store.events("s", 0, 1000).await.unwrap();
+    assert!(events
+        .iter()
+        .any(|event| event.kind == "run.finished" && event.data["reason"] == "interrupted"));
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "tool.dispatched")
+            .count(),
+        usize::from(work == "after")
+    );
+}
+
+#[tokio::test]
+async fn cancellation_settles_an_unanswered_definition_hook() {
+    cancelled_hook("definition").await;
+}
+
+#[tokio::test]
+async fn cancellation_settles_an_unanswered_before_hook() {
+    cancelled_hook("before").await;
+}
+
+#[tokio::test]
+async fn cancellation_settles_an_unanswered_after_hook() {
+    cancelled_hook("after").await;
+}
+
+#[tokio::test]
+async fn shutdown_settles_unanswered_plugin_hooks() {
+    for work in ["definition", "before", "after"] {
+        let (_dir, store, runtime, mut bridge_rx) = workspace(work).await;
+        let (bridge_id, params) = next_request(&mut bridge_rx).await;
+        assert_eq!(params["kind"], work);
+        let finished =
+            tokio::time::timeout(std::time::Duration::from_secs(2), runtime.shutdown()).await;
+        if finished.is_err() {
+            runtime.deliver_product_reply(bridge_id, json!({"error":"fixture cleanup"}));
+            drop(bridge_rx);
+            tokio::time::timeout(std::time::Duration::from_secs(5), runtime.shutdown())
+                .await
+                .unwrap();
+        }
+        assert!(
+            finished.is_ok(),
+            "shutdown waited for the unanswered {work} hook"
+        );
+        assert!(!runtime.deliver_product_reply(bridge_id, json!({"result":{}})));
+        assert!(store
+            .events("s", 0, 1000)
+            .await
+            .unwrap()
+            .iter()
+            .any(|event| event.kind == "run.finished" && event.data["reason"] == "interrupted"));
+    }
 }
