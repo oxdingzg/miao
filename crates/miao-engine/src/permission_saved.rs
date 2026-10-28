@@ -136,9 +136,13 @@ mod tests {
             initialize(&connection).unwrap();
             project(&mut connection, "/repo", &[rule("bash", "git *")]).unwrap();
         }
-        let connection = Connection::open(&path).unwrap();
-        initialize(&connection).unwrap();
-        assert_eq!(rules(&connection, "/repo").unwrap().len(), 1);
+        {
+            let connection = Connection::open(&path).unwrap();
+            initialize(&connection).unwrap();
+            assert_eq!(rules(&connection, "/repo").unwrap().len(), 1);
+        }
+        // Windows refuses to delete a file another handle still owns, so the
+        // reopened connection has to be closed before the cleanup.
         std::fs::remove_file(&path).unwrap();
     }
 
