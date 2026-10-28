@@ -1,0 +1,62 @@
+Source: main 4f49325f7d5f6eebd3a8787f393410519bf157dd
+
+Command (executed on a build host):
+cargo test --test tool_input_recovery --test first_event --test guarded_cancel --test jobs --test cron --test wakeup --test subagent --test run_usage --test usage_lineage --test doctor --test worker
+
+test standard_numeric_fields_or_semantics_and_dst_are_preserved ... ok
+test recurring_occurrences_admit_distinct_inputs_without_catch_up_bursts ... ok
+test queued_backlog_coalesces_and_timer_survives_turn_cancel ... ok
+test cron_and_wakeup_share_one_capacity_budget ... ok
+test nonrecurring_expiry_recovery_and_fork_have_no_hidden_replay ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+test diagnostic_rejects_unrelated_future_and_missing_databases_without_adoption ... ok
+test readonly_inspection_during_ownership_does_not_reconcile_runs_or_inputs ... ok
+test diagnostics_without_database_require_no_credentials_or_provider ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.66s
+test disabled_first_event_deadline_preserves_external_interruption_and_closes_upstream ... ok
+test actual_native_process_bounds_headers_silence_and_pings_without_refilling_retry_budget ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 68.27s
+test stale_execution_ids_cannot_interrupt_the_new_run ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test crash_reconciliation_preserves_unknown_running_state_without_replay ... ok
+test runtime_shutdown_joins_running_and_queued_jobs ... ok
+test job_ownership_and_explicit_cancel_are_separate_from_turn_control ... ok
+test job_list_and_wait_observe_a_completed_job ... ok
+test admitted_job_survives_turn_cancel_and_instruction_reads_do_not_wait_for_it ... ok
+test job_completion_after_idle_admits_once_and_wakes_the_existing_owner ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.34s
+test run_usage_counts_normalized_fields_once_and_keeps_raw_for_audit ... ok
+test run_usage_aggregates_provider_attempts ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test task_is_denied_without_subagent_authority ... ok
+test background_task_survives_the_parent_turn_and_reports_durably ... ok
+test task_delegates_to_a_child_session_and_returns_its_message ... ok
+test a_delegated_child_cannot_delegate_again ... ok
+test task_reference_injects_the_archived_window_into_the_child ... ok
+test a_child_the_host_left_unbounded_closes_itself_and_still_reports ... ok
+test task_returns_a_child_result_that_outlives_one_event_page ... ok
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+test provider_executed_calls_are_never_corrected_or_dispatched ... ok
+test unregistered_calls_are_corrected_within_the_same_budget_and_never_dispatched ... ok
+test changing_invalid_calls_cannot_bypass_the_two_correction_allowance ... ok
+test real_wire_correction_preserves_completed_write_and_durable_error_without_raw_arguments ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+test usage_report_aggregates_turns_tokens_ttft_and_lineage ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test wakeup_has_explicit_permission_upper_bound_and_session_local_input ... ok
+test independent_cancel_ownership_and_shutdown_close_timers_without_prompts ... ok
+test timer_survives_turn_cancel_and_fires_one_atomic_admission ... ok
+test a_finished_timer_handle_does_not_keep_the_runtime_alive ... ok
+test capacity_and_recovery_are_bounded_and_fork_does_not_copy_timers ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+test missing_optional_worker_does_not_prevent_engine_admission ... ok
+test timeout_degrades_worker_without_leaving_a_reusable_partial_transport ... ok
+test truncated_frame_degrades_the_worker ... ok
+test worker_lists_and_calls_a_tool ... ok
+test worker_call_passes_runtime_authorization ... ok
+test oversized_unterminated_frame_is_rejected_before_allocation_grows ... ok
+test worker_ask_denial_surfaces_as_a_denied_answer ... ok
+test worker_ask_relays_to_the_durable_question_flow ... ok
+test cancellation_interrupts_a_call_blocked_on_outbound_write ... ok
+test cancelling_a_stalled_spawned_worker_reaps_its_process ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s

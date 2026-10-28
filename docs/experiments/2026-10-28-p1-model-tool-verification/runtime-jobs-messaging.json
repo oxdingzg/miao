@@ -1,0 +1,157 @@
+{
+  "reference_commit": "4f49325f7d5f6eebd3a8787f393410519bf157dd",
+  "date": "2026-10-28",
+  "scope": "Three groups of three P1 items: tool recovery/web/watchdogs; scheduling/fairness/delegation; messaging/timing/diagnostics. Product and benefit acceptance stay separate.",
+  "new_test_runs": {
+    "rust_passed": 46,
+    "core_passed": 19,
+    "core_assertions": 77,
+    "rust_receipts": "checks-runtime-jobs.txt",
+    "core_command": "bun test test/session-peer-tools.test.ts test/session-background-jobs.test.ts (packages/core)",
+    "related_prior_receipts": [
+      "checks-tool-edit.txt"
+    ]
+  },
+  "items": [
+    {
+      "code": "TOOL-06",
+      "result": "verified_offline_needs_current_client_acceptance",
+      "observed": [
+        "Malformed or unregistered tool inputs receive bounded corrective handling. Repetitive stream output retains the partial reply and stops before a late tool call executes."
+      ],
+      "remaining": [
+        "Current compiled-client presentation and the complete cross-provider malformed-input matrix remain open."
+      ],
+      "evidence": [
+        "crates/miao-engine/tests/tool_input_recovery.rs",
+        "crates/miao-engine/tests/output_guard.rs",
+        "crates/miao-engine/src/output_guard.rs"
+      ]
+    },
+    {
+      "code": "TOOL-07",
+      "result": "needs_benefit_acceptance",
+      "observed": [
+        "Web fixtures retain backend wire contracts, reauthorize redirects, hide search credentials/provider bodies, bound content and cancel an in-flight response."
+      ],
+      "remaining": [
+        "Live search relevance/recall and paid cost comparisons require the task baseline and budget; distinct backend result shapes are not treated as equivalent recall."
+      ],
+      "evidence": [
+        "crates/miao-engine/tests/web.rs",
+        "crates/miao-engine/src/web.rs"
+      ]
+    },
+    {
+      "code": "JOB-04",
+      "result": "needs_product_acceptance",
+      "observed": [
+        "The actual native-process watchdog test bounds headers, silence and pings without refilling the retry budget. Stale execution IDs cannot cancel a newer run. Worker tests bound spawn/frames/writes and reap stalled children."
+      ],
+      "remaining": [
+        "A current-client wait-reason display and the full tool/approval/backpressure/MCP/LSP/subagent cancellation matrix are not established by these selected tests."
+      ],
+      "evidence": [
+        "crates/miao-engine/tests/first_event.rs",
+        "crates/miao-engine/tests/guarded_cancel.rs",
+        "crates/miao-engine/tests/worker.rs",
+        "crates/miao-engine/src/process.rs",
+        "crates/miao-engine/src/mcp.rs"
+      ]
+    },
+    {
+      "code": "JOB-05",
+      "result": "needs_product_acceptance",
+      "observed": [
+        "Cron and wakeup store occurrence, expiry, ownership and timezone facts; fixtures cover distinct admissions, backlog coalescing, restart/fork behavior, cancellation and shared capacity. Timers create advisory wakes rather than directly running a model."
+      ],
+      "remaining": [
+        "Current-client next-execution/timezone/expiry presentation and edit flows remain unverified. Timer execution cost belongs in the paid task/usage acceptance, not inferred from scheduler tests."
+      ],
+      "evidence": [
+        "crates/miao-engine/src/cron.rs",
+        "crates/miao-engine/src/wakeup.rs",
+        "crates/miao-engine/tests/cron.rs",
+        "crates/miao-engine/tests/wakeup.rs"
+      ]
+    },
+    {
+      "code": "JOB-06",
+      "result": "needs_stress_acceptance",
+      "observed": [
+        "Runtime admission uses bounded execution, job and subagent semaphores; independent Session operation and bounded scheduler capacity have fixture coverage."
+      ],
+      "remaining": [
+        "Fleet-wide provider/terminal/LSP observability and queue/starvation/RSS/FD curves under sustained concurrent load are not supplied. Per-engine limits do not establish cross-Location fairness."
+      ],
+      "evidence": [
+        "crates/miao-engine/src/runtime.rs",
+        "crates/miao-engine/src/subagent.rs",
+        "crates/miao-engine/tests/jobs.rs",
+        "crates/miao-engine/tests/cron.rs"
+      ]
+    },
+    {
+      "code": "AGT-02",
+      "result": "needs_product_acceptance",
+      "observed": [
+        "Native delegation requires subagent authority, leaf-child constraints and bounded work. Tests cover durable background completion, archived references, denied delegation, leaf recursion refusal and turn-budget closure. Background-job recovery preserves unknown outcomes without restarting untracked work."
+      ],
+      "remaining": [
+        "The complete current-client foreground-to-background, independent cancellation and parent-cancellation terminal-state matrix still needs acceptance."
+      ],
+      "evidence": [
+        "crates/miao-engine/src/subagent.rs",
+        "crates/miao-engine/tests/subagent.rs",
+        "packages/core/test/session-background-jobs.test.ts"
+      ]
+    },
+    {
+      "code": "AGT-05",
+      "result": "needs_work",
+      "observed": [
+        "The shared peer tool rejects self/cross-project sends, checks message permission, bounds pending input and only wakes active peers by default. The local peer/background suites pass 19 tests with 77 assertions."
+      ],
+      "remaining": [
+        "The send-message input/output has no explicit reply-to or admitted message receipt ID. Admission currently creates a fresh SessionMessage.ID, so this boundary alone does not prove restart/retry delivery deduplication. A persisted reply-loop cost budget and visible stop contract remain to be defined and tested."
+      ],
+      "evidence": [
+        "packages/core/src/session/peer-tools.ts",
+        "packages/core/src/tool/send-message.ts",
+        "packages/core/test/session-peer-tools.test.ts"
+      ]
+    },
+    {
+      "code": "COST-04",
+      "result": "needs_work",
+      "observed": [
+        "The native timing table retains locally measured TTFT and turn duration. Usage receipts retain run/step identity and auxiliary timing rather than inventing vendor telemetry."
+      ],
+      "remaining": [
+        "A complete admission/queue/provider/tool/approval/summary/verification phase breakdown and expandable current wait-object presentation are not established. Existing TTFT/turn duration is not that complete breakdown."
+      ],
+      "evidence": [
+        "crates/miao-engine/src/store.rs",
+        "crates/miao-engine/tests/run_usage.rs",
+        "crates/miao-engine/tests/usage_lineage.rs",
+        "packages/miao/src/engine/bridge.ts"
+      ]
+    },
+    {
+      "code": "COST-05",
+      "result": "needs_product_and_overhead_acceptance",
+      "observed": [
+        "Native doctor is read-only, works during active ownership and reports version/platform/sandbox/supported transports and database integrity without claiming network or credential validity. The product doctor also analyzes resource/CPU trends."
+      ],
+      "remaining": [
+        "A complete active-route/dependency diagnosis, redacted diagnostic export contract and bounded idle-overhead measurement remain open. Supported transport names are not proof of active-route health."
+      ],
+      "evidence": [
+        "crates/miao-engine/src/doctor.rs",
+        "crates/miao-engine/tests/doctor.rs",
+        "packages/miao/src/cli/cmd/doctor.ts",
+        "packages/core/src/blackbox/tape.ts"
+      ]
+    }
+  ]
+}
