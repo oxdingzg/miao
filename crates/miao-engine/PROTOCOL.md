@@ -17,6 +17,17 @@ One JSON object per line on stdin/stdout. A request carries a string or number
 Notifications carry no request id. Only local stdio is defined here; the engine
 does not claim ACP or the existing miao HttpApi is compatible.
 
+### Reverse-call cancellation
+
+Host reverse calls use `product_tool` or `hook_tool` with a `bridge_id` and
+`params.session_id`. Cancelling the Session removes its pending reply slots and
+emits the corresponding `product_tool.cancel` or `hook_tool.cancel` notification
+with the same `bridge_id` and `params: {session_id, bridge_id}`. The host should
+interrupt only the matching Session's active callback, release scoped resources,
+and suppress late replies. Unknown notices are safe to ignore. Connection loss
+or client close must also release host callbacks. A host that ignores a notice
+does not prevent the engine from settling its own cancelled drain.
+
 ## Methods
 
 | Method | Params | Result |

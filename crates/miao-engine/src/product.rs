@@ -172,36 +172,32 @@ impl Bridge {
         Ok(response.get("result").cloned().unwrap_or(Value::Null))
     }
 
-    /// Cancel every pending product-tool bridge call for one Session. Each
-    /// removed call gets a `product_tool.cancel` notice so a host executor can
-    /// stop its children instead of waiting on a parent that is gone; the
-    /// dropped senders fail every awaiting call, hook dispatches included.
+    /// Cancel every pending reverse call for one Session. Notify the host with
+    /// the matching method so its callback can release its own scoped work.
     pub async fn cancel_session(&self, session: &str) -> Vec<u64> {
-        let product_ids: Vec<u64> = {
+        let calls: Vec<(u64, String)> = {
             let mut pending = self.pending.lock().unwrap();
-            let mut product_ids = Vec::new();
+            let mut calls = Vec::new();
             pending.retain(|id, call| {
                 if call.session != session {
                     return true;
                 }
-                if call.method == "product_tool" {
-                    product_ids.push(*id);
-                }
+                calls.push((*id, call.method.clone()));
                 false
             });
-            product_ids
+            calls
         };
-        for id in &product_ids {
+        for (id, method) in &calls {
             let notice = serde_json::json!({
                 "bridge_id": id,
-                "method": "product_tool.cancel",
+                "method": format!("{method}.cancel"),
                 "params": {"session_id": session, "bridge_id": id},
             });
             if self.tx.send(notice).await.is_err() {
                 break;
             }
         }
-        product_ids
+        calls.into_iter().map(|(id, _)| id).collect()
     }
 }
 

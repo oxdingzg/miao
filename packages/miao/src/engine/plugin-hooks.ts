@@ -86,6 +86,7 @@ export const prepare = Effect.fn("Engine.pluginHooks")(function* (
         if (exit.value.output === originalOutput && exit.value.metadata === originalMetadata) return {}
         return { output: exit.value.metadata !== originalMetadata ? exit.value.metadata : exit.value.output }
       }),
+      { signal: call.signal },
     )
   return options
 })
