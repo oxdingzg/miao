@@ -6,7 +6,7 @@ import { DateTime, Effect } from "effect"
 import { FSUtil } from "@miao/core/fs-util"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { SessionMessage } from "@miao/core/session/message"
-import { inlineTextFiles } from "@miao/core/session/runner/materialize-files"
+import { inlineTextFiles } from "@miao/core/session/materialize-files"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
