@@ -36,6 +36,8 @@ Options:
     -b, --binary <path>     Install from a local binary instead of downloading
         --engine-binary <path>  Install a local miao-engine next to the CLI
         --no-engine         Don't install the native engine
+        --tui-binary <path> Install a local miao-tui next to the CLI
+        --no-tui            Don't install the Rust TUI
         --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
 
 Examples:
@@ -50,6 +52,8 @@ no_modify_path=false
 binary_path=""
 engine_binary=""
 no_engine=false
+tui_binary=""
+no_tui=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -86,6 +90,19 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-engine)
             no_engine=true
+            shift
+            ;;
+        --tui-binary)
+            if [[ -n "${2:-}" ]]; then
+                tui_binary="$2"
+                shift 2
+            else
+                echo -e "${RED}Error: --tui-binary requires a path argument${NC}"
+                exit 1
+            fi
+            ;;
+        --no-tui)
+            no_tui=true
             shift
             ;;
         --no-modify-path)
@@ -485,13 +502,75 @@ install_engine_binary() {
     print_message info "${MUTED}Native engine installed: ${NC}$INSTALL_DIR/miao-engine${EXE}"
 }
 
+# The Rust TUI ships beside the CLI so `miao --tui rust` can spawn it. Like the
+# engine it is optional: a release without the archive keeps the TypeScript TUI.
+install_tui() {
+    if [ "$no_tui" = true ] || [ "$specific_version" = "local" ]; then
+        return 0
+    fi
+    local combo file url tmp_dir tui
+    combo="$os-$arch"
+    case "$os" in
+        linux) file="miao-tui-${combo}.tar.gz" ;;
+        *) file="miao-tui-${combo}.zip" ;;
+    esac
+    url="https://github.com/oxdingzg/miao/releases/download/v${specific_version}/${file}"
+    tmp_dir="${TMPDIR:-/tmp}/miao_tui_install_$$"
+    mkdir -p "$tmp_dir"
+    if ! curl -f -sS -L -o "$tmp_dir/$file" "$url"; then
+        if ! curl -f -sS -L -o "$tmp_dir/$file" "https://github.com/oxdingzg/miao/releases/latest/download/${file}"; then
+            print_message info "${MUTED}No Rust TUI archive in this release; miao uses the TypeScript TUI.${NC}"
+            rm -rf "$tmp_dir"
+            return 0
+        fi
+    fi
+    if [ "$os" = "linux" ]; then
+        tar -xzf "$tmp_dir/$file" -C "$tmp_dir"
+    else
+        unzip -q "$tmp_dir/$file" -d "$tmp_dir"
+    fi
+    tui="$tmp_dir/miao-tui${EXE}"
+    if [ ! -f "$tui" ]; then
+        print_message info "${MUTED}TUI archive was not usable; keeping the TypeScript TUI.${NC}"
+        rm -rf "$tmp_dir"
+        return 0
+    fi
+    chmod 755 "$tui" 2>/dev/null || true
+    # A binary that cannot answer --version on this machine is not installed.
+    # The probe is guarded because an older archive predates the flag and
+    # `set -e` is active.
+    if [ -z "$("$tui" --version 2>/dev/null || true)" ]; then
+        print_message info "${MUTED}TUI archive does not run on this system; not installing it.${NC}"
+        rm -rf "$tmp_dir"
+        return 0
+    fi
+    mv -f "$tui" "$INSTALL_DIR/miao-tui${EXE}"
+    print_message info "${MUTED}Rust TUI installed: ${NC}$INSTALL_DIR/miao-tui${EXE}"
+    rm -rf "$tmp_dir"
+}
+
+install_tui_binary() {
+    if [ -z "$tui_binary" ]; then
+        return 0
+    fi
+    if [ ! -f "$tui_binary" ]; then
+        print_message error "TUI binary not found at ${tui_binary}"
+        return 1
+    fi
+    cp "$tui_binary" "$INSTALL_DIR/miao-tui${EXE}"
+    chmod 755 "$INSTALL_DIR/miao-tui${EXE}"
+    print_message info "${MUTED}Rust TUI installed: ${NC}$INSTALL_DIR/miao-tui${EXE}"
+}
+
 if [ -n "$binary_path" ]; then
     install_from_binary
     install_engine_binary
+    install_tui_binary
 else
     check_version
     download_and_install
     install_engine
+    install_tui
 fi
 
 
