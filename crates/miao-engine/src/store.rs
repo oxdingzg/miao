@@ -264,6 +264,7 @@ impl Store {
                 crate::permission_grant::initialize(&conn)?;
                 crate::permission_saved::initialize(&conn)?;
                 crate::permission_patterns::initialize(&conn)?;
+                crate::product_permission_request::initialize(&conn)?;
                 // ADR-0019: content-addressed Session file snapshots and the one
                 // staged revert intent. Blobs live beside the database.
                 conn.execute_batch(
@@ -2296,6 +2297,7 @@ impl Store {
             if let Some(display) = display {
                 completed["display"] = display;
             }
+            crate::product_permission_request::cancel_pending(&tx, &session, &run, Some(&key))?;
             append(&tx,&session,"tool.completed",completed)?;
             let mut content = vec![json!({"type":"tool_result","tool_use_id":id,"content":serde_json::to_string(&result)?,"is_error":is_error})];
             content.extend(attachments);
@@ -3101,6 +3103,7 @@ fn project_message_at(
 
 fn reconcile_tools(tx: &Transaction<'_>, session: &str, run: &str) -> Result<(), Error> {
     crate::question::reconcile(tx, session, run)?;
+    crate::product_permission_request::cancel_pending(tx, session, run, None)?;
     let inputs: Vec<(String, String)> = {
         let mut stmt=tx.prepare("SELECT input,state FROM engine_tool WHERE run_id=?1 AND state IN ('planned','dispatched')")?;
         let rows = stmt.query_map([run], |r| Ok((r.get(0)?, r.get(1)?)))?;

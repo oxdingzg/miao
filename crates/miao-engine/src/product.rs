@@ -216,9 +216,19 @@ impl Bridge {
         &self,
         source: &crate::product_permission::Source,
     ) -> Option<crate::product_permission::Authority> {
-        self.pending
-            .lock()
-            .unwrap()
+        self.with_permission_authority(source, |authority| Ok(authority.clone()))
+            .ok()
+    }
+
+    /// Serialize a durable authorization commit with reply-slot removal. The
+    /// callback is synchronous and must never await another bridge operation.
+    pub(crate) fn with_permission_authority<T>(
+        &self,
+        source: &crate::product_permission::Source,
+        execute: impl FnOnce(&crate::product_permission::Authority) -> Result<T, crate::protocol::Error>,
+    ) -> Result<T, crate::protocol::Error> {
+        let pending = self.pending.lock().unwrap();
+        let authority = pending
             .get(&source.bridge_id)
             .filter(|pending| {
                 pending.session == source.session_id && pending.method == "product_tool"
@@ -229,7 +239,10 @@ impl Bridge {
                     && authority.context.message_seq == source.message_seq
                     && !authority.cancel.is_cancelled()
             })
-            .cloned()
+            .ok_or_else(|| {
+                crate::protocol::Error::Invalid("inactive product permission source".into())
+            })?;
+        execute(authority)
     }
 
     pub(crate) fn same_connection(&self, other: &Self) -> bool {

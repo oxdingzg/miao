@@ -5,7 +5,7 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Source {
     pub session_id: String,
