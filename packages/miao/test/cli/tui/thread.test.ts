@@ -7,6 +7,7 @@ import { tmpdir } from "../../fixture/fixture"
 import {
   TuiThreadCommand,
   resolveThreadDirectory,
+  rustEngineDatabase,
   rustTuiBinary,
   selectedTui,
   unsupportedByRustTui,
@@ -87,6 +88,25 @@ describe("tui thread", () => {
 
   test("prefers MIAO_TUI_BIN over the installed locations", () => {
     expect(rustTuiBinary({ MIAO_TUI_BIN: "/custom/miao-tui" })).toBe("/custom/miao-tui")
+  })
+
+  test("points the Rust TUI at the Location's engine database", async () => {
+    await using config = await tmpdir()
+    const root = path.join(config.path, "engines")
+    // The engine refuses the product database, and the server derives a
+    // Location's store from its directory alone, so the launcher must land on
+    // that same file or the two never see each other's Sessions.
+    const digest = new Bun.CryptoHasher("sha256").update(JSON.stringify({ directory: "/repo" })).digest("hex")
+
+    expect(await rustEngineDatabase(config.path, "/repo", { MIAO_ENGINE_STORAGE: root })).toBe(
+      path.join(root, digest + ".db"),
+    )
+  })
+
+  test("refuses the Rust TUI when native storage is opted out", async () => {
+    await using config = await tmpdir()
+
+    expect(await rustEngineDatabase(config.path, "/repo", { MIAO_ENGINE_STORAGE: "" })).toBeUndefined()
   })
 
   test("refuses options the Rust TUI does not implement", () => {

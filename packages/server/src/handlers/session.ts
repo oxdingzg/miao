@@ -375,6 +375,20 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.recovery",
+        Effect.fn(function* (ctx) {
+          const owner = yield* requireNativeOwner(ctx.params.sessionID)
+          return {
+            data: yield* owner.native.recovery({
+              sessionID: ctx.params.sessionID,
+              storage: owner.placement.storage,
+              location: owner.placement.location,
+              callID: ctx.params.callID,
+            }),
+          }
+        }),
+      )
+      .handle(
         "session.resolveRecovery",
         Effect.fn(function* (ctx) {
           const owner = yield* requireNativeOwner(ctx.params.sessionID)

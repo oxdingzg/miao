@@ -673,6 +673,15 @@ export const fromOwners = (
           await connection.client.request("recoveries", { session_id: input.sessionID, after: input.after ?? "" }),
         ),
       ),
+    recovery: (input) =>
+      read<ReturnType<typeof NativeRecovery.inspection>>(input, async (connection) =>
+        NativeRecovery.inspection(
+          await connection.client.request("recovery_get", {
+            session_id: input.sessionID,
+            call_id: input.callID,
+          }),
+        ),
+      ),
     resolveRecovery: (input) =>
       read<ReturnType<typeof NativeRecovery.resolution>>(input, async (connection) =>
         NativeRecovery.resolution(await connection.session.resolveRecovery(input)),

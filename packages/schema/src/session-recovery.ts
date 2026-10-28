@@ -1,7 +1,7 @@
 export * as SessionRecovery from "./session-recovery"
 
 import { Schema } from "effect"
-import { NonNegativeInt } from "./schema"
+import { NonNegativeInt, optional } from "./schema"
 
 export const Decision = Schema.Literals(["retry", "abandon"]).annotate({ identifier: "SessionRecovery.Decision" })
 export type Decision = typeof Decision.Type
@@ -21,14 +21,24 @@ export const Resolution = Schema.Struct({
 }).annotate({ identifier: "SessionRecovery.Resolution" })
 export interface Resolution extends Schema.Schema.Type<typeof Resolution> {}
 
+export const Origin = Schema.Literals(["model", "operator"]).annotate({ identifier: "SessionRecovery.Origin" })
+export type Origin = typeof Origin.Type
+
 export const Call = Schema.Struct({
   callID: Schema.String,
   runID: Schema.String,
   tool: Schema.String,
   outcome: Schema.Literal("unknown"),
+  origin: Origin.pipe(optional),
   resolution: Schema.NullOr(Resolution),
 }).annotate({ identifier: "SessionRecovery.Call" })
 export interface Call extends Schema.Schema.Type<typeof Call> {}
+
+export const Inspection = Schema.Struct({
+  ...Call.fields,
+  input: Schema.Unknown,
+}).annotate({ identifier: "SessionRecovery.Inspection" })
+export interface Inspection extends Schema.Schema.Type<typeof Inspection> {}
 
 export const Page = Schema.Struct({
   calls: Schema.Array(Call),

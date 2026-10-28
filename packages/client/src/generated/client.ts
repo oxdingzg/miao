@@ -51,6 +51,8 @@ import type {
   SessionsSwitchAccountOutput,
   SessionsRecoveriesInput,
   SessionsRecoveriesOutput,
+  SessionsRecoveryInput,
+  SessionsRecoveryOutput,
   SessionsResolveRecoveryInput,
   SessionsResolveRecoveryOutput,
   SessionsPromptInput,
@@ -742,6 +744,17 @@ export function make(options: ClientOptions) {
             method: "GET",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/recovery`,
             query: { after: input["after"] },
+            successStatus: 200,
+            declaredStatuses: [409, 404, 503, 400, 410, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      recovery: (input: SessionsRecoveryInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsRecoveryOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/recovery/${encodeURIComponent(input.callID)}`,
             successStatus: 200,
             declaredStatuses: [409, 404, 503, 400, 410, 401],
             empty: false,

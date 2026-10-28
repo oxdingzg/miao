@@ -306,6 +306,10 @@ pub enum Command {
         #[serde(default)]
         resume: bool,
     },
+    RecoveryGet {
+        session_id: String,
+        call_id: String,
+    },
     Mode {
         session_id: String,
         mode: CollaborationMode,
