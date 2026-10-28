@@ -123,6 +123,8 @@ export interface EngineOptions {
     callID: string
     /** Bridge routing key; the cancel notice carries it back. */
     bridgeID: number
+    /** Aborted when this call is cancelled, the connection fails or the client closes. */
+    signal?: AbortSignal
     /** The calling assistant message's durable seq, when the engine reports it. */
     messageSeq?: number
   }) => Promise<unknown>
@@ -342,6 +344,7 @@ interface Pending {
 export class EngineClient {
   private next = 1
   private readonly pending = new Map<number, Pending>()
+  private readonly productCalls = new Map<number, { sessionID: string; controller: AbortController }>()
   private readonly eventHandlers: Array<(event: EngineEvent) => void> = []
   private readonly progressHandlers: Array<(progress: EngineProgress) => void> = []
   private readonly failureHandlers: Array<(error: Error) => void> = []
@@ -548,7 +551,11 @@ export class EngineClient {
 
   private fail(error: Error, terminal = false) {
     const notify = terminal && !this.failure && !this.closed
-    if (terminal) this.failure ??= error
+    if (terminal) {
+      this.failure ??= error
+      for (const call of this.productCalls.values()) call.controller.abort(this.failure)
+      this.productCalls.clear()
+    }
     for (const pending of this.pending.values()) pending.reject(this.failure ?? error)
     this.pending.clear()
     if (notify) for (const handler of this.failureHandlers) handler(this.failure ?? error)
@@ -588,34 +595,56 @@ export class EngineClient {
       const params = message.params as
         | { session_id?: string; name?: string; input?: unknown; call_id?: unknown; message_seq?: unknown }
         | undefined
+      const controller = new AbortController()
       const reply = (value: Record<string, unknown>) => {
-        if (this.available) this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+        if (this.available && !controller.signal.aborted)
+          this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
       }
-      if (typeof bridgeID !== "number" || !params?.name || !this.onProductTool) {
+      const execute = this.onProductTool
+      if (typeof bridgeID !== "number" || !params?.name || !execute) {
         reply({ error: "product tool is not available on this host" })
         return
       }
-      void this.onProductTool({
-        sessionID: params.session_id ?? "",
+      if (!this.available || this.productCalls.has(bridgeID)) return
+      const active = { sessionID: params.session_id ?? "", controller }
+      this.productCalls.set(bridgeID, active)
+      const call = {
+        sessionID: active.sessionID,
         name: params.name,
         input: params.input,
         // Newer engines name the real provider call; older ones only have the
         // bridge routing key, which stays a stable fallback identity.
         callID: typeof params.call_id === "string" && params.call_id.length > 0 ? params.call_id : String(bridgeID),
         bridgeID,
+        signal: controller.signal,
         ...(typeof params.message_seq === "number" ? { messageSeq: params.message_seq } : {}),
-      })
+      }
+      void Promise.resolve()
+        .then(() => execute(call))
         .then(
           (result) => reply({ result }),
           (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
         )
         .catch(() => this.inputClosed())
+        .finally(() => {
+          if (this.productCalls.get(bridgeID) === active) this.productCalls.delete(bridgeID)
+        })
       return
     }
     if (message.method === "product_tool.cancel") {
       const bridgeID = message.bridge_id
       const params = message.params as { session_id?: string } | undefined
-      if (typeof bridgeID === "number") this.onProductToolCancel?.({ sessionID: params?.session_id ?? "", bridgeID })
+      if (typeof bridgeID !== "number") return
+      const active = this.productCalls.get(bridgeID)
+      if (!active || active.sessionID !== params?.session_id) return
+      this.productCalls.delete(bridgeID)
+      // Legacy executors may need their workflow metadata before the signal's
+      // interrupt finalizers remove it. Always interrupt even if they throw.
+      try {
+        this.onProductToolCancel?.({ sessionID: active.sessionID, bridgeID })
+      } finally {
+        active.controller.abort()
+      }
       return
     }
     if (message.method === "hook_tool") {

@@ -889,6 +889,7 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
           if (structured?.["moved"] === true) return structured
           return text.length > 0 ? text : output.structured
         }),
+        { signal: call.signal },
       )
       return output
     } finally {
@@ -897,8 +898,11 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
     }
   }
   options.onProductToolCancel = (notice) => {
-    // The engine dropped the pending reply slot, so only the spawned children
-    // and the script's waiters need releasing here.
+    // Capture the workflow before the client's interrupt signal releases the
+    // product callback and its finally block removes this metadata.
+    const callID = bridgeCalls.get(notice.bridgeID)
+    const run = callID ? workflowRuns.get(callID) : undefined
+    if (!run) return
     void Effect.runPromise(
       Effect.gen(function* () {
         const found = yield* SessionEnginePlacement.find(db, SessionSchema.ID.make(notice.sessionID))
@@ -908,9 +912,6 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
           engineID: found.storage,
           location: found.location,
         })
-        const callID = bridgeCalls.get(notice.bridgeID)
-        const run = callID ? workflowRuns.get(callID) : undefined
-        if (!run) return
         for (const hook of run.hooks) hook()
         for (const child of run.children) {
           const cancelled = yield* Effect.exit(
