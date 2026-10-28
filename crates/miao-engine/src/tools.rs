@@ -832,6 +832,11 @@ impl Tools {
         self
     }
 
+    /// The LSP registry when startup attached one. `None` means no server was
+    /// configured, and a reload cannot attach one without rebuilding `Tools`.
+    pub(crate) fn lsp_registry(&self) -> Option<&Arc<crate::lsp::Registry>> {
+        self.lsp.as_ref()
+    }
     pub fn with_lsp(mut self, registry: Arc<crate::lsp::Registry>) -> Self {
         self.lsp = Some(registry);
         self

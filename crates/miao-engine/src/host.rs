@@ -240,6 +240,7 @@ impl Host {
                 .reject_question(&self.controller, &session_id, rejection)
                 .await
                 .map(|_| json!({ "accepted": true })),
+            Command::ConfigReload => runtime.reload_config().await,
             Command::State { session_id } => runtime.store().state(&session_id).await,
             Command::Usage { session_id } => runtime.store().usage_report(&session_id).await,
             Command::UpdateState {
