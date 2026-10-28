@@ -17,6 +17,7 @@ import { ProductFormatter } from "./product-formatter"
 import { ProductPermission } from "./product-permission"
 import { ProductRoutes } from "./product-routes"
 import { ProductMcp } from "./product-mcp"
+import { WorkerConfig } from "./worker-config"
 import { McpAuth } from "@miao/core/mcp/auth"
 import { PromptMaterialization } from "./prompt-materialization"
 import { Blob } from "@miao/core/blob"
@@ -26,7 +27,6 @@ import { Credential } from "@miao/core/credential"
 import { Integration } from "@miao/core/integration"
 import { GoogleAccount } from "@miao/core/google-account"
 import { CredentialDaemon } from "@miao/core/credential/daemon"
-import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
 import { SandboxPolicy } from "@miao/core/sandbox/policy"
@@ -63,7 +63,7 @@ import { SessionNativeTitle } from "@miao/core/session/native-title"
 import { SessionInput } from "@miao/schema/session-input"
 import type { SessionID } from "@miao/schema/session-id"
 import { SessionTitle } from "@miao/core/session/title"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { memoMap } from "@miao/core/effect/memo-map"
 
 import { SessionStore } from "@miao/core/session/store"
@@ -1045,11 +1045,7 @@ const layer = Layer.effect(
       // engine. The config lives outside any model-writable workspace (tmp),
       // and its argv is static because the engine names the workspace in the
       // `hello` handshake.
-      const workerConfigFile = path.join(os.tmpdir(), "miao-engine-worker-config.json")
-      const host = path.resolve(import.meta.dir, "worker-host.ts")
-      yield* Effect.promise(() => Bun.write(workerConfigFile, JSON.stringify({ argv: [process.execPath, host] })))
-      configuration.workerConfigFile = workerConfigFile
-      yield* Effect.logInfo("[worker-host] config written:", workerConfigFile)
+      configuration.workerConfigFile = yield* WorkerConfig.prepare().pipe(Effect.orDie)
     }
     const mcp = yield* ProductMcp.prepare(configuration).pipe(Effect.provideService(McpAuth.Service, mcpAuth))
     let ownerRouter: Owners | undefined
@@ -1210,7 +1206,7 @@ const layer = Layer.effect(
           Effect.gen(function* () {
             const runtime = yield* buildLocationRuntime(input.location)
             const locationContext = runtime as unknown as Context.Context<
-              AgentV2.Service | EventV2.Service | SessionRunnerModel.Service
+              AgentV2.Service | EventV2.Service | SessionModel.Service
             >
             const snapshot = yield* engine.snapshot({ ...input, metadataOnly: true })
             const selection = Schema.decodeUnknownOption(Schema.NullOr(SessionModelRoute.Binding))(
@@ -1231,7 +1227,7 @@ const layer = Layer.effect(
               store: sessions,
               llm: llm,
               agents: Context.get(locationContext, AgentV2.Service),
-              models: Context.get(locationContext, SessionRunnerModel.Service),
+              models: Context.get(locationContext, SessionModel.Service),
               events: Context.get(locationContext, EventV2.Service),
             }).pipe(Effect.catch(() => Effect.succeed(undefined)))
           }),

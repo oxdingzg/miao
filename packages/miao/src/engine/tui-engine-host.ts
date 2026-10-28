@@ -14,7 +14,7 @@ import { PluginV2 } from "@miao/core/plugin"
 import { AbsolutePath } from "@miao/core/schema"
 import { AmbientContext } from "./ambient-context"
 import { engineArgs, type EngineOptions } from "./client"
-import { discoveredEngine } from "./discovery"
+import { discoveredEngine, resolveEngine } from "./discovery"
 import { prepareMcpConfig } from "./mcp-config"
 import { compactionSettings, engineSettings, nativeEngineOptions } from "./native-engine"
 import { ProductFormatter } from "./product-formatter"
@@ -220,6 +220,14 @@ async function runEngine(argv: string[], env: Record<string, string | undefined>
 export async function runEngineShim(args: string[]): Promise<number> {
   const parsed = parseTuiEngineArgs(args)
   const binary = process.env.MIAO_ENGINE_REAL_BIN ?? discoveredEngine()
+  if (binary) {
+    try {
+      resolveEngine({ environment: { MIAO_ENGINE_BIN: binary } })
+    } catch (error) {
+      process.stderr.write(`miao engine-shim: ${error instanceof Error ? error.message : String(error)}\n`)
+      return 1
+    }
+  }
   if (!binary || !parsed.workspace || !parsed.database) {
     if (!binary) {
       process.stderr.write("miao engine-shim: could not find miao-engine\n")

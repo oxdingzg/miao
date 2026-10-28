@@ -182,7 +182,7 @@ impl Registry {
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::inherit())
             .kill_on_drop(true);
         let mut child = command
             .spawn()

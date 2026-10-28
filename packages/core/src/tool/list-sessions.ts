@@ -24,6 +24,9 @@ export const Input = Schema.Struct({
     description:
       "Include idle historical Sessions. Default lists Sessions with active execution or unfinished work only.",
   }),
+  search: Schema.optional(Schema.String).annotate({
+    description: "Only Sessions whose title contains this text, case-insensitive.",
+  }),
 })
 export type List = (input: typeof Input.Type) => Effect.Effect<ReadonlyArray<Summary>, ToolFailure>
 export const Output = Schema.Struct({ sessions: Schema.Array(Summary) })

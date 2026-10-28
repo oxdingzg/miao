@@ -1167,6 +1167,42 @@ impl Store {
         }).await
     }
 
+    /// Read discovery follows committed tool results, even if the process died
+    /// before selecting the next provider context. The lifecycle cursor advances
+    /// independently of context epochs, which are reused when nothing changed.
+    pub async fn instruction_reads(
+        &self,
+        session: &str,
+        location: &str,
+    ) -> Result<(Vec<Value>, Vec<String>), Error> {
+        let (session, location) = (session.to_owned(), location.to_owned());
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let previous: Option<(u64, String)> = tx.query_row(
+                "SELECT seq,data FROM engine_event WHERE session_id=?1 AND kind='instructions_loaded' ORDER BY seq DESC LIMIT 1",
+                [&session], |row| Ok((row.get(0)?, row.get(1)?)),
+            ).optional()?;
+            let after = previous.as_ref().map(|row| row.0).unwrap_or(0);
+            let sources = match previous {
+                Some((_, data)) => serde_json::from_str::<Value>(&data)?
+                    .as_object().filter(|data| data.get("location").is_some_and(|value| value == &location))
+                    .and_then(|data| data.get("sources")).and_then(Value::as_array).cloned().unwrap_or_default(),
+                None => {
+                    // Forks inherit the context selected at their checkpoint,
+                    // before they have emitted their first lifecycle cursor.
+                    let sources: Option<String> = tx.query_row("SELECT sources FROM engine_context WHERE session_id=?1 ORDER BY epoch DESC LIMIT 1", [&session], |row| row.get(0)).optional()?;
+                    sources.map(|sources| serde_json::from_str::<Vec<Value>>(&sources)).transpose()?.unwrap_or_default()
+                }
+            };
+            let mut statement = tx.prepare(
+                "SELECT json_extract(data,'$.read.path') FROM engine_event WHERE session_id=?1 AND seq>?2 AND kind='tool.completed' AND json_extract(data,'$.is_error')=0 AND json_extract(data,'$.read.location')=?3 ORDER BY seq",
+            )?;
+            let paths = statement.query_map(params![session, after, location], |row| row.get(0))?
+                .collect::<Result<Vec<String>, _>>()?;
+            Ok((sources, paths))
+        }).await
+    }
+
     /// One read transaction captures a replay cursor and its projections. This
     /// is a bounded resync view, not an unbounded transcript dump.
     pub async fn snapshot(&self, session: &str) -> Result<Value, Error> {
@@ -2097,6 +2133,7 @@ impl Store {
             if changed!=1 { return Err(Error::Invalid("tool is not dispatched".into())); }
             let name: String = tx.query_row("SELECT name FROM engine_tool WHERE id=?1",params![key],|row| row.get(0))?;
             let mut result = result;
+            let read = result.as_object_mut().and_then(|result| result.remove("_instruction_read"));
             // A file mutation's display diffs ride beside the model-facing
             // result: the host renders them from the event, and the model never
             // pays for a patch that repeats text it already wrote.
@@ -2127,6 +2164,14 @@ impl Store {
                 }
             }
             let mut completed = json!({"call_id":key,"result":result,"result_json":serde_json::to_string(&result)?,"is_error":is_error});
+            if name == "read_file" && !is_error {
+                let location: Option<String> = tx.query_row("SELECT root FROM engine_location WHERE session_id=?1", [&session], |row| row.get(0)).optional()?;
+                if let (Some(location), Some(read)) = (location, read) {
+                    if read["location"] == location && read["path"].is_string() {
+                        completed["read"] = read;
+                    }
+                }
+            }
             if let Some(display) = display {
                 completed["display"] = display;
             }

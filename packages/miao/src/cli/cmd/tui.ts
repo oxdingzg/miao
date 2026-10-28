@@ -225,6 +225,8 @@ export const TuiThreadCommand = cmd({
           return
         }
         const cwd = Filesystem.resolve(process.cwd())
+        const { resolveEngine } = await import("@/engine/discovery")
+        resolveEngine()
         const { Global } = await import("@miao/core/global")
         const prompt = await input(args.prompt)
         // The Rust TUI spawns the engine itself, so it needs the engine's own

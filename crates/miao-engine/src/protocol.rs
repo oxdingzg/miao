@@ -361,11 +361,16 @@ pub enum Command {
     },
     Recall {
         session_id: String,
+        #[serde(default)]
         query: String,
         #[serde(default = "recall_limit")]
         limit: usize,
         #[serde(default)]
         before_message_seq: Option<u64>,
+        #[serde(default)]
+        tool_use_id: Option<String>,
+        #[serde(default)]
+        offset: usize,
     },
     Crons {
         session_id: String,
@@ -496,6 +501,10 @@ pub enum Command {
         import_id: String,
     },
     Sessions,
+    /// Re-derive the configuration sections the engine owns and reconcile them
+    /// in place. The reply names what changed, what kept its connection, and
+    /// what this build cannot reload yet.
+    ConfigReload,
     Fork {
         session_id: String,
         target_session_id: String,

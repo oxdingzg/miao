@@ -41,6 +41,11 @@ struct Settlement {
     /// loses the diff on every replayed run.
     #[serde(default)]
     display: Option<Value>,
+    /// Prepared-read provenance belongs beside the model output, like display
+    /// data. Replay can recover its instruction context without reading the
+    /// original target again.
+    #[serde(default)]
+    read: Option<Value>,
 }
 
 struct Cursor {
@@ -93,6 +98,31 @@ impl ToolReplay {
                 failed: false,
             }),
         })
+    }
+
+    pub(crate) async fn read_receipt(
+        &self,
+        name: &str,
+        input: &Value,
+    ) -> Result<Option<Value>, Error> {
+        if name != "read_file" {
+            return Ok(None);
+        }
+        let cursor = self.cursor.lock().await;
+        if cursor.failed {
+            return Err(Error::Invalid("native tool replay is poisoned".into()));
+        }
+        let Some(call) = self.calls.get(cursor.position) else {
+            return Ok(None);
+        };
+        if encode(&call.request)? != encode(&json!({"name":name,"input":input}))? {
+            return Ok(None);
+        }
+        Ok(call
+            .frames
+            .first()
+            .and_then(|frame| frame.value.get("read"))
+            .cloned())
     }
 
     pub async fn take(
@@ -165,6 +195,9 @@ impl Settlement {
         // it into the event and keeps it out of the model-facing result.
         if let (Some(display), Some(object)) = (self.display, output.as_object_mut()) {
             object.insert("_display".into(), display);
+        }
+        if let (Some(read), Some(object)) = (self.read, output.as_object_mut()) {
+            object.insert("_instruction_read".into(), read);
         }
         Ok((output, self.is_error))
     }

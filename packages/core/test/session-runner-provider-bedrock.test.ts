@@ -4,7 +4,7 @@ import { Effect } from "effect"
 import { Credential } from "@miao/core/credential"
 import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { it } from "./lib/effect"
 import { exchange, sse } from "./lib/llm-wire"
 
@@ -123,7 +123,7 @@ describe("Amazon Bedrock V2 route", () => {
       { ...noAws, AWS_ACCESS_KEY_ID: "AKIDTEST", AWS_SECRET_ACCESS_KEY: "secret-test", AWS_SESSION_TOKEN: "session-test" },
       Effect.gen(function* () {
         // models.dev lists AWS_ACCESS_KEY_ID first, so the env connection resolves to it.
-        const model = yield* SessionRunnerModel.fromCatalogModel(
+        const model = yield* SessionModel.fromCatalogModel(
           bedrock({ id: "anthropic.claude-sonnet-5-v1:0", settings: { region: "us-west-2" } }),
           Credential.Key.make({ type: "key", key: "AKIDTEST" }),
         )
@@ -148,7 +148,7 @@ describe("Amazon Bedrock V2 route", () => {
     withEnv(
       { ...noAws, AWS_BEARER_TOKEN_BEDROCK: "bedrock-api-key", AWS_REGION: "eu-central-1" },
       Effect.gen(function* () {
-        const model = yield* SessionRunnerModel.fromCatalogModel(
+        const model = yield* SessionModel.fromCatalogModel(
           bedrock({ id: "amazon.nova-pro-v1:0", body: { additionalModelRequestFields: { top_k: 5 } } }),
         )
         const { wire } = yield* exchange(LLM.request({ model, prompt: "Hello" }), converseStream, eventStream)
@@ -166,7 +166,7 @@ describe("Amazon Bedrock V2 route", () => {
     withEnv(
       { ...noAws, AWS_BEARER_TOKEN_BEDROCK: "bedrock-api-key" },
       Effect.gen(function* () {
-        const model = yield* SessionRunnerModel.fromCatalogModel(
+        const model = yield* SessionModel.fromCatalogModel(
           bedrock({ id: "global.anthropic.claude-opus-5-v1:0", url: "https://vpce-1.bedrock-runtime.example" }),
         )
         const { wire } = yield* exchange(LLM.request({ model, prompt: "Hello" }), converseStream, eventStream)
@@ -188,7 +188,7 @@ describe("Amazon Bedrock V2 route", () => {
         AWS_CONTAINER_CREDENTIALS_FULL_URI: undefined,
       },
       Effect.gen(function* () {
-        const model = yield* SessionRunnerModel.fromCatalogModel(bedrock({ id: "amazon.nova-pro-v1:0" }))
+        const model = yield* SessionModel.fromCatalogModel(bedrock({ id: "amazon.nova-pro-v1:0" }))
         const failure = yield* exchange(LLM.request({ model, prompt: "Hello" }), converseStream, eventStream).pipe(
           Effect.flip,
         )
@@ -201,7 +201,7 @@ describe("Amazon Bedrock V2 route", () => {
     withEnv(
       { ...noAws, AWS_BEARER_TOKEN_BEDROCK: "bedrock-api-key", AWS_REGION: "us-east-1" },
       Effect.gen(function* () {
-        const model = yield* SessionRunnerModel.fromCatalogModel(
+        const model = yield* SessionModel.fromCatalogModel(
           bedrock({
             id: "openai.gpt-5.5",
             package: "@ai-sdk/amazon-bedrock/mantle",

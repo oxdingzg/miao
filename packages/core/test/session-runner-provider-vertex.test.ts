@@ -4,7 +4,7 @@ import { Effect } from "effect"
 import { Credential } from "@miao/core/credential"
 import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { it } from "./lib/effect"
 import { exchange, sse } from "./lib/llm-wire"
 
@@ -62,7 +62,7 @@ const anthropicStream = sse([
 describe("Google Vertex V2 route", () => {
   it.effect("sends Gemini to the project's regional generateContent endpoint", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         vertex({ id: "gemini-3.5-pro", package: "@ai-sdk/google-vertex" }),
       )
       const { wire, response } = yield* exchange(LLM.request({ model, prompt: "Hello" }), geminiStream)
@@ -80,7 +80,7 @@ describe("Google Vertex V2 route", () => {
 
   it.effect("uses express mode for a Vertex API key without a project", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         vertex({ id: "gemini-3.5-flash", package: "@ai-sdk/google-vertex", body: {}, headers: {} }),
         Credential.Key.make({ type: "key", key: "vertex-key" }),
       )
@@ -100,7 +100,7 @@ describe("Google Vertex V2 route", () => {
 
   it.effect("sends Claude through rawPredict with the Vertex body", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         vertex({
           id: "claude-sonnet-5@default",
           package: "@ai-sdk/google-vertex/anthropic",
@@ -121,7 +121,7 @@ describe("Google Vertex V2 route", () => {
 
   it.effect("puts Claude in a continental multi-region on the regional endpoint platform", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         vertex({
           id: "claude-opus-5@default",
           package: "@ai-sdk/google-vertex/anthropic",
@@ -135,7 +135,7 @@ describe("Google Vertex V2 route", () => {
 
   it.effect("expands the catalog URL template of partner (MaaS) models", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         vertex({
           id: "zai-org/glm-5-maas",
           package: "@ai-sdk/openai-compatible",
@@ -162,9 +162,9 @@ describe("Google Vertex V2 route", () => {
 
   it.effect("reports Vertex models as routable", () =>
     Effect.sync(() => {
-      expect(SessionRunnerModel.supported(vertex({ id: "gemini", package: "@ai-sdk/google-vertex" }))).toBe(true)
+      expect(SessionModel.supported(vertex({ id: "gemini", package: "@ai-sdk/google-vertex" }))).toBe(true)
       expect(
-        SessionRunnerModel.supported(vertex({ id: "claude", package: "@ai-sdk/google-vertex/anthropic" })),
+        SessionModel.supported(vertex({ id: "claude", package: "@ai-sdk/google-vertex/anthropic" })),
       ).toBe(true)
     }),
   )

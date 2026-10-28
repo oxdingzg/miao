@@ -27,6 +27,7 @@ import { SessionEvent } from "@miao/schema/session-event"
 import {
   generateNativeTitle,
   mergeNativeSessions,
+  nativePins,
   nativeSessionInfo,
   nativeSessionUsage,
   waitNative,
@@ -212,7 +213,9 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.get",
         Effect.fn(function* (ctx) {
           // A native Session is stored by the engine; its snapshot is the only
-          // authority for identity, title, and time.
+          // authority for identity, title, and time. A pin is the exception: it
+          // is a list preference the catalog owns, so it comes from the catalog
+          // row the pin handler writes rather than from the engine.
           const native = yield* Effect.serviceOption(NativeEngine.Service)
           const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
           if (Option.isSome(native) && placement) {
@@ -228,6 +231,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               models: yield* availableModels,
               snapshot,
             })
+            const pinned = (yield* nativePins(db)).get(ctx.params.sessionID)
             return {
               data: nativeSessionInfo({
                 sessionID: ctx.params.sessionID,
@@ -235,6 +239,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 location: placement.location,
                 snapshot,
                 usage,
+                pinned,
               }),
             }
           }
@@ -898,10 +903,22 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.pin",
         Effect.fn(function* (ctx) {
-          // A native Session keeps its own authority; the pin is a list
-          // preference the catalog owns, so it is recorded the same way an
-          // accepted native archive is, without claiming TypeScript execution.
-          yield* requireTypescriptOwner(ctx.params.sessionID, "session.pin")
+          // A native Session is owned by the engine, but the pin is a list
+          // preference the catalog owns and the engine has no pin of its own —
+          // its `engine_session` table only carries an archive timestamp. So
+          // the pin is recorded in the catalog the way an accepted native
+          // archive is mirrored, without routing through the engine and without
+          // claiming TypeScript execution authority. The middleware has already
+          // resolved the placement, so this Session exists.
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (placement) {
+            yield* events.publish(SessionEvent.Info.Updated, {
+              sessionID: ctx.params.sessionID,
+              timestamp: yield* DateTime.now,
+              pinned: ctx.payload.pinned,
+            })
+            return
+          }
           yield* session.pin({ sessionID: ctx.params.sessionID, pinned: ctx.payload.pinned }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
               Effect.fail(

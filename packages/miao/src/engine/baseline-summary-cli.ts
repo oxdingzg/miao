@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises"
 import path from "node:path"
 import type { BaselineEvidence } from "./baseline-run"
+import { summarizeAccounting } from "./baseline-accounting"
 
 /**
  * Summarizes a sweep's evidence directory into one row per engine and task:
@@ -44,33 +45,34 @@ for (const run of runs) {
 }
 
 console.log(
-  "| engine | task | passed | p50 | turns/run | input tokens | output tokens | tools/run | receipts | loops |",
+  "| engine | task | passed | failed | unverified | p50 | recorded attempts/run | input tokens | output tokens | cost | cost/completed | ms/completed | tools/run | receipts | loops |",
 )
-console.log("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+console.log("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
 for (const [key, entries] of [...groups.entries()].sort(([left], [right]) => left.localeCompare(right))) {
   const [engine, task] = key.split("\u0000")
   const total = entries.length
-  const passed = entries.filter((entry) => entry.outcome === "passed").length
+  const accounting = summarizeAccounting(entries.map((entry) => ({ ...entry.evidence, outcome: entry.outcome })))
   const latencies = entries.map((entry) => entry.evidence.elapsedMs).sort((left, right) => left - right)
-  const turns = entries.reduce((sum, entry) => sum + entry.evidence.attempts.length, 0)
-  const input = entries.reduce(
-    (sum, entry) => sum + entry.evidence.attempts.reduce((inner, attempt) => inner + (attempt.inputTokens ?? 0), 0),
-    0,
-  )
-  const output = entries.reduce(
-    (sum, entry) => sum + entry.evidence.attempts.reduce((inner, attempt) => inner + (attempt.outputTokens ?? 0), 0),
-    0,
-  )
+  const p50 = accounting.totalElapsedMs === null ? "unknown" : `${latencies[Math.ceil(latencies.length * 0.5) - 1]} ms`
+  const metrics = [
+    accounting.inputTokens,
+    accounting.outputTokens,
+    accounting.cost,
+    accounting.perCompletedTask.cost,
+    accounting.perCompletedTask.elapsedMs,
+  ]
+    .map((value) =>
+      value === null ? "unknown" : Number.isInteger(value) ? String(value) : String(Number(value.toPrecision(8))),
+    )
+    .join(" | ")
   const tools = entries.reduce((sum, entry) => sum + entry.evidence.toolCalls, 0)
-  const receipts = [
-    ...new Set(entries.flatMap((entry) => entry.evidence.receipts)),
-  ].sort()
+  const receipts = [...new Set(entries.flatMap((entry) => entry.evidence.receipts))].sort()
   const loops = [
     ...new Set(entries.flatMap((entry) => [...entry.evidence.loops.continuations, ...entry.evidence.loops.stopped])),
   ].sort()
   console.log(
-    `| ${engine} | ${task} | ${passed}/${total} | ${latencies[Math.ceil(latencies.length * 0.5) - 1] ?? 0} ms | ` +
-      `${(turns / total).toFixed(1)} | ${input} | ${output} | ${(tools / total).toFixed(1)} | ` +
+    `| ${engine} | ${task} | ${accounting.passed}/${total} | ${accounting.failed} | ${accounting.unverified} | ${p50} | ` +
+      `${(accounting.attempts / total).toFixed(1)} | ${metrics} | ${(tools / total).toFixed(1)} | ` +
       `${receipts.join(", ") || "-"} | ${loops.join(", ") || "-"} |`,
   )
 }

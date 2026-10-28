@@ -16,7 +16,7 @@ import { Policy } from "@miao/core/policy"
 import { ProviderV2 } from "@miao/core/provider"
 import { ProjectV2 } from "@miao/core/project"
 import { AbsolutePath } from "@miao/core/schema"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { SessionV2 } from "@miao/core/session"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
@@ -44,7 +44,7 @@ const it = testEffect(
       EventV2.node,
       Integration.node,
       Policy.node,
-      SessionRunnerModel.node,
+      SessionModel.node,
     ]),
     [
       [
@@ -66,7 +66,7 @@ const withConfig = (entries: Config.Entry[]) =>
         EventV2.node,
         Integration.node,
         Policy.node,
-        SessionRunnerModel.node,
+        SessionModel.node,
       ]),
       [
         [
@@ -131,7 +131,7 @@ describe("configured provider account", () => {
   itConfig.effect("runs a provider on the account config names, not the newest one", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
-      const models = yield* SessionRunnerModel.Service
+      const models = yield* SessionModel.Service
       const integrations = yield* Integration.Service
       const credentials = yield* Credential.Service
       const integrationID = Integration.ID.make("configured-account")
@@ -181,7 +181,7 @@ describe("selected Session model lookup", () => {
   it.effect("keeps provider/model overlays fresh and refuses disabled or removed selections", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
-      const models = yield* SessionRunnerModel.Service
+      const models = yield* SessionModel.Service
       yield* populate(catalog)
       expect((yield* models.resolve(session)).model.route.defaults.headers).toMatchObject({
         "x-provider": "one",
@@ -216,7 +216,7 @@ describe("selected Session model lookup", () => {
   it.effect("rechecks the selected integration after credential creation and revocation", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
-      const models = yield* SessionRunnerModel.Service
+      const models = yield* SessionModel.Service
       const integrations = yield* Integration.Service
       const credentials = yield* Credential.Service
       const integrationID = Integration.ID.make("selected-gateway")
@@ -288,7 +288,7 @@ describe("selected Session model lookup", () => {
       () =>
         Effect.gen(function* () {
           const catalog = yield* Catalog.Service
-          const models = yield* SessionRunnerModel.Service
+          const models = yield* SessionModel.Service
           yield* populate(catalog, 100)
           yield* Effect.forEach(Array.from({ length: 5 }), () => models.resolve(session), { discard: true })
           const samples = yield* Effect.forEach(Array.from({ length: 40 }), () =>

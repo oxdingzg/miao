@@ -25,6 +25,8 @@ export interface EngineOptions {
   ephemeral?: boolean
   /** Bound control-plane RPCs; model execution itself runs asynchronously. */
   requestTimeoutMs?: number
+  /** Bounded extension-worker diagnostics, separate from protocol stdout. */
+  onDiagnostic?: (message: string) => void
 
   binary: string
   db: string
@@ -357,6 +359,7 @@ export class EngineClient {
     private readonly onProductToolCancel?: EngineOptions["onProductToolCancel"],
     private readonly ephemeral: boolean = false,
     private readonly requestTimeoutMs = 60_000,
+    private readonly onDiagnostic?: EngineOptions["onDiagnostic"],
   ) {
     const stdout = this.readStdout().catch(() => {
       this.fail(new EngineError("engine_protocol", "miao-engine output stream failed"), true)
@@ -400,6 +403,7 @@ export class EngineClient {
         options.onProductToolCancel,
         options.ephemeral ?? false,
         options.requestTimeoutMs,
+        options.onDiagnostic,
       )
     } catch (error) {
       manifest?.dispose()
@@ -686,10 +690,30 @@ export class EngineClient {
   private async readStderr() {
     const decoder = new TextDecoder()
     const reader = this.child.stderr.getReader()
+    let partial = ""
+    let reported = 0
+    const report = (line: string) => {
+      if (!line.startsWith("[worker-host]") && !line.startsWith("miao-engine extension worker unavailable:")) return
+      if (reported > 16) return
+      const message =
+        reported === 16 ? "[worker-host] further diagnostics omitted; inspect engine stderr" : line.slice(0, 8192)
+      reported += 1
+      // An observer must not stop draining stderr and block the engine's pipe.
+      try {
+        this.onDiagnostic?.(message)
+      } catch {}
+    }
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
-      this.stderr = (this.stderr + decoder.decode(value)).slice(-8192)
+      const chunk = decoder.decode(value, { stream: true })
+      this.stderr = (this.stderr + chunk).slice(-8192)
+      const lines = (partial + chunk).split("\n")
+      partial = (lines.pop() ?? "").slice(-8192)
+      lines.forEach(report)
     }
+    const trailing = decoder.decode()
+    this.stderr = (this.stderr + trailing).slice(-8192)
+    report(partial + trailing)
   }
 }

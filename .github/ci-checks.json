@@ -16,6 +16,7 @@
     "crates/miao-sandbox/**",
     "package.json",
     ".github/workflows/engine.yml",
+    ".github/workflows/engine-artifacts.yml",
     "packages/core/src/patch.ts",
     "packages/core/src/flag/**",
     "packages/native/**",

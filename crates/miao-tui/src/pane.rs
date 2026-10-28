@@ -93,7 +93,7 @@ impl Shell {
                         .join("\n\n");
                     (!text.trim().is_empty()).then_some(text)
                 }
-                Entry::User { .. } => None,
+                Entry::User { .. } | Entry::Error { .. } => None,
             })?;
         Some(reply)
     }
@@ -290,6 +290,9 @@ pub struct Home {
     pub rows: Vec<SessionSummary>,
     pub selected: usize,
     notice: Option<String>,
+    /// Set once the engine has answered the first `sessions` request. Until
+    /// then an empty list is a load in flight, not an empty catalog.
+    loaded: bool,
     theme: Theme,
 }
 
@@ -299,6 +302,7 @@ impl Home {
             rows: Vec::new(),
             selected: 0,
             notice: None,
+            loaded: false,
             theme,
         }
     }
@@ -311,11 +315,22 @@ impl Home {
         self.notice.as_deref()
     }
 
+    /// What an empty list shows: a load still in flight reads differently from
+    /// a catalog that really has nothing in it.
+    fn placeholder(&self) -> &str {
+        if self.loaded {
+            "no sessions yet · press n to start one"
+        } else {
+            "loading sessions…"
+        }
+    }
+
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
     }
 
     pub fn set_rows(&mut self, rows: Vec<SessionSummary>) {
+        self.loaded = true;
         let selected_id = self.rows.get(self.selected).map(|row| row.id.clone());
         self.rows = rows;
         self.selected = selected_id
@@ -350,7 +365,7 @@ impl Home {
             let message = self
                 .notice
                 .clone()
-                .unwrap_or_else(|| "no sessions yet · press n to start one".to_string());
+                .unwrap_or_else(|| self.placeholder().to_string());
             frame.render_widget(
                 Paragraph::new(message)
                     .style(Style::new().fg(palette.text_muted))
@@ -485,6 +500,18 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>
                             theme,
                         )),
                     }
+                }
+                lines.push(Line::default());
+            }
+            Entry::Error { message } => {
+                for (index, line) in message.lines().enumerate() {
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            if index == 0 { "✗ " } else { "  " },
+                            Style::new().fg(palette.error),
+                        ),
+                        Span::styled(line.to_string(), Style::new().fg(palette.error)),
+                    ]));
                 }
                 lines.push(Line::default());
             }
@@ -1268,6 +1295,24 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_turn_renders_its_message_as_an_error_line() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let transcript = Transcript {
+            entries: vec![Entry::Error {
+                message: "provider unavailable".into(),
+            }],
+            ..Transcript::default()
+        };
+        let lines = transcript_lines(&transcript, &theme);
+        assert_eq!(lines[0].to_string(), "✗ provider unavailable");
+        assert_eq!(lines[0].spans[0].style.fg, Some(theme.palette.error));
+    }
+
+    #[test]
     fn the_last_response_is_the_newest_assistant_text() {
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let mut shell = Shell::new(
@@ -1336,6 +1381,19 @@ mod tests {
         assert_eq!(answer["question_id"], "run-1/call_2");
         assert_eq!(answer["input_hash"], "b".repeat(64));
         assert_eq!(answer["answers"], serde_json::json!([["docs"]]));
+    }
+
+    #[test]
+    fn an_empty_home_reads_as_loading_until_the_engine_answers() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let mut home = Home::new(theme);
+        assert_eq!(home.placeholder(), "loading sessions…");
+        home.set_rows(Vec::new());
+        assert_eq!(home.placeholder(), "no sessions yet · press n to start one");
     }
 
     #[test]

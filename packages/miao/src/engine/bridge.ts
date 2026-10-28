@@ -11,7 +11,7 @@ import { SessionContextManagement } from "@miao/schema/session-context-managemen
 import { adoptSession, messageID, promotedInputMessageID } from "./identity"
 import type { EngineEvent, EngineProgress } from "./client"
 import { decodeAttachments } from "./prompt-attachments"
-import { SessionRunnerCost } from "@miao/core/session/runner/cost"
+import { SessionCost } from "@miao/core/session/cost"
 import type { ModelV2 } from "@miao/core/model"
 
 /**
@@ -418,7 +418,7 @@ export function translateStepEnded(
     // cache did not already serve. An unknown price stays 0, matching the
     // runner's behavior for models without catalog rates.
     cost: costs
-      ? SessionRunnerCost.ofTurn(costs, {
+      ? SessionCost.ofTurn(costs, {
           inputTokens: tokens.input,
           outputTokens: tokens.output,
           reasoningTokens: tokens.reasoning,

@@ -124,16 +124,24 @@ test.skipIf(process.platform === "win32")(
 
 test("a timed-out read leaves other requests and the executing engine available", async () => {
   await using tmp = await tmpdir()
+  const ready = path.join(tmp.path, "ready")
   const client = EngineClient.start({
     binary: path.join(import.meta.dir, "../fixture/engine-fake.ts"),
     db: path.join(tmp.path, "engine.db"),
     workspace: tmp.path,
     model: "fixture",
     requestTimeoutMs: 500,
-    env: { ENGINE_FAKE_IGNORE_SNAPSHOT: "1" },
+    env: { ENGINE_FAKE_IGNORE_SNAPSHOT: "1", ENGINE_FAKE_READY_FILE: ready },
   })
   try {
-    // Establish startup before testing a bounded request.
+    // The RPC budget measures a ready fixture, independently of process startup.
+    const deadline = Date.now() + 5_000
+    // A BunFile may cache a negative stat; create a fresh handle for each poll.
+    while (!(await Bun.file(ready).exists()) || (await Bun.file(ready).text()) !== "ready") {
+      if (!client.available || Date.now() >= deadline)
+        throw new Error(`engine fixture did not become ready: ${client.stderrText}`)
+      await Bun.sleep(10)
+    }
     await client.request("sessions")
     // The real fixture deliberately leaves a snapshot request unanswered.
     const failure = client.request("snapshot", { session_id: "s" }).catch((error: unknown) => error)
@@ -144,4 +152,4 @@ test("a timed-out read leaves other requests and the executing engine available"
   } finally {
     await client.close()
   }
-})
+}, 10_000)

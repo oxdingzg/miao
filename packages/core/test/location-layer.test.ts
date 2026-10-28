@@ -19,7 +19,7 @@ import { ProviderV2 } from "@miao/core/provider"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { SessionMessage } from "@miao/core/session/message"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { WorkspaceV2 } from "@miao/core/workspace"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
@@ -382,7 +382,7 @@ describe("LocationServiceMap", () => {
               }),
             ),
           )
-          const failure = yield* SessionRunnerModel.Service.use((models) =>
+          const failure = yield* SessionModel.Service.use((models) =>
             models.resolve(
               SessionV2.Info.make({
                 id: SessionV2.ID.make("ses_unavailable_model"),

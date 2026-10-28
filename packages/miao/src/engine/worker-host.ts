@@ -60,7 +60,6 @@ let catalog: {
 
 const discover = async (workspaceDirectory: string) => {
   workspace = workspaceDirectory
-  const debug: string[] = []
   const roots = [
     path.join(workspace, ".miao"),
     path.join(workspace, ".opencode"),
@@ -78,7 +77,8 @@ const discover = async (workspaceDirectory: string) => {
           .map((file: string) => path.join(directory, file))
           .toSorted()
       } catch (error) {
-        debug.push(`readdir ${directory}: ${String(error)}`)
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") continue
+        console.error(`[worker-host] cannot read tool directory ${directory}: ${String(error)}`)
         continue
       }
       for (const file of files) {
@@ -91,14 +91,11 @@ const discover = async (workspaceDirectory: string) => {
             found.set(id === "default" ? namespace : `${namespace}_${id}`, value)
           }
         } catch (error) {
-          debug.push(`import ${file}: ${String(error)}`)
+          console.error(`[worker-host] cannot load ${file}: ${String(error)}`)
         }
       }
     }
   }
-  debug.push(`[worker-host] workspace=${workspaceDirectory} tools=${found.size} names=${JSON.stringify([...found.keys()])}`)
-  debug.push(`[worker-host] .miao listing=${JSON.stringify((() => { try { return require("node:fs").readdirSync(path.join(workspaceDirectory, ".miao")) } catch (error) { return String(error) } })())}`)
-  debug.push(`[worker-host] .miao/tool listing=${JSON.stringify((() => { try { return require("node:fs").readdirSync(path.join(workspaceDirectory, ".miao", "tool")) } catch (error) { return String(error) } })())}`)
   catalog = [...found.entries()].map(([name, definition]) => {
     const schema = tool.schema.object(definition.args ?? {})
     return {
@@ -190,31 +187,41 @@ const dispatch = async (id: number, method: string, params: Record<string, unkno
   return false
 }
 
-const lines = readline.createInterface({ input: process.stdin, terminal: false })
-lines.on("line", (line) => {
-  if (!line.trim()) return
-  let frame: { id?: unknown; method?: unknown; params?: unknown; result?: { approved?: unknown; message?: unknown } }
-  try {
-    frame = JSON.parse(line)
-  } catch {
-    return
-  }
-  if (typeof frame.id === "number" && frame.method === undefined) {
-    const pending = pendingAsks.get(frame.id)
-    if (!pending) return
-    pendingAsks.delete(frame.id)
-    if (frame.result?.approved === true) pending.resolve()
-    else
-      pending.reject(
-        new Error(typeof frame.result?.message === "string" ? frame.result.message : "permission denied"),
-      )
-    return
-  }
-  if (typeof frame.id !== "number" || typeof frame.method !== "string") return
-  const id = frame.id
-  const method = frame.method
-  dispatch(id, method, (frame.params ?? {}) as Record<string, unknown>).then((handled) => {
-    if (!handled) fail(id, `unknown worker method: ${method}`)
+export const run = () =>
+  new Promise<void>((resolve) => {
+    const lines = readline.createInterface({ input: process.stdin, terminal: false })
+    lines.on("line", (line) => {
+      if (!line.trim()) return
+      let frame: {
+        id?: unknown
+        method?: unknown
+        params?: unknown
+        result?: { approved?: unknown; message?: unknown }
+      }
+      try {
+        frame = JSON.parse(line)
+      } catch {
+        return
+      }
+      if (typeof frame.id === "number" && frame.method === undefined) {
+        const pending = pendingAsks.get(frame.id)
+        if (!pending) return
+        pendingAsks.delete(frame.id)
+        if (frame.result?.approved === true) pending.resolve()
+        else
+          pending.reject(
+            new Error(typeof frame.result?.message === "string" ? frame.result.message : "permission denied"),
+          )
+        return
+      }
+      if (typeof frame.id !== "number" || typeof frame.method !== "string") return
+      const id = frame.id
+      const method = frame.method
+      dispatch(id, method, (frame.params ?? {}) as Record<string, unknown>).then((handled) => {
+        if (!handled) fail(id, `unknown worker method: ${method}`)
+      })
+    })
+    lines.on("close", () => resolve())
   })
-})
-lines.on("close", () => process.exit(0))
+
+if (import.meta.main) await run()

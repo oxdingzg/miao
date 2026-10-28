@@ -35,6 +35,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id`, `metadata_only?` | committed Session snapshot; metadata-only replies omit `messages` |
 | `sessions` | — | `string[]` (Session ids) |
+| `config_reload` | — | `{generation, changed, unchanged, unsupported}` |
 | `fork` | `session_id`, `target_session_id`, `message_seq?` | `{target_session_id}` |
 | `revert` | `session_id`, `checkpoint` | `{checkpoint, from_seq, reverted}` |
 | `unrevert` | `session_id` | `{restored}` |
@@ -477,6 +478,26 @@ soft-reverts messages at or after the boundary (rows stay for audit and
 staged intent. All phases refuse symlinks or paths that escape the Session's
 workspace. A restore whose blob is missing fails before any staged intent is
 recorded. The `snapshot` reply reports the staged revert when one exists.
+
+### Incremental configuration reload
+
+`config_reload` re-derives the configuration sections the engine owns from the
+same origin startup used (`--lsp-config`, `--config-sources` or `--config-dir`)
+and reconciles the ones this build can swap in place. The reply is
+`{generation, changed, unchanged, unsupported, …}`: `generation` advances only
+when a section changed, `changed`/`unchanged` name top-level sections, and
+`unsupported` names the sections this build does not reload yet rather than
+implying they were applied.
+
+The LSP server set is reconciled per server by name and configuration. An
+unchanged server keeps its connection and is never restarted; a changed or
+removed server is dropped and started again on next use, so a reload never
+spawns a process by itself. The `lsp` object in the reply lists the exact
+`changed`, `unchanged` and `removed` server names. A derivation error (invalid
+JSON, unknown key, duplicate extension) changes nothing and fails the command;
+the running configuration stays as it was. A Session that never had an LSP
+registry at startup (`unsupported` contains `lsp`) cannot gain one without
+restarting the engine.
 
 ### Injected context
 

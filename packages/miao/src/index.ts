@@ -25,6 +25,13 @@ if (process.argv.includes("--build-id")) {
 
 const args = hideBin(process.argv)
 
+// The optional extension worker re-executes this binary without a source tree.
+if (args[0] === "__worker-host") {
+  const { run } = await import("./engine/worker-host")
+  await run()
+  process.exit(0)
+}
+
 // A released single-file binary cannot ship a separate `miao-run` executable, so
 // it re-executes itself through this hidden command to run a sandboxed child.
 // Intercept here before yargs so the runner stays cheap and does not load the

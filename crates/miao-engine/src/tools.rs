@@ -832,6 +832,11 @@ impl Tools {
         self
     }
 
+    /// The LSP registry when startup attached one. `None` means no server was
+    /// configured, and a reload cannot attach one without rebuilding `Tools`.
+    pub(crate) fn lsp_registry(&self) -> Option<&Arc<crate::lsp::Registry>> {
+        self.lsp.as_ref()
+    }
     pub fn with_lsp(mut self, registry: Arc<crate::lsp::Registry>) -> Self {
         self.lsp = Some(registry);
         self
@@ -1314,6 +1319,46 @@ impl Tools {
         })
     }
 
+    /// A matching diagnostic receipt supplies its original prepared resource;
+    /// replay must not require the original file to still exist. Normal policy
+    /// evaluation still runs, and the live executor revalidates Prepared paths.
+    pub(crate) fn prepare_recorded_read(
+        &self,
+        input: Value,
+        read: &Value,
+    ) -> Result<Prepared, ToolError> {
+        serde_json::from_value::<ReadInput>(input.clone()).map_err(|_| ToolError::InvalidInput)?;
+        let path = read["path"].as_str().ok_or(ToolError::InvalidInput)?;
+        let relative = Path::new(path);
+        if read["location"] != self.location()
+            || path.is_empty()
+            || relative
+                .components()
+                .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        {
+            return Err(ToolError::OutsideWorkspace);
+        }
+        let resource = relative
+            .components()
+            .map(|part| part.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+        let resolved = self.root.join(&resource);
+        if self.protected.contains(&resolved) {
+            return Err(ToolError::ProtectedResource);
+        }
+        Ok(Prepared {
+            name: "read_file".into(),
+            input,
+            path: resolved,
+            resource,
+            targets: Vec::new(),
+            access: Access::Read,
+            batchable_read: false,
+            select: None,
+        })
+    }
+
     /// A settled rejection, in the model's own vocabulary. A bare "invalid
     /// tool input" leaves nothing to correct, so a model that dropped its
     /// arguments — glm-5.3-flash sends `{}` — resends the same call. Name the
@@ -1660,7 +1705,17 @@ impl Tools {
             .await
             .map_err(|_| ToolError::Io(std::io::Error::other("search worker failed")))?;
         }
-        self.execute(&prepared.name, prepared.input, cancel).await
+        let read = (prepared.name == "read_file")
+            .then(|| prepared.path.strip_prefix(&self.root).ok())
+            .flatten()
+            .map(|path| json!({"location": self.location(), "path":path.components().map(|part| part.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")}));
+        let mut output = self.execute(&prepared.name, prepared.input, cancel).await?;
+        if let Some(read) = read {
+            // Internal settlement metadata, removed before model history. This
+            // captures the prepared path after a plugin's argument rewrite.
+            output["_instruction_read"] = read;
+        }
+        Ok(output)
     }
 
     fn delegation_definitions(&self) -> Vec<ToolDefinition> {
@@ -1766,7 +1821,7 @@ impl Tools {
             description:"Reviewable workspace knowledge in .miao/knowledge.json. list(query?,limit?) returns a short source-freshness index; get(id,include_stale?) returns current sourced notes, or stale/unverified notes for explicit review. Writes also use expected_store_sha256 from list/get/write results (null creates the store). put requires id, expected_revision (0=create note), title, kind, body; repo_fact/file_index also require sources[{path,sha256}] and derivation. index_file(id,path,expected_revision) builds bounded lexical declaration candidates from one file; delete(id,expected_revision) removes a note. Sources must be readable workspace files. Preference/constraint notes expire after seven days by default. Writes use ordinary workspace write permission. Notes are advisory: current instructions, AGENTS.md and live source win.".into(),
             input_schema:json!({"type":"object","properties":{"op":{"type":"string","enum":["list","get","put","index_file","delete"]},"id":{"type":"string","maxLength":128},"query":{"type":"string","maxLength":256},"limit":{"type":"integer","minimum":1,"maximum":20},"include_stale":{"type":"boolean"},"expected_revision":{"type":"integer","minimum":0},"expected_store_sha256":{"type":["string","null"],"pattern":"^[a-fA-F0-9]{64}$"},"title":{"type":"string","maxLength":160},"kind":{"type":"string","enum":["repo_fact","preference","constraint","file_index"]},"body":{"type":"string","maxLength":8192},"derivation":{"type":"string","maxLength":2048},"sources":{"type":"array","maxItems":8,"items":{"type":"object","properties":{"path":{"type":"string"},"sha256":{"type":"string","pattern":"^[a-fA-F0-9]{64}$"}},"required":["path","sha256"],"additionalProperties":false}},"ttl_seconds":{"type":"integer","minimum":1,"maximum":2592000},"path":{"type":"string"}},"required":["op"],"additionalProperties":false}),
         });
-        definitions.push(ToolDefinition{name:"recall".into(),description:"Search this Session's raw immutable messages, including history before compaction. Literal case-sensitive substring; opaque provider state excluded. Pass tool_use_id instead of query to restore the elided middle of one tool output that context pruning replaced. Bounded scan pages may contain no matches; follow next_before_message_seq until exhausted.".into(),input_schema:json!({"type":"object","properties":{"query":{"type":"string","maxLength":512},"tool_use_id":{"type":"string","maxLength":128},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":20,"default":10},"before_message_seq":{"type":"integer","minimum":0}},"additionalProperties":false})});
+        definitions.push(ToolDefinition{name:"recall".into(),description:"Search this Session's raw immutable messages, including history before compaction. Literal case-sensitive substring; opaque provider state excluded. Pass tool_use_id instead of query to restore the elided middle of one tool output that context pruning replaced. Both search and archived-output scans may return empty pages; pass next_before_message_seq as before_message_seq to continue until exhausted. Once an output is found, use next_offset to page its contents.".into(),input_schema:json!({"type":"object","properties":{"query":{"type":"string","maxLength":512},"tool_use_id":{"type":"string","maxLength":128},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":20,"default":10},"before_message_seq":{"type":"integer","minimum":0}},"additionalProperties":false})});
         definitions.extend([
             ToolDefinition{name:"session_state".into(),description:"Read this Session's durable todo list and goal with optimistic revisions, including after compaction/restart.".into(),input_schema:json!({"type":"object","properties":{},"additionalProperties":false})},
             ToolDefinition{name:"todowrite".into(),description:"Replace this Session's durable todo list (max 128). Stable id and depends_on express prerequisites; waiting jobs block only their dependents, not independent work. Optional expected_revision=0 for first write, or the revision from session_state, prevents stale updates.".into(),input_schema:json!({"type":"object","properties":{"todos":{"type":"array","maxItems":128,"items":{"type":"object","properties":{"id":{"type":"string","minLength":1},"depends_on":{"type":"array","items":{"type":"string"}},"content":{"type":"string"},"status":{"type":"string","enum":["pending","in_progress","waiting","blocked","completed","cancelled"]},"priority":{"type":"string","enum":["high","medium","low"]}},"required":["content","status","priority"],"additionalProperties":false}},"expected_revision":{"type":"integer","minimum":0}},"required":["todos"],"additionalProperties":false})},
@@ -2088,4 +2143,72 @@ fn report_diagnostics(value: &Value) -> Option<Value> {
         .take(20)
         .collect();
     (!report.is_empty()).then(|| json!(report))
+}
+
+#[cfg(test)]
+mod recorded_read_tests {
+    use super::{ToolError, Tools};
+    use crate::permission::{Config, Decision, Policy, Rule};
+    use serde_json::json;
+    use tokio_util::sync::CancellationToken;
+
+    #[tokio::test]
+    async fn a_recorded_read_preserves_policy_and_cannot_bypass_the_live_reader() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = Tools::new(dir.path()).await.unwrap();
+        let prepared = tools
+            .prepare_recorded_read(
+                json!({"path":"nested/file.txt"}),
+                &json!({"location":tools.location(),"path":"nested/file.txt"}),
+            )
+            .unwrap();
+        assert_eq!(prepared.resource(), "nested/file.txt");
+        let policy = Policy::new(Config {
+            rules: vec![Rule {
+                tool: "read_file".into(),
+                path: "nested/file.txt".into(),
+                decision: Decision::Deny,
+            }],
+            ..Config::default()
+        })
+        .unwrap();
+        assert_eq!(
+            policy.evaluate(prepared.name(), prepared.resource(), prepared.access()),
+            Decision::Deny
+        );
+        assert!(
+            matches!(tools.execute_prepared(prepared, &Policy::new(Config::default()).unwrap(), CancellationToken::new(), None).await, Err(ToolError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_recorded_read_rejects_foreign_locations_traversal_and_protected_resources() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = Tools::new(dir.path()).await.unwrap();
+        let protected = std::path::Path::new(tools.location()).join("private.txt");
+        let tools = tools.with_protected_resource(&protected);
+        for path in ["../escape", "/absolute", ""] {
+            assert!(matches!(
+                tools.prepare_recorded_read(
+                    json!({"path":path}),
+                    &json!({"location":tools.location(),"path":path})
+                ),
+                Err(ToolError::OutsideWorkspace)
+            ));
+        }
+        assert!(matches!(
+            tools.prepare_recorded_read(
+                json!({"path":"file.txt"}),
+                &json!({"location":"another-location","path":"file.txt"})
+            ),
+            Err(ToolError::OutsideWorkspace)
+        ));
+        assert!(matches!(
+            tools.prepare_recorded_read(
+                json!({"path":"private.txt"}),
+                &json!({"location":tools.location(),"path":"private.txt"})
+            ),
+            Err(ToolError::ProtectedResource)
+        ));
+    }
 }

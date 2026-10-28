@@ -12,6 +12,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 /// One ordered configuration source from the host, lowest priority first.
+#[derive(Clone)]
 pub enum Source {
     /// A directory: `config_scope::FILE_NAMES` inside it, in name order.
     Dir(PathBuf),
@@ -250,6 +251,43 @@ pub fn policy_from_sources(
 ) -> Result<permission::Config, String> {
     let documents = load(sources)?;
     Ok(policy(&documents, miao_sandbox))
+}
+
+/// Where the engine derives LSP servers from. Kept for the lifetime of the
+/// process so a reload derives exactly the way startup did: the same files, the
+/// same precedence, and the same built-in table.
+#[derive(Clone)]
+pub enum LspOrigin {
+    /// `--lsp-config`: a host-materialized manifest outside the workspace.
+    Manifest(PathBuf),
+    /// `--config-sources`: the host's ordered source plan.
+    Sources(Vec<Source>),
+    /// `--config-dir`: one directory, the standalone entry.
+    Directory(PathBuf),
+}
+
+impl LspOrigin {
+    pub fn derive(&self) -> Result<Vec<lsp::Config>, String> {
+        match self {
+            LspOrigin::Manifest(path) => {
+                let bytes =
+                    std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
+                if bytes.len() > 65536 {
+                    return Err("LSP config exceeds 64 KiB".into());
+                }
+                serde_json::from_slice(&bytes).map_err(|_| "invalid LSP host config".to_string())
+            }
+            LspOrigin::Sources(sources) => lsp_from_documents(&load(sources)?),
+            LspOrigin::Directory(directory) => lsp_from_documents(&load(std::slice::from_ref(
+                &Source::Dir(directory.clone()),
+            ))?),
+        }
+    }
+}
+
+fn lsp_from_documents(documents: &[Document]) -> Result<Vec<lsp::Config>, String> {
+    let configured = lsp_configured(documents);
+    lsp_entries(configured.as_ref(), &BUILTIN_SERVERS, &system_lookup())
 }
 
 /// Parse the host's ordered source plan: a JSON array of `{"dir": path}`,

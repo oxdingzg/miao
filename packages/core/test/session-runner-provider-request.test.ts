@@ -6,7 +6,7 @@ import { Integration } from "@miao/core/integration"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { SessionRunnerProviderHeaders } from "@miao/core/session/runner/provider-headers"
 import { it } from "./lib/effect"
 import { exchange, sse } from "./lib/llm-wire"
@@ -72,7 +72,7 @@ const oauth = Credential.OAuth.make({
 describe("V2 provider request overrides", () => {
   it.effect("ChatGPT OAuth (Codex) carries the miao client identity and session affinity", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         catalog({ providerID: "openai", package: "@ai-sdk/openai" }),
         oauth,
       )
@@ -100,7 +100,7 @@ describe("V2 provider request overrides", () => {
 
   it.effect("OpenAI API keys keep the same client identity", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         catalog({ providerID: "openai", package: "@ai-sdk/openai" }),
         Credential.Key.make({ type: "key", key: "sk-test" }),
       )
@@ -114,7 +114,7 @@ describe("V2 provider request overrides", () => {
 
   it.effect("other @ai-sdk/openai providers do not claim the Codex originator", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         catalog({ providerID: "my-openai-proxy", package: "@ai-sdk/openai", url: "https://proxy.example/v1" }),
         Credential.Key.make({ type: "key", key: "sk-test" }),
       )
@@ -127,7 +127,7 @@ describe("V2 provider request overrides", () => {
 
   it.effect("Cerebras omits max tokens unless the user configured them", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         catalog({ providerID: "cerebras", package: "@ai-sdk/cerebras", apiID: "gpt-oss-120b" }),
         Credential.Key.make({ type: "key", key: "csk-test" }),
       )

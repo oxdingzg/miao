@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { LLMError, LLMEvent, Model, RateLimitReason, type LLMRequest } from "@miao/llm"
 import { AgentV2 } from "@miao/core/agent"
 import { SessionNativeTitle } from "@miao/core/session/native-title"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { SessionSchema } from "@miao/core/session/schema"
 import type { SessionID } from "@miao/schema/session-id"
 import { DateTime, Effect, Stream } from "effect"
@@ -16,7 +16,7 @@ const llmStream = () =>
     LLMEvent.textEnd({ id: "1" }),
   ) as unknown as Stream.Stream<LLMEvent, never>
 
-const makeDeps = (info: SessionSchema.Info, resolve?: SessionRunnerModel.Interface["resolve"]) => {
+const makeDeps = (info: SessionSchema.Info, resolve?: SessionModel.Interface["resolve"]) => {
   const published: Array<{ readonly title: string }> = []
   const deps = {
     sessionID: "ses_title" as SessionID,
@@ -60,7 +60,7 @@ describe("SessionNativeTitle", () => {
   test("publishes a generated title while the placeholder is still set", async () => {
     const info0 = info(DEFAULT_TITLE)
     const published: Array<{ readonly title: string }> = []
-    const resolve: SessionRunnerModel.Interface["resolve"] = (session) =>
+    const resolve: SessionModel.Interface["resolve"] = (session) =>
       Effect.succeed({
         model: Model.make({ id: "test-model", provider: "test", route: {} as never }),
         info: undefined as never,
@@ -154,7 +154,7 @@ describe("SessionNativeTitle", () => {
         agents: { get: () => Effect.succeed(undefined as never) },
         models: {
           resolve: (() =>
-            Effect.fail(new Error("model unavailable"))) as unknown as SessionRunnerModel.Interface["resolve"],
+            Effect.fail(new Error("model unavailable"))) as unknown as SessionModel.Interface["resolve"],
         },
         events: {
           publish: (definition: unknown, payload: { readonly title: string }) => {
@@ -180,7 +180,7 @@ test("an unavailable stored model falls back without carrying its credential pin
   fixture.deps.models.resolve = (session) => {
     seen.push(session)
     return session.model
-      ? Effect.fail(new SessionRunnerModel.ModelNotSelectedError({ sessionID: session.id }))
+      ? Effect.fail(new SessionModel.ModelNotSelectedError({ sessionID: session.id }))
       : Effect.succeed({
           model: Model.make({ id: "default-model", provider: "fixture", route: {} as never }),
           info: undefined as never,
@@ -305,7 +305,7 @@ test("a plan-excluded title model is not retried on the next idle transition", a
         Effect.succeed({
           model: Model.make({ id: "glm-5.3-highspeed", provider, route: {} as never }),
           info: undefined as never,
-        })) as unknown as SessionRunnerModel.Interface["resolve"],
+        })) as unknown as SessionModel.Interface["resolve"],
     },
     events: {
       publish: (definition: unknown, payload: { readonly title: string }) => {

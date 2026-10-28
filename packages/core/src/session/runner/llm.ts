@@ -87,7 +87,7 @@ import { SessionTitle } from "../title"
 import { SessionTitleSettlement } from "../title-settlement"
 import { LegacyNotMigratedError } from "../error"
 import { type RunError, Service } from "./index"
-import { SessionRunnerModel } from "./model"
+import { SessionModel } from "../model"
 import { SessionRunnerProviderHeaders } from "./provider-headers"
 import { SessionRunnerProviderRetry } from "./provider-retry"
 import { SessionOutputGuard } from "./output-guard"
@@ -96,7 +96,7 @@ import { SessionFirstByteGuard } from "./first-byte-guard"
 import { createLLMEventPublisher, progressContent, progressGate } from "./publish-llm-event"
 import { SessionToolDispatch } from "../tool-dispatch"
 import { toLLMMessages } from "./to-llm-message"
-import { inlineTextFiles, materializeBlobRefs } from "./materialize-files"
+import { inlineTextFiles, materializeBlobRefs } from "../materialize-files"
 import { BUDGET_EXHAUSTED_PROMPT, BUDGET_WRAP_UP_NOTE, MAX_STEPS_PROMPT } from "./max-steps"
 import { Token } from "../../util/token"
 import { SessionRunnerMetrics } from "./metrics"
@@ -255,7 +255,7 @@ const layer = Layer.effect(
     const shell = yield* BashTool.Execution
     const mutation = yield* LocationMutation.Service
     const tools = yield* ToolRegistry.Service
-    const models = yield* SessionRunnerModel.Service
+    const models = yield* SessionModel.Service
     const store = yield* SessionStore.Service
     const location = yield* Location.Service
     const systemContext = yield* SystemContextRegistry.Service
@@ -646,7 +646,7 @@ const layer = Layer.effect(
       const system =
         (commandChanged ? undefined : initialized) ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id))
       const resolveStartedAt = Date.now()
-      const catalogRetry = { attempt: 0, error: undefined as SessionRunnerModel.Error | undefined }
+      const catalogRetry = { attempt: 0, error: undefined as SessionModel.Error | undefined }
       const resolved = yield* Effect.suspend(() => {
         const previous = catalogRetry.error
         catalogRetry.error = undefined
@@ -1137,7 +1137,7 @@ const layer = Layer.effect(
 
       // The failure the next attempt retries; announced durably when that attempt starts,
       // so a retry the schedule declines is never reported.
-      let retrying: LLMError | SessionRunnerModel.Error | undefined
+      let retrying: LLMError | SessionModel.Error | undefined
       let attempt = 0
       // A replay restates the request, so it is only safe where nothing durable
       // has been produced: no answer text and no dispatched tool call. Reasoning
@@ -2225,7 +2225,7 @@ export const node = makeLocationNode({
     ToolRegistry.node,
     BashTool.executionNode,
     LocationMutation.node,
-    SessionRunnerModel.node,
+    SessionModel.node,
     SessionStore.node,
     Location.node,
     SystemContextRegistry.node,
@@ -2248,10 +2248,10 @@ export const node = makeLocationNode({
 
 const stepFailure = (error: unknown) =>
   error instanceof LLMError ||
-  error instanceof SessionRunnerModel.ModelNotSelectedError ||
-  error instanceof SessionRunnerModel.ModelUnavailableError ||
-  error instanceof SessionRunnerModel.VariantUnavailableError ||
-  error instanceof SessionRunnerModel.UnsupportedApiError ||
+  error instanceof SessionModel.ModelNotSelectedError ||
+  error instanceof SessionModel.ModelUnavailableError ||
+  error instanceof SessionModel.VariantUnavailableError ||
+  error instanceof SessionModel.UnsupportedApiError ||
   error instanceof Integration.AuthorizationError
 
 /**
@@ -2263,7 +2263,7 @@ const stepFailure = (error: unknown) =>
  * its own at all, so reading only the reason's own field left every retried
  * turn recorded with no status code and no vendor request id.
  */
-const retryDetail = (error: LLMError | SessionRunnerModel.Error) => {
+const retryDetail = (error: LLMError | SessionModel.Error) => {
   const reason = error instanceof LLMError ? error.reason : undefined
   const http = reason !== undefined && "http" in reason ? reason.http : undefined
   const rateLimit = reason !== undefined && "rateLimit" in reason ? reason.rateLimit : undefined
@@ -2289,7 +2289,7 @@ const retryDetail = (error: LLMError | SessionRunnerModel.Error) => {
 }
 
 /** The subset of a retry worth one warning line; the response body stays in the event, not the log. */
-const retryLog = (error: LLMError | SessionRunnerModel.Error) => {
+const retryLog = (error: LLMError | SessionModel.Error) => {
   const detail = retryDetail(error)
   return {
     reason: detail.message,
