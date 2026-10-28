@@ -618,7 +618,12 @@ export type SessionsListOutput = {
       readonly reasoning: number
       readonly cache: { readonly read: number; readonly write: number }
     }
-    readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
+    readonly time: {
+      readonly created: number
+      readonly updated: number
+      readonly archived?: number
+      readonly pinned?: number
+    }
     readonly title: string
     readonly location: { readonly directory: string; readonly workspaceID?: string }
     readonly subpath?: string
@@ -722,7 +727,12 @@ export type SessionsCreateOutput = {
       readonly reasoning: number
       readonly cache: { readonly read: number; readonly write: number }
     }
-    readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
+    readonly time: {
+      readonly created: number
+      readonly updated: number
+      readonly archived?: number
+      readonly pinned?: number
+    }
     readonly title: string
     readonly location: { readonly directory: string; readonly workspaceID?: string }
     readonly subpath?: string
@@ -802,7 +812,12 @@ export type SessionsGetOutput = {
       readonly reasoning: number
       readonly cache: { readonly read: number; readonly write: number }
     }
-    readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
+    readonly time: {
+      readonly created: number
+      readonly updated: number
+      readonly archived?: number
+      readonly pinned?: number
+    }
     readonly title: string
     readonly location: { readonly directory: string; readonly workspaceID?: string }
     readonly subpath?: string
@@ -1337,6 +1352,13 @@ export type SessionsArchiveInput = {
 
 export type SessionsArchiveOutput = void
 
+export type SessionsPinInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly pinned: { readonly pinned: boolean }["pinned"]
+}
+
+export type SessionsPinOutput = void
+
 export type SessionsRemoveInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionsRemoveOutput = void
@@ -1431,7 +1453,12 @@ export type SessionsForkOutput = {
       readonly reasoning: number
       readonly cache: { readonly read: number; readonly write: number }
     }
-    readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
+    readonly time: {
+      readonly created: number
+      readonly updated: number
+      readonly archived?: number
+      readonly pinned?: number
+    }
     readonly title: string
     readonly location: { readonly directory: string; readonly workspaceID?: string }
     readonly subpath?: string
@@ -1658,7 +1685,12 @@ export type SessionsChildrenOutput = {
       readonly reasoning: number
       readonly cache: { readonly read: number; readonly write: number }
     }
-    readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
+    readonly time: {
+      readonly created: number
+      readonly updated: number
+      readonly archived?: number
+      readonly pinned?: number
+    }
     readonly title: string
     readonly location: { readonly directory: string; readonly workspaceID?: string }
     readonly subpath?: string
@@ -1750,7 +1782,12 @@ export type SessionsHistoryOutput = {
               readonly reasoning: number
               readonly cache: { readonly read: number; readonly write: number }
             }
-            readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
+            readonly time: {
+              readonly created: number
+              readonly updated: number
+              readonly archived?: number
+              readonly pinned?: number
+            }
             readonly title: string
             readonly location: { readonly directory: string; readonly workspaceID?: string }
             readonly subpath?: string
@@ -1785,6 +1822,7 @@ export type SessionsHistoryOutput = {
           readonly sessionID: string
           readonly title?: string
           readonly archived?: boolean
+          readonly pinned?: boolean
         }
       }
     | {
@@ -2499,7 +2537,12 @@ export type SessionsEventsOutput =
             readonly reasoning: number
             readonly cache: { readonly read: number; readonly write: number }
           }
-          readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
+          readonly time: {
+            readonly created: number
+            readonly updated: number
+            readonly archived?: number
+            readonly pinned?: number
+          }
           readonly title: string
           readonly location: { readonly directory: string; readonly workspaceID?: string }
           readonly subpath?: string
@@ -2534,6 +2577,7 @@ export type SessionsEventsOutput =
         readonly sessionID: string
         readonly title?: string
         readonly archived?: boolean
+        readonly pinned?: boolean
       }
     }
   | {
@@ -5437,7 +5481,12 @@ export type EventsDurableOutput =
             readonly reasoning: number
             readonly cache: { readonly read: number; readonly write: number }
           }
-          readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
+          readonly time: {
+            readonly created: number
+            readonly updated: number
+            readonly archived?: number
+            readonly pinned?: number
+          }
           readonly title: string
           readonly location: { readonly directory: string; readonly workspaceID?: string }
           readonly subpath?: string
@@ -5524,7 +5573,12 @@ export type EventsDurableOutput =
             readonly reasoning: number
             readonly cache: { readonly read: number; readonly write: number }
           }
-          readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
+          readonly time: {
+            readonly created: number
+            readonly updated: number
+            readonly archived?: number
+            readonly pinned?: number
+          }
           readonly title: string
           readonly location: { readonly directory: string; readonly workspaceID?: string }
           readonly subpath?: string
@@ -5559,6 +5613,7 @@ export type EventsDurableOutput =
         readonly sessionID: string
         readonly title?: string
         readonly archived?: boolean
+        readonly pinned?: boolean
       }
     }
   | {
@@ -5572,6 +5627,7 @@ export type EventsDurableOutput =
         readonly sessionID: string
         readonly title?: string
         readonly archived?: boolean
+        readonly pinned?: boolean
       }
     }
   | {

@@ -79,6 +79,8 @@ import type {
   SessionsRenameOutput,
   SessionsArchiveInput,
   SessionsArchiveOutput,
+  SessionsPinInput,
+  SessionsPinOutput,
   SessionsRemoveInput,
   SessionsRemoveOutput,
   SessionsCommandInput,
@@ -910,6 +912,18 @@ export function make(options: ClientOptions) {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/archive`,
             body: { archived: input["archived"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 410, 409, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      pin: (input: SessionsPinInput, requestOptions?: RequestOptions) =>
+        request<SessionsPinOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/pin`,
+            body: { pinned: input["pinned"] },
             successStatus: 204,
             declaredStatuses: [404, 400, 410, 409, 401],
             empty: true,

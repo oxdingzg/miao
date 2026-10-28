@@ -698,6 +698,7 @@ export namespace Info {
       ...Base,
       title: Schema.String.pipe(optional),
       archived: Schema.Boolean.pipe(optional),
+      pinned: Schema.Boolean.pipe(optional),
     },
   })
   export type Updated = typeof Updated.type
