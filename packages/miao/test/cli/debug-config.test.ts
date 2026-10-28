@@ -61,4 +61,24 @@ describe("debug config redaction", () => {
       expect(config).toEqual(before)
     }),
   )
+
+  cliIt.live("reports each value's source, scope and override order", ({ opencode }) =>
+    Effect.gen(function* () {
+      const content = JSON.stringify({
+        model: "content/model",
+        providers: { example: { request: { body: { apiKey: "sk-secret" } } } },
+      })
+      const result = yield* opencode.spawn(["debug", "config", "--sources"], { env: { MIAO_CONFIG_CONTENT: content } })
+      opencode.expectExit(result, 0, "debug config --sources")
+      const explanation = JSON.parse(result.stdout)
+      const key = (path: string) => explanation.keys.find((item: any) => item.path.join(".") === path)
+
+      expect(key("model")).toMatchObject({ value: "content/model", origin: { scope: "env" } })
+      expect(key("model").origin.path).toBeUndefined()
+      expect(explanation.sources.at(-1)).toMatchObject({ origin: { scope: "env" }, keys: expect.any(Array) })
+      // The resolved secret is redacted but its provenance still has to be visible.
+      expect(key("providers.example.request.body.apiKey")).toMatchObject({ value: "***", origin: { scope: "env" } })
+      expect(result.stdout).not.toContain("sk-secret")
+    }),
+  )
 })

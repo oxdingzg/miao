@@ -1,9 +1,10 @@
 import path from "path"
 import fs from "fs/promises"
 import { describe, expect } from "bun:test"
-import { Cause, Effect, Exit, Layer, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
 import { FastCheck } from "effect/testing"
 import { Config } from "@miao/core/config"
+import { ConfigExplain } from "@miao/core/config/explain"
 import { ConfigProvider } from "@miao/core/config/provider"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
@@ -954,6 +955,116 @@ describe("Config", () => {
               loaded,
             ),
           ).toEqual(["global"])
+        })
+      }),
+    ),
+  )
+
+  it.effect("explains each effective value with its source and the values it overrode", () =>
+    Effect.sync(() => {
+      const document = (path: string, input: unknown) =>
+        new Config.Document({ type: "document", path, info: Option.getOrThrow(Config.decodeDocument(input)) })
+      const scoped = [
+        {
+          entry: document("/global/miao.json", {
+            model: "global/model",
+            providers: { demo: { name: "Demo", request: { body: { apiKey: "global" } } } },
+          }),
+          scope: "global" as const,
+        },
+        {
+          entry: document("/repo/miao.json", {
+            model: "project/model",
+            providers: { demo: { request: { body: { apiKey: "project" } } } },
+          }),
+          scope: "project" as const,
+        },
+        {
+          entry: document("/repo/.miao/miao.jsonc", { model: "local/model" }),
+          scope: "local" as const,
+        },
+      ]
+
+      const explanation = ConfigExplain.explain(scoped)
+      const key = (path: string) => explanation.keys.find((item) => item.path.join(".") === path)!
+
+      expect(key("model")).toMatchObject({
+        value: "local/model",
+        origin: { scope: "local", path: "/repo/.miao/miao.jsonc" },
+        overridden: [
+          { value: "global/model", origin: { scope: "global", path: "/global/miao.json" } },
+          { value: "project/model", origin: { scope: "project", path: "/repo/miao.json" } },
+        ],
+      })
+      // A deep merge lets one file own part of an object another file declared.
+      expect(key("providers.demo.request.body.apiKey")).toMatchObject({
+        value: "project",
+        origin: { scope: "project", path: "/repo/miao.json" },
+        overridden: [{ value: "global", origin: { scope: "global", path: "/global/miao.json" } }],
+      })
+      expect(key("providers.demo.name")).toMatchObject({
+        value: "Demo",
+        origin: { scope: "global", path: "/global/miao.json" },
+        overridden: [],
+      })
+      expect(explanation.sources.map((source) => [source.origin.scope, source.origin.path])).toEqual([
+        ["global", "/global/miao.json"],
+        ["project", "/repo/miao.json"],
+        ["local", "/repo/.miao/miao.jsonc"],
+      ])
+    }),
+  )
+
+  it.live("explains config scopes and origins from the files a location reads", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((tmp) => {
+        const global = path.join(tmp.path, "global")
+        const directory = path.join(tmp.path, "repo")
+        const customFile = path.join(tmp.path, "custom.json")
+        return Effect.gen(function* () {
+          // The location reads files and environment variables when its graph
+          // is built, so both must be in place before the layer is provided.
+          yield* Effect.promise(async () => {
+            await fs.mkdir(global, { recursive: true })
+            await fs.mkdir(path.join(directory, ".miao"), { recursive: true })
+            await Promise.all([
+              fs.writeFile(path.join(global, "miao.json"), JSON.stringify({ model: "global/model" })),
+              fs.writeFile(path.join(directory, "miao.json"), JSON.stringify({ model: "project/model" })),
+              fs.writeFile(path.join(directory, ".miao", "miao.json"), JSON.stringify({ model: "local/model" })),
+              fs.writeFile(customFile, JSON.stringify({ model: "custom/model" })),
+            ])
+          })
+
+          return yield* withEnv(
+            { MIAO_CONFIG: customFile, MIAO_CONFIG_CONTENT: JSON.stringify({ model: "inline/model" }) },
+            () =>
+              Effect.gen(function* () {
+                const config = yield* Config.Service
+                const explanation = yield* config.explain!()
+                expect(explanation.sources.map((source) => [source.origin.scope, source.origin.path])).toEqual([
+                  ["global", path.join(global, "miao.json")],
+                  ["global", global],
+                  ["env", customFile],
+                  ["project", path.join(directory, "miao.json")],
+                  ["local", path.join(directory, ".miao", "miao.json")],
+                  ["local", path.join(directory, ".miao")],
+                  ["env", undefined],
+                ])
+                expect(explanation.keys.find((key) => key.path.join(".") === "model")).toMatchObject({
+                  value: "inline/model",
+                  origin: { scope: "env" },
+                  overridden: [
+                    { value: "global/model", origin: { scope: "global" } },
+                    { value: "custom/model", origin: { scope: "env", path: customFile } },
+                    { value: "project/model", origin: { scope: "project" } },
+                    { value: "local/model", origin: { scope: "local" } },
+                  ],
+                })
+              }).pipe(Effect.provide(testLayer(directory, global))),
+          )
         })
       }),
     ),
