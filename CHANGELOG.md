@@ -11,6 +11,27 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.16] - 2026-10-28
+
+### Added
+- **core**: report ignored config keys with an executable fix (#1592) (`4fbd5f0134`)
+- **core**: explain config values by source and scope (#1589) (`30bd32ff1f`)
+- **engine**: switch native sessions to existing workspaces (#1573) (`00d1fe43f8`)
+- **engine**: derive LSP servers from the config plan instead of a temp file (#1557) (`fe78fd6baa`)
+
+### Fixed
+- **tui**: start the Rust TUI through the product engine plan (#1588) (`23251db1be`)
+- **engine**: retry a failed turn instead of spending its window (#1591) (`8cac456e63`)
+- **cli**: keep explicit project startup on the lazy TUI path (#1583) (`3f509f6ca2`)
+- **engine**: preserve UTF-8 when parsing JSONC config (#1587) (`20987213c3`)
+- **tui**: reduce idle clock redraws and skip missed ticks (#1581) (`f572ebde43`)
+- **ci**: isolate native product contract test files (#1578) (`d22238a8fa`)
+- **cli**: pair preview installs with their Rust TUI (#1577) (`e065e4bee9`)
+- **core**: scope workspace changes to their project (#1579) (`a07ef651b6`)
+- **engine**: read Chat Completions frames like the TypeScript protocol (#1576) (`1aa193f01a`)
+- **engine**: retain the default model during session moves (#1569) (`4f361651a0`)
+- **core**: release the freeze after native session moves (#1568) (`87c86ca33c`)
+
 ## [0.3.15] - 2026-10-28
 
 ### Fixed
