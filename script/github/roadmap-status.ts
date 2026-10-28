@@ -49,18 +49,15 @@ export function itemCode(title: string) {
 /** Appends the pull request to the item's 关联证据 line, at most once. */
 export function withEvidence(body: string, reference: { number: number; url: string }) {
   if (body.includes(reference.url)) return body
+  const evidence = `[#${reference.number}](${reference.url})`
   const lines = body.split("\n")
   const index = lines.findIndex((line) => line.startsWith("关联证据："))
   const line = lines[index]
-  if (!line) return body
+  if (!line) return [body.trimEnd(), `关联证据：${evidence}。`].filter(Boolean).join("\n\n")
   const current = line.trimEnd()
   const suffix = current.endsWith("。") ? "。" : current.endsWith(".") ? "." : ""
   const base = suffix ? current.slice(0, -1) : current
-  return [
-    ...lines.slice(0, index),
-    `${base} [#${reference.number}](${reference.url})${suffix}`,
-    ...lines.slice(index + 1),
-  ].join("\n")
+  return [...lines.slice(0, index), `${base} ${evidence}${suffix}`, ...lines.slice(index + 1)].join("\n")
 }
 
 /** Acceptance records a committed document carries. */
