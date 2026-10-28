@@ -65,6 +65,12 @@ struct Inner {
     context: Mutex<Option<ContextLimits>>,
     roles: Mutex<crate::roles::Bindings>,
     route_limits: Mutex<crate::model_routes::RouteLimits>,
+    /// Where LSP servers were derived from at startup, so a reload re-reads the
+    /// same sources instead of guessing at them.
+    lsp_origin: Mutex<Option<crate::config_derive::LspOrigin>>,
+    /// Number of reloads that changed at least one section. Replaying the same
+    /// configuration does not advance it.
+    config_generation: Mutex<u64>,
     /// Task-specific verification command run before a run may finish.
     verification: Mutex<Option<String>>,
     breaker: Mutex<context_trigger::Breaker>,
@@ -194,6 +200,8 @@ impl Runtime {
                 context: Mutex::new(None),
                 roles: Mutex::new(crate::roles::Bindings::default()),
                 route_limits: Mutex::new(crate::model_routes::RouteLimits::default()),
+                lsp_origin: Mutex::new(None),
+                config_generation: Mutex::new(1),
                 verification: Mutex::new(None),
                 breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
                 restore_pending: Mutex::new(std::collections::HashSet::new()),
@@ -331,6 +339,60 @@ impl Runtime {
 
     pub async fn set_context_limits(&self, limits: Option<ContextLimits>) {
         *self.inner.context.lock().await = limits;
+    }
+
+    /// Record where startup derived the LSP servers from, so `config_reload`
+    /// re-reads those sources rather than a caller-supplied snapshot.
+    pub async fn set_lsp_origin(&self, origin: crate::config_derive::LspOrigin) {
+        *self.inner.lsp_origin.lock().await = Some(origin);
+    }
+
+    /// Re-derive the sections this build can reload and reconcile them in
+    /// place. Today that is the LSP server set: unchanged servers keep their
+    /// connections, changed or removed ones restart on next use, and a
+    /// derivation error changes nothing. The report names every section the
+    /// engine did not reload instead of implying it did.
+    pub async fn reload_config(&self) -> Result<Value, Error> {
+        let mut unsupported = vec!["policy", "models", "mcp", "context", "tools"];
+        // The registry only exists when startup found at least one server; a
+        // plan that starts empty cannot grow without rebuilding Tools, so that
+        // case is reported rather than silently accepted.
+        let plan = self
+            .inner
+            .lsp_origin
+            .lock()
+            .await
+            .clone()
+            .zip(self.inner.tools.lsp_registry());
+        let Some((origin, registry)) = plan else {
+            unsupported.insert(0, "lsp");
+            return Ok(json!({
+                "generation": *self.inner.config_generation.lock().await,
+                "changed": [],
+                "unchanged": [],
+                "unsupported": unsupported,
+            }));
+        };
+        // Derive before touching anything: a malformed edit leaves the running
+        // configuration intact and is reported as an error.
+        let configs = origin.derive().map_err(Error::Invalid)?;
+        let reconciled = registry.reconcile(configs).await?;
+        let changed = !reconciled.changed.is_empty() || !reconciled.removed.is_empty();
+        let mut generation = self.inner.config_generation.lock().await;
+        if changed {
+            *generation += 1;
+        }
+        Ok(json!({
+            "generation": *generation,
+            "changed": if changed { json!(["lsp"]) } else { json!([]) },
+            "unchanged": if changed { json!([]) } else { json!(["lsp"]) },
+            "unsupported": unsupported,
+            "lsp": {
+                "changed": reconciled.changed,
+                "unchanged": reconciled.unchanged,
+                "removed": reconciled.removed,
+            },
+        }))
     }
 
     /// Purpose-role model bindings (ADR-14): a binding is a model id on the
