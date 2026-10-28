@@ -19,6 +19,7 @@
 # Environment:
 #   MIAO_ENGINE_BIN           engine binary under test; without it the
 #                             engine-binary files skip themselves
+#   INTEGRATION_REQUIRE_ENGINE  set to 1 in CI to reject a missing or unusable engine
 #   INTEGRATION_TEST_TIMEOUT  per-test timeout in ms passed to bun test
 #                             (default 300000, raised from the unit 30000)
 #   INTEGRATION_FILE_TIMEOUT  wall-clock budget per attempt in seconds
@@ -32,12 +33,32 @@ timeout_ms="${INTEGRATION_TEST_TIMEOUT:-300000}"
 file_deadline="${INTEGRATION_FILE_TIMEOUT:-900}"
 round="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/miao-integration-$$"
 
-if [ -z "${MIAO_ENGINE_BIN:-}" ]; then
+if [ "${INTEGRATION_REQUIRE_ENGINE:-0}" = 1 ]; then
+  if [ ! -x "${MIAO_ENGINE_BIN:-}" ]; then
+    echo "INTEGRATION_REQUIRE_ENGINE=1 requires an executable MIAO_ENGINE_BIN" >&2
+    exit 1
+  fi
+  "$MIAO_ENGINE_BIN" --version || exit 1
+elif [ -z "${MIAO_ENGINE_BIN:-}" ]; then
   echo "MIAO_ENGINE_BIN is not set; engine-binary files will skip themselves" >&2
 fi
 
 files=()
-while IFS= read -r file; do files+=("$file"); done < <(find test/engine test/acp -name '*.test.ts' | sort)
+# Optional package-relative file arguments let specialist jobs share the same
+# isolation and cleanup without paying for the entire integration suite.
+if [ "$#" -gt 0 ]; then
+  for file in "$@"; do
+    case "$file" in
+      test/engine/*.test.ts|test/acp/*.test.ts)
+        [ -f "$file" ] || { echo "integration test file does not exist: $file" >&2; exit 1; }
+        files+=("$file")
+        ;;
+      *) echo "expected an integration test under test/engine or test/acp: $file" >&2; exit 1 ;;
+    esac
+  done
+else
+  while IFS= read -r file; do files+=("$file"); done < <(find test/engine test/acp -name '*.test.ts' | sort)
+fi
 if [ "${#files[@]}" -eq 0 ]; then
   echo "no integration test files found under test/engine and test/acp" >&2
   exit 1

@@ -124,6 +124,7 @@ jobs:
         working-directory: packages/miao
         env:
           MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine
+          INTEGRATION_REQUIRE_ENGINE: "1"
         timeout-minutes: 40
         run: bun run test:integration
 
