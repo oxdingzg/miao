@@ -41,6 +41,17 @@ if (sandboxIndex !== -1) {
   await ensureEmbeddedEngine().catch(() => undefined)
 }
 
+// The Rust TUI starts its engine itself and can only forward a fixed table of
+// environment variables as flags, which carries no product route or credential
+// source. The launcher points `MIAO_ENGINE_BIN` at this hidden command instead:
+// it prepares the product's engine plan, then runs the real engine and relays
+// frames between the TUI and that child.
+const engineShim = process.argv.indexOf("__engine-shim")
+if (engineShim !== -1) {
+  const { runEngineShim } = await import("./engine/tui-engine-host")
+  process.exit(await runEngineShim(process.argv.slice(engineShim + 1)))
+}
+
 function show(out: string) {
   const text = out.trimStart()
   if (!text.startsWith("opencode ")) {
