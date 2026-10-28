@@ -1,0 +1,5 @@
+{
+  // A nearer `.miao` directory wins over the project file, key by key.
+  "model": "local/model", // trailing comma below
+  "shell": "/bin/fish",
+}
