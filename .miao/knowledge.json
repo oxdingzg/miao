@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "revision": 1,
+  "notes": {
+    "native-tool-replay-trace16-display": {
+      "revision": 1,
+      "title": "native-tool-replay trace:root[16] CI 红根因 = #1493 display 回放缺失，#1498 已修",
+      "kind": "repo_fact",
+      "body": "CI 红（2026-10-26 16:26Z–17:03Z 窗口）native-tool-replay.test.ts \"native write receipts replay…\" 失败 trace:root[16] 的根因：#1493 给引擎加 display 通道（file_mutation 计算 diff 放进 result._display，store 移到 tool.completed.display），但 BlackboxTape 录制 native-tool 交互时 Settlement 未含 display，rust ToolReplay 回放产生的 tool.completed 缺 display 键 → expectTrace 字节级比较必败（ordinal 16，双方都 tool.completed，expected 有 display、actual 没有）。#1498（89e6c21e67）修复：engine-tools.ts 录制时捕获 display，tool_replay.rs Settlement.materialize 把 display 以 _display 放回 result。已在本地用 main@1b8f9c8f2 树+该树引擎确定性复现并字段级验证。要点：标题泵（#1492）是 host 侧、不经 direct-spawn 引擎客户端，与本测试失败无关；s6 分支（feat/s6-permission-unify，PR #1499 open）17:02Z 的 run 同签名红但其树无 #1493，为另一未解罕见 CI 竞态（本地 120 轮插桩压测未复现）；s2/s5 的红是 unit job ACP session 测试超时，与本案无关。诊断技巧：EngineTools.observe 的 tape 帧严格复制引擎事件，回放侧数据必等于录制侧，同序位同 kind 数据差异只能来自 tape 往返丢失/变换的字段。",
+      "derivation": "在 main@1b8f9c8f2 worktree 用同树构建的 debug 引擎运行 native-tool-replay.test.ts 必现失败，dump-mismatch 显示 expected 含 display、actual 缺 display；#1498 diff 与提交信息吻合；release worktree（含 #1498）单文件 10/10 绿、全量 145/145 绿；CI run 40370121197（post-#1498 main）success。",
+      "sources": [
+        {
+          "path": ".worktrees/release/crates/miao-engine/src/tool_replay.rs",
+          "sha256": "98a896eaeaa4496fe7e52cc9e515d6f0137cf7dd5e1fc5e455c0f723e8827c69"
+        },
+        {
+          "path": ".worktrees/release/packages/miao/src/blackbox/engine-tools.ts",
+          "sha256": "5213d36b4ca5199464a89ad3793e7218f174adcf2e975b529b9521b294867c6d"
+        },
+        {
+          "path": ".worktrees/release/packages/core/src/blackbox/tape.ts",
+          "sha256": "65efede4e0c39af742b767f023563fa621cc9a0f45c351491481907150dee8b4"
+        }
+      ],
+      "location": "2a9af13f4df1c0641b0df93acc22ccd45fe837ca9c70f2217a5a24ecd6bee5c8",
+      "origin_session": "ses_gfe5e873c3742ffeecfodas0CT/sub-dc77ca12-e64c-4231-9b87-4483bad7699d",
+      "updated_at_ms": 1793038909168,
+      "expires_at_ms": null
+    }
+  }
+}
