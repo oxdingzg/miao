@@ -55,7 +55,7 @@ import { SessionTitleSettlement } from "@miao/core/session/title-settlement"
 import { SessionBlackbox } from "@miao/core/session/blackbox"
 import { BlackboxTape } from "@miao/core/blackbox/tape"
 import * as SessionRunnerLLM from "@miao/core/session/runner/llm"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { BashTool } from "@miao/core/tool/bash"
 import { MonitorTool } from "@miao/core/tool/monitor"
 import { BackgroundJob } from "@miao/core/background-job"
@@ -377,10 +377,10 @@ const waitForChild = (pid: number) =>
     return yield* Effect.die(new Error(`Process ${pid} never spawned a child`))
   })
 
-let modelResolveHook: Effect.Effect<void, SessionRunnerModel.Error> = Effect.void
-let modelResolveFailure: SessionRunnerModel.Error | undefined
+let modelResolveHook: Effect.Effect<void, SessionModel.Error> = Effect.void
+let modelResolveFailure: SessionModel.Error | undefined
 let currentModel = model
-const models = SessionRunnerModel.layerWith((session) =>
+const models = SessionModel.layerWith((session) =>
   modelResolveFailure ? Effect.fail(modelResolveFailure) : modelResolveHook.pipe(Effect.as(session.model?.id === "replacement" ? replacementModel : currentModel)),
 )
 const systemContextKey = SystemContext.Key.make("test/context")
@@ -459,7 +459,7 @@ const runnerLayer = (directory: string) =>
     [
       [Snapshot.node, Snapshot.noopLayer],
       [LayerNodePlatform.llmClient, client],
-      [SessionRunnerModel.node, models],
+      [SessionModel.node, models],
       [SystemContextRegistry.node, systemContext],
       [Location.node, Location.boundNode({ directory: AbsolutePath.make(directory) })],
       [SkillGuidance.node, skillGuidance],
@@ -531,7 +531,7 @@ const appNodes = [
   ToolRegistry.toolsNode,
   echoNode,
   AppProcess.node,
-  SessionRunnerModel.node,
+  SessionModel.node,
   SystemContextRegistry.node,
   SkillGuidance.node,
   ReferenceGuidance.node,
@@ -552,7 +552,7 @@ const execution = makeExecution()
 const appOverrides = (bound: LayerNode.Replacement): LayerNode.Replacements => [
   [LayerNodePlatform.llmClient, client],
   [PermissionV2.node, permission],
-  [SessionRunnerModel.node, models],
+  [SessionModel.node, models],
   [SystemContextRegistry.node, systemContext],
   bound,
   [SkillGuidance.node, skillGuidance],
@@ -1858,7 +1858,7 @@ describe("SessionRunnerLLM", () => {
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
-      const failure = new SessionRunnerModel.VariantUnavailableError({ providerID: ProviderV2.ID.openai, modelID: ModelV2.ID.make("gpt-6.1-sol"), variant: ModelV2.VariantID.make("medium") })
+      const failure = new SessionModel.VariantUnavailableError({ providerID: ProviderV2.ID.openai, modelID: ModelV2.ID.make("gpt-6.1-sol"), variant: ModelV2.VariantID.make("medium") })
       modelResolveFailure = failure
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "hi" }), resume: false })
       expect(yield* session.resume(sessionID).pipe(Effect.flip)).toBe(failure)
@@ -8717,7 +8717,7 @@ describe("SessionRunnerLLM", () => {
       yield* setup
       const session = yield* SessionV2.Service
       const database = yield* Database.Service
-      const failure = new SessionRunnerModel.ModelUnavailableError({
+      const failure = new SessionModel.ModelUnavailableError({
         providerID: ProviderV2.ID.make("fake"),
         modelID: ModelV2.ID.make("fake-model"),
       })

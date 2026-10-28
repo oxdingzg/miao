@@ -63,7 +63,7 @@ import { SessionNativeTitle } from "@miao/core/session/native-title"
 import { SessionInput } from "@miao/schema/session-input"
 import type { SessionID } from "@miao/schema/session-id"
 import { SessionTitle } from "@miao/core/session/title"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { memoMap } from "@miao/core/effect/memo-map"
 
 import { SessionStore } from "@miao/core/session/store"
@@ -1210,7 +1210,7 @@ const layer = Layer.effect(
           Effect.gen(function* () {
             const runtime = yield* buildLocationRuntime(input.location)
             const locationContext = runtime as unknown as Context.Context<
-              AgentV2.Service | EventV2.Service | SessionRunnerModel.Service
+              AgentV2.Service | EventV2.Service | SessionModel.Service
             >
             const snapshot = yield* engine.snapshot({ ...input, metadataOnly: true })
             const selection = Schema.decodeUnknownOption(Schema.NullOr(SessionModelRoute.Binding))(
@@ -1231,7 +1231,7 @@ const layer = Layer.effect(
               store: sessions,
               llm: llm,
               agents: Context.get(locationContext, AgentV2.Service),
-              models: Context.get(locationContext, SessionRunnerModel.Service),
+              models: Context.get(locationContext, SessionModel.Service),
               events: Context.get(locationContext, EventV2.Service),
             }).pipe(Effect.catch(() => Effect.succeed(undefined)))
           }),

@@ -13,7 +13,7 @@ import { ProviderV2 } from "@miao/core/provider"
 import { ProjectV2 } from "@miao/core/project"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { SessionRunnerProviderRetry } from "@miao/core/session/runner/provider-retry"
 import { ApplicationTools } from "@miao/core/tool/application-tools"
 import { Database } from "@miao/core/database/database"
@@ -194,7 +194,7 @@ describe("SessionRunnerProviderRetry against a live location", () => {
           })
 
           yield* Effect.gen(function* () {
-            const models = yield* SessionRunnerModel.Service
+            const models = yield* SessionModel.Service
             const rejected = yield* models
               .resolve(session)
               .pipe(Effect.provide(LocationServiceMap.Service.get(location)), Effect.flip)
@@ -274,7 +274,7 @@ describe("SessionRunnerProviderRetry against a live location", () => {
           })
 
           yield* Effect.gen(function* () {
-            const models = yield* SessionRunnerModel.Service
+            const models = yield* SessionModel.Service
             const rejected = yield* models
               .resolve(session)
               .pipe(Effect.provide(LocationServiceMap.Service.get(location)), Effect.flip)

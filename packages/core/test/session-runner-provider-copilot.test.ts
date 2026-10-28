@@ -6,7 +6,7 @@ import { Integration } from "@miao/core/integration"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { it } from "./lib/effect"
 import { exchange, sse } from "./lib/llm-wire"
 
@@ -61,7 +61,7 @@ const copilotHeaders = {
 describe("GitHub Copilot V2 route", () => {
   it.effect("sends GPT-5 class models through Responses with the Copilot token", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(copilot({ id: "gpt-6.1-sol" }), login())
+      const model = yield* SessionModel.fromCatalogModel(copilot({ id: "gpt-6.1-sol" }), login())
       const { wire, response } = yield* exchange(
         LLM.request({ model, prompt: "Hello", tools: [lookup] }),
         sse([
@@ -97,7 +97,7 @@ describe("GitHub Copilot V2 route", () => {
 
   it.effect("keeps chat-completions models and mini variants on Chat", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(copilot({ id: "gpt-5-mini" }), login())
+      const model = yield* SessionModel.fromCatalogModel(copilot({ id: "gpt-5-mini" }), login())
       const { wire, response } = yield* exchange(
         LLM.request({ model, prompt: "Hello" }),
         sse([
@@ -117,7 +117,7 @@ describe("GitHub Copilot V2 route", () => {
 
   it.effect("follows the endpoint the account's model list named", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         copilot({ id: "gpt-4.1", package: "@ai-sdk/github-copilot", endpoint: "responses" }),
         login(),
       )
@@ -131,7 +131,7 @@ describe("GitHub Copilot V2 route", () => {
 
   it.effect("sends Claude through Anthropic Messages under /v1 with bearer auth", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         copilot({
           id: "claude-sonnet-5",
           package: "@ai-sdk/anthropic",
@@ -168,7 +168,7 @@ describe("GitHub Copilot V2 route", () => {
 
   it.effect("routes an Enterprise login to its Copilot API", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         copilot({ id: "gpt-6.1-sol" }),
         login({ enterpriseUrl: "company.ghe.com" }),
       )
@@ -182,7 +182,7 @@ describe("GitHub Copilot V2 route", () => {
 
   it.effect("accepts a GITHUB_TOKEN key credential", () =>
     Effect.gen(function* () {
-      const model = yield* SessionRunnerModel.fromCatalogModel(
+      const model = yield* SessionModel.fromCatalogModel(
         copilot({ id: "gpt-4.1" }),
         Credential.Key.make({ type: "key", key: "ghp_env" }),
       )
@@ -196,7 +196,7 @@ describe("GitHub Copilot V2 route", () => {
 
   it.effect("reports every Copilot model as routable", () =>
     Effect.sync(() => {
-      expect(SessionRunnerModel.supported(copilot({ id: "x", package: "@ai-sdk/github-copilot" }))).toBe(true)
+      expect(SessionModel.supported(copilot({ id: "x", package: "@ai-sdk/github-copilot" }))).toBe(true)
     }),
   )
 })

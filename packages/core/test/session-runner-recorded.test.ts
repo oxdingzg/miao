@@ -22,7 +22,7 @@ import { SessionExecution } from "@miao/core/session/execution"
 import { SessionRunCoordinator } from "@miao/core/session/run-coordinator"
 import { SessionRunner } from "@miao/core/session/runner"
 import * as SessionRunnerLLM from "@miao/core/session/runner/llm"
-import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { SessionModel } from "@miao/core/session/model"
 import { ToolRegistry } from "@miao/core/tool/registry"
 import { ToolOutputStore } from "@miao/core/tool-output-store"
 import { SessionTable } from "@miao/core/session/sql"
@@ -67,7 +67,7 @@ const model = OpenAIChat.route
     generation: { maxTokens: 20, temperature: 0 },
   })
   .model({ id: "gpt-4o-mini" })
-const models = SessionRunnerModel.layerWith(() => Effect.succeed(model))
+const models = SessionModel.layerWith(() => Effect.succeed(model))
 const systemContext = AppNodeBuilder.build(SystemContextRegistry.node)
 const skillGuidance = Layer.mock(SkillGuidance.Service, { load: () => Effect.succeed(SystemContext.empty) })
 const referenceGuidance = Layer.mock(ReferenceGuidance.Service, { load: () => Effect.succeed(SystemContext.empty) })
@@ -75,7 +75,7 @@ const config = Layer.succeed(Config.Service, Config.Service.of({ entries: () => 
 const runnerLayer = AppNodeBuilder.build(SessionRunnerLLM.node, [
   [Snapshot.node, Snapshot.noopLayer],
   [LayerNodePlatform.llmClient, client],
-  [SessionRunnerModel.node, models],
+  [SessionModel.node, models],
   [SystemContextRegistry.node, systemContext],
   [Location.node, Location.boundNode({ directory: AbsolutePath.make("/project") })],
   [SkillGuidance.node, skillGuidance],
@@ -112,7 +112,7 @@ const it = testEffect(
       SessionStore.node,
       AgentV2.node,
       ToolRegistry.node,
-      SessionRunnerModel.node,
+      SessionModel.node,
       SystemContextRegistry.node,
       SkillGuidance.node,
       ReferenceGuidance.node,
@@ -125,7 +125,7 @@ const it = testEffect(
       [LayerNodePlatform.llmClient, client],
       [PermissionV2.node, permission],
       [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
-      [SessionRunnerModel.node, models],
+      [SessionModel.node, models],
       [SystemContextRegistry.node, systemContext],
       [Location.node, Location.boundNode({ directory: AbsolutePath.make("/project") })],
       [SkillGuidance.node, skillGuidance],

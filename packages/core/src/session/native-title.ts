@@ -4,7 +4,7 @@ import type { Model } from "@miao/schema/model"
 import type { Credential } from "@miao/schema/credential"
 import type { LLMError, LLMEvent, LLMRequest } from "@miao/llm"
 import { SessionTitle } from "./title"
-import { SessionRunnerModel } from "./runner/model"
+import { SessionModel } from "./model"
 import type { SessionStore } from "./store"
 import { AgentV2 } from "../agent"
 import type { EventV2 } from "../event"
@@ -34,7 +34,7 @@ export const afterRun = Effect.fn("SessionNativeTitle.afterRun")(function* (inpu
   readonly store: { readonly get: SessionStore.Interface["get"] }
   readonly llm: { readonly stream: (request: LLMRequest) => Stream.Stream<LLMEvent, LLMError> }
   readonly agents: Pick<AgentV2.Interface, "get">
-  readonly models: { readonly resolve: SessionRunnerModel.Interface["resolve"] }
+  readonly models: { readonly resolve: SessionModel.Interface["resolve"] }
   readonly events: {
     readonly publish: (
       definition: typeof SessionEvent.Info.Updated,
