@@ -2,7 +2,7 @@
 //! rule projection so refreshing that projection cannot delete native policy.
 use crate::{
     permission::{digest, Decision},
-    permission_rules::{Request, Rule},
+    permission_rules::{Request, Rule, MAX_RULES},
     protocol::Error,
     store::Store,
 };
@@ -10,7 +10,6 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-const MAX_RULES: usize = 256;
 const ID_PREFIX: &str = "prule_";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,15 +41,27 @@ pub struct Remove {
 }
 
 pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
-    connection.execute_batch(
+    connection.execute_batch(&format!(
         "CREATE TABLE IF NOT EXISTS engine_owned_permission_rule(
            workspace TEXT NOT NULL,
            digest TEXT NOT NULL,
            rule TEXT NOT NULL,
            created_at_ms INTEGER NOT NULL,
            PRIMARY KEY(workspace, digest)
-         );",
-    )?;
+         );
+         CREATE TRIGGER IF NOT EXISTS engine_projected_permission_budget
+         BEFORE INSERT ON engine_permission_rule
+         WHEN NOT EXISTS(SELECT 1 FROM engine_permission_rule WHERE workspace=NEW.workspace AND digest=NEW.digest)
+         AND (SELECT COUNT(*) FROM engine_permission_rule WHERE workspace=NEW.workspace)
+             +(SELECT COUNT(*) FROM engine_owned_permission_rule WHERE workspace=NEW.workspace)>={MAX_RULES}
+         BEGIN SELECT RAISE(ABORT, 'saved permission rule budget exceeded'); END;
+         CREATE TRIGGER IF NOT EXISTS engine_owned_permission_budget
+         BEFORE INSERT ON engine_owned_permission_rule
+         WHEN NOT EXISTS(SELECT 1 FROM engine_owned_permission_rule WHERE workspace=NEW.workspace AND digest=NEW.digest)
+         AND (SELECT COUNT(*) FROM engine_permission_rule WHERE workspace=NEW.workspace)
+             +(SELECT COUNT(*) FROM engine_owned_permission_rule WHERE workspace=NEW.workspace)>={MAX_RULES}
+         BEGIN SELECT RAISE(ABORT, 'saved permission rule budget exceeded'); END;"
+    ))?;
     Ok(())
 }
 
@@ -98,9 +109,9 @@ fn records(connection: &Connection, workspace: &str) -> Result<Vec<Pattern>, Err
         return Ok(Vec::new());
     }
     let mut statement = connection.prepare(
-        "SELECT digest,rule,created_at_ms FROM engine_owned_permission_rule WHERE workspace=?1 ORDER BY created_at_ms,digest LIMIT 257",
+        "SELECT digest,rule,created_at_ms FROM engine_owned_permission_rule WHERE workspace=?1 ORDER BY created_at_ms,digest LIMIT ?2",
     )?;
-    let rows = statement.query_map([workspace], |row| {
+    let rows = statement.query_map(params![workspace, MAX_RULES + 1], |row| {
         Ok((
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
@@ -330,6 +341,28 @@ mod tests {
                 .len(),
             256
         );
+    }
+
+    #[test]
+    fn native_projection_replays_do_not_overfill_the_shared_saved_rule_budget() {
+        let mut connection = connection();
+        let native = put(&mut connection, "/repo", &rule("native")).unwrap();
+        let projected = (0..255)
+            .map(|index| rule(&format!("legacy-{index}")))
+            .collect::<Vec<_>>();
+        crate::permission_saved::project(&mut connection, "/repo", &projected).unwrap();
+        crate::permission_saved::project(&mut connection, "/repo", &projected).unwrap();
+        assert!(
+            crate::permission_saved::project(&mut connection, "/repo", &[rule("over-budget")])
+                .is_err()
+        );
+        assert_eq!(
+            crate::permission_saved::rules(&connection, "/repo")
+                .unwrap()
+                .len(),
+            256
+        );
+        assert_eq!(records(&connection, "/repo").unwrap(), vec![native]);
     }
 
     #[test]

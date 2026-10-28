@@ -739,7 +739,9 @@ Native rows live separately from the host projection in the additive optional
 `engine_owned_permission_rule` table. They join saved rules during evaluation;
 removal does not delete projected rows or exact-call grants. A compatible older
 read-only database without this optional table has no native-owned patterns.
-Writes validate the combined saved-rule budget transactionally. Capability
+SQLite insertion constraints enforce the combined saved-rule budget for both
+native and projected rows; full-budget content replays remain idempotent.
+Writes fail transactionally. Capability
 negotiation, not a guessed version string, identifies support.
 
 These methods provide standing-policy storage and explicit controller editing.
