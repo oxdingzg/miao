@@ -482,12 +482,29 @@ recorded. The `snapshot` reply reports the staged revert when one exists.
 ### Incremental configuration reload
 
 `config_reload` re-derives the configuration sections the engine owns from the
-same origin startup used (`--lsp-config`, `--config-sources` or `--config-dir`)
-and reconciles the ones this build can swap in place. The reply is
+same origin startup used (`--policy`, `--config-sources` or `--config-dir` for
+the policy; `--lsp-config`, `--config-sources` or `--config-dir` for LSP) and
+reconciles the ones this build can swap in place. The reply is
 `{generation, changed, unchanged, unsupported, …}`: `generation` advances only
 when a section changed, `changed`/`unchanged` name top-level sections, and
 `unsupported` names the sections this build does not reload yet rather than
-implying they were applied.
+implying they were applied. Every section is derived and validated before any is
+applied, so a malformed edit or a boundary violation leaves all of them as they
+were.
+
+The policy section replaces the base policy a turn is derived from and, in the
+same swap, the capability gates and web client that policy implies — a
+tightened policy left running beside the old gates would check one thing and
+enforce another. Gates are applied first, then the policy: that order can only
+add a refusal ahead of the new rules, never permit a call the old ones denied.
+A turn that already took its policy snapshot keeps it and the next turn reads
+the new one; approvals carry the old revision and are therefore refused with
+`ApprovalMismatch`, so a tightened policy never inherits an approval granted
+under the looser one. The startup invariants are re-checked and a reload that
+would break one is refused: process authority requires the database outside the
+workspace and credentials outside it, and MCP requires external authority.
+A Session with no recorded policy origin (`unsupported` contains `policy`)
+cannot reload that section.
 
 The LSP server set is reconciled per server by name and configuration. An
 unchanged server keeps its connection and is never restarted; a changed or

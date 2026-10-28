@@ -98,7 +98,8 @@
 - **standalone**：`serve --config-dir` 没有宿主，由引擎自己轮询源文件的 mtime（默认 2s，
   去抖后按摘要判定），走同一条换入路径。
 - 不用 OS 文件监听：网络文件系统、容器挂载和编辑器原子写入的语义在各平台不一致，轮询
-  mtime + 内容摘要更可预测。轮询只在 `--config-dir`/`--config-sources` 模式开启。
+  mtime + 内容摘要更可预测。轮询覆盖每个 origin 命名的文件并集（policy 与 LSP 两侧，内联
+  `content` 除外）；宿主若用显式 `config_reload`，轮询只是幂等的兜底。
 
 ## 4. 验收映射
 
@@ -136,8 +137,17 @@
    按 server 名 + 配置 diff——未变的连接保留，变更/删除的在下次使用前关闭。启动来源
    （`--lsp-config` / `--config-sources` / `--config-dir`）记为 `LspOrigin`，重载重读同一来源。
    reload 自身不 spawn 子进程；派生失败不改动任何一节。
-2. **policy 与工具闸门**：见 §3.2——单独换 policy 会让收紧的规则与旧闸门并存，必须同时
-   换入能力闸门。
+2. **policy 与工具闸门（已实现）**：见 §3.2——单独换 policy 会让收紧的规则与旧闸门并存，
+   必须同时换入能力闸门。`Inner.policy` 改为 `RwLock<Arc<Policy>>`（每 turn 取一次快照，
+   turn 内不变，未决审批按 revision 自动失效）；`Tools` 的八个能力闸门收进 `Gates`，放在
+   共享 cell 里整体换入，web 客户端同为可换载体；启动来源记为 `PolicyOrigin`（`--policy` /
+   `--config-sources` / `--config-dir` / entry 默认，`--mode` 每次重新施加），重载重读同一来源。
+   启动时的不变式（process 需要数据库与凭证在工作区外、MCP 需要外部授权）在换入前重跑，
+   违反则整份拒绝且不改动任何一节。换入顺序为先闸门后 policy：该方向只会比旧 policy 更严。
+   standalone 轮询的观察面扩为 policy 与 LSP 两侧文件的并集。验证：`tests/config_reload_policy.rs`
+   覆盖"收紧/放宽换入闸门与工具面、同内容不换代、畸形配置不改动、越界 process 被拒"；
+   真实引擎以 `--config-dir` 运行、只改 `sandbox.mode` 两次，轮询各打印一次
+   `configuration reloaded: ["policy"]`，generation 1→2→3 而 LSP 三台服务器始终 `unchanged`。
 3. **MCP reconcile**：现有 `servers: Vec<Arc<Server>>` 与 `tools` 表要改成可替换结构；子进程
    按 server 归属（与 LSP 相同），避免 registry 级 child 列表。
 4. **Provider 路由替换**：模型目录与路由表的换代。
