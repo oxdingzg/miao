@@ -337,7 +337,7 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
   // run accumulates history instead of starting over.
   for (const [round, prompt] of [task.prompt, ...(task.followups ?? [])].entries()) {
     const recording = path.join(blackbox, `${round}`)
-    const args = [input.bun ?? "bun", input.entry, "run", prompt, "--format", "json", "-m", input.model]
+    const args = [input.bun ?? "bun", input.entry, "run", prompt, "--engine", "ts", "--format", "json", "-m", input.model]
     if (session) args.push("--session", session)
     const child = Bun.spawn(args, {
       cwd: workspace,
