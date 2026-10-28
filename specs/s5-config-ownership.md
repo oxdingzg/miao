@@ -1,28 +1,44 @@
 # S5：配置下沉设计
 
 状态：进行中。设计第 1、2 条已合入 main（step 1 引擎读产品配置文件 #1487，step 2 引擎推导
-产品配置 #1500）；`product-*.ts` 的临时文件物化仍在，S5 尚未收口。前置：S3 已落地。
+产品配置 #1500）；policy 的产品物化已退役，LSP 的产品物化已随 #1557 合入 main。
+宿主事实传输、完整配置兼容与统一规范化读面仍需收口，不能据此宣布 S5 完成。前置：S3 已落地。
 
 ## 1. 目的
 
 `specs/rust-phase-2.md` §4 的 S5：`miao.json` 的优先级解析进入引擎，TS 只传目录与环境；
-删除 `product-*.ts` 的临时文件物化。
+删除重复派生纯配置的临时文件物化。宿主运行时事实的生产和传输另按职责边界登记，
+不把删除探针、路由或插件发现当成配置解析迁移。
 
 ## 2. 现状
 
-- 配置解析只在 TS：`packages/core/src/config.ts:49`（`fileNames` 的优先级列表、
-  `parseJsonc`、V1 迁移入口 `ConfigMigrateV1`）。
-- 引擎只接受 argv 与产品物化的临时文件：`packages/miao/src/engine/product-policy.ts`、
-  `product-hooks.ts`、`product-mcp.ts`、`product-lsp.ts`、`product-formatter.ts`、
-  `product-agent.ts`、`product-command.ts`、`product-tools.ts`、`product-routes.ts`。
-  每一份都是一次"TS 已解析 → 写临时 JSON → 引擎读"的往返。
+- 引擎已通过 `config_scope.rs` 读有序文件/目录/inline JSONC 源，再由 `config_derive.rs`
+  派生 policy/LSP；产品宿主传 `Config.sources()` 的源计划，保留显式 operator override。
+- TS 的 `Config.Service` 仍服务产品 UI、配置写入及其他消费者，并保留 V1 迁移入口。
+  当前共享黄金样例主要覆盖 policy/LSP；不能将这些样例等同整份产品配置已共用一个规范化读面。
+- `product-policy.ts` 与 `product-lsp.ts` 的实际物化调用方已删除；JSONC UTF-8 保真修复
+  #1587 已合入，不能再将“解析只在 TS”或“LSP 待合并”作为当前事实。
+
+### 2.1 剩余传输的归属
+
+| 数据                                     | 当前生产者与传输                                                                | 处理边界                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------- |
+| policy/LSP 纯配置                        | 引擎读源计划并派生；仍允许显式 host manifest override                           | 不恢复产品侧重复派生；黄金样例继续双侧对齐   |
+| formatter                                | `ProductFormatter.prepare` 调用 `Formatter.*.enabled(context)`，传私有 manifest | 保留 TS 环境探针；不是未清理的静态配置表     |
+| routes、tools、hooks、MCP 与 worker 适配 | 宿主目录、插件/凭据解析及桥接，传对应 manifest/运行时选项                       | 保留兼容边界和版本契约，不机械删除实际调用方 |
+| ambient instructions、skills、references | 宿主解析来源、只读引用和嵌入内容，再传源/授权 manifest                          | 文件来源与运行时授权仍由宿主决定             |
+| saved permission                         | 产品保存规则投影到引擎；S6 判定退役是另一项工作                                 | 不把权限事实投影误删为配置冗余               |
+
+职责依据见 [RUS-03](rus03-control-plane-responsibilities.md)。#1572 已钉住 formatter
+context 和 engine arguments 的宿主契约。如果最终验收要求零临时 manifest，仍需另行实现
+有版本、生命周期和权限语义的宿主事实传输；当前 manifest 的存在不能直接算“已收口”。
 
 ## 3. 设计
 
 1. **解析进引擎**：引擎读同一组文件（`miao.json` / `miao.jsonc` / `opencode.json` /
    `opencode.jsonc`）与同样的优先级，自己做 V1 迁移判定与 JSONC 解析。
 2. **TS 传目录与环境**：启动参数只传 workspace 目录、global 配置目录、以及必须由宿主决定的
-   环境（例如网关 token）。临时文件物化删除。
+   环境（例如网关 token）。纯配置的重复物化删除；宿主事实按 §2.1 登记其传输契约。
 3. **一份解析器两种读者**：S5 期间 TS 仍需要配置（TUI、命令、agent 列表），所以解析器要有
    两份实现且**必须用同一组黄金样例对齐**（输入 JSON → 归一化输出），否则会出现"引擎看到的
    配置与 TUI 不同"。这是 S5 的主要成本，也是它的验收核心。
@@ -32,7 +48,8 @@
 
 - 黄金样例集：每个样例（含 JSONC、V1 迁移、多目录优先级、未知键）在 TS 与引擎两侧产生
   相同的归一化配置；样例随 PR 提交。
-- 删除 `product-*.ts` 的物化后，全量测试与 blackbox 通过。
+- 纯配置物化的实际调用方消失后，全量测试与 blackbox 通过。保留的宿主事实逐项登记；
+  不将其存在误判为死代码，也不据此勾选“所有临时文件均已退役”。
 - 配置错误信息两侧一致（快照测试）。
 
 ## 5. 不做
@@ -42,8 +59,8 @@
 
 ## 6. 风险
 
-| 风险 | 处理 |
-|---|---|
-| 两套解析器漂移 | 黄金样例集进入 CI；漂移即失败 |
-| V1 迁移规则在两处实现不一致 | 迁移只在引擎实现一次，TS 侧读引擎归一化后的结果 |
-| 启动变慢（引擎每次读文件） | 配置读取在引擎启动一次并缓存，与今天产品侧行为一致 |
+| 风险                        | 处理                                               |
+| --------------------------- | -------------------------------------------------- |
+| 两套解析器漂移              | 黄金样例集进入 CI；漂移即失败                      |
+| V1 迁移规则在两处实现不一致 | 迁移只在引擎实现一次，TS 侧读引擎归一化后的结果    |
+| 启动变慢（引擎每次读文件）  | 配置读取在引擎启动一次并缓存，与今天产品侧行为一致 |
