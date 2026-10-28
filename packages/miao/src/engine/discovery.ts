@@ -28,6 +28,12 @@ export type Capabilities = {
   routesSchema?: number
   /** Version of the short-lived read-only catalog command, when supported. */
   catalog?: number
+  savedRulesSnapshot?: number
+  productPermissionRequests?: number
+  productPermissionReplies?: number
+  productPermissionCancel?: number
+  productPermissionDiagnostics?: number
+  productPermissionAuto?: number
 }
 
 const EXE = process.platform === "win32" ? ".exe" : ""
@@ -68,6 +74,13 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (camel !== undefined && snake !== undefined && camel !== snake) return undefined
     const routesSchema = camel ?? snake
     if (wire.catalog !== undefined && !isRevision(wire.catalog)) return undefined
+    if (wire.saved_rules_snapshot !== undefined && !isRevision(wire.saved_rules_snapshot)) return undefined
+    if (wire.product_permission_requests !== undefined && !isRevision(wire.product_permission_requests))
+      return undefined
+    if (wire.product_permission_replies !== undefined && !isRevision(wire.product_permission_replies)) return undefined
+    if (wire.product_permission_cancel !== undefined && !isRevision(wire.product_permission_cancel)) return undefined
+    if (wire.product_permission_diagnostics !== undefined && !isRevision(wire.product_permission_diagnostics)) return undefined
+    if (wire.product_permission_auto !== undefined && !isRevision(wire.product_permission_auto)) return undefined
     return {
       name: "miao-engine",
       version: wire.version,
@@ -75,6 +88,16 @@ export function capabilities(binary: string): Capabilities | undefined {
       schema: wire.schema,
       ...(typeof routesSchema === "number" ? { routesSchema } : {}),
       ...(typeof wire.catalog === "number" ? { catalog: wire.catalog } : {}),
+      ...(typeof wire.saved_rules_snapshot === "number" ? { savedRulesSnapshot: wire.saved_rules_snapshot } : {}),
+      ...(typeof wire.product_permission_requests === "number"
+        ? { productPermissionRequests: wire.product_permission_requests }
+        : {}),
+      ...(typeof wire.product_permission_replies === "number"
+        ? { productPermissionReplies: wire.product_permission_replies }
+        : {}),
+      ...(typeof wire.product_permission_cancel === "number" ? { productPermissionCancel: wire.product_permission_cancel } : {}),
+      ...(typeof wire.product_permission_diagnostics === "number" ? { productPermissionDiagnostics: wire.product_permission_diagnostics } : {}),
+      ...(typeof wire.product_permission_auto === "number" ? { productPermissionAuto: wire.product_permission_auto } : {}),
     }
   } catch {
     return undefined

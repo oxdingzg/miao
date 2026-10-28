@@ -66,3 +66,117 @@ policy 做优先级求值。两者不是同一种东西，所以 S6 不是"加�
 | 迁移期间"问过又再问一次" | 导入在 Session 唤醒前完成；导入失败则拒绝启动该 Session |
 | 项目级规则的作用域误用（跨项目生效） | scope 以 Location 为键，测试覆盖两个项目互不影响 |
 | 删除 TS 判定后某些插件失去判定入口 | 插件走引擎的工具/权限 RPC；先在 S6 前补一个兼容层 |
+
+
+## 7. 第③步的绑定规则查询前置
+
+新增 `product_permission_evaluate` 将宿主声明的动作/资源与活跃的产品工具reverse call绑定。
+Rust在派发时保存本turn的agent规则和policy revision；控制器只提交session、bridge、call、
+message身份以及动作/资源事实，不提交configured/saved规则。查询校验连接、取消状态、
+运行中run、dispatched工具和规范工作目录，随后用同目录保存规则求值；回复后、取消后、
+工具已settle或跨身份的查询均拒绝。相同policy在不同workspace的authority revision不同。
+
+该前置没有执行宿主动作，没有创建审批/grant，没有启用新的规则写入者，也没有删除TS判定。
+它提供的是模式规则判定，不是可重放的执行许可；原生能力/plan边界与宿主取消仍须成立。
+产品适配器启用前还依赖完整保存规则快照刷新（#1643）及配对能力门禁；不能在旧追加投影上
+假装撤销已生效，也不能退回调用方任意提供规则的通用查询。
+
+接下来的切片仍须分别完成：只展示原生判定的宿主适配器、绑定运行中子请求的持久审批、
+有来源区分的原生模式规则写入/事件投影，再移除TS第二判定。既有planned工具审批的唯一索引
+不能直接用于多个运行中宿主子请求；也不能放宽原有校验来绕过该边界。完整§4验收仍开放。
+
+### 7.1 原生模式规则写入与来源边界
+
+`permission_pattern_list/put/remove` 为Runtime规范workspace提供原生持久allow规则；
+入参不允许选择workspace/source，ID绑定workspace及内容，重复put保持ID和创建时间，
+跨workspace的ID不能撤销同内容的另一条规则。原生行与宿主投影分别存储，求值时合并，
+configured deny仍先于两类saved allow。SQLite插入约束覆盖两种来源的合并规则预算，失败回滚该写入；满额重复投影仍幂等。
+
+这只是原生规则写入前置。绑定pending子请求的always答复、原生变更事件的产品投影、
+完整快照刷新配对验收（#1643）、宿主第二判定删除及§4询问次数验收仍未完成。
+不能因为原生表已有写入API而把产品表当成已切换为只读投影。
+
+### 7.2 宿主子请求的原生持久化前置
+
+`product_permission_requests: 1` 为活跃产品工具提供 admit/status/reply/pending RPC。
+每次不同断言用独立 request ID；相同 ID 只接受完整输入与来源完全匹配的重试。
+记录绑定 Runtime owner、规范 workspace、Session、bridge、源工具、message、输入摘要
+及捕获的 authority revision。桥连接和源槽位锁覆盖 SQL 提交；源工具结束、取消和
+崩溃恢复会在同一事务清理 pending，不能借旧回复写入 always 规则。
+
+always 仅保存调用方明确声明的 save 模式，和单次答复一起原子提交；空 save 不记忆。
+答复前重新检查当前 saved deny；模式写入失败整体回滚。它不制造精确 grant，
+也不执行宿主动作。宿主仍须遵守取消信号及原生能力边界。
+
+这一切片尚未启用产品兼容适配器，也未实现产品事件投影
+或删除 TS evaluator。必须继续完成这些门禁并通过 §4 验收，不能将前置能力当成 S6 完成。
+
+### 7.3 已在等待的其他子请求
+
+reject 在同一事务拒绝当前 Session 已 pending 的其他断言，不波及其他 Session 或后续新请求。
+always 只在当前请求获准且明确保存模式时，重新求值同 Runtime、同规范 workspace 的既有
+pending（可跨 Session）；逐一绑定其活跃来源与该 turn 捕获的 agent 规则，仅放行 allow。
+新选择的 agent 不替换既有来源捕获的规则，配置 deny 仍不能被别的 Session 的保存规则覆盖。
+
+模式、当前回复、其他 pending 的结算及事件一起提交；任一写入故障整体回滚。已经结算的
+精确回复重试不再扫描新请求，也不恢复后来撤销的规则。该后端行为仍须与兼容适配器、
+拒绝反馈的产品消费及 UI 事件投影配对验收，不能据此声明第二 TS 判定已经退役。
+
+### 7.4 拒绝时的纠正反馈
+
+`product_permission_replies: 1` 明确标识同级回复语义和可选 message。非空拒绝消息作为
+feedback 保存到当前请求与结算事件，reason 为 user_corrected；同一拒绝清理的其他请求
+仍为 user_rejected，不复制纠正内容。空拒绝消息与普通拒绝一致，once/always 的 message
+不参与语义。反馈限制 4096 UTF-8 字节且不接受 NUL；非法反馈不结算请求。
+
+精确回复重试还须匹配规范化后的纠正消息，不能借重试修改历史反馈。缺少 feedback 的旧记录
+按无反馈读取，无反馈时不输出该字段。产品必须协商能力后才发送带 message 的回复；
+仍待兼容适配器消费、事件投影、自动分类模式核对及 §4 完整问询次数验收。
+
+### 7.5 宿主 auto 模式
+
+原生子请求准入捕获派发 turn 的 agent auto 标志；切换 agent/mode 不追溯改变活跃来源。
+configured deny 不进入分类器；仅将 edit/bash 中可证明安全的 ask 改为 allow，记录
+reason=auto_allowed，不保存模式规则或精确 grant。stdin 字段存在（包括 null）时 bash
+仍需询问；未知动作/操作继续 ask，Windows bash 不自动放行。
+
+产品工具 manifest 的 host_context 携带 Location 路径拼写及宿主 cwd，directory 须规范化为
+同一原生 Location，cwd 若存在须为绝对路径。它在启动时校验、每个来源捕获，不能由单次请求
+覆盖。规则仍匹配原资源，分类才按宿主 cwd 作词法解析；根目录自身、越界路径及敏感路径
+不自动放行。原始/解析后敏感路径均保守检查，不替代实际执行器的文件系统与能力上限。
+
+product_permission_auto:1 为单独门禁，准入 authority hash 绑定模式及路径上下文；rule-only
+查询不等于完整准入。仍须用真实 TS 分类器对照自动/手动模式、相对路径与 stdin，再完成
+产品适配、事件投影和 §4 总体验收，不能将后端能力当成 TS 判定已退役。
+
+### 7.6 单个断言等待的撤销
+
+`product_permission_cancel: 1` 提供绑定活跃 source 与 request_id 的撤销命令，供宿主等待被
+中断时清理自己的断言。仅将本条 pending 结算为 cancelled/caller_cancelled，不应用用户
+reject 对同 Session 已等待请求的清扫语义，不保存模式或 grant；记录与事件同事务提交。
+重复撤销不重复发事件，已结算记录保持原结果，过期记录保持 expired。旧 always 回复不能
+重新批准已撤销请求，外来/失活来源不能撤销。这只是兼容适配器的中断清理前置，尚未启用
+该适配器，也不代表 §4 的询问次数与取消验收已完成。
+
+### 7.7 拒绝决定的历史证据
+
+`product_permission_diagnostics: 1` 为 policy_denied 记录保存实际 Rust 判定的 denial：
+effect、有效规则及该次判定的 authority_revision。准入拒绝保存准入时的结果；答复时重查
+产生拒绝则保存重查结果，同时保留原准入绑定供精确重试。随后规则变化不改写历史证据。
+用户拒绝、取消或允许不伪造 policy denial，缺少该字段的旧行按证据未知读取。未来适配器
+须消费原生证据，不能用较晚的 TS 规则重新解释历史拒绝；本项尚未启用适配器。
+
+### 7.8 Location 内的活跃调用路由
+
+Core 的 PermissionSource 保存 Location 内的活跃 `(Session, message, call)` 绑定，不向工具
+注册表加入鉴权回调，也不建立 Session-ID layer。内建及插件工具仍捕获同一个 Permission
+服务；启用原生路由后，服务按实际 placement 将 native 断言交给绑定的原生适配器。独立
+插件 Promise 不依赖 Effect 上下文传播来找来源。TS-owned Session 保留原决策行为。
+
+启用状态在该 Location 内只会收紧；绑定释放、重复登记或来源缺失不能恢复成 TS 授权。
+宿主接线要求完整快照及原生请求/回复/撤销/诊断/auto 能力，且回调必须有实际 message
+身份与取消信号。该接线依赖完整快照、回调取消和宿主路由前置改动，不用版本号猜能力。
+位置级待审批列表从 placement 定位引擎并查询原生记录，回复前再次核对所属 Session。
+
+本切片仍不代表 S6 完成：原生 standing-rule 的产品投影、撤销入口和 §4 脚本验收尚待完成；
+兼容阶段也不能据此声明所有 TS 判定路径已经退役。
