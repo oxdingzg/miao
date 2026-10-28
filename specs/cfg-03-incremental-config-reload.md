@@ -62,6 +62,10 @@
 
 - **policy**：`RwLock<Arc<Policy>>`。每 turn 开头取一次 Arc，turn 内不变。revision 本身由
   manifest 派生，换入即产生新 revision；未决审批按 §2 的既有校验失效，需要重新请求。
+  **换入 policy 必须同时换入 `Tools` 的能力闸门**（writes/process/background/delegation/
+  mcp/web/cron/wakeup）：闸门在 `Runtime::with_policy*` 构造时从 policy 烘进 `Tools`，
+  只换 policy 会让收紧后的规则与旧闸门并存——检查通过、写入仍然放行。因此这一节不是
+  "加一个 RwLock"，而是把闸门拆成可替换载体（或换入时重建 `Tools`）。
 - **models**：`RwLock<Arc<dyn Provider>>`。Session 的模型绑定是持久事实，不因 reload 改变；
   下一个 turn 解析绑定时才看到新目录。绑定在新目录里不存在 → 该 turn 报错并要求重新选择，
   不静默回退。
@@ -128,9 +132,15 @@
 
 ## 7. 实现顺序
 
-1. **协议与基底**：`config_reload` 命令、`ConfigGeneration` 与分节摘要、`Runtime` 的
-   `policy: RwLock<Arc<Policy>>` 换入（这一层单独就能让模型/agent/policy 变化按 turn 生效）。
-2. **Tools 分节替换**：mcp/lsp `reconcile`、context/hooks/skills/references 的 `RwLock`。
-3. **Provider 路由替换**：模型目录与路由表的换代。
-4. **standalone 轮询**：`--config-dir` 模式的 mtime 观察。
-5. **宿主接线**：TS 与 Rust TUI 在配置写入后调用 `config_reload`，并把报告显示为一行状态。
+1. **LSP 增量重配（已实现）**：`config_reload` 命令与分节报告；`lsp::Registry::reconcile`
+   按 server 名 + 配置 diff——未变的连接保留，变更/删除的在下次使用前关闭。启动来源
+   （`--lsp-config` / `--config-sources` / `--config-dir`）记为 `LspOrigin`，重载重读同一来源。
+   reload 自身不 spawn 子进程；派生失败不改动任何一节。
+2. **policy 与工具闸门**：见 §3.2——单独换 policy 会让收紧的规则与旧闸门并存，必须同时
+   换入能力闸门。
+3. **MCP reconcile**：现有 `servers: Vec<Arc<Server>>` 与 `tools` 表要改成可替换结构；子进程
+   按 server 归属（与 LSP 相同），避免 registry 级 child 列表。
+4. **Provider 路由替换**：模型目录与路由表的换代。
+5. **context / hooks / skills / references**：各自载体的换代。
+6. **standalone 轮询**：`--config-dir` 模式的 mtime 观察。
+7. **宿主接线**：TS 与 Rust TUI 在配置写入后调用 `config_reload`，并把报告显示为一行状态。
