@@ -112,7 +112,10 @@ async fn drive(
     }
     app.set_bus(bus.clone());
     app.start();
-    let mut ticker = tokio::time::interval(Duration::from_millis(100));
+    // Relative timestamps only change by the minute; input and engine events
+    // already repaint immediately. Do not replay clock ticks after an editor.
+    let mut ticker = tokio::time::interval(Duration::from_secs(60));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         terminal.draw(|frame| app.render(frame))?;
         if std::env::var_os("MIAO_TUI_TEST_PANIC").is_some() {
