@@ -7,6 +7,11 @@
 //! a test tells replay from the live stream.
 
 use std::io::{BufRead, Write};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
+use std::time::Duration;
 
 use serde_json::{json, Value};
 
@@ -24,6 +29,9 @@ fn main() {
     // The approval scenario keeps one request outstanding until the client
     // resolves it, so the panel has something to show on the first snapshot.
     let mut approval_pending = std::env::var_os("MIAO_TUI_FAKE_APPROVAL").is_some();
+    let streaming = std::env::var_os("MIAO_TUI_FAKE_STREAM").is_some();
+    let stream_updates = Arc::new(AtomicU64::new(0));
+    let mut stream_started = false;
 
     for line in stdin.lock().lines() {
         let Ok(line) = line else { return };
@@ -59,6 +67,27 @@ fn main() {
                 }
                 subscribed = true;
                 next = durable.iter().map(seq).max().unwrap_or(0).max(after) + 1;
+                if streaming && !stream_started {
+                    stream_started = true;
+                    let updates = stream_updates.clone();
+                    let session = session_id.clone();
+                    std::thread::spawn(move || {
+                        let mut out = std::io::stdout();
+                        // Sustained activity deliberately has no debounce-sized
+                        // quiet gap; tests synchronize on projected snapshots.
+                        for tick in 1..=1000 {
+                            updates.store(tick, Ordering::SeqCst);
+                            send(
+                                &mut out,
+                                json!({"method":"event","params":{
+                                    "session_id":session,"seq":5+tick,
+                                    "kind":"message.committed","data":{}
+                                }}),
+                            );
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                    });
+                }
             }
             "ping" => {
                 send(&mut out, json!({"id":id,"result":{"ok":true}}));
@@ -135,6 +164,18 @@ fn main() {
                         "matcher": {"kind": "builtin"},
                         "expires_at_ms": 0
                     }]);
+                }
+
+                if streaming {
+                    let tick = stream_updates.load(Ordering::SeqCst);
+                    snapshot["cursor"] = json!(5 + tick);
+                    if !metadata_only {
+                        snapshot["messages"][1]["content"][0]["text"] =
+                            json!(format!("stream tick {tick}"));
+                    }
+                    if tick > 0 && tick < 1000 {
+                        snapshot["active_run"] = json!("run-stream");
+                    }
                 }
                 send(&mut out, json!({"id":id,"result":snapshot}));
             }
@@ -276,6 +317,7 @@ fn unit_command(out: &mut std::io::Stdout, id: u64, frame: &Value, result: Value
 }
 
 fn send(out: &mut std::io::Stdout, frame: Value) {
+    let mut out = out.lock();
     let _ = writeln!(out, "{frame}");
     let _ = out.flush();
 }
