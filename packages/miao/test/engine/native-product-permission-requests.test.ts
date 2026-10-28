@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
-import { EngineClient } from "@/engine/client"
+import { EngineClient, type EngineEvent } from "@/engine/client"
 import { tmpdir } from "../fixture/fixture"
 
 const binary = process.env.MIAO_ENGINE_BIN
@@ -50,6 +50,7 @@ test.skipIf(!binary)(
     )
     const parked = Promise.withResolvers<{ source: Source; pending: Record }>()
     const release = Promise.withResolvers<void>()
+    const finished = Promise.withResolvers<void>()
     const client: EngineClient = EngineClient.start({
       binary,
       db: path.join(tmp.path, "engine.db"),
@@ -109,6 +110,10 @@ test.skipIf(!binary)(
         }
       },
     })
+    const onFinished = (event: EngineEvent) => {
+      if (event.session_id === "s" && event.kind === "run.finished") finished.resolve()
+    }
+    client.onEvent(onFinished)
     try {
       await client.admit({ session_id: "s", input_id: "one", prompt: "call host", delivery: "steer" }, false)
       await client.request("select_agent", {
@@ -125,6 +130,7 @@ test.skipIf(!binary)(
           },
         },
       })
+      await client.subscribe("s", 0)
       await client.request("resume", { session_id: "s" })
       const result = await Promise.race([
         parked.promise,
@@ -144,6 +150,13 @@ test.skipIf(!binary)(
           },
         }),
       ).rejects.toBeInstanceOf(Error)
+      // Cancel acknowledges the interruption; run.finished publishes its durable cleanup.
+      await Promise.race([
+        finished.promise,
+        Bun.sleep(10_000).then(() => {
+          throw new Error("cancelled run did not finish")
+        }),
+      ])
       expect(await client.request("product_permission_pending", { session_id: "s" })).toEqual([])
       expect(await client.request("permission_pattern_list")).toMatchObject([{ rule: { resource: "public" } }])
       const events = (await client.request("events", { session_id: "s", after: 0 })) as {
@@ -154,6 +167,7 @@ test.skipIf(!binary)(
         events.filter((event) => event.kind === "product.permission.resolved").map((event) => event.data.state),
       ).toEqual(["allowed", "cancelled"])
     } finally {
+      client.offEvent(onFinished)
       release.resolve()
       await client.close()
       await provider.stop(true)
