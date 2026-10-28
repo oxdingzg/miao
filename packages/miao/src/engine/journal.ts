@@ -40,7 +40,10 @@ export async function replayJournal(input: {
   const translator = new EngineTranslator((event) => {
     if (event.source.seq > input.after) outputs.push(event)
   }, input.pricing)
-  let after = 0
+  const base = "event_base" in snapshot ? snapshot.event_base : 0
+  if (typeof base !== "number" || !Number.isSafeInteger(base) || base < 0 || base > snapshot.cursor)
+    throw new EngineError("engine_replay_invalid", "native snapshot has an invalid journal base")
+  let after = base
   while (after < snapshot.cursor) {
     const page = await input.request("events", { session_id: input.sessionID, after })
     if (!Array.isArray(page) || page.length === 0)

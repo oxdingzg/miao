@@ -7,11 +7,22 @@ const binary = process.env.MIAO_ENGINE_BIN
 if (!binary) test.skip("native product tools settle a host-owned Session tool", () => {})
 
 if (binary)
-  for (const toolName of ["list_sessions", "workflow"] as const)
-    test(`native product tools settle ${toolName} through the host`, async () => {
+  for (const [toolName, outcome] of [
+    ["list_sessions", "success"],
+    ["workflow", "success"],
+    ["switch_workspace", "success"],
+    ["switch_workspace", "missing"],
+    ["switch_workspace", "denied"],
+    ["switch_workspace", "same"],
+  ] as const)
+    test(`native product tools settle ${toolName} (${outcome}) through the host`, async () => {
       await using tmp = await tmpdir()
       const directory = path.join(tmp.path, "project")
+      const destination = path.join(tmp.path, "other-project")
       await Bun.$`mkdir -p ${directory}`.quiet()
+      await Bun.$`mkdir -p ${destination}`.quiet()
+      await Bun.write(path.join(destination, "workspace-marker.txt"), "destination-workspace-marker")
+      await Bun.write(path.join(destination, "AGENTS.md"), "Workspace instruction: destination-only-instruction")
       const policyFile = path.join(tmp.path, "policy.json")
       await Bun.write(policyFile, JSON.stringify({ mode: "workspace" }))
       const tools: string[] = []
@@ -31,6 +42,14 @@ if (binary)
               message.role === "user" && JSON.stringify(message.content).includes("workflow-child-acceptance"),
           )
           const first = !childTurn && !body.messages.some((message) => message.role === "tool")
+          const switched =
+            toolName === "switch_workspace" &&
+            outcome === "success" &&
+            !first &&
+            !body.messages.some(
+              (message) =>
+                message.role === "tool" && JSON.stringify(message.content).includes("destination-workspace-marker"),
+            )
           const delta = first
             ? {
                 role: "assistant",
@@ -42,20 +61,44 @@ if (binary)
                     function: {
                       name: toolName,
                       arguments: JSON.stringify(
-                        toolName === "list_sessions"
-                          ? { includeHistory: true }
-                          : {
-                              script:
-                                'return await tools.workflow.agent({agent:"explore",description:"Fixture child",prompt:"Reply workflow-child-acceptance"})',
-                            },
+                        toolName === "switch_workspace"
+                          ? {
+                              directory:
+                                outcome === "same"
+                                  ? directory
+                                  : outcome === "missing"
+                                    ? path.join(tmp.path, "missing")
+                                    : destination,
+                            }
+                          : toolName === "list_sessions"
+                            ? { includeHistory: true }
+                            : {
+                                script:
+                                  'return await tools.workflow.agent({agent:"explore",description:"Fixture child",prompt:"Reply workflow-child-acceptance"})',
+                              },
                       ),
                     },
                   },
                 ],
               }
-            : { content: childTurn ? "workflow-child-acceptance" : "completed-product-tool-turn" }
+            : switched
+              ? {
+                  role: "assistant",
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "destination-read",
+                      type: "function",
+                      function: {
+                        name: "read_file",
+                        arguments: JSON.stringify({ path: "workspace-marker.txt" }),
+                      },
+                    },
+                  ],
+                }
+              : { content: childTurn ? "workflow-child-acceptance" : "completed-product-tool-turn" }
           return new Response(
-            `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta, finish_reason: first ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`,
+            `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta, finish_reason: first || switched ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`,
             { headers: { "content-type": "text/event-stream" } },
           )
         },
@@ -83,7 +126,7 @@ if (binary)
           XDG_CACHE_HOME: path.join(tmp.path, "cache"),
           MIAO_CONFIG_CONTENT: JSON.stringify({
             model: "fixture/fixture",
-            permission: "allow",
+            permission: outcome === "denied" ? { "*": "allow", external_directory: "deny" } : "allow",
             providers: {
               fixture: {
                 name: "Fixture",
@@ -104,7 +147,7 @@ if (binary)
         stderr: "pipe",
       })
       const stderr = new Response(child.stderr).text()
-      const timer = setTimeout(() => child.kill(), 40_000)
+      const timer = setTimeout(() => child.kill(), 80_000)
       try {
         let output = ""
         const decoder = new TextDecoder()
@@ -138,7 +181,7 @@ if (binary)
           body: JSON.stringify({ id: "msg_native_product", prompt: { text: "list the other sessions" } }),
         })
         expect(prompt.status).toBe(200)
-        const deadline = Date.now() + 20_000
+        const deadline = Date.now() + 60_000
         let history = ""
         while (Date.now() < deadline) {
           const response = await fetch(url + "/api/session/" + target.id + "/history", { headers })
@@ -149,10 +192,37 @@ if (binary)
         }
         expect(history).toContain("completed-product-tool-turn")
         const context = await fetch(url + "/api/session/" + target.id + "/context", { headers })
+        if (!context.ok) throw new Error(`native context HTTP ${context.status}: ${await context.text()}`)
         expect(context.status).toBe(200)
         const transcript = await context.json()
         const rendered = JSON.stringify(transcript.data)
-        expect(rendered).toContain(toolName === "list_sessions" ? peer.id : "workflow-child-acceptance")
+        if (toolName !== "switch_workspace" || outcome === "success")
+          expect(rendered).toContain(
+            toolName === "switch_workspace"
+              ? "destination-workspace-marker"
+              : toolName === "list_sessions"
+                ? peer.id
+                : "workflow-child-acceptance",
+          )
+        if (toolName === "switch_workspace") {
+          using db = new Database(path.join(tmp.path, "miao.db"), { readonly: true })
+          const placement = db
+            .query<{ location: string }, [string]>("select location from session_engine_placement where session_id = ?")
+            .get(target.id)
+          const expected = outcome === "success" ? destination : directory
+          expect(JSON.parse(placement?.location ?? "{}").directory).toBe(
+            await Bun.$`realpath ${expected}`.text().then((value) => value.trim()),
+          )
+          const catalog = db
+            .query<{ directory: string }, [string]>("select directory from session where id = ?")
+            .get(target.id)
+          expect(catalog?.directory).toBe(expected)
+          expect(rendered).toContain("switch_workspace")
+          expect(rendered).not.toContain("path is outside the configured workspace")
+          if (outcome === "denied" || outcome === "missing") {
+            expect(db.query("select * from session_migration").all()).toHaveLength(0)
+          }
+        }
         if (toolName === "workflow") {
           using db = new Database(path.join(tmp.path, "miao.db"), { readonly: true })
           const children = db
@@ -169,8 +239,10 @@ if (binary)
           (message: { content?: { type: string; state?: { status: string } }[] }) =>
             message.content?.filter((part) => part.type === "tool").map((part) => part.state?.status) ?? [],
         )
-        expect(states).toContain("completed")
-        expect(calls).toBe(toolName === "list_sessions" ? 2 : 3)
+        expect(states).toContain(outcome === "denied" || outcome === "missing" ? "error" : "completed")
+        expect(calls).toBe(
+          toolName === "workflow" || (toolName === "switch_workspace" && outcome === "success") ? 3 : 2,
+        )
         expect(tools).toContain("workflow")
       } finally {
         clearTimeout(timer)
@@ -179,4 +251,4 @@ if (binary)
         await stderr
         provider.stop(true)
       }
-    }, 40_000)
+    }, 80_000)

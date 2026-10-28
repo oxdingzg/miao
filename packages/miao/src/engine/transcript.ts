@@ -161,13 +161,15 @@ async function readTranscriptWithSeq(
     )
   }
   if (!snapshot.transfer_import) return { messages: result, seqs }
-  const imported = await readTransferred(input, snapshot.transfer_import, snapshot.cursor)
+  const transferred = await readTransferred(input, snapshot.transfer_import, snapshot.cursor)
+  const imported = transferred.messages
   const identities = new Set(imported.map((message) => message.id))
   if (result.some((message) => identities.has(message.id)))
     throw new Error("Transferred and native message IDs collide")
   // Transferred bundles do not carry the native sequence, so keep their page
   // order as a stable stand-in for display and cursor arithmetic.
-  for (const [index, message] of imported.entries()) if (!seqs.has(message.id)) seqs.set(message.id, index + 1)
+  for (const [index, message] of imported.entries())
+    if (!seqs.has(message.id)) seqs.set(message.id, transferred.sequences.get(message.id) ?? index + 1)
   return {
     messages:
       input.selected && snapshot.selection ? [result[0], ...imported, ...result.slice(1)] : [...imported, ...result],
@@ -181,11 +183,13 @@ const TransferPage = Schema.Struct({
   after: Sequence,
   next: Schema.NullOr(Sequence),
   messages: Schema.Array(SessionMessage.Message),
+  sequences: Schema.optional(Schema.Record(Schema.String, Sequence)),
 })
 
 async function readTransferred(input: Parameters<typeof readTranscript>[0], id: string, cursor: number) {
   const messages: SessionMessage.Message[] = []
   const identities = new Set<string>()
+  const sequences = new Map<string, number>()
   const state = { after: 0, digest: "" }
   while (true) {
     const page = Schema.decodeUnknownSync(TransferPage)(
@@ -202,8 +206,10 @@ async function readTransferred(input: Parameters<typeof readTranscript>[0], id: 
       if (identities.has(message.id)) throw new Error("Transferred timeline has duplicate canonical IDs")
       identities.add(message.id)
       messages.push(message)
+      const seq = page.sequences?.[message.id]
+      if (seq !== undefined) sequences.set(message.id, seq)
     }
-    if (page.next === null) return messages
+    if (page.next === null) return { messages, sequences }
     if (page.next <= state.after || !page.messages.length)
       throw new Error("Transferred timeline cursor did not advance")
     state.after = page.next

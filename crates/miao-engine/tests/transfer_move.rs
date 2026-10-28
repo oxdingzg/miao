@@ -175,6 +175,18 @@ async fn move_export_stages_into_a_fresh_location() {
         .unwrap();
     assert_eq!(staged.state, "staged");
     assert_eq!(staged.session_id, "s");
+    let staged_snapshot = destination.snapshot("s").await.unwrap();
+    assert_eq!(staged_snapshot["event_base"], parsed["source"]["sequence"]);
+    assert!(
+        staged_snapshot["cursor"].as_u64().unwrap()
+            > parsed["source"]["sequence"].as_u64().unwrap()
+    );
+    let first_event = destination.events("s", 0, 1).await.unwrap();
+    assert_eq!(
+        first_event[0].seq,
+        parsed["source"]["sequence"].as_u64().unwrap() + 1
+    );
+
     assert_eq!(
         destination.location("s").await.unwrap().as_deref(),
         Some(destination_dir.to_str().unwrap())
