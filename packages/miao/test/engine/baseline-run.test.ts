@@ -28,6 +28,27 @@ const base = [
   event(3, "run.started", { run_id: "run" }),
 ]
 
+test("failed primary calls without usage retain unknowns after an earlier measured turn", async () => {
+  await using tmp = await tmpdir()
+  const result = await run(tmp.path, "read-only", [
+    ...base,
+    event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
+    event(5, "usage", { run_id: "run", step: 0, usage: { inputTokens: 120, outputTokens: 30 } }),
+    event(6, "provider.request", { run_id: "run", step: 1, attempt: 1, profile: profile() }),
+    event(7, "provider.failed", { run_id: "run", step: 1, message: "offline failed call without usage" }),
+    event(8, "run.finished", { run_id: "run", reason: "failed" }),
+    event(9, "stop_failure", { run_id: "run", reason: "failed" }),
+  ])
+  expect(result.sample?.outcome).toBe("failed")
+  expect(result.evidence.attempts).toHaveLength(2)
+  expect(result.evidence.attempts[1]).toMatchObject({
+    inputTokens: null,
+    outputTokens: null,
+    cost: null,
+    source: { kind: "primary", receiptSeq: 7, providerSuccess: false },
+  })
+})
+
 test("auxiliary role calls retain usage and failed unknowns alongside primary attempts", async () => {
   await using tmp = await tmpdir()
   const result = await run(tmp.path, "read-only", [

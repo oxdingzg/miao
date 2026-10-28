@@ -30,3 +30,8 @@ recorded time, provider success and semantic acceptance when reported. Failed
 calls without usage retain null axes and cost. These are auxiliary calls observed
 on the subscribed Session; this does not establish complete child-Session retry
 coverage, role-profile comparability or historical price attribution.
+
+A primary `provider.failed` receipt without a usage row for its Session/run/step
+also contributes an unknown observation. A later partial-usage receipt for that
+same turn takes precedence, so interruption recovery does not add a second row.
+These rows describe provider turns, not every internal HTTP retry.
