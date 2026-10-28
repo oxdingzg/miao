@@ -529,6 +529,17 @@ pub enum Command {
     RevertStage {
         session_id: String,
         boundary_seq: u64,
+        /// Restore the recorded file set with the conversation rewind. `false`
+        /// stages a history-only revert, for a caller that wants the transcript
+        /// rewound and the workspace left as it is.
+        #[serde(default = "yes")]
+        files: bool,
+    },
+    /// What a revert at `boundary_seq` would change, including paths that
+    /// changed outside the Session since it last recorded them.
+    RevertPreview {
+        session_id: String,
+        boundary_seq: u64,
     },
     RevertClear {
         session_id: String,
