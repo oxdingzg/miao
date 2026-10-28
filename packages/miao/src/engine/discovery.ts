@@ -18,6 +18,7 @@ export const REQUIRED_PROTOCOL = 2
  * would reject the manifest with an opaque parse error.
  */
 export const REQUIRED_ROUTES_SCHEMA = 2
+export const REQUIRED_SAVED_RULES_SNAPSHOT = 1
 
 export type Capabilities = {
   name: string
@@ -121,6 +122,7 @@ export function resolveEngine(
     exists?: (binary: string) => boolean
     executable?: string
     launcher?: string
+    requireSavedRulesSnapshot?: boolean
   } = {},
 ): { binary: string; capabilities: Capabilities } | undefined {
   const environment = input.environment ?? process.env
@@ -128,14 +130,15 @@ export function resolveEngine(
   const exists = input.exists ?? existsSync
   const compatible = (found: Capabilities) =>
     found.protocol >= REQUIRED_PROTOCOL &&
-    (found.routesSchema === undefined || found.routesSchema >= REQUIRED_ROUTES_SCHEMA)
+    (found.routesSchema === undefined || found.routesSchema >= REQUIRED_ROUTES_SCHEMA) &&
+    (!input.requireSavedRulesSnapshot || (found.savedRulesSnapshot ?? 0) >= REQUIRED_SAVED_RULES_SNAPSHOT)
   const explicit = environment.MIAO_ENGINE_BIN
   if (explicit) {
     const found = exists(explicit) ? probe(explicit) : undefined
     if (!found || !compatible(found)) {
       throw new Error(
         found
-          ? `MIAO_ENGINE_BIN=${explicit} reports protocol ${found.protocol} and route schema ${found.routesSchema ?? "unknown"} but this build requires protocol ${REQUIRED_PROTOCOL} and route schema ${REQUIRED_ROUTES_SCHEMA}`
+          ? `MIAO_ENGINE_BIN=${explicit} reports protocol ${found.protocol} and route schema ${found.routesSchema ?? "unknown"} but this build requires protocol ${REQUIRED_PROTOCOL} and route schema ${REQUIRED_ROUTES_SCHEMA}${input.requireSavedRulesSnapshot ? ` and saved-rule snapshots ${REQUIRED_SAVED_RULES_SNAPSHOT}` : ""}`
           : `MIAO_ENGINE_BIN=${explicit} cannot report capabilities`,
       )
     }
@@ -155,7 +158,7 @@ let cached: { value: ReturnType<typeof resolveEngine> } | undefined
 
 /** Cached process-environment discovery; the binary does not change mid-run. */
 export function discoveredEngine(): string | undefined {
-  cached ??= { value: resolveEngine() }
+  cached ??= { value: resolveEngine({ requireSavedRulesSnapshot: true }) }
   return cached.value?.binary
 }
 

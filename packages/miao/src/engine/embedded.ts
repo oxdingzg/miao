@@ -81,7 +81,15 @@ export async function ensureEmbeddedEngine(
   if (!engine) return undefined
   const probe = input.probe ?? capabilities
   const exists = input.exists ?? existsSync
+  const validate = (binary: string) =>
+    resolveEngine({
+      environment: { MIAO_ENGINE_BIN: binary },
+      probe,
+      exists: () => true,
+      requireSavedRulesSnapshot: true,
+    })
   const existing = resolveEngine({
+    requireSavedRulesSnapshot: true,
     environment: {},
     probe,
     exists,
@@ -103,7 +111,7 @@ export async function ensureEmbeddedEngine(
   ) {
     try {
       await extractTo(preferred, engine)
-      if (probe(preferred)) return preferred
+      if (validate(preferred)) return preferred
     } catch {
       return undefined
     }
@@ -123,7 +131,7 @@ export async function ensureEmbeddedEngine(
       // No healthy matching extraction was found. Rewrite even when the marker
       // matches: an invalid/missing binary must not be trusted by marker alone.
       await extractTo(target, engine)
-      if (probe(target)) return target
+      if (validate(target)) return target
     } catch {
       // Unwritable candidate dir or a dead probe: fall through to the next target.
     }

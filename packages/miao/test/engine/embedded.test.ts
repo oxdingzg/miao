@@ -14,6 +14,7 @@ const ok =
     name: "miao-engine",
     version: "0.0.1",
     protocol: 2,
+    savedRulesSnapshot: 1,
     schema: 12,
     ...overrides,
   })
@@ -21,6 +22,24 @@ const ok =
 const EXE = process.platform === "win32" ? ".exe" : ""
 
 const payload = (text: string) => new TextEncoder().encode(text)
+
+test("an extraction without saved-rule snapshot support is not reported as a usable pair", async () => {
+  await using tmp = await scratch()
+  const executable = path.join(tmp.dir, "miao")
+  await writeFile(executable, "launcher")
+  const bytes = payload("LEGACY-ADDITIVE-ENGINE")
+  expect(
+    await ensureEmbeddedEngine({
+      executable,
+      home: tmp.dir,
+      environment: {},
+      preferPaired: true,
+      load: async () => ({ bytes, sha256: createHash("sha256").update(bytes).digest("hex") }),
+      probe: ok({ savedRulesSnapshot: 0 }),
+      exists: (binary) => binary === executable,
+    }),
+  ).toBeUndefined()
+})
 
 test("a matching marker cannot hide a corrupt managed binary", async () => {
   await using tmp = await scratch()

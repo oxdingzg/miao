@@ -47,6 +47,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `unrevert` | `session_id` | `{restored}` |
 | `approve` | `session_id`, `response` | `{accepted:true}` |
 | `approve_persistent` | `session_id`, `response` (allow only) | `{accepted:true}` |
+| `permission_saved_snapshot` | `workspace`, `rules` (complete saved-allowance snapshot, including empty) | `{accepted:true}` |
 | `history` | `session_id`, `selected` | `Message[]` |
 | `context` | `session_id`, `epoch?` | Context Epoch or null |
 | `compact` | `session_id`, `compaction_id`, `through_message_seq`, `summary` | checkpoint |
@@ -872,3 +873,17 @@ record's admission binding; the latter stays unchanged for exact reply retries.
 User rejection, cancellation and allowance do not manufacture policy evidence.
 Legacy records without `denial` decode as unknown evidence and omit the field.
 These are engine-produced diagnostics, not caller-provided policy or a new grant.
+## Saved-allowance snapshot capability
+
+`saved_rules_snapshot: 1` in `--capabilities` advertises
+`permission_saved_snapshot`. The command atomically replaces the workspace's
+complete projected saved-allowance set; `rules: []` revokes the last saved rule.
+Rules must be bounded allow rules. Invalid input or a failed insert leaves the
+previous snapshot intact. The workspace must resolve to the attached Runtime's
+own directory. Exact persistent approval grants remain separate.
+
+`permission_saved_project` retains legacy additive-import behavior and cannot
+represent revocation. Managed product owners use the snapshot command before
+admission, including for an empty set, and fail startup/admission if the engine
+cannot synchronize it. This command does not transfer native rule-writing
+ownership or remove the compatibility TypeScript permission evaluator.

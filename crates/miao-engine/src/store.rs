@@ -2388,6 +2388,15 @@ impl Store {
             .await
     }
 
+    pub async fn replace_saved_rules(
+        &self,
+        workspace: String,
+        rules: Vec<crate::permission_rules::Rule>,
+    ) -> Result<(), Error> {
+        self.call(move |conn| crate::permission_saved::snapshot(conn, &workspace, &rules))
+            .await
+    }
+
     pub async fn revoke_permission_grant(
         &self,
         scope: crate::permission_grant::Scope,

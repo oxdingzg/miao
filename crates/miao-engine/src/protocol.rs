@@ -610,6 +610,12 @@ pub enum Command {
         workspace: String,
         rules: Vec<crate::permission_rules::Rule>,
     },
+    /// Replace the complete managed saved-allowance snapshot, including empty.
+    /// A distinct command prevents an old additive-only engine ignoring revocation.
+    PermissionSavedSnapshot {
+        workspace: String,
+        rules: Vec<crate::permission_rules::Rule>,
+    },
     Approve {
         session_id: String,
         response: Response,
