@@ -1,0 +1,40 @@
+Source: 4f49325f7d5f6eebd3a8787f393410519bf157dd
+Remote cargo test --locked --test concurrent_open --test migration --test transfer --test transfer_history --test transfer_activation --test transfer_move --test doctor
+
+running 3 tests
+test startup_recovery_skips_sessions_with_a_live_lease ... ok
+test a_second_process_can_open_the_same_database ... ok
+test concurrent_admits_from_two_processes_do_not_lock ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.88s
+running 3 tests
+test diagnostic_rejects_unrelated_future_and_missing_databases_without_adoption ... ok
+test diagnostics_without_database_require_no_credentials_or_provider ... ok
+test readonly_inspection_during_ownership_does_not_reconcile_runs_or_inputs ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+running 4 tests
+test migration_abort_is_pre_cutover_only_and_exported_sources_remain_fenced ... ok
+test migration_refuses_pending_inputs_and_upgrades_original_retry_identity ... ok
+test migration_stage_cutover_complete_freezes_and_reopens_the_session ... ok
+test shutdown_joins_the_heartbeat_before_releasing_the_last_store_handle ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+running 3 tests
+test malformed_or_conflicting_import_never_changes_existing_destination ... ok
+test inactive_import_preserves_exact_bundle_and_survives_close_reopen_abort ... ok
+test canonical_timeline_paging_and_context_selection_preserve_original_json ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+running 4 tests
+test a_delta_export_for_an_unknown_session_still_conflicts ... ok
+test a_session_born_native_exports_its_whole_timeline_without_a_transfer_import ... ok
+test activation_failure_rolls_back_the_gate_and_every_provider_row ... ok
+test actual_product_cas_is_required_and_activation_restores_provider_context_and_state ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+running 3 tests
+test preparation_preserves_selected_messages_media_times_and_tool_correlation ... ok
+test opaque_reasoning_is_model_protocol_and_route_bound ... ok
+test unsupported_selected_work_and_corrupt_artifacts_fail_before_any_store_mutation ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 1 test
+test move_export_stages_into_a_fresh_location ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+Local package receipts: packages/miao bun test test/cli/export.test.ts: 5 passed, 31 assertions. packages/core bun test test/session-restore.test.ts test/session-blob-gc.test.ts test/session-compact.test.ts test/database-migration.test.ts: 29 passed, 76 assertions.
