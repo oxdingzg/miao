@@ -386,6 +386,9 @@ struct Opened {
     /// are replay, not news, so they must not fire attention sounds.
     live_after: u64,
     displays: HashMap<String, Vec<DisplayFile>>,
+    /// The newest `stop_failure`, carried the same way: the snapshot has no
+    /// assistant message for a failed turn.
+    failure: Option<(u64, String)>,
 }
 
 async fn run(
@@ -668,6 +671,7 @@ async fn run(
                                 | "tool.completed"
                                 | "run.started"
                                 | "run.finished"
+                                | "stop_failure"
                                 | "run.cancel_requested"
                                 | "approval.requested"
                                 | "approval.resolved"
@@ -743,6 +747,7 @@ async fn open_session(
         seen: 0,
         live_after: 0,
         displays: HashMap::new(),
+        failure: None,
     };
     project(client, bus, &mut state).await;
     *open = Some(state);
@@ -762,6 +767,7 @@ async fn project(client: &EngineClient, bus: &Bus, state: &mut Opened) {
     };
     let mut transcript = Transcript::from_snapshot(&snapshot);
     transcript.displays = state.displays.clone();
+    transcript.failure = state.failure.clone();
     loop {
         let page = client
             .request(
@@ -779,7 +785,8 @@ async fn project(client: &EngineClient, bus: &Bus, state: &mut Opened) {
         };
         for item in &items {
             let kind = item.get("kind").and_then(Value::as_str).unwrap_or_default();
-            transcript.apply_event(kind, item.get("data").unwrap_or(&Value::Null));
+            let seq = item.get("seq").and_then(Value::as_u64).unwrap_or(0);
+            transcript.apply_event(seq, kind, item.get("data").unwrap_or(&Value::Null));
         }
         state.seen = state.seen.max(last);
         if items.len() < EVENTS_PAGE {
@@ -787,6 +794,8 @@ async fn project(client: &EngineClient, bus: &Bus, state: &mut Opened) {
         }
     }
     state.displays = transcript.displays.clone();
+    state.failure = transcript.failure.clone();
+    transcript.push_failure();
     let cursor = snapshot.get("cursor").and_then(Value::as_u64).unwrap_or(0);
     state.live_after = cursor.max(state.live_after);
     let _ = client.subscribe(&state.id, cursor).await;

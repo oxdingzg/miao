@@ -78,7 +78,7 @@ impl Shell {
                         .join("\n\n");
                     (!text.trim().is_empty()).then_some(text)
                 }
-                Entry::User { .. } => None,
+                Entry::User { .. } | Entry::Error { .. } => None,
             })?;
         Some(reply)
     }
@@ -426,6 +426,18 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>
                             theme,
                         )),
                     }
+                }
+                lines.push(Line::default());
+            }
+            Entry::Error { message } => {
+                for (index, line) in message.lines().enumerate() {
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            if index == 0 { "✗ " } else { "  " },
+                            Style::new().fg(palette.error),
+                        ),
+                        Span::styled(line.to_string(), Style::new().fg(palette.error)),
+                    ]));
                 }
                 lines.push(Line::default());
             }

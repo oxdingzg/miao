@@ -284,6 +284,12 @@ pub enum Entry {
         model: Option<String>,
         parts: Vec<Part>,
     },
+    /// A drain that ended in failure. A failed turn commits no assistant
+    /// message, so the snapshot cannot project this: it comes from the
+    /// `stop_failure` event and is carried across refreshes like `displays`.
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -301,6 +307,12 @@ pub struct Transcript {
     /// Display diffs by tool-call id. They live on the committed event, not in
     /// the message content the snapshot projects.
     pub displays: HashMap<String, Vec<DisplayFile>>,
+    /// Terminal failure of the newest run, with the event's sequence. Also
+    /// event-only: `push_failure` turns it into an entry.
+    pub failure: Option<(u64, String)>,
+    /// Sequence of the newest projected message. Messages and events share one
+    /// sequence, so it says whether a failure still trails the conversation.
+    pub tail_seq: u64,
 }
 
 impl Transcript {
@@ -316,6 +328,9 @@ impl Transcript {
     }
 
     fn push_message(&mut self, message: &Value) {
+        self.tail_seq = self
+            .tail_seq
+            .max(message.get("seq").and_then(Value::as_u64).unwrap_or(0));
         let role = message
             .get("role")
             .and_then(Value::as_str)
@@ -441,13 +456,34 @@ impl Transcript {
         }
     }
 
-    /// Fold one committed event into the view. Only the display diff is kept:
-    /// message content is re-read from a snapshot, which is the engine's own
-    /// projection and cannot drift from the journal.
-    pub fn apply_event(&mut self, kind: &str, data: &Value) {
-        if kind != "tool.completed" {
+    /// Fold one committed event into the view. Message content is re-read from
+    /// a snapshot, which is the engine's own projection and cannot drift from
+    /// the journal; only the display diff and the terminal failure live on
+    /// events alone, so both are carried here.
+    pub fn apply_event(&mut self, seq: u64, kind: &str, data: &Value) {
+        match kind {
+            "stop_failure" => self.failure = failure_of(seq, data),
+            // A later drain that ended any other way supersedes the failure.
+            "stop" => self.failure = None,
+            "tool.completed" => self.push_display(data),
+            _ => {}
+        }
+    }
+
+    /// Append the failure once the snapshot and the replayed events are folded
+    /// in. It belongs to the transcript only while it is the tail: a message
+    /// committed after it means the user has already moved past that turn.
+    pub fn push_failure(&mut self) {
+        let Some((seq, message)) = self.failure.clone() else {
+            return;
+        };
+        if seq <= self.tail_seq {
             return;
         }
+        self.entries.push(Entry::Error { message });
+    }
+
+    fn push_display(&mut self, data: &Value) {
         let Some(call_id) = data.get("call_id").and_then(Value::as_str) else {
             return;
         };
@@ -492,6 +528,12 @@ fn text(value: Option<&Value>) -> Option<String> {
         .map(str::trim)
         .filter(|text| !text.is_empty())
         .map(str::to_string)
+}
+
+/// The drain's own error text, which `stop_failure` carries. A payload without
+/// one must not render an empty block.
+fn failure_of(seq: u64, data: &Value) -> Option<(u64, String)> {
+    Some((seq, text(data.get("message"))?))
 }
 
 #[cfg(test)]
@@ -646,6 +688,7 @@ mod tests {
     fn a_display_event_attaches_its_files_to_the_call() {
         let mut transcript = Transcript::default();
         transcript.apply_event(
+            12,
             "tool.completed",
             &json!({
                 "call_id": "run-1/call_1",
@@ -712,7 +755,64 @@ mod tests {
     #[test]
     fn an_event_without_a_display_is_ignored() {
         let mut transcript = Transcript::default();
-        transcript.apply_event("tool.completed", &json!({ "call_id": "run-1/call_1" }));
+        transcript.apply_event(9, "tool.completed", &json!({ "call_id": "run-1/call_1" }));
         assert!(transcript.displays.is_empty());
+    }
+
+    #[test]
+    fn a_failed_run_reaches_the_transcript_as_an_error_entry() {
+        let mut transcript = Transcript::from_snapshot(&json!({
+            "session_id": "ses_a",
+            "messages": [{ "seq": 4, "role": "user", "content": "hello" }]
+        }));
+        transcript.apply_event(
+            9,
+            "stop_failure",
+            &json!({ "run_id": "run-1", "reason": "failed", "message": "provider unavailable" }),
+        );
+        transcript.push_failure();
+        assert_eq!(
+            transcript.entries.last(),
+            Some(&Entry::Error {
+                message: "provider unavailable".into()
+            })
+        );
+    }
+
+    #[test]
+    fn a_failure_before_the_newest_message_is_history() {
+        let mut transcript = Transcript::from_snapshot(&json!({
+            "session_id": "ses_a",
+            "messages": [{ "seq": 12, "role": "user", "content": "try again" }]
+        }));
+        transcript.apply_event(
+            9,
+            "stop_failure",
+            &json!({ "run_id": "run-1", "reason": "failed", "message": "provider unavailable" }),
+        );
+        transcript.push_failure();
+        assert_eq!(
+            transcript.entries,
+            vec![Entry::User {
+                text: "try again".into()
+            }],
+            "the retry has already moved past the old failure"
+        );
+    }
+
+    #[test]
+    fn a_stop_that_did_not_fail_clears_the_failure() {
+        let mut transcript = Transcript::default();
+        transcript.apply_event(
+            9,
+            "stop_failure",
+            &json!({ "run_id": "run-1", "reason": "failed", "message": "boom" }),
+        );
+        transcript.apply_event(
+            11,
+            "stop",
+            &json!({ "run_id": "run-2", "reason": "completed" }),
+        );
+        assert_eq!(transcript.failure, None);
     }
 }
