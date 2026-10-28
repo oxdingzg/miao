@@ -91,6 +91,9 @@ impl Host {
                 session_id,
                 archived,
             } => runtime.store().set_archived(&session_id, archived).await,
+            Command::Pin { session_id, pinned } => {
+                runtime.store().set_pinned(&session_id, pinned).await
+            }
             Command::Remove { session_id } => runtime.remove(&session_id).await,
             Command::RequestCompact { session_id } => runtime.request_compact(&session_id).await,
             Command::SelectAgent { session_id, agent } => {

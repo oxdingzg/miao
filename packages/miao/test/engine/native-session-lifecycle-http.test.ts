@@ -74,14 +74,11 @@ if (binary)
       })
       expect(restored.status).toBe(204)
       expect((await (await fetch(sessionPath, { headers })).json()).data.time.archived).toBeUndefined()
-      // The pin is a catalog list preference, so a native-owned Session takes
-      // it without the request being routed through the engine.
+      // The engine owns the pin, so it survives a fresh snapshot read and the
+      // merged listing can group it ahead of a Session created later.
       const pinPath = sessionPath + "/pin"
-      const pinned = await fetch(pinPath, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ pinned: true }),
-      })
+      expect((await fetch(pinPath, { method: "POST" })).status).toBe(401)
+      const pinned = await fetch(pinPath, { method: "POST", headers, body: JSON.stringify({ pinned: true }) })
       expect(pinned.status).toBe(204)
       expect((await (await fetch(sessionPath, { headers })).json()).data.time.pinned).toBeDefined()
       // A fork survives its parent's removal: only the lineage edge is dropped.
@@ -89,18 +86,13 @@ if (binary)
       expect(fork.status).toBe(200)
       const forked = await fork.json()
       expect(forked.data.parentID).toBe(body.id)
-      // The pin is a catalog list preference, so it has to survive the merge
-      // with the engine-owned entries: the pinned Session leads the page even
-      // though the fork is newer, and the projection carries its pin.
-      const listing = await fetch(url + "/api/session?directory=" + encodeURIComponent(directory), { headers })
-      const rows = (await listing.json()).data as { id: string; time: { pinned?: string } }[]
+      // The pin outranks recency: the fork is newer, the pinned root still leads,
+      // and the projection carries the engine's pin.
+      const listed = await fetch(url + "/api/session?directory=" + encodeURIComponent(directory), { headers })
+      const rows = (await listed.json()).data as { id: string; time: { pinned?: string } }[]
       expect(rows.map((row) => row.id)).toEqual([body.id, forked.data.id])
       expect(rows[0].time.pinned).toBeDefined()
-      const unpinned = await fetch(pinPath, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ pinned: false }),
-      })
+      const unpinned = await fetch(pinPath, { method: "POST", headers, body: JSON.stringify({ pinned: false }) })
       expect(unpinned.status).toBe(204)
       expect((await (await fetch(sessionPath, { headers })).json()).data.time.pinned).toBeUndefined()
       const removePath = sessionPath + "/remove"

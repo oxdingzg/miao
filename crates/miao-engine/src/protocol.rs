@@ -325,6 +325,14 @@ pub enum Command {
         session_id: String,
         archived: bool,
     },
+    /// Set or clear a Session's pin. A pin is a catalog preference, owned here
+    /// so every client orders the shared catalog the same way; it changes no
+    /// message, run or inbox row and leaves `updated_at_ms` untouched, so
+    /// pinning does not make a Session look recently used.
+    Pin {
+        session_id: String,
+        pinned: bool,
+    },
     /// Delete everything a Session owns. Not a tombstone: the conversation,
     /// inbox, runs, approvals, jobs and schedules are gone and the identity can
     /// be re-created. Children keep their Sessions; only their lineage rows are
