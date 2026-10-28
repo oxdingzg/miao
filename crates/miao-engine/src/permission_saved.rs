@@ -136,9 +136,13 @@ mod tests {
             initialize(&connection).unwrap();
             project(&mut connection, "/repo", &[rule("bash", "git *")]).unwrap();
         }
-        let connection = Connection::open(&path).unwrap();
-        initialize(&connection).unwrap();
-        assert_eq!(rules(&connection, "/repo").unwrap().len(), 1);
+        {
+            let connection = Connection::open(&path).unwrap();
+            initialize(&connection).unwrap();
+            assert_eq!(rules(&connection, "/repo").unwrap().len(), 1);
+        }
+        // Windows keeps the database file locked while the reopened
+        // connection is alive, so the delete must follow the drop.
         std::fs::remove_file(&path).unwrap();
     }
 
