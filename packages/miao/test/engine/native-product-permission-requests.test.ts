@@ -12,6 +12,8 @@ test.skipIf(!binary)(
   "native host assertions preserve retry identity, atomic always rules and cancellation across stdio",
   async () => {
     if (!binary) throw new Error("native engine required")
+    const capabilities: unknown = await Bun.$`${binary} --capabilities`.json()
+    expect(capabilities).toMatchObject({ product_permission_replies: 1 })
     await using tmp = await tmpdir()
     const provider = Bun.serve({
       hostname: "127.0.0.1",
@@ -74,7 +76,7 @@ test.skipIf(!binary)(
           const input = { request_id: "first", facts, save: ["public"] }
           const admit = (input: unknown) =>
             client.request("product_permission_admit", { source, input }) as Promise<Record>
-          const reply = (record: Record, reply: string) =>
+          const reply = (record: Record, reply: string, message?: string) =>
             client.request("product_permission_reply", {
               source,
               response: {
@@ -82,6 +84,7 @@ test.skipIf(!binary)(
                 input_hash: record.input_hash,
                 authority_revision: record.authority_revision,
                 reply,
+                ...(message === undefined ? {} : { message }),
               },
             })
           const pending = await admit(input)
@@ -104,6 +107,20 @@ test.skipIf(!binary)(
           expect((await admit({ request_id: "denied", facts: { ...facts, resources: ["secret"] } })).state).toBe(
             "denied",
           )
+          const corrected = await admit({ request_id: "corrected", facts: { ...facts, resources: ["correctable"] } })
+          const declined = await admit({
+            request_id: "declined-peer",
+            facts: { ...facts, resources: ["peer-resource"] },
+          })
+          const feedback = "先检查配置，再修改。\nKeep the existing data."
+          const denied = await reply(corrected, "reject", feedback)
+          expect(denied).toMatchObject({ state: "denied", reason: "user_corrected", feedback })
+          expect(await reply(corrected, "reject", feedback)).toEqual(denied)
+          await expect(reply(corrected, "reject", "different correction")).rejects.toBeInstanceOf(Error)
+          expect(await client.request("product_permission_status", { source, request_id: declined.id })).toMatchObject({
+            state: "denied",
+            reason: "user_rejected",
+          })
           const next = await admit({ request_id: "cancel", facts: { ...facts, resources: ["different"] }, save: ["*"] })
           expect(next.state).toBe("pending")
           parked.resolve({ source, pending: next })
@@ -170,7 +187,7 @@ test.skipIf(!binary)(
       }[]
       expect(
         events.filter((event) => event.kind === "product.permission.resolved").map((event) => event.data.state),
-      ).toEqual(["allowed", "allowed", "cancelled"])
+      ).toEqual(["allowed", "allowed", "denied", "denied", "cancelled"])
     } finally {
       client.offEvent(onFinished)
       release.resolve()
