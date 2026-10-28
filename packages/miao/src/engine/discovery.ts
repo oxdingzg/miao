@@ -54,8 +54,8 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (typeof value !== "object" || value === null) return undefined
     const wire = value as Record<string, unknown>
     if (wire.name !== "miao-engine") return undefined
-    if (typeof wire.protocol !== "number") return undefined
-    if (typeof wire.schema !== "number") return undefined
+    if (!isRevision(wire.protocol)) return undefined
+    if (!isRevision(wire.schema)) return undefined
     if (typeof wire.version !== "string") return undefined
     // The engine writes snake_case (`routes_schema`); a probe fixture may carry
     // the camelCase spelling. Read either, refuse a frame that disagrees with
@@ -63,11 +63,11 @@ export function capabilities(binary: string): Capabilities | undefined {
     // field — that policy is unchanged, only the accepted encoding is wider.
     const camel = wire.routesSchema
     const snake = wire.routes_schema
-    if (camel !== undefined && typeof camel !== "number") return undefined
-    if (snake !== undefined && typeof snake !== "number") return undefined
+    if (camel !== undefined && !isRevision(camel)) return undefined
+    if (snake !== undefined && !isRevision(snake)) return undefined
     if (camel !== undefined && snake !== undefined && camel !== snake) return undefined
     const routesSchema = camel ?? snake
-    if (wire.catalog !== undefined && typeof wire.catalog !== "number") return undefined
+    if (wire.catalog !== undefined && !isRevision(wire.catalog)) return undefined
     return {
       name: "miao-engine",
       version: wire.version,
@@ -136,4 +136,8 @@ export function discoveredEngine(): string | undefined {
 /** Test seam: forget the cached discovery. */
 export function resetDiscovery() {
   cached = undefined
+}
+
+function isRevision(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
 }

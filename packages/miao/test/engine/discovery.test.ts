@@ -157,3 +157,49 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
 test.skipIf(!process.env.MIAO_ENGINE_BIN)("the native executable reports a normalized route schema", () => {
   expect(capabilities(process.env.MIAO_ENGINE_BIN!)?.routesSchema).toBeGreaterThanOrEqual(2)
 })
+
+test.skipIf(process.platform === "win32")(
+  "capability revisions reject malformed numeric contracts before selection",
+  async () => {
+    await using tmp = await tmpdir()
+    const binary = path.join(tmp.path, "miao-engine")
+    for (const wire of [
+      { protocol: 2.5 },
+      { protocol: Number.MAX_SAFE_INTEGER + 1 },
+      { schema: -1 },
+      { schema: 1.5 },
+      { schema: Number.MAX_VALUE },
+      { routes_schema: 2.5 },
+      { routesSchema: -1 },
+      { catalog: 0.5 },
+      { catalog: -1 },
+    ]) {
+      await Bun.write(binary, `#!/bin/sh\nprintf '%s' '${JSON.stringify({ ...engine(2), ...wire })}'\n`)
+      await chmod(binary, 0o755)
+      expect(capabilities(binary)).toBeUndefined()
+      expect(() => resolveEngine({ environment: { MIAO_ENGINE_BIN: binary } })).toThrow("cannot report capabilities")
+      expect(resolveEngine({ environment: {}, exists: () => true, probe: () => capabilities(binary) })).toBeUndefined()
+    }
+  },
+)
+
+test.skipIf(process.platform === "win32")(
+  "valid integer capability levels retain the existing compatibility policy",
+  async () => {
+    await using tmp = await tmpdir()
+    const binary = path.join(tmp.path, "miao-engine")
+    for (const protocol of [2, 3]) {
+      await Bun.write(
+        binary,
+        `#!/bin/sh\nprintf '%s' '${JSON.stringify({ ...engine(protocol), schema: 0, routes_schema: 3, catalog: 0 })}'\n`,
+      )
+      await chmod(binary, 0o755)
+      expect(resolveEngine({ environment: { MIAO_ENGINE_BIN: binary } })?.capabilities).toEqual({
+        ...engine(protocol),
+        schema: 0,
+        routesSchema: 3,
+        catalog: 0,
+      })
+    }
+  },
+)
