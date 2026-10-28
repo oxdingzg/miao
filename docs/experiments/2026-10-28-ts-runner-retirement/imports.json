@@ -1,0 +1,3009 @@
+{
+  "sourceCommit": "4fbd5f01341206de1d29a5af58dac7185466ac97",
+  "method": "TypeScript AST: literal import/export declarations and literal dynamic imports in tracked packages/**/*.ts and tsx; @miao/core/* and relative module resolution. Self-namespace exports excluded. Source/verification classify by /src/ path. This is an import boundary inventory, not call-graph reachability or proof of runtime activation. Computed imports, require(), DI lookup and generated/third-party consumers require separate review.",
+  "categories": {
+    "runner": {
+      "sourceEdges": 25,
+      "verificationEdges": 33
+    },
+    "execution": {
+      "sourceEdges": 22,
+      "verificationEdges": 29
+    },
+    "scheduling": {
+      "sourceEdges": 17,
+      "verificationEdges": 10
+    },
+    "inbox": {
+      "sourceEdges": 26,
+      "verificationEdges": 17
+    },
+    "permission": {
+      "sourceEdges": 44,
+      "verificationEdges": 38
+    },
+    "placement": {
+      "sourceEdges": 23,
+      "verificationEdges": 12
+    }
+  },
+  "runnerFiles": [
+    "packages/core/src/session/runner/cost.ts",
+    "packages/core/src/session/runner/first-byte-guard.ts",
+    "packages/core/src/session/runner/index.ts",
+    "packages/core/src/session/runner/llm.ts",
+    "packages/core/src/session/runner/materialize-files.ts",
+    "packages/core/src/session/runner/max-steps.ts",
+    "packages/core/src/session/runner/metrics.ts",
+    "packages/core/src/session/runner/model-io.ts",
+    "packages/core/src/session/runner/model.ts",
+    "packages/core/src/session/runner/output-guard.ts",
+    "packages/core/src/session/runner/provider-headers.ts",
+    "packages/core/src/session/runner/provider-retry.ts",
+    "packages/core/src/session/runner/publish-llm-event.ts",
+    "packages/core/src/session/runner/to-llm-message.ts",
+    "packages/core/src/session/runner/tool-input-guard.ts"
+  ],
+  "edges": [
+    {
+      "category": "execution",
+      "file": "packages/core/src/location-services.ts",
+      "line": 37,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "./session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/src/location-services.ts",
+      "line": 38,
+      "target": "packages/core/src/session/execution/local.ts",
+      "specifier": "./session/execution/local",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/src/session.ts",
+      "line": 41,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "./session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/src/session/execution/local.ts",
+      "line": 10,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/src/session/peer-tools.ts",
+      "line": 15,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "./execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 17,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/src/session/schedule.ts",
+      "line": 10,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "./execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/src/tool/bash.ts",
+      "line": 11,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/src/tool/monitor.ts",
+      "line": 15,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/location-services.test.ts",
+      "line": 5,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/location-services.test.ts",
+      "line": 6,
+      "target": "packages/core/src/session/execution/local.ts",
+      "specifier": "@miao/core/session/execution/local",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-background-jobs.test.ts",
+      "line": 15,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-create.test.ts",
+      "line": 26,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-engine-placement.test.ts",
+      "line": 12,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../src/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-execution-local.test.ts",
+      "line": 15,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-execution-local.test.ts",
+      "line": 16,
+      "target": "packages/core/src/session/execution/local.ts",
+      "specifier": "@miao/core/session/execution/local",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-history.test.ts",
+      "line": 15,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-migration-coordinator.test.ts",
+      "line": 11,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../src/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-migration-reverse.test.ts",
+      "line": 10,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../src/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-migration.test.ts",
+      "line": 11,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../src/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-move-coordinator.test.ts",
+      "line": 15,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../src/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-ownership.test.ts",
+      "line": 10,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../src/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-ownership.test.ts",
+      "line": 11,
+      "target": "packages/core/src/session/execution/local.ts",
+      "specifier": "../src/session/execution/local",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-projector.test.ts",
+      "line": 20,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-prompt.test.ts",
+      "line": 17,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-reverse-import.test.ts",
+      "line": 11,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../src/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-routing.test.ts",
+      "line": 17,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../src/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-runner-recorded.test.ts",
+      "line": 21,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-runner.test.ts",
+      "line": 51,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-schedule.test.ts",
+      "line": 12,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/session-transfer-bundle.test.ts",
+      "line": 13,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../src/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/tool-bash.test.ts",
+      "line": 20,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/tool-goal.test.ts",
+      "line": 11,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/tool-monitor.test.ts",
+      "line": 12,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/tool-plan-enter.test.ts",
+      "line": 13,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/tool-plan-exit.test.ts",
+      "line": 16,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/core/test/workspace-scope.test.ts",
+      "line": 14,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "../src/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/miao/src/cli/cli-runtime.ts",
+      "line": 23,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/miao/src/cli/cli-runtime.ts",
+      "line": 24,
+      "target": "packages/core/src/session/execution/local.ts",
+      "specifier": "@miao/core/session/execution/local",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/miao/src/cli/cmd/session.ts",
+      "line": 6,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/miao/src/engine/native-engine.ts",
+      "line": 71,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/miao/src/engine/product-tools.ts",
+      "line": 18,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/miao/src/runtime/host.ts",
+      "line": 69,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "dynamic-import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/miao/src/runtime/host.ts",
+      "line": 70,
+      "target": "packages/core/src/session/execution/local.ts",
+      "specifier": "@miao/core/session/execution/local",
+      "kind": "dynamic-import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/miao/src/server/server.ts",
+      "line": 8,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/miao/src/server/server.ts",
+      "line": 9,
+      "target": "packages/core/src/session/execution/local.ts",
+      "specifier": "@miao/core/session/execution/local",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/miao/test/cli/session-cmd.test.ts",
+      "line": 9,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "execution",
+      "file": "packages/server/src/assembly.ts",
+      "line": 33,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/server/src/assembly.ts",
+      "line": 34,
+      "target": "packages/core/src/session/execution/local.ts",
+      "specifier": "@miao/core/session/execution/local",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/server/src/routes.ts",
+      "line": 21,
+      "target": "packages/core/src/session/execution.ts",
+      "specifier": "@miao/core/session/execution",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "execution",
+      "file": "packages/server/src/routes.ts",
+      "line": 23,
+      "target": "packages/core/src/session/execution/local.ts",
+      "specifier": "@miao/core/session/execution/local",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/client/test/contract-identity.test.ts",
+      "line": 7,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session.ts",
+      "line": 46,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "./session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session.ts",
+      "line": 47,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "./session/admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/admission.ts",
+      "line": 7,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "./input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/blackbox-history.ts",
+      "line": 7,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "./input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/context-epoch.ts",
+      "line": 11,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "./input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/delegation.ts",
+      "line": 9,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "./admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/execution/local.ts",
+      "line": 13,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "../admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/heal.ts",
+      "line": 12,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "./admission",
+      "kind": "import",
+      "typeOnly": true,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/peer-tools.ts",
+      "line": 18,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "./admission",
+      "kind": "import",
+      "typeOnly": true,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/peer-tools.ts",
+      "line": 19,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "./input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/placement.ts",
+      "line": 10,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "./admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/projector.ts",
+      "line": 15,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "./input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/routing.ts",
+      "line": 12,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "./admission",
+      "kind": "import",
+      "typeOnly": true,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 74,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "../input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 75,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "../admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/src/session/sql.ts",
+      "line": 6,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "./input",
+      "kind": "import",
+      "typeOnly": true,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/location-services.test.ts",
+      "line": 4,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "@miao/core/session/admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/session-create.test.ts",
+      "line": 27,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/session-engine-placement.test.ts",
+      "line": 18,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "../src/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/session-heal.test.ts",
+      "line": 16,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "@miao/core/session/admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/session-heal.test.ts",
+      "line": 18,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/session-migration.test.ts",
+      "line": 15,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "../src/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/session-placement.test.ts",
+      "line": 17,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/session-projector.test.ts",
+      "line": 21,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/session-prompt.test.ts",
+      "line": 18,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/session-routing.test.ts",
+      "line": 13,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "../src/session/admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/session-routing.test.ts",
+      "line": 14,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "../src/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/session-runner.test.ts",
+      "line": 31,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "@miao/core/session/admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/session-runner.test.ts",
+      "line": 47,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/session-schedule.test.ts",
+      "line": 13,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/core/test/shared-schema.test.ts",
+      "line": 71,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "dynamic-import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/miao/src/engine/admission-binding.ts",
+      "line": 1,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "@miao/core/session/admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/miao/src/engine/admission.ts",
+      "line": 4,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "@miao/core/session/admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/miao/src/engine/admission.ts",
+      "line": 6,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/miao/src/engine/input-projection.ts",
+      "line": 4,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/miao/src/engine/product-tools.ts",
+      "line": 15,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "@miao/core/session/admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/miao/src/engine/product-tools.ts",
+      "line": 16,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/miao/test/engine/input-projection.test.ts",
+      "line": 14,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/sdk/src/remote-control/control-methods.ts",
+      "line": 8,
+      "target": "packages/core/src/session/input.ts",
+      "specifier": "@miao/core/session/input",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/server/src/assembly.ts",
+      "line": 30,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "@miao/core/session/admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/server/src/middleware/session-location.ts",
+      "line": 9,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "@miao/core/session/admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "inbox",
+      "file": "packages/server/src/routes.ts",
+      "line": 20,
+      "target": "packages/core/src/session/admission.ts",
+      "specifier": "@miao/core/session/admission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/config/plugin/agent.ts",
+      "line": 15,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/location-services.ts",
+      "line": 25,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "./permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/mcp.ts",
+      "line": 25,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "./permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/permission.ts",
+      "line": 12,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "./permission/saved",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/permission.ts",
+      "line": 13,
+      "target": "packages/core/src/permission/classifier.ts",
+      "specifier": "./permission/classifier",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/permission/saved.ts",
+      "line": 8,
+      "target": "packages/core/src/permission/sql.ts",
+      "specifier": "./sql",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/permission/sql.ts",
+      "line": 5,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "./saved",
+      "kind": "import",
+      "typeOnly": true,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/plugin/agent.ts",
+      "line": 9,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/session/command-prepare.ts",
+      "line": 11,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/session/peer-tools.ts",
+      "line": 10,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": true,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 30,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/shell/approval.ts",
+      "line": 9,
+      "target": "packages/core/src/permission/arity.ts",
+      "specifier": "../permission/arity",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/skill.ts",
+      "line": 10,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "./permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/skill/guidance.ts",
+      "line": 6,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/apply-patch.ts",
+      "line": 17,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/bash.ts",
+      "line": 22,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/custom.ts",
+      "line": 10,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/edit.ts",
+      "line": 25,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/glob.ts",
+      "line": 11,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/grep.ts",
+      "line": 10,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/knowledge.ts",
+      "line": 12,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/lsp.ts",
+      "line": 15,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/monitor.ts",
+      "line": 11,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/plan-approval.ts",
+      "line": 8,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/plan-exit.ts",
+      "line": 14,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/plugin-tool.ts",
+      "line": 7,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": true,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/question.ts",
+      "line": 6,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/read.ts",
+      "line": 11,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/registry.ts",
+      "line": 6,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/skill.ts",
+      "line": 9,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/terminal.ts",
+      "line": 6,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/todowrite.ts",
+      "line": 6,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/webfetch.ts",
+      "line": 9,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/websearch.ts",
+      "line": 11,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/src/tool/write.ts",
+      "line": 23,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/agent.test.ts",
+      "line": 6,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/config/agent.test.ts",
+      "line": 12,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/mcp-oauth.test.ts",
+      "line": 19,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/mcp-oauth.test.ts",
+      "line": 20,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "@miao/core/permission/saved",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/mcp.test.ts",
+      "line": 16,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/mcp.test.ts",
+      "line": 17,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "@miao/core/permission/saved",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/permission-arity.test.ts",
+      "line": 2,
+      "target": "packages/core/src/permission/arity.ts",
+      "specifier": "@miao/core/permission/arity",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/permission-classifier.test.ts",
+      "line": 2,
+      "target": "packages/core/src/permission/classifier.ts",
+      "specifier": "@miao/core/permission/classifier",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/permission-decide.test.ts",
+      "line": 2,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/permission.test.ts",
+      "line": 9,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/permission.test.ts",
+      "line": 10,
+      "target": "packages/core/src/permission/sql.ts",
+      "specifier": "@miao/core/permission/sql",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/permission.test.ts",
+      "line": 11,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "@miao/core/permission/saved",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/session-peer-tools.test.ts",
+      "line": 4,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "../src/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/session-runner-recorded.test.ts",
+      "line": 11,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/session-runner.test.ts",
+      "line": 32,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/shared-schema.test.ts",
+      "line": 65,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "dynamic-import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/shell-approval.test.ts",
+      "line": 2,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-apply-patch.test.ts",
+      "line": 14,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-bash-sandbox.test.ts",
+      "line": 17,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-bash-sandbox.test.ts",
+      "line": 18,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "@miao/core/permission/saved",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-bash.test.ts",
+      "line": 14,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-custom.test.ts",
+      "line": 12,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-custom.test.ts",
+      "line": 13,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "@miao/core/permission/saved",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-edit.test.ts",
+      "line": 15,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-formatted-output.test.ts",
+      "line": 11,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-knowledge.test.ts",
+      "line": 9,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-lsp.test.ts",
+      "line": 13,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-monitor.test.ts",
+      "line": 8,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-plan-enter.test.ts",
+      "line": 8,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-plan-exit.test.ts",
+      "line": 11,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-question.test.ts",
+      "line": 5,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-read.test.ts",
+      "line": 13,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-skill.test.ts",
+      "line": 7,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-terminal.test.ts",
+      "line": 8,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-todowrite.test.ts",
+      "line": 7,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-webfetch.test.ts",
+      "line": 8,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-websearch.test.ts",
+      "line": 7,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/core/test/tool-write.test.ts",
+      "line": 14,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "permission",
+      "file": "packages/miao/src/engine/product-permission.ts",
+      "line": 2,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "@miao/core/permission/saved",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/miao/src/engine/product-tools.ts",
+      "line": 9,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/sdk/src/opencode.ts",
+      "line": 4,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "@miao/core/permission/saved",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/server/src/assembly.ts",
+      "line": 22,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "@miao/core/permission/saved",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/server/src/handlers/permission.ts",
+      "line": 2,
+      "target": "packages/core/src/permission.ts",
+      "specifier": "@miao/core/permission",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/server/src/handlers/permission.ts",
+      "line": 3,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "@miao/core/permission/saved",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/server/src/location.ts",
+      "line": 5,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "@miao/core/permission/saved",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/server/src/middleware/session-location.ts",
+      "line": 6,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "@miao/core/permission/saved",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "permission",
+      "file": "packages/server/src/routes.ts",
+      "line": 16,
+      "target": "packages/core/src/permission/saved.ts",
+      "specifier": "@miao/core/permission/saved",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/src/session-create.ts",
+      "line": 11,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "./session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/src/session/execution/local.ts",
+      "line": 15,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "../engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/src/session/input.ts",
+      "line": 9,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "./engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/src/session/migration-coordinator.ts",
+      "line": 7,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "./engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/src/session/migration-reverse-coordinator.ts",
+      "line": 10,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "./engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/src/session/migration-reverse.ts",
+      "line": 11,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "./engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/src/session/migration.ts",
+      "line": 8,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "./engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/src/session/move-coordinator.ts",
+      "line": 7,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "./engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/src/session/ownership.ts",
+      "line": 10,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "./engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/src/session/projector.ts",
+      "line": 9,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "./engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/src/session/routing.ts",
+      "line": 13,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "./engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 18,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "../engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/src/session/transfer-bundle.ts",
+      "line": 12,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "./engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/test/session-engine-placement.test.ts",
+      "line": 14,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "../src/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/test/session-execution-local.test.ts",
+      "line": 17,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/test/session-migration-coordinator.test.ts",
+      "line": 14,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "../src/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/test/session-migration-reverse.test.ts",
+      "line": 11,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "../src/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/test/session-move-coordinator.test.ts",
+      "line": 10,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "../src/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/test/session-routing.test.ts",
+      "line": 12,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "../src/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/test/session-routing.test.ts",
+      "line": 15,
+      "target": "packages/core/src/session/routing.ts",
+      "specifier": "../src/session/routing",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "placement",
+      "file": "packages/core/test/session-transfer-bundle.test.ts",
+      "line": 27,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "../src/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "placement",
+      "file": "packages/miao/src/cli/cmd/session.ts",
+      "line": 34,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/miao/src/cli/cmd/tui.ts",
+      "line": 427,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "dynamic-import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/miao/src/engine/admission.ts",
+      "line": 5,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/miao/src/engine/input-projection.ts",
+      "line": 3,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/miao/src/engine/native-engine.ts",
+      "line": 10,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/miao/src/engine/product-tools.ts",
+      "line": 17,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/miao/src/engine/subagent-projection.ts",
+      "line": 4,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/miao/test/engine/input-projection.test.ts",
+      "line": 13,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "placement",
+      "file": "packages/miao/test/engine/native-prewarm.test.ts",
+      "line": 4,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "placement",
+      "file": "packages/miao/test/engine/native-session-merge.test.ts",
+      "line": 6,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "placement",
+      "file": "packages/miao/test/engine/subagent-projection.test.ts",
+      "line": 9,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "placement",
+      "file": "packages/server/src/handlers/session.ts",
+      "line": 23,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/server/src/middleware/session-location.ts",
+      "line": 10,
+      "target": "packages/core/src/session/routing.ts",
+      "specifier": "@miao/core/session/routing",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "placement",
+      "file": "packages/server/src/native-session.ts",
+      "line": 14,
+      "target": "packages/core/src/session/engine-placement.ts",
+      "specifier": "@miao/core/session/engine-placement",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/location-services.ts",
+      "line": 35,
+      "target": "packages/core/src/session/runner/llm.ts",
+      "specifier": "./session/runner/llm",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/location-services.ts",
+      "line": 36,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "./session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session.ts",
+      "line": 27,
+      "target": "packages/core/src/session/runner/index.ts",
+      "specifier": "./session/runner/index",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session.ts",
+      "line": 54,
+      "target": "packages/core/src/session/runner/materialize-files.ts",
+      "specifier": "./session/runner/materialize-files",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/execution.ts",
+      "line": 7,
+      "target": "packages/core/src/session/runner/index.ts",
+      "specifier": "./runner/index",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/execution/local.ts",
+      "line": 7,
+      "target": "packages/core/src/session/runner/index.ts",
+      "specifier": "../runner",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/native-title.ts",
+      "line": 7,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "./runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/index.ts",
+      "line": 8,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "./model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 89,
+      "target": "packages/core/src/session/runner/index.ts",
+      "specifier": "./index",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 90,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "./model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 91,
+      "target": "packages/core/src/session/runner/provider-headers.ts",
+      "specifier": "./provider-headers",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 92,
+      "target": "packages/core/src/session/runner/provider-retry.ts",
+      "specifier": "./provider-retry",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 93,
+      "target": "packages/core/src/session/runner/output-guard.ts",
+      "specifier": "./output-guard",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 94,
+      "target": "packages/core/src/session/runner/tool-input-guard.ts",
+      "specifier": "./tool-input-guard",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 95,
+      "target": "packages/core/src/session/runner/first-byte-guard.ts",
+      "specifier": "./first-byte-guard",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 96,
+      "target": "packages/core/src/session/runner/publish-llm-event.ts",
+      "specifier": "./publish-llm-event",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 98,
+      "target": "packages/core/src/session/runner/to-llm-message.ts",
+      "specifier": "./to-llm-message",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 99,
+      "target": "packages/core/src/session/runner/materialize-files.ts",
+      "specifier": "./materialize-files",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 100,
+      "target": "packages/core/src/session/runner/max-steps.ts",
+      "specifier": "./max-steps",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 102,
+      "target": "packages/core/src/session/runner/metrics.ts",
+      "specifier": "./metrics",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 103,
+      "target": "packages/core/src/session/runner/model-io.ts",
+      "specifier": "./model-io",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/src/session/runner/publish-llm-event.ts",
+      "line": 8,
+      "target": "packages/core/src/session/runner/cost.ts",
+      "specifier": "./cost",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/location-layer.test.ts",
+      "line": 22,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-execution-local.test.ts",
+      "line": 8,
+      "target": "packages/core/src/session/runner/index.ts",
+      "specifier": "@miao/core/session/runner",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-execution-local.test.ts",
+      "line": 9,
+      "target": "packages/core/src/session/runner/llm.ts",
+      "specifier": "@miao/core/session/runner/llm",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-first-byte-guard.test.ts",
+      "line": 6,
+      "target": "packages/core/src/session/runner/first-byte-guard.ts",
+      "specifier": "@miao/core/session/runner/first-byte-guard",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-model-lookup.test.ts",
+      "line": 19,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-output-guard.test.ts",
+      "line": 4,
+      "target": "packages/core/src/session/runner/output-guard.ts",
+      "specifier": "@miao/core/session/runner/output-guard",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-provider-retry.test.ts",
+      "line": 16,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-provider-retry.test.ts",
+      "line": 17,
+      "target": "packages/core/src/session/runner/provider-retry.ts",
+      "specifier": "@miao/core/session/runner/provider-retry",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-cost.test.ts",
+      "line": 4,
+      "target": "packages/core/src/session/runner/cost.ts",
+      "specifier": "@miao/core/session/runner/cost",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-materialize.test.ts",
+      "line": 11,
+      "target": "packages/core/src/session/runner/materialize-files.ts",
+      "specifier": "@miao/core/session/runner/materialize-files",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-message.test.ts",
+      "line": 15,
+      "target": "packages/core/src/session/runner/to-llm-message.ts",
+      "specifier": "@miao/core/session/runner/to-llm-message",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-metrics.test.ts",
+      "line": 2,
+      "target": "packages/core/src/session/runner/metrics.ts",
+      "specifier": "@miao/core/session/runner/metrics",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-model-cold-catalog.test.ts",
+      "line": 16,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-model-io.test.ts",
+      "line": 6,
+      "target": "packages/core/src/session/runner/model-io.ts",
+      "specifier": "@miao/core/session/runner/model-io",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-model.test.ts",
+      "line": 11,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-provider-azure.test.ts",
+      "line": 7,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-provider-bedrock.test.ts",
+      "line": 7,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-provider-copilot.test.ts",
+      "line": 9,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-provider-request.test.ts",
+      "line": 9,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-provider-request.test.ts",
+      "line": 10,
+      "target": "packages/core/src/session/runner/provider-headers.ts",
+      "specifier": "@miao/core/session/runner/provider-headers",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-provider-vertex.test.ts",
+      "line": 7,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-recorded.test.ts",
+      "line": 23,
+      "target": "packages/core/src/session/runner/index.ts",
+      "specifier": "@miao/core/session/runner",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-recorded.test.ts",
+      "line": 24,
+      "target": "packages/core/src/session/runner/llm.ts",
+      "specifier": "@miao/core/session/runner/llm",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-recorded.test.ts",
+      "line": 25,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-text-files.test.ts",
+      "line": 9,
+      "target": "packages/core/src/session/runner/materialize-files.ts",
+      "specifier": "@miao/core/session/runner/materialize-files",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner-tool-events.test.ts",
+      "line": 10,
+      "target": "packages/core/src/session/runner/publish-llm-event.ts",
+      "specifier": "@miao/core/session/runner/publish-llm-event",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner.test.ts",
+      "line": 53,
+      "target": "packages/core/src/session/runner/index.ts",
+      "specifier": "@miao/core/session/runner",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner.test.ts",
+      "line": 57,
+      "target": "packages/core/src/session/runner/llm.ts",
+      "specifier": "@miao/core/session/runner/llm",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner.test.ts",
+      "line": 58,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-runner.test.ts",
+      "line": 64,
+      "target": "packages/core/src/session/runner/output-guard.ts",
+      "specifier": "@miao/core/session/runner/output-guard",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-tool-input-guard.test.ts",
+      "line": 4,
+      "target": "packages/core/src/session/runner/tool-input-guard.ts",
+      "specifier": "@miao/core/session/runner/tool-input-guard",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session-tool-progress.test.ts",
+      "line": 18,
+      "target": "packages/core/src/session/runner/publish-llm-event.ts",
+      "specifier": "../src/session/runner/publish-llm-event",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/core/test/session/native-title.test.ts",
+      "line": 5,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "runner",
+      "file": "packages/miao/src/engine/bridge.ts",
+      "line": 14,
+      "target": "packages/core/src/session/runner/cost.ts",
+      "specifier": "@miao/core/session/runner/cost",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/miao/src/engine/native-engine.ts",
+      "line": 66,
+      "target": "packages/core/src/session/runner/model.ts",
+      "specifier": "@miao/core/session/runner/model",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "runner",
+      "file": "packages/server/src/native-session.ts",
+      "line": 11,
+      "target": "packages/core/src/session/runner/cost.ts",
+      "specifier": "@miao/core/session/runner/cost",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/src/location-services.ts",
+      "line": 39,
+      "target": "packages/core/src/session/schedule.ts",
+      "specifier": "./session/schedule",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/src/session.ts",
+      "line": 58,
+      "target": "packages/core/src/session/delegation-store.ts",
+      "specifier": "./session/delegation-store",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/src/session/delegation.ts",
+      "line": 10,
+      "target": "packages/core/src/session/delegation-store.ts",
+      "specifier": "./delegation-store",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/src/session/execution/local.ts",
+      "line": 6,
+      "target": "packages/core/src/session/run-coordinator.ts",
+      "specifier": "../run-coordinator",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/src/session/execution/local.ts",
+      "line": 14,
+      "target": "packages/core/src/session/delegation.ts",
+      "specifier": "../delegation",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/src/session/projector.ts",
+      "line": 16,
+      "target": "packages/core/src/session/delegation-store.ts",
+      "specifier": "./delegation-store",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/src/session/runner/index.ts",
+      "line": 11,
+      "target": "packages/core/src/session/delegation.ts",
+      "specifier": "../delegation",
+      "kind": "import",
+      "typeOnly": true,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 69,
+      "target": "packages/core/src/session/delegation.ts",
+      "specifier": "../delegation",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/src/session/runner/llm.ts",
+      "line": 70,
+      "target": "packages/core/src/session/delegation-store.ts",
+      "specifier": "../delegation-store",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/src/session/schedule.ts",
+      "line": 11,
+      "target": "packages/core/src/session/delegation-store.ts",
+      "specifier": "./delegation-store",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/src/tool/background-task.ts",
+      "line": 5,
+      "target": "packages/core/src/session/delegation-store.ts",
+      "specifier": "../session/delegation-store",
+      "kind": "import",
+      "typeOnly": true,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/src/tool/schedule.ts",
+      "line": 6,
+      "target": "packages/core/src/session/schedule.ts",
+      "specifier": "../session/schedule",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/test/location-layer.test.ts",
+      "line": 6,
+      "target": "packages/core/src/session/schedule.ts",
+      "specifier": "@miao/core/session/schedule",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/test/session-background-jobs.test.ts",
+      "line": 19,
+      "target": "packages/core/src/session/delegation-store.ts",
+      "specifier": "@miao/core/session/delegation-store",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/test/session-run-coordinator.test.ts",
+      "line": 3,
+      "target": "packages/core/src/session/run-coordinator.ts",
+      "specifier": "@miao/core/session/run-coordinator",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/test/session-runner-recorded.test.ts",
+      "line": 22,
+      "target": "packages/core/src/session/run-coordinator.ts",
+      "specifier": "@miao/core/session/run-coordinator",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/test/session-runner.test.ts",
+      "line": 52,
+      "target": "packages/core/src/session/run-coordinator.ts",
+      "specifier": "@miao/core/session/run-coordinator",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/test/session-runner.test.ts",
+      "line": 86,
+      "target": "packages/core/src/session/delegation.ts",
+      "specifier": "@miao/core/session/delegation",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/test/session-runner.test.ts",
+      "line": 87,
+      "target": "packages/core/src/session/delegation-store.ts",
+      "specifier": "@miao/core/session/delegation-store",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/test/session-schedule.test.ts",
+      "line": 14,
+      "target": "packages/core/src/session/delegation-store.ts",
+      "specifier": "@miao/core/session/delegation-store",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/test/session-schedule.test.ts",
+      "line": 18,
+      "target": "packages/core/src/session/schedule.ts",
+      "specifier": "@miao/core/session/schedule",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/core/test/tool-schedule.test.ts",
+      "line": 6,
+      "target": "packages/core/src/session/schedule.ts",
+      "specifier": "@miao/core/session/schedule",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "verification"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/miao/src/cli/cli-runtime.ts",
+      "line": 22,
+      "target": "packages/core/src/session/schedule.ts",
+      "specifier": "@miao/core/session/schedule",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/miao/src/engine/product-tools.ts",
+      "line": 7,
+      "target": "packages/core/src/session/delegation-store.ts",
+      "specifier": "@miao/core/session/delegation-store",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/server/src/assembly.ts",
+      "line": 32,
+      "target": "packages/core/src/session/schedule.ts",
+      "specifier": "@miao/core/session/schedule",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/server/src/handlers/session.ts",
+      "line": 15,
+      "target": "packages/core/src/session/schedule.ts",
+      "specifier": "@miao/core/session/schedule",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    },
+    {
+      "category": "scheduling",
+      "file": "packages/server/src/handlers/session.ts",
+      "line": 16,
+      "target": "packages/core/src/session/delegation-store.ts",
+      "specifier": "@miao/core/session/delegation-store",
+      "kind": "import",
+      "typeOnly": false,
+      "scope": "source"
+    }
+  ]
+}
