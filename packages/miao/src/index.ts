@@ -12,6 +12,7 @@ import { Heap } from "./cli/heap"
 import { Maintenance } from "./cli/maintenance"
 import { Monitor } from "./cli/monitor"
 import { Crash } from "./cli/crash"
+import { commandSelection } from "./cli/dispatch"
 
 // A stray uncaught exception still exits; an unhandled rejection is recorded
 // and survives (see installFatalHandlers).
@@ -165,12 +166,11 @@ async function buildCli(selection: "all" | "default" | readonly string[]) {
     .strict()
 }
 
-const positional = args.find((arg) => !arg.startsWith("-"))
 const wantsHelp = args.includes("-h") || args.includes("--help")
-const wantsVersion = args.includes("-v") || args.includes("--version")
-const known = positional !== undefined && commandLoaders.some(([name]) => name === positional)
-const selection: "all" | "default" | readonly string[] =
-  positional !== undefined ? (known ? [positional] : "all") : wantsVersion ? [] : wantsHelp ? "all" : "default"
+const selection = await commandSelection(
+  args,
+  commandLoaders.map(([name]) => name),
+)
 
 WindowLifecycle.install()
 
