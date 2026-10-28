@@ -61,6 +61,9 @@ struct Inner {
     stop: CancellationToken,
     heartbeat: Mutex<Option<JoinHandle<()>>>,
     progress: broadcast::Sender<Value>,
+    /// Reports of reloads that actually changed something, so a host can show
+    /// them without having issued the reload itself.
+    config_changes: broadcast::Sender<Value>,
     product: Arc<std::sync::RwLock<crate::product::State>>,
     context: Mutex<Option<ContextLimits>>,
     roles: Mutex<crate::roles::Bindings>,
@@ -174,6 +177,7 @@ impl Runtime {
         store.adopt_wakeups().await?;
         store.adopt_crons().await?;
         let (progress, _) = broadcast::channel(256);
+        let (config_changes, _) = broadcast::channel(16);
         let runtime = Self {
             inner: Arc::new(Inner {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -196,6 +200,7 @@ impl Runtime {
                 stop: CancellationToken::new(),
                 heartbeat: Mutex::new(None),
                 progress,
+                config_changes,
                 product: Arc::new(std::sync::RwLock::new(crate::product::State::default())),
                 context: Mutex::new(None),
                 roles: Mutex::new(crate::roles::Bindings::default()),
@@ -392,7 +397,7 @@ impl Runtime {
         if changed {
             *generation += 1;
         }
-        Ok(json!({
+        let report = json!({
             "generation": *generation,
             "changed": if changed { json!(["lsp"]) } else { json!([]) },
             "unchanged": if changed { json!([]) } else { json!(["lsp"]) },
@@ -402,7 +407,14 @@ impl Runtime {
                 "unchanged": reconciled.unchanged,
                 "removed": reconciled.removed,
             },
-        }))
+        });
+        // Announced only when a section moved: a replayed configuration has
+        // nothing to tell the user, and a host that issued the reload already
+        // has the report as the reply.
+        if changed {
+            let _ = self.inner.config_changes.send(report.clone());
+        }
+        Ok(report)
     }
 
     /// Purpose-role model bindings (ADR-14): a binding is a model id on the
@@ -666,6 +678,23 @@ impl Runtime {
     /// resynchronize from committed messages, never block provider execution.
     pub fn progress(&self) -> broadcast::Receiver<Value> {
         self.inner.progress.subscribe()
+    }
+
+    /// Reports of reloads that changed at least one section. A host that issues
+    /// `config_reload` already gets the report as the reply; this channel lets a
+    /// host show a reload it did not cause, such as the standalone poller's.
+    pub fn config_events(&self) -> broadcast::Receiver<Value> {
+        self.inner.config_changes.subscribe()
+    }
+
+    /// Tell every listening host that a reload was refused. A host that issued
+    /// the reload gets the error as its reply, but a poller-driven failure would
+    /// otherwise exist only in the engine's stderr, which no host reads live.
+    pub fn announce_config_failure(&self, message: &str) {
+        let _ = self
+            .inner
+            .config_changes
+            .send(json!({ "changed": [], "error": message }));
     }
 
     pub async fn admit(&self, input: Input, resume: bool) -> Result<Admission, Error> {
