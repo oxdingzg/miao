@@ -23,8 +23,9 @@ use crate::status::UsageSummary;
 use crate::transport::{self, EngineClient, EngineSpawn, TransportEvent};
 
 /// Committed events that change what the transcript shows. Coalesced so one
-/// assistant turn does not trigger a snapshot per event.
-const REFRESH_DEBOUNCE: Duration = Duration::from_millis(150);
+/// assistant turn does not trigger a snapshot per event. The first pending
+/// event fixes the deadline; sustained activity must not postpone progress.
+const REFRESH_DELAY: Duration = Duration::from_millis(150);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const EVENTS_PAGE: usize = 100;
 
@@ -398,7 +399,7 @@ async fn run(
     let mut dirty: Option<Instant> = None;
     refresh_sessions(&client, &bus).await;
     loop {
-        let deadline = dirty.map(|start| start + REFRESH_DEBOUNCE);
+        let deadline = dirty.map(|start| start + REFRESH_DELAY);
         tokio::select! {
             request = requests.recv() => match request {
                 None => {
@@ -430,7 +431,7 @@ async fn run(
                     match client.admit(input, true, attachments.clone()).await {
                         Ok(_) => {
                             if open.as_ref().is_some_and(|state| state.id == session_id) {
-                                dirty = Some(Instant::now());
+                                dirty.get_or_insert_with(Instant::now);
                             }
                         }
                         Err(error) => bus.send(AppEvent::PromptFailed {
@@ -456,7 +457,7 @@ async fn run(
                     match client.admit(input, true, Vec::new()).await {
                         Ok(_) => {
                             if open.as_ref().is_some_and(|state| state.id == session_id) {
-                                dirty = Some(Instant::now());
+                                dirty.get_or_insert_with(Instant::now);
                             }
                         }
                         Err(error) => bus.send(AppEvent::PromptFailed {
@@ -468,7 +469,9 @@ async fn run(
                 }
                 Some(Request::Cancel { session_id }) => {
                     match client.cancel(&session_id).await {
-                        Ok(_) => dirty = Some(Instant::now()),
+                        Ok(_) => {
+                            dirty.get_or_insert_with(Instant::now);
+                        }
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("interrupt failed: {error}")))
                         }
@@ -484,7 +487,9 @@ async fn run(
                         .request(method, json!({ "session_id": session_id, "response": response }))
                         .await;
                     match result {
-                        Ok(_) => dirty = Some(Instant::now()),
+                        Ok(_) => {
+                            dirty.get_or_insert_with(Instant::now);
+                        }
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("approval failed: {error}")))
                         }
@@ -492,7 +497,9 @@ async fn run(
                 }
                 Some(Request::Answer { session_id, answer }) => {
                     match client.answer_question(&session_id, answer).await {
-                        Ok(_) => dirty = Some(Instant::now()),
+                        Ok(_) => {
+                            dirty.get_or_insert_with(Instant::now);
+                        }
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("answer failed: {error}")))
                         }
@@ -509,7 +516,9 @@ async fn run(
                         )
                         .await;
                     match result {
-                        Ok(_) => dirty = Some(Instant::now()),
+                        Ok(_) => {
+                            dirty.get_or_insert_with(Instant::now);
+                        }
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("reject failed: {error}")))
                         }
@@ -539,7 +548,7 @@ async fn run(
                     match result {
                         Ok(_) => {
                             if open.as_ref().is_some_and(|state| state.id == session_id) {
-                                dirty = Some(Instant::now());
+                                dirty.get_or_insert_with(Instant::now);
                             }
                         }
                         Err(error) => {
@@ -571,7 +580,7 @@ async fn run(
                     match result {
                         Ok(_) => {
                             if open.as_ref().is_some_and(|state| state.id == session_id) {
-                                dirty = Some(Instant::now());
+                                dirty.get_or_insert_with(Instant::now);
                             }
                         }
                         Err(error) => {
@@ -590,7 +599,7 @@ async fn run(
                         Ok(_) => {
                             refresh_sessions(&client, &bus).await;
                             if open.as_ref().is_some_and(|state| state.id == session_id) {
-                                dirty = Some(Instant::now());
+                                dirty.get_or_insert_with(Instant::now);
                             }
                         }
                         Err(error) => {
@@ -675,7 +684,7 @@ async fn run(
                                 | "question.resolved"
                         )
                     {
-                        dirty = Some(Instant::now());
+                        dirty.get_or_insert_with(Instant::now);
                     }
                 }
                 Some(TransportEvent::Failure(failure)) => {
