@@ -60,7 +60,6 @@ let catalog: {
 
 const discover = async (workspaceDirectory: string) => {
   workspace = workspaceDirectory
-  const debug: string[] = []
   const roots = [
     path.join(workspace, ".miao"),
     path.join(workspace, ".opencode"),
@@ -78,7 +77,8 @@ const discover = async (workspaceDirectory: string) => {
           .map((file: string) => path.join(directory, file))
           .toSorted()
       } catch (error) {
-        debug.push(`readdir ${directory}: ${String(error)}`)
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") continue
+        console.error(`[worker-host] cannot read tool directory ${directory}: ${String(error)}`)
         continue
       }
       for (const file of files) {
@@ -91,14 +91,11 @@ const discover = async (workspaceDirectory: string) => {
             found.set(id === "default" ? namespace : `${namespace}_${id}`, value)
           }
         } catch (error) {
-          debug.push(`import ${file}: ${String(error)}`)
+          console.error(`[worker-host] cannot load ${file}: ${String(error)}`)
         }
       }
     }
   }
-  debug.push(`[worker-host] workspace=${workspaceDirectory} tools=${found.size} names=${JSON.stringify([...found.keys()])}`)
-  debug.push(`[worker-host] .miao listing=${JSON.stringify((() => { try { return require("node:fs").readdirSync(path.join(workspaceDirectory, ".miao")) } catch (error) { return String(error) } })())}`)
-  debug.push(`[worker-host] .miao/tool listing=${JSON.stringify((() => { try { return require("node:fs").readdirSync(path.join(workspaceDirectory, ".miao", "tool")) } catch (error) { return String(error) } })())}`)
   catalog = [...found.entries()].map(([name, definition]) => {
     const schema = tool.schema.object(definition.args ?? {})
     return {
