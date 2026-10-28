@@ -72,6 +72,9 @@ import { SessionExecution } from "@miao/core/session/execution"
 import { SessionUsageStore } from "@miao/core/session/usage-store"
 import { Question } from "@miao/schema/question"
 import { translateApproval, translateQuestion } from "./bridge"
+import { ProductPermissionRequest } from "./product-permission-request"
+import { NativePermissionPattern } from "./native-permission-pattern"
+import { PermissionSaved } from "@miao/schema/permission-saved"
 
 const ApprovalBindings = Schema.Struct({
   approvals: Schema.Array(
@@ -442,6 +445,8 @@ export const fromOwners = (
   owners: Owners,
   preparation: {
     catalog?: NativeEngine.Interface["catalog"]
+    hostPermissions?: boolean
+    nativePatterns?: boolean
     prompt?: (input: Parameters<NativeEngine.Interface["admit"]>[0]) => Effect.Effect<PromptInput.Prompt, unknown>
     command?: (
       input: Parameters<NativeEngine.Interface["command"]>[0],
@@ -499,6 +504,33 @@ export const fromOwners = (
   return {
     storageRoot,
     catalog: preparation.catalog,
+    savedPermissions: (input) => {
+      if (!preparation.nativePatterns || !storageRoot) return Effect.succeed([])
+      return read<readonly PermissionSaved.Info[]>(
+        { storage: SessionEnginePlacement.storageFor(storageRoot, input.location), location: input.location },
+        async (connection) =>
+          Schema.decodeUnknownSync(NativePermissionPattern.List)(
+            await connection.client.request("permission_pattern_list"),
+          ).map((pattern) => NativePermissionPattern.saved(pattern, input.projectID)),
+      )
+    },
+    removeSavedPermission: (input) => {
+      if (!preparation.nativePatterns || !storageRoot)
+        return Effect.fail(
+          new ConflictError({ resource: input.id, message: "Native saved-rule control is unavailable" }),
+        )
+      return read(
+        { storage: SessionEnginePlacement.storageFor(storageRoot, input.location), location: input.location },
+        async (connection) => {
+          const patterns = Schema.decodeUnknownSync(NativePermissionPattern.List)(
+            await connection.client.request("permission_pattern_list"),
+          )
+          const binding = patterns.find((pattern) => `${PermissionSaved.NativePrefix}${pattern.id}` === input.id)
+          if (!binding) return
+          await connection.client.request("permission_pattern_remove", { rule_id: binding.id })
+        },
+      ).pipe(Effect.asVoid)
+    },
     // Owners are keyed by storage, so this is the same owner `session.create`
     // will connect: warming it spawns the engine child and boots the product
     // context (plugins, routes, tools) off the critical path.
@@ -1185,6 +1217,8 @@ const layer = Layer.effect(
     const engine = fromOwners(
       owners,
       {
+        hostPermissions: supported?.productPermissionRequests === 1 && supported?.productPermissionReplies === 1,
+        nativePatterns: supported?.permissionPatterns === 1,
         catalog: catalog ? (input) => readCatalog(configuration.binary, input) : undefined,
         prompt: (input) =>
           PromptMaterialization.prepare(input.prompt).pipe(

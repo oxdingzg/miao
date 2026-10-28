@@ -34,6 +34,7 @@ export type Capabilities = {
   productPermissionCancel?: number
   productPermissionDiagnostics?: number
   productPermissionAuto?: number
+  permissionPatterns?: number
 }
 
 const EXE = process.platform === "win32" ? ".exe" : ""
@@ -81,6 +82,7 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (wire.product_permission_cancel !== undefined && !isRevision(wire.product_permission_cancel)) return undefined
     if (wire.product_permission_diagnostics !== undefined && !isRevision(wire.product_permission_diagnostics)) return undefined
     if (wire.product_permission_auto !== undefined && !isRevision(wire.product_permission_auto)) return undefined
+    if (wire.permission_patterns !== undefined && !isRevision(wire.permission_patterns)) return undefined
     return {
       name: "miao-engine",
       version: wire.version,
@@ -98,6 +100,7 @@ export function capabilities(binary: string): Capabilities | undefined {
       ...(typeof wire.product_permission_cancel === "number" ? { productPermissionCancel: wire.product_permission_cancel } : {}),
       ...(typeof wire.product_permission_diagnostics === "number" ? { productPermissionDiagnostics: wire.product_permission_diagnostics } : {}),
       ...(typeof wire.product_permission_auto === "number" ? { productPermissionAuto: wire.product_permission_auto } : {}),
+      ...(typeof wire.permission_patterns === "number" ? { permissionPatterns: wire.permission_patterns } : {}),
     }
   } catch {
     return undefined
