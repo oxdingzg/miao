@@ -14,6 +14,112 @@ pub struct Source {
     pub path: String,
 }
 
+pub(crate) struct ReadSource {
+    source: Source,
+    trigger: String,
+}
+
+/// Only successful, durably settled file reads activate nested instructions.
+/// Keep the observation Session-owned; Tools is shared by a whole Location.
+pub(crate) async fn read_sources(
+    tools: &Tools,
+    previous: &[serde_json::Value],
+    paths: &[String],
+    cancel: CancellationToken,
+) -> Result<Vec<ReadSource>, ToolError> {
+    const LIMIT: usize = 64;
+    if std::env::var("MIAO_DISABLE_PROJECT_CONFIG")
+        .is_ok_and(|value| value == "1" || value == "true")
+    {
+        return Ok(Vec::new());
+    }
+    let names = if std::env::var("MIAO_DISABLE_CLAUDE_CODE_PROMPT")
+        .is_ok_and(|value| value == "1" || value == "true")
+    {
+        vec!["AGENTS.md", "CONTEXT.md"]
+    } else {
+        vec!["AGENTS.md", "CLAUDE.md", "CONTEXT.md"]
+    };
+    let root = std::path::Path::new(tools.location());
+    let mut found = std::collections::BTreeMap::new();
+    for value in previous {
+        let (Some(path), Some(trigger)) = (value["path"].as_str(), value["read_path"].as_str())
+        else {
+            continue;
+        };
+        let parsed = std::path::Path::new(path);
+        if value["type"] == "read_instruction"
+            && value["location"] == tools.location()
+            && source_path(path)
+            && !parsed.is_absolute()
+            && parsed
+                .parent()
+                .is_some_and(|parent| !parent.as_os_str().is_empty())
+            && parsed
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| names.contains(&name))
+            && found.len() < LIMIT
+        {
+            found.insert(path.to_owned(), trigger.to_owned());
+        }
+    }
+    for path in paths {
+        if cancel.is_cancelled() {
+            return Err(ToolError::Interrupted);
+        }
+        let Ok(prepared) = tools.prepare("read_file", json!({"path": path})).await else {
+            continue;
+        };
+        let Ok(relative) = prepared.resolved_path().strip_prefix(root) else {
+            // External read references do not authorize instruction discovery.
+            continue;
+        };
+        for directory in relative.ancestors().skip(1) {
+            if directory.as_os_str().is_empty() || found.len() >= LIMIT {
+                break;
+            }
+            for name in &names {
+                let candidate = directory.join(name);
+                if tokio::fs::symlink_metadata(root.join(&candidate))
+                    .await
+                    .is_err()
+                {
+                    continue;
+                }
+                let candidate = candidate.to_string_lossy().replace('\\', "/");
+                // The matching instruction itself is already visible in its
+                // read result; discovering its ancestors remains useful.
+                if root.join(&candidate) != prepared.resolved_path() {
+                    found.entry(candidate).or_insert_with(|| path.clone());
+                }
+                break;
+            }
+        }
+    }
+    let mut sources = found.into_iter().collect::<Vec<_>>();
+    sources.sort_by(|left, right| {
+        left.0
+            .matches('/')
+            .count()
+            .cmp(&right.0.matches('/').count())
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    Ok(sources
+        .into_iter()
+        .map(|(path, trigger)| ReadSource {
+            source: Source {
+                label: format!(
+                    "nested-{}",
+                    &crate::permission::digest(path.as_bytes())[..16]
+                ),
+                path,
+            },
+            trigger,
+        })
+        .collect())
+}
+
 /// A host-selected skill directory: workspace-relative paths stay contained;
 /// absolute paths require a read-only directory reference. `*.md` at its root
 /// and nested `SKILL.md` files are discovered under directory and file policy.
@@ -432,7 +538,7 @@ pub async fn assemble(
     policy: &Policy,
     cancel: CancellationToken,
 ) -> Result<ContextBundle, ToolError> {
-    assemble_for_agent(tools, policy, cancel, None).await
+    assemble_for_agent(tools, policy, cancel, None, &[]).await
 }
 
 pub(crate) async fn assemble_for_agent(
@@ -440,6 +546,7 @@ pub(crate) async fn assemble_for_agent(
     policy: &Policy,
     cancel: CancellationToken,
     agent: Option<&crate::session_agent::AgentManifest>,
+    reads: &[ReadSource],
 ) -> Result<ContextBundle, ToolError> {
     if cancel.is_cancelled() {
         return Err(ToolError::Interrupted);
@@ -556,6 +663,7 @@ pub(crate) async fn assemble_for_agent(
             sources.push(json!({"type":"reference","path":reference.path,"status":"authorized"}));
         }
     }
+    append_read_sources(tools, policy, cancel, reads, &mut system, &mut sources).await?;
     let fingerprint = context_digest(&system, &sources).map_err(|_| ToolError::InvalidInput)?;
     Ok(ContextBundle {
         system,
@@ -597,4 +705,136 @@ pub(crate) fn progress_reminder(history: &[Message]) -> Option<&'static str> {
     (silent == 3).then_some(
         "<system-reminder>\nSeveral tool batches have completed without a user-facing update. In your next response, include a brief normal-text update in the user's language describing what you have actually learned and what you will check or change next. Use the tool results as evidence; say if the investigation is still inconclusive. Do not expose private reasoning, repeat command logs, or claim unverified success. Continue the task and call tools as needed; this reminder does not ask you to stop or give a final answer.\n</system-reminder>",
     )
+}
+
+async fn append_read_sources(
+    tools: &Tools,
+    policy: &Policy,
+    cancel: CancellationToken,
+    reads: &[ReadSource],
+    system: &mut String,
+    sources: &mut Vec<serde_json::Value>,
+) -> Result<(), ToolError> {
+    if reads.is_empty() {
+        return Ok(());
+    }
+    let mut bytes = serde_json::to_vec(sources)
+        .map_err(|_| ToolError::InvalidInput)?
+        .len();
+    let mut omitted = 0;
+    for read in reads {
+        if cancel.is_cancelled() {
+            return Err(ToolError::Interrupted);
+        }
+        let source = &read.source;
+        let mut entry = json!({"type":"read_instruction","label":source.label,"path":source.path,"location":tools.location(),"read_path":read.trigger,"status":"skipped"});
+        let prepared = tools
+            .prepare("read_file", json!({"path":source.path}))
+            .await;
+        let text = match prepared {
+            Ok(prepared)
+                if !prepared
+                    .resolved_path()
+                    .starts_with(std::path::Path::new(tools.location())) =>
+            {
+                entry["reason"] = json!("outside_context_authority");
+                None
+            }
+            Ok(prepared) => {
+                let resource = prepared.resource().to_owned();
+                if sources
+                    .iter()
+                    .any(|source| source["status"] == "loaded" && source["resource"] == resource)
+                {
+                    continue;
+                }
+                entry["resource"] = json!(resource);
+                let direct =
+                    policy.evaluate("read_file", &source.path, crate::permission::Access::Read);
+                let resolved =
+                    policy.evaluate(prepared.name(), prepared.resource(), prepared.access());
+                if direct != Decision::Allow || resolved != Decision::Allow {
+                    entry["reason"] =
+                        json!(if direct == Decision::Deny || resolved == Decision::Deny {
+                            "policy_deny"
+                        } else {
+                            "policy_ask"
+                        });
+                    None
+                } else {
+                    match tools
+                        .execute_prepared(prepared, policy, cancel.child_token(), None)
+                        .await
+                    {
+                        Ok(data) => {
+                            entry["status"] = json!("loaded");
+                            entry["sha256"] = data["sha256"].clone();
+                            data["text"].as_str().map(str::to_owned)
+                        }
+                        Err(ToolError::Interrupted) => return Err(ToolError::Interrupted),
+                        Err(_) => {
+                            entry["reason"] = json!("read_failed");
+                            None
+                        }
+                    }
+                }
+            }
+            Err(ToolError::OutsideWorkspace | ToolError::ProtectedResource) => {
+                entry["reason"] = json!("outside_context_authority");
+                None
+            }
+            Err(_) => {
+                entry["reason"] = json!("read_failed");
+                None
+            }
+        };
+        let path = source
+            .path
+            .replace('&', "&amp;")
+            .replace('"', "&quot;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;");
+        let block = text.map(|text| {
+            format!(
+                "\n\n<project-instructions source=\"{}\" path=\"{}\">\nThese instructions apply within this file's directory; deeper instruction files take precedence.\n{}\n</project-instructions>",
+                source.label, path, text
+            )
+        });
+        let block = block.filter(|block| {
+            if system.len() + block.len() <= 65536 {
+                return true;
+            }
+            entry["status"] = json!("skipped");
+            entry["reason"] = json!("context_budget");
+            false
+        });
+        let size = serde_json::to_vec(&entry)
+            .map_err(|_| ToolError::InvalidInput)?
+            .len()
+            + 1;
+        // Reserve room for a receipt instead of overflowing Store's durable
+        // source budget when a deep project contributes long file names.
+        if bytes + size + 128 > 65536 {
+            omitted += 1;
+            continue;
+        }
+        if let Some(block) = block {
+            system.push_str(&block);
+        }
+        bytes += size;
+        sources.push(entry);
+    }
+    if omitted > 0 {
+        let receipt =
+            json!({"type":"read_instruction_limit","reason":"source_budget","omitted":omitted});
+        if bytes
+            + serde_json::to_vec(&receipt)
+                .map_err(|_| ToolError::InvalidInput)?
+                .len()
+            < 65536
+        {
+            sources.push(receipt);
+        }
+    }
+    Ok(())
 }

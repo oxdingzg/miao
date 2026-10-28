@@ -1660,7 +1660,17 @@ impl Tools {
             .await
             .map_err(|_| ToolError::Io(std::io::Error::other("search worker failed")))?;
         }
-        self.execute(&prepared.name, prepared.input, cancel).await
+        let read = (prepared.name == "read_file")
+            .then(|| prepared.path.strip_prefix(&self.root).ok())
+            .flatten()
+            .map(|path| json!({"location": self.location(), "path":path.to_string_lossy().replace('\\', "/")}));
+        let mut output = self.execute(&prepared.name, prepared.input, cancel).await?;
+        if let Some(read) = read {
+            // Internal settlement metadata, removed before model history. This
+            // captures the prepared path after a plugin's argument rewrite.
+            output["_instruction_read"] = read;
+        }
+        Ok(output)
     }
 
     fn delegation_definitions(&self) -> Vec<ToolDefinition> {

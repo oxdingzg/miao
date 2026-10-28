@@ -1553,11 +1553,32 @@ async fn execute(
                 .map_err(|error| Error::Invalid(error.to_string()))?,
             None => selected_provider,
         };
+        let (observed, paths) = inner
+            .store
+            .instruction_reads(session, inner.tools.location())
+            .await?;
+        let reads = match crate::context::read_sources(
+            &inner.tools,
+            &observed,
+            &paths,
+            cancel.child_token(),
+        )
+        .await
+        {
+            Ok(reads) => reads,
+            Err(ToolError::Interrupted) => return Ok(()),
+            Err(error) => {
+                return Err(Error::Invalid(format!(
+                    "instruction discovery failed: {error}"
+                )))
+            }
+        };
         let mut bundle = match crate::context::assemble_for_agent(
             &inner.tools,
             &policy,
             cancel.child_token(),
             manifest,
+            &reads,
         )
         .await
         {
@@ -1613,7 +1634,7 @@ async fn execute(
             .record(
                 session,
                 crate::events::Lifecycle::InstructionsLoaded.name(),
-                json!({"run_id":run,"sources":sources}),
+                json!({"run_id":run,"sources":sources,"location":inner.tools.location()}),
             )
             .await?;
         let (mut history, state) = inner.store.selected_input(session).await?;
@@ -2639,6 +2660,12 @@ command: None,
                 } else {
                     (output, is_error)
                 };
+                let mut output = output;
+                if replayed_call {
+                    if let Some(output) = output.as_object_mut() {
+                        output.remove("_instruction_read");
+                    }
+                }
                 let polling_terminal = name == "terminal_read"
                     && !is_error
                     && output.get("exit").is_some_and(Value::is_null);
