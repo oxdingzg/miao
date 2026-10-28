@@ -15,7 +15,7 @@ import { Directory, Document, Info, type Entry } from "@miao/schema/config"
 export { Directory, Document, type Entry, Info } from "@miao/schema/config"
 import { ConfigMigrateV1 } from "./v1/config/migrate"
 import { ConfigErrorV1 } from "./v1/config/error"
-
+import { ConfigExplain } from "./config/explain"
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -62,8 +62,6 @@ export const decodeDocument = (input: unknown) =>
     ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
     : decodeInfo(input)
 
-
-
 /** One ordered configuration source: the shape the engine's `--config-sources` reads. */
 export type Source = { dir: string } | { file: string } | { content: string }
 
@@ -76,6 +74,12 @@ export interface Interface {
    * doubles that do not feed the engine may omit it.
    */
   readonly sources?: () => Effect.Effect<Source[]>
+  /**
+   * Returns where every effective value came from, which document won and
+   * which values it overrode, with each document's scope. Readers that report
+   * configuration to a user (CLI, HTTP) use this; test doubles may omit it.
+   */
+  readonly explain?: () => Effect.Effect<ConfigExplain.Explanation>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/Config") {}
@@ -118,9 +122,8 @@ const layer = Layer.effect(
           new ConfigErrorV1.InvalidError({ path: origin, message: error.message })
         const info = yield* ConfigMigrateV1.isV1(input)
           ? Effect.mapError(
-              Effect.flatMap(
-                Schema.decodeUnknownEffect(ConfigV1.Info, decodeOptions)(input),
-                (v1) => Schema.decodeUnknownEffect(Info, decodeOptions)(ConfigMigrateV1.migrate(v1)),
+              Effect.flatMap(Schema.decodeUnknownEffect(ConfigV1.Info, decodeOptions)(input), (v1) =>
+                Schema.decodeUnknownEffect(Info, decodeOptions)(ConfigMigrateV1.migrate(v1)),
               ),
               invalid,
             )
@@ -158,12 +161,13 @@ const layer = Layer.effect(
               stop: location.project.directory,
             })
             .pipe(Effect.orDie)
+    const projectDirectories = discovered
+      .filter((item) => [".miao", ".opencode"].includes(path.basename(item)))
+      .toReversed()
+      .map((directory) => AbsolutePath.make(directory))
     const directories = [
       globalDirectory,
-      ...discovered
-        .filter((item) => [".miao", ".opencode"].includes(path.basename(item)))
-        .toReversed()
-        .map((directory) => AbsolutePath.make(directory)),
+      ...projectDirectories,
       ...(customDirectory ? [AbsolutePath.make(path.resolve(customDirectory))] : []),
     ]
     // A config closer to the opened directory should win over one higher up.
@@ -178,13 +182,19 @@ const layer = Layer.effect(
     // global config, project files, then `.miao` files.
     const custom = customFile ? yield* loadFile(path.resolve(customFile)).pipe(Effect.orDie) : undefined
     const content = customContent ? yield* parseDocument(customContent) : undefined
-    const configs = [
-      ...(supplementary[0] ?? []),
-      ...(custom ? [custom] : []),
-      ...direct,
-      ...supplementary.slice(1).flat(),
-      ...(content ? [content] : []),
+    const scoped = [
+      ...(supplementary[0] ?? []).map((entry) => ({ entry, scope: "global" as const })),
+      ...(custom ? [{ entry: custom, scope: "env" as const }] : []),
+      ...direct.map((entry) => ({ entry, scope: "project" as const })),
+      ...supplementary.slice(1).flatMap((entries, index) =>
+        entries.map((entry) => ({
+          entry,
+          scope: index < projectDirectories.length ? ("local" as const) : ("env" as const),
+        })),
+      ),
+      ...(content ? [{ entry: content, scope: "env" as const }] : []),
     ]
+    const configs = scoped.map((item) => item.entry)
     // Rules use the opposite order so a user-global rule can override a
     // repository rule. Statement order inside each file stays unchanged.
     yield* policy.load(
@@ -212,6 +222,9 @@ const layer = Layer.effect(
       }),
       sources: Effect.fn("Config.sources")(function* () {
         return sources
+      }),
+      explain: Effect.fn("Config.explain")(function* () {
+        return ConfigExplain.explain(scoped)
       }),
     })
   }).pipe(
