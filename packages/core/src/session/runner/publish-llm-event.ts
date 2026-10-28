@@ -5,7 +5,7 @@ import { ModelV2 } from "../../model"
 import { SessionEvent } from "../event"
 import { SessionMessage } from "../message"
 import { SessionSchema } from "../schema"
-import { SessionRunnerCost } from "./cost"
+import { SessionCost } from "../cost"
 import type { Tool } from "../../tool/tool"
 import type { Database } from "../../database/database"
 import { SessionToolDispatch } from "../tool-dispatch"
@@ -578,7 +578,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         if (stepSettlement) return yield* Effect.die("Duplicate step finish")
         stepSettlement = {
           finish: event.reason,
-          cost: SessionRunnerCost.of(input.cost ?? [], event.usage),
+          cost: SessionCost.of(input.cost ?? [], event.usage),
           tokens: tokens(event.usage),
         }
         return
