@@ -61,6 +61,18 @@ async fn all_in_usage_includes_rejected_auxiliary_work_and_preserves_missing_axe
     assert!(report["providerDetail"][0]["observedUsage"]
         .get("providerMetadata")
         .is_none());
+    // The report layer inherits the absence rule: a missing axis stays absent
+    // instead of reading as a measured zero.
+    assert_eq!(
+        report["providerDetail"][0]["observedUsage"]["cacheReadInputTokens"],
+        80
+    );
+    assert!(report["providerDetail"][0]["observedUsage"]
+        .get("cacheWriteInputTokens")
+        .is_none());
+    assert!(report["providerDetail"][0]["observedUsage"]
+        .get("reasoningTokens")
+        .is_none());
     assert!(report["auxiliary"]["turnsDetail"][0]["durationMs"].is_u64());
 }
 
