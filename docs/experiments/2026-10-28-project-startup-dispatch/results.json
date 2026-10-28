@@ -1,0 +1,133 @@
+{
+  "source_commits": {
+    "control": "4f49325f7d5f6eebd3a8787f393410519bf157dd",
+    "feature": "a76bc671e4"
+  },
+  "compiler": "Bun 1.4.2, same channel and build options",
+  "artifact": "matched remote-built control/feature CLI; identical public 0.3.14 TUI/engine",
+  "samples": [
+    {
+      "case": "control",
+      "run": 1,
+      "database": "new",
+      "composer_visible_ms": 600.53,
+      "local_fixture_reply_visible_ms": 845.7,
+      "fixture_request_ms": 600.12,
+      "fixture_requests": 1
+    },
+    {
+      "case": "feature",
+      "run": 1,
+      "database": "new",
+      "composer_visible_ms": 334.38,
+      "local_fixture_reply_visible_ms": 604.52,
+      "fixture_request_ms": 338.18,
+      "fixture_requests": 1
+    },
+    {
+      "case": "control",
+      "run": 2,
+      "database": "reused small database",
+      "composer_visible_ms": 490.06,
+      "local_fixture_reply_visible_ms": 743.02,
+      "fixture_request_ms": 480.01,
+      "fixture_requests": 1
+    },
+    {
+      "case": "feature",
+      "run": 2,
+      "database": "reused small database",
+      "composer_visible_ms": 339.85,
+      "local_fixture_reply_visible_ms": 588.31,
+      "fixture_request_ms": 329.72,
+      "fixture_requests": 1
+    },
+    {
+      "case": "control",
+      "run": 3,
+      "database": "reused small database",
+      "composer_visible_ms": 472.63,
+      "local_fixture_reply_visible_ms": 704.2,
+      "fixture_request_ms": 453.58,
+      "fixture_requests": 1
+    },
+    {
+      "case": "feature",
+      "run": 3,
+      "database": "reused small database",
+      "composer_visible_ms": 320.98,
+      "local_fixture_reply_visible_ms": 604.92,
+      "fixture_request_ms": 319.14,
+      "fixture_requests": 1
+    },
+    {
+      "case": "control",
+      "run": 4,
+      "database": "reused small database",
+      "composer_visible_ms": 462.31,
+      "local_fixture_reply_visible_ms": 715.28,
+      "fixture_request_ms": 452.97,
+      "fixture_requests": 1
+    },
+    {
+      "case": "feature",
+      "run": 4,
+      "database": "reused small database",
+      "composer_visible_ms": 343.25,
+      "local_fixture_reply_visible_ms": 623.9,
+      "fixture_request_ms": 344.82,
+      "fixture_requests": 1
+    },
+    {
+      "case": "control",
+      "run": 5,
+      "database": "reused small database",
+      "composer_visible_ms": 458.91,
+      "local_fixture_reply_visible_ms": 692.32,
+      "fixture_request_ms": 433.03,
+      "fixture_requests": 1
+    },
+    {
+      "case": "feature",
+      "run": 5,
+      "database": "reused small database",
+      "composer_visible_ms": 368.72,
+      "local_fixture_reply_visible_ms": 614.07,
+      "fixture_request_ms": 363.14,
+      "fixture_requests": 1
+    }
+  ],
+  "limits": [
+    "Five interleaved control/feature pairs in a tiny workspace, not a production p95 or cold-cache study",
+    "First database is new; later runs reuse it, not a large historical database",
+    "Composer visibility is not separate proof of input/submit readiness",
+    "Reply uses a zero-delay local fixture, not model network latency",
+    "Times include process/terminal capture and polling overhead; no paid provider calls",
+    "Matched Bun 1.4.2 source builds; do not attribute the larger difference from the separate public-release baseline to this patch",
+    "Only explicit absolute or ./relative directory operands use the new fast path; bare words retain command-alias resolution",
+    "No large-repository, long-history, real-provider or production p95 acceptance is claimed"
+  ],
+  "descriptive_medians_ms": {
+    "control": {
+      "composer_visible_ms": 472.63,
+      "local_fixture_reply_visible_ms": 715.28
+    },
+    "feature": {
+      "composer_visible_ms": 339.85,
+      "local_fixture_reply_visible_ms": 604.92
+    }
+  },
+  "composer_median_reduction_percent": 28.09,
+  "verification": {
+    "dispatch_tests": 6,
+    "dispatch_assertions": 15,
+    "legacy_selected_tui_tests": 15,
+    "legacy_selected_tui_assertions": 39,
+    "help_snapshots": 40,
+    "typecheck": "passed",
+    "remote_control_build": "passed",
+    "remote_feature_build": "passed",
+    "embedded_engine_smoke": "both passed",
+    "paid_provider_calls": 0
+  }
+}
