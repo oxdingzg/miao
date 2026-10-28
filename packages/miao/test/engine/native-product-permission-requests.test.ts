@@ -13,7 +13,7 @@ test.skipIf(!binary)(
   async () => {
     if (!binary) throw new Error("native engine required")
     const capabilities: unknown = await Bun.$`${binary} --capabilities`.json()
-    expect(capabilities).toMatchObject({ product_permission_replies: 1 })
+    expect(capabilities).toMatchObject({ product_permission_replies: 1, product_permission_cancel: 1 })
     await using tmp = await tmpdir()
     const provider = Bun.serve({
       hostname: "127.0.0.1",
@@ -93,6 +93,21 @@ test.skipIf(!binary)(
           await expect(admit({ ...input, facts: { ...facts, resources: ["different"] } })).rejects.toBeInstanceOf(Error)
           expect(await client.request("product_permission_pending", { session_id: call.sessionID })).toEqual([pending])
           expect(await client.request("product_permission_status", { source, request_id: pending.id })).toEqual(pending)
+          const withdrawal = await admit({ request_id: "withdraw", facts: { ...facts, resources: ["withdraw"] } })
+          const other = await admit({ request_id: "withdraw-peer", facts: { ...facts, resources: ["other"] } })
+          const withdraw = (request_id: string) => client.request("product_permission_cancel", { source, request_id })
+          const cancelled = await withdraw(withdrawal.id)
+          expect(cancelled).toMatchObject({ state: "cancelled", reason: "caller_cancelled", reply: null })
+          expect(await withdraw(withdrawal.id)).toEqual(cancelled)
+          expect(await client.request("product_permission_status", { source, request_id: other.id })).toMatchObject({
+            state: "pending",
+          })
+          expect(await client.request("product_permission_status", { source, request_id: pending.id })).toMatchObject({
+            state: "pending",
+          })
+          await expect(reply(withdrawal, "always")).rejects.toBeInstanceOf(Error)
+          expect(await client.request("permission_pattern_list")).toEqual([])
+          await withdraw(other.id)
           const sibling = await admit({ request_id: "peer", facts })
           expect(await reply(pending, "always")).toMatchObject({ state: "allowed", reply: "always" })
           expect(await client.request("product_permission_status", { source, request_id: sibling.id })).toMatchObject({
@@ -187,7 +202,7 @@ test.skipIf(!binary)(
       }[]
       expect(
         events.filter((event) => event.kind === "product.permission.resolved").map((event) => event.data.state),
-      ).toEqual(["allowed", "allowed", "denied", "denied", "cancelled"])
+      ).toEqual(["cancelled", "cancelled", "allowed", "allowed", "denied", "denied", "cancelled"])
     } finally {
       client.offEvent(onFinished)
       release.resolve()

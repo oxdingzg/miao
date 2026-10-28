@@ -494,6 +494,10 @@ impl Host {
                 .product_permission_status(&self.controller, &source, request_id)
                 .await
                 .and_then(|record| serde_json::to_value(record).map_err(Error::from)),
+            Command::ProductPermissionCancel { source, request_id } => runtime
+                .cancel_product_permission(&self.controller, &source, request_id)
+                .await
+                .and_then(|record| serde_json::to_value(record).map_err(Error::from)),
             Command::ProductPermissionReply { source, response } => runtime
                 .reply_product_permission(&self.controller, &source, response)
                 .await

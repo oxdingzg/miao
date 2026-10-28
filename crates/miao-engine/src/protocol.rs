@@ -557,6 +557,11 @@ pub enum Command {
         source: crate::product_permission::Source,
         request_id: String,
     },
+    /// Withdraw only this source's assertion without rejecting sibling requests.
+    ProductPermissionCancel {
+        source: crate::product_permission::Source,
+        request_id: String,
+    },
     ProductPermissionReply {
         source: crate::product_permission::Source,
         response: crate::product_permission_request::Response,
