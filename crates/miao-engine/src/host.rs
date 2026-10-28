@@ -183,6 +183,8 @@ impl Host {
                 query,
                 limit,
                 before_message_seq,
+                tool_use_id,
+                offset,
             } => {
                 runtime
                     .store()
@@ -192,8 +194,8 @@ impl Host {
                             query,
                             limit,
                             before_message_seq,
-                            tool_use_id: None,
-                            offset: 0,
+                            tool_use_id,
+                            offset,
                         },
                     )
                     .await
