@@ -347,6 +347,16 @@ impl Runtime {
         *self.inner.lsp_origin.lock().await = Some(origin);
     }
 
+    /// Whether any Session in this process is inside a drain. A standalone
+    /// reload waits for this to clear, so no turn observes half a change.
+    pub fn is_draining(&self) -> bool {
+        self.inner
+            .draining
+            .lock()
+            .map(|draining| !draining.is_empty())
+            .unwrap_or(false)
+    }
+
     /// Re-derive the sections this build can reload and reconcile them in
     /// place. Today that is the LSP server set: unchanged servers keep their
     /// connections, changed or removed ones restart on next use, and a
