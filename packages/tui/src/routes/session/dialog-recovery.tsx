@@ -41,7 +41,10 @@ export function DialogRecovery(props: { sessionID: string }) {
       ...pending().map(
         (call): DialogSelectOption<Choice> => ({
           title: call.tool,
-          description: `${call.callID} · outcome unknown`,
+          description:
+            call.origin === "operator"
+              ? `${call.callID} · outcome unknown · operator shell cannot be retried`
+              : `${call.callID} · outcome unknown`,
           value: { type: "call", call },
           category: "Interrupted tools",
         }),
@@ -79,7 +82,7 @@ export function DialogRecovery(props: { sessionID: string }) {
             : (failure() ??
               (pending().length === 0
                 ? "No unresolved tool outcomes on this page."
-                : "Choose a tool to retry or abandon. Its previous outcome remains unknown."))}
+                : "Choose a tool to inspect its sanitized input, then retry or abandon. Its previous outcome remains unknown."))}
         </text>
       }
       onSelect={(option) => {
@@ -108,6 +111,7 @@ function RecoveryDecision(props: { sessionID: string; call: SessionRecovery.Call
   const toast = useToast()
   const theme = useTheme().theme
   const [busy, setBusy] = createSignal(false)
+  const operator = props.call.origin === "operator"
   // Keep identities stable when a transport error leaves the result uncertain
   // and the user repeats the same choice in this dialog.
   const operations = { retry: crypto.randomUUID(), abandon: crypto.randomUUID() }
@@ -133,29 +137,69 @@ function RecoveryDecision(props: { sessionID: string; call: SessionRecovery.Call
         },
       )
   }
+  const inspect = () => {
+    void sdk.api.sessions.recovery({ sessionID: props.sessionID, callID: props.call.callID }).then(
+      (result) =>
+        dialog.replace(
+          () => <RecoveryInput sessionID={props.sessionID} call={props.call} input={result.input} />,
+        ),
+      (error: unknown) => toast.show({ variant: "error", message: errorMessage(error), duration: 6000 }),
+    )
+  }
   return (
-    <DialogSelect<SessionRecovery.Decision>
+    <DialogSelect<"inspect" | SessionRecovery.Decision>
       title={`Recover ${props.call.tool}`}
       locked={busy()}
       detail={
         <text fg={theme.textMuted}>
-          The previous outcome remains unknown. Retry inspects current state before a new call; abandon continues
-          without retrying this operation.
+          {operator
+            ? "This call came from an operator shell and cannot be retried; abandon continues without retrying it."
+            : "The previous outcome remains unknown. Retry inspects current state before a new call; abandon continues\nwithout retrying this operation."}
         </text>
       }
       options={[
         {
-          title: "Inspect and retry",
-          value: "retry",
-          description: "Use a fresh call under current permissions if still needed",
+          title: "View sanitized input",
+          value: "inspect",
+          description: "Show the sanitized input recorded for this call",
         },
+        ...(operator
+          ? []
+          : [
+              {
+                title: "Inspect and retry",
+                value: "retry",
+                description: "Use a fresh call under current permissions if still needed",
+              } satisfies { title: string; value: SessionRecovery.Decision; description: string },
+            ]),
         {
           title: "Abandon this operation",
           value: "abandon",
           description: "Continue the remaining task without retrying this call",
         },
       ]}
-      onSelect={(option) => submit(option.value)}
+      onSelect={(option) => {
+        if (option.value === "inspect") {
+          inspect()
+          return
+        }
+        submit(option.value)
+      }}
+    />
+  )
+}
+
+function RecoveryInput(props: { sessionID: string; call: SessionRecovery.Call; input: unknown }) {
+  const dialog = useDialog()
+  const theme = useTheme().theme
+  return (
+    <DialogSelect<{ back: true }>
+      title={`Input for ${props.call.tool}`}
+      detail={
+        <text fg={theme.text}>{JSON.stringify(props.input, null, 2)}</text>
+      }
+      options={[{ title: "Back", value: { back: true } }]}
+      onSelect={() => dialog.replace(() => <RecoveryDecision sessionID={props.sessionID} call={props.call} />)}
     />
   )
 }
