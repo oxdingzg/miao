@@ -14,6 +14,7 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 ## [0.3.16] - 2026-10-28
 
 ### Added
+- **engine**: report config provenance from the same ordered plan (#1601) (`370928dbd4`)
 - **core**: report ignored config keys with an executable fix (#1592) (`4fbd5f0134`)
 - **core**: explain config values by source and scope (#1589) (`30bd32ff1f`)
 - **engine**: switch native sessions to existing workspaces (#1573) (`00d1fe43f8`)
