@@ -575,6 +575,11 @@ pub enum Command {
     PermissionEvaluate {
         request: crate::permission_rules::Request,
     },
+    /// Query only the Runtime-owned authority of a live reverse product call.
+    ProductPermissionEvaluate {
+        source: crate::product_permission::Source,
+        request: crate::product_permission::Request,
+    },
     /// Project the product's saved "always allow" rules into the engine store
     /// (S6 step 2). Idempotent by rule digest; scoped to one workspace.
     PermissionSavedProject {

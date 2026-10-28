@@ -401,6 +401,73 @@ impl Runtime {
         }
     }
 
+    /// Evaluate against the authority captured by the active reverse call.
+    /// This is a bounded query, not an execution or persistent-approval ticket.
+    pub async fn evaluate_product_permission(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        request: crate::product_permission::Request,
+    ) -> Result<crate::permission_rules::Outcome, Error> {
+        if controller.runtime_id != self.inner.id {
+            return Err(Error::Invalid(
+                "product permission controller mismatch".into(),
+            ));
+        }
+        if request.actions.is_empty() || request.resources.is_empty() {
+            return Err(Error::Invalid(
+                "product permission requires actions and resources".into(),
+            ));
+        }
+        let bridge = self
+            .inner
+            .product
+            .read()
+            .unwrap()
+            .bridge
+            .clone()
+            .ok_or_else(|| Error::Invalid("inactive product permission source".into()))?;
+        let authority = bridge
+            .permission_authority(source)
+            .ok_or_else(|| Error::Invalid("inactive product permission source".into()))?;
+        let saved = self
+            .inner
+            .store
+            .product_permission_rules(
+                source.session_id.clone(),
+                authority.run_id.clone(),
+                source.call_id.clone(),
+                self.inner.tools.location().into(),
+            )
+            .await?;
+        let mut outcome = crate::permission_rules::evaluate(&crate::permission_rules::Request {
+            actions: request.actions,
+            resources: request.resources,
+            explicit: request.explicit,
+            configured: authority.configured.clone(),
+            saved: Some(saved),
+        })?;
+        outcome.authority_revision = crate::permission::digest(&serde_json::to_vec(&json!({
+            "semantics":"product-permission-authority-v1",
+            "workspace":self.inner.tools.location(),
+            "policy":authority.policy_revision,
+            "boundary":self.inner.tools.grant_authority_descriptor(),
+            "rules":outcome.authority_revision,
+        }))?);
+        let connected = self
+            .inner
+            .product
+            .read()
+            .unwrap()
+            .bridge
+            .as_ref()
+            .is_some_and(|current| current.same_connection(&bridge));
+        if !connected || bridge.permission_authority(source).is_none() {
+            return Err(Error::Invalid("inactive product permission source".into()));
+        }
+        Ok(outcome)
+    }
+
     /// Configure automatic context management (roadmap §2.13). `None` keeps it
     /// off; without limits the run loop never attempts a checkpoint.
     /// Require this command to pass before a run may finish; see the
@@ -2920,7 +2987,15 @@ command: None,
                                                     bridge.cancel_session(session).await;
                                                     Err(ToolError::Interrupted)
                                                 }
-                                                outcome = bridge.call(session, name, input, context) => match outcome {
+                                                outcome = bridge.call_authorized(session, name, input, crate::product_permission::Authority {
+                                                    run_id: run.into(),
+                                                    context,
+                                                    policy_revision: policy.revision().into(),
+                                                    configured: manifest.and_then(|agent| agent.ordered_permissions.as_ref()).map(|ordered| ordered.rules.iter().map(|rule| crate::permission_rules::Rule {
+                                                        action: rule.action.clone(), resource: rule.resource.clone(), effect: rule.effect,
+                                                    }).collect()),
+                                                    cancel: cancel.clone(),
+                                                }) => match outcome {
                                                     Ok(output) => {
                                                         if output.get("moved").is_some_and(|value| value.as_bool() == Some(true)) {
                                                             moved = true;
