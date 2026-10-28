@@ -10,8 +10,10 @@ import { SessionID } from "@miao/schema/session-id"
 import { ModelV2 } from "@miao/core/model"
 import { SessionRunnerCost } from "@miao/core/session/runner/cost"
 import { Cause, DateTime, Deferred, Effect, Option, Schema } from "effect"
+import { isNotNull } from "drizzle-orm"
 import { Database } from "@miao/core/database/database"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
+import { SessionTable } from "@miao/core/session/sql"
 import { NativeEngine } from "./native-engine"
 import { nativeIdle } from "./native-state"
 
@@ -34,6 +36,7 @@ export function nativeSessionInfo(input: {
   location: Location.Ref
   snapshot: Readonly<Record<string, unknown>>
   usage?: SessionInfo.Usage
+  pinned?: DateTime.Utc
 }): SessionInfo.Info {
   const selection = Schema.decodeUnknownOption(Schema.NullOr(SessionModelRoute.Binding))(
     input.snapshot["model_selection"],
@@ -85,6 +88,7 @@ export function nativeSessionInfo(input: {
       created: DateTime.makeUnsafe(created ?? 0),
       updated: DateTime.makeUnsafe(updated ?? created ?? 0),
       ...(archived !== undefined ? { archived: DateTime.makeUnsafe(archived) } : {}),
+      ...(input.pinned !== undefined ? { pinned: input.pinned } : {}),
     },
     model,
     title: typeof title === "string" ? title : "",
@@ -292,15 +296,43 @@ export function selectNativeSessions(input: {
   return direction === "previous" ? listed.toReversed() : listed
 }
 
-/** The catalog's paging comparator, shared by selection and the final merge. */
+/**
+ * The catalog's paging comparator, shared by selection and the final merge.
+ * A pin is a list preference the catalog owns rather than an engine fact, so a
+ * pinned Session leads the list in either direction exactly as it does in
+ * `V2Session.list`: SQLite sorts a NULL last, and this mirror keeps the native
+ * and catalog prefixes cut at the same element.
+ */
 export function compareSessions(order: "asc" | "desc") {
   return (left: SessionInfo.Info, right: SessionInfo.Info) => {
+    const pin = (left.time.pinned === undefined ? 1 : 0) - (right.time.pinned === undefined ? 1 : 0)
+    if (pin !== 0) return pin
     const delta = DateTime.toEpochMillis(left.time.created) - DateTime.toEpochMillis(right.time.created)
     if (delta !== 0) return order === "asc" ? delta : -delta
     const ids = left.id < right.id ? -1 : left.id > right.id ? 1 : 0
     return order === "asc" ? ids : -ids
   }
 }
+
+/**
+ * The pins the catalog holds. The engine records no pin of its own — its
+ * `engine_session` row carries an archive timestamp and nothing about ordering
+ * — so a native projection reads the pin from the catalog row that mirrors the
+ * Session, the same row the pin handler writes. Pinned Sessions are a handful
+ * by definition, so one read of the catalog's own table serves both a listing
+ * page and a single `session.get`.
+ */
+export const nativePins = Effect.fn("NativeSession.pins")(function* (db: Database.Interface["db"]) {
+  const rows = yield* db
+    .select({ id: SessionTable.id, pinned: SessionTable.time_pinned })
+    .from(SessionTable)
+    .where(isNotNull(SessionTable.time_pinned))
+    .all()
+    .pipe(Effect.orDie)
+  return new Map(
+    rows.flatMap((row) => (row.pinned == null ? [] : [[row.id, DateTime.makeUnsafe(row.pinned)] as const])),
+  )
+})
 
 /** Merge in traversal order so previous pages keep the nearest candidates. */
 export function mergeListingPage(input: {
@@ -350,6 +382,7 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
   projects: { resolve: (directory: AbsolutePath) => Effect.Effect<{ id: Project.ID }> }
 }) {
   const placements = yield* SessionEnginePlacement.list(input.db)
+  const pins = yield* nativePins(input.db)
   const groups = new Map<string, { storage: AbsolutePath; location: Location.Ref; sessions: string[] }>()
   for (const placement of placements) {
     if (input.directory && placement.location.directory !== input.directory) continue
@@ -412,7 +445,14 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
                 snapshot,
               })
             : undefined
-          return nativeSessionInfo({ sessionID, projectID: project, location: group.location, snapshot, usage })
+          return nativeSessionInfo({
+            sessionID,
+            projectID: project,
+            location: group.location,
+            snapshot,
+            usage,
+            pinned: pins.get(sessionID),
+          })
         }).pipe(
           Effect.catchCause((cause) =>
             Cause.hasInterrupts(cause)
