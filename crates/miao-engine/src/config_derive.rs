@@ -99,10 +99,13 @@ fn validate_sandbox(origin: &str, sandbox: &serde_json::Value) -> Result<(), Str
         }
     }
     if let Some(roots) = sandbox.get("writable_roots") {
-        if roots.as_array().map_or(true, |roots| {
-            roots.iter().any(|root| !root.is_string())
-        }) {
-            return Err(format!("{origin}: sandbox.writable_roots must be an array of strings"));
+        if roots
+            .as_array()
+            .map_or(true, |roots| roots.iter().any(|root| !root.is_string()))
+        {
+            return Err(format!(
+                "{origin}: sandbox.writable_roots must be an array of strings"
+            ));
         }
     }
     if let Some(on_unavailable) = sandbox.get("on_unavailable") {
@@ -134,23 +137,37 @@ fn validate_lsp(origin: &str, lsp: &serde_json::Value) -> Result<(), String> {
         };
         if !command.is_array()
             || command.as_array().unwrap().is_empty()
-            || command.as_array().unwrap().iter().any(|part| !part.is_string())
+            || command
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|part| !part.is_string())
         {
-            return Err(format!("{origin}: lsp.{id}.command must be an array of strings"));
+            return Err(format!(
+                "{origin}: lsp.{id}.command must be an array of strings"
+            ));
         }
         if let Some(extensions) = entry.get("extensions") {
             if extensions
                 .as_array()
                 .map_or(true, |items| items.iter().any(|item| !item.is_string()))
             {
-                return Err(format!("{origin}: lsp.{id}.extensions must be an array of strings"));
+                return Err(format!(
+                    "{origin}: lsp.{id}.extensions must be an array of strings"
+                ));
             }
         }
         if let Some(env) = entry.get("env") {
             if !env.is_object()
-                || env.as_object().unwrap().iter().any(|(_, value)| !value.is_string())
+                || env
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .any(|(_, value)| !value.is_string())
             {
-                return Err(format!("{origin}: lsp.{id}.env must map strings to strings"));
+                return Err(format!(
+                    "{origin}: lsp.{id}.env must map strings to strings"
+                ));
             }
         }
     }
@@ -536,7 +553,10 @@ mod validate_tests {
     #[test]
     fn lsp_entries_without_a_command_stay_valid_but_mistyped_commands_refuse() {
         assert!(validated(serde_json::json!({"lsp": {"gopls": {"disabled": true}}})).is_ok());
-        assert!(validated(serde_json::json!({"lsp": {"gopls": {"command": ["gopls"], "extensions": [".go"]}}})).is_ok());
+        assert!(validated(
+            serde_json::json!({"lsp": {"gopls": {"command": ["gopls"], "extensions": [".go"]}}})
+        )
+        .is_ok());
         assert!(validated(serde_json::json!({"lsp": {"gopls": {"command": "gopls"}}})).is_err());
         assert!(validated(serde_json::json!({"lsp": {"gopls": 3}})).is_err());
         assert!(validated(serde_json::json!({"lsp": false})).is_ok());
