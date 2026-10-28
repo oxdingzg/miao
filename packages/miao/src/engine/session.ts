@@ -659,7 +659,10 @@ export class EngineSession {
     )
       throw new EngineError("engine_snapshot_invalid", "native snapshot has no valid Session cursor")
     this.#refreshAfter.set(sessionID, snapshot.cursor)
-    let after = 0
+    const base = "event_base" in snapshot ? snapshot.event_base : 0
+    if (typeof base !== "number" || !Number.isSafeInteger(base) || base < 0 || base > snapshot.cursor)
+      throw new EngineError("engine_replay_invalid", "native snapshot has an invalid journal base")
+    let after = base
     while (after < snapshot.cursor) {
       const page = await this.#client.request("events", { session_id: sessionID, after })
       if (!Array.isArray(page) || page.length === 0)

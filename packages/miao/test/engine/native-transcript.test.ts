@@ -310,3 +310,32 @@ test("a snapshot without provenance/selection fails rather than returning TS his
     }),
   ).rejects.toThrow()
 })
+
+test("transferred transcript entries retain the destination's actual import sequences", async () => {
+  const entries = await readTranscriptEntries({
+    sessionID: session,
+    engineID: "store",
+    location,
+    selected: false,
+    request: async (method) => {
+      if (method === "snapshot")
+        return { session_id: session, cursor: 9, messages: [], selection: null, transfer_import: "transfer" }
+      if (method === "events")
+        return Array.from({ length: 9 }, (_, index) =>
+          row(index + 1, "session.transfer.activated", { import_id: "transfer" }),
+        )
+      if (method === "transfer_timeline")
+        return {
+          id: "transfer",
+          bundle_sha256: "digest",
+          after: 0,
+          next: null,
+          messages: [{ id: "msg_original", type: "user", text: "source", time: { created: 123 } }],
+          sequences: { msg_original: 6 },
+        }
+      throw new Error(`unexpected method ${method}`)
+    },
+  })
+  expect(entries).toHaveLength(1)
+  expect(entries[0]).toMatchObject({ seq: 6, message: { id: "msg_original" } })
+})
