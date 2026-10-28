@@ -3,6 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { Option } from "effect"
 import { Config } from "@miao/core/config"
+import { ConfigExplain } from "@miao/core/config/explain"
 import { LSPServer } from "@miao/core/lsp/server"
 import { SandboxPolicy } from "@miao/core/sandbox/policy"
 
@@ -58,7 +59,9 @@ for (const name of lspCases) {
           return info?.lsp
         }),
       )
-    ).filter((lsp) => lsp !== undefined).at(-1)
+    )
+      .filter((lsp) => lsp !== undefined)
+      .at(-1)
     if (configured === false) {
       servers.clear()
     } else if (configured !== true && configured !== undefined) {
@@ -82,13 +85,15 @@ for (const name of lspCases) {
     const entries = Array.from(servers.values()).flatMap((server) => {
       const argv0 = resolve(server.command[0])
       if (argv0 === undefined) return []
-      return [{
-        name: server.id,
-        argv: [argv0, ...server.command.slice(1)],
-        extensions: server.extensions,
-        env: server.env ?? {},
-        initialization: server.initialization ?? null,
-      }]
+      return [
+        {
+          name: server.id,
+          argv: [argv0, ...server.command.slice(1)],
+          extensions: server.extensions,
+          env: server.env ?? {},
+          initialization: server.initialization ?? null,
+        },
+      ]
     })
     const expected = JSON.parse(fs.readFileSync(path.join(root, name, "expected-lsp.json"), "utf8"))
     expect(entries).toEqual(expected)
@@ -133,5 +138,62 @@ for (const name of cases) {
       sandbox: boolean
     }
     expect(sandbox).toBe(expected.sandbox)
+  })
+}
+
+// The engine reports which document won each effective value, so the product
+// can show where a setting came from. Both readers must name the same file for
+// the same leaf, or a user sees one answer in the TUI and another in the
+// engine's errors; the shared case pins that.
+const explainCases = fs
+  .readdirSync(root)
+  .filter((name) => fs.existsSync(path.join(root, name, "expected-explain.json")))
+  .sort()
+
+for (const name of explainCases) {
+  test(`golden case ${name} matches the shared expected provenance`, async () => {
+    const caseDirectory = path.join(root, name)
+    const plan = JSON.parse(fs.readFileSync(path.join(caseDirectory, "sources.json"), "utf8")) as Array<{
+      dir?: string
+      file?: string
+    }>
+    const scoped: ConfigExplain.ScopedEntry[] = []
+    for (const source of plan) {
+      const scope: ConfigExplain.Scope =
+        source.dir === "global" ? "global" : source.dir === "local" ? "local" : "project"
+      const files = source.dir
+        ? Config.fileNames.map((file) => path.join(caseDirectory, source.dir!, file))
+        : [path.join(caseDirectory, source.file!)]
+      for (const file of files) {
+        if (!fs.existsSync(file)) continue
+        const info = Option.getOrUndefined(Config.decodeDocument(Config.parseJsonc(await Bun.file(file).text())))
+        if (info) scoped.push({ entry: new Config.Document({ type: "document", path: file, info }), scope })
+      }
+    }
+    const explanation = ConfigExplain.explain(scoped)
+    // The engine sorts object keys while this reader preserves document order,
+    // so both sides sort by path; origins are absolute here and relative in the
+    // shared sample.
+    const relative = (origin: string | undefined) => origin!.slice(caseDirectory.length + 1)
+    const derived = {
+      sources: explanation.sources.map((source) => ({
+        origin: relative(source.origin.path),
+        keys: [...source.keys].map((key) => JSON.stringify(key)).sort(),
+      })),
+      keys: [...explanation.keys]
+        .map((key) => ({
+          path: [...key.path],
+          value: key.value,
+          origin: relative(key.origin.path),
+          overridden: key.overridden.map((leaf) => ({
+            value: leaf.value,
+            origin: relative(leaf.origin.path),
+          })),
+        }))
+        .sort((left, right) => JSON.stringify(left.path).localeCompare(JSON.stringify(right.path))),
+    }
+    for (const source of derived.sources) source.keys = source.keys.map((key) => JSON.parse(key))
+    const expected = JSON.parse(fs.readFileSync(path.join(caseDirectory, "expected-explain.json"), "utf8"))
+    expect(derived).toEqual(expected)
   })
 }

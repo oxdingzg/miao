@@ -143,3 +143,71 @@ fn derived_lsp_matches_every_golden_case() {
         );
     }
 }
+
+/// Origins arrive as absolute paths; the samples are shared with the TypeScript
+/// reference, so every reader reports them relative to its own case directory.
+fn relativize(value: &Value, case: &Path) -> Value {
+    match value {
+        Value::String(text) => Value::String(
+            text.strip_prefix(&format!("{}/", case.display()))
+                .unwrap_or(text)
+                .to_string(),
+        ),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(|item| relativize(item, case)).collect())
+        }
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, item)| (key.clone(), relativize(item, case)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// `serde_json` keeps object keys sorted while the TypeScript reader preserves
+/// document order, so both sides sort by key path before comparing.
+fn sort_keys(value: &mut Value) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    if let Some(Value::Array(keys)) = object.get_mut("keys") {
+        if keys.first().is_some_and(Value::is_object) {
+            keys.sort_by(|left, right| {
+                left.get("path")
+                    .unwrap_or(&Value::Null)
+                    .to_string()
+                    .cmp(&right.get("path").unwrap_or(&Value::Null).to_string())
+            });
+        }
+    }
+    for item in object.values_mut() {
+        sort_keys(item);
+    }
+}
+
+#[test]
+fn explained_provenance_matches_every_golden_case() {
+    let cases = golden_cases("expected-explain.json");
+    assert!(
+        !cases.is_empty(),
+        "expected a shared golden provenance case, found none"
+    );
+    for case in cases {
+        let sources = read_sources(&case).expect("an explain case carries a sources plan");
+        let documents = config_derive::load(&sources)
+            .unwrap_or_else(|error| panic!("{}: {error}", case.display()));
+        let mut derived = relativize(&config_derive::explain(&documents), &case);
+        sort_keys(&mut derived);
+        let expected: Value = serde_json::from_str(
+            &std::fs::read_to_string(case.join("expected-explain.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            derived,
+            expected,
+            "{} drifted from the shared golden provenance",
+            case.display()
+        );
+    }
+}

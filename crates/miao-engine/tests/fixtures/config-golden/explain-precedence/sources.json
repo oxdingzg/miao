@@ -1,0 +1,5 @@
+[
+  { "dir": "global" },
+  { "dir": "project" },
+  { "dir": "local" }
+]
