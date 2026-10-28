@@ -11,6 +11,20 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.13] - 2026-10-27
+
+### Added
+- **tui**: highlight fenced code blocks by their language (#1550) (`0da4af6563`)
+- **tui**: start the Rust TUI by default (#1539) (`205b3a7e3a`)
+- **tui**: read keybind overrides from tui.json (#1538) (`2cd036e662`)
+- **tui**: capture the mouse and apply the cursor style (#1549) (`372448f088`)
+- **tui**: bring the theme catalog and config chain to parity (#1536) (`e961d6cd54`)
+- **tui**: ship the Rust TUI and start it with --tui rust (#1535) (`8b723b9e88`)
+- **tui**: add attention, clipboard, external editor and Zed context (Phase 3 T10) (#1534) (`c330b7399a`)
+- **tui**: render markdown and project engine tool results (Phase 3 T9) (#1533) (`c65e138aa6`)
+- **engine**: project saved permission rules into the engine store (S6 step 2) (#1546) (`cee3dc1444`)
+- **engine**: derive product policy and LSP from the ordered config source plan (#1544) (`2e6379b2a9`)
+
 ## [0.3.12] - 2026-10-27
 
 ### Added
