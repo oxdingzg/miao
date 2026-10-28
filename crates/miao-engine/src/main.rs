@@ -743,7 +743,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         runtime.set_context_limits(Some(limits)).await;
     }
     if let Some(origin) = lsp_origin {
-        runtime.set_lsp_origin(origin).await;
+        runtime.set_lsp_origin(origin.clone()).await;
+        // No host watches these files in the standalone entry, so the engine
+        // polls them itself; a hosted engine gets an explicit `config_reload`.
+        watch_config(runtime.clone(), origin);
     }
     runtime.set_route_limits(route_limits).await;
     let roles = miao_engine::roles::Bindings {
@@ -828,6 +831,64 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("miao-engine stdio: {error}");
     }
     std::process::exit(if result.is_ok() { 0 } else { 1 });
+}
+
+/// Standalone config reload. A hosted engine learns about a configuration
+/// change from `config_reload`; the standalone entry has no host to tell it,
+/// so it stats the same sources a reload reads.
+///
+/// Polling rather than an OS watcher is deliberate: network filesystems,
+/// container mounts and editors' atomic renames do not deliver consistent
+/// events across platforms, while mtime plus size does. A tick that lands
+/// while a Session is draining is skipped, so a turn never observes half a
+/// change. A failed derivation is reported once and retried only when a file
+/// changes again, not on every tick.
+fn watch_config(runtime: Runtime, origin: miao_engine::config_derive::LspOrigin) {
+    tokio::spawn(async move {
+        let mut stamp = config_stamp(&origin);
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            let next = config_stamp(&origin);
+            if next == stamp {
+                continue;
+            }
+            if runtime.is_draining() {
+                continue;
+            }
+            stamp = next;
+            match runtime.reload_config().await {
+                Ok(report)
+                    if report["changed"]
+                        .as_array()
+                        .is_some_and(|changed| !changed.is_empty()) =>
+                {
+                    eprintln!("miao-engine configuration reloaded: {}", report["changed"]);
+                }
+                Ok(_) => {}
+                Err(error) => eprintln!("miao-engine configuration reload failed: {error}"),
+            }
+        }
+    });
+}
+
+/// Per-source `(mtime, size)`, `None` for a missing file. Nanosecond mtimes
+/// keep two edits in the same second distinguishable.
+fn config_stamp(origin: &miao_engine::config_derive::LspOrigin) -> Vec<Option<(u128, u64)>> {
+    origin
+        .files()
+        .iter()
+        .map(|path| {
+            std::fs::metadata(path).ok().map(|meta| {
+                let mtime = meta
+                    .modified()
+                    .ok()
+                    .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|elapsed| elapsed.as_nanos())
+                    .unwrap_or(0);
+                (mtime, meta.len())
+            })
+        })
+        .collect()
 }
 
 async fn serve(
@@ -1130,6 +1191,19 @@ fn leading_request_id(prefix: &[u8]) -> Value {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn config_stamp_tracks_rewrites_and_absent_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("miao.json");
+        let origin = miao_engine::config_derive::LspOrigin::Manifest(path.clone());
+        assert_eq!(super::config_stamp(&origin), vec![None]);
+        std::fs::write(&path, "{}").unwrap();
+        let first = super::config_stamp(&origin);
+        assert!(first[0].is_some());
+        std::fs::write(&path, "{ }").unwrap();
+        assert_ne!(super::config_stamp(&origin), first);
+    }
+
     #[tokio::test]
     async fn replay_burst_waits_for_output_capacity_instead_of_closing_the_engine() {
         let (output, mut incoming) = tokio::sync::mpsc::channel(2);

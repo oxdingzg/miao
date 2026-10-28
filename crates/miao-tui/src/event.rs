@@ -43,6 +43,10 @@ pub enum AppEvent {
     Usage(UsageSummary),
     /// The Session currently open was deleted.
     SessionRemoved(String),
+    /// One ephemeral provider fact for the open Session: a progress frame or a
+    /// journaled retry. It never belongs to the transcript, only to the live
+    /// status line.
+    Provider(Value),
     /// A fresh projection of the open Session.
     SessionOpened {
         summary: Option<SessionSummary>,
