@@ -46,6 +46,20 @@ test.skipIf(!binary)(
       await expect(
         first.request("permission_pattern_put", { rule: { ...rule, effect: "deny" } }),
       ).rejects.toBeInstanceOf(Error)
+      const projected = Array.from({ length: 255 }, (_, index) => ({ ...rule, resource: `legacy-${index}` }))
+      const projection = { workspace: stored.workspace, rules: projected }
+      expect(await first.request("permission_saved_project", projection)).toEqual({ accepted: true })
+      expect(await first.request("permission_saved_project", projection)).toEqual({ accepted: true })
+      expect(await first.request("permission_pattern_put", { rule })).toEqual(stored)
+      await expect(
+        first.request("permission_pattern_put", { rule: { ...rule, resource: "native-over-budget" } }),
+      ).rejects.toBeInstanceOf(Error)
+      await expect(
+        first.request("permission_saved_project", {
+          workspace: stored.workspace,
+          rules: [{ ...rule, resource: "legacy-over-budget" }],
+        }),
+      ).rejects.toBeInstanceOf(Error)
       expect(await first.request("permission_pattern_list")).toEqual([stored])
       expect(await first.request("permission_pattern_remove", { rule_id: stored.id })).toEqual({ removed: true })
       expect(await first.request("permission_pattern_remove", { rule_id: stored.id })).toEqual({ removed: false })

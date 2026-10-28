@@ -90,7 +90,7 @@ message身份以及动作/资源事实，不提交configured/saved规则。查�
 `permission_pattern_list/put/remove` 为Runtime规范workspace提供原生持久allow规则；
 入参不允许选择workspace/source，ID绑定workspace及内容，重复put保持ID和创建时间，
 跨workspace的ID不能撤销同内容的另一条规则。原生行与宿主投影分别存储，求值时合并，
-configured deny仍先于两类saved allow。写入前校验合并规则预算，失败回滚该写入。
+configured deny仍先于两类saved allow。SQLite插入约束覆盖两种来源的合并规则预算，失败回滚该写入；满额重复投影仍幂等。
 
 这只是原生规则写入前置。绑定pending子请求的always答复、原生变更事件的产品投影、
 完整快照刷新配对验收（#1643）、宿主第二判定删除及§4询问次数验收仍未完成。

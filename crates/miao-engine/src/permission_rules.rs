@@ -56,7 +56,7 @@ pub struct Outcome {
 
 /// Host bounds, mirrored from the ordered policy compiler: oversized input is
 /// refused instead of half-evaluated, so callers fail closed.
-const MAX_RULES: usize = 256;
+pub(crate) const MAX_RULES: usize = 256;
 const MAX_ACTION_BYTES: usize = 256;
 const MAX_RESOURCE_BYTES: usize = 4096;
 const MAX_ACTIONS: usize = 64;
