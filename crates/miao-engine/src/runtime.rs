@@ -729,6 +729,27 @@ impl Runtime {
         Ok(result)
     }
 
+    pub async fn replace_saved_rules(
+        &self,
+        controller: &Controller,
+        workspace: String,
+        rules: Vec<crate::permission_rules::Rule>,
+    ) -> Result<(), Error> {
+        if controller.runtime_id != self.inner.id {
+            return Err(Error::Invalid("permission controller mismatch".into()));
+        }
+        let workspace = tokio::fs::canonicalize(workspace)
+            .await
+            .map_err(|_| Error::Invalid("saved permission workspace is unavailable".into()))?;
+        if workspace != std::path::Path::new(self.inner.tools.location()) {
+            return Err(Error::Invalid("saved permission Location mismatch".into()));
+        }
+        self.inner
+            .store
+            .replace_saved_rules(self.inner.tools.location().to_owned(), rules)
+            .await
+    }
+
     pub async fn approve(
         &self,
         controller: &Controller,

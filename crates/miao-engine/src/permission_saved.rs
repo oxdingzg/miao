@@ -61,6 +61,39 @@ pub(crate) fn project(
     Ok(())
 }
 
+/// Replace the product's complete saved-allowance snapshot for one workspace.
+/// Unlike legacy additive import, an empty snapshot revokes every old row.
+pub(crate) fn snapshot(
+    connection: &mut Connection,
+    workspace: &str,
+    rules: &[Rule],
+) -> Result<(), Error> {
+    crate::permission_source::require_legacy(connection, workspace)?;
+    if !bounded(workspace)
+        || workspace.contains('\0')
+        || rules.len() > MAX_RULES
+        || rules.iter().any(|rule| {
+            rule.effect != crate::permission::Decision::Allow
+                || !crate::permission_rules::bounded_rule(rule)
+        })
+    {
+        return Err(Error::Invalid("invalid saved permission snapshot".into()));
+    }
+    let tx = crate::store::write_tx(connection)?;
+    crate::permission_source::require_legacy(&tx, workspace)?;
+    tx.execute(
+        "DELETE FROM engine_permission_rule_legacy WHERE workspace=?1",
+        [workspace],
+    )?;
+    let now = crate::approval::now_ms();
+    for rule in rules {
+        tx.execute("INSERT OR IGNORE INTO engine_permission_rule_legacy(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
+            params![workspace,rule_digest(rule)?,serde_json::to_string(rule)?,now])?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 /// The workspace's projected rules, in projection order.
 pub(crate) fn rules(connection: &Connection, workspace: &str) -> Result<Vec<Rule>, Error> {
     crate::permission_source::require_legacy(connection, workspace)?;
@@ -105,6 +138,59 @@ mod tests {
             resource: resource.into(),
             effect: Decision::Allow,
         }
+    }
+
+    #[test]
+    fn snapshots_revoke_removed_and_final_rules_without_crossing_workspaces() {
+        let mut connection = connection();
+        project(
+            &mut connection,
+            "/a",
+            &[rule("edit", "a"), rule("edit", "b")],
+        )
+        .unwrap();
+        project(&mut connection, "/b", &[rule("edit", "other")]).unwrap();
+        snapshot(&mut connection, "/a", &[rule("edit", "b")]).unwrap();
+        assert_eq!(rules(&connection, "/a").unwrap(), vec![rule("edit", "b")]);
+        snapshot(&mut connection, "/a", &[]).unwrap();
+        assert!(rules(&connection, "/a").unwrap().is_empty());
+        assert_eq!(
+            rules(&connection, "/b").unwrap(),
+            vec![rule("edit", "other")]
+        );
+    }
+
+    #[test]
+    fn duplicate_snapshots_are_idempotent_and_invalid_snapshots_keep_previous_rules() {
+        let mut connection = connection();
+        for _ in 0..2 {
+            snapshot(
+                &mut connection,
+                "/a",
+                &[rule("edit", "ok"), rule("edit", "ok")],
+            )
+            .unwrap();
+        }
+        assert_eq!(rules(&connection, "/a").unwrap(), vec![rule("edit", "ok")]);
+        assert!(snapshot(&mut connection, "/a", &[rule("edit", &"x".repeat(4097))]).is_err());
+        let mut deny = rule("edit", "*");
+        deny.effect = Decision::Deny;
+        assert!(snapshot(&mut connection, "/a", &[deny]).is_err());
+        assert_eq!(rules(&connection, "/a").unwrap(), vec![rule("edit", "ok")]);
+    }
+
+    #[test]
+    fn failed_snapshot_insert_rolls_back_the_prior_allowances() {
+        let mut connection = connection();
+        snapshot(&mut connection, "/a", &[rule("edit", "old")]).unwrap();
+        connection.execute_batch("CREATE TRIGGER reject_snapshot BEFORE INSERT ON engine_permission_rule_legacy WHEN json_extract(NEW.rule,'$.resource')='blocked' BEGIN SELECT RAISE(FAIL,'fixture failure'); END;").unwrap();
+        assert!(snapshot(
+            &mut connection,
+            "/a",
+            &[rule("edit", "new"), rule("edit", "blocked")]
+        )
+        .is_err());
+        assert_eq!(rules(&connection, "/a").unwrap(), vec![rule("edit", "old")]);
     }
 
     #[test]
