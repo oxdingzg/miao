@@ -28,6 +28,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `cancel_input` | `session_id`, `input_id` | `{accepted:bool, reason?}` |
 | `cancel` | `session_id` | `{accepted:bool}` |
 | `archive` | `session_id`, `archived` | `{accepted:true, archived}` |
+| `pin` | `session_id`, `pinned` | `{accepted:true, pinned}` |
 | `remove` | `session_id` | `{accepted:bool, reason?}` |
 | `request_compact` | `session_id` | `{accepted:true, duplicate, pending}` |
 | `select_agent` | `session_id`, `agent` | `{agent_hash, changed}` |
@@ -251,9 +252,17 @@ Session may be archived while a drain is active and restored with
 Session reports `null`. Archiving never initializes a Session: an unknown id
 fails with `invalid_request`.
 
-### Removal
+### Pinning
 
-`remove` takes `session_id` and deletes everything the Session owns — its
+`pin` takes `session_id` and `pinned`. A pin is a list preference the engine
+owns, so a second client orders the shared catalog the same way: it writes the
+Session's `pinned_at_ms` (null when cleared), appends `session.pinned`, and
+deliberately leaves `updated_at_ms` alone — a pin is not Session activity and
+must not read as the Session having been used. The snapshot and `catalog_info`
+report `pinned_at_ms`. Unlike `archive` an unknown id fails with
+`invalid_request`: pinning never initializes a Session.
+
+ — its
 conversation, inbox, runs, tools, approvals, jobs, schedules, placement, lease
 and event log — after interrupting any active drain and stopping the
 in-process tasks that belong to it. Stopping those tasks is required, not

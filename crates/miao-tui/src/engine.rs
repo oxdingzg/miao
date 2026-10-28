@@ -92,6 +92,10 @@ pub enum Request {
         session_id: String,
         archived: bool,
     },
+    Pin {
+        session_id: String,
+        pinned: bool,
+    },
     Remove {
         session_id: String,
     },
@@ -223,6 +227,15 @@ impl Handle {
         let _ = self.tx.send(Request::Archive {
             session_id: session_id.to_string(),
             archived,
+        });
+    }
+
+    /// Pin or unpin a Session. The engine records the timestamp, so the list
+    /// order survives a restart and is shared with every other client.
+    pub fn pin(&self, session_id: &str, pinned: bool) {
+        let _ = self.tx.send(Request::Pin {
+            session_id: session_id.to_string(),
+            pinned,
         });
     }
 
@@ -624,6 +637,23 @@ async fn run(
                         Ok(_) => refresh_sessions(&client, &bus).await,
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("archive failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::Pin {
+                    session_id,
+                    pinned,
+                }) => {
+                    let result = client
+                        .request(
+                            "pin",
+                            json!({ "session_id": session_id, "pinned": pinned }),
+                        )
+                        .await;
+                    match result {
+                        Ok(_) => refresh_sessions(&client, &bus).await,
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("pin failed: {error}")))
                         }
                     }
                 }

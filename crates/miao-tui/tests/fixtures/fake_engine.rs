@@ -119,6 +119,7 @@ fn main() {
                     "cursor": 2,
                     "updated_at_ms": updated,
                     "archived_at_ms": null,
+                    "pinned_at_ms": null,
                     "parent_session_id": null,
                     "location": "/tmp",
                     "model_selection": {"protocol": "chat", "model": "fake/glm"},
@@ -247,6 +248,10 @@ fn main() {
             }
             "archive" if sessions => {
                 log_action(&frame["params"], "archive");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "pin" if sessions => {
+                log_action(&frame["params"], "pin");
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
             }
             "remove" if sessions => {
