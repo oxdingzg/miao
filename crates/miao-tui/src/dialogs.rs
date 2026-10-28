@@ -161,6 +161,8 @@ pub enum ListKind {
     Sessions,
     /// `Enter` restores the prompt; `d` removes it.
     Stash,
+    /// `Enter` returns the revert boundary sequence the row names.
+    Timeline,
     /// No selection: `Enter` and `Esc` both close.
     ReadOnly,
 }
@@ -189,8 +191,15 @@ impl ListDialog {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfirmKind {
     RemoveSession(String),
+    /// Rewind the transcript to a user message, with or without restoring the
+    /// file set the Session recorded at that boundary.
+    Revert {
+        boundary_seq: u64,
+        files: bool,
+    },
 }
 
 pub struct ConfirmDialog {
@@ -202,12 +211,24 @@ pub struct ConfirmDialog {
     pub kind: ConfirmKind,
 }
 
+impl ConfirmDialog {
+    /// The word on the confirming button. A revert is not a delete, and the
+    /// button should not say so.
+    pub fn action_label(&self) -> &'static str {
+        match self.kind {
+            ConfirmKind::RemoveSession(_) => "delete",
+            ConfirmKind::Revert { .. } => "revert",
+        }
+    }
+}
+
 pub enum Dialog {
     Models(ListDialog),
     Theme(ListDialog),
     Sessions(ListDialog),
     Accounts(ListDialog),
     Stash(ListDialog),
+    Timeline(ListDialog),
     Status(ListDialog),
     Debug(ListDialog),
     Help(ListDialog),
@@ -364,6 +385,15 @@ impl Dialog {
         ))
     }
 
+    pub fn timeline(rows: Vec<Row>) -> Self {
+        Dialog::Timeline(ListDialog::new(
+            "timeline",
+            rows,
+            ListKind::Timeline,
+            "enter revert to here · esc close",
+        ))
+    }
+
     pub fn status(rows: Vec<Row>) -> Self {
         Dialog::Status(ListDialog::new(
             "status",
@@ -413,6 +443,21 @@ impl Dialog {
         })
     }
 
+    /// Ask before a revert lands. The plan comes from the engine, so the
+    /// dialog states what will actually change, including paths this Session
+    /// did not edit itself.
+    pub fn confirm_revert(boundary_seq: u64, plan: &crate::session::RevertPlan) -> Self {
+        Dialog::Confirm(ConfirmDialog {
+            title: "revert",
+            message: plan.summary(),
+            confirmed: false,
+            kind: ConfirmKind::Revert {
+                boundary_seq,
+                files: plan.files(),
+            },
+        })
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> Action {
         if key.kind != KeyEventKind::Press {
             return Action::None;
@@ -423,6 +468,7 @@ impl Dialog {
             | Dialog::Sessions(list)
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
+            | Dialog::Timeline(list)
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => handle_list_key(list, key),
@@ -439,6 +485,7 @@ impl Dialog {
             | Dialog::Sessions(list)
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
+            | Dialog::Timeline(list)
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => list.title,
@@ -455,6 +502,7 @@ impl Dialog {
             | Dialog::Sessions(list)
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
+            | Dialog::Timeline(list)
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => Some(list),
@@ -469,6 +517,7 @@ impl Dialog {
             | Dialog::Sessions(list)
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
+            | Dialog::Timeline(list)
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => Some(list),
@@ -533,6 +582,8 @@ pub enum Action {
     /// Take one stashed prompt back into the composer.
     StashRestore(usize),
     StashRemove(usize),
+    /// Rewind this Session to the user message with this sequence.
+    Revert(u64),
     /// Run the command the palette selected, by its id.
     Command(String),
 }
@@ -552,6 +603,10 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
             return match list.kind {
                 ListKind::Sessions => Action::OpenSession(id),
                 ListKind::Stash => Action::StashRestore(list.selected),
+                ListKind::Timeline => match id.parse::<u64>() {
+                    Ok(seq) => Action::Revert(seq),
+                    Err(_) => Action::None,
+                },
                 _ => Action::Chosen(list.selected),
             };
         }
@@ -733,6 +788,13 @@ fn handle_confirm_key(confirm: &mut ConfirmDialog, key: KeyEvent) -> Action {
             }
             let kind = match &confirm.kind {
                 ConfirmKind::RemoveSession(id) => ConfirmKind::RemoveSession(id.clone()),
+                ConfirmKind::Revert {
+                    boundary_seq,
+                    files,
+                } => ConfirmKind::Revert {
+                    boundary_seq: *boundary_seq,
+                    files: *files,
+                },
             };
             return Action::Confirmed(kind);
         }
