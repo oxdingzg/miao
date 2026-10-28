@@ -90,6 +90,15 @@ describe("tui thread", () => {
     expect(rustTuiBinary({ MIAO_TUI_BIN: "/custom/miao-tui" })).toBe("/custom/miao-tui")
   })
 
+  test("prefers the TUI paired with the retained CLI over another installed version", async () => {
+    await using tmp = await tmpdir()
+    const name = process.platform === "win32" ? "miao-tui.exe" : "miao-tui"
+    const binary = path.join(tmp.path, name)
+    await Bun.write(binary, "paired fixture")
+    expect(rustTuiBinary({}, path.join(tmp.path, "miao"))).toBe(binary)
+    expect(rustTuiBinary({ MIAO_TUI_BIN: "/operator/miao-tui" }, path.join(tmp.path, "miao"))).toBe("/operator/miao-tui")
+  })
+
   test("points the Rust TUI at the Location's engine database", async () => {
     await using config = await tmpdir()
     const root = path.join(config.path, "engines")
@@ -131,7 +140,7 @@ describe("tui thread", () => {
 
   cliIt.live("rejects mini-only options without --mini", ({ opencode }) =>
     Effect.gen(function* () {
-      const result = yield* opencode.spawn(["--replay-limit", "10"])
+      const result = yield* opencode.spawn(["--tui", "legacy", "--replay-limit", "10"])
 
       opencode.expectExit(result, 1)
       expect(result.stderr).toContain("--replay-limit requires --mini")

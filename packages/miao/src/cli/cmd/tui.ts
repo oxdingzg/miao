@@ -33,10 +33,11 @@ export function selectedTui(args: { tui?: string }, environment = process.env): 
 }
 
 /// `MIAO_TUI_BIN` first, then the locations `install` writes, then PATH.
-export function rustTuiBinary(environment = process.env): string | undefined {
+export function rustTuiBinary(environment = process.env, executable = process.execPath): string | undefined {
   if (environment.MIAO_TUI_BIN) return environment.MIAO_TUI_BIN
   const name = process.platform === "win32" ? "miao-tui.exe" : "miao-tui"
   const installed = [
+    path.join(path.dirname(executable), name),
     path.join(os.homedir(), ".miao", "bin", name),
     path.join(os.homedir(), ".local", "bin", name),
   ].find((candidate) => existsSync(candidate))
