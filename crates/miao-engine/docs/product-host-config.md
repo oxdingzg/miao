@@ -50,3 +50,28 @@ startup failure. An explicit MCP manifest overrides shared settings. Attachment
 does not grant individual tool calls: the native policy's tool decisions still
 apply. Configuration is captured at owner startup; restart the owner after
 changing it.
+
+## Native configuration explanation
+
+`miao-engine config explain --config-dir PATH` reports the selected directory's
+documents in precedence order, with each final leaf value, its origin, and the
+values it overrides. For an ordered directory/file/inline plan, use the same
+source format as engine startup:
+
+```sh
+printf '%s' '[{"dir":"/path/to/global"},{"file":"/path/to/project/miao.jsonc"}]' |
+  miao-engine config explain --config-sources -
+```
+
+The command reads the selected documents locally and prints JSON. It runs
+without provider configuration or a runtime database, and leaves source files
+unchanged. Credential-labelled values and header values are masked before
+building the override chain; URL user information and credential-labelled query
+parameters are masked as well. File origins and ordinary model/settings values
+remain available for diagnosis.
+
+The source plan is bounded to 1 MiB when read from stdin and the JSON report to
+8 MiB. Parsing and validation use the engine's existing config loader, including
+its root, sandbox and LSP validation. This command explains selected documents;
+Session overrides, managed-setting classification and diagnostics for every
+unknown product key still require separate integration for CFG-02 acceptance.
