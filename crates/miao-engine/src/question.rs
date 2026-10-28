@@ -173,7 +173,12 @@ impl Store {
             // engine itself is relaying on that call.
             let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_tool t JOIN engine_run r ON t.run_id=r.id WHERE t.id=?1 AND (t.name='question' OR substr(t.name,1,8)='worker__') AND t.state='dispatched' AND r.id=?2 AND r.session_id=?3 AND r.state='running')",params![key,run,session],|row|row.get(0))?;
             if !active{return Err(Error::Invalid("question has no active dispatched intent".into()));}
-            let data=json!({"question_id":key,"run_id":run,"call_id":call,"location":location,"input_hash":hash,"input":input,"expires_at_ms":now_ms().saturating_add(input["timeout_ms"].as_u64().unwrap_or(60000))});
+            // A worker may ask several times within one dispatched tool call.
+            // Bind each reply to this request's durable sequence, while the
+            // source tool intent keeps its original run/call identity.
+            let seq: u64 = tx.query_row("SELECT next_seq+1 FROM engine_session WHERE id=?1", [&session], |row| row.get(0))?;
+            let question_id=format!("{key}/{seq}");
+            let data=json!({"question_id":question_id,"run_id":run,"call_id":call,"location":location,"input_hash":hash,"input":input,"expires_at_ms":now_ms().saturating_add(input["timeout_ms"].as_u64().unwrap_or(60000))});
             append(&tx,&session,"question.requested",data.clone())?;tx.commit()?;Ok(data)
         }).await
     }

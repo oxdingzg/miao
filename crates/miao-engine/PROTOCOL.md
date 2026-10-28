@@ -156,6 +156,14 @@ run and cancels that owner's token as one serialized command. It returns
 `accepted: false` for a missing, idle, already-cancelled or changed run. A stale
 run ID cannot cancel the next run; a failed match also preserves pending wakes.
 
+### Interactive request identities
+
+Question IDs are opaque, Session-scoped request identities. A worker may issue
+several interactive `ask` requests during one tool call; every ask gets its own
+durable identity even when its input is identical. An exact retry of a settled
+answer is idempotent only for that identity and cannot settle a later ask. The
+stored request still binds the source run/call, workspace and input hash.
+
 ### Pending-input cancellation
 
 `cancel_input` takes `session_id` and `input_id` and drops one admitted input
