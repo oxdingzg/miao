@@ -61,17 +61,19 @@
       "result": "needs_startup_optimization_and_full_matrix",
       "observed": [
         "Five published 0.3.14 macOS arm64 CLI/TUI/engine starts used one tiny isolated workspace, a new then reused small database, and a zero-delay local provider fixture. Each run made one fixture request; no paid model call.",
-        "Composer-visible median is 1615.92 ms (range 1087.84..2140.05); fixture-reply-visible median is 1879.04 ms (range 1351.69..2379.0). Raw samples retain request-arrival timing and collection limits."
+        "Composer-visible median is 1615.92 ms (range 1087.84..2140.05); fixture-reply-visible median is 1879.04 ms (range 1351.69..2379.0). Raw samples retain request-arrival timing and collection limits.",
+        "Open PR #1583 compares matched Bun 1.4.2 control/feature builds in five interleaved pairs: composer-visible median 472.63 to 339.85 ms (about 28% lower), with identical public TUI/engine and local replies. This is separate from the published-asset startup baseline."
       ],
       "remaining": [
         "This small sequential sample does not establish production cold/warm p50/p95, a large-repository/old-database matrix, or distinct input-ready/submit-ready milestones.",
-        "The observations do not demonstrate the suggested 500 ms warm-input target. The command selector treats an existing project path as an unknown command and loads all commands; this is a concrete startup follow-up under investigation.",
+        "The observations do not demonstrate the suggested 500 ms warm-input target. PR #1583 addresses explicit existing project paths through lazy TUI dispatch, but remains unmerged and does not establish the whole startup matrix.",
         "Local fixture reply time is not real provider network latency; terminal capture/poll overhead is included."
       ],
       "evidence": [
         "startup-samples.json",
         "packages/miao/src/index.ts",
-        "crates/miao-tui/src/lib.rs"
+        "crates/miao-tui/src/lib.rs",
+        "https://github.com/oxdingzg/miao/pull/1583"
       ]
     },
     {

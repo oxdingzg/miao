@@ -299,5 +299,27 @@
       "report": "workspace-release.json",
       "product_complete": false
     }
+  ],
+  "followup_prs": [
+    {
+      "number": 1577,
+      "scope": "preview CLI/TUI/engine pairing"
+    },
+    {
+      "number": 1578,
+      "scope": "native file isolation and fixture process cleanup"
+    },
+    {
+      "number": 1579,
+      "scope": "workspace/Session project boundaries"
+    },
+    {
+      "number": 1581,
+      "scope": "idle clock redraw frequency"
+    },
+    {
+      "number": 1583,
+      "scope": "explicit project startup dispatch"
+    }
   ]
 }
