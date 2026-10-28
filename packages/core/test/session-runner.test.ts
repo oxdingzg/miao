@@ -616,6 +616,12 @@ const itCountingSnapshots = testEffect(
     appOverrides(location("/project")).map(([node, layer]) => (node === Snapshot.node ? [node, countingSnapshots] : [node, layer])),
   ),
 )
+// Tests below settle more than a hundred real tool dispatches, one SQLite write
+// each. On an idle machine that is a couple of seconds, but a loaded CI runner
+// pushes it past Bun's 5 second default; a timed-out drain keeps running and
+// pollutes the module-level `executions` of every later test in this file.
+const heavyToolCallTimeout = 30_000
+
 const sessionID = SessionV2.ID.make("ses_runner_test")
 const otherSessionID = SessionV2.ID.make("ses_runner_other")
 
@@ -3770,6 +3776,7 @@ describe("SessionRunnerLLM", () => {
       const last = fanOut?.type === "assistant" ? fanOut.content.at(-1) : undefined
       expect(last).toMatchObject({ type: "tool", id: "call-many-100", state: { status: "completed" } })
     }),
+    heavyToolCallTimeout,
   )
 
   it.effect("executes a replayed call once within the same provider attempt", () =>
@@ -3867,6 +3874,7 @@ describe("SessionRunnerLLM", () => {
       expect(requests).toHaveLength(12)
       expect(JSON.stringify(yield* session.context(sessionID))).not.toContain("Refusing to run")
     }),
+    heavyToolCallTimeout,
   )
 
   for (const delivery of ["steer", "queue"] as const) {
@@ -4018,6 +4026,7 @@ describe("SessionRunnerLLM", () => {
       expect(userTexts(requests[2]!).some((text) => text.startsWith("keep going"))).toBe(true)
       expect((yield* todos.get(sessionID))[0]?.status).toBe("completed")
     }),
+    heavyToolCallTimeout,
   )
 
   it.effect("runs a tool call the provider replays only once", () =>
