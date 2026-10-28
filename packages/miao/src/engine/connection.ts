@@ -16,9 +16,15 @@ export const connectEngine = Effect.fn("Engine.connect")(function* (
 ) {
   const clients = yield* ClientEvents.Service
   const pending = yield* Queue.unbounded<
-    EngineSessionEvent | { barrier: Deferred.Deferred<void> } | { failure: Error }
+    EngineSessionEvent | { barrier: Deferred.Deferred<void> } | { failure: Error } | { diagnostic: string }
   >()
-  const client = EngineClient.start(options)
+  const client = EngineClient.start({
+    ...options,
+    onDiagnostic: (message) => {
+      Queue.offerUnsafe(pending, { diagnostic: message })
+      options.onDiagnostic?.(message)
+    },
+  })
   const session = new EngineSession(
     client,
     (event) => {
@@ -35,6 +41,10 @@ export const connectEngine = Effect.fn("Engine.connect")(function* (
       const next = yield* Queue.take(pending)
       if ("barrier" in next) {
         yield* Deferred.succeed(next.barrier, undefined)
+        continue
+      }
+      if ("diagnostic" in next) {
+        yield* Effect.logWarning("Native extension worker", { location: options.location, message: next.diagnostic })
         continue
       }
       if ("failure" in next) {
@@ -98,11 +108,7 @@ export const connectEngine = Effect.fn("Engine.connect")(function* (
           workspace: options.location.directory,
           rules: JSON.parse(options.savedRules!),
         }),
-      catch: (error) =>
-        new EngineError(
-          "engine_saved_rules",
-          error instanceof Error ? error.message : String(error),
-        ),
+      catch: (error) => new EngineError("engine_saved_rules", error instanceof Error ? error.message : String(error)),
     })
   }
   return { client, session, flush }
