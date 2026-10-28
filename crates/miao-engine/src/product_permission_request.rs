@@ -159,6 +159,28 @@ impl Store {
         .await
     }
 
+    pub(crate) async fn cancel_product_permission(
+        &self,
+        context: Context,
+        id: String,
+    ) -> Result<Record, Error> {
+        self.call(move |connection| {
+            with_source(connection, &context, |transaction| {
+                let (owner, mut record) = load(transaction, &id)?
+                    .ok_or_else(|| Error::Invalid("product permission request not found".into()))?;
+                require_binding(&context, &owner, &record)?;
+                if record.state != State::Pending || expire(transaction, &mut record)? {
+                    return Ok(record);
+                }
+                record.state = State::Cancelled;
+                record.reason = Some("caller_cancelled".into());
+                resolve(transaction, &record)?;
+                Ok(record)
+            })
+        })
+        .await
+    }
+
     pub(crate) async fn reply_product_permission(
         &self,
         context: Context,

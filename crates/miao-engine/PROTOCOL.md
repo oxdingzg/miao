@@ -790,6 +790,17 @@ adapter, product event projection, and removal
 of the TypeScript evaluator remain separate S6 gates. Existing host tools do
 not switch permission ownership merely because the capability is present.
 
+#### Withdrawing one assertion
+
+`product_permission_cancel: 1` advertises `product_permission_cancel` with
+`source` and `request_id`. A live, bound caller can withdraw its own pending
+assertion when its wait is interrupted. This resolves only that record as
+`cancelled` with reason `caller_cancelled`; it does not reject siblings, save
+patterns, or grant permission. The update and resolution event are atomic.
+Exact retries do not emit duplicate events. Already terminal records are
+returned unchanged, and an expired request remains expired. Foreign or inactive
+sources fail the same binding checks as status and replies.
+
 #### Replies and already-pending peers
 
 A reject resolves this request and the already-pending requests in the same
