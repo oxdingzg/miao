@@ -1,4 +1,5 @@
 import { baselineContract } from "./baseline"
+import { summarizeAccounting } from "./baseline-accounting"
 
 export interface BaselineSample {
   task: string
@@ -63,23 +64,11 @@ export function summarizeBaseline(samples: BaselineSample[]) {
   }
   const groups = ["typescript", "rust"].map((engine) => {
     const runs = samples.filter((sample) => sample.engine === engine)
-    const attempts = runs.flatMap((run) => run.attempts)
     const latencies = runs.map((run) => run.elapsedMs).toSorted((left, right) => left - right)
-    const total = (key: "inputTokens" | "outputTokens" | "cost") =>
-      attempts.length && attempts.every((attempt) => attempt[key] !== null)
-        ? attempts.reduce((sum, attempt) => sum + (attempt[key] ?? 0), 0)
-        : null
     const successfulAttempts = runs.filter((run) => run.outcome === "passed").flatMap((run) => run.attempts)
     return {
       engine,
-      runs: runs.length,
-      passed: runs.filter((run) => run.outcome === "passed").length,
-      failed: runs.filter((run) => run.outcome === "failed").length,
-      unverified: runs.filter((run) => run.outcome === "unverified").length,
-      attempts: attempts.length,
-      inputTokens: total("inputTokens"),
-      outputTokens: total("outputTokens"),
-      cost: total("cost"),
+      ...summarizeAccounting(runs),
       successfulAttemptTokens:
         successfulAttempts.length &&
         successfulAttempts.every((attempt) => attempt.inputTokens !== null && attempt.outputTokens !== null)

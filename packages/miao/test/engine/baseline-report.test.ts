@@ -49,10 +49,13 @@ test("all-attempt totals include failed runs and unsuccessful attempts before re
     inputTokens: 40,
     outputTokens: 13,
     successfulAttemptTokens: 38,
+    totalElapsedMs: 1100,
+    perCompletedTask: { inputTokens: 40, outputTokens: 13, elapsedMs: 1100 },
     p50ElapsedMs: 100,
     p95ElapsedMs: 1000,
   })
   expect(report.groups[1].cost).toBeCloseTo(0.4)
+  expect(report.groups[1].perCompletedTask.cost).toBeCloseTo(0.4)
   expect(report.defaultSwitchEligible).toBe(false)
 })
 
@@ -133,4 +136,46 @@ test("report CLI emits unknown incomplete coverage with a nonzero verdict", asyn
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+test("completion rates charge failed and unverified attempts to verified successes", () => {
+  const report = summarizeBaseline([
+    sample("rust", "read-only"),
+    sample("rust", "read-only", 1),
+    { ...sample("rust", "read-only", 2), outcome: "failed" },
+    { ...sample("rust", "read-only", 3), outcome: "unverified", elapsedMs: 700 },
+  ])
+  expect(report.groups[1]).toMatchObject({
+    runs: 4,
+    passed: 2,
+    failed: 1,
+    unverified: 1,
+    attempts: 4,
+    totalElapsedMs: 1000,
+    perCompletedTask: { inputTokens: 20, outputTokens: 10, cost: 0.2, elapsedMs: 500 },
+  })
+  expect(report.fullSuiteComparable).toBe(false)
+  expect(report.defaultSwitchEligible).toBe(false)
+})
+
+test("unknown dimensions stay independent and zero completions have no per-completion rate", () => {
+  const passed = sample("rust", "read-only")
+  passed.attempts[0] = { inputTokens: null, outputTokens: 0, cost: 0 }
+  expect(summarizeBaseline([passed]).groups[1].perCompletedTask).toEqual({
+    inputTokens: null,
+    outputTokens: 0,
+    cost: 0,
+    elapsedMs: 100,
+  })
+  const failed = { ...sample("rust", "read-only"), outcome: "failed" as const }
+  expect(summarizeBaseline([failed]).groups[1]).toMatchObject({
+    cost: 0.1,
+    perCompletedTask: { inputTokens: null, outputTokens: null, cost: null, elapsedMs: null },
+  })
+  expect(summarizeBaseline([]).groups[1].perCompletedTask).toEqual({
+    inputTokens: null,
+    outputTokens: null,
+    cost: null,
+    elapsedMs: null,
+  })
 })
