@@ -19,6 +19,10 @@ archive SQL query. Text queries and handles remain mutually exclusive. Invalid
 or overflowing cursors remain rejected. The 1000-message page limit, Session
 boundary, and output byte windows are unchanged. Tool instructions distinguish
 message-scan cursors from `next_offset`, which pages an output after it is found.
+Delegated references have no model to follow those cursors, so `archived_output`
+walks bounded scan pages internally, yielding the Store worker between pages.
+The regression also checks this direct helper: before that fix it returned null
+for the same durable output after the model-facing cursor path already passed.
 
 Verification on a build host:
 
@@ -36,6 +40,6 @@ fixture. All provider behavior in these checks uses local fixtures; no paid
 comparison or model-quality improvement is claimed. This is implementation and
 regression evidence, not a release or complete CTX-02 acceptance statement.
 
-The operator RPC still exposes search-only recall. Delegated archive references
-still use the existing single scan page. Extending those interfaces requires
-separate work; this change repairs the model's existing paginated recall path.
+The operator RPC still exposes search-only recall. Extending that interface
+requires separate work; this change repairs existing model and delegation
+archive recovery paths.

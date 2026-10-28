@@ -351,6 +351,14 @@ async fn archived_handle_scan_resumes_after_compaction_and_reopen() {
     assert_eq!(page["message_seq"], original.seq);
     assert_eq!(page["text"], "原文-MIDDLE");
     assert_eq!(page["is_error"], false);
+    let referenced = store.archived_output("s", "old-output", 0).await.unwrap();
+    assert_eq!(referenced["text"], "原文-MIDDLE");
+    assert_eq!(referenced["message_seq"], original.seq);
+    assert!(store
+        .archived_output("other", "old-output", 0)
+        .await
+        .unwrap()["text"]
+        .is_null());
     assert!(store
         .recall("other", Query::parse(input).unwrap())
         .await

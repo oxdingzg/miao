@@ -72,9 +72,19 @@ impl Store {
         tool_use_id: &str,
         offset: usize,
     ) -> Result<Value, Error> {
-        let (session, tool_use_id) = (session.to_owned(), tool_use_id.to_owned());
-        self.call(move |conn| archived_window(conn, &session, &tool_use_id, offset, None))
-            .await
+        let mut before = None;
+        loop {
+            let (session, tool_use_id) = (session.to_owned(), tool_use_id.to_owned());
+            // References do not have a model to follow scan cursors. Yield the
+            // Store worker between bounded pages until the handle is resolved.
+            let window = self
+                .call(move |conn| archived_window(conn, &session, &tool_use_id, offset, before))
+                .await?;
+            match window["next_before_message_seq"].as_u64() {
+                Some(cursor) => before = Some(cursor),
+                None => return Ok(window),
+            }
+        }
     }
 
     /// Search immutable messages, never a generated compaction summary. A scan
