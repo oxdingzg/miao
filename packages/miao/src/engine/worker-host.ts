@@ -190,31 +190,41 @@ const dispatch = async (id: number, method: string, params: Record<string, unkno
   return false
 }
 
-const lines = readline.createInterface({ input: process.stdin, terminal: false })
-lines.on("line", (line) => {
-  if (!line.trim()) return
-  let frame: { id?: unknown; method?: unknown; params?: unknown; result?: { approved?: unknown; message?: unknown } }
-  try {
-    frame = JSON.parse(line)
-  } catch {
-    return
-  }
-  if (typeof frame.id === "number" && frame.method === undefined) {
-    const pending = pendingAsks.get(frame.id)
-    if (!pending) return
-    pendingAsks.delete(frame.id)
-    if (frame.result?.approved === true) pending.resolve()
-    else
-      pending.reject(
-        new Error(typeof frame.result?.message === "string" ? frame.result.message : "permission denied"),
-      )
-    return
-  }
-  if (typeof frame.id !== "number" || typeof frame.method !== "string") return
-  const id = frame.id
-  const method = frame.method
-  dispatch(id, method, (frame.params ?? {}) as Record<string, unknown>).then((handled) => {
-    if (!handled) fail(id, `unknown worker method: ${method}`)
+export const run = () =>
+  new Promise<void>((resolve) => {
+    const lines = readline.createInterface({ input: process.stdin, terminal: false })
+    lines.on("line", (line) => {
+      if (!line.trim()) return
+      let frame: {
+        id?: unknown
+        method?: unknown
+        params?: unknown
+        result?: { approved?: unknown; message?: unknown }
+      }
+      try {
+        frame = JSON.parse(line)
+      } catch {
+        return
+      }
+      if (typeof frame.id === "number" && frame.method === undefined) {
+        const pending = pendingAsks.get(frame.id)
+        if (!pending) return
+        pendingAsks.delete(frame.id)
+        if (frame.result?.approved === true) pending.resolve()
+        else
+          pending.reject(
+            new Error(typeof frame.result?.message === "string" ? frame.result.message : "permission denied"),
+          )
+        return
+      }
+      if (typeof frame.id !== "number" || typeof frame.method !== "string") return
+      const id = frame.id
+      const method = frame.method
+      dispatch(id, method, (frame.params ?? {}) as Record<string, unknown>).then((handled) => {
+        if (!handled) fail(id, `unknown worker method: ${method}`)
+      })
+    })
+    lines.on("close", () => resolve())
   })
-})
-lines.on("close", () => process.exit(0))
+
+if (import.meta.main) await run()
