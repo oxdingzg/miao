@@ -509,7 +509,7 @@ async fn run(
                     }
                 }
                 Some(Request::Catalog) => {
-                    match client.request("model_catalog", json!({})).await {
+                    match client.command("model_catalog").await {
                         Ok(value) => {
                             bus.send(AppEvent::Accounts(AccountInfo::catalog(&value)));
                             bus.send(AppEvent::Models(ModelInfo::catalog(&value)));
@@ -691,7 +691,7 @@ async fn run(
 }
 
 async fn refresh_sessions(client: &EngineClient, bus: &Bus) {
-    let ids = match client.request("sessions", json!({})).await {
+    let ids = match client.command("sessions").await {
         Ok(Value::Array(ids)) => ids,
         Ok(_) => {
             bus.send(AppEvent::EngineFailure(

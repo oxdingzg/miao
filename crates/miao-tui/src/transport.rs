@@ -148,6 +148,18 @@ impl EngineClient {
     }
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value, TransportError> {
+        self.call(frame(0, method, Some(params)), method).await
+    }
+
+    /// A command the engine declares as a unit variant (`sessions`,
+    /// `model_catalog`) takes no `params` key at all: its envelope is adjacently
+    /// tagged, so `{"method":"sessions","params":{}}` is rejected as an
+    /// `invalid_request` instead of reading the empty object as no arguments.
+    pub async fn command(&self, method: &str) -> Result<Value, TransportError> {
+        self.call(frame(0, method, None), method).await
+    }
+
+    async fn call(&self, mut frame: Value, method: &str) -> Result<Value, TransportError> {
         if let Some(failure) = self.failure.lock().expect("failure").clone() {
             return Err(TransportError::Closed(failure));
         }
@@ -160,7 +172,10 @@ impl EngineClient {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (reply_tx, reply_rx) = oneshot::channel();
         self.pending.lock().expect("pending").insert(id, reply_tx);
-        let frame = json!({ "id": id, "method": method, "params": params });
+        frame
+            .as_object_mut()
+            .expect("request frame object")
+            .insert("id".into(), json!(id));
         if self.outbound.send(frame).is_err() {
             self.pending.lock().expect("pending").remove(&id);
             return Err(TransportError::Closed(EngineFailure {
@@ -533,6 +548,16 @@ impl Reap {
             let _ = reply.send(Err(TransportError::Closed(failure.clone())));
         }
         let _ = self.events.send(TransportEvent::Failure(failure));
+    }
+}
+
+/// One request frame. A unit command carries no `params` key: the engine's
+/// `Command` enum is adjacently tagged, and `params: {}` on a unit variant is a
+/// typed deserialization failure rather than "no arguments".
+fn frame(id: u64, method: &str, params: Option<Value>) -> Value {
+    match params {
+        Some(params) => json!({ "id": id, "method": method, "params": params }),
+        None => json!({ "id": id, "method": method }),
     }
 }
 
