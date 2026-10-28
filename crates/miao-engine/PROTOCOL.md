@@ -491,9 +491,11 @@ implying they were applied.
 
 The LSP server set is reconciled per server by name and configuration. An
 unchanged server keeps its connection and is never restarted; a changed or
-removed server is dropped and started again on next use, so a reload never
-spawns a process by itself. The `lsp` object in the reply lists the exact
-`changed`, `unchanged` and `removed` server names. A derivation error (invalid
+removed server is dropped, and a changed or newly configured server is started
+again on next use, so a reload never spawns a process by itself. A server the
+plan adds counts as a change: the reconcile swaps the plan, and only then can a
+later request reach the new server. The `lsp` object in the reply lists the
+exact `changed`, `unchanged` and `removed` server names. A derivation error (invalid
 JSON, unknown key, duplicate extension) changes nothing and fails the command;
 the running configuration stays as it was. A Session that never had an LSP
 registry at startup (`unsupported` contains `lsp`) cannot gain one without

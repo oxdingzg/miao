@@ -419,16 +419,20 @@ impl Plan {
     }
 }
 
-/// Server names whose connection the new plan makes stale, split into the ones
-/// whose configuration changed and the ones the plan no longer contains.
+/// Server names the new plan has to (re)start, split into the ones whose
+/// configuration changed or that are new, and the ones the plan no longer
+/// contains.
+///
+/// `next` is the authority on what counts as matched, not `previous`: a server
+/// the plan adds has no connection to keep, and the plan swap that follows is
+/// what makes it reachable. Walking `previous` alone would call an addition
+/// unchanged and leave the old plan in place, so a reload could never grow the
+/// server set.
 fn diff(previous: &[Config], next: &[Config]) -> (Vec<String>, Vec<String>) {
     let name = |config: &Config| config.name.clone();
-    let changed = previous
+    let changed = next
         .iter()
-        .filter(|config| {
-            next.iter()
-                .any(|other| other.name == config.name && other != *config)
-        })
+        .filter(|config| !previous.iter().any(|other| other == *config))
         .map(name)
         .collect();
     let removed = previous
@@ -1038,5 +1042,41 @@ mod tests {
             .unwrap_err();
         assert!(error.to_string().contains("no publishDiagnostics push"));
         fixture.abort();
+    }
+
+    fn server(name: &str, extension: &str) -> Config {
+        Config {
+            name: name.to_string(),
+            argv: vec![name.to_string()],
+            extensions: vec![extension.to_string()],
+            env: BTreeMap::new(),
+            initialization: None,
+        }
+    }
+
+    #[test]
+    fn an_added_server_is_a_change_so_the_plan_grows() {
+        let rust = server("rust", "rs");
+        let toml = server("toml", "toml");
+        // Nothing changed: every name is matched by an equal configuration.
+        assert_eq!(
+            diff(std::slice::from_ref(&rust), std::slice::from_ref(&rust)),
+            (Vec::<String>::new(), Vec::<String>::new())
+        );
+        // An addition has no connection to keep and must reach the new plan.
+        assert_eq!(
+            diff(std::slice::from_ref(&rust), &[rust.clone(), toml.clone()]),
+            (vec!["toml".to_string()], Vec::<String>::new())
+        );
+        // A rewrite of a kept name restarts it; a name that disappears is
+        // removed rather than changed, because nothing replaces it.
+        let rewritten = server("rust", "rs\ntoml");
+        assert_eq!(
+            diff(
+                &[rust.clone(), toml.clone()],
+                std::slice::from_ref(&rewritten)
+            ),
+            (vec!["rust".to_string()], vec!["toml".to_string()])
+        );
     }
 }
