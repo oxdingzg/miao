@@ -2289,7 +2289,14 @@ command: None,
                     if let Some(reason) = plugin_before {
                         (json!({"error":reason}), true)
                     } else {
-                        let prepared = inner.tools.prepare(name, block_input).await;
+                        let recorded_read = match &inner.tool_replay {
+                            Some(replay) => replay.read_receipt(name, &block_input).await?,
+                            None => None,
+                        };
+                        let prepared = match recorded_read {
+                            Some(read) => inner.tools.prepare_recorded_read(block_input, &read),
+                            None => inner.tools.prepare(name, block_input).await,
+                        };
                         match prepared {
                             Err(error) => (
                                 json!({"error":inner.tools.rejection(name, &block["input"], &error)}),
@@ -2660,12 +2667,6 @@ command: None,
                 } else {
                     (output, is_error)
                 };
-                let mut output = output;
-                if replayed_call {
-                    if let Some(output) = output.as_object_mut() {
-                        output.remove("_instruction_read");
-                    }
-                }
                 let polling_terminal = name == "terminal_read"
                     && !is_error
                     && output.get("exit").is_some_and(Value::is_null);

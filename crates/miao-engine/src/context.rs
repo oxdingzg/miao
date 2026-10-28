@@ -29,13 +29,18 @@ pub(crate) async fn read_sources(
 ) -> Result<Vec<ReadSource>, ToolError> {
     const LIMIT: usize = 64;
     if std::env::var("MIAO_DISABLE_PROJECT_CONFIG")
-        .is_ok_and(|value| value == "1" || value == "true")
+        .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
     {
         return Ok(Vec::new());
     }
-    let names = if std::env::var("MIAO_DISABLE_CLAUDE_CODE_PROMPT")
-        .is_ok_and(|value| value == "1" || value == "true")
-    {
+    let names = if [
+        "MIAO_DISABLE_CLAUDE_CODE_PROMPT",
+        "MIAO_DISABLE_CLAUDE_CODE",
+    ]
+    .into_iter()
+    .any(|name| {
+        std::env::var(name).is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+    }) {
         vec!["AGENTS.md", "CONTEXT.md"]
     } else {
         vec!["AGENTS.md", "CLAUDE.md", "CONTEXT.md"]
@@ -68,14 +73,16 @@ pub(crate) async fn read_sources(
         if cancel.is_cancelled() {
             return Err(ToolError::Interrupted);
         }
-        let Ok(prepared) = tools.prepare("read_file", json!({"path": path})).await else {
+        // The prepared reader already recorded a canonical workspace-relative
+        // path. Its original file may be gone when a receipt is replayed.
+        let relative = std::path::Path::new(path);
+        if !source_path(path) || relative.is_absolute() {
             continue;
-        };
-        let Ok(relative) = prepared.resolved_path().strip_prefix(root) else {
-            // External read references do not authorize instruction discovery.
-            continue;
-        };
+        }
         for directory in relative.ancestors().skip(1) {
+            if cancel.is_cancelled() {
+                return Err(ToolError::Interrupted);
+            }
             if directory.as_os_str().is_empty() || found.len() >= LIMIT {
                 break;
             }
@@ -90,7 +97,7 @@ pub(crate) async fn read_sources(
                 let candidate = candidate.to_string_lossy().replace('\\', "/");
                 // The matching instruction itself is already visible in its
                 // read result; discovering its ancestors remains useful.
-                if root.join(&candidate) != prepared.resolved_path() {
+                if std::path::Path::new(&candidate) != relative {
                     found.entry(candidate).or_insert_with(|| path.clone());
                 }
                 break;

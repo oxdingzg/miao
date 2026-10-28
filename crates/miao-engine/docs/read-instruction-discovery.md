@@ -10,8 +10,11 @@ The prepared native reader attaches internal path metadata after argument
 rewrites. Tool settlement removes this metadata from the model-facing result and
 records `read: { location, path }` beside the successful `tool.completed` event in
 the same SQLite transaction. Failed calls and external reference reads do not
-activate workspace instruction sources. Diagnostic tool replay does not activate
-new observations from its recorded output.
+activate workspace instruction sources. Diagnostic tool replay preserves the
+recorded read provenance in the same Location, even if the original target file
+has since been deleted. It does not execute that file read again. Instruction
+files themselves are refreshed under the normal context policy, as root
+instructions already are; replay requires matching instruction files.
 
 Before a provider request, the runner reads committed observations after the
 last `instructions_loaded` cursor. The cursor advances even when an unchanged
@@ -30,9 +33,9 @@ Location are ignored, including journals retained through a move.
 For each successfully read workspace file, discovery walks its canonical parent
 directories up to, but excluding, the workspace root. Each directory selects the
 first existing name: `AGENTS.md`, then `CLAUDE.md`, then `CONTEXT.md`.
-`MIAO_DISABLE_CLAUDE_CODE_PROMPT` excludes `CLAUDE.md`;
+`MIAO_DISABLE_CLAUDE_CODE_PROMPT` (or `MIAO_DISABLE_CLAUDE_CODE`) excludes `CLAUDE.md`;
 `MIAO_DISABLE_PROJECT_CONFIG` disables nested discovery. Both recognize `1` and
-`true`.
+case-insensitive `true`.
 
 Sources load from outer to inner directories. Their prompt blocks identify the
 instruction file and its directory scope; deeper files take precedence in their

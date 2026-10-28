@@ -104,6 +104,20 @@ async fn prompt(runtime: &Runtime, session: &str, id: &str) {
         .unwrap();
 }
 
+async fn reopened_store(path: &std::path::Path) -> Store {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            match Store::open(path).await {
+                Ok(store) => return store,
+                Err(Error::Busy) => tokio::time::sleep(std::time::Duration::from_millis(2)).await,
+                Err(error) => panic!("store reopen failed: {error}"),
+            }
+        }
+    })
+    .await
+    .unwrap()
+}
+
 async fn request(receive: &mut mpsc::Receiver<String>) -> String {
     tokio::time::timeout(std::time::Duration::from_secs(5), receive.recv())
         .await
@@ -206,7 +220,7 @@ async fn observations_survive_reopen_and_never_leak_to_another_session() {
     runtime.shutdown().await;
     drop(runtime);
     drop(store);
-    let store = Store::open(&database).await.unwrap();
+    let store = reopened_store(&database).await;
     let (runtime, mut receive) = start(
         &store,
         Tools::new(dir.path()).await.unwrap(),
@@ -237,6 +251,8 @@ async fn a_settled_read_before_context_selection_is_recovered_from_the_ledger() 
     store.record("s", "tool.completed", json!({"call_id":"interrupted/read","is_error":false,"read":{"location":location,"path":"src/deep/file.txt"}})).await.unwrap();
     runtime.shutdown().await;
     drop(runtime);
+    drop(store);
+    let store = reopened_store(&dir.path().join("engine.db")).await;
     let (runtime, mut receive) = start(
         &store,
         Tools::new(dir.path()).await.unwrap(),
