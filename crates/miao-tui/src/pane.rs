@@ -248,6 +248,9 @@ pub struct Home {
     pub rows: Vec<SessionSummary>,
     pub selected: usize,
     notice: Option<String>,
+    /// Set once the engine has answered the first `sessions` request. Until
+    /// then an empty list is a load in flight, not an empty catalog.
+    loaded: bool,
     theme: Theme,
 }
 
@@ -257,6 +260,7 @@ impl Home {
             rows: Vec::new(),
             selected: 0,
             notice: None,
+            loaded: false,
             theme,
         }
     }
@@ -269,11 +273,22 @@ impl Home {
         self.notice.as_deref()
     }
 
+    /// What an empty list shows: a load still in flight reads differently from
+    /// a catalog that really has nothing in it.
+    fn placeholder(&self) -> &str {
+        if self.loaded {
+            "no sessions yet · press n to start one"
+        } else {
+            "loading sessions…"
+        }
+    }
+
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
     }
 
     pub fn set_rows(&mut self, rows: Vec<SessionSummary>) {
+        self.loaded = true;
         let selected_id = self.rows.get(self.selected).map(|row| row.id.clone());
         self.rows = rows;
         self.selected = selected_id
@@ -308,7 +323,7 @@ impl Home {
             let message = self
                 .notice
                 .clone()
-                .unwrap_or_else(|| "no sessions yet · press n to start one".to_string());
+                .unwrap_or_else(|| self.placeholder().to_string());
             frame.render_widget(
                 Paragraph::new(message)
                     .style(Style::new().fg(palette.text_muted))
@@ -1249,6 +1264,19 @@ mod tests {
         assert_eq!(answer["question_id"], "run-1/call_2");
         assert_eq!(answer["input_hash"], "b".repeat(64));
         assert_eq!(answer["answers"], serde_json::json!([["docs"]]));
+    }
+
+    #[test]
+    fn an_empty_home_reads_as_loading_until_the_engine_answers() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let mut home = Home::new(theme);
+        assert_eq!(home.placeholder(), "loading sessions…");
+        home.set_rows(Vec::new());
+        assert_eq!(home.placeholder(), "no sessions yet · press n to start one");
     }
 
     #[test]
