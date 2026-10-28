@@ -248,12 +248,24 @@ export const TuiThreadCommand = cmd({
             await upgrade()
           })().catch(() => {})
         }, 1000).unref?.()
+        // The Rust TUI can only forward its environment as a fixed table of
+        // flags, and that table has no product route or credential source. A
+        // shim stands in for the engine: it prepares the same plan the
+        // TypeScript host prepares for this Location, then runs the real engine.
+        const { rustEngineShim } = await import("@/engine/tui-engine-host")
+        const shim = await rustEngineShim()
+        const env: Record<string, string | undefined> = { ...process.env, MIAO_TOOL_BIN: Global.Path.bin }
+        if (shim) {
+          env.MIAO_ENGINE_BIN = shim.program
+          env.MIAO_ENGINE_REAL_BIN = shim.engine
+        }
         const child = Bun.spawn(argv, {
           cwd,
           stdio: ["inherit", "inherit", "inherit"],
-          env: { ...process.env, MIAO_TOOL_BIN: Global.Path.bin },
+          env,
         })
         process.exitCode = await child.exited
+        await shim?.dispose()
         return
       }
       UI.warn("The Rust TUI is not installed; starting the TypeScript TUI. Reinstall miao to get it.")
