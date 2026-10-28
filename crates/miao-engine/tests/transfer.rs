@@ -233,3 +233,28 @@ async fn display_archive_rejects_unknown_source_ids_before_staging_a_session() {
     assert!(store.snapshot("s").await.is_err());
     store.close().await.unwrap();
 }
+
+#[tokio::test]
+async fn a_missing_journal_prefix_is_not_reclassified_as_a_move_base() {
+    let tmp = tempfile::tempdir().unwrap();
+    let storage = tmp.path().join("engine.db");
+    let store = Store::open(&storage).await.unwrap();
+    store
+        .initialize("s", "ordinary Session", tmp.path().to_str().unwrap())
+        .await
+        .unwrap();
+    store.record("s", "fixture", json!({})).await.unwrap();
+    {
+        let connection = rusqlite::Connection::open(&storage).unwrap();
+        connection
+            .execute(
+                "DELETE FROM engine_event WHERE session_id='s' AND seq=1",
+                [],
+            )
+            .unwrap();
+    }
+    let snapshot = store.snapshot("s").await.unwrap();
+    assert_eq!(snapshot["event_base"], 0);
+    assert!(snapshot["cursor"].as_u64().unwrap() > 1);
+    store.close().await.unwrap();
+}
