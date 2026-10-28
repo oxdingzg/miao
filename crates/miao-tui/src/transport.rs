@@ -484,8 +484,7 @@ fn engine_failure(status: Option<ExitStatus>, stderr_tail: &Mutex<String>) -> En
     if busy {
         return EngineFailure {
             code: "engine_busy".into(),
-            message: "miao-engine exited: native storage is owned by another running engine"
-                .into(),
+            message: "miao-engine exited: native storage is owned by another running engine".into(),
         };
     }
     let detail = stderr_detail(stderr_tail);
