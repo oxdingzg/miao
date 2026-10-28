@@ -920,6 +920,9 @@ impl Tools {
     pub(crate) fn has_mcp(&self) -> bool {
         self.mcp.is_some()
     }
+    pub(crate) fn mcp_registry(&self) -> Option<&Arc<mcp::Registry>> {
+        self.mcp.as_ref()
+    }
     pub fn with_worker(mut self, registry: Arc<crate::worker::Registry>) -> Self {
         self.worker = Some(registry);
         self

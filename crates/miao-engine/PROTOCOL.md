@@ -35,7 +35,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id`, `metadata_only?` | committed Session snapshot; metadata-only replies omit `messages` |
 | `sessions` | — | `string[]` (Session ids) |
-| `config_reload` | — | `{generation, changed, unchanged, unsupported}` |
+| `config_reload` | — | `{generation, changed, unchanged, unsupported, lsp?, mcp?}` |
 | `fork` | `session_id`, `target_session_id`, `message_seq?` | `{target_session_id}` |
 | `revert` | `session_id`, `checkpoint` | `{checkpoint, from_seq, reverted}` |
 | `unrevert` | `session_id` | `{restored}` |
@@ -515,6 +515,20 @@ JSON, unknown key, duplicate extension) changes nothing and fails the command;
 the running configuration stays as it was. A Session that never had an LSP
 registry at startup (`unsupported` contains `lsp`) cannot gain one without
 restarting the engine.
+
+The MCP server set is reconciled by server name and configuration fingerprint.
+An unchanged server keeps its connection, its catalog watcher and its child
+process. A changed or added server is connected before its predecessor is
+closed, so a rebuild that fails leaves the previous connection serving and is
+reported in `mcp.failed` as `{server, error}` instead of failing the reload; a
+failed server that had no predecessor simply stays absent. A removed server's
+tools disappear, its watcher exits and its child process is killed. The `mcp`
+object lists the exact `changed`, `unchanged`, `removed` and `failed` names.
+List-level violations (more than eight servers, duplicate names, an invalid
+authority revision) are refused before anything is touched, and a derivation
+error (invalid JSON, unknown key) fails the command with every section as it
+was. A Session started without `--mcp-config` (`unsupported` contains `mcp`)
+cannot gain MCP servers without restarting the engine.
 
 The standalone entry has no host to call the command, so it polls the same
 sources every two seconds (`mtime` plus size, not an OS watcher) and runs the

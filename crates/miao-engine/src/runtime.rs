@@ -71,6 +71,8 @@ struct Inner {
     /// Where LSP servers were derived from at startup, so a reload re-reads the
     /// same sources instead of guessing at them.
     lsp_origin: Mutex<Option<crate::config_derive::LspOrigin>>,
+    /// Where the MCP server list was derived from at startup.
+    mcp_origin: Mutex<Option<crate::config_derive::McpOrigin>>,
     /// Where the base policy was derived from at startup, so a reload derives
     /// it the same way, including the operator's `--mode` override.
     policy_origin: Mutex<Option<(crate::config_derive::PolicyOrigin, Option<Mode>)>>,
@@ -231,6 +233,7 @@ impl Runtime {
                 roles: Mutex::new(crate::roles::Bindings::default()),
                 route_limits: Mutex::new(crate::model_routes::RouteLimits::default()),
                 lsp_origin: Mutex::new(None),
+                mcp_origin: Mutex::new(None),
                 policy_origin: Mutex::new(None),
                 config_generation: Mutex::new(1),
                 verification: Mutex::new(None),
@@ -378,6 +381,12 @@ impl Runtime {
         *self.inner.lsp_origin.lock().await = Some(origin);
     }
 
+    /// Record where startup read the MCP server list, so `config_reload`
+    /// re-reads that file instead of a caller-supplied snapshot.
+    pub async fn set_mcp_origin(&self, origin: crate::config_derive::McpOrigin) {
+        *self.inner.mcp_origin.lock().await = Some(origin);
+    }
+
     /// Record where the base policy came from, including the operator's
     /// `--mode` override, so `config_reload` derives it the way startup did.
     pub async fn set_policy_origin(
@@ -409,10 +418,12 @@ impl Runtime {
     /// new policy, never permit a call the old one denied; a turn that already
     /// took its policy snapshot keeps it, and the next turn reads the new one.
     pub async fn reload_config(&self) -> Result<Value, Error> {
-        let mut unsupported = vec!["models", "mcp", "context", "tools"];
-        // The registry only exists when startup found at least one server; a
-        // plan that starts empty cannot grow without rebuilding Tools, so that
-        // case is reported rather than silently accepted.
+        let mut unsupported = vec!["models", "context", "tools"];
+        // The LSP registry only exists when startup found at least one server;
+        // a plan that starts empty cannot grow without rebuilding Tools, so
+        // that case is reported rather than silently accepted. The MCP
+        // registry exists whenever the host supplied `--mcp-config`, even with
+        // an empty list, so it can grow from nothing.
         let policy_origin = self.inner.policy_origin.lock().await.clone();
         let lsp_origin = self
             .inner
@@ -421,11 +432,21 @@ impl Runtime {
             .await
             .clone()
             .zip(self.inner.tools.lsp_registry());
+        let mcp_origin = self
+            .inner
+            .mcp_origin
+            .lock()
+            .await
+            .clone()
+            .zip(self.inner.tools.mcp_registry().cloned());
         if policy_origin.is_none() {
             unsupported.insert(0, "policy");
         }
         if lsp_origin.is_none() {
             unsupported.insert(0, "lsp");
+        }
+        if mcp_origin.is_none() {
+            unsupported.insert(0, "mcp");
         }
         // Derive every section before touching any of them, then validate, then
         // apply: a derivation or boundary error leaves every section as it was.
@@ -450,8 +471,18 @@ impl Runtime {
             Some((origin, _)) => Some(origin.derive().map_err(Error::Invalid)?),
             None => None,
         };
+        let servers = match &mcp_origin {
+            Some((origin, _)) => Some(origin.derive().map_err(Error::Invalid)?),
+            None => None,
+        };
         let reconciled = match (configs, &lsp_origin) {
             (Some(configs), Some((_, registry))) => Some(registry.reconcile(configs).await?),
+            _ => None,
+        };
+        // A failed MCP rebuild keeps its previous connection and is reported
+        // inside the section, so it does not fail the rest of the reload.
+        let repaired = match (servers, &mcp_origin) {
+            (Some(servers), Some((_, registry))) => Some(registry.reconcile(servers).await?),
             _ => None,
         };
         if let Some(policy) = policy {
@@ -468,11 +499,15 @@ impl Runtime {
         let lsp_changed = reconciled.as_ref().is_some_and(|reconciled| {
             !reconciled.changed.is_empty() || !reconciled.removed.is_empty()
         });
+        let mcp_changed = repaired
+            .as_ref()
+            .is_some_and(|repaired| !repaired.changed.is_empty() || !repaired.removed.is_empty());
         let mut changed = Vec::new();
         let mut unchanged = Vec::new();
         for (section, changed_here, supported) in [
             ("policy", policy_changed, policy_origin.is_some()),
             ("lsp", lsp_changed, lsp_origin.is_some()),
+            ("mcp", mcp_changed, mcp_origin.is_some()),
         ] {
             if !supported {
                 continue;
@@ -498,6 +533,17 @@ impl Runtime {
                 "changed": reconciled.changed,
                 "unchanged": reconciled.unchanged,
                 "removed": reconciled.removed,
+            });
+        }
+        if let Some(repaired) = repaired {
+            report["mcp"] = json!({
+                "changed": repaired.changed,
+                "unchanged": repaired.unchanged,
+                "removed": repaired.removed,
+                "failed": repaired.failed.iter().map(|failure| json!({
+                    "server": failure.server,
+                    "error": failure.error,
+                })).collect::<Vec<_>>(),
             });
         }
         Ok(report)

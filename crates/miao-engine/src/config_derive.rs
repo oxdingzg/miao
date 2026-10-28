@@ -7,7 +7,7 @@
 //! `tests/fixtures/config-golden`, which the TypeScript suite also reads: two
 //! implementations, one set of samples.
 
-use crate::{config_scope, lsp, permission};
+use crate::{config_scope, lsp, mcp, permission};
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -264,6 +264,40 @@ pub enum LspOrigin {
     Sources(Vec<Source>),
     /// `--config-dir`: one directory, the standalone entry.
     Directory(PathBuf),
+}
+
+/// Where startup read the MCP server list from. Only the host-supplied
+/// manifest exists today, but a reload re-reads exactly the file the operator
+/// named rather than any caller-supplied snapshot.
+#[derive(Clone)]
+pub enum McpOrigin {
+    /// `--mcp-config`: a host-materialized server manifest outside the
+    /// workspace.
+    Manifest(PathBuf),
+}
+
+impl McpOrigin {
+    pub fn derive(&self) -> Result<Vec<mcp::Config>, String> {
+        match self {
+            McpOrigin::Manifest(path) => {
+                let bytes =
+                    std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
+                if bytes.len() > 65536 {
+                    return Err("MCP config exceeds 64 KiB".into());
+                }
+                serde_json::from_slice(&bytes).map_err(|error| {
+                    format!("{}: invalid MCP host config: {error}", path.display())
+                })
+            }
+        }
+    }
+
+    /// The files a reload would read, for a cheap change check.
+    pub fn files(&self) -> Vec<PathBuf> {
+        match self {
+            McpOrigin::Manifest(path) => vec![path.clone()],
+        }
+    }
 }
 
 impl LspOrigin {

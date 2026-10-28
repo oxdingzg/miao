@@ -148,8 +148,16 @@
    覆盖"收紧/放宽换入闸门与工具面、同内容不换代、畸形配置不改动、越界 process 被拒"；
    真实引擎以 `--config-dir` 运行、只改 `sandbox.mode` 两次，轮询各打印一次
    `configuration reloaded: ["policy"]`，generation 1→2→3 而 LSP 三台服务器始终 `unchanged`。
-3. **MCP reconcile**：现有 `servers: Vec<Arc<Server>>` 与 `tools` 表要改成可替换结构；子进程
-   按 server 归属（与 LSP 相同），避免 registry 级 child 列表。
+3. **MCP reconcile（已实现）**：`Registry` 的 `authority`/`servers`/`configs` 改为可替换载体，
+   `children` 按 server 名归属（与 LSP 相同），不再有 registry 级 child 列表。每台 server 记录
+   配置摘要 `fingerprint`；`Registry::reconcile` 按名字 + 摘要 diff：未变复用连接、watcher 与
+   子进程，变更/新增先连接新实例再关闭旧连接（失败保留旧连接并写入 `mcp.failed`），删除则移除
+   工具、通知 watcher 退出并杀子进程。列表级不变量（8 台上限、重名、authority revision）在任何
+   连接被替换前校验。启动来源记为 `McpOrigin::Manifest`，`config_reload` 报告新增
+   `mcp: {changed, unchanged, removed, failed}`；standalone 轮询文件并集包含 `--mcp-config`。
+   验证：`tests/config_reload_mcp.rs` 4 个用例（连接计数证明未变 server 不重连、换配置只重建该
+   server、失败保留旧连接仍可调用、非法清单不改动任何状态）；`cargo test` 全量通过；
+   `cargo clippy --all-targets -- -D warnings` 与 `cargo fmt --check` 在构建机通过。
 4. **Provider 路由替换**：模型目录与路由表的换代。
 5. **context / hooks / skills / references**：各自载体的换代。
 6. **standalone 轮询**：`--config-dir` 模式的 mtime 观察。

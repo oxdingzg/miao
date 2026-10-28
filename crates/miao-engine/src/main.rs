@@ -619,6 +619,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|_| "invalid plugin hooks host config")?,
         );
     }
+    let mut mcp_origin = None;
     if let Some(path) = options.get("--mcp-config") {
         if !policy.mcp_enabled() {
             return Err("MCP config requires explicit workspace allow_mcp authority".into());
@@ -627,18 +628,16 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         if path.starts_with(std::path::Path::new(tools.location())) {
             return Err("MCP host config must be outside model-writable workspace".into());
         }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("MCP config exceeds 64 KiB".into());
-        }
-        let configs = serde_json::from_slice::<Vec<miao_engine::mcp::Config>>(&bytes)
-            .map_err(|_| "invalid MCP host config")?;
-        let registry =
-            miao_engine::mcp::Registry::connect(configs, std::path::Path::new(tools.location()))
-                .await?;
+        let origin = miao_engine::config_derive::McpOrigin::Manifest(path.clone());
+        let registry = miao_engine::mcp::Registry::connect(
+            origin.derive()?,
+            std::path::Path::new(tools.location()),
+        )
+        .await?;
         let registry = Arc::new(registry);
         registry.start_watchers();
         tools = tools.with_protected_resource(&path).with_mcp(registry);
+        mcp_origin = Some(origin);
     }
     if let Some(path) = options.get("--formatter-config") {
         let path = tokio::fs::canonicalize(path).await?;
@@ -734,6 +733,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(origin) = &lsp_origin {
         runtime.set_lsp_origin(origin.clone()).await;
     }
+    if let Some(origin) = &mcp_origin {
+        runtime.set_mcp_origin(origin.clone()).await;
+    }
     runtime.set_policy_origin(policy_origin.clone(), mode).await;
     // No host watches these files in the standalone entry, so the engine polls
     // them itself; a hosted engine gets an explicit `config_reload`. Both
@@ -741,6 +743,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let watched = {
         let mut files = policy_origin.files();
         if let Some(origin) = &lsp_origin {
+            files.extend(origin.files());
+        }
+        if let Some(origin) = &mcp_origin {
             files.extend(origin.files());
         }
         files.sort();
