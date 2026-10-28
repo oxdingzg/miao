@@ -45,6 +45,7 @@ export interface MoveEngine {
 }
 
 const Receipt = Schema.Struct({
+  id: Schema.optional(Schema.String),
   session_id: Schema.optional(Schema.String),
   bundle_sha256: Schema.String,
   state: Schema.optional(Schema.String),
@@ -100,7 +101,7 @@ export const moveRust = Effect.fn("SessionMoveCoordinator.moveRust")(function* (
     target: input.target,
     bundleSHA256,
   })
-  if (fenced.state === "completed") return yield* fail()
+  if (fenced.state === "completed") return
 
   const binding = { protocol: receipt.binding.protocol, model: receipt.binding.model }
   const routeID = receipt.route_id ?? input.routeID
@@ -118,7 +119,40 @@ export const moveRust = Effect.fn("SessionMoveCoordinator.moveRust")(function* (
     bundleSHA256,
     productDatabase: input.productDatabase,
   })
-  if (activated.state !== "active") return yield* fail()
+  if (
+    activated.state !== "active" ||
+    activated.bundle_sha256 !== bundleSHA256 ||
+    activated.session_id !== input.sessionID ||
+    activated.id !== input.id
+  )
+    return yield* fail()
+  // Release the product freeze after activation; otherwise context and
+  // history controls conflict while the destination is already running.
+  yield* input.database.transaction(() =>
+    Effect.gen(function* () {
+      const current = yield* SessionMigration.find(input.database, input.id)
+      const placement = yield* SessionEnginePlacement.find(input.database, input.sessionID)
+      if (
+        current?.state !== "switched" ||
+        current.session_id !== input.sessionID ||
+        current.bundle_sha256 !== bundleSHA256 ||
+        current.native_storage !== input.target.storage ||
+        current.location.directory !== input.target.location.directory ||
+        current.location.workspaceID !== input.target.location.workspaceID ||
+        placement?.engine !== "rust" ||
+        placement.storage !== input.target.storage ||
+        placement.location.directory !== input.target.location.directory ||
+        placement.location.workspaceID !== input.target.location.workspaceID
+      )
+        return yield* fail()
+      yield* input.database
+        .update(SessionMigrationTable)
+        .set({ state: "completed", updated_at: Date.now() })
+        .where(eq(SessionMigrationTable.id, input.id))
+        .run()
+        .pipe(Effect.orDie)
+    }),
+  )
 })
 
 /** The placement fence lives beside the other migration transitions because
@@ -136,7 +170,16 @@ const movePlacement = (
   db.transaction(() =>
     Effect.gen(function* () {
       const observed = yield* SessionMigration.find(db, input.id)
-      if (observed && observed.bundle_sha256 === input.bundleSHA256 && observed.state !== "aborted") {
+      if (
+        observed &&
+        observed.state !== "aborted" &&
+        observed.direction === "rust_to_rust" &&
+        observed.session_id === input.sessionID &&
+        observed.bundle_sha256 === input.bundleSHA256 &&
+        observed.native_storage === input.target.storage &&
+        observed.location.directory === input.target.location.directory &&
+        observed.location.workspaceID === input.target.location.workspaceID
+      ) {
         return observed
       }
       if (observed) return yield* new SessionMigration.Conflict({ sessionID: input.sessionID })
