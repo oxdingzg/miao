@@ -29,34 +29,149 @@ pub struct Document {
 
 /// Load every source in order. A missing file inside a directory is skipped;
 /// an unreadable file or a malformed document is an error naming the source.
+/// Sections the engine derives are validated with their key paths, so a
+/// mistyped `sandbox` or `lsp` entry fails the way the product's schema
+/// decode does instead of silently falling back to the default.
 pub fn load(sources: &[Source]) -> Result<Vec<Document>, String> {
     let mut documents = Vec::new();
     for source in sources {
         match source {
             Source::Dir(directory) => {
                 for (path, value) in config_scope::documents(std::slice::from_ref(directory))? {
-                    documents.push(Document {
-                        origin: path.display().to_string(),
-                        value,
-                    });
+                    let origin = path.display().to_string();
+                    validate(&origin, &value)?;
+                    documents.push(Document { origin, value });
                 }
             }
             Source::File(path) => {
                 let text = std::fs::read_to_string(path)
                     .map_err(|error| format!("{}: {error}", path.display()))?;
+                let value = config_scope::parse_document(&text)
+                    .map_err(|error| format!("{}: {error}", path.display()))?;
+                let origin = path.display().to_string();
+                validate(&origin, &value)?;
+                documents.push(Document { origin, value });
+            }
+            Source::Content(text) => {
+                let value = config_scope::parse_document(text)?;
+                validate("inline config", &value)?;
                 documents.push(Document {
-                    origin: path.display().to_string(),
-                    value: config_scope::parse_document(&text)
-                        .map_err(|error| format!("{}: {error}", path.display()))?,
+                    origin: "inline config".to_string(),
+                    value,
                 });
             }
-            Source::Content(text) => documents.push(Document {
-                origin: "inline config".to_string(),
-                value: config_scope::parse_document(text)?,
-            }),
         }
     }
     Ok(documents)
+}
+
+/// Validate the `sandbox` and `lsp` sections against the shapes the product's
+/// config schema accepts, naming the file and the key path on a mismatch.
+fn validate(origin: &str, value: &serde_json::Value) -> Result<(), String> {
+    let Some(object) = value.as_object() else {
+        return Ok(());
+    };
+    match object.get("sandbox") {
+        None | Some(serde_json::Value::Null) => {}
+        Some(sandbox) => validate_sandbox(origin, sandbox)?,
+    }
+    match object.get("lsp") {
+        None | Some(serde_json::Value::Null) => {}
+        Some(lsp) => validate_lsp(origin, lsp)?,
+    }
+    Ok(())
+}
+
+fn validate_sandbox(origin: &str, sandbox: &serde_json::Value) -> Result<(), String> {
+    let Some(sandbox) = sandbox.as_object() else {
+        return Err(format!("{origin}: sandbox must be an object"));
+    };
+    if let Some(mode) = sandbox.get("mode") {
+        if mode.as_str() != Some("off") && mode.as_str() != Some("workspace-write") {
+            return Err(format!(
+                "{origin}: sandbox.mode must be \"off\" or \"workspace-write\""
+            ));
+        }
+    }
+    if let Some(network) = sandbox.get("network") {
+        if !network.is_boolean() && !network.is_null() {
+            return Err(format!("{origin}: sandbox.network must be a boolean"));
+        }
+    }
+    if let Some(roots) = sandbox.get("writable_roots") {
+        if roots
+            .as_array()
+            .is_none_or(|roots| roots.iter().any(|root| !root.is_string()))
+        {
+            return Err(format!(
+                "{origin}: sandbox.writable_roots must be an array of strings"
+            ));
+        }
+    }
+    if let Some(on_unavailable) = sandbox.get("on_unavailable") {
+        if on_unavailable.as_str() != Some("warn") && on_unavailable.as_str() != Some("fail") {
+            return Err(format!(
+                "{origin}: sandbox.on_unavailable must be \"warn\" or \"fail\""
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_lsp(origin: &str, lsp: &serde_json::Value) -> Result<(), String> {
+    if lsp.is_boolean() {
+        return Ok(());
+    }
+    let Some(entries) = lsp.as_object() else {
+        return Err(format!("{origin}: lsp must be a boolean or an object"));
+    };
+    for (id, entry) in entries {
+        let Some(entry) = entry.as_object() else {
+            return Err(format!("{origin}: lsp.{id} must be an object"));
+        };
+        if entry.get("disabled") == Some(&serde_json::Value::Bool(true)) {
+            continue;
+        }
+        let Some(command) = entry.get("command") else {
+            continue;
+        };
+        if !command.is_array()
+            || command.as_array().unwrap().is_empty()
+            || command
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|part| !part.is_string())
+        {
+            return Err(format!(
+                "{origin}: lsp.{id}.command must be an array of strings"
+            ));
+        }
+        if let Some(extensions) = entry.get("extensions") {
+            if extensions
+                .as_array()
+                .is_none_or(|items| items.iter().any(|item| !item.is_string()))
+            {
+                return Err(format!(
+                    "{origin}: lsp.{id}.extensions must be an array of strings"
+                ));
+            }
+        }
+        if let Some(env) = entry.get("env") {
+            if !env.is_object()
+                || env
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .any(|(_, value)| !value.is_string())
+            {
+                return Err(format!(
+                    "{origin}: lsp.{id}.env must map strings to strings"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The product capability policy the host used to materialize as a temp file:
@@ -407,6 +522,49 @@ fn executable(path: &std::path::Path) -> bool {
         std::fs::metadata(path)
             .map(|meta| meta.is_file())
             .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod validate_tests {
+    use super::*;
+
+    fn validated(value: Value) -> Result<(), String> {
+        validate("miao.json", &value)
+    }
+
+    #[test]
+    fn a_mistyped_sandbox_mode_names_the_key_path() {
+        assert_eq!(
+            validated(serde_json::json!({"sandbox": {"mode": true}})).unwrap_err(),
+            "miao.json: sandbox.mode must be \"off\" or \"workspace-write\""
+        );
+        assert!(validated(serde_json::json!({"sandbox": {"mode": "off"}})).is_ok());
+    }
+
+    #[test]
+    fn a_boolean_sandbox_is_refused_like_the_product_schema() {
+        assert_eq!(
+            validated(serde_json::json!({"sandbox": true})).unwrap_err(),
+            "miao.json: sandbox must be an object"
+        );
+    }
+
+    #[test]
+    fn lsp_entries_without_a_command_stay_valid_but_mistyped_commands_refuse() {
+        assert!(validated(serde_json::json!({"lsp": {"gopls": {"disabled": true}}})).is_ok());
+        assert!(validated(
+            serde_json::json!({"lsp": {"gopls": {"command": ["gopls"], "extensions": [".go"]}}})
+        )
+        .is_ok());
+        assert!(validated(serde_json::json!({"lsp": {"gopls": {"command": "gopls"}}})).is_err());
+        assert!(validated(serde_json::json!({"lsp": {"gopls": 3}})).is_err());
+        assert!(validated(serde_json::json!({"lsp": false})).is_ok());
+    }
+
+    #[test]
+    fn unknown_keys_never_fail() {
+        assert!(validated(serde_json::json!({"theme": "dark", "model": "x/y"})).is_ok());
     }
 }
 
