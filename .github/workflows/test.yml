@@ -199,9 +199,9 @@ jobs:
           node-version: "24"
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
-      - name: Verify storage and session ownership
+      - name: Verify storage, session ownership, and Windows location paths
         working-directory: packages/core
-        run: bun test test/runtime-ownership.test.ts test/session-ownership.test.ts test/process/process.test.ts
+        run: bun test test/runtime-ownership.test.ts test/session-ownership.test.ts test/process/process.test.ts test/location-filesystem-windows.test.ts
       - name: Verify window exit and immutable upgrade
         working-directory: packages/miao
         run: bun test test/runtime/window.test.ts test/installation/windows-upgrade.test.ts
