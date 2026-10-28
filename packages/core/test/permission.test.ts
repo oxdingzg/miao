@@ -7,6 +7,7 @@ import { LayerNode } from "@miao/core/effect/layer-node"
 import { EventV2 } from "@miao/core/event"
 import { Location } from "@miao/core/location"
 import { PermissionV2 } from "@miao/core/permission"
+import { PermissionSource } from "@miao/core/permission/source"
 import { PermissionTable } from "@miao/core/permission/sql"
 import { PermissionSaved } from "@miao/core/permission/saved"
 import { Project } from "@miao/core/project"
@@ -32,6 +33,7 @@ const it = testEffect(
       PermissionSaved.node,
       AgentV2.node,
       PermissionV2.node,
+      PermissionSource.node,
     ]),
     [[Location.node, current]],
   ),
@@ -104,6 +106,20 @@ function waitForRequest() {
 }
 
 describe("PermissionV2", () => {
+  it.effect("native routing mode preserves decisions for TS-owned Sessions", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "read", resource: "*", effect: "allow" }])
+      const sources = yield* PermissionSource.Service
+      const permission = yield* PermissionV2.Service
+      yield* sources.enable
+      yield* permission.assert(assertion())
+      expect((yield* permission.ask(assertion())).effect).toBe("allow")
+      yield* setRules([{ action: "read", resource: "*", effect: "deny" }])
+      expect((yield* permission.ask(assertion())).effect).toBe("deny")
+      expect(yield* permission.list()).toEqual([])
+    }),
+  )
+
   it.effect("returns the evaluated effect and only queues prompts", () =>
     Effect.gen(function* () {
       yield* setup([{ action: "read", resource: "*", effect: "allow" }])

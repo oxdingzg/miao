@@ -1,4 +1,6 @@
 import { Location } from "@miao/core/location"
+import { Database } from "@miao/core/database/database"
+import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { PermissionV2 } from "@miao/core/permission"
 import { PermissionSaved } from "@miao/core/permission/saved"
 import { Effect, Option } from "effect"
@@ -18,7 +20,21 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
       .handle(
         "permission.request.list",
         Effect.fn(function* () {
-          return yield* response((yield* PermissionV2.Service).list())
+          const permission = yield* PermissionV2.Service
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const host = yield* permission.list()
+          if (Option.isNone(native)) return yield* response(Effect.succeed(host))
+          const location = yield* Location.Service
+          const database = yield* Database.Service
+          const placements = yield* SessionEnginePlacement.list(database.db)
+          const pending = yield* Effect.forEach(
+            placements.filter(
+              (item) => item.location.directory === location.directory && item.location.workspaceID === location.workspaceID,
+            ),
+            (item) => native.value.permissions(item).pipe(Effect.orDie),
+            { concurrency: 4 },
+          )
+          return yield* response(Effect.succeed([...host, ...pending.flat()]))
         }),
       )
       .handle(
@@ -84,6 +100,9 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
           const native = yield* Effect.serviceOption(NativeEngine.Service)
           const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
           if (Option.isSome(native) && placement) {
+            const pending = yield* native.value.permissions({ sessionID: ctx.params.sessionID, ...placement })
+            if (!pending.some((request) => request.id === ctx.params.requestID))
+              return yield* missingRequest(ctx.params.requestID)
             yield* native.value.replyPermission({
               sessionID: ctx.params.sessionID,
               requestID: ctx.params.requestID,

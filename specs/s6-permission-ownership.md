@@ -165,3 +165,18 @@ effect、有效规则及该次判定的 authority_revision。准入拒绝保存�
 产生拒绝则保存重查结果，同时保留原准入绑定供精确重试。随后规则变化不改写历史证据。
 用户拒绝、取消或允许不伪造 policy denial，缺少该字段的旧行按证据未知读取。未来适配器
 须消费原生证据，不能用较晚的 TS 规则重新解释历史拒绝；本项尚未启用适配器。
+
+### 7.8 Location 内的活跃调用路由
+
+Core 的 PermissionSource 保存 Location 内的活跃 `(Session, message, call)` 绑定，不向工具
+注册表加入鉴权回调，也不建立 Session-ID layer。内建及插件工具仍捕获同一个 Permission
+服务；启用原生路由后，服务按实际 placement 将 native 断言交给绑定的原生适配器。独立
+插件 Promise 不依赖 Effect 上下文传播来找来源。TS-owned Session 保留原决策行为。
+
+启用状态在该 Location 内只会收紧；绑定释放、重复登记或来源缺失不能恢复成 TS 授权。
+宿主接线要求完整快照及原生请求/回复/撤销/诊断/auto 能力，且回调必须有实际 message
+身份与取消信号。该接线依赖完整快照、回调取消和宿主路由前置改动，不用版本号猜能力。
+位置级待审批列表从 placement 定位引擎并查询原生记录，回复前再次核对所属 Session。
+
+本切片仍不代表 S6 完成：原生 standing-rule 的产品投影、撤销入口和 §4 脚本验收尚待完成；
+兼容阶段也不能据此声明所有 TS 判定路径已经退役。
