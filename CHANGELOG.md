@@ -11,6 +11,15 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.14] - 2026-10-28
+
+### Added
+- **engine**: validate derived config sections with their key paths (S5) (#1555) (`be0f6c2296`)
+- **config**: fail a location whose config documents do not parse (#1547) (`f72df1bac7`)
+
+### Fixed
+- **tui**: start the Rust TUI against the engine's own storage (#1566) (`576522fdd1`)
+
 ## [0.3.13] - 2026-10-27
 
 ### Added
