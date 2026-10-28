@@ -4,8 +4,8 @@
 //! product-side schema migration that would break the engine surfaces here
 //! instead of at provider turn time.
 
-use miao_engine::credential::{Kind, Source};
 use miao_engine::credential::Error;
+use miao_engine::credential::{Kind, Source};
 use std::path::PathBuf;
 
 fn product_database() -> PathBuf {
