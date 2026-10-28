@@ -176,6 +176,9 @@ async function emit(session: string, inputID: string) {
 }
 
 const reader = Bun.stdin.stream().getReader()
+// Publish readiness only after module initialization and the input reader exist.
+const ready = process.env.ENGINE_FAKE_READY_FILE
+if (ready) await Bun.write(ready, "ready")
 for (;;) {
   const { done, value } = await reader.read()
   if (done) break
