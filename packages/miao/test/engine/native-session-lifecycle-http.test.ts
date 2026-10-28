@@ -74,6 +74,23 @@ if (binary)
       })
       expect(restored.status).toBe(204)
       expect((await (await fetch(sessionPath, { headers })).json()).data.time.archived).toBeUndefined()
+      // The pin is a catalog list preference, so a native-owned Session takes
+      // it without the request being routed through the engine.
+      const pinPath = sessionPath + "/pin"
+      const pinned = await fetch(pinPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ pinned: true }),
+      })
+      expect(pinned.status).toBe(204)
+      expect((await (await fetch(sessionPath, { headers })).json()).data.time.pinned).toBeDefined()
+      const unpinned = await fetch(pinPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ pinned: false }),
+      })
+      expect(unpinned.status).toBe(204)
+      expect((await (await fetch(sessionPath, { headers })).json()).data.time.pinned).toBeUndefined()
       // A fork survives its parent's removal: only the lineage edge is dropped.
       const fork = await fetch(sessionPath + "/fork", { method: "POST", headers, body: "{}" })
       expect(fork.status).toBe(200)
