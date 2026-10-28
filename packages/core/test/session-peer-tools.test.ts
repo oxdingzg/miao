@@ -81,9 +81,7 @@ const context: Tool.Context = {
 const settle = (name: string, input: unknown) => {
   const tool = tools[name]
   if (!tool) throw new Error(`missing tool ${name}`)
-  return Effect.runPromise(
-    Tool.settle(tool, { type: "tool-call", id: "call_1", name, input }, context),
-  )
+  return Effect.runPromise(Tool.settle(tool, { type: "tool-call", id: "call_1", name, input }, context))
 }
 
 describe("peer tool factory", () => {
@@ -102,6 +100,18 @@ describe("peer tool factory", () => {
     expect(text).toContain("ses_target")
     expect(text).toContain("execution: busy")
     expect(text).toContain("background jobs: 1")
+  })
+
+  test("narrows the list to titles containing the search text", async () => {
+    const matched = await settle("list_sessions", { search: "TARG" })
+    const matchedText = matched.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+    // Case-insensitive: the fixture title is "Target".
+    expect(matchedText).toContain("ses_target")
+
+    const missed = await settle("list_sessions", { search: "nothing-matches-this" })
+    const missedText = missed.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+    expect(missedText).not.toContain("ses_target")
+    expect(missedText).toContain("No matching Sessions")
   })
 
   test("admits a message and requests a wake for an active peer", async () => {

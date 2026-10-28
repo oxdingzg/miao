@@ -116,11 +116,21 @@ export const make = (input: Dependencies): Readonly<Record<string, AnyTool>> => 
           }
         }),
       )
-      return summaries
-        .filter((row) => request.includeHistory || row.active)
-        .sort((a, b) => Number(b.active) - Number(a.active) || b.lastActivity - a.lastActivity)
-        .slice(0, 50)
-        .map(({ active, ...summary }) => summary)
+      return (
+        summaries
+          .filter((row) => request.includeHistory || row.active)
+          // A search narrows the same list rather than replacing it, so it runs
+          // after the history gate: an idle Session still has to be asked for
+          // explicitly even when its title matches.
+          .filter((row) => {
+            if (request.search === undefined) return true
+            const needle = request.search.toLocaleLowerCase()
+            return row.title.toLocaleLowerCase().includes(needle)
+          })
+          .sort((a, b) => Number(b.active) - Number(a.active) || b.lastActivity - a.lastActivity)
+          .slice(0, 50)
+          .map(({ active, ...summary }) => summary)
+      )
     })
 
   const runSendMessage = (
@@ -269,9 +279,8 @@ export const makePeers = (input: Sources): Peers => {
       const list = yield* input.todos.get(sessionID)
       const goal = yield* SessionGoal.current(input.db, sessionID)
       const backgroundJobs = input.jobs
-        ? (yield* input.jobs.list()).filter(
-            (job) => job.status === "running" && job.metadata?.sessionID === sessionID,
-          ).length
+        ? (yield* input.jobs.list()).filter((job) => job.status === "running" && job.metadata?.sessionID === sessionID)
+            .length
         : 0
       const unfinished =
         list.some((todo) => todo.status !== "completed" && todo.status !== "cancelled") ||
