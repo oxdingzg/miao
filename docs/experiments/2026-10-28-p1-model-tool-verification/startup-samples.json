@@ -1,0 +1,53 @@
+{
+  "source_commit": "4f49325f7d5f6eebd3a8787f393410519bf157dd",
+  "artifact": "published v0.3.14 darwin-arm64 CLI/TUI/engine",
+  "samples": [
+    {
+      "run": 1,
+      "database": "new",
+      "composer_visible_ms": 2140.05,
+      "local_fixture_reply_visible_ms": 2379.0,
+      "fixture_request_ms": 2124.77,
+      "fixture_requests": 1
+    },
+    {
+      "run": 2,
+      "database": "reused small database",
+      "composer_visible_ms": 1867.86,
+      "local_fixture_reply_visible_ms": 2099.5,
+      "fixture_request_ms": 1846.44,
+      "fixture_requests": 1
+    },
+    {
+      "run": 3,
+      "database": "reused small database",
+      "composer_visible_ms": 1193.27,
+      "local_fixture_reply_visible_ms": 1435.42,
+      "fixture_request_ms": 1180.64,
+      "fixture_requests": 1
+    },
+    {
+      "run": 4,
+      "database": "reused small database",
+      "composer_visible_ms": 1087.84,
+      "local_fixture_reply_visible_ms": 1351.69,
+      "fixture_request_ms": 1072.34,
+      "fixture_requests": 1
+    },
+    {
+      "run": 5,
+      "database": "reused small database",
+      "composer_visible_ms": 1615.92,
+      "local_fixture_reply_visible_ms": 1879.04,
+      "fixture_request_ms": 1603.08,
+      "fixture_requests": 1
+    }
+  ],
+  "limits": [
+    "Five sequential starts of a tiny workspace, not a production p95 or cold-cache study",
+    "First database is new; later runs reuse it, not a large historical database",
+    "Composer visibility is not separate proof of input/submit readiness",
+    "Reply uses a zero-delay local fixture, not model network latency",
+    "Times include process/terminal capture and polling overhead; no paid provider calls"
+  ]
+}

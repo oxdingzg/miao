@@ -1,0 +1,123 @@
+{
+  "date": "2026-10-28",
+  "reference_commit": "4f49325f7d5f6eebd3a8787f393410519bf157dd",
+  "scope": "APP-01..04 and MEDIA-01 source/fixture verification; real clients/devices and guarded PDF execution remain open",
+  "checks": {
+    "rust_normal_reported_passed": 9,
+    "rust_pdf_case_returned_early": 1,
+    "rust_video_explicit_passed": 1,
+    "rust_actual_test_bodies_completed": 9,
+    "product_native_passed": 8,
+    "product_native_assertions": 69,
+    "product_acp_passed": 1,
+    "product_acp_assertions": 11,
+    "remote_control_passed": 26,
+    "remote_control_assertions": 187,
+    "app_dom_passed": 21,
+    "app_dom_assertions": 43,
+    "receipt": "checks-app-media.txt"
+  },
+  "items": [
+    {
+      "code": "APP-01",
+      "result": "needs_current_cross_client_acceptance",
+      "observed": [
+        "The app SDK resolves reactive per-server/per-directory contexts and consumes product APIs; timeline projection/model/measurement and new-session workspace control have 21 passing DOM-fixture tests.",
+        "The native product/ACP/HTTP receipts are recorded separately from Web/Desktop interaction. No frontend rewrite is assumed necessary for a Rust-backed product."
+      ],
+      "remaining": [
+        "No complete current Web/Desktop user-path exercise proves Session history/input/tools/approval/usage/fork consistency across clients.",
+        "A complete legacy shape/type/fallback and test-fixture consumer cleanup map remains open; DOM fixtures are not end-to-end kernel/service evidence."
+      ],
+      "evidence": [
+        "packages/app/src/context/sdk.tsx",
+        "packages/app/src/context/server-sdk.tsx",
+        "packages/app/src/pages/session/timeline/model.ts",
+        "packages/app/src/pages/session/timeline/projection.test.ts",
+        "packages/app/src/pages/new-session/new-session-workspace-controller.test.ts"
+      ]
+    },
+    {
+      "code": "APP-02",
+      "result": "needs_current_remote_client_acceptance",
+      "observed": [
+        "Actual local hub/crypto fixtures test pairing/grants/device roster/runtime tickets, one-use browser upgrade tickets, live account/origin authorization, expiration/revocation and pinned grant metadata.",
+        "Remote RPC fixtures require persisted operation IDs and preserve uncertainty rather than retrying unknown writes."
+      ],
+      "remaining": [
+        "The full current UI path through hub login, directory binding, pairing QR/device list and visible expiry/revocation/reconnection has not been exercised.",
+        "These fixtures do not establish a complete production log-redaction audit or real-browser/session-scope matrix."
+      ],
+      "evidence": [
+        "packages/remote-control/test/pairing.test.ts",
+        "packages/remote-control/test/grants.test.ts",
+        "packages/remote-control/test/device-roster.test.ts",
+        "packages/remote-control/test/hub-tickets.test.ts",
+        "packages/remote-control/test/hub-browser.test.ts",
+        "packages/remote-control/test/remote-rpc.test.ts"
+      ]
+    },
+    {
+      "code": "APP-03",
+      "result": "needs_real_device_and_resume_acceptance",
+      "observed": [
+        "Push fixtures require live account/origin, support registration rotation/revocation/logout pruning, and fence delivery on runtime/grant/device/host revocation. Remote RPC bounds pending requests and retains persisted operation identities.",
+        "Provider delivery is a controlled fixture; no external user notification or live APNs call was sent."
+      ],
+      "remaining": [
+        "A current browser/mobile user must still continue a local task, answer approval and observe output across offline/cursor recovery without duplicate admission.",
+        "Real APNs/device registration, revocation, notification deduplication and system delivery behavior remain unverified by these local fixtures."
+      ],
+      "evidence": [
+        "packages/remote-control/test/push-api.test.ts",
+        "packages/remote-control/test/hub-push-delivery.test.ts",
+        "packages/remote-control/test/remote-rpc.test.ts",
+        "packages/remote-control/src/browser-checkpoint.ts"
+      ]
+    },
+    {
+      "code": "APP-04",
+      "result": "needs_browser_workspace_and_disconnect_acceptance",
+      "observed": [
+        "Browser hub fixtures exercise actual local login authorization and single-use host/runtime relay tickets. Browser checkpoint keys include hub/account/device/host/runtime/grant/version/session identity.",
+        "Remote operation fixtures preserve uncertain outcomes and do not retry potentially committed writes."
+      ],
+      "remaining": [
+        "IndexedDB checkpoint persistence and browser cookie/workspace/relay flows have not been verified in a real browser in this audit.",
+        "Cross-device execution-location/network/credential-boundary presentation remains open.",
+        "No complete current browser-disconnect exercise proves the local task is neither silently terminated nor restarted; the separate native HTTP lease receipts do not close every remote path."
+      ],
+      "evidence": [
+        "packages/remote-control/src/browser-checkpoint.ts",
+        "packages/remote-control/src/browser-channel.ts",
+        "packages/remote-control/test/hub-browser.test.ts",
+        "packages/remote-control/test/remote-rpc.test.ts",
+        "crates/miao-engine/tests/http_leases.rs"
+      ]
+    },
+    {
+      "code": "MEDIA-01",
+      "result": "needs_complete_uri_provider_and_pdf_acceptance",
+      "observed": [
+        "Native media tests exercise Anthropic/Chat image admission/identity/history, image-only prompts, local image tools across protocols, and size/type bounds. The ignored ffmpeg skill-to-frame-to-provider workflow was explicitly run on the build host and passed.",
+        "Product native image/birth fixtures plus independent HTTP attachment tests pass 8 cases/69 assertions; ACP embedded text/image/resource-link handling passes one subprocess case.",
+        "The bridge accepts at most eight bounded inline image/PDF/text attachments, validates base64 and retains metadata. Native unsupported-type handling preserves an actionable tool-reading fallback rather than silently inventing model support."
+      ],
+      "remaining": [
+        "The PDF text/render integration case silently returns early because ps2pdf is missing. Its harness pass is not counted as actual PDF integration acceptance; only the page-selection cases execute fully.",
+        "All local/remote/managed URI, permission, cancellation and large-stdio-frame combinations still need an end-to-end provider/client matrix.",
+        "The inline bridge limit is 8 MiB of base64 characters per attachment, not a claim of 8 MiB decoded-byte acceptance."
+      ],
+      "evidence": [
+        "crates/miao-engine/tests/media.rs",
+        "crates/miao-engine/tests/pdf.rs",
+        "crates/miao-engine/src/media.rs",
+        "packages/miao/src/engine/prompt-attachments.ts",
+        "packages/miao/test/engine/native-image-input.test.ts",
+        "packages/miao/test/engine/native-birth-http.test.ts",
+        "packages/miao/test/engine/http-client.test.ts",
+        "packages/miao/test/cli/acp/prompt-content.test.ts"
+      ]
+    }
+  ]
+}

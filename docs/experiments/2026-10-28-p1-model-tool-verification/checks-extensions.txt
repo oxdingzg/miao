@@ -1,0 +1,57 @@
+Source: 4f49325f7d5f6eebd3a8787f393410519bf157dd
+Remote: cargo test --locked --test skills --test mcp --test mcp_http --test mcp_resources --test lsp --test formatter; cargo test --locked --lib tool_catalog::tests
+
+running 2 tests
+test formatter_timeout_preserves_committed_mutation_and_final_hash ... ok
+test formatters_run_after_write_edit_and_patch_and_report_final_fingerprint ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.04s
+running 6 tests
+test real_rust_analyzer_observes_edited_document ... ignored, requires installed rust-analyzer; run explicitly on a build host
+test lsp_query_rejects_missing_positions_and_foreign_parameters ... ok
+test lsp_tools_are_absent_without_a_registry ... ok
+test edited_documents_refresh_diagnostics_and_queries_without_reopening ... ok
+test read_file_warms_the_language_server_for_the_next_edit ... ok
+test lsp_tools_query_a_language_server ... ok
+test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.21s
+running 13 tests
+test cancellation_after_dispatch_does_not_replay ... ok
+test external_authority_is_a_capability_upper_bound_even_with_read_only_hint ... ok
+test configured_child_is_initialized_and_reaped_at_shutdown ... ok
+test wire_catalog_schema_and_native_name_mapping ... ok
+test server_errors_disconnect_and_output_budgets_are_explicit ... ok
+test discovery_and_filtered_execution_keep_the_provider_surface_stable ... ok
+test configured_startup_timeout_bounds_a_silent_stdio_server ... ok
+test original_catalog_identity_survives_approval_reopen_and_fork ... ok
+test compact_extension_approval_binds_target_and_arguments_before_dispatch ... ok
+test configured_request_timeout_is_bounded_and_never_replays_the_call ... ok
+test runtime_permission_denial_prevents_wire_dispatch_and_allowed_error_is_durable ... ok
+test list_changed_notification_refreshes_catalog_without_reconnect ... ok
+test failed_refresh_keeps_previous_catalog_until_next_change ... ok
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.76s
+running 7 tests
+test http_oauth_configuration_conflicts_are_rejected ... ok
+test http_configuration_rejects_ambiguous_authority_and_unsafe_headers ... ok
+test http_redirect_never_forwards_host_credentials ... ok
+test http_oauth_failures_stay_explicit_and_reach_no_server ... ok
+test http_initialization_catalog_call_and_host_headers_roundtrip ... ok
+test http_oauth_refresh_exchanges_once_and_bearer_reaches_the_server ... ok
+test persistent_grants_survive_new_proxy_transport_and_miss_changed_registration_or_metadata ... ok
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+running 2 tests
+test resource_cancellation_does_not_retry_or_execute_a_prompt ... ok
+test resources_and_prompts_use_capability_gated_external_operations ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+running 5 tests
+test invalid_skill_directories_are_rejected ... ok
+test workspace_skill_file_denials_also_hide_frontmatter ... ok
+test a_skill_without_frontmatter_falls_back_to_its_directory_name ... ok
+test skills_are_listed_by_name_and_description_only ... ok
+test host_skill_metadata_requires_directory_authority_and_per_file_policy ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+running 2 tests
+test tool_catalog::tests::projections_preserve_errors_missing_paths_and_escaped_keys ... ok
+test tool_catalog::tests::bounded_catalogs_find_exact_tools_without_mutating_the_stable_surface ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 168 filtered out; finished in 0.00s
+
+Local: packages/core bun test test/mcp-oauth.test.ts test/mcp-oauth-fetch.test.ts test/mcp/oauth-callback.test.ts test/mcp/oauth-provider.test.ts test/skill-discovery.test.ts test/tool-skill.test.ts
+38 passed; 90 assertions.

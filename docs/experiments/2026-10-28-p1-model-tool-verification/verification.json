@@ -1,0 +1,149 @@
+{
+  "reference_commit": "4f49325f7d5f6eebd3a8787f393410519bf157dd",
+  "date": "2026-10-28",
+  "scope": "Offline implementation verification for MOD-05, MOD-06 and TOOL-01. These are not completed product acceptance or paid-model benefit measurements.",
+  "tests": {
+    "passed": 34,
+    "failed": 0,
+    "evidence": "checks.txt",
+    "network": "Local fixture endpoints only; no paid provider calls."
+  },
+  "items": [
+    {
+      "code": "MOD-05",
+      "result": "needs_work",
+      "criteria": [
+        {
+          "requirement": "Bound Retry-After, jitter, aggregate retry budget and transient 400 recovery",
+          "result": "verified_offline",
+          "evidence": [
+            "crates/miao-engine/src/provider.rs:191",
+            "crates/miao-engine/src/provider.rs:986",
+            "crates/miao-engine/src/provider.rs:1149",
+            "crates/miao-engine/src/provider.rs:1442",
+            "crates/miao-engine/tests/transport_retry.rs"
+          ]
+        },
+        {
+          "requirement": "Keep incompatible opaque history pinned and respect explicit route/variant choices",
+          "result": "verified_offline",
+          "evidence": [
+            "crates/miao-engine/src/routing.rs:382",
+            "crates/miao-engine/tests/model_catalog.rs:179",
+            "crates/miao-engine/tests/variant_fallback.rs"
+          ]
+        },
+        {
+          "requirement": "Show the next retry time, support cancellation and account for failed attempts",
+          "result": "partial",
+          "evidence": [
+            "packages/miao/src/engine/bridge.ts:568",
+            "packages/tui/src/routes/session/provider-failure.tsx:22",
+            "crates/miao-engine/src/routing.rs:427"
+          ],
+          "gap": "The native retry projection carries attempt/reason/status but no future retry deadline. The legacy TUI explicitly avoids inventing a countdown for that producer. Failed HTTP attempt counts are retained, but this batch does not establish complete billing attribution for every failed request."
+        },
+        {
+          "requirement": "Record implementation PRs and current live-client acceptance",
+          "result": "partial",
+          "implementation_prs": [
+            1446,
+            1480,
+            1488
+          ],
+          "gap": "Offline results are recorded here. Current-version live retry/cancellation and complete cost acceptance remain open."
+        }
+      ]
+    },
+    {
+      "code": "MOD-06",
+      "result": "needs_product_acceptance",
+      "criteria": [
+        {
+          "requirement": "Derive reasoning variants, provider options, context limits and media capabilities from catalog routes",
+          "result": "verified_offline",
+          "evidence": [
+            "packages/miao/src/engine/product-routes.ts:151",
+            "packages/miao/src/engine/product-routes.ts:333",
+            "packages/miao/src/engine/product-routes.ts:344",
+            "crates/miao-engine/src/model_routes.rs:30",
+            "crates/miao-engine/tests/variant_fallback.rs"
+          ]
+        },
+        {
+          "requirement": "Explain unsupported parameters/capabilities and avoid universal provider-specific switches",
+          "result": "partial",
+          "evidence": [
+            "crates/miao-engine/src/request_options.rs",
+            "crates/miao-engine/src/model_catalog.rs:125",
+            "crates/miao-engine/src/session_model.rs:45",
+            "crates/miao-engine/tests/variant_fallback.rs"
+          ],
+          "gap": "The fixture pins unsupported media feedback and route-specific variant options. It does not cover every unsupported parameter or both TUI implementations in a current live-client capability matrix."
+        },
+        {
+          "requirement": "Record implementation PRs and live-client acceptance",
+          "result": "partial",
+          "implementation_prs": [
+            1449,
+            1459,
+            1462,
+            1463,
+            1464
+          ],
+          "gap": "No new live-account capability matrix is claimed by this offline batch."
+        }
+      ]
+    },
+    {
+      "code": "TOOL-01",
+      "result": "needs_benefit_acceptance",
+      "dependency": "VAL-01",
+      "criteria": [
+        {
+          "requirement": "Bound read windows and searches while retaining source identity",
+          "result": "verified_offline_for_read_and_search",
+          "evidence": [
+            "crates/miao-engine/src/tools.rs:41",
+            "crates/miao-engine/src/tools.rs:1714",
+            "crates/miao-engine/src/search.rs:100",
+            "crates/miao-engine/src/search.rs:267",
+            "crates/miao-engine/tests/read_range.rs",
+            "crates/miao-engine/tests/read_batch.rs",
+            "crates/miao-engine/tests/accuracy.rs"
+          ],
+          "limits": {
+            "whole_file_text_bytes": 32768,
+            "window_lines": 2000,
+            "search_result_limit": 500,
+            "search_output_bytes": 30000
+          },
+          "gap": "This batch does not establish the complete ignore-rule and LSP retrieval matrix."
+        },
+        {
+          "requirement": "Avoid repeated whole-file reads on large-file and unfamiliar-repository tasks",
+          "result": "partial",
+          "evidence": [
+            "crates/miao-engine/tests/read_range.rs"
+          ],
+          "gap": "Large whole-file reads are refused with window guidance. Fixture correctness does not establish model behavior on unfamiliar real repositories."
+        },
+        {
+          "requirement": "Measure localization correctness, extra provider turns and request volume",
+          "result": "not_measured",
+          "gap": "Requires the VAL-01 task baseline and approved real-model budget. No latency, quality or cost improvement is inferred from the offline tool tests."
+        },
+        {
+          "requirement": "Record implementation PRs and benefit evidence",
+          "result": "partial",
+          "implementation_prs": [
+            811,
+            965,
+            1473
+          ],
+          "gap": "Implementation and offline evidence are linked; benefit acceptance remains open."
+        }
+      ]
+    }
+  ]
+}

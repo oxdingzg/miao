@@ -1,0 +1,103 @@
+{
+  "date": "2026-10-28",
+  "reference_commit": "4f49325f7d5f6eebd3a8787f393410519bf157dd",
+  "scope": "Workspace and release evidence review; open PR feature checks are explicitly separate from baseline/source publication",
+  "checks": {
+    "baseline_core_passed": 12,
+    "baseline_core_assertions": 52,
+    "baseline_workspace_api_passed": 10,
+    "baseline_workspace_api_assertions": 20,
+    "feature_scope_pr": 1579,
+    "feature_scope_tests_passed": 19,
+    "feature_scope_assertions": 66,
+    "feature_preview_pr": 1577,
+    "feature_preview_cli_passed": 16,
+    "feature_preview_rust_tui_passed": 186,
+    "published_macos_arm64_archives_sha256_verified": 3,
+    "published_macos_arm64_binaries_version_verified": 3,
+    "published_macos_arm64_codesign_verified": 3
+  },
+  "items": [
+    {
+      "code": "WSP-01",
+      "result": "needs_work",
+      "observed": [
+        "Project directory/registry/worktree fixtures cover directory identity, strategy and worktree create/list/reset/removal. Twelve core cases pass; ten workspace routing/API cases pass.",
+        "Direct real-service regressions reproduced cross-project removal/warp. PR #1579 scopes Session/workspace lookups and status to the requested project and validates targets before event-owner claims; seven new regressions plus related suites pass 19 tests/66 assertions."
+      ],
+      "remaining": [
+        "The main baseline is still vulnerable to those cross-project operations until #1579 is reviewed/merged.",
+        "Workspace.create inserts metadata before filesystem creation, and remove handles Session changes before the filesystem operation completes. Full rollback preserving a usable environment on same-project filesystem failure is not established.",
+        "Native worktree/session handoff remains in separate open PR #1573; it is not part of released main."
+      ],
+      "evidence": [
+        "packages/core/src/workspace-live.ts",
+        "packages/core/src/project/worktree.ts",
+        "packages/core/test/project-worktree.test.ts",
+        "packages/core/test/project-directories.test.ts",
+        "packages/core/test/project-registry.test.ts",
+        "packages/miao/test/server/workspace-routing.test.ts",
+        "packages/miao/test/server/httpapi-workspace.test.ts",
+        "https://github.com/oxdingzg/miao/pull/1579",
+        "https://github.com/oxdingzg/miao/pull/1573"
+      ]
+    },
+    {
+      "code": "WSP-04",
+      "result": "needs_work",
+      "observed": [
+        "The same-project worktree removal fixture relocates anchored Sessions and tests reset refusing the primary checkout. The new #1579 fixtures preserve foreign workspace/Session/event rows and filter per-project connection statuses.",
+        "Own temporary repositories, storage and processes are used for the verification; no real user workspace was deleted."
+      ],
+      "remaining": [
+        "Workspace lifecycle services do not offer the requested reference-preview/dry-run cleanup interface. Worktree removal invokes forced Git removal and branch deletion after relocating anchored Sessions.",
+        "The complete bounded-concurrency worktree/storage/index/process isolation matrix is not established by those selected tests.",
+        "#1579 fixes the reproduced project-scope issue; filesystem failure rollback and comprehensive cleanup acceptance remain open."
+      ],
+      "evidence": [
+        "packages/core/src/project/worktree.ts",
+        "packages/core/src/workspace-live.ts",
+        "packages/core/test/project-worktree.test.ts",
+        "https://github.com/oxdingzg/miao/pull/1579"
+      ]
+    },
+    {
+      "code": "REL-02",
+      "result": "needs_cross_platform_update_acceptance",
+      "observed": [
+        "Release v0.3.14 is public (published 2026-10-28T06:14:32Z), tag 4f49325f7d5f6eebd3a8787f393410519bf157dd. Existing release run 40640751458 succeeded; this takeover did not dispatch it.",
+        "Downloaded public macOS arm64 CLI/engine/TUI archives match their adjacent SHA256 files, and all three binaries report 0.3.14. The real install script installs those three components in an isolated directory using local-asset flags.",
+        "All three downloaded macOS binaries pass codesign --verify --strict. This verifies embedded signatures, not notarization policy or every platform."
+      ],
+      "remaining": [
+        "Online update/proxy/custom-CA/offline staging behavior, interruption recovery and full platform-specific signature/notarization acceptance are not established by this macOS offline install.",
+        "The current daily stable command was not overwritten by the isolated verification. Open preview pairing/CI fixes #1577/#1578 are outside this release."
+      ],
+      "evidence": [
+        "https://github.com/oxdingzg/miao/releases/tag/v0.3.14",
+        "https://github.com/oxdingzg/miao/actions/runs/40640751458",
+        "install",
+        "script/install-engine.sh",
+        "https://github.com/oxdingzg/miao/pull/1577"
+      ]
+    },
+    {
+      "code": "REL-03",
+      "result": "needs_upgrade_rollback_and_database_acceptance",
+      "observed": [
+        "PR #1577 builds/install-tests a preview CLI with retained TUI/engine. The default tmux startup has no TUI/engine overrides; process paths prove all three 0.3.14 components come from the same retained directory. Session listing/creation, Chinese composer rendering, input clearing and clean exit passed without a model request.",
+        "Package typecheck and 16 CLI tests pass; remote Rust TUI has 186 passing tests plus fmt/clippy. Rejecting a 0.3.13 TUI during preflight preserves the existing preview link.",
+        "Published v0.3.14 assets and an installed feature preview are separately recorded; no unpublished PR is represented as part of the official release."
+      ],
+      "remaining": [
+        "Actual published-asset upgrade/downgrade/re-upgrade and database compatibility checks remain open; existence of miao.prev is not a completed rollback exercise.",
+        "The pairing changes remain open PR #1577 and are not part of v0.3.14. Other-platform preview integration has not been manually exercised."
+      ],
+      "evidence": [
+        "script/install-local.sh",
+        "https://github.com/oxdingzg/miao/pull/1577",
+        "https://github.com/oxdingzg/miao/releases/tag/v0.3.14"
+      ]
+    }
+  ]
+}

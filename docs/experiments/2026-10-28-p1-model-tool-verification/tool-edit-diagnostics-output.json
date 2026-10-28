@@ -1,0 +1,135 @@
+{
+  "reference_commit": "4f49325f7d5f6eebd3a8787f393410519bf157dd",
+  "date": "2026-10-28",
+  "scope": "TOOL-02, TOOL-04 and TOOL-05 offline verification; no current live-client or cross-platform acceptance is inferred.",
+  "tests": {
+    "passed": 34,
+    "failed": 0,
+    "ignored": 1,
+    "ignored_test": "real_rust_analyzer_observes_edited_document",
+    "evidence": "checks-tool-edit.txt"
+  },
+  "items": [
+    {
+      "code": "TOOL-02",
+      "result": "needs_product_acceptance",
+      "criteria": [
+        {
+          "requirement": "Reject stale revisions and preserve multi-file patch atomicity",
+          "result": "verified_offline",
+          "evidence": [
+            "crates/miao-engine/tests/mutations.rs:216",
+            "crates/miao-engine/tests/mutations.rs:271",
+            "crates/miao-engine/tests/stale_edit.rs:82",
+            "crates/miao-engine/tests/apply_patch.rs:124",
+            "crates/miao-engine/tests/apply_patch.rs:156"
+          ]
+        },
+        {
+          "requirement": "Preserve BOM, EOL, Unicode and unchanged bytes across large files, renames and deletes",
+          "result": "partial",
+          "evidence": [
+            "crates/miao-engine/tests/apply_patch.rs:177",
+            "crates/miao-engine/tests/mutations.rs:242",
+            "crates/miao-engine/src/file_mutation.rs",
+            "crates/miao-engine/src/patch.rs"
+          ],
+          "gap": "The executed cases cover BOM/CRLF, exact edits and transactional add/update/delete. A complete large-file, rename/delete and cross-platform Unicode matrix remains unverified."
+        },
+        {
+          "requirement": "Record implementation and current real-client acceptance",
+          "result": "partial",
+          "gap": "The exact-main offline receipts are retained. Current compiled-client and Windows mutation acceptance remain open."
+        }
+      ]
+    },
+    {
+      "code": "TOOL-04",
+      "result": "needs_product_acceptance",
+      "criteria": [
+        {
+          "requirement": "Warm LSP on reads and refresh diagnostics after edits",
+          "result": "verified_offline",
+          "evidence": [
+            "crates/miao-engine/tests/lsp.rs:391",
+            "crates/miao-engine/tests/lsp.rs:559",
+            "packages/miao/test/engine/native-lsp-tools.test.ts"
+          ]
+        },
+        {
+          "requirement": "Expose diagnostic document versions and stale state",
+          "result": "verified_offline",
+          "evidence": [
+            "crates/miao-engine/tests/lsp.rs:440",
+            "crates/miao-engine/tests/lsp.rs:472",
+            "crates/miao-engine/src/lsp.rs"
+          ]
+        },
+        {
+          "requirement": "Connect verification commands to the product repair loop and report required checks honestly",
+          "result": "partial",
+          "evidence": [
+            "crates/miao-engine/src/runtime.rs:3007",
+            "crates/miao-engine/src/runtime.rs:3077",
+            "packages/miao/src/engine/client.ts:294"
+          ],
+          "gap": "The verification path exists, but this batch does not execute a current compiled-client edit/diagnose/fix/verify cycle."
+        },
+        {
+          "requirement": "Record real-server/client evidence for the applicable version",
+          "result": "partial",
+          "historical_prs": [
+            1308,
+            1343
+          ],
+          "gap": "Historical real-server evidence is distinct from this offline fixture run. The real rust-analyzer test is ignored by default and was not executed in this batch."
+        }
+      ]
+    },
+    {
+      "code": "TOOL-05",
+      "result": "needs_work",
+      "criteria": [
+        {
+          "requirement": "Bound shell/search/web/MCP/JSON/image outputs, timeouts and long lines",
+          "result": "partial",
+          "evidence": [
+            "crates/miao-engine/src/process.rs:34",
+            "crates/miao-engine/src/process.rs:674",
+            "crates/miao-engine/src/search.rs:267",
+            "crates/miao-engine/src/web.rs:14",
+            "crates/miao-engine/src/web.rs:15",
+            "crates/miao-engine/src/mcp.rs"
+          ],
+          "gap": "Process and web bounds are explicit and web fixtures pass. A unified per-output-kind matrix, including MCP, JSON and image paths, is still required."
+        },
+        {
+          "requirement": "Keep bounded previews with original output available by handle and intact UTF-8 boundaries",
+          "result": "partial",
+          "evidence": [
+            "crates/miao-engine/src/runtime.rs:3857",
+            "crates/miao-engine/src/runtime.rs:3869",
+            "crates/miao-engine/src/process.rs:674",
+            "crates/miao-engine/src/process.rs:686",
+            "crates/miao-engine/src/web.rs:418"
+          ],
+          "gap": "Archived tool-result windows do not by themselves prove retention of process bytes already dropped by the process runner. Native process output truncates bytes before lossy UTF-8 decoding; a boundary test and an original-output retention contract are needed."
+        },
+        {
+          "requirement": "Keep infinite output and malicious responses within memory bounds",
+          "result": "partial",
+          "evidence": [
+            "crates/miao-engine/tests/web.rs:85",
+            "crates/miao-engine/tests/output_guard.rs"
+          ],
+          "gap": "The stream-loop guard and bounded web behavior are covered. No all-channel hostile-output RSS/FD stress curve is supplied by these tests."
+        },
+        {
+          "requirement": "Record product and benefit acceptance",
+          "result": "open",
+          "gap": "No universal original-output retention or memory-benefit acceptance is claimed."
+        }
+      ]
+    }
+  ]
+}
