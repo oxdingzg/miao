@@ -21,6 +21,7 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 - **engine**: derive LSP servers from the config plan instead of a temp file (#1557) (`fe78fd6baa`)
 
 ### Fixed
+- **tui**: assert the sound path with an absolute path on every platform (#1604) (`4134fea9f3`)
 - **tui**: start the Rust TUI through the product engine plan (#1588) (`23251db1be`)
 - **engine**: retry a failed turn instead of spending its window (#1591) (`8cac456e63`)
 - **cli**: keep explicit project startup on the lazy TUI path (#1583) (`3f509f6ca2`)
