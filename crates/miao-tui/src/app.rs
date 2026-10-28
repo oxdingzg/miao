@@ -425,6 +425,7 @@ impl App {
             AppEvent::ActionFailed(message) => {
                 self.shell.composer.notice = Some(message);
             }
+            AppEvent::Notice(message) => self.notice(&message),
             AppEvent::PromptFailed {
                 text,
                 attachments,

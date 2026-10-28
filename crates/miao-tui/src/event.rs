@@ -56,6 +56,9 @@ pub enum AppEvent {
     /// A control action (cancel, approve, answer) the engine refused. Shown as
     /// a composer notice; it never ends the transport.
     ActionFailed(String),
+    /// Something the user should know that is not a failure, such as the engine
+    /// reloading its configuration. Shown as a composer notice.
+    Notice(String),
     /// A prompt the engine refused. The UI puts `text` and its attachments
     /// back in the composer so the draft is never lost.
     PromptFailed {
