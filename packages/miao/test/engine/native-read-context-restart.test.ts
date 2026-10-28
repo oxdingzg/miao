@@ -101,14 +101,20 @@ test.skipIf(!binary)(
       await Bun.write(instruction, "NESTED_RULE_AFTER_CRASH\n")
       const client = EngineClient.start(options)
       const finished = Promise.withResolvers<void>()
+      const runs = new Set<string>()
       client.onEvent((event) => {
-        if (event.kind === "run.finished") finished.resolve()
+        if (event.session_id !== session || typeof event.data !== "object" || event.data === null) return
+        if (!("run_id" in event.data) || typeof event.data.run_id !== "string") return
+        if (event.kind === "run.started") runs.add(event.data.run_id)
+        if (event.kind === "run.finished" && runs.has(event.data.run_id)) finished.resolve()
       })
       try {
-        await client.request("snapshot", { session_id: session })
+        const snapshot = (await client.request("snapshot", { session_id: session })) as { cursor: number }
+        expect(snapshot.cursor).toBeGreaterThan(0)
         // Opening/read-only access is not authority to retry unfinished provider work.
         expect(bodies).toHaveLength(2)
-        await client.subscribe(session)
+        // Replayed completion of the interrupted run is not this continuation.
+        await client.subscribe(session, snapshot.cursor)
         await client.admit({ session_id: session, input_id: "second", prompt: "Continue explicitly" })
         await Promise.race([
           finished.promise,
