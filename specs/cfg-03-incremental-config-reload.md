@@ -169,4 +169,15 @@
    失败后恢复原清单不推进 generation"。
 5. **context / hooks / skills / references**：各自载体的换代。
 6. **standalone 轮询**：`--config-dir` 模式的 mtime 观察。
-7. **宿主接线**：TS 与 Rust TUI 在配置写入后调用 `config_reload`，并把报告显示为一行状态。
+7. **宿主可见性（引擎侧与 Rust TUI 已实现）**：`Runtime` 增加 `config_changes` 广播，
+   只有真正改动了至少一节的 reload 才发布，内容与 `config_reload` 的回复相同；stdio 适配器
+   把它转成 `{"method":"config","params":report}` 通知发给每个订阅者（配置是进程级、不分
+   Session），HTTP SSE 仍按 Session 分片、不转发，托管宿主自己调用 `config_reload` 时本来就有
+   回复。这样宿主不必是触发者也能显示变化：standalone 轮询、另一个客户端或 CLI 触发的 reload
+   都会到达。轮询读到畸形文件时（引擎自己拒绝的 reload）同一条通道发
+   `{"changed":[],"error":"..."}`，否则这类失败只留在引擎 stderr 里。Rust TUI 在
+   `TransportEvent::Config` 上把它显示成 composer 的一行
+   `configuration reloaded: <节>` 或 `configuration reload failed: <错误>`。TUI 用
+   `--config-dir` 启动，引擎自己的轮询已经完成换入，
+   所以宿主侧**不需要**再调 `config_reload`；它不是触发器，只是观察者。TS 宿主在退役中，
+   本次不改：它把未知 method 忽略，行为不变，需要显示时再补同样的处理。

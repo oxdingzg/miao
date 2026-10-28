@@ -73,6 +73,12 @@ impl Shell {
         &self.transcript.draft
     }
 
+    /// The projection behind the rendered lines, for actions that need the
+    /// structured transcript rather than its painted form.
+    pub fn transcript(&self) -> Option<&Transcript> {
+        self.last.as_ref()
+    }
+
     /// The text of the newest assistant reply, for the copy-to-clipboard
     /// action. Tool calls and reasoning are not part of a reply.
     pub fn last_response(&self) -> Option<String> {
@@ -463,7 +469,7 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>
     let mut lines = Vec::new();
     for entry in &transcript.entries {
         match entry {
-            Entry::User { text } => {
+            Entry::User { text, .. } => {
                 for line in text.lines() {
                     lines.push(Line::from(vec![
                         Span::styled("❯ ", Style::new().fg(palette.primary)),
@@ -965,7 +971,11 @@ fn render_confirm(
                 if confirm.confirmed { idle } else { selected },
             ),
             Span::styled(
-                format!("{} delete", if confirm.confirmed { "▸" } else { " " }),
+                format!(
+                    "{} {}",
+                    if confirm.confirmed { "▸" } else { " " },
+                    confirm.action_label()
+                ),
                 if confirm.confirmed {
                     Style::new().fg(palette.error).add_modifier(Modifier::BOLD)
                 } else {
@@ -1331,6 +1341,7 @@ mod tests {
                 },
                 Entry::User {
                     text: "question".into(),
+                    seq: 3,
                 },
                 Entry::Assistant {
                     agent: None,
