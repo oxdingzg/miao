@@ -1314,6 +1314,46 @@ impl Tools {
         })
     }
 
+    /// A matching diagnostic receipt supplies its original prepared resource;
+    /// replay must not require the original file to still exist. Normal policy
+    /// evaluation still runs, and the live executor revalidates Prepared paths.
+    pub(crate) fn prepare_recorded_read(
+        &self,
+        input: Value,
+        read: &Value,
+    ) -> Result<Prepared, ToolError> {
+        serde_json::from_value::<ReadInput>(input.clone()).map_err(|_| ToolError::InvalidInput)?;
+        let path = read["path"].as_str().ok_or(ToolError::InvalidInput)?;
+        let relative = Path::new(path);
+        if read["location"] != self.location()
+            || path.is_empty()
+            || relative
+                .components()
+                .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        {
+            return Err(ToolError::OutsideWorkspace);
+        }
+        let resource = relative
+            .components()
+            .map(|part| part.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+        let resolved = self.root.join(&resource);
+        if self.protected.contains(&resolved) {
+            return Err(ToolError::ProtectedResource);
+        }
+        Ok(Prepared {
+            name: "read_file".into(),
+            input,
+            path: resolved,
+            resource,
+            targets: Vec::new(),
+            access: Access::Read,
+            batchable_read: false,
+            select: None,
+        })
+    }
+
     /// A settled rejection, in the model's own vocabulary. A bare "invalid
     /// tool input" leaves nothing to correct, so a model that dropped its
     /// arguments — glm-5.3-flash sends `{}` — resends the same call. Name the
@@ -1660,7 +1700,17 @@ impl Tools {
             .await
             .map_err(|_| ToolError::Io(std::io::Error::other("search worker failed")))?;
         }
-        self.execute(&prepared.name, prepared.input, cancel).await
+        let read = (prepared.name == "read_file")
+            .then(|| prepared.path.strip_prefix(&self.root).ok())
+            .flatten()
+            .map(|path| json!({"location": self.location(), "path":path.components().map(|part| part.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")}));
+        let mut output = self.execute(&prepared.name, prepared.input, cancel).await?;
+        if let Some(read) = read {
+            // Internal settlement metadata, removed before model history. This
+            // captures the prepared path after a plugin's argument rewrite.
+            output["_instruction_read"] = read;
+        }
+        Ok(output)
     }
 
     fn delegation_definitions(&self) -> Vec<ToolDefinition> {
@@ -2088,4 +2138,72 @@ fn report_diagnostics(value: &Value) -> Option<Value> {
         .take(20)
         .collect();
     (!report.is_empty()).then(|| json!(report))
+}
+
+#[cfg(test)]
+mod recorded_read_tests {
+    use super::{ToolError, Tools};
+    use crate::permission::{Config, Decision, Policy, Rule};
+    use serde_json::json;
+    use tokio_util::sync::CancellationToken;
+
+    #[tokio::test]
+    async fn a_recorded_read_preserves_policy_and_cannot_bypass_the_live_reader() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = Tools::new(dir.path()).await.unwrap();
+        let prepared = tools
+            .prepare_recorded_read(
+                json!({"path":"nested/file.txt"}),
+                &json!({"location":tools.location(),"path":"nested/file.txt"}),
+            )
+            .unwrap();
+        assert_eq!(prepared.resource(), "nested/file.txt");
+        let policy = Policy::new(Config {
+            rules: vec![Rule {
+                tool: "read_file".into(),
+                path: "nested/file.txt".into(),
+                decision: Decision::Deny,
+            }],
+            ..Config::default()
+        })
+        .unwrap();
+        assert_eq!(
+            policy.evaluate(prepared.name(), prepared.resource(), prepared.access()),
+            Decision::Deny
+        );
+        assert!(
+            matches!(tools.execute_prepared(prepared, &Policy::new(Config::default()).unwrap(), CancellationToken::new(), None).await, Err(ToolError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_recorded_read_rejects_foreign_locations_traversal_and_protected_resources() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = Tools::new(dir.path()).await.unwrap();
+        let protected = std::path::Path::new(tools.location()).join("private.txt");
+        let tools = tools.with_protected_resource(&protected);
+        for path in ["../escape", "/absolute", ""] {
+            assert!(matches!(
+                tools.prepare_recorded_read(
+                    json!({"path":path}),
+                    &json!({"location":tools.location(),"path":path})
+                ),
+                Err(ToolError::OutsideWorkspace)
+            ));
+        }
+        assert!(matches!(
+            tools.prepare_recorded_read(
+                json!({"path":"file.txt"}),
+                &json!({"location":"another-location","path":"file.txt"})
+            ),
+            Err(ToolError::OutsideWorkspace)
+        ));
+        assert!(matches!(
+            tools.prepare_recorded_read(
+                json!({"path":"private.txt"}),
+                &json!({"location":tools.location(),"path":"private.txt"})
+            ),
+            Err(ToolError::ProtectedResource)
+        ));
+    }
 }

@@ -1553,11 +1553,32 @@ async fn execute(
                 .map_err(|error| Error::Invalid(error.to_string()))?,
             None => selected_provider,
         };
+        let (observed, paths) = inner
+            .store
+            .instruction_reads(session, inner.tools.location())
+            .await?;
+        let reads = match crate::context::read_sources(
+            &inner.tools,
+            &observed,
+            &paths,
+            cancel.child_token(),
+        )
+        .await
+        {
+            Ok(reads) => reads,
+            Err(ToolError::Interrupted) => return Ok(()),
+            Err(error) => {
+                return Err(Error::Invalid(format!(
+                    "instruction discovery failed: {error}"
+                )))
+            }
+        };
         let mut bundle = match crate::context::assemble_for_agent(
             &inner.tools,
             &policy,
             cancel.child_token(),
             manifest,
+            &reads,
         )
         .await
         {
@@ -1613,7 +1634,7 @@ async fn execute(
             .record(
                 session,
                 crate::events::Lifecycle::InstructionsLoaded.name(),
-                json!({"run_id":run,"sources":sources}),
+                json!({"run_id":run,"sources":sources,"location":inner.tools.location()}),
             )
             .await?;
         let (mut history, state) = inner.store.selected_input(session).await?;
@@ -2268,7 +2289,14 @@ command: None,
                     if let Some(reason) = plugin_before {
                         (json!({"error":reason}), true)
                     } else {
-                        let prepared = inner.tools.prepare(name, block_input).await;
+                        let recorded_read = match &inner.tool_replay {
+                            Some(replay) => replay.read_receipt(name, &block_input).await?,
+                            None => None,
+                        };
+                        let prepared = match recorded_read {
+                            Some(read) => inner.tools.prepare_recorded_read(block_input, &read),
+                            None => inner.tools.prepare(name, block_input).await,
+                        };
                         match prepared {
                             Err(error) => (
                                 json!({"error":inner.tools.rejection(name, &block["input"], &error)}),
