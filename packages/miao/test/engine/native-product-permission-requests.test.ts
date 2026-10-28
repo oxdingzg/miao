@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
 import { EngineClient, type EngineEvent } from "@/engine/client"
+import { ProductPermissionRequest } from "@/engine/product-permission-request"
 import { tmpdir } from "../fixture/fixture"
 
 const binary = process.env.MIAO_ENGINE_BIN
@@ -13,7 +14,11 @@ test.skipIf(!binary)(
   async () => {
     if (!binary) throw new Error("native engine required")
     const capabilities: unknown = await Bun.$`${binary} --capabilities`.json()
-    expect(capabilities).toMatchObject({ product_permission_replies: 1, product_permission_cancel: 1 })
+    expect(capabilities).toMatchObject({
+      product_permission_replies: 1,
+      product_permission_cancel: 1,
+      product_permission_diagnostics: 1,
+    })
     await using tmp = await tmpdir()
     const provider = Bun.serve({
       hostname: "127.0.0.1",
@@ -119,9 +124,20 @@ test.skipIf(!binary)(
             { source: "native", rule: { action: "read", resource: "public", effect: "allow" } },
           ])
           expect((await admit({ request_id: "remembered", facts })).state).toBe("allowed")
-          expect((await admit({ request_id: "denied", facts: { ...facts, resources: ["secret"] } })).state).toBe(
-            "denied",
-          )
+          const blocked = await admit({ request_id: "denied", facts: { ...facts, resources: ["secret"] } })
+          expect(blocked.state).toBe("denied")
+          expect(blocked).toMatchObject({
+            reason: "policy_denied",
+            denial: {
+              effect: "deny",
+              authority_revision: blocked.authority_revision,
+            },
+          })
+          expect(ProductPermissionRequest.parse(blocked, call.sessionID)?.denial?.rules).toContainEqual({
+            action: "read",
+            resource: "secret",
+            effect: "deny",
+          })
           const corrected = await admit({ request_id: "corrected", facts: { ...facts, resources: ["correctable"] } })
           const declined = await admit({
             request_id: "declined-peer",

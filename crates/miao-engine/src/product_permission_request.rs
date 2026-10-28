@@ -74,6 +74,8 @@ pub struct Record {
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feedback: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub denial: Option<Outcome>,
 }
 
 #[derive(Clone)]
@@ -133,8 +135,9 @@ impl Store {
             let record = Record {
                 id: input.request_id.clone(), source: context.source.clone(), workspace: context.workspace.clone(),
                 expires_at_ms: input.timeout_ms.map(|timeout| now.saturating_add(timeout)), request: input,
-                input_hash: hash, authority_revision: outcome.authority_revision, created_at_ms: now, state,
+                input_hash: hash, authority_revision: outcome.authority_revision.clone(), created_at_ms: now, state,
                 reply: None, reason: if auto { Some("auto_allowed".into()) } else { (state == State::Denied).then(|| "policy_denied".into()) }, feedback: None,
+                denial: (outcome.effect == Decision::Deny).then_some(outcome),
             };
             transaction.execute("INSERT INTO engine_product_permission_request(id,session_id,run_id,call_id,workspace,owner,state,data) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![record.id, context.source.session_id, context.authority.run_id, format!("{}/{}",context.authority.run_id,context.source.call_id), context.workspace,context.owner,state_name(state),serde_json::to_string(&record)?])?;
             if state == State::Pending { append(transaction, &context.source.session_id, "product.permission.requested", serde_json::to_value(&record)?)?; }
@@ -224,9 +227,15 @@ impl Store {
                 if expire(transaction, &mut record)? {
                     return Ok(record);
                 }
+                let outcome = if response.reply == Reply::Reject {
+                    None
+                } else {
+                    Some(evaluate(transaction, &context, &record.request.facts)?)
+                };
                 let denied = response.reply == Reply::Reject
-                    || evaluate(transaction, &context, &record.request.facts)?.effect
-                        == Decision::Deny;
+                    || outcome
+                        .as_ref()
+                        .is_some_and(|outcome| outcome.effect == Decision::Deny);
                 if !denied && response.reply == Reply::Always {
                     for resource in record.request.save.as_deref().unwrap_or_default() {
                         crate::permission_patterns::put_in(
@@ -247,6 +256,7 @@ impl Store {
                 };
                 record.reply = Some(response.reply);
                 record.feedback = feedback;
+                record.denial = outcome.filter(|outcome| outcome.effect == Decision::Deny);
                 record.reason = denied.then(|| {
                     match response.reply {
                         Reply::Reject if record.feedback.is_some() => "user_corrected",
