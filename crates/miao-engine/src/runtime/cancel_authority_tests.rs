@@ -35,10 +35,12 @@ struct Fixture {
 }
 
 async fn running() -> Fixture {
+    running_in("engine.db").await
+}
+
+async fn running_in(name: &str) -> Fixture {
     let directory = tempfile::tempdir().unwrap();
-    let store = Store::open(directory.path().join("engine.db"))
-        .await
-        .unwrap();
+    let store = Store::open(directory.path().join(name)).await.unwrap();
     let runtime = Runtime::with_policy(
         store.clone(),
         Arc::new(Caller),
@@ -231,6 +233,239 @@ async fn waiting_for_the_store_writer_does_not_capture_cancellation_authority() 
         unblocked,
         "cancel waited on unrelated database writer contention"
     );
+}
+
+async fn shared_connection(fixture: &Fixture) -> rusqlite::Connection {
+    let path = fixture.directory.path().join("permissions.db");
+    let authority = crate::permission_project::Authority::open(&path)
+        .await
+        .unwrap();
+    authority
+        .project("fixture".into())
+        .unwrap()
+        .snapshot()
+        .await
+        .unwrap();
+    let connection = rusqlite::Connection::open(path).unwrap();
+    connection.busy_timeout(Duration::from_secs(2)).unwrap();
+    connection
+        .execute_batch("CREATE TABLE fixture_decision(value TEXT)")
+        .unwrap();
+    connection
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shared_root_commit_locks_the_real_source_and_never_writes_it() {
+    let fixture = running().await;
+    let mut connection = shared_connection(&fixture).await;
+    let context = fixture
+        .runtime
+        .capture_permission_source(&fixture.runtime.controller(), &fixture.source)
+        .unwrap();
+    let (entered, started) = oneshot::channel();
+    let (release, held) = std::sync::mpsc::channel();
+    let writer = tokio::task::spawn_blocking(move || {
+        let result = context.with_root_transaction(&mut connection, |transaction| {
+            transaction.execute("INSERT INTO fixture_decision VALUES('allow')", [])?;
+            let _ = entered.send(());
+            held.recv().unwrap();
+            Ok(())
+        });
+        (connection, result)
+    });
+    started.await.unwrap();
+    let source = rusqlite::Connection::open(fixture.store.path()).unwrap();
+    assert!(
+        source.execute_batch("BEGIN IMMEDIATE").is_err(),
+        "attached source did not hold a writer fence"
+    );
+    release.send(()).unwrap();
+    let (connection, result) = writer.await.unwrap();
+    result.unwrap();
+    assert_eq!(
+        connection
+            .query_row("SELECT COUNT(*) FROM fixture_decision", [], |row| row
+                .get::<_, u32>(0))
+            .unwrap(),
+        1
+    );
+    source.execute_batch("BEGIN IMMEDIATE; ROLLBACK;").unwrap();
+    drop(connection);
+    drop(source);
+    fixture.runtime.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shared_root_uses_the_exact_unicode_source_filename_without_creating_another_database() {
+    let fixture = running_in("来源 %#&.db").await;
+    let connection = shared_connection(&fixture).await;
+    let authority =
+        crate::permission_project::Authority::open(fixture.directory.path().join("permissions.db"))
+            .await
+            .unwrap();
+    let source = fixture
+        .runtime
+        .capture_permission_source(&fixture.runtime.controller(), &fixture.source)
+        .unwrap();
+    authority
+        .with_permission_source(&source, |transaction| {
+            transaction.execute("INSERT INTO fixture_decision VALUES('exact source')", [])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        connection
+            .query_row("SELECT COUNT(*) FROM fixture_decision", [], |row| row
+                .get::<_, u32>(0))
+            .unwrap(),
+        1
+    );
+    assert!(fixture.store.path().is_file());
+    drop(connection);
+    fixture.runtime.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shared_root_refuses_source_writes_rolls_back_and_detaches_on_failure() {
+    let fixture = running().await;
+    let mut connection = shared_connection(&fixture).await;
+    let context = fixture
+        .runtime
+        .capture_permission_source(&fixture.runtime.controller(), &fixture.source)
+        .unwrap();
+    for statement in [
+        "UPDATE permission_source.engine_lease SET epoch=epoch+1",
+        "PRAGMA permission_source.user_version=1",
+        "COMMIT",
+        "SAVEPOINT escaped",
+        "DETACH DATABASE permission_source",
+        "ATTACH DATABASE ':memory:' AS escaped",
+    ] {
+        assert!(
+            context
+                .with_root_transaction(&mut connection, |transaction| {
+                    transaction.execute("INSERT INTO fixture_decision VALUES('allow')", [])?;
+                    transaction.execute_batch(statement)?;
+                    Ok(())
+                })
+                .is_err(),
+            "unguarded SQL was accepted: {statement}"
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM fixture_decision", [], |row| row
+                    .get::<_, u32>(0))
+                .unwrap(),
+            0
+        );
+    }
+    let databases = connection
+        .prepare("PRAGMA database_list")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(!databases
+        .iter()
+        .any(|database| database == "permission_source"));
+    context
+        .with_root_transaction(&mut connection, |transaction| {
+            transaction.execute(
+                "INSERT INTO fixture_decision VALUES('allowed after rollback')",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    drop(connection);
+    fixture.runtime.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shared_root_refuses_an_epoch_that_no_longer_owns_its_dispatched_source() {
+    let fixture = running().await;
+    let mut connection = shared_connection(&fixture).await;
+    let context = fixture
+        .runtime
+        .capture_permission_source(&fixture.runtime.controller(), &fixture.source)
+        .unwrap();
+    fixture
+        .store
+        .call(|source| {
+            source.execute(
+                "UPDATE engine_lease SET epoch=epoch+1 WHERE session_id='s'",
+                [],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    assert!(context
+        .with_root_transaction(&mut connection, |transaction| {
+            transaction.execute("INSERT INTO fixture_decision VALUES('stale allow')", [])?;
+            Ok(())
+        })
+        .is_err());
+    assert_eq!(
+        connection
+            .query_row("SELECT COUNT(*) FROM fixture_decision", [], |row| row
+                .get::<_, u32>(0))
+            .unwrap(),
+        0
+    );
+    drop(connection);
+    fixture.runtime.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shared_root_source_cancellation_rolls_back_before_acknowledgement() {
+    let fixture = running().await;
+    let mut connection = shared_connection(&fixture).await;
+    let source = fixture
+        .runtime
+        .capture_permission_source(&fixture.runtime.controller(), &fixture.source)
+        .unwrap();
+    let cancelled = source.context.authority.cancel.clone();
+    let (entered, started) = oneshot::channel();
+    let (release, held) = std::sync::mpsc::channel();
+    let writer = tokio::task::spawn_blocking(move || {
+        let result = source.with_root_transaction(&mut connection, |transaction| {
+            transaction.execute("INSERT INTO fixture_decision VALUES('allow')", [])?;
+            let _ = entered.send(());
+            held.recv().unwrap();
+            Ok(())
+        });
+        (connection, result)
+    });
+    started.await.unwrap();
+    let runtime = fixture.runtime.clone();
+    let mut acknowledgement = tokio::spawn(async move { runtime.cancel("s").await });
+    cancelled.cancelled().await;
+    let early = tokio::time::timeout(Duration::from_millis(100), &mut acknowledgement).await;
+    let waited = early.is_err();
+    release.send(()).unwrap();
+    let (connection, result) = writer.await.unwrap();
+    assert!(result.is_err());
+    let accepted = match early {
+        Ok(result) => result.unwrap().unwrap(),
+        Err(_) => acknowledgement.await.unwrap().unwrap(),
+    };
+    assert!(accepted);
+    assert!(
+        waited,
+        "cancel acknowledgement overtook a shared authorization transaction"
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT COUNT(*) FROM fixture_decision", [], |row| row
+                .get::<_, u32>(0))
+            .unwrap(),
+        0
+    );
+    drop(connection);
+    fixture.runtime.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

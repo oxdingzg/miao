@@ -67,8 +67,20 @@ pub(crate) fn source_active(
     call: &str,
     workspace: &str,
 ) -> Result<bool, Error> {
+    source_active_in(connection, session, run, call, workspace, false)
+}
+
+pub(crate) fn source_active_in(
+    connection: &Connection,
+    session: &str,
+    run: &str,
+    call: &str,
+    workspace: &str,
+    attached: bool,
+) -> Result<bool, Error> {
+    let schema = if attached { "permission_source." } else { "" };
     Ok(connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM engine_tool t JOIN engine_run r ON r.id=t.run_id JOIN engine_location l ON l.session_id=r.session_id JOIN engine_lease e ON e.session_id=r.session_id WHERE t.id=?1 AND t.state='dispatched' AND r.id=?2 AND r.session_id=?3 AND r.state='running' AND l.root=?4 AND r.lease_epoch=e.epoch AND e.owner_pid=?5)",
+        &format!("SELECT EXISTS(SELECT 1 FROM {schema}engine_tool t JOIN {schema}engine_run r ON r.id=t.run_id JOIN {schema}engine_location l ON l.session_id=r.session_id JOIN {schema}engine_lease e ON e.session_id=r.session_id WHERE t.id=?1 AND t.state='dispatched' AND r.id=?2 AND r.session_id=?3 AND r.state='running' AND l.root=?4 AND r.lease_epoch=e.epoch AND e.owner_pid=?5)"),
         params![format!("{run}/{call}"), run, session, workspace, std::process::id()],
         |row| row.get(0),
     )?)
