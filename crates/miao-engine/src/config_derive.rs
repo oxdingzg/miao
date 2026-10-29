@@ -7,7 +7,7 @@
 //! `tests/fixtures/config-golden`, which the TypeScript suite also reads: two
 //! implementations, one set of samples.
 
-use crate::{config_scope, lsp, permission};
+use crate::{config_scope, lsp, mcp, permission};
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -266,6 +266,40 @@ pub enum LspOrigin {
     Directory(PathBuf),
 }
 
+/// Where startup read the MCP server list from. Only the host-supplied
+/// manifest exists today, but a reload re-reads exactly the file the operator
+/// named rather than any caller-supplied snapshot.
+#[derive(Clone)]
+pub enum McpOrigin {
+    /// `--mcp-config`: a host-materialized server manifest outside the
+    /// workspace.
+    Manifest(PathBuf),
+}
+
+impl McpOrigin {
+    pub fn derive(&self) -> Result<Vec<mcp::Config>, String> {
+        match self {
+            McpOrigin::Manifest(path) => {
+                let bytes =
+                    std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
+                if bytes.len() > 65536 {
+                    return Err("MCP config exceeds 64 KiB".into());
+                }
+                serde_json::from_slice(&bytes).map_err(|error| {
+                    format!("{}: invalid MCP host config: {error}", path.display())
+                })
+            }
+        }
+    }
+
+    /// The files a reload would read, for a cheap change check.
+    pub fn files(&self) -> Vec<PathBuf> {
+        match self {
+            McpOrigin::Manifest(path) => vec![path.clone()],
+        }
+    }
+}
+
 impl LspOrigin {
     pub fn derive(&self) -> Result<Vec<lsp::Config>, String> {
         match self {
@@ -281,6 +315,92 @@ impl LspOrigin {
             LspOrigin::Directory(directory) => lsp_from_documents(&load(std::slice::from_ref(
                 &Source::Dir(directory.clone()),
             ))?),
+        }
+    }
+
+    /// The files a reload would read, for a cheap change check. Inline
+    /// `Content` sources have no file and never change on disk.
+    pub fn files(&self) -> Vec<PathBuf> {
+        match self {
+            LspOrigin::Manifest(path) => vec![path.clone()],
+            LspOrigin::Directory(directory) => files_in(directory),
+            LspOrigin::Sources(sources) => sources
+                .iter()
+                .flat_map(|source| match source {
+                    Source::Dir(directory) => files_in(directory),
+                    Source::File(path) => vec![path.clone()],
+                    Source::Content(_) => Vec::new(),
+                })
+                .collect(),
+        }
+    }
+}
+
+fn files_in(directory: &std::path::Path) -> Vec<PathBuf> {
+    config_scope::FILE_NAMES
+        .iter()
+        .map(|name| directory.join(name))
+        .collect()
+}
+
+/// Where the engine derives its base permission policy from. Kept for the
+/// process lifetime so a reload derives exactly the way startup did instead of
+/// guessing at a source the operator never named.
+#[derive(Clone)]
+pub enum PolicyOrigin {
+    /// `--policy`: a host-materialized permission config.
+    File(PathBuf),
+    /// `--config-sources`: the host's ordered source plan.
+    Sources(Vec<Source>),
+    /// `--config-dir`: one directory, the standalone entry.
+    Directory(PathBuf),
+    /// No operator source: the entry's own default. `acp` selects which.
+    Entry { acp: bool },
+}
+
+impl PolicyOrigin {
+    /// Re-derive the policy from the sources. `mode` is the operator's
+    /// `--mode` override, applied last because it wins over both the entry
+    /// default and a policy file. The sandbox switch is re-read from the
+    /// environment, which cannot change inside a running process.
+    pub fn derive(&self, mode: Option<permission::Mode>) -> Result<permission::Config, String> {
+        let sandbox = std::env::var("MIAO_SANDBOX").ok();
+        let mut config = match self {
+            PolicyOrigin::File(path) => {
+                let bytes =
+                    std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
+                if bytes.len() > 65536 {
+                    return Err("permission config exceeds 64 KiB".into());
+                }
+                serde_json::from_slice(&bytes)
+                    .map_err(|error| format!("{}: {error}", path.display()))?
+            }
+            PolicyOrigin::Sources(sources) => policy_from_sources(sources, sandbox.as_deref())?,
+            PolicyOrigin::Directory(directory) => {
+                policy_from_directory(directory, sandbox.as_deref())?
+            }
+            PolicyOrigin::Entry { acp } => permission::Config::for_entry(*acp),
+        };
+        if let Some(mode) = mode {
+            config.mode = mode;
+        }
+        Ok(config)
+    }
+
+    /// The files a reload would read, for a cheap change check.
+    pub fn files(&self) -> Vec<PathBuf> {
+        match self {
+            PolicyOrigin::File(path) => vec![path.clone()],
+            PolicyOrigin::Directory(directory) => files_in(directory),
+            PolicyOrigin::Sources(sources) => sources
+                .iter()
+                .flat_map(|source| match source {
+                    Source::Dir(directory) => files_in(directory),
+                    Source::File(path) => vec![path.clone()],
+                    Source::Content(_) => Vec::new(),
+                })
+                .collect(),
+            PolicyOrigin::Entry { .. } => Vec::new(),
         }
     }
 }
@@ -991,5 +1111,28 @@ mod tests {
         let missing = vec![Source::File(root.join("absent.json"))];
         assert!(load(&missing).is_err());
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn an_origin_names_the_files_a_reload_reads() {
+        let manifest = LspOrigin::Manifest(PathBuf::from("/host/lsp.json"));
+        assert_eq!(manifest.files(), vec![PathBuf::from("/host/lsp.json")]);
+
+        let directory = LspOrigin::Directory(PathBuf::from("/config"));
+        assert_eq!(directory.files().len(), config_scope::FILE_NAMES.len());
+        assert!(directory
+            .files()
+            .iter()
+            .all(|path| path.starts_with("/config")));
+
+        // Inline content has no file to watch and must not add a phantom path.
+        let sources = LspOrigin::Sources(vec![
+            Source::Dir(PathBuf::from("/config")),
+            Source::File(PathBuf::from("/project/miao.json")),
+            Source::Content("{}".to_string()),
+        ]);
+        let files = sources.files();
+        assert_eq!(files.len(), config_scope::FILE_NAMES.len() + 1);
+        assert_eq!(files.last(), Some(&PathBuf::from("/project/miao.json")));
     }
 }

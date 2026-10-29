@@ -199,7 +199,7 @@ async fn actual_product_cas_is_required_and_activation_restores_provider_context
     let available = database.snapshot_at("s", 1).await.unwrap();
     assert_eq!(available["assembled"], true);
     assert_eq!(available["available"], true);
-    let staged = database.revert_stage("s", 1).await.unwrap();
+    let staged = database.revert_stage("s", 1, true).await.unwrap();
     assert!(staged["created"]
         .as_array()
         .unwrap()

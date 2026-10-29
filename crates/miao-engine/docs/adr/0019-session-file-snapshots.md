@@ -62,6 +62,47 @@ leaves at most one intent to reconcile. On startup the engine reports staged
 reverts through the existing recovery surface rather than silently completing or
 discarding them.
 
+`RevertStage` takes `files: bool` (default `true`). A Session that never wrote a
+file has no snapshot at any boundary, and refusing its revert would make a pure
+conversation read-only; `files: false` stages the intent with an empty file set,
+so `commit` still rewinds history and nothing on disk is asserted about.
+
+### Preview
+
+`Command::RevertPreview { session_id, boundary_seq }` answers what a stage would
+change without changing anything: `{available, boundary_seq, snapshot_id,
+restore, remove, conflicts}`, or `{available: false, reason}` where `reason` is
+`no-location` or `no-file-snapshot`. A path is a **conflict** when its current
+on-disk content differs from the newest content the Session itself recorded for
+it — that is an edit the Session did not make, which a restore would overwrite,
+so a client must show it before confirming. A path whose disk content equals the
+Session's own last record is this Session's own work, which is the thing a revert
+exists to undo, and is not reported as a conflict. The preview refuses while a
+run is active, exactly like a stage.
+
+`snapshot` replies carry `reverted_count`, the number of soft-reverted rows a
+`unrevert` would restore. It is the durable signal a redo affordance reads:
+nothing else in the snapshot distinguishes "revert never happened" from
+"revert happened and hid nothing".
+
+### What undo can and cannot reverse
+
+The phases are deliberately asymmetric, and the client must state that rather
+than imply a full undo:
+
+| Action | Files | Conversation | Reversible by |
+| --- | --- | --- | --- |
+| `stage` | restored to the boundary | unchanged | `clear` |
+| `clear` | reversed to the pre-stage state | unchanged | — |
+| `commit` | unchanged since stage | rewound (soft) | `unrevert` |
+| `unrevert` | **not** re-applied | restored | — |
+
+So a TUI "undo" is stage-then-commit: it both moves files and rewinds history,
+and its redo (`unrevert`) brings the messages back but leaves the workspace as
+the revert left it. Shell commands, network calls, and any other external side
+effect a turn performed are outside every one of these phases and are never
+reversed; a confirm dialog says so.
+
 ### Invariants
 
 1. **Files are restored from the Session's own record, not from the host.**
@@ -98,8 +139,10 @@ discarding them.
    capture at the settled boundary, retention and pruning, staged-revert records.
 2. Runtime: capture hook next to compaction/agent application; `stage`/`clear`/
    `commit` with the file-set report; recovery reporting for a staged revert.
-3. Protocol: the three commands plus their event shapes; the snapshot record in
-   `snapshot` replies as available/unavailable with its boundary.
+3. Protocol: the three commands plus their event shapes, `revert_preview`, the
+   history-only `files: false` stage, `reverted_count` in `snapshot` replies, and
+   the snapshot record in `snapshot` replies as available/unavailable with its
+   boundary.
 4. Facade: `session.revert.stage/clear/commit` serve native placements; the
    product projection maps the new events onto its revert state.
 5. Tests: engine (capture/restore round trip, staged-clear symmetry, commit

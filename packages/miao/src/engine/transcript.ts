@@ -11,6 +11,8 @@ const Sequence = Schema.Finite.check(Schema.isInt(), Schema.isGreaterThanOrEqual
 const Snapshot = Schema.Struct({
   session_id: Schema.String,
   cursor: Sequence,
+  /** The projection's own size; absent on engines that predate the field. */
+  message_count: Schema.optional(Sequence),
   transfer_import: Schema.optional(Schema.NullOr(Schema.String)),
   active_run: Schema.optional(Schema.NullOr(Schema.String)),
   messages: Schema.Array(
@@ -30,6 +32,21 @@ const Snapshot = Schema.Struct({
   ),
 })
 const decodeSnapshot = Schema.decodeUnknownSync(Snapshot)
+
+/** A pre-0.3.8 engine returned at most `LIMIT 1001` messages, so a snapshot cut
+ * there holds exactly that many while the journal keeps commits past the last
+ * one. Only that engine generation needs the signature; an engine that reports
+ * its projection size is compared against it directly. */
+function cutAtLegacyLimit(snapshot: { messages: readonly { seq: number }[] }, events: readonly OpenCodeEvent[]) {
+  const cut = 1001
+  if (snapshot.messages.length !== cut) return false
+  const last = snapshot.messages[cut - 1].seq
+  return events.some((event) =>
+    event.type === "session.next.assistant.identity"
+      ? event.data.assistantSeq > last
+      : event.type === "session.next.prompt.admitted" && sequence(event) > last,
+  )
+}
 const encodeEvent = Schema.encodeSync(OpenCodeEvent)
 // Rendering drafts may contain explicit undefined optionals; JSON wire
 // encoding omits them before the canonical message codec decodes timestamps.
@@ -69,22 +86,24 @@ async function readTranscriptWithSeq(
   // `LIMIT 1001`, so a long Session's snapshot ends mid-history while its
   // journal keeps the rest. Rendering that read would silently drop every
   // message past the cut — the operator's own prompts included, which then
-  // look like the Session swallowed them. A snapshot that lands on the cut
-  // while the journal holds later commits is incomplete by construction.
-  const projectionCut = 1001
-  const lastVisible = snapshot.messages[projectionCut - 1]?.seq
-  if (
-    snapshot.messages.length >= projectionCut &&
-    lastVisible !== undefined &&
-    page.events.some(
-      (event) =>
-        (event.type === "session.next.assistant.identity" || event.type === "session.next.prompt.admitted") &&
-        sequence(event) > lastVisible,
-    )
-  )
+  // look like the Session swallowed them.
+  //
+  // An engine that reports the projection's own size settles the question
+  // outright: a shorter projection is truncated, a matching one is whole no
+  // matter how many messages a long Session holds. An older engine says
+  // nothing about its limit, so only the legacy signature is left: exactly the
+  // 1001 messages it could return, with the journal naming a later commit. The
+  // count alone is not the signature — every Session past 1000 messages has
+  // one, and refusing those refused the operator's own long Sessions.
+  const messageCount = snapshot.message_count
+  const truncated =
+    messageCount === undefined ? cutAtLegacyLimit(snapshot, page.events) : snapshot.messages.length !== messageCount
+  if (truncated)
     throw new EngineError(
       "engine_snapshot_truncated",
-      `native snapshot stops at message ${lastVisible} of ${snapshot.cursor}; the installed engine truncates long Session snapshots, update miao to 0.3.8 or newer`,
+      messageCount === undefined
+        ? `native snapshot stops at message ${snapshot.messages.at(-1)?.seq} of ${snapshot.cursor} while the journal names later commits; the installed engine truncates long Session snapshots, update miao to 0.3.8 or newer`
+        : `native snapshot returned ${snapshot.messages.length} of ${messageCount} messages`,
     )
   const active = new Set(
     snapshot.messages

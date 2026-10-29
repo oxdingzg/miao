@@ -38,6 +38,7 @@ impl Shell {
             transcript: TranscriptPane {
                 theme: theme.clone(),
                 lines: vec![Line::from("no Session selected")],
+                draft: Vec::new(),
                 scroll: 0,
                 follow: true,
             },
@@ -56,6 +57,26 @@ impl Shell {
         let max = self.transcript.lines.len().saturating_sub(1);
         self.transcript.scroll = self.transcript.scroll.min(max as u16);
         self.last = Some(transcript.clone());
+    }
+
+    /// Show what the model is streaming before its message commits. Empty
+    /// strings clear it.
+    pub fn set_draft(&mut self, text: &str, reasoning: &str) {
+        self.transcript.draft = match text.is_empty() && reasoning.is_empty() {
+            true => Vec::new(),
+            false => draft_lines(text, reasoning, &self.transcript.theme),
+        };
+    }
+
+    #[cfg(test)]
+    pub fn draft(&self) -> &[Line<'static>] {
+        &self.transcript.draft
+    }
+
+    /// The projection behind the rendered lines, for actions that need the
+    /// structured transcript rather than its painted form.
+    pub fn transcript(&self) -> Option<&Transcript> {
+        self.last.as_ref()
     }
 
     /// The text of the newest assistant reply, for the copy-to-clipboard
@@ -157,6 +178,9 @@ impl Shell {
 pub struct TitlePane {
     label: String,
     status: Option<String>,
+    /// The status reports a problem with the run (for example, the engine
+    /// stopped reporting) rather than routine activity.
+    status_alert: bool,
     theme: Theme,
 }
 
@@ -169,6 +193,7 @@ impl TitlePane {
         Self {
             label: format!(" miao-tui · {name} · {}", git_branch(workspace)),
             status: None,
+            status_alert: false,
             theme,
         }
     }
@@ -190,6 +215,20 @@ impl TitlePane {
         self.status = status;
     }
 
+    pub fn set_status_alert(&mut self, alert: bool) {
+        self.status_alert = alert;
+    }
+
+    #[cfg(test)]
+    pub fn status(&self) -> Option<&str> {
+        self.status.as_deref()
+    }
+
+    #[cfg(test)]
+    pub fn status_alert(&self) -> bool {
+        self.status_alert
+    }
+
     fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
     }
@@ -201,9 +240,13 @@ impl Pane for TitlePane {
         let style = Style::new().fg(palette.primary).bg(palette.surface).bold();
         let mut spans = vec![Span::styled(format!("{} ", self.label), style)];
         if let Some(status) = &self.status {
+            let color = match self.status_alert {
+                true => palette.warning,
+                false => palette.text_muted,
+            };
             spans.push(Span::styled(
                 format!("· {status} "),
-                Style::new().fg(palette.text_muted).bg(palette.surface),
+                Style::new().fg(color).bg(palette.surface),
             ));
         }
         frame.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -213,6 +256,9 @@ impl Pane for TitlePane {
 pub struct TranscriptPane {
     theme: Theme,
     lines: Vec<Line<'static>>,
+    /// The streamed answer that the next projection replaces. Kept apart from
+    /// `lines` so a projection can drop it in one assignment.
+    draft: Vec<Line<'static>>,
     scroll: u16,
     /// Follow the tail while new projections arrive. Any manual scroll clears
     /// it, so reading history is not interrupted by committed events.
@@ -229,12 +275,14 @@ impl Pane for TranscriptPane {
             ))
             .border_style(Style::new().fg(palette.border))
             .style(Style::new().bg(palette.background));
+        let mut lines = self.lines.clone();
+        lines.extend(self.draft.iter().cloned());
         if self.follow {
             let viewport = area.height.saturating_sub(2) as usize;
-            self.scroll = self.lines.len().saturating_sub(viewport) as u16;
+            self.scroll = lines.len().saturating_sub(viewport) as u16;
         }
         frame.render_widget(
-            Paragraph::new(self.lines.clone())
+            Paragraph::new(lines)
                 .style(Style::new().fg(palette.text))
                 .block(block)
                 .wrap(Wrap { trim: false })
@@ -399,12 +447,29 @@ fn relative_time(updated_at_ms: u64) -> String {
     }
 }
 
+/// The streamed answer, rendered like the assistant entry it will become: the
+/// provisional block gains its header when the committed message arrives.
+fn draft_lines(text: &str, reasoning: &str, theme: &Theme) -> Vec<Line<'static>> {
+    let palette = theme.palette;
+    let mut lines = Vec::new();
+    if !reasoning.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("▸ thinking · {} chars", reasoning.chars().count()),
+            Style::new().fg(palette.text_muted),
+        )));
+    }
+    if !text.is_empty() {
+        lines.extend(markdown::lines(text, theme));
+    }
+    lines
+}
+
 fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>> {
     let palette = theme.palette;
     let mut lines = Vec::new();
     for entry in &transcript.entries {
         match entry {
-            Entry::User { text } => {
+            Entry::User { text, .. } => {
                 for line in text.lines() {
                     lines.push(Line::from(vec![
                         Span::styled("❯ ", Style::new().fg(palette.primary)),
@@ -906,7 +971,11 @@ fn render_confirm(
                 if confirm.confirmed { idle } else { selected },
             ),
             Span::styled(
-                format!("{} delete", if confirm.confirmed { "▸" } else { " " }),
+                format!(
+                    "{} {}",
+                    if confirm.confirmed { "▸" } else { " " },
+                    confirm.action_label()
+                ),
                 if confirm.confirmed {
                     Style::new().fg(palette.error).add_modifier(Modifier::BOLD)
                 } else {
@@ -1178,6 +1247,64 @@ mod tests {
     use crate::session::{Choice, QuestionItem};
 
     #[test]
+    fn an_alerting_status_is_painted_in_the_warning_color() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        shell.title.set_status(Some(
+            "waiting for model · 40s · no engine signal 20s".into(),
+        ));
+        shell.title.set_status_alert(true);
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 1))
+            .expect("test terminal");
+        terminal
+            .draw(|frame| shell.title.render(frame, frame.area()))
+            .expect("draw");
+        let cells = &terminal.backend().buffer().content;
+        assert!(cells.iter().any(|cell| cell.fg == palette.warning));
+        shell.title.set_status_alert(false);
+        terminal
+            .draw(|frame| shell.title.render(frame, frame.area()))
+            .expect("draw");
+        let cells = &terminal.backend().buffer().content;
+        assert!(cells.iter().all(|cell| cell.fg != palette.warning));
+    }
+
+    #[test]
+    fn the_draft_shows_the_answer_before_it_is_committed() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        shell.set_draft("streamed words", "considering");
+        let draft = shell
+            .draft()
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(draft.starts_with("▸ thinking · 11 chars"));
+        assert!(draft.contains("streamed words"));
+        // A projection, or a run that ends, clears it in one assignment.
+        shell.set_draft("", "");
+        assert!(shell.draft().is_empty());
+    }
+
+    #[test]
     fn a_failed_turn_renders_its_message_as_an_error_line() {
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let theme = Theme {
@@ -1214,6 +1341,7 @@ mod tests {
                 },
                 Entry::User {
                     text: "question".into(),
+                    seq: 3,
                 },
                 Entry::Assistant {
                     agent: None,
