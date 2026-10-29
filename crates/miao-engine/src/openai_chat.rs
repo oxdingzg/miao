@@ -202,7 +202,7 @@ impl OpenAIChat {
         if credential.kind() != Kind::Key && matches!(self.auth_style, AuthStyle::ApiKey) {
             return Err(ProviderError::AuthProfile);
         }
-        let mut messages = messages(&request.messages)?;
+        let mut messages = messages(&request.messages, requires_reasoning_passback(&self.model))?;
         if !request.system.is_empty() {
             messages.insert(0, json!({"role":"system","content":request.system}));
         }
@@ -264,9 +264,23 @@ fn user_content(text: &[String], images: &[Value]) -> Value {
     Value::Array(parts)
 }
 
+/// Whether this route's model expects the reasoning field replayed on every
+/// assistant turn. DeepSeek's thinking mode does, and its identifier names the
+/// family on every route miao can reach (`deepseek/deepseek-flash`,
+/// `opencode-go/deepseek-v4.1-flash`), the same signal the TypeScript runner
+/// keys on in `packages/core/src/session/runner/to-llm-message.ts`. Other
+/// OpenAI-compatible gateways do not read the field, so it stays omitted
+/// rather than becoming an unknown key in their request bodies.
+fn requires_reasoning_passback(model: &str) -> bool {
+    model.to_ascii_lowercase().contains("deepseek")
+}
+
 /// Preserve text/tool-result chronology, and reject opaque blocks rather than
 /// dropping them during a model/protocol switch. No implicit fallback here.
-fn messages(history: &[Message]) -> Result<Vec<Value>, ProviderError> {
+fn messages(
+    history: &[Message],
+    replay_empty_reasoning: bool,
+) -> Result<Vec<Value>, ProviderError> {
     let invalid = || ProviderError::Stream("history cannot be lowered to Chat Completions".into());
     let mut output = Vec::new();
     for message in history {
@@ -318,6 +332,15 @@ fn messages(history: &[Message]) -> Result<Vec<Value>, ProviderError> {
             let mut message = json!({"role":"assistant","content":if text.is_empty(){None}else{Some(text.join("\n"))}});
             if !reasoning.is_empty() {
                 message["reasoning_content"] = Value::String(reasoning.join(""));
+            } else if replay_empty_reasoning {
+                // DeepSeek's thinking mode requires the field on every assistant
+                // turn it is asked to continue, including one that reasoned
+                // nothing — a step produced by a non-thinking model, or a turn
+                // whose reasoning was never persisted. Dropping it makes
+                // DeepSeek reject the request with HTTP 400 "The
+                // reasoning_content in the thinking mode must be passed back",
+                // and no later turn of that Session can recover.
+                message["reasoning_content"] = Value::String(String::new());
             }
             if !calls.is_empty() {
                 message["tool_calls"] = Value::Array(calls);
