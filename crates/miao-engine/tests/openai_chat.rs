@@ -417,6 +417,79 @@ async fn reasoning_content_round_trips_and_lowers_back_verbatim() {
 }
 
 #[tokio::test]
+async fn deepseek_replays_an_empty_reasoning_field_on_an_unreasoned_turn() {
+    let body = frames(
+        vec![
+            chunk(json!({"content":"ok"}), json!(null)),
+            chunk(json!({}), json!("stop")),
+        ],
+        true,
+    );
+    let (url, mut requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "deepseek-flash".into()).unwrap();
+    let mut input = request();
+    input.messages.extend([
+        Message {
+            role: "assistant".into(),
+            // A tool-only turn from a model that emitted no reasoning at all.
+            content: json!([{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}]),
+            checkpoint: None,
+            recorded_at_ms: None,
+        },
+        Message {
+            role: "user".into(),
+            content: json!([{"type":"tool_result","tool_use_id":"call","content":"contents","is_error":false}]),
+            checkpoint: None,
+            recorded_at_ms: None,
+        },
+    ]);
+    let (progress, _receive) = mpsc::channel(64);
+    provider
+        .stream(input, progress, CancellationToken::new())
+        .await
+        .unwrap();
+    let body = requests.recv().await.unwrap();
+    // DeepSeek rejects the whole request when the field is missing, so the turn
+    // carries it back empty rather than omitting it.
+    assert_eq!(body["messages"][1]["reasoning_content"], "");
+    assert_eq!(
+        body["messages"][1]["tool_calls"][0]["function"]["name"],
+        "read_file"
+    );
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn other_routes_gain_no_reasoning_field() {
+    let body = frames(
+        vec![
+            chunk(json!({"content":"ok"}), json!(null)),
+            chunk(json!({}), json!("stop")),
+        ],
+        true,
+    );
+    let (url, mut requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let mut input = request();
+    input.messages.push(Message {
+        role: "assistant".into(),
+        content: json!([{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}]),
+        checkpoint: None,
+        recorded_at_ms: None,
+    });
+    let (progress, _receive) = mpsc::channel(64);
+    provider
+        .stream(input, progress, CancellationToken::new())
+        .await
+        .unwrap();
+    let body = requests.recv().await.unwrap();
+    // Only families that require the field see it; every other gateway keeps
+    // the request body it had before.
+    assert!(body["messages"][1].get("reasoning_content").is_none());
+    server.await.unwrap();
+}
+
+#[tokio::test]
 async fn opaque_reasoning_and_legacy_delta_fields_are_rejected() {
     for (field, value) in [
         ("reasoning_opaque", json!("signature")),
