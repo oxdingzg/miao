@@ -106,12 +106,10 @@ function waitForRequest() {
 }
 
 describe("PermissionV2", () => {
-  it.effect("native routing mode preserves decisions for TS-owned Sessions", () =>
+  it.effect("native source routing preserves decisions for TS-owned Sessions", () =>
     Effect.gen(function* () {
       yield* setup([{ action: "read", resource: "*", effect: "allow" }])
-      const sources = yield* PermissionSource.Service
       const permission = yield* PermissionV2.Service
-      yield* sources.enable
       yield* permission.assert(assertion())
       expect((yield* permission.ask(assertion())).effect).toBe("allow")
       yield* setRules([{ action: "read", resource: "*", effect: "deny" }])
