@@ -1321,3 +1321,14 @@ only their own directory/workspace changes. A nonfinal page advances through
 its last returned change; a final page advances to the captured Root watermark,
 including filtered-out changes, without skipping later matching writes.
 This does not activate shared Runtime authorization or settle pending requests.
+
+The shared authority's schema-v4 request transaction is currently a Rust library
+boundary, not an advertised host RPC capability. Trusted callers bind a project
+and canonical implicit-local directory, then use a Runtime-captured source handle
+for `Context.admit_request`, `request_status`, `reply_request`, and
+`cancel_request`. The Root UUID, context, source database, Runtime owner, run,
+and complete reverse-call identity bind retries. Always writes explicit saved
+patterns and its request receipt atomically in Root while the attached Session
+database remains read-only. Source shutdown cleanup, sibling reject/reevaluation,
+subscription wakeups and migration-aware Runtime activation remain unfinished;
+these methods must not be treated as an activated backend.
