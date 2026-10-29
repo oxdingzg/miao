@@ -54,7 +54,8 @@ pub fn load(sources: &[Source]) -> Result<Vec<Document>, String> {
                 documents.push(Document { origin, value });
             }
             Source::Content(text) => {
-                let value = config_scope::parse_document(text)?;
+                let value = config_scope::parse_document(text)
+                    .map_err(|error| format!("inline config: {error}"))?;
                 validate("inline config", &value)?;
                 documents.push(Document {
                     origin: "inline config".to_string(),
@@ -66,11 +67,11 @@ pub fn load(sources: &[Source]) -> Result<Vec<Document>, String> {
     Ok(documents)
 }
 
-/// Validate the `sandbox` and `lsp` sections against the shapes the product's
-/// config schema accepts, naming the file and the key path on a mismatch.
+/// Validate the root object and `sandbox`/`lsp` section shapes against the
+/// product's config schema, naming the source and key path on a mismatch.
 fn validate(origin: &str, value: &serde_json::Value) -> Result<(), String> {
     let Some(object) = value.as_object() else {
-        return Ok(());
+        return Err(format!("{origin}: config root must be an object"));
     };
     match object.get("sandbox") {
         None | Some(serde_json::Value::Null) => {}
@@ -1023,6 +1024,48 @@ fn collect_defined(value: &Value, prefix: &mut Vec<String>, out: &mut Vec<Value>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn non_object_documents_fail_with_the_origin_for_every_source_kind() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("miao.json");
+        for text in ["null", "false", "42", "\"oops\"", "[]"] {
+            std::fs::write(&file, text).unwrap();
+            for (source, origin) in [
+                (
+                    Source::Dir(root.path().to_owned()),
+                    file.display().to_string(),
+                ),
+                (Source::File(file.clone()), file.display().to_string()),
+                (Source::Content(text.to_owned()), "inline config".to_owned()),
+            ] {
+                let error = load(&[source])
+                    .err()
+                    .expect("non-object config was accepted");
+                assert!(error.contains(&origin), "{error}");
+                assert!(error.contains("config root must be an object"), "{error}");
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_inline_json_names_its_source() {
+        let error = load(&[Source::Content("{ bad".into())]).err().unwrap();
+        assert!(error.starts_with("inline config:"), "{error}");
+        assert!(error.contains("line 1"), "{error}");
+    }
+
+    #[test]
+    fn valid_object_documents_keep_tolerating_unrelated_product_fields() {
+        for text in ["{}", r#"{"theme":"nord","unknown":{"enabled":true}}"#] {
+            let documents = load(&[Source::Content(text.to_owned())]).unwrap();
+            assert_eq!(documents.len(), 1);
+            assert_eq!(
+                documents[0].value,
+                serde_json::from_str::<Value>(text).unwrap()
+            );
+        }
+    }
 
     fn documents(values: &[Value]) -> Vec<Document> {
         values

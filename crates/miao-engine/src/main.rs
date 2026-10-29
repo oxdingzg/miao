@@ -109,6 +109,44 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Idle/signal termination can leave Tokio's blocking stdin reader parked.
         // All accepted database operations and stdout replies have settled here.
         std::process::exit(if result.is_ok() { 0 } else { 1 });
+    if args.first().map(String::as_str) == Some("config") {
+        let sources =
+            match &args[1..] {
+                [command, flag, directory] if command == "explain" && flag == "--config-dir" => {
+                    vec![miao_engine::config_derive::Source::Dir(directory.into())]
+                }
+                [command, flag, plan] if command == "explain" && flag == "--config-sources" => {
+                    let plan = if plan == "-" {
+                        use std::io::Read;
+                        let mut input = Vec::new();
+                        std::io::stdin()
+                            .lock()
+                            .take(1024 * 1024 + 1)
+                            .read_to_end(&mut input)?;
+                        if input.len() > 1024 * 1024 {
+                            return Err("config source plan exceeds 1 MiB".into());
+                        }
+                        String::from_utf8(input).map_err(|_| "config source plan must be UTF-8")?
+                    } else {
+                        plan.clone()
+                    };
+                    miao_engine::config_derive::plan(&plan)?
+                }
+                _ => return Err(
+                    "Usage: miao-engine config explain --config-dir PATH | --config-sources JSON|-"
+                        .into(),
+                ),
+            };
+        let report =
+            tokio::task::spawn_blocking(move || miao_engine::config_explain::report(&sources))
+                .await??;
+        let output = serde_json::to_vec(&report)?;
+        if output.len() > 8 * 1024 * 1024 {
+            return Err("config explanation exceeds 8 MiB".into());
+        }
+        use std::io::Write;
+        std::io::stdout().lock().write_all(&output)?;
+        return Ok(());
     }
     if args.first().map(String::as_str) == Some("doctor") {
         let path = match &args[1..] {
@@ -226,6 +264,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
         eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\n       miao-engine permissions --db PATH --project ID\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
         std::process::exit(2);
     }
     let acp = mode == Some("acp");
