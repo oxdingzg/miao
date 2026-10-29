@@ -11,10 +11,17 @@ import { tmpdir } from "./fixture"
 
 const binary = process.env.MIAO_ENGINE_BIN
 
-export async function nativeHostSource() {
+export async function nativeHostSource(options: { mode?: PermissionV2.Mode; rules?: PermissionV2.Ruleset } = {}) {
   if (!binary) throw new Error("native engine required")
   const supported = capabilities(binary)
   if (!supported) throw new Error("native capabilities required")
+  const rules =
+    options.rules ??
+    ([
+      { action: "*", resource: "*", effect: "allow" },
+      { action: "read", resource: "*", effect: "ask" },
+      { action: "read", resource: "secret", effect: "deny" },
+    ] satisfies PermissionV2.Ruleset)
   const tmp = await tmpdir()
   const provider = Bun.serve({
     hostname: "127.0.0.1",
@@ -42,6 +49,7 @@ export async function nativeHostSource() {
   await Bun.write(
     productToolsFile,
     JSON.stringify({
+      host_context: { directory: tmp.path, cwd: process.cwd() },
       tools: [
         {
           name: "host_probe",
@@ -94,13 +102,10 @@ export async function nativeHostSource() {
       session_id: sessionID,
       agent: {
         name: "fixture",
+        ...(options.mode === "auto" ? { permission_mode: "auto" } : {}),
         ordered_permissions: {
           semantics: "ordered-wildcard-v1",
-          rules: [
-            { action: "*", resource: "*", effect: "allow" },
-            { action: "read", resource: "*", effect: "ask" },
-            { action: "read", resource: "secret", effect: "deny" },
-          ],
+          rules,
         },
       },
     })
@@ -114,6 +119,7 @@ export async function nativeHostSource() {
     ])
     return {
       directory: tmp.path,
+      rules,
       storage: path.join(tmp.path, "engine.db"),
       client,
       source,

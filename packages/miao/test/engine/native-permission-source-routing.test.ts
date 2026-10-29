@@ -263,6 +263,92 @@ test.skipIf(!binary)(
   45_000,
 )
 
+test.skipIf(!binary)(
+  "interactive, auto and read-only rules produce matching native and TS decisions",
+  async () => {
+    for (const mode of ["interactive", "auto", "readonly"] as const) {
+      const traces = []
+      for (const native of [false, true]) {
+        await using fixture = await nativeHostSource({
+          mode: mode === "interactive" ? "default" : "auto",
+          rules: [
+            { action: "*", resource: "*", effect: "allow" },
+            { action: "read", resource: "secret", effect: "deny" },
+            { action: "edit", resource: "*", effect: mode === "readonly" ? "deny" : "ask" },
+            { action: "bash", resource: "*", effect: mode === "readonly" ? "deny" : "ask" },
+          ],
+        })
+        const trace = await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              yield* setup(fixture, native)
+              const permission = yield* PermissionV2.Service
+              const sources = yield* PermissionSource.Service
+              const agents = yield* AgentV2.Service
+              const events = yield* EventV2.Service
+              yield* agents.transform((editor) =>
+                editor.update(AgentV2.ID.make("test"), (agent) => {
+                  agent.permissions = [...fixture.rules]
+                  agent.permission_mode = mode === "interactive" ? "default" : "auto"
+                }),
+              )
+              const invocation = fixture.request("mode", "*")
+              if (invocation.source?.type !== "tool") throw new Error("tool source required")
+              if (native)
+                yield* sources.bind({
+                  sessionID: invocation.sessionID,
+                  source: invocation.source,
+                  executor: fixture.permission,
+                })
+              const prompts: string[] = []
+              const unsubscribe = yield* events.listen((event) =>
+                Effect.sync(() => {
+                  if (event.type === PermissionV2.Event.Asked.type) prompts.push((event.data as PermissionV2.Request).id)
+                }),
+              )
+              yield* Effect.addFinalizer(() => unsubscribe)
+              const effects = []
+              const cases = [
+                { id: "noop", action: "noop", resource: "*" },
+                { id: "denied-read", action: "read", resource: "secret" },
+                { id: "safe-bash", action: "bash", resource: "git status" },
+                { id: "unsafe-bash", action: "bash", resource: "rm -rf file" },
+                { id: "stdin", action: "bash", resource: "ls", metadata: { stdin: null } },
+                { id: "safe-edit", action: "edit", resource: `${fixture.directory}/src/file.rs` },
+                { id: "sensitive-edit", action: "edit", resource: `${fixture.directory}/.env` },
+                { id: "outside-edit", action: "edit", resource: `${fixture.directory}/../outside.rs` },
+              ] as const
+              for (const item of cases) {
+                const request = fixture.request(item.id, item.resource, {
+                  action: item.action,
+                  ...("metadata" in item ? { metadata: item.metadata } : {}),
+                })
+                const result = yield* permission.ask(request)
+                effects.push(result.effect)
+                if (result.effect !== "ask") continue
+                if (native) yield* Effect.promise(async () => fixture.reply(await fixture.wait(item.id), "reject"))
+                if (!native) yield* permission.reply({ requestID: result.id, reply: "reject" })
+              }
+              expect(yield* permission.list()).toEqual([])
+              return { effects, asks: native ? fixture.asked.map((request) => request.id) : prompts }
+            }).pipe(Effect.provide(services(fixture)), Effect.timeout("20 seconds")),
+          ),
+        )
+        traces.push(trace)
+      }
+      expect(traces[1]).toEqual(traces[0])
+      expect(traces[0]?.effects).toEqual(
+        mode === "readonly"
+          ? ["allow", "deny", "deny", "deny", "deny", "deny", "deny", "deny"]
+          : mode === "auto"
+            ? ["allow", "deny", "allow", "ask", "ask", "allow", "ask", "ask"]
+            : ["allow", "deny", "ask", "ask", "ask", "ask", "ask", "ask"],
+      )
+    }
+  },
+  90_000,
+)
+
 function services(fixture: Awaited<ReturnType<typeof nativeHostSource>>) {
   return AppNodeBuilder.build(
     LayerNode.group([
