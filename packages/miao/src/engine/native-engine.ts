@@ -1445,4 +1445,7 @@ export const node = makeGlobalNode({
   ],
 })
 
+// A listener owns its transport; its Core dependencies retain the process MemoMap.
+export const listenerNode: typeof node = { ...node, implementation: Layer.fresh(layer) }
+
 export * as NativeEngineNode from "./native-engine"
