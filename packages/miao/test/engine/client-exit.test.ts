@@ -127,6 +127,10 @@ test.skipIf(process.platform === "win32")(
 for (const method of [
   "snapshot",
   "context_snapshot",
+  "observe",
+  "context_observe",
+  "changes",
+  "context_changes",
   "permission_import_snapshot",
   "permission_import_changes",
   "permission_saved_migration",

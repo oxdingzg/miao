@@ -156,6 +156,7 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
     { wire: { saved_permission_migration: 1 }, normalized: undefined, accepted: true },
     { wire: { permission_context_handoff: 1 }, normalized: undefined, accepted: true },
     { wire: { permission_source_handoff: 1 }, normalized: undefined, accepted: true },
+    { wire: { permission_changefeed: 1 }, normalized: undefined, accepted: true },
     { wire: { permission_patterns: 1 }, normalized: undefined, accepted: true },
     { wire: { permission_pattern_changes: 1 }, normalized: undefined, accepted: true },
     { wire: { routesSchema: 2 }, normalized: 2, accepted: true },
@@ -175,6 +176,7 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
       expect(capabilities(binary)).toHaveProperty("permissionContextHandoff", 1)
     if ("permission_source_handoff" in input.wire)
       expect(capabilities(binary)).toHaveProperty("permissionSourceHandoff", 1)
+    if ("permission_changefeed" in input.wire) expect(capabilities(binary)).toHaveProperty("permissionChangefeed", 1)
     if ("permission_patterns" in input.wire) expect(capabilities(binary)).toHaveProperty("permissionPatterns", 1)
     if ("product_permission_requests" in input.wire) {
       expect(capabilities(binary)).toHaveProperty("productPermissionRequests", 1)
@@ -192,6 +194,7 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
     { saved_permission_migration: "1" },
     { permission_context_handoff: "1" },
     { permission_source_handoff: "1" },
+    { permission_changefeed: "1" },
     { permission_patterns: "1" },
     { permission_pattern_changes: "1" },
     { product_permission_requests: "1" },

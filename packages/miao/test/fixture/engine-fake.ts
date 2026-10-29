@@ -99,6 +99,10 @@ function handle(request: {
       "permission_pattern_list",
       "permission_pattern_snapshot",
       "permission_pattern_changes",
+      "observe",
+      "context_observe",
+      "changes",
+      "context_changes",
     ].includes(method)
   )
     return
