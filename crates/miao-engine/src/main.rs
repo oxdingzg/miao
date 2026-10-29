@@ -493,16 +493,22 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             Some(_) => return Err("--lsp-diagnostics must be on or off".into()),
         });
     let mut route_limits = miao_engine::model_routes::RouteLimits::default();
+    let mut model_origin = None;
     let provider = if let Some(path) = options.get("--model-routes-config") {
         let path = tokio::fs::canonicalize(path).await?;
-        let (provider, route_limits_new) = miao_engine::model_routes::load(
-            &path,
-            std::path::Path::new(tools.location()),
-            provider,
-        )
-        .await?;
+        let workspace = std::path::PathBuf::from(tools.location());
+        // Keep the unrouted provider: a reload layers the new manifest over
+        // exactly this base instead of re-deriving the operator's flags.
+        let base = provider;
+        let (provider, route_limits_new) =
+            miao_engine::model_routes::load(&path, &workspace, base.clone()).await?;
         tools = tools.with_protected_resource(&path);
         route_limits = route_limits_new;
+        model_origin = Some(miao_engine::model_routes::Origin {
+            base,
+            path,
+            workspace,
+        });
         provider
     } else {
         provider
@@ -737,6 +743,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(origin) = &mcp_origin {
         runtime.set_mcp_origin(origin.clone()).await;
     }
+    if let Some(origin) = &model_origin {
+        runtime.set_model_origin(origin.clone()).await?;
+    }
     runtime.set_policy_origin(policy_origin.clone(), mode).await;
     // No host watches these files in the standalone entry, so the engine polls
     // them itself; a hosted engine gets an explicit `config_reload`. Both
@@ -748,6 +757,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Some(origin) = &mcp_origin {
             files.extend(origin.files());
+        }
+        if let Some(origin) = &model_origin {
+            files.push(origin.path.clone());
         }
         files.sort();
         files.dedup();
