@@ -125,6 +125,8 @@ export interface EngineOptions {
     bridgeID: number
     /** The calling assistant message's durable seq, when the engine reports it. */
     messageSeq?: number
+    /** The source callback must carry cancellation before native permission routing is enabled. */
+    signal?: AbortSignal
   }) => Promise<unknown>
   /**
    * A run settled while this bridge call was still pending (cancel, failure,
@@ -342,6 +344,12 @@ interface Pending {
 export class EngineClient {
   private next = 1
   private readonly pending = new Map<number, Pending>()
+  /**
+   * Cancellation for the product calls the engine is waiting on. A native
+   * permission ask parks inside such a call, so the settle or cancel notice has
+   * to interrupt it instead of leaving the host waiting.
+   */
+  private readonly productCalls = new Map<number, AbortController>()
   private readonly eventHandlers: Array<(event: EngineEvent) => void> = []
   private readonly progressHandlers: Array<(progress: EngineProgress) => void> = []
   private readonly failureHandlers: Array<(error: Error) => void> = []
@@ -551,6 +559,9 @@ export class EngineClient {
     if (terminal) this.failure ??= error
     for (const pending of this.pending.values()) pending.reject(this.failure ?? error)
     this.pending.clear()
+    // A failed engine can no longer settle these calls; the host must stop them.
+    for (const call of this.productCalls.values()) call.abort(this.failure ?? error)
+    this.productCalls.clear()
     if (notify) for (const handler of this.failureHandlers) handler(this.failure ?? error)
   }
 
@@ -595,6 +606,9 @@ export class EngineClient {
         reply({ error: "product tool is not available on this host" })
         return
       }
+      const controller = new AbortController()
+      const signal = controller.signal
+      this.productCalls.set(bridgeID, controller)
       void this.onProductTool({
         sessionID: params.session_id ?? "",
         name: params.name,
@@ -604,18 +618,23 @@ export class EngineClient {
         callID: typeof params.call_id === "string" && params.call_id.length > 0 ? params.call_id : String(bridgeID),
         bridgeID,
         ...(typeof params.message_seq === "number" ? { messageSeq: params.message_seq } : {}),
+        signal,
       })
         .then(
           (result) => reply({ result }),
           (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
         )
         .catch(() => this.inputClosed())
+        .finally(() => this.productCalls.delete(bridgeID))
       return
     }
     if (message.method === "product_tool.cancel") {
       const bridgeID = message.bridge_id
       const params = message.params as { session_id?: string } | undefined
-      if (typeof bridgeID === "number") this.onProductToolCancel?.({ sessionID: params?.session_id ?? "", bridgeID })
+      if (typeof bridgeID === "number") {
+        this.productCalls.get(bridgeID)?.abort()
+        this.onProductToolCancel?.({ sessionID: params?.session_id ?? "", bridgeID })
+      }
       return
     }
     if (message.method === "hook_tool") {

@@ -75,6 +75,7 @@ pub(crate) fn rules(connection: &Connection, workspace: &str) -> Result<Vec<Rule
                 .map_err(|_| Error::Invalid("corrupt saved permission rule".into()))?,
         );
     }
+    rules.extend(crate::permission_patterns::rules(connection, workspace)?);
     Ok(rules)
 }
 

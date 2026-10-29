@@ -72,6 +72,9 @@ import { SessionExecution } from "@miao/core/session/execution"
 import { SessionUsageStore } from "@miao/core/session/usage-store"
 import { Question } from "@miao/schema/question"
 import { translateApproval, translateQuestion } from "./bridge"
+import { ProductPermissionRequest } from "./product-permission-request"
+import { NativePermissionPattern } from "./native-permission-pattern"
+import { PermissionSaved } from "@miao/schema/permission-saved"
 
 const ApprovalBindings = Schema.Struct({
   approvals: Schema.Array(
@@ -442,6 +445,8 @@ export const fromOwners = (
   owners: Owners,
   preparation: {
     catalog?: NativeEngine.Interface["catalog"]
+    hostPermissions?: boolean
+    nativePatterns?: boolean
     prompt?: (input: Parameters<NativeEngine.Interface["admit"]>[0]) => Effect.Effect<PromptInput.Prompt, unknown>
     command?: (
       input: Parameters<NativeEngine.Interface["command"]>[0],
@@ -499,6 +504,33 @@ export const fromOwners = (
   return {
     storageRoot,
     catalog: preparation.catalog,
+    savedPermissions: (input) => {
+      if (!preparation.nativePatterns || !storageRoot) return Effect.succeed([])
+      return read<readonly PermissionSaved.Info[]>(
+        { storage: SessionEnginePlacement.storageFor(storageRoot, input.location), location: input.location },
+        async (connection) =>
+          Schema.decodeUnknownSync(NativePermissionPattern.List)(
+            await connection.client.request("permission_pattern_list"),
+          ).map((pattern) => NativePermissionPattern.saved(pattern, input.projectID)),
+      )
+    },
+    removeSavedPermission: (input) => {
+      if (!preparation.nativePatterns || !storageRoot)
+        return Effect.fail(
+          new ConflictError({ resource: input.id, message: "Native saved-rule control is unavailable" }),
+        )
+      return read(
+        { storage: SessionEnginePlacement.storageFor(storageRoot, input.location), location: input.location },
+        async (connection) => {
+          const patterns = Schema.decodeUnknownSync(NativePermissionPattern.List)(
+            await connection.client.request("permission_pattern_list"),
+          )
+          const binding = patterns.find((pattern) => `${PermissionSaved.NativePrefix}${pattern.id}` === input.id)
+          if (!binding) return
+          await connection.client.request("permission_pattern_remove", { rule_id: binding.id })
+        },
+      ).pipe(Effect.asVoid)
+    },
     // Owners are keyed by storage, so this is the same owner `session.create`
     // will connect: warming it spawns the engine child and boots the product
     // context (plugins, routes, tools) off the critical path.
@@ -841,7 +873,7 @@ export const fromOwners = (
           session_id: input.sessionID,
           metadata_only: true,
         })
-        return Schema.decodeUnknownSync(ApprovalBindings)(snapshot).approvals.map((binding) => {
+        const approvals = Schema.decodeUnknownSync(ApprovalBindings)(snapshot).approvals.map((binding) => {
           if (binding.session_id !== input.sessionID)
             throw new EngineError("approval_owner_mismatch", "Approval belongs to another Session")
           return Schema.decodeUnknownSync(Permission.Request)(
@@ -853,9 +885,45 @@ export const fromOwners = (
             }),
           )
         })
+        if (!preparation.hostPermissions) return approvals
+        const pending = await connection.client.request("product_permission_pending", { session_id: input.sessionID })
+        if (!Array.isArray(pending)) throw new EngineError("host_permission_invalid", "Invalid native host permission list")
+        return [
+          ...approvals,
+          ...pending.map((value) => {
+            const info = ProductPermissionRequest.parse(value, input.sessionID)
+            if (!info || info.state !== "pending")
+              throw new EngineError("host_permission_invalid", "Invalid native host permission binding")
+            return ProductPermissionRequest.request(info)
+          }),
+        ]
       }),
     replyPermission: (input) =>
       read(input, async (connection) => {
+        if (input.requestID.startsWith("per_host_")) {
+          if (!preparation.hostPermissions)
+            throw new EngineError("host_permission_unsupported", "Native host permission replies are not supported")
+          const pending = await connection.client.request("product_permission_pending", { session_id: input.sessionID })
+          if (!Array.isArray(pending)) throw new EngineError("host_permission_invalid", "Invalid native host permission list")
+          const records = pending.map((value) => {
+            const info = ProductPermissionRequest.parse(value, input.sessionID)
+            if (!info || info.state !== "pending")
+              throw new EngineError("host_permission_invalid", "Invalid native host permission binding")
+            return info
+          })
+          const binding = records.find((info) => ProductPermissionRequest.id(info) === input.requestID)
+          if (!binding) throw new EngineError("approval_not_found", "No pending host permission in this Session")
+          return connection.client.request("product_permission_reply", {
+            source: binding.source,
+            response: {
+              request_id: binding.id,
+              input_hash: binding.input_hash,
+              authority_revision: binding.authority_revision,
+              reply: input.reply,
+              ...(input.message === undefined ? {} : { message: input.message }),
+            },
+          })
+        }
         const snapshot = await connection.client.request("snapshot", {
           session_id: input.sessionID,
           metadata_only: true,
@@ -1181,10 +1249,13 @@ const layer = Layer.effect(
         : Effect.void,
     )
     yield* Effect.addFinalizer(() => unsubscribeUsage)
-    const catalog = capabilities(configuration.binary)?.catalog === 1
+    const supported = capabilities(configuration.binary)
+    const catalog = supported?.catalog === 1
     const engine = fromOwners(
       owners,
       {
+        hostPermissions: supported?.productPermissionRequests === 1 && supported?.productPermissionReplies === 1,
+        nativePatterns: supported?.permissionPatterns === 1,
         catalog: catalog ? (input) => readCatalog(configuration.binary, input) : undefined,
         prompt: (input) =>
           PromptMaterialization.prepare(input.prompt).pipe(

@@ -108,6 +108,56 @@ pub fn edit(targets: &[String]) -> Verdict {
     }
 }
 
+/// Host resources retain their original spelling for rule matching. Resolve
+/// them lexically against the captured host cwd only for classification.
+/// Filesystem capability and symlink checks still belong to the executor.
+pub fn host_edit(resources: &[String], host: &crate::product::HostContext) -> Verdict {
+    use std::path::{Component, Path, PathBuf};
+    fn normalize(path: &Path) -> PathBuf {
+        path.components()
+            .fold(PathBuf::new(), |mut result, component| {
+                match component {
+                    Component::CurDir => {}
+                    Component::ParentDir => {
+                        result.pop();
+                    }
+                    _ => result.push(component.as_os_str()),
+                }
+                result
+            })
+    }
+    if resources.is_empty() {
+        return Verdict::Unknown;
+    }
+    let directory = normalize(Path::new(&host.directory));
+    let safe = resources.iter().all(|resource| {
+        if protected_path(resource) {
+            return false;
+        }
+        let path = Path::new(resource);
+        let target = if path.is_absolute() {
+            normalize(path)
+        } else {
+            let Some(cwd) = &host.cwd else {
+                return false;
+            };
+            normalize(&Path::new(cwd).join(path))
+        };
+        let Ok(relative) = target.strip_prefix(&directory) else {
+            return false;
+        };
+        // Match the product's lexical containment check, including its refusal
+        // of a root itself and names beginning with two dots.
+        !relative.as_os_str().is_empty()
+            && !relative.to_string_lossy().starts_with("..")
+            && !protected_path(&target.to_string_lossy())
+    });
+    if safe {
+        return Verdict::Safe;
+    }
+    Verdict::Unknown
+}
+
 pub fn bash(command: &str) -> Verdict {
     // The host classifier declines on Windows; the extra length bound only
     // turns a pathological parse into an ask instead of a stall.

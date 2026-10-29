@@ -1,13 +1,13 @@
 import { Location } from "@miao/core/location"
-import { PermissionV2 } from "@miao/core/permission"
-import { PermissionSaved } from "@miao/core/permission/saved"
 import { Database } from "@miao/core/database/database"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
+import { PermissionV2 } from "@miao/core/permission"
+import { PermissionSaved } from "@miao/core/permission/saved"
 import { Effect, Option } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { NativeEngine } from "../native-engine"
-import { PermissionNotFoundError, SessionNotFoundError } from "@miao/protocol/errors"
+import { ConflictError, PermissionNotFoundError, SessionNotFoundError } from "@miao/protocol/errors"
 import { response } from "../location"
 
 function missingRequest(id: PermissionV2.ID) {
@@ -100,6 +100,9 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
           const native = yield* Effect.serviceOption(NativeEngine.Service)
           const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
           if (Option.isSome(native) && placement) {
+            const pending = yield* native.value.permissions({ sessionID: ctx.params.sessionID, ...placement })
+            if (!pending.some((request) => request.id === ctx.params.requestID))
+              return yield* missingRequest(ctx.params.requestID)
             yield* native.value.replyPermission({
               sessionID: ctx.params.sessionID,
               requestID: ctx.params.requestID,
@@ -121,17 +124,41 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
         "permission.saved.list",
         Effect.fn(function* (ctx) {
           const location = yield* Location.Service
-          return {
-            data: yield* (yield* PermissionSaved.Service).list({
-              projectID: ctx.query.projectID ?? location.project.id,
-            }),
-          }
+          const saved = yield* PermissionSaved.Service
+          const legacy = yield* saved.list({ projectID: ctx.query.projectID ?? location.project.id })
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          if (
+            Option.isNone(native) ||
+            !native.value.savedPermissions ||
+            (ctx.query.projectID !== undefined && ctx.query.projectID !== location.project.id)
+          )
+            return { data: legacy }
+          const projected = yield* native.value.savedPermissions({
+            location: Location.Ref.make({ directory: location.directory, workspaceID: location.workspaceID }),
+            projectID: location.project.id,
+          })
+          return { data: [...legacy, ...projected] }
         }),
       )
       .handle(
         "permission.saved.remove",
         Effect.fn(function* (ctx) {
-          yield* (yield* PermissionSaved.Service).remove(ctx.params.id)
+          if (ctx.params.id.startsWith(PermissionSaved.NativePrefix)) {
+            const native = yield* Effect.serviceOption(NativeEngine.Service)
+            if (Option.isNone(native) || !native.value.removeSavedPermission)
+              return yield* new ConflictError({
+                resource: ctx.params.id,
+                message: "Native saved-rule control is unavailable",
+              })
+            const location = yield* Location.Service
+            yield* native.value.removeSavedPermission({
+              id: ctx.params.id,
+              location: Location.Ref.make({ directory: location.directory, workspaceID: location.workspaceID }),
+            })
+            return HttpApiSchema.NoContent.make()
+          }
+          const saved = yield* PermissionSaved.Service
+          yield* saved.remove(ctx.params.id)
           return HttpApiSchema.NoContent.make()
         }),
       )

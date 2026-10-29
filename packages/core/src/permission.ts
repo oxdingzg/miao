@@ -10,6 +10,9 @@ import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
 import { Wildcard } from "./util/wildcard"
 import { PermissionSaved } from "./permission/saved"
+import { PermissionSource } from "./permission/source"
+import { Database } from "./database/database"
+import { SessionEnginePlacement } from "./session/engine-placement"
 import { PermissionClassifier } from "./permission/classifier"
 
 export { Effect, Rule, Ruleset, Mode } from "@miao/schema/permission"
@@ -185,6 +188,8 @@ const layer = Layer.effect(
     const agents = yield* AgentV2.Service
     const sessions = yield* SessionStore.Service
     const saved = yield* PermissionSaved.Service
+    const sources = yield* PermissionSource.Service
+    const database = yield* Database.Service
     const pending = new Map<ID, Pending>()
 
     yield* EffectRuntime.addFinalizer(() =>
@@ -198,6 +203,16 @@ const layer = Layer.effect(
         ),
       ),
     )
+
+    const route = EffectRuntime.fn("PermissionV2.route")(function* (input: AssertInput) {
+      const placement = yield* SessionEnginePlacement.find(database.db, input.sessionID)
+      if (placement?.engine !== "rust") return undefined
+      const executor = yield* sources.get(input)
+      if (executor) return executor
+      return yield* EffectRuntime.die(
+        new PermissionSource.Unavailable({ sessionID: input.sessionID, reason: "missing_binding" }),
+      )
+    })
 
     const savedRules = EffectRuntime.fnUntraced(function* () {
       return (yield* saved.list({ projectID: location.project.id })).map(
@@ -272,6 +287,8 @@ const layer = Layer.effect(
       )
 
     const ask = EffectRuntime.fn("PermissionV2.ask")(function* (input: AssertInput) {
+      const native = yield* route(input)
+      if (native) return yield* native.ask(input)
       const result = yield* evaluateInput(input)
       const value = request(input)
       if (result.effect === "ask") yield* create(value, input)
@@ -281,6 +298,8 @@ const layer = Layer.effect(
     const assert = EffectRuntime.fn("PermissionV2.assert")((input: AssertInput) =>
       EffectRuntime.uninterruptibleMask((restore) =>
         EffectRuntime.gen(function* () {
+          const native = yield* route(input)
+          if (native) return yield* restore(native.assert(input))
           const result = yield* evaluateInput(input)
           if (result.effect === "deny") {
             return yield* new BlockedError({
@@ -418,7 +437,15 @@ export const locationLayer = layer.pipe(Layer.provideMerge(AgentV2.locationLayer
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [EventV2.node, Location.node, AgentV2.node, SessionStore.node, PermissionSaved.node],
+  deps: [
+    EventV2.node,
+    Location.node,
+    AgentV2.node,
+    SessionStore.node,
+    PermissionSaved.node,
+    PermissionSource.node,
+    Database.node,
+  ],
 })
 
 /** Snapshot the rules actually read by this permission service, including saved approvals. */
