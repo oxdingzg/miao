@@ -9,6 +9,7 @@ import { useClipboard } from "../../context/clipboard"
 import type { TranscriptUserMessage } from "@miao/schema/view-models"
 import { promptInfoFromUserMessage } from "../../context/session-v2-write"
 import type { PromptInfo } from "../../prompt/history"
+import { searchableMessageText } from "./dialog-timeline"
 
 export function DialogMessage(props: {
   messageID: string
@@ -18,9 +19,18 @@ export function DialogMessage(props: {
   const sync = useSync()
   const { theme } = useTheme()
   const sdk = useSDK()
+  // A reply reached from the timeline search is copyable but has no user-side
+  // actions: revert and fork are prompt-boundary operations.
   const message = createMemo(() => {
     const found = sync.data.message[props.sessionID]?.find((x) => x.id === props.messageID)
-    return found?.type === "user" ? (found as TranscriptUserMessage) : undefined
+    if (found?.type === "user") return found as TranscriptUserMessage
+    if (found?.type === "assistant") return found
+    return undefined
+  })
+  const isPrompt = createMemo(() => message()?.type === "user")
+  const rawText = createMemo(() => {
+    const current = message()
+    return current ? searchableMessageText(current) : ""
   })
   const route = useRoute()
   const clipboard = useClipboard()
@@ -31,51 +41,55 @@ export function DialogMessage(props: {
       footer={<text fg={theme.textMuted}>{Locale.preciseTime(message()?.time.created)}</text>}
       options={[
         {
-          title: "Revert",
-          value: "session.revert",
-          description: "undo messages and file changes",
-          onSelect: (dialog) => {
-            const msg = message()
-            if (!msg) return
-
-            void sdk.api.sessions.stage({ sessionID: props.sessionID, messageID: msg.id })
-
-            if (props.setPrompt) {
-              props.setPrompt(promptInfoFromUserMessage(msg))
-            }
-
-            dialog.clear()
-          },
-        },
-        {
           title: "Copy",
           value: "message.copy",
           description: "message text to clipboard",
           onSelect: async (dialog) => {
-            const msg = message()
-            if (!msg) return
+            const text = rawText()
+            if (!text) return
 
-            await clipboard.write?.(msg.text)
+            await clipboard.write?.(text)
             dialog.clear()
           },
         },
-        {
-          title: "Fork",
-          value: "session.fork",
-          description: "create a new session",
-          onSelect: async (dialog) => {
-            const result = await sdk.api.sessions
-              .fork({ sessionID: props.sessionID, messageID: props.messageID })
-              .then((r) => ({ data: r }))
-            const prompt = message() ? promptInfoFromUserMessage(message() as TranscriptUserMessage) : undefined
-            route.navigate({
-              sessionID: result.data!.id,
-              type: "session",
-              prompt,
-            })
-            dialog.clear()
-          },
-        },
+        ...(isPrompt()
+          ? [
+              {
+                title: "Revert",
+                value: "session.revert",
+                description: "undo messages and file changes",
+                onSelect: (dialog: { clear: () => void }) => {
+                  const msg = message()
+                  if (!msg || msg.type !== "user") return
+
+                  void sdk.api.sessions.stage({ sessionID: props.sessionID, messageID: msg.id })
+
+                  if (props.setPrompt) {
+                    props.setPrompt(promptInfoFromUserMessage(msg))
+                  }
+
+                  dialog.clear()
+                },
+              },
+              {
+                title: "Fork",
+                value: "session.fork",
+                description: "create a new session",
+                onSelect: async (dialog: { clear: () => void }) => {
+                  const result = await sdk.api.sessions
+                    .fork({ sessionID: props.sessionID, messageID: props.messageID })
+                    .then((r) => ({ data: r }))
+                  const prompt = message()?.type === "user" ? promptInfoFromUserMessage(message() as TranscriptUserMessage) : undefined
+                  route.navigate({
+                    sessionID: result.data!.id,
+                    type: "session",
+                    prompt,
+                  })
+                  dialog.clear()
+                },
+              },
+            ]
+          : []),
       ]}
     />
   )

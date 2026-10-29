@@ -115,7 +115,8 @@ impl Dialog {
     pub fn render(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let mut lines: Vec<Line> = Vec::new();
         match (&self.state, &self.notice) {
-            (None, Some(notice)) => lines.push(Line::from(notice.as_str()).style(Style::default().fg(theme.palette.error))),
+            (None, Some(notice)) => lines
+                .push(Line::from(notice.as_str()).style(Style::default().fg(theme.palette.error))),
             (None, _) if self.loading => lines.push(Line::from("reading workspace state…")),
             (Some(state), notice) => {
                 let branch = match (&state.branch, state.detached) {
@@ -142,7 +143,9 @@ impl Dialog {
                 header.push_str(&shown);
                 lines.push(Line::from(header).style(Style::default().fg(theme.palette.accent)));
                 if let Some(notice) = notice {
-                    lines.push(Line::from(notice.as_str()).style(Style::default().fg(theme.palette.error)));
+                    lines.push(
+                        Line::from(notice.as_str()).style(Style::default().fg(theme.palette.error)),
+                    );
                 }
                 lines.push(Line::from(""));
                 if state.files.is_empty() {

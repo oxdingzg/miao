@@ -12,7 +12,6 @@ pub mod markdown;
 pub mod pane;
 pub mod platform;
 pub mod saved_permissions;
-pub mod workspace_changes;
 pub mod session;
 pub mod state;
 pub mod status;
@@ -20,6 +19,7 @@ pub mod terminal;
 pub mod theme;
 pub mod tool;
 pub mod transport;
+pub mod workspace_changes;
 
 use std::error::Error;
 use std::path::PathBuf;

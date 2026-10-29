@@ -5,6 +5,15 @@ import { Locale } from "../../util/locale"
 import { DialogMessage } from "./dialog-message"
 import { useDialog } from "../../ui/dialog"
 import type { PromptInfo } from "../../component/prompt/history"
+import type { SessionMessage, TranscriptTextPart } from "@miao/schema/view-models"
+
+/** The text a timeline search matches on: a prompt's own text, or a reply's first text block. */
+export function searchableMessageText(message: SessionMessage): string {
+  if (message.type === "user") return message.text
+  if (message.type === "assistant")
+    return message.content.find((part): part is TranscriptTextPart => part.type === "text")?.text ?? ""
+  return ""
+}
 
 export function DialogTimeline(props: {
   sessionID: string
@@ -22,10 +31,11 @@ export function DialogTimeline(props: {
     const messages = sync.data.message[props.sessionID] ?? []
     const result = [] as DialogSelectOption<string>[]
     for (const message of messages) {
-      if (message.type !== "user") continue
-      if (message.type !== "user" || message.text.trim().length === 0) continue
+      // The search covers both sides of the conversation, not just prompts.
+      const text = searchableMessageText(message)
+      if (text.trim().length === 0) continue
       result.push({
-        title: message.text.replace(/\n/g, " "),
+        title: `${message.type === "user" ? "prompt" : "reply"} · ${text.replace(/\n/g, " ")}`,
         value: message.id,
         footer: Locale.todayTimeOrDateTime(message.time.created),
         onSelect: (dialog) => {
