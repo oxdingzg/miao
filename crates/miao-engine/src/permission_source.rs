@@ -287,7 +287,7 @@ mod tests {
         permission_rules::Rule,
         protocol::{Delivery, Input},
     };
-    use rusqlite::Connection;
+    use rusqlite::{params, Connection};
 
     fn rule(resource: &str) -> Rule {
         Rule {
