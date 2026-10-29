@@ -17,9 +17,10 @@
 # this round), and recreates the directory empty for the next file.
 #
 # Environment:
-#   MIAO_ENGINE_BIN           engine binary under test; without it the
-#                             engine-binary files skip themselves
-#   INTEGRATION_REQUIRE_ENGINE  set to 1 in CI to reject a missing or unusable engine
+#   MIAO_ENGINE_BIN           executable prebuilt engine under test; required
+#                             for native integration acceptance
+#   INTEGRATION_REQUIRE_ENGINE  defaults to 1; 0 is an explicit non-native run
+#                             and requires selected file arguments
 #   INTEGRATION_TEST_TIMEOUT  per-test timeout in ms passed to bun test
 #                             (default 300000, raised from the unit 30000)
 #   INTEGRATION_FILE_TIMEOUT  wall-clock budget per attempt in seconds
@@ -27,20 +28,29 @@
 #                             whole suite
 set -m -u -o pipefail
 
-cd "$(dirname "$0")/../packages/miao"
+cd "$(dirname "$0")/../packages/miao" || exit 1
 
 timeout_ms="${INTEGRATION_TEST_TIMEOUT:-300000}"
 file_deadline="${INTEGRATION_FILE_TIMEOUT:-900}"
 round="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/miao-integration-$$"
 
-if [ "${INTEGRATION_REQUIRE_ENGINE:-0}" = 1 ]; then
+case "${INTEGRATION_REQUIRE_ENGINE:-1}" in
+  0|1) ;;
+  *) echo "INTEGRATION_REQUIRE_ENGINE must be 0 or 1" >&2; exit 1 ;;
+esac
+if [ "${INTEGRATION_REQUIRE_ENGINE:-1}" = 1 ]; then
   if [ ! -x "${MIAO_ENGINE_BIN:-}" ]; then
-    echo "INTEGRATION_REQUIRE_ENGINE=1 requires an executable MIAO_ENGINE_BIN" >&2
+    echo "Native integration requires an executable MIAO_ENGINE_BIN (set it to a prebuilt engine)." >&2
+    echo "For selected protocol-only files, explicitly set INTEGRATION_REQUIRE_ENGINE=0; this does not validate the native engine." >&2
     exit 1
   fi
   "$MIAO_ENGINE_BIN" --version || exit 1
-elif [ -z "${MIAO_ENGINE_BIN:-}" ]; then
-  echo "MIAO_ENGINE_BIN is not set; engine-binary files will skip themselves" >&2
+else
+  if [ "$#" -eq 0 ]; then
+    echo "INTEGRATION_REQUIRE_ENGINE=0 requires explicit protocol-only file arguments; the full suite requires a native engine." >&2
+    exit 1
+  fi
+  echo "Non-native integration selection: native engine acceptance is not established." >&2
 fi
 
 files=()
@@ -84,10 +94,10 @@ run_attempt() {
   # mode; a visible engine binary switches serve into native engine mode
   # whose credential routing the fixtures cannot provide. Only test/engine
   # files run against the engine under test.
-  local strip_engine=""
-  case "$file" in test/acp/*) strip_engine="-u MIAO_ENGINE_BIN" ;; esac
-  # env options must precede the assignments, so the strip flag expands first.
-  env $strip_engine TMPDIR="$round" bun test --timeout "$timeout_ms" --only-failures "./$file" &
+  local runner_env=(env)
+  case "$file" in test/acp/*) runner_env+=(-u MIAO_ENGINE_BIN) ;; esac
+  # env options must precede the per-process assignments.
+  "${runner_env[@]}" TMPDIR="$round" bun test --timeout "$timeout_ms" --only-failures "./$file" &
   local pid=$!
   local elapsed=0
   while kill -0 "$pid" 2>/dev/null; do
