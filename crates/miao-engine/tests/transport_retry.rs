@@ -21,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 struct Flaky {
     calls: AtomicUsize,
     delta_then_fail: bool,
+    handshake_then_fail: bool,
 }
 #[async_trait]
 impl Provider for Flaky {
@@ -31,6 +32,15 @@ impl Provider for Flaky {
         _: CancellationToken,
     ) -> Result<Reply, ProviderError> {
         if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            if self.handshake_then_fail {
+                let _ = progress
+                    .send(json!({
+                        "kind":"content_start",
+                        "raw":{"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]},
+                    }))
+                    .await;
+                return Err(ProviderError::ResponseTransport);
+            }
             if self.delta_then_fail {
                 let _ = progress
                     .send(json!({"kind":"text_delta","text":"partial"}))
@@ -98,6 +108,7 @@ async fn pre_output_transport_failure_is_retried() {
     let provider = Arc::new(Flaky {
         calls: AtomicUsize::new(0),
         delta_then_fail: false,
+        handshake_then_fail: false,
     });
     let (store, provider) = run(provider).await;
     assert_eq!(
@@ -131,6 +142,7 @@ async fn post_output_transport_failure_is_not_replayed() {
     let provider = Arc::new(Flaky {
         calls: AtomicUsize::new(0),
         delta_then_fail: true,
+        handshake_then_fail: false,
     });
     let (store, provider) = run(provider).await;
     assert_eq!(
@@ -139,6 +151,33 @@ async fn post_output_transport_failure_is_not_replayed() {
         "streamed output must not be replayed"
     );
     assert!(store
+        .events("s", 0, 1000)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| event.kind == "provider.failed"));
+}
+
+/// A gateway announces the assistant role in a frame of its own before it sends
+/// any token. That handshake is not output: if it spent the pre-output replay,
+/// a stream that dies before its first byte of answer would fail the turn with
+/// no retry, which is how a four-minute silent stall became a failed run.
+#[tokio::test]
+async fn a_contentless_handshake_does_not_spend_the_replay() {
+    let provider = Arc::new(Flaky {
+        calls: AtomicUsize::new(0),
+        delta_then_fail: false,
+        handshake_then_fail: true,
+    });
+    let (store, provider) = run(provider).await;
+    assert_eq!(
+        provider.calls.load(Ordering::SeqCst),
+        2,
+        "a handshake before any token must not spend the replay"
+    );
+    let history = store.history("s").await.unwrap();
+    assert_eq!(history.last().unwrap().content[0]["text"], "recovered");
+    assert!(!store
         .events("s", 0, 1000)
         .await
         .unwrap()

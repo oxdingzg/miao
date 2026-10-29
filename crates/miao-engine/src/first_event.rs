@@ -107,7 +107,49 @@ pub(crate) fn semantic_event(event: &Value) -> bool {
     if event["choices"].as_array().is_some_and(Vec::is_empty) && event["usage"].is_null() {
         return false;
     }
+    if handshake(event) {
+        return false;
+    }
     true
+}
+
+/// An OpenAI-compatible gateway can open a stream by naming the assistant role
+/// in a frame of its own, well before the first token. That frame is a
+/// handshake, not output: counting it would report a zero TTFT for a turn that
+/// has produced nothing, and it would spend the pre-output replay that recovers
+/// a stream dying before its first byte of answer.
+fn handshake(event: &Value) -> bool {
+    if !event["usage"].is_null() {
+        return false;
+    }
+    let Some(choices) = event["choices"]
+        .as_array()
+        .filter(|choices| !choices.is_empty())
+    else {
+        return false;
+    };
+    choices.iter().all(|choice| {
+        let settled = choice.get("finish_reason").is_none_or(Value::is_null);
+        match choice.get("delta") {
+            Some(Value::Object(delta)) => {
+                settled
+                    && delta
+                        .iter()
+                        .all(|(key, value)| key == "role" || blank(value))
+            }
+            _ => false,
+        }
+    })
+}
+
+fn blank(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::String(text) => text.is_empty(),
+        Value::Array(items) => items.is_empty(),
+        Value::Object(fields) => fields.is_empty(),
+        Value::Bool(_) | Value::Number(_) => false,
+    }
 }
 
 #[cfg(test)]
