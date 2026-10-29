@@ -1020,23 +1020,37 @@ pub(crate) fn strip_jsonc(input: &str) -> String {
             }
             '/' => match chars.peek() {
                 Some('/') => {
+                    out.push(' ');
                     for rest in chars.by_ref() {
-                        if rest == '\n' {
-                            out.push('\n');
+                        if matches!(rest, '\n' | '\r') {
+                            out.push(rest);
                             break;
                         }
+                        out.extend(std::iter::repeat_n(' ', rest.len_utf8()));
                     }
                 }
                 Some('*') => {
                     chars.next();
+                    out.push_str("  ");
                     let mut previous = '\0';
+                    let mut closed = false;
                     for rest in chars.by_ref() {
+                        if matches!(rest, '\n' | '\r') {
+                            out.push(rest);
+                        } else {
+                            out.extend(std::iter::repeat_n(' ', rest.len_utf8()));
+                        }
                         if previous == '*' && rest == '/' {
+                            closed = true;
                             break;
                         }
                         previous = rest;
                     }
-                    out.push(' ');
+                    // Keep invalid syntax visible to serde_json instead of
+                    // accepting a valid prefix before an unfinished comment.
+                    if !closed {
+                        return input.to_owned();
+                    }
                 }
                 _ => out.push('/'),
             },
@@ -1078,6 +1092,8 @@ fn strip_trailing_commas(input: &str) -> String {
                 }
                 if next >= chars.len() || (chars[next] != '}' && chars[next] != ']') {
                     out.push(',');
+                } else {
+                    out.push(' ');
                 }
             }
             _ => out.push(c),
@@ -1116,6 +1132,42 @@ const fn rgb(hex: &str) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn jsonc_carriage_returns_end_line_comments() {
+        let text = "// comment\r{\"theme\":\"nord\"}";
+        let value: serde_json::Value = serde_json::from_str(&strip_jsonc(text)).unwrap();
+        assert_eq!(value["theme"], "nord");
+    }
+
+    #[test]
+    fn jsonc_comments_preserve_source_positions_and_token_boundaries() {
+        let text = "{/* 中文🐱\r\n comment */\"a\":[1,],\"b\":?}";
+        let stripped = strip_jsonc(text);
+        assert_eq!(stripped.len(), text.len());
+        for (index, byte) in text.bytes().enumerate() {
+            if byte == b'\n' || byte == b'\r' {
+                assert_eq!(stripped.as_bytes()[index], byte);
+            }
+        }
+        let error = serde_json::from_str::<serde_json::Value>(&stripped).unwrap_err();
+        assert_eq!(error.line(), 2);
+        assert_eq!(
+            error.column(),
+            text.lines().last().unwrap().find('?').unwrap() + 1
+        );
+        assert!(serde_json::from_str::<serde_json::Value>(&strip_jsonc("[1/**/2]")).is_err());
+    }
+
+    #[test]
+    fn jsonc_unterminated_comments_do_not_turn_invalid_configuration_into_valid_json() {
+        for text in [
+            "{\"theme\":\"nord\"} /*",
+            "{\"theme\":\"nord\"} /* unterminated",
+        ] {
+            assert!(serde_json::from_str::<serde_json::Value>(&strip_jsonc(text)).is_err());
+        }
+    }
 
     #[test]
     fn jsonc_comments_and_trailing_commas_are_stripped() {

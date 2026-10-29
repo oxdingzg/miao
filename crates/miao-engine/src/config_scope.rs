@@ -16,6 +16,8 @@ pub const FILE_NAMES: [&str; 4] = ["miao.json", "miao.jsonc", "opencode.json", "
 ///
 /// Comment markers inside strings are content, not syntax, so the scanner tracks
 /// string state and escapes; a `//` inside a URL or a `/*` inside a glob stays.
+/// Comments and trailing commas become whitespace to preserve token boundaries
+/// and the original byte/line positions used by parse diagnostics.
 pub fn strip_jsonc(text: &str) -> Result<String, String> {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(text.len());
@@ -41,19 +43,26 @@ pub fn strip_jsonc(text: &str) -> Result<String, String> {
                 index += 1;
             }
             b'/' if index + 1 < bytes.len() && bytes[index + 1] == b'/' => {
-                while index < bytes.len() && bytes[index] != b'\n' {
+                while index < bytes.len() && !matches!(bytes[index], b'\n' | b'\r') {
+                    out.push(b' ');
                     index += 1;
                 }
             }
             b'/' if index + 1 < bytes.len() && bytes[index + 1] == b'*' => {
+                out.extend_from_slice(b"  ");
                 index += 2;
                 while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
                 {
+                    out.push(match bytes[index] {
+                        b'\n' | b'\r' => bytes[index],
+                        _ => b' ',
+                    });
                     index += 1;
                 }
                 if index + 1 >= bytes.len() {
                     return Err("unterminated block comment".into());
                 }
+                out.extend_from_slice(b"  ");
                 index += 2;
             }
             _ => {
@@ -65,7 +74,7 @@ pub fn strip_jsonc(text: &str) -> Result<String, String> {
     String::from_utf8(strip_trailing_commas(&out)).map_err(|error| error.to_string())
 }
 
-/// Drop a comma that is followed only by whitespace and a closing bracket.
+/// Blank a comma that is followed only by whitespace and a closing bracket.
 fn strip_trailing_commas(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len());
     let mut in_string = false;
@@ -95,6 +104,7 @@ fn strip_trailing_commas(bytes: &[u8]) -> Vec<u8> {
                 next += 1;
             }
             if next < bytes.len() && (bytes[next] == b'}' || bytes[next] == b']') {
+                out.push(b' ');
                 index += 1;
                 continue;
             }
@@ -176,6 +186,45 @@ fn merge_into(target: &mut serde_json::Value, value: &serde_json::Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comments_separate_tokens_instead_of_repairing_invalid_json() {
+        for text in [r#"{"n":1/**/2}"#, r#"{"ok":tru/**/e}"#, "[1/* comment */2]"] {
+            assert!(parse_document(text).is_err(), "accepted {text}");
+        }
+    }
+
+    #[test]
+    fn a_carriage_return_ends_a_line_comment() {
+        assert_eq!(
+            parse_document("// comment\r{\"enabled\":true}").unwrap(),
+            serde_json::json!({"enabled":true})
+        );
+    }
+
+    #[test]
+    fn stripping_preserves_source_offsets_for_configuration_errors() {
+        let text = "{/* 中文🐱\r\n comment */\"a\":[1,],\"b\":?}";
+        let stripped = strip_jsonc(text).unwrap();
+        assert_eq!(stripped.len(), text.len());
+        for (index, byte) in text.bytes().enumerate() {
+            if byte == b'\n' || byte == b'\r' {
+                assert_eq!(stripped.as_bytes()[index], byte);
+            }
+        }
+        let error = serde_json::from_str::<serde_json::Value>(&stripped).unwrap_err();
+        assert_eq!(error.line(), 2);
+        assert_eq!(
+            error.column(),
+            text.lines().last().unwrap().find('?').unwrap() + 1
+        );
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("miao.jsonc");
+        std::fs::write(&file, text).unwrap();
+        let diagnostic = documents(&[root.path().to_owned()]).unwrap_err();
+        assert!(diagnostic.contains(file.to_str().unwrap()));
+        assert!(diagnostic.contains(&format!("line 2 column {}", error.column())));
+    }
 
     #[test]
     fn comments_inside_strings_are_content() {
