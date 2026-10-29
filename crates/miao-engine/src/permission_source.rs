@@ -125,19 +125,7 @@ impl Store {
             let transaction = crate::store::write_tx(connection)?;
             let mut record = load(&transaction, &workspace)?
                 .ok_or_else(|| Error::Invalid("permission source was not prepared".into()))?;
-            if snapshot.project.authority != record.target.authority
-                || snapshot.project.project != record.target.project
-                || snapshot.directory != record.target.directory
-                || snapshot.workspace_id != record.target.workspace_id
-                || snapshot.migration.as_ref().is_none_or(|receipt| {
-                    receipt.fingerprint != record.fingerprint
-                        || receipt.imported != record.patterns.len()
-                })
-            {
-                return Err(Error::Invalid(
-                    "permission source destination receipt mismatch".into(),
-                ));
-            }
+            record.require_destination(&snapshot)?;
             if record.state == State::Completed {
                 return Ok(record);
             }
@@ -150,6 +138,27 @@ impl Store {
             Ok(record)
         })
         .await
+    }
+}
+
+impl Record {
+    pub(crate) fn require_destination(
+        &self,
+        snapshot: &permission_context::Snapshot,
+    ) -> Result<(), Error> {
+        if snapshot.project.authority != self.target.authority
+            || snapshot.project.project != self.target.project
+            || snapshot.directory != self.target.directory
+            || snapshot.workspace_id != self.target.workspace_id
+            || snapshot.migration.as_ref().is_none_or(|receipt| {
+                receipt.fingerprint != self.fingerprint || receipt.imported != self.patterns.len()
+            })
+        {
+            return Err(Error::Invalid(
+                "permission source destination receipt mismatch".into(),
+            ));
+        }
+        Ok(())
     }
 }
 

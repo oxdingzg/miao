@@ -1319,3 +1319,9 @@ refresh their own requests. `retire_source_requests` lets the trusted owner canc
 its precisely captured source after it ends, without granting or saving anything.
 Runtime finalization calls, subscription wakeups and migration-aware activation
 remain unfinished; these methods must not be treated as an activated backend.
+
+`Context.bind_handoff(Store)` creates an opaque `HandoffBinding` by reading the
+actual completed native directory source and current Root receipt. Its snapshot
+rechecks Root identity, scope, original fingerprint/count and source receipt while
+preserving later revocation. This proves only the native directory handoff; it
+neither proves the product project handoff nor unfreezes or authorizes execution.

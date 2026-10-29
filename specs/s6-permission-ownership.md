@@ -359,3 +359,9 @@ always 保存规则后，仅重新求值同 Runtime owner、项目和目录的�
 `retire_source_requests` 是可信归属者的仅取消操作：即使原工具已结束，也只按精确来源绑定
 取消该来源剩余 pending，不新增规则或许可；重试不重复写入事件。此入口仍需在 Runtime
 的来源终结及取消确认路径接线，不能据此宣称已自动清理。
+
+目录来源绑定 `Context.bind_handoff(Store)` 从真实 Session 库读取并验证 completed 回执，
+再与真实 Root 当前快照核对 UUID、项目、目录、workspace、原始指纹及原始数量，不接受
+调用者提供的快照作为绑定凭据。返回不可直接构造的 `HandoffBinding`；每次 snapshot 重新
+核对来源回执和目的端身份，读取当前规则并保留撤销结果。prepared、错误目的端或回执丢失
+均拒绝。它只证明原生目录来源交接，不代替产品项目级交接证明、不解冻来源、不允许执行。
