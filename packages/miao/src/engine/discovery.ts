@@ -29,11 +29,18 @@ export type Capabilities = {
   /** Version of the short-lived read-only catalog command, when supported. */
   catalog?: number
   savedRulesSnapshot?: number
+  savedPermissionMigration?: number
+  permissionContextStore?: number
+  permissionProjectHandoff?: number
+  permissionContextHandoff?: number
+  permissionProjectStore?: number
+  permissionImportChanges?: number
   productPermissionRequests?: number
   productPermissionReplies?: number
   productPermissionCancel?: number
   productPermissionDiagnostics?: number
   productPermissionAuto?: number
+  permissionPatternChanges?: number
   permissionPatterns?: number
 }
 
@@ -75,14 +82,22 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (camel !== undefined && snake !== undefined && camel !== snake) return undefined
     const routesSchema = camel ?? snake
     if (wire.catalog !== undefined && !isRevision(wire.catalog)) return undefined
+    if (wire.permission_import_changes !== undefined && !isRevision(wire.permission_import_changes)) return undefined
+    if (wire.saved_permission_migration !== undefined && !isRevision(wire.saved_permission_migration)) return undefined
     if (wire.saved_rules_snapshot !== undefined && !isRevision(wire.saved_rules_snapshot)) return undefined
     if (wire.product_permission_requests !== undefined && !isRevision(wire.product_permission_requests))
       return undefined
     if (wire.product_permission_replies !== undefined && !isRevision(wire.product_permission_replies)) return undefined
     if (wire.product_permission_cancel !== undefined && !isRevision(wire.product_permission_cancel)) return undefined
-    if (wire.product_permission_diagnostics !== undefined && !isRevision(wire.product_permission_diagnostics)) return undefined
+    if (wire.product_permission_diagnostics !== undefined && !isRevision(wire.product_permission_diagnostics))
+      return undefined
     if (wire.product_permission_auto !== undefined && !isRevision(wire.product_permission_auto)) return undefined
+    if (wire.permission_pattern_changes !== undefined && !isRevision(wire.permission_pattern_changes)) return undefined
     if (wire.permission_patterns !== undefined && !isRevision(wire.permission_patterns)) return undefined
+    if (wire.permission_project_handoff !== undefined && !isRevision(wire.permission_project_handoff)) return undefined
+    if (wire.permission_context_handoff !== undefined && !isRevision(wire.permission_context_handoff)) return undefined
+    if (wire.permission_context_store !== undefined && !isRevision(wire.permission_context_store)) return undefined
+    if (wire.permission_project_store !== undefined && !isRevision(wire.permission_project_store)) return undefined
     return {
       name: "miao-engine",
       version: wire.version,
@@ -90,6 +105,24 @@ export function capabilities(binary: string): Capabilities | undefined {
       schema: wire.schema,
       ...(typeof routesSchema === "number" ? { routesSchema } : {}),
       ...(typeof wire.catalog === "number" ? { catalog: wire.catalog } : {}),
+      ...(typeof wire.permission_project_handoff === "number"
+        ? { permissionProjectHandoff: wire.permission_project_handoff }
+        : {}),
+      ...(typeof wire.permission_context_handoff === "number"
+        ? { permissionContextHandoff: wire.permission_context_handoff }
+        : {}),
+      ...(typeof wire.permission_context_store === "number"
+        ? { permissionContextStore: wire.permission_context_store }
+        : {}),
+      ...(typeof wire.permission_project_store === "number"
+        ? { permissionProjectStore: wire.permission_project_store }
+        : {}),
+      ...(typeof wire.permission_import_changes === "number"
+        ? { permissionImportChanges: wire.permission_import_changes }
+        : {}),
+      ...(typeof wire.saved_permission_migration === "number"
+        ? { savedPermissionMigration: wire.saved_permission_migration }
+        : {}),
       ...(typeof wire.saved_rules_snapshot === "number" ? { savedRulesSnapshot: wire.saved_rules_snapshot } : {}),
       ...(typeof wire.product_permission_requests === "number"
         ? { productPermissionRequests: wire.product_permission_requests }
@@ -97,9 +130,18 @@ export function capabilities(binary: string): Capabilities | undefined {
       ...(typeof wire.product_permission_replies === "number"
         ? { productPermissionReplies: wire.product_permission_replies }
         : {}),
-      ...(typeof wire.product_permission_cancel === "number" ? { productPermissionCancel: wire.product_permission_cancel } : {}),
-      ...(typeof wire.product_permission_diagnostics === "number" ? { productPermissionDiagnostics: wire.product_permission_diagnostics } : {}),
-      ...(typeof wire.product_permission_auto === "number" ? { productPermissionAuto: wire.product_permission_auto } : {}),
+      ...(typeof wire.product_permission_cancel === "number"
+        ? { productPermissionCancel: wire.product_permission_cancel }
+        : {}),
+      ...(typeof wire.product_permission_diagnostics === "number"
+        ? { productPermissionDiagnostics: wire.product_permission_diagnostics }
+        : {}),
+      ...(typeof wire.product_permission_auto === "number"
+        ? { productPermissionAuto: wire.product_permission_auto }
+        : {}),
+      ...(typeof wire.permission_pattern_changes === "number"
+        ? { permissionPatternChanges: wire.permission_pattern_changes }
+        : {}),
       ...(typeof wire.permission_patterns === "number" ? { permissionPatterns: wire.permission_patterns } : {}),
     }
   } catch {

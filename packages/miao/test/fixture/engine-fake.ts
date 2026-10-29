@@ -76,6 +76,20 @@ function handle(request: { id: number; method: string; params: Record<string, un
     send({ id, result: { accepted: true } })
     return
   }
+  if (
+    process.env.ENGINE_FAKE_IGNORE_SNAPSHOT === "1" &&
+    [
+      "context_snapshot",
+      "permission_import_snapshot",
+      "permission_import_changes",
+      "permission_saved_migration",
+      "permission_saved_imported",
+      "permission_pattern_list",
+      "permission_pattern_snapshot",
+      "permission_pattern_changes",
+    ].includes(method)
+  )
+    return
   if (method === "snapshot") {
     if (process.env.ENGINE_FAKE_IGNORE_SNAPSHOT === "1") return
     send({ id, result: { session_id: params.session_id, cursor: cursors.get(String(params.session_id)) ?? 0 } })

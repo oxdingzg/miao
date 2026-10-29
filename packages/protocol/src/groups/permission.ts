@@ -76,14 +76,15 @@ export const makePermissionGroup = <
         success: Schema.Struct({
           data: Schema.Struct({ id: Permission.ID, effect: Permission.Effect }),
         }),
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, ConflictError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
           OpenApi.annotations({
             identifier: "v2.session.permission.create",
             summary: "Create permission request",
-            description: "Evaluate and, when approval is required, create a permission request for a session.",
+            description:
+              "Evaluate and, when approval is required, create a permission request for a TypeScript session. Native requests must originate from an active engine-owned tool invocation; this endpoint returns a conflict for native sessions.",
           }),
         ),
     )

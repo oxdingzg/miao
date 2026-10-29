@@ -530,10 +530,42 @@ impl Host {
                 .pending_product_permissions(&self.controller, session_id)
                 .await
                 .and_then(|records| serde_json::to_value(records).map_err(Error::from)),
+            Command::PermissionImportSnapshot => runtime
+                .permission_import_snapshot(&self.controller)
+                .await
+                .and_then(|snapshot| serde_json::to_value(snapshot).map_err(Error::from)),
+            Command::PermissionImportChanges(input) => runtime
+                .permission_import_changes(&self.controller, input)
+                .await
+                .and_then(|page| serde_json::to_value(page).map_err(Error::from)),
+            Command::PermissionSavedMigrate(input) => runtime
+                .migrate_saved_permissions(&self.controller, input)
+                .await
+                .and_then(|receipt| serde_json::to_value(receipt).map_err(Error::from)),
+            Command::PermissionSavedMigration => runtime
+                .saved_permission_migration(&self.controller)
+                .await
+                .and_then(|receipt| serde_json::to_value(receipt).map_err(Error::from)),
+            Command::PermissionSavedImported => runtime
+                .imported_permissions(&self.controller)
+                .await
+                .and_then(|rules| serde_json::to_value(rules).map_err(Error::from)),
+            Command::PermissionSavedRemove(input) => runtime
+                .remove_imported_permission(&self.controller, input.id)
+                .await
+                .map(|removed| json!({"removed":removed})),
             Command::PermissionPatternList => runtime
                 .permission_patterns(&self.controller)
                 .await
                 .and_then(|patterns| serde_json::to_value(patterns).map_err(Error::from)),
+            Command::PermissionPatternSnapshot => runtime
+                .permission_pattern_snapshot(&self.controller)
+                .await
+                .and_then(|snapshot| serde_json::to_value(snapshot).map_err(Error::from)),
+            Command::PermissionPatternChanges(input) => runtime
+                .permission_pattern_changes(&self.controller, input)
+                .await
+                .and_then(|page| serde_json::to_value(page).map_err(Error::from)),
             Command::PermissionPatternPut(input) => runtime
                 .put_permission_pattern(&self.controller, input.rule)
                 .await

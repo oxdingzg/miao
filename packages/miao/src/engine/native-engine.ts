@@ -46,6 +46,7 @@ import { capabilities, discoveredEngine, resolveEngine } from "./discovery"
 import { readCatalog } from "./catalog"
 import { generatedInputEngineID, messageID, promotedInputMessageID } from "./identity"
 import { makeEngineOwners } from "./owners"
+import { makeNativePermissionProjection } from "./native-permission-projection"
 import { projectInputAdmitted } from "./input-projection"
 import { projectSubagentStarted } from "./subagent-projection"
 import type { EnginePricing } from "./session"
@@ -447,6 +448,7 @@ export const fromOwners = (
     catalog?: NativeEngine.Interface["catalog"]
     hostPermissions?: boolean
     nativePatterns?: boolean
+    permissionProjection?: ReturnType<typeof makeNativePermissionProjection>
     prompt?: (input: Parameters<NativeEngine.Interface["admit"]>[0]) => Effect.Effect<PromptInput.Prompt, unknown>
     command?: (
       input: Parameters<NativeEngine.Interface["command"]>[0],
@@ -508,10 +510,23 @@ export const fromOwners = (
       if (!preparation.nativePatterns || !storageRoot) return Effect.succeed([])
       return read<readonly PermissionSaved.Info[]>(
         { storage: SessionEnginePlacement.storageFor(storageRoot, input.location), location: input.location },
-        async (connection) =>
-          Schema.decodeUnknownSync(NativePermissionPattern.List)(
+        async (connection) => {
+          if (preparation.permissionProjection) {
+            const value = await preparation.permissionProjection(connection.client, {
+              storage: SessionEnginePlacement.storageFor(storageRoot, input.location),
+              location: input.location,
+            })
+            return value.rules.map((rule) => ({
+              ...rule,
+              projectID: input.projectID,
+              origin: "native" as const,
+              scope: { type: "directory" as const, directory: value.directory },
+            }))
+          }
+          return Schema.decodeUnknownSync(NativePermissionPattern.List)(
             await connection.client.request("permission_pattern_list"),
-          ).map((pattern) => NativePermissionPattern.saved(pattern, input.projectID)),
+          ).map((pattern) => NativePermissionPattern.saved(pattern, input.projectID))
+        },
       )
     },
     removeSavedPermission: (input) => {
@@ -526,8 +541,12 @@ export const fromOwners = (
             await connection.client.request("permission_pattern_list"),
           )
           const binding = patterns.find((pattern) => `${PermissionSaved.NativePrefix}${pattern.id}` === input.id)
-          if (!binding) return
-          await connection.client.request("permission_pattern_remove", { rule_id: binding.id })
+          if (binding) await connection.client.request("permission_pattern_remove", { rule_id: binding.id })
+          if (preparation.permissionProjection)
+            await preparation.permissionProjection(connection.client, {
+              storage: SessionEnginePlacement.storageFor(storageRoot, input.location),
+              location: input.location,
+            })
         },
       ).pipe(Effect.asVoid)
     },
@@ -1256,6 +1275,10 @@ const layer = Layer.effect(
       {
         hostPermissions: supported?.productPermissionRequests === 1 && supported?.productPermissionReplies === 1,
         nativePatterns: supported?.permissionPatterns === 1,
+        permissionProjection:
+          supported?.permissionPatterns === 1 && supported?.permissionPatternChanges === 1
+            ? makeNativePermissionProjection(database)
+            : undefined,
         catalog: catalog ? (input) => readCatalog(configuration.binary, input) : undefined,
         prompt: (input) =>
           PromptMaterialization.prepare(input.prompt).pipe(

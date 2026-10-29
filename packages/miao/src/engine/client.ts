@@ -6,7 +6,7 @@ import type { ResponsesCacheContract, ResponsesWebSocketContract } from "@miao/s
 import { prepareMcpConfig } from "./mcp-config"
 
 /**
- * Host-side client for the experimental Rust engine (`miao-engine serve`).
+ * Host-side client for native runtime and project-permission stdio control.
  *
  * The engine speaks newline-delimited JSON over stdio: requests carry an `id` and
  * a `method`/`params` pair, replies echo the `id` with either `result` or `error`,
@@ -169,7 +169,7 @@ export interface EngineOptions {
  * tokens, CI secrets, other providers' keys) never reach it, and the caller's
  * `env` still overrides any of these.
  */
-const INHERITED_ENVIRONMENT = [
+const PROCESS_ENVIRONMENT = [
   "PATH",
   "HOME",
   "USER",
@@ -191,6 +191,10 @@ const INHERITED_ENVIRONMENT = [
   "LOCALAPPDATA",
   "ProgramData",
   "NUMBER_OF_PROCESSORS",
+] as const
+
+const INHERITED_ENVIRONMENT = [
+  ...PROCESS_ENVIRONMENT,
   // Provider credentials the engine reads.
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
@@ -259,6 +263,13 @@ export function engineEnvironment(
   }
   delete merged.MIAO_WEBSEARCH_PROVIDER
   return merged
+}
+
+/** Model-free permission control receives process basics, never provider keys. */
+export function permissionEnvironment(inherited: Record<string, string | undefined> = process.env) {
+  return Object.fromEntries(
+    PROCESS_ENVIRONMENT.flatMap((key) => (inherited[key] === undefined ? [] : [[key, inherited[key]]])),
+  )
 }
 
 /** The argv the child engine is spawned with; pure so tests can assert it. */
@@ -419,6 +430,35 @@ export class EngineClient {
     }
   }
 
+  /** Project control starts without model configuration or provider credentials. */
+  static startPermissionStore(options: {
+    binary: string
+    db: string
+    project: string
+    context?: { directory: string; workspaceID?: string }
+    requestTimeoutMs?: number
+  }) {
+    const child = spawn(
+      [
+        options.binary,
+        "permissions",
+        "--db",
+        options.db,
+        "--project",
+        options.project,
+        ...(options.context ? ["--directory", options.context.directory] : []),
+        ...(options.context?.workspaceID !== undefined ? ["--workspace-id", options.context.workspaceID] : []),
+      ],
+      {
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: permissionEnvironment(),
+      },
+    )
+    return new EngineClient(child, undefined, undefined, undefined, undefined, false, options.requestTimeoutMs)
+  }
+
   onEvent(handler: (event: EngineEvent) => void) {
     this.eventHandlers.push(handler)
   }
@@ -454,7 +494,24 @@ export class EngineClient {
         // An expensive catalog read must not kill unrelated active Sessions.
         // A timed-out mutation still retires the transport: its durable outcome
         // must be inspected before another attempt.
-        if (["snapshot", "sessions", "history", "events", "usage", "timer_sessions"].includes(method)) {
+        if (
+          [
+            "snapshot",
+            "context_snapshot",
+            "sessions",
+            "history",
+            "events",
+            "usage",
+            "timer_sessions",
+            "permission_import_snapshot",
+            "permission_import_changes",
+            "permission_saved_migration",
+            "permission_saved_imported",
+            "permission_pattern_list",
+            "permission_pattern_snapshot",
+            "permission_pattern_changes",
+          ].includes(method)
+        ) {
           this.pending.delete(id)
           reject(error)
           return

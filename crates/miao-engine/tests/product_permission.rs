@@ -2180,3 +2180,178 @@ async fn reply_time_policy_denial_records_the_recheck_without_changing_the_reply
         .is_none());
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn one_time_saved_rule_handoff_is_controller_bound_live_and_cannot_resurrect_revocations() {
+    let (_directory, store, runtime, source) = running().await;
+    let (_other_directory, _other_store, other, _other_source) = running().await;
+    let mut host = Host::new(runtime.clone());
+    assert_eq!(
+        host.dispatch(
+            serde_json::from_value(json!({"method":"permission_saved_migration"})).unwrap()
+        )
+        .await
+        .unwrap(),
+        Value::Null
+    );
+    let initial = host
+        .dispatch(serde_json::from_value(json!({"method":"permission_import_snapshot"})).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(initial["cursor"], 0);
+    assert_eq!(initial["migration"], Value::Null);
+    let command = json!({"method":"permission_saved_migrate","params":{
+        "project":"legacy-project", "rules":[{"id":"legacy-row", "rule":{"action":"read","resource":"public","effect":"allow"}}]
+    }});
+    let native = runtime
+        .put_permission_pattern(
+            &runtime.controller(),
+            permission_rules::Rule {
+                action: "read".into(),
+                resource: "native/**".into(),
+                effect: Decision::Allow,
+            },
+        )
+        .await
+        .unwrap();
+    let receipt = host
+        .dispatch(serde_json::from_value(command.clone()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(receipt["project"], "legacy-project");
+    assert_eq!(receipt["imported"], 1);
+    assert_eq!(
+        runtime
+            .evaluate_product_permission(&runtime.controller(), &source, request("public"))
+            .await
+            .unwrap()
+            .effect,
+        Decision::Allow
+    );
+    assert_eq!(
+        runtime
+            .evaluate_product_permission(&runtime.controller(), &source, request("secret"))
+            .await
+            .unwrap()
+            .effect,
+        Decision::Deny
+    );
+    assert_eq!(
+        host.dispatch(
+            serde_json::from_value(json!({"method":"permission_saved_imported"})).unwrap()
+        )
+        .await
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .len(),
+        1
+    );
+    assert!(runtime
+        .saved_permission_migration(&other.controller())
+        .await
+        .is_err());
+    assert!(runtime
+        .imported_permissions(&other.controller())
+        .await
+        .is_err());
+    assert!(runtime
+        .remove_imported_permission(&other.controller(), "legacy-row".into())
+        .await
+        .is_err());
+    assert!(runtime
+        .migrate_saved_permissions(
+            &other.controller(),
+            miao_engine::permission_migration::Input {
+                project: "legacy-project".into(),
+                rules: vec![]
+            }
+        )
+        .await
+        .is_err());
+    for expected in [true, false] {
+        assert_eq!(
+            host.dispatch(
+                serde_json::from_value(
+                    json!({"method":"permission_saved_remove","params":{"id":"legacy-row"}})
+                )
+                .unwrap()
+            )
+            .await
+            .unwrap(),
+            json!({"removed":expected})
+        );
+    }
+    assert_eq!(
+        host.dispatch(serde_json::from_value(command.clone()).unwrap())
+            .await
+            .unwrap(),
+        receipt
+    );
+    assert_eq!(
+        runtime
+            .evaluate_product_permission(&runtime.controller(), &source, request("public"))
+            .await
+            .unwrap()
+            .effect,
+        Decision::Ask
+    );
+    assert_eq!(
+        runtime
+            .permission_patterns(&runtime.controller())
+            .await
+            .unwrap(),
+        vec![native]
+    );
+    assert!(runtime
+        .imported_permissions(&runtime.controller())
+        .await
+        .unwrap()
+        .is_empty());
+    let workspace = store.location("s").await.unwrap().unwrap();
+    assert!(store
+        .project_saved_rules(
+            workspace,
+            vec![permission_rules::Rule {
+                action: "read".into(),
+                resource: "public".into(),
+                effect: Decision::Allow
+            }]
+        )
+        .await
+        .is_err());
+    let snapshot = host
+        .dispatch(serde_json::from_value(json!({"method":"permission_import_snapshot"})).unwrap())
+        .await
+        .unwrap();
+    assert!(snapshot["rules"].as_array().unwrap().is_empty());
+    let changes = host
+        .dispatch(
+            serde_json::from_value(
+                json!({"method":"permission_import_changes","params":{"after":0,"limit":256}}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(changes["changes"].as_array().unwrap().len(), 2);
+    assert_eq!(changes["changes"][0]["change"]["kind"], "migrated");
+    assert_eq!(changes["changes"][1]["change"]["kind"], "removed");
+    assert_eq!(snapshot["cursor"], changes["cursor"]);
+    assert!(runtime
+        .permission_import_snapshot(&other.controller())
+        .await
+        .is_err());
+    assert!(runtime
+        .permission_import_changes(
+            &other.controller(),
+            miao_engine::permission_import_changes::Input { after: 0, limit: 1 }
+        )
+        .await
+        .is_err());
+    let mut foreign_scope = command;
+    foreign_scope["params"]["workspace"] = json!("/foreign");
+    assert!(serde_json::from_value::<miao_engine::protocol::Command>(foreign_scope).is_err());
+    runtime.shutdown().await;
+    other.shutdown().await;
+}

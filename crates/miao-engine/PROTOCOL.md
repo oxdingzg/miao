@@ -36,6 +36,8 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `select_account` | `session_id`, `credential_id` (string or null) | `{binding, account, changed}` |
 | `product_permission_evaluate` | `source`, `request` (active reverse-call facts) | `{effect, rules, authority_revision}` |
 | `permission_pattern_list` | — | native-owned standing patterns for this Runtime's workspace |
+| `permission_pattern_snapshot` | — | atomic native standing-rule snapshot and change cursor |
+| `permission_pattern_changes` | `after`, `limit` (1–256) | ordered durable changes after a workspace cursor |
 | `permission_pattern_put` | `rule` (allow only) | persisted pattern with ID, workspace, source and timestamp |
 | `permission_pattern_remove` | `rule_id` | `{removed:bool}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
@@ -872,3 +874,137 @@ record's admission binding; the latter stays unchanged for exact reply retries.
 User rejection, cancellation and allowance do not manufacture policy evidence.
 Legacy records without `denial` decode as unknown evidence and omit the field.
 These are engine-produced diagnostics, not caller-provided policy or a new grant.
+
+### Durable standing-rule projection cursor
+
+`permission_pattern_changes: 1` advertises the snapshot and changes commands.
+Both are controller operations bound to the Runtime’s canonical workspace;
+callers cannot select a workspace. Bootstrap a product projection with
+`permission_pattern_snapshot` (`workspace`, `patterns`, `cursor`), then consume
+`permission_pattern_changes` with `after=cursor` and `limit` from 1 to 256.
+The snapshot reads patterns and its cursor in one SQLite transaction, including
+rules created before the journal existed. Do not bootstrap from the feed alone.
+
+A page returns `workspace`, ordered `changes`, `cursor` and `has_more`. Each
+change has `seq`, `recorded_at_ms` and either `{kind:"upsert",pattern}` or
+`{kind:"remove",id}`. Resume after the returned cursor; an empty page retains
+the supplied cursor. Sequence gaps can belong to other workspaces. A receipt is
+committed in the same transaction as the pattern mutation, including patterns
+saved by an always reply. Content retries and absent/foreign revocations add
+no receipt. Receipt failure rolls back the mutation; a corrupt receipt fails
+the page. This journal is projection evidence, never a second rule authority.
+
+Product-side durable projection, acknowledgements, import retirement and
+complete S6 migration remain separate work. This revision does not prune the
+journal; retention and consumer acknowledgements require a separate design.
+
+### One-time saved-rule handoff (backend prerequisite)
+
+`saved_permission_migration: 1` advertises four controller-scoped commands:
+
+- `permission_saved_migrate {project,rules:[{id,rule}]}` atomically replaces the old
+  projection and records an immutable input receipt. Rules must be bounded allow
+  rules; duplicate IDs and native projection IDs are rejected. Input ordering is
+  irrelevant. Same-input retries return the receipt, including after revocation;
+  changed input or project is rejected. Empty imports clear stale projected rows.
+- `permission_saved_migration` returns the receipt, or null before handoff.
+- `permission_saved_imported` returns currently active imported IDs and rules.
+- `permission_saved_remove {id}` revokes one imported identity and retains its
+  tombstone. Duplicate content stays allowed until all its imported identities
+  are revoked. Independent native patterns remain independent.
+
+Workspace is the Runtime controller's canonical workspace and cannot be supplied
+in these commands. Legacy projection writes are rejected after handoff; rule
+budget, receipt, provenance and revocation updates share SQLite transactions.
+This does not create exact-call grants or widen workspace scope. Product
+activation, imported-rule change projection and project/global/worktree scope
+migration remain separate work; existing product owners do not invoke handoff.
+
+### Imported-rule change projection
+
+`permission_import_changes: 1` adds `permission_import_snapshot` and
+`permission_import_changes {after,limit}` (1–256). Both bind to the controller's
+canonical workspace. The snapshot pins the immutable migration receipt, active
+imported IDs/rules and cursor in one read transaction, including pre-journal
+imports and empty rule sets. Its cursor is independent of the native-pattern
+journal; older pattern consumers receive no new variant.
+
+One `migrated` change carries the receipt and full imported identity set, so a
+handoff cannot be projected as a partial list across page boundaries. Actual
+revocations append `removed {id,fingerprint}` in the same transaction; the
+fingerprint binds each removal to its immutable workspace migration receipt. Exact import retries,
+duplicate/foreign revokes and restarts do not append changes. Journal failure
+rolls back the grant or revoke. Receipt/scope/identity corruption refuses the
+whole page; a fresh atomic snapshot can rebuild from authoritative rows.
+
+These commands supply projection evidence, never another authorization path.
+Product imported-rule replicas, automatic handoff and broader scope migration
+remain separate activation work.
+
+### Model-free project permission control
+
+`permission_project_store: 1` advertises the separate local stdio entry point
+`miao-engine permissions --db PATH --project ID`. It opens only the dedicated
+project permission database and binds one project for the process lifetime; no
+workspace, model, provider, Session store or reverse tool bridge is initialized.
+The inherited environment in the product client contains process basics without
+provider credentials. The ordinary runtime protocol remains unchanged.
+
+Requests retain the usual scalar `id`, `method` and optional `params` framing:
+
+- `snapshot`: authority identity, bound project, revision, migration receipt and
+  active rules in one read transaction.
+- `migrate {rules:[{id,rule}]}`: one-time immutable legacy handoff, returning the
+  current snapshot. An exact retry never restores revoked identities.
+- `put {rule}`: idempotent native standing allow rule, returning the snapshot.
+- `remove {id}`: scoped revoke, returning `{removed}`; duplicate removal is false.
+- `shutdown`: acknowledge and exit after the response flushes.
+
+Requests cannot choose another project, workspace or database. Unknown fields,
+invalid input, deny patterns and unsupported databases are refused. The shared
+16 MiB framing bound and discard/resynchronization behavior apply. The process
+exits after five minutes without input, on EOF, shutdown or termination signal.
+Read timeouts do not imply a rule mutation; write timeouts retire the transport
+and require inspection of the durable snapshot before deciding on another write.
+
+This is trusted local rule-management control, not a model authorization tool or
+a Session execution owner. Runtime source/pending/always integration, product
+activation and legacy write retirement remain open.
+
+`permission_context_store: 1` additionally advertises startup binding with
+`--directory PATH [--workspace-id ID]`. The directory is canonicalized and must
+exist; explicit workspace identity is isolated from omitted implicit-local
+placement. Invalid bindings fail before opening the database. The project-only
+entry point remains compatible and refuses context requests without a binding.
+Additional methods use the same frame validation and timeout behavior:
+
+- `context_snapshot`: project snapshot plus canonical `directory`, nullable
+  `workspace_id`, directory `revision`, nullable directory migration receipt,
+  and active native `patterns`, all in one read transaction.
+- `context_put {rule}`: directory-only standing allow, returning that snapshot.
+- `context_remove {id}`: revoke only in the bound directory and workspace identity.
+- `context_migrate {patterns}`: explicit one-time handoff of native directory
+  patterns, retaining their IDs and timestamps. Changed inputs fail; exact retry
+  does not resurrect revoked patterns.
+
+Per-frame requests cannot change any binding. The combined project/directory
+budget counts unique rule content; directory rules never become project grants.
+This API does not freeze the old source or activate automatic product migration.
+
+`permission_project_handoff: 1` advertises `handoff {authority,rules}` on the
+project control endpoint. The expected durable authority identity is checked
+inside the same write transaction before importing rules **or accepting an
+existing receipt retry**. A mismatching destination fails without modifying
+rules, receipt or revision. Hosts freezing a source must use this method instead
+of unbound `migrate`, and probe support before preparing the source. A database
+pathname alone is not a durable destination identity.
+
+`permission_context_handoff: 1` similarly advertises
+`context_handoff {authority,patterns}` on a directory-bound controller. It checks
+the expected project database identity inside the directory write transaction,
+before the first import and before accepting a receipt retry. IDs, timestamps,
+revocations and the combined rule budget follow `context_migrate`. A mismatched
+identity changes neither directory nor project state. The request cannot change
+the startup project, canonical directory or workspace identity. Frozen directory
+sources must use this method and probe its capability before preparing a handoff;
+this destination operation does not itself freeze or retire their old writer.

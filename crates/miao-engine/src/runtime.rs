@@ -428,6 +428,73 @@ impl Runtime {
         }
     }
 
+    pub async fn permission_import_snapshot(
+        &self,
+        controller: &Controller,
+    ) -> Result<crate::permission_import_changes::Snapshot, Error> {
+        self.inner
+            .store
+            .permission_import_snapshot(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn permission_import_changes(
+        &self,
+        controller: &Controller,
+        input: crate::permission_import_changes::Input,
+    ) -> Result<crate::permission_import_changes::Page, Error> {
+        self.inner
+            .store
+            .permission_import_changes(self.permission_pattern_workspace(controller)?, input)
+            .await
+    }
+
+    pub async fn migrate_saved_permissions(
+        &self,
+        controller: &Controller,
+        input: crate::permission_migration::Input,
+    ) -> Result<crate::permission_migration::Receipt, Error> {
+        self.inner
+            .store
+            .migrate_legacy_permissions(
+                self.permission_pattern_workspace(controller)?,
+                input.project,
+                input.rules,
+            )
+            .await
+    }
+
+    pub async fn saved_permission_migration(
+        &self,
+        controller: &Controller,
+    ) -> Result<Option<crate::permission_migration::Receipt>, Error> {
+        self.inner
+            .store
+            .legacy_permission_migration(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn imported_permissions(
+        &self,
+        controller: &Controller,
+    ) -> Result<Vec<crate::permission_migration::LegacyRule>, Error> {
+        self.inner
+            .store
+            .imported_permissions(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn remove_imported_permission(
+        &self,
+        controller: &Controller,
+        id: String,
+    ) -> Result<bool, Error> {
+        self.inner
+            .store
+            .remove_imported_permission(self.permission_pattern_workspace(controller)?, id)
+            .await
+    }
+
     pub async fn permission_patterns(
         &self,
         controller: &Controller,
@@ -435,6 +502,27 @@ impl Runtime {
         self.inner
             .store
             .permission_patterns(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn permission_pattern_snapshot(
+        &self,
+        controller: &Controller,
+    ) -> Result<crate::permission_pattern_changes::Snapshot, Error> {
+        self.inner
+            .store
+            .permission_pattern_snapshot(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn permission_pattern_changes(
+        &self,
+        controller: &Controller,
+        input: crate::permission_pattern_changes::Input,
+    ) -> Result<crate::permission_pattern_changes::Page, Error> {
+        self.inner
+            .store
+            .permission_pattern_changes(self.permission_pattern_workspace(controller)?, input)
             .await
     }
 
@@ -2391,6 +2479,7 @@ async fn execute(
         // output has been emitted it is not. Retry the bounded pre-output case so
         // a transient reset (for example a proxy dropping the stream) does not
         // fail the turn.
+        let permissions = permission_profile(inner, &policy).await?;
         let mut produced = false;
         let mut ttft_ms: Option<u64> = None;
         let mut attempts = 0;
@@ -2416,7 +2505,7 @@ async fn execute(
                             json!({"name":"native-runtime","semantics":"native-runtime-v1","collaborationMode":if plan {"plan"} else {"build"}})
                         }
                     },
-                    permissions: json!({"policy":policy.descriptor(),"boundary":inner.tools.authority_descriptor()}),
+                    permissions: permissions.clone(),
                 },
                 crate::provider::scoped(
                     transport_budget.clone(),
@@ -3449,12 +3538,13 @@ command: None,
                 })
             };
             let mut breaker = inner.breaker.lock().await;
+            let permissions = permission_profile(inner, &policy).await?;
             let mut prefix = || {
                 let provider = Arc::clone(&prefix_provider);
                 let store = inner.store.clone();
                 let stop = inner.stop.clone();
                 let mut snapshot = request.clone();
-                let permissions = json!({"policy":policy.descriptor(),"boundary":inner.tools.authority_descriptor()});
+                let permissions = permissions.clone();
                 async move {
                     if !prefix_allowed {
                         return None;
@@ -3812,6 +3902,21 @@ command: None,
         }
         step += 1;
     }
+}
+
+// Saved rules can change during a running turn. This is the provider boundary's
+// diagnostic snapshot; each actual assertion still obtains its own native decision.
+async fn permission_profile(inner: &Inner, policy: &Policy) -> Result<Value, Error> {
+    let workspace = inner.tools.location();
+    let saved = inner.store.saved_rules(workspace.to_string()).await?;
+    Ok(json!({
+        "semantics": "native-permission-snapshot-v1",
+        "snapshot": "provider-boundary",
+        "workspace": workspace,
+        "policy": policy.descriptor(),
+        "boundary": inner.tools.authority_descriptor(),
+        "saved": saved,
+    }))
 }
 
 async fn notify_admission(
