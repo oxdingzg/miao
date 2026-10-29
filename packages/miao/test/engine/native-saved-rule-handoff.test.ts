@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import path from "node:path"
 import { Effect, Fiber } from "effect"
 import { nativeHostSource } from "../fixture/native-host-source"
 
@@ -28,16 +29,20 @@ test.skipIf(!process.env.MIAO_ENGINE_BIN)(
       expect(await fixture.client.request("permission_saved_remove", { id: "legacy-row" })).toEqual({ removed })
     expect(await fixture.client.request("permission_saved_migrate", input)).toEqual(receipt)
     expect(await fixture.client.request("permission_saved_imported")).toEqual([])
-    await expect(
-      fixture.client.request("permission_saved_project", {
-        workspace: fixture.directory,
-        rules: input.rules.map((item) => item.rule),
-      }),
-    ).rejects.toThrow()
-    await expect(fixture.client.request("permission_saved_migrate", { ...input, project: "other" })).rejects.toThrow()
-    await expect(
-      fixture.client.request("permission_saved_migrate", { ...input, workspace: "/foreign" }),
-    ).rejects.toThrow()
+    expect(
+      await failure(
+        fixture.client.request("permission_saved_project", {
+          workspace: path.toNamespacedPath(fixture.directory),
+          rules: input.rules.map((item) => item.rule),
+        }),
+      ),
+    ).toMatchObject({ code: "storage_error", message: expect.stringContaining("saved permission ownership migrated") })
+    expect(
+      await failure(fixture.client.request("permission_saved_migrate", { ...input, project: "other" })),
+    ).toMatchObject({ code: "invalid_request" })
+    expect(
+      await failure(fixture.client.request("permission_saved_migrate", { ...input, workspace: "/foreign" })),
+    ).toMatchObject({ code: "invalid_request" })
     const waiting = Effect.runFork(fixture.permission.assert(fixture.request("revoked", "public")))
     await fixture.reply(await fixture.wait("revoked"), "reject")
     expect((await Effect.runPromise(Fiber.await(waiting)))._tag).toBe("Failure")
@@ -45,3 +50,11 @@ test.skipIf(!process.env.MIAO_ENGINE_BIN)(
   },
   20_000,
 )
+
+// Settle the IPC promise before the synchronous matcher on Windows.
+function failure(request: Promise<unknown>) {
+  return request.then(
+    () => undefined,
+    (error: unknown) => error,
+  )
+}
