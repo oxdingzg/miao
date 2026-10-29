@@ -96,6 +96,7 @@ impl Host {
             }
             Command::Remove { session_id } => runtime.remove(&session_id).await,
             Command::RequestCompact { session_id } => runtime.request_compact(&session_id).await,
+            Command::Recap { session_id } => runtime.recap(&session_id).await,
             Command::SelectAgent { session_id, agent } => {
                 runtime.set_agent(&session_id, *agent).await
             }

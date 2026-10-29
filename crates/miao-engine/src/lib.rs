@@ -52,6 +52,7 @@ pub mod protocol;
 pub mod provider;
 pub mod question;
 pub mod recall;
+pub mod recap;
 pub mod recovery;
 pub mod request_options;
 pub mod responses_cache;
