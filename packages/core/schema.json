@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "5711317a-e729-4ddf-bf5c-07fa1861c8c5",
+  "id": "ea4fda3a-72e0-4b0f-aa9d-a56e1d117f6b",
   "prevIds": [
-    "97000bb1-774c-4eef-97d6-2ff62f1b45f0"
+    "5711317a-e729-4ddf-bf5c-07fa1861c8c5"
   ],
   "ddl": [
     {
@@ -12,6 +12,10 @@
     },
     {
       "name": "data_migration",
+      "entityType": "tables"
+    },
+    {
+      "name": "permission_import_replica",
       "entityType": "tables"
     },
     {
@@ -213,6 +217,66 @@
       "name": "time_completed",
       "entityType": "columns",
       "table": "data_migration"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "owner_key",
+      "entityType": "columns",
+      "table": "permission_import_replica"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "location",
+      "entityType": "columns",
+      "table": "permission_import_replica"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "directory",
+      "entityType": "columns",
+      "table": "permission_import_replica"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cursor",
+      "entityType": "columns",
+      "table": "permission_import_replica"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "migration",
+      "entityType": "columns",
+      "table": "permission_import_replica"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "rules",
+      "entityType": "columns",
+      "table": "permission_import_replica"
     },
     {
       "type": "text",
@@ -2641,6 +2705,15 @@
       "nameExplicit": false,
       "name": "data_migration_pk",
       "table": "data_migration",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "owner_key"
+      ],
+      "nameExplicit": false,
+      "name": "permission_import_replica_pk",
+      "table": "permission_import_replica",
       "entityType": "pks"
     },
     {
