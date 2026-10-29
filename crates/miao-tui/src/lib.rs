@@ -104,6 +104,13 @@ async fn drive(
     ) {
         Ok(settings) => {
             app.set_settings(settings.clone());
+            if let Some(notice) = engine::unrouted_notice(
+                &settings.spawn.args,
+                &settings.model,
+                std::env::var_os("MIAO_ENGINE_REAL_BIN").is_some(),
+            ) {
+                app.warn(&notice);
+            }
             match engine::attach(&settings, bus.clone()) {
                 Ok(handle) => app.attach_engine(handle),
                 Err(message) => app.handle(AppEvent::EngineFailure(message)),
