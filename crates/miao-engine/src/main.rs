@@ -109,6 +109,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Idle/signal termination can leave Tokio's blocking stdin reader parked.
         // All accepted database operations and stdout replies have settled here.
         std::process::exit(if result.is_ok() { 0 } else { 1 });
+    }
     if args.first().map(String::as_str) == Some("config") {
         let sources =
             match &args[1..] {

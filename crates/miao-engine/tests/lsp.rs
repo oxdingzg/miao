@@ -748,6 +748,7 @@ async fn a_reload_reconciles_the_lsp_section_and_keeps_unchanged_connections() {
     assert_eq!(report["lsp"]["removed"], json!([]));
     assert_eq!(report["lsp"]["unchanged"], json!(["rust"]));
     assert_eq!(initializations.load(Ordering::SeqCst), 1);
+    assert_eq!(announced.try_recv().unwrap(), report);
 
     // A malformed manifest changes nothing and is reported as an error.
     std::fs::write(&manifest, "{").unwrap();

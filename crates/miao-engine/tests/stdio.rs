@@ -486,7 +486,6 @@ fn agent_selection_is_a_wire_command_that_reports_its_derived_hash() {
 
 #[test]
 fn input_status_is_a_wire_command_that_survives_cancellation() {
-fn session_children_is_a_wire_command_over_the_lineage_edge() {
     let dir = tempfile::tempdir().unwrap();
     let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
         .args([
@@ -511,11 +510,6 @@ fn session_children_is_a_wire_command_over_the_lineage_edge() {
         json!({"id":4,"method":"cancel_input","params":{"session_id":"s","input_id":"one"}}),
         json!({"id":5,"method":"input_status","params":{"session_id":"s","input_id":"one"}}),
         json!({"id":6,"method":"input_status","params":{"session_id":"missing","input_id":"one"}}),
-        json!({"id":2,"method":"session_children","params":{"session_id":"s"}}),
-        json!({"id":3,"method":"fork","params":{"session_id":"s","target_session_id":"child"}}),
-        json!({"id":4,"method":"session_children","params":{"session_id":"s"}}),
-        json!({"id":5,"method":"session_children","params":{"session_id":"child"}}),
-        json!({"id":6,"method":"session_children","params":{"session_id":"missing"}}),
         json!({"id":7,"method":"shutdown"}),
     ];
     let mut stdin = process.stdin.take().unwrap();
@@ -548,6 +542,55 @@ fn session_children_is_a_wire_command_over_the_lineage_edge() {
     assert_eq!(cancelled["state"], "cancelled");
     assert!(cancelled["cancelled"]["seq"].is_number(), "{replies:?}");
     // An unknown Session has no inbox to ask about.
+    assert!(reply(6)["error"].is_object(), "{replies:?}");
+}
+
+#[test]
+fn session_children_is_a_wire_command_over_the_lineage_edge() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"hello"},"resume":false}}),
+        json!({"id":2,"method":"session_children","params":{"session_id":"s"}}),
+        json!({"id":3,"method":"fork","params":{"session_id":"s","target_session_id":"child"}}),
+        json!({"id":4,"method":"session_children","params":{"session_id":"s"}}),
+        json!({"id":5,"method":"session_children","params":{"session_id":"child"}}),
+        json!({"id":6,"method":"session_children","params":{"session_id":"missing"}}),
+        json!({"id":7,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let reply = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap().clone();
+    let result = |id: u64| reply(id)["result"].clone();
     // Before the fork the parent has no children, which is an answer.
     assert_eq!(result(2)["children"], json!([]));
     assert_eq!(result(2)["truncated"], json!(false));
@@ -706,7 +749,6 @@ async fn a_slow_reader_does_not_kill_the_engine() {
 
 #[test]
 fn workspace_git_state_is_a_wire_command_that_answers_absent_repositories() {
-fn stdio_recap_is_a_wire_command_that_commits_no_checkpoint() {
     let dir = tempfile::tempdir().unwrap();
     let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
         .args([
@@ -729,10 +771,6 @@ fn stdio_recap_is_a_wire_command_that_commits_no_checkpoint() {
         json!({"id":2,"method":"vcs_status","params":{"session_id":"s"}}),
         json!({"id":3,"method":"vcs_status","params":{"session_id":"missing"}}),
         json!({"id":4,"method":"shutdown"}),
-        json!({"id":2,"method":"recap","params":{"session_id":"s"}}),
-        json!({"id":3,"method":"recap","params":{"session_id":"missing"}}),
-        json!({"id":4,"method":"events","params":{"session_id":"s","after":0}}),
-        json!({"id":5,"method":"shutdown"}),
     ];
     let mut stdin = process.stdin.take().unwrap();
     for request in requests {
@@ -765,6 +803,50 @@ fn stdio_recap_is_a_wire_command_that_commits_no_checkpoint() {
         replies.iter().find(|reply| reply["id"] == 3).unwrap()["error"].is_object(),
         "{replies:?}"
     );
+}
+
+#[test]
+fn stdio_recap_is_a_wire_command_that_commits_no_checkpoint() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"hello"},"resume":false}}),
+        json!({"id":2,"method":"recap","params":{"session_id":"s"}}),
+        json!({"id":3,"method":"recap","params":{"session_id":"missing"}}),
+        json!({"id":4,"method":"events","params":{"session_id":"s","after":0}}),
+        json!({"id":5,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
     let result = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap()["result"].clone();
     let recap = result(2);
     assert!(

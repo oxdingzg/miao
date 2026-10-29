@@ -1101,6 +1101,8 @@ impl Runtime {
             .store
             .replace_saved_rules(self.inner.tools.location().to_owned(), rules)
             .await
+    }
+
     /// Build a recap for a person coming back to this Session.
     ///
     /// A recap is a review artifact, not a context operation: it calls no

@@ -95,7 +95,6 @@ impl Host {
                 runtime.store().set_pinned(&session_id, pinned).await
             }
             Command::Remove { session_id } => runtime.remove(&session_id).await,
-            Command::RequestCompact { session_id } => runtime.request_compact(&session_id).await,
             Command::Recap { session_id } => runtime.recap(&session_id).await,
             Command::RequestCompact {
                 session_id,
