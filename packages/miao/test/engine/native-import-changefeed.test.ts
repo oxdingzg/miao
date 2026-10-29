@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import path from "node:path"
 import { Schema } from "effect"
 import { EngineClient } from "@/engine/client"
 import { nativeHostSource } from "../fixture/native-host-source"
@@ -17,7 +18,12 @@ test.skipIf(!process.env.MIAO_ENGINE_BIN)(
     await using fixture = await nativeHostSource()
     expect(fixture.supported.permissionImportChanges).toBe(1)
     const initial = Schema.decodeUnknownSync(Snapshot)(await fixture.client.request("permission_import_snapshot"))
-    expect(initial).toEqual({ workspace: fixture.directory, cursor: 0, migration: null, rules: [] })
+    expect(initial).toEqual({
+      workspace: path.toNamespacedPath(fixture.directory),
+      cursor: 0,
+      migration: null,
+      rules: [],
+    })
     const input = {
       project: "legacy-project",
       rules: [{ id: "legacy-row", rule: { action: "read", resource: "public", effect: "allow" } }],
@@ -61,7 +67,12 @@ test.skipIf(!process.env.MIAO_ENGINE_BIN)(
         cursor: second.cursor,
         changes: [],
       })
-      await expect(reopened.request("permission_import_changes", { after: 0, limit: 257 })).rejects.toThrow()
+      // Await IPC before asserting: Bun's Windows rejection matcher can stall pipe progress.
+      const invalid = await reopened.request("permission_import_changes", { after: 0, limit: 257 }).then(
+        () => undefined,
+        (error: unknown) => error,
+      )
+      expect(invalid).toMatchObject({ code: "invalid_request" })
     } finally {
       await reopened.close()
     }
