@@ -26,6 +26,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `admit` | `input`, `resume`, `attachments?` | `Admission` |
 | `resume` | `session_id` | `{accepted:true}` |
 | `cancel_input` | `session_id`, `input_id` | `{accepted:bool, reason?}` |
+| `input_status` | `session_id`, `input_id` | admission receipt (see below) |
 | `cancel` | `session_id` | `{accepted:bool}` |
 | `archive` | `session_id`, `archived` | `{accepted:true, archived}` |
 | `pin` | `session_id`, `pinned` | `{accepted:true, pinned}` |
@@ -182,6 +183,41 @@ A cancelled identity is terminal: admitting the same `session_id`/`input_id`
 again fails with `input_conflict` instead of resurrecting the dropped prompt or
 returning a receipt whose prompt never runs. A client that wants to re-send a
 cancelled prompt admits it under a fresh `input_id`.
+
+### Input receipt
+
+`input_status` takes `session_id` and `input_id` and answers where one admitted
+input is now, so a reconnecting client can place a prompt it sent earlier
+without replaying every `input.*` event:
+
+```json
+{
+  "session_id": "s",
+  "input_id": "one",
+  "state": "promoted",
+  "delivery": "steer",
+  "admitted_seq": 4,
+  "admitted_at_ms": 1730000000000,
+  "promoted": {"seq": 5, "recorded_at_ms": 1730000000100, "checkpoint": "..."}
+}
+```
+
+- `state` is `pending`, `promoted`, `cancelled`, or `unknown`. An id this
+  Session never admitted answers `unknown` with no other fields, because
+  another Session's admission is not this caller's fact; an unknown
+  `session_id` is `invalid_request`.
+- A `pending` input carries `pending_ahead`: how many inputs of the **same
+  delivery class** were admitted before it. Promotions run steer-first and take
+  at most one queued item per idle boundary, so a single cross-class position
+  would claim an order the engine does not promise.
+- A `promoted` input carries `promoted`: the seq of the user message it became
+  (the projection lands on the promotion event's seq), that event's local time
+  and its checkpoint, which is the identity a transcript or revert names.
+- A `cancelled` input carries `cancelled`: the seq and local time of the
+  `input.cancelled` event that dropped it.
+- Execution and failure are deliberately absent. Promotion starts a run whose
+  outcome belongs to that run — `run.finished` and the Session's run state —
+  not to the admission receipt.
 
 ### Session agent selection
 

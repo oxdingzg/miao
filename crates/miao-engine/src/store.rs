@@ -599,6 +599,118 @@ impl Store {
         .await
     }
 
+    /// One admitted input's durable receipt.
+    ///
+    /// A reconnecting client can page `pending_inputs`, but it cannot learn
+    /// what happened to a prompt it sent earlier without replaying every
+    /// `input.*` event: this answers "where is my prompt now" from the inbox
+    /// row and the one event that settled it. Execution and failure are not
+    /// part of the receipt — promotion starts a run whose outcome belongs to
+    /// that run, not to the admission.
+    pub async fn input_status(&self, session: &str, input_id: &str) -> Result<Value, Error> {
+        if session.is_empty() || input_id.is_empty() || session.len() > 256 || input_id.len() > 256
+        {
+            return Err(Error::Invalid(
+                "session_id and input_id must be nonempty".into(),
+            ));
+        }
+        let (session, input_id) = (session.to_owned(), input_id.to_owned());
+        self.call(move |conn| {
+            let exists: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(Error::Invalid("Session does not exist".into()));
+            }
+            let row: Option<(String, String, u64, Option<u64>)> = conn
+                .query_row(
+                    "SELECT i.delivery,i.state,i.admitted_seq,e.recorded_at_ms
+                     FROM engine_input i
+                     LEFT JOIN engine_event e ON e.session_id=i.session_id AND e.seq=i.admitted_seq
+                     WHERE i.session_id=?1 AND i.id=?2",
+                    params![session, input_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .optional()?;
+            let Some((delivery, state, admitted_seq, admitted_at_ms)) = row else {
+                // Another Session's admission is not this caller's receipt.
+                return Ok(json!({
+                    "session_id": session,
+                    "input_id": input_id,
+                    "state": "unknown",
+                }));
+            };
+            let mut receipt = json!({
+                "session_id": &session,
+                "input_id": &input_id,
+                "state": &state,
+                "delivery": &delivery,
+                "admitted_seq": admitted_seq,
+                "admitted_at_ms": admitted_at_ms,
+            });
+            match state.as_str() {
+                "pending" => {
+                    // Promotions run steer-first, then at most one queued item
+                    // per idle boundary, so position only means something
+                    // inside one delivery class.
+                    receipt["pending_ahead"] = json!(conn.query_row(
+                        "SELECT COUNT(*) FROM engine_input
+                         WHERE session_id=?1 AND delivery=?2 AND state='pending' AND admitted_seq<?3",
+                        params![&session, &delivery, admitted_seq],
+                        |row| row.get::<_, u64>(0),
+                    )?);
+                }
+                "promoted" => {
+                    let promoted: Option<(u64, Option<u64>, Option<String>)> = conn
+                        .query_row(
+                            "SELECT e.seq,e.recorded_at_ms,json_extract(e.data,'$.checkpoint')
+                             FROM engine_event e
+                             WHERE e.session_id=?1 AND e.kind='input.promoted'
+                               AND json_extract(e.data,'$.input_id')=?2
+                             ORDER BY e.seq LIMIT 1",
+                            params![&session, &input_id],
+                            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                        )
+                        .optional()?;
+                    // The projected user message occupies the promotion's seq,
+                    // so this is the message a transcript can scroll to.
+                    receipt["promoted"] = match promoted {
+                        Some((seq, recorded_at_ms, checkpoint)) => json!({
+                            "seq": seq,
+                            "recorded_at_ms": recorded_at_ms,
+                            "checkpoint": checkpoint,
+                        }),
+                        None => Value::Null,
+                    };
+                }
+                "cancelled" => {
+                    let cancelled: Option<(u64, Option<u64>)> = conn
+                        .query_row(
+                            "SELECT e.seq,e.recorded_at_ms FROM engine_event e
+                             WHERE e.session_id=?1 AND e.kind='input.cancelled'
+                               AND json_extract(e.data,'$.input_id')=?2
+                             ORDER BY e.seq LIMIT 1",
+                            params![&session, &input_id],
+                            |row| Ok((row.get(0)?, row.get(1)?)),
+                        )
+                        .optional()?;
+                    receipt["cancelled"] = match cancelled {
+                        Some((seq, recorded_at_ms)) => json!({
+                            "seq": seq,
+                            "recorded_at_ms": recorded_at_ms,
+                        }),
+                        None => Value::Null,
+                    };
+                }
+                _ => {}
+            }
+            Ok(receipt)
+        })
+        .await
+    }
+
     pub async fn active_run(&self, session: &str) -> Result<Option<String>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {

@@ -113,6 +113,10 @@ impl Host {
                 session_id,
                 input_id,
             } => runtime.store().cancel_input(&session_id, &input_id).await,
+            Command::InputStatus {
+                session_id,
+                input_id,
+            } => runtime.store().input_status(&session_id, &input_id).await,
             Command::ModelCatalog => {
                 serde_json::to_value(runtime.model_catalog()).map_err(Error::from)
             }
