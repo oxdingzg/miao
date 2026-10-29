@@ -215,6 +215,45 @@ async fn archiving_is_reversible_and_never_invents_a_session() {
 }
 
 #[tokio::test]
+async fn pinning_is_reversible_and_never_counts_as_activity() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    assert!(matches!(
+        store.set_pinned("s", true).await,
+        Err(Error::Invalid(_))
+    ));
+    store.admit(input("one", Delivery::Steer)).await.unwrap();
+    let before = store.snapshot("s").await.unwrap();
+    assert!(before["pinned_at_ms"].is_null());
+    assert_eq!(
+        store.set_pinned("s", true).await.unwrap(),
+        json!({"accepted": true, "pinned": true})
+    );
+    let pinned = store.snapshot("s").await.unwrap();
+    assert!(pinned["pinned_at_ms"].is_number());
+    // A pin is a list preference, not activity: the catalog's update time must
+    // not move, or pinning would look like the Session had just been used.
+    assert_eq!(pinned["updated_at_ms"], before["updated_at_ms"]);
+    // The pin is a durable event, so another client replaying the catalog sees
+    // the same order the writer just created.
+    let events = store.events("s", 0, 100).await.unwrap();
+    assert!(events
+        .iter()
+        .any(|event| event.kind == "session.pinned" && event.data["pinned"] == true));
+    assert_eq!(
+        store.set_pinned("s", false).await.unwrap(),
+        json!({"accepted": true, "pinned": false})
+    );
+    assert!(store.snapshot("s").await.unwrap()["pinned_at_ms"].is_null());
+    // Pinning the archive flag's sibling column never disturbs the archive one.
+    store.set_archived("s", true).await.unwrap();
+    store.set_pinned("s", true).await.unwrap();
+    let both = store.snapshot("s").await.unwrap();
+    assert!(both["archived_at_ms"].is_number());
+    assert!(both["pinned_at_ms"].is_number());
+}
+
+#[tokio::test]
 async fn removing_a_session_deletes_its_rows_and_orphans_its_children() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
