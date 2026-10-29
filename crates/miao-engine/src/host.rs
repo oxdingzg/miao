@@ -534,6 +534,14 @@ impl Host {
                 .permission_patterns(&self.controller)
                 .await
                 .and_then(|patterns| serde_json::to_value(patterns).map_err(Error::from)),
+            Command::PermissionPatternSnapshot => runtime
+                .permission_pattern_snapshot(&self.controller)
+                .await
+                .and_then(|snapshot| serde_json::to_value(snapshot).map_err(Error::from)),
+            Command::PermissionPatternChanges(input) => runtime
+                .permission_pattern_changes(&self.controller, input)
+                .await
+                .and_then(|page| serde_json::to_value(page).map_err(Error::from)),
             Command::PermissionPatternPut(input) => runtime
                 .put_permission_pattern(&self.controller, input.rule)
                 .await

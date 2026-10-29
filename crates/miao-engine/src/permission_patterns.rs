@@ -62,6 +62,7 @@ pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
              +(SELECT COUNT(*) FROM engine_owned_permission_rule WHERE workspace=NEW.workspace)>={MAX_RULES}
          BEGIN SELECT RAISE(ABORT, 'saved permission rule budget exceeded'); END;"
     ))?;
+    crate::permission_pattern_changes::initialize(connection)?;
     Ok(())
 }
 
@@ -97,7 +98,7 @@ pub(crate) fn rules(connection: &Connection, workspace: &str) -> Result<Vec<Rule
         .collect())
 }
 
-fn records(connection: &Connection, workspace: &str) -> Result<Vec<Pattern>, Error> {
+pub(crate) fn records(connection: &Connection, workspace: &str) -> Result<Vec<Pattern>, Error> {
     require_workspace(workspace)?;
     // Older compatible databases may be opened read-only by a catalog. Missing
     // optional native patterns mean no additional allow, never an implicit grant.
@@ -161,7 +162,7 @@ pub(crate) fn put_in(
     require_workspace(workspace)?;
     require_rule(rule)?;
     let id = rule_digest(workspace, rule)?;
-    transaction.execute(
+    let inserted = transaction.execute(
         "INSERT OR IGNORE INTO engine_owned_permission_rule(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
         params![workspace, id, serde_json::to_string(rule)?, crate::approval::now_ms()],
     )?;
@@ -176,6 +177,15 @@ pub(crate) fn put_in(
         .into_iter()
         .find(|record| record.id == format!("{ID_PREFIX}{id}"))
         .ok_or_else(|| Error::Invalid("native permission pattern was not stored".into()))?;
+    if inserted != 0 {
+        crate::permission_pattern_changes::append(
+            transaction,
+            workspace,
+            &crate::permission_pattern_changes::Change::Upsert {
+                pattern: record.clone(),
+            },
+        )?;
+    }
     Ok(record)
 }
 
@@ -190,18 +200,27 @@ fn remove(connection: &mut Connection, workspace: &str, id: &str) -> Result<bool
         "DELETE FROM engine_owned_permission_rule WHERE workspace=?1 AND digest=?2",
         params![workspace, id],
     )? != 0;
+    if removed {
+        crate::permission_pattern_changes::append(
+            &transaction,
+            workspace,
+            &crate::permission_pattern_changes::Change::Remove {
+                id: format!("{ID_PREFIX}{id}"),
+            },
+        )?;
+    }
     transaction.commit()?;
     Ok(removed)
 }
 
-fn require_workspace(workspace: &str) -> Result<(), Error> {
+pub(crate) fn require_workspace(workspace: &str) -> Result<(), Error> {
     if workspace.is_empty() || workspace.len() > 8192 || workspace.contains('\0') {
         return Err(Error::Invalid("invalid native permission workspace".into()));
     }
     Ok(())
 }
 
-fn require_rule(rule: &Rule) -> Result<(), Error> {
+pub(crate) fn require_rule(rule: &Rule) -> Result<(), Error> {
     if rule.effect != Decision::Allow {
         return Err(Error::Invalid("native saved patterns must allow".into()));
     }
@@ -213,7 +232,7 @@ fn require_rule(rule: &Rule) -> Result<(), Error> {
     Ok(())
 }
 
-fn rule_digest(workspace: &str, rule: &Rule) -> Result<String, Error> {
+pub(crate) fn rule_digest(workspace: &str, rule: &Rule) -> Result<String, Error> {
     Ok(digest(&serde_json::to_vec(
         &json!({"semantics":"native-permission-pattern-v1","workspace":workspace,"rule":rule}),
     )?))
@@ -391,5 +410,184 @@ mod tests {
         assert!(records(&connection, "/repo").is_err());
         connection.execute("UPDATE engine_owned_permission_rule SET rule=?1,workspace='/other' WHERE digest=?2", params![serde_json::to_string(&rule("*")).unwrap(), first.id.strip_prefix("prule_").unwrap()]).unwrap();
         assert!(records(&connection, "/other").is_err());
+    }
+    #[test]
+    fn durable_change_pages_are_scoped_ordered_and_content_retries_are_silent() {
+        use crate::permission_pattern_changes::{changes, Change, Input};
+        let mut connection = connection();
+        let first = put(&mut connection, "/first", &rule("one")).unwrap();
+        put(&mut connection, "/other", &rule("other")).unwrap();
+        assert_eq!(put(&mut connection, "/first", &rule("one")).unwrap(), first);
+        let second = put(&mut connection, "/first", &rule("two")).unwrap();
+        assert!(remove(&mut connection, "/first", &first.id).unwrap());
+        assert!(!remove(&mut connection, "/first", &first.id).unwrap());
+        assert!(!remove(&mut connection, "/other", &second.id).unwrap());
+        let page = changes(&connection, "/first", Input { after: 0, limit: 2 }).unwrap();
+        assert_eq!(page.changes.len(), 2);
+        assert!(page.has_more);
+        assert_eq!(
+            page.changes[0].change,
+            Change::Upsert {
+                pattern: first.clone()
+            }
+        );
+        assert_eq!(page.changes[1].change, Change::Upsert { pattern: second });
+        assert!(page.changes[1].seq > page.changes[0].seq + 1);
+        let tail = changes(
+            &connection,
+            "/first",
+            Input {
+                after: page.cursor,
+                limit: 2,
+            },
+        )
+        .unwrap();
+        assert!(!tail.has_more);
+        assert_eq!(tail.changes.len(), 1);
+        assert_eq!(tail.changes[0].change, Change::Remove { id: first.id });
+        let empty = changes(
+            &connection,
+            "/first",
+            Input {
+                after: tail.cursor,
+                limit: 2,
+            },
+        )
+        .unwrap();
+        assert!(empty.changes.is_empty());
+        assert_eq!(empty.cursor, tail.cursor);
+        assert_eq!(
+            changes(
+                &connection,
+                "/other",
+                Input {
+                    after: 0,
+                    limit: 256
+                }
+            )
+            .unwrap()
+            .changes
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn change_receipt_failures_roll_back_put_and_revoke() {
+        use crate::permission_pattern_changes::{changes, Input};
+        let mut connection = connection();
+        let first = put(&mut connection, "/repo", &rule("one")).unwrap();
+        connection.execute_batch("CREATE TRIGGER fail_permission_change BEFORE INSERT ON engine_permission_pattern_change BEGIN SELECT RAISE(ABORT,'receipt fault'); END;").unwrap();
+        assert!(put(&mut connection, "/repo", &rule("two")).is_err());
+        assert!(remove(&mut connection, "/repo", &first.id).is_err());
+        assert_eq!(records(&connection, "/repo").unwrap(), vec![first]);
+        assert_eq!(
+            changes(
+                &connection,
+                "/repo",
+                Input {
+                    after: 0,
+                    limit: 256
+                }
+            )
+            .unwrap()
+            .changes
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn atomic_snapshot_bootstraps_pre_journal_rules_and_replays_later_removal() {
+        use crate::permission_pattern_changes::{changes, snapshot, Change, Input};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("changes.db");
+        let initial = {
+            let mut connection = Connection::open(&path).unwrap();
+            crate::permission_saved::initialize(&connection).unwrap();
+            initialize(&connection).unwrap();
+            let first = put(&mut connection, "/repo", &rule("one")).unwrap();
+            connection
+                .execute("DELETE FROM engine_permission_pattern_change", [])
+                .unwrap();
+            let initial = snapshot(&mut connection, "/repo").unwrap();
+            assert_eq!(initial.cursor, 0);
+            assert_eq!(initial.patterns, vec![first.clone()]);
+            assert!(remove(&mut connection, "/repo", &first.id).unwrap());
+            initial
+        };
+        let mut connection = Connection::open(&path).unwrap();
+        initialize(&connection).unwrap();
+        let page = changes(
+            &connection,
+            "/repo",
+            Input {
+                after: initial.cursor,
+                limit: 256,
+            },
+        )
+        .unwrap();
+        assert_eq!(page.changes.len(), 1);
+        assert_eq!(
+            page.changes[0].change,
+            Change::Remove {
+                id: initial.patterns[0].id.clone()
+            }
+        );
+        assert!(snapshot(&mut connection, "/repo")
+            .unwrap()
+            .patterns
+            .is_empty());
+    }
+
+    #[test]
+    fn change_cursor_bounds_and_corrupt_receipts_fail_without_a_partial_projection() {
+        use crate::permission_pattern_changes::{changes, Input};
+        let mut connection = connection();
+        put(&mut connection, "/repo", &rule("one")).unwrap();
+        for input in [
+            Input { after: 0, limit: 0 },
+            Input {
+                after: 0,
+                limit: 257,
+            },
+            Input {
+                after: u64::MAX,
+                limit: 1,
+            },
+        ] {
+            assert!(changes(&connection, "/repo", input).is_err());
+        }
+        assert!(changes(&connection, "", Input { after: 0, limit: 1 }).is_err());
+        connection
+            .execute(
+                "UPDATE engine_permission_pattern_change SET change='{}'",
+                [],
+            )
+            .unwrap();
+        assert!(changes(&connection, "/repo", Input { after: 0, limit: 1 }).is_err());
+    }
+    #[test]
+    fn a_later_receipt_failure_rolls_back_every_pattern_in_the_outer_transaction() {
+        use crate::permission_pattern_changes::{changes, Input};
+        let mut connection = connection();
+        connection.execute_batch("CREATE TRIGGER fail_second_receipt BEFORE INSERT ON engine_permission_pattern_change WHEN json_extract(NEW.change,'$.pattern.rule.resource')='two' BEGIN SELECT RAISE(ABORT,'second receipt fault'); END;").unwrap();
+        {
+            let transaction = crate::store::write_tx(&mut connection).unwrap();
+            super::put_in(&transaction, "/repo", &rule("one")).unwrap();
+            assert!(super::put_in(&transaction, "/repo", &rule("two")).is_err());
+        }
+        assert!(records(&connection, "/repo").unwrap().is_empty());
+        assert!(changes(
+            &connection,
+            "/repo",
+            Input {
+                after: 0,
+                limit: 256
+            }
+        )
+        .unwrap()
+        .changes
+        .is_empty());
     }
 }

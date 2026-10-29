@@ -602,6 +602,8 @@ pub enum Command {
     },
     /// Standing allow patterns owned by this Runtime's canonical workspace.
     PermissionPatternList,
+    PermissionPatternSnapshot,
+    PermissionPatternChanges(crate::permission_pattern_changes::Input),
     PermissionPatternPut(crate::permission_patterns::Put),
     PermissionPatternRemove(crate::permission_patterns::Remove),
     /// Project the product's saved "always allow" rules into the engine store
