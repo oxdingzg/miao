@@ -2464,7 +2464,11 @@ async fn execute(
             // same decision: there is no surface to review.
             Vec::new()
         } else {
-            dispatch_plugin_definitions(inner, session, run, tools).await?
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Ok(()),
+                reviewed = dispatch_plugin_definitions(inner, session, run, tools) => reviewed?,
+            }
         };
         // Wrap-up guidance rides the request after the durable history as an
         // assistant note, matching the TS runner's message shape.
@@ -2998,15 +3002,18 @@ command: None,
                     // them the turn is actually blocked on.
                     let _waiting = WaitNotice::start(&inner.progress, session, run, step, id, name);
                     let mut block_input = block["input"].clone();
-                    let plugin_before = dispatch_plugin_before(
-                        inner,
-                        session,
-                        run,
-                        id,
-                        effective_name,
-                        &mut block_input,
-                    )
-                    .await?;
+                    let plugin_before = tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => return Ok(()),
+                        verdict = dispatch_plugin_before(
+                            inner,
+                            session,
+                            run,
+                            id,
+                            effective_name,
+                            &mut block_input,
+                        ) => verdict?,
+                    };
                     if let Some(reason) = plugin_before {
                         (json!({"error":reason}), true)
                     } else {
@@ -3381,17 +3388,19 @@ command: None,
                 let (output, is_error) = if plugin_marked(inner, "after") {
                     let mut output = output;
                     let mut is_error = is_error;
-                    if let Some(reason) = dispatch_plugin_after(
-                        inner,
-                        session,
-                        run,
-                        id,
-                        effective_name,
-                        &block["input"],
-                        &mut output,
-                    )
-                    .await?
-                    {
+                    if let Some(reason) = tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => return Ok(()),
+                        verdict = dispatch_plugin_after(
+                            inner,
+                            session,
+                            run,
+                            id,
+                            effective_name,
+                            &block["input"],
+                            &mut output,
+                        ) => verdict?,
+                    } {
                         output = json!({"error":reason});
                         is_error = true;
                     }
