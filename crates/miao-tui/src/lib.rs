@@ -11,6 +11,7 @@ pub mod keybinds;
 pub mod markdown;
 pub mod pane;
 pub mod platform;
+pub mod saved_permissions;
 pub mod session;
 pub mod state;
 pub mod status;
