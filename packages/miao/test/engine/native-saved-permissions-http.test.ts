@@ -92,6 +92,7 @@ test.skipIf(!binary)(
     })
     const { Database } = await import("bun:sqlite")
     const database = new Database(path.join(tmp.path, "miao-native.db"))
+    database.run("PRAGMA busy_timeout = 5000")
     try {
       database
         .query(
