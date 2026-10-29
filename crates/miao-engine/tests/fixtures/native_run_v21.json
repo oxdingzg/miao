@@ -1,0 +1,16 @@
+{
+  "source_commit": "03cc9ef503",
+  "binary_sha256": "28735e93efff1425d2259db1a53675c5dd5824233a0aff752f1b56ac4fdd017a",
+  "schema": 21,
+  "fixture_sha256": "4df46ac4f63399df9f5309b586bf3f1ad88d069c5715828eca1cf4ebe25f66ac",
+  "generation": "Real compiled engine initialized schema21 and admitted input with resume:false; historical run/tool/lease rows seeded through SQL after shutdown, no provider execution",
+  "expected": {
+    "session_id": "schema21-session",
+    "run_id": "historical-run",
+    "input_id": "schema21-input",
+    "lease_epoch": 7,
+    "run_claim_epoch": null,
+    "location": "/fixture/schema21"
+  },
+  "restore": "Disable foreign keys while restoring the complete SQLite dump; enable after schema and rows exist"
+}
