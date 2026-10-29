@@ -1,23 +1,13 @@
 export * as SessionRunner from "./index"
 
-import type { LLMError } from "@miao/llm"
 import { Context, Effect } from "effect"
 import type { BusyPhase } from "@miao/schema/session-event"
 import { SessionSchema } from "../schema"
-import type { ContextSnapshotDecodeError, LegacyNotMigratedError, MessageDecodeError } from "../error"
-import { SessionModel } from "../model"
-import type { SystemContext } from "../../system-context/index"
-import type { ToolOutputStore } from "../../tool-output-store"
+import type { ExecutionError } from "../error"
 import type { SessionDelegation } from "../delegation"
 
-export type RunError =
-  | LLMError
-  | SessionModel.Error
-  | MessageDecodeError
-  | ContextSnapshotDecodeError
-  | LegacyNotMigratedError
-  | SystemContext.InitializationBlocked
-  | ToolOutputStore.Error
+/** Compatibility name for callers that still implement the TypeScript runner. */
+export type RunError = ExecutionError
 
 /** Runs one local continuation from already-recorded Session history. */
 export interface Interface {

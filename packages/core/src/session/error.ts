@@ -1,6 +1,20 @@
 import { Schema } from "effect"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
+import type { LLMError } from "@miao/llm"
+import type { SessionModel } from "./model"
+import type { SystemContext } from "../system-context/index"
+import type { ToolOutputStore } from "../tool-output-store"
+
+/** Shared continuation failure contract, independent of the legacy runner service. */
+export type ExecutionError =
+  | LLMError
+  | SessionModel.Error
+  | MessageDecodeError
+  | ContextSnapshotDecodeError
+  | LegacyNotMigratedError
+  | SystemContext.InitializationBlocked
+  | ToolOutputStore.Error
 
 export class MessageDecodeError extends Schema.TaggedErrorClass<MessageDecodeError>()("Session.MessageDecodeError", {
   sessionID: SessionSchema.ID,
