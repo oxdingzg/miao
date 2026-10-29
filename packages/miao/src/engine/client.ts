@@ -513,6 +513,7 @@ export class EngineClient {
         // must be inspected before another attempt.
         if (
           [
+            "binding",
             "snapshot",
             "context_snapshot",
             "sessions",

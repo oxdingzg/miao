@@ -22,6 +22,7 @@ struct Request {
 #[derive(Deserialize)]
 #[serde(tag = "method", content = "params", rename_all = "snake_case")]
 enum Command {
+    Binding,
     Snapshot,
     Prepare(Prepare),
     Complete(Box<Complete>),
@@ -96,6 +97,9 @@ impl Controller {
         let shutdown = matches!(request.command, Command::Shutdown);
         let result: Result<Value, Error> = async {
             Ok(match request.command {
+                Command::Binding => {
+                    json!({"project":self.project,"directory":self.directory,"workspace_id":null})
+                }
                 Command::Snapshot => {
                     let record = self
                         .store

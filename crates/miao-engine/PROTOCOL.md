@@ -944,6 +944,8 @@ requires an existing native Session database and canonicalizes the directory
 before opening it. The implicit-local placement and project stay bound for the
 process lifetime. Provider flags, credentials and model execution are absent.
 
+- `binding`: startup-bound project, canonical directory and implicit-local workspace identity.
+  Hosts compare both controls before freezing a source; this read does not prepare it.
 - `snapshot`: nullable immutable source record, including target identity,
   original native patterns, destination fingerprint and `prepared/completed` state.
 - `prepare {authority}`: require a quiescent directory with no live or unknown
