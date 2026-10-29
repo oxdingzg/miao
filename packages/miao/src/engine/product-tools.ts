@@ -7,6 +7,7 @@ import { Database } from "@miao/core/database/database"
 import { SessionDelegationStore } from "@miao/core/session/delegation-store"
 import { EventV2 } from "@miao/core/event"
 import { PermissionV2 } from "@miao/core/permission"
+import { PermissionSource } from "@miao/core/permission/source"
 import { QuestionV2 } from "@miao/core/question"
 import { ProjectV2 } from "@miao/core/project"
 import { ProjectWorktree } from "@miao/core/project/worktree"
@@ -31,12 +32,15 @@ import { ToolPlugins } from "@miao/core/tool/plugins"
 import { PushNotificationTool } from "@miao/core/tool/push-notification"
 import { ToolRegistry } from "@miao/core/tool/registry"
 import { ToolFailure, type ToolCall } from "@miao/llm"
-import type { Location } from "@miao/schema/location"
+import { Location } from "@miao/core/location"
 import { AbsolutePath } from "@miao/core/schema"
 import { Cause, DateTime, Effect, Option, Schema } from "effect"
 import { EngineError, type EngineOptions } from "./client"
 import type { EngineClient, EngineEvent } from "./client"
 import { messageID } from "./identity"
+import { capabilities } from "./discovery"
+import { NativeHostPermission } from "./native-host-permission"
+import { ProductPermissionRequest } from "./product-permission-request"
 import { moveEngine } from "./transfer"
 import { PluginTools } from "./plugin-tools"
 import type { EngineSession } from "./session"
@@ -117,6 +121,7 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
 ) {
   const options: Partial<EngineOptions> = {}
   if (configuration.productToolsFile) return options
+  const location = yield* Location.Service
   const database = yield* Database.Service
   const scope = yield* Effect.scope
   const db = database.db
@@ -125,6 +130,9 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
   const storageRoot = process.env.MIAO_ENGINE_STORAGE
   const store = yield* SessionStore.Service
   const permission = yield* PermissionV2.Service
+  const sources = yield* PermissionSource.Service
+  const supported = capabilities(configuration.binary)
+  const nativePermissions = NativeHostPermission.supports(supported) && supported.savedRulesSnapshot === 1
   const question = yield* QuestionV2.Service
   const events = yield* EventV2.Service
   const todos = yield* SessionTodo.Service
@@ -852,7 +860,12 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
   )
   const file = path.join(directory, "product-tools.json")
   yield* Effect.tryPromise({
-    try: () => writeFile(file, JSON.stringify({ tools }), { mode: 0o600 }),
+    try: () =>
+      writeFile(
+        file,
+        JSON.stringify({ tools, host_context: { directory: location.directory, cwd: process.cwd() } }),
+        { mode: 0o600 },
+      ),
     catch: () => new EngineError("engine_product_tools_io", "could not write native product-tools manifest"),
   })
   options.productToolsFile = file
@@ -862,6 +875,33 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
     try {
       const output = await Effect.runPromise(
         Effect.gen(function* () {
+          if (nativePermissions && supported) {
+            if (call.messageSeq === undefined || !call.signal)
+              return yield* Effect.die(
+                new EngineError("host_permission_source_missing", "Native tool identity and cancellation are required"),
+              )
+            if (call.signal.aborted) return yield* Effect.interrupt
+            const found = yield* placement(sessionID)
+            if (!found || found.engine !== "rust")
+              return yield* Effect.die(
+                new EngineError("host_permission_source_missing", "Native tool placement is missing"),
+              )
+            const owner = yield* router.get({ storage: found.storage, engineID: found.storage, location: found.location })
+            yield* sources.bind({
+              sessionID,
+              source: { type: "tool", messageID: messageID(call.sessionID, call.messageSeq), callID: call.callID },
+              executor: NativeHostPermission.make({
+                client: owner.client,
+                source: new ProductPermissionRequest.Source({
+                  session_id: call.sessionID,
+                  bridge_id: call.bridgeID,
+                  call_id: call.callID,
+                  message_seq: call.messageSeq,
+                }),
+                capabilities: supported,
+              }),
+            })
+          }
           const session = yield* store.get(sessionID)
           const tool = make(sessionID)[call.name]
           if (!tool) return yield* new ToolFailure({ message: `Unknown product tool: ${call.name}` })
@@ -888,7 +928,8 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
           const structured = asRecord(output.structured)
           if (structured?.["moved"] === true) return structured
           return text.length > 0 ? text : output.structured
-        }),
+        }).pipe(Effect.scoped),
+        { signal: call.signal },
       )
       return output
     } finally {
