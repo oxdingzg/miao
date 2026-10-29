@@ -349,7 +349,7 @@ describe("PermissionV2", () => {
     }),
   )
 
-  it.effect("auto mode settles safe asks without a prompt", () =>
+  it.effect("auto mode approves safe edits and preserves Windows command prompts", () =>
     Effect.gen(function* () {
       yield* setup([{ action: "edit", resource: "*", effect: "ask" }], "auto")
       const service = yield* PermissionV2.Service
@@ -358,8 +358,11 @@ describe("PermissionV2", () => {
       })
       expect(yield* service.list()).toEqual([])
       expect(yield* service.ask(assertion({ action: "bash", resources: ["git status", "ls -la"] }))).toMatchObject({
-        effect: "allow",
+        effect: process.platform === "win32" ? "ask" : "allow",
       })
+      const pending = yield* service.list()
+      expect(pending).toHaveLength(process.platform === "win32" ? 1 : 0)
+      for (const request of pending) yield* service.reply({ requestID: request.id, reply: "reject" })
       expect(yield* service.list()).toEqual([])
     }),
   )
