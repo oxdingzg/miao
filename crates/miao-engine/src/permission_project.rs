@@ -94,6 +94,19 @@ impl Authority {
         })
     }
 
+    /// Run trusted shared-store work behind a live Runtime source fence.
+    /// Only this authority's main database is writable. This does not decide
+    /// permissions or validate a project/directory ownership handoff.
+    pub async fn with_permission_source<T: Send + 'static>(
+        &self,
+        source: &crate::permission_source_transaction::Source,
+        execute: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T, Error> + Send + 'static,
+    ) -> Result<T, Error> {
+        let source = source.clone();
+        self.call(move |connection| source.with_root_transaction(connection, execute))
+            .await
+    }
+
     pub(crate) async fn call<T: Send + 'static>(
         &self,
         f: impl FnOnce(&mut Connection) -> Result<T, Error> + Send + 'static,
