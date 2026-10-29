@@ -1352,3 +1352,13 @@ or uncertain foreign owners stay pending; inactive sources are only cancelled or
 expired. Receipts/events commit together or the page rolls back. No Session
 history/run, standing rule, provider or execution is changed. Runtime startup and
 finalization still need to call this library boundary explicitly.
+
+The shared request journal has a typed `permission_requests` cursor, distinct
+from standing-rule cursors. Pages validate Root identity/watermark and filter the
+actual source database plus bound project/directory. Session schema25 stores the
+projection event digest and scoped cursor atomically with Session UI events, so
+replay, races and restart do not duplicate notifications; a failed page rolls back.
+Initial policy-final admission emits no fake UI reply. Pending requests released
+by saved rules retain `saved_rules_allowed` and the existing always settlement
+vocabulary. Notifications never authorize execution: host assertions still poll
+live fenced status. Explicit Runtime integration remains unfinished.

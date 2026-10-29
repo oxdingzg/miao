@@ -23,7 +23,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 // Older readers do not understand inactive semantic imports and could execute
 // a destination before its host has switched the authoritative placement.
-pub const SCHEMA_VERSION: u32 = 24;
+pub const SCHEMA_VERSION: u32 = 25;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -293,6 +293,7 @@ impl Store {
                 crate::permission_patterns::initialize(&conn)?;
                 crate::permission_migration::initialize(&conn)?;
                 crate::product_permission_request::initialize(&conn)?;
+                crate::shared_permission_events::initialize_source(&conn)?;
                 // ADR-0019: content-addressed Session file snapshots and the one
                 // staged revert intent. Blobs live beside the database.
                 conn.execute_batch(
