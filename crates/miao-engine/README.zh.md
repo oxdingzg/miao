@@ -152,6 +152,7 @@ export 不创建缺失数据库、不改变执行状态、不承担第二份权�
 - 同 Session 串行执行，跨 Session 可并行；M0 上限为 64 attached Sessions、8 active executions、每次输入 allowance 25 provider turns。
 - actor 控制循环能在 provider 等待期间响应 cancel；tasks 在 shutdown 被取消并 join。
 - 相同工具名/input/result 累计 3 次且没有新用户输入时记录 `loop.detected` 并停止；新输入重置计数。该检测不宣称识别所有语义循环。
+- 同一输入已执行 5 次而被拒绝的调用，最多再被拒 3 次；下一次拒绝记录 `loop.stopped` 并结束本次 run，不再向模型追问。
 - provider panic 仅 reconcile 当前 Session；慢临时进度消费者不阻塞执行，其他 Session 不受该故障影响。
 - 完整 assistant/tool-call projection 与 planned intents 同事务；授权通过后才记录 dispatched；tool settlement 与 tool-result projection 同事务。
 - Location 与 admission 同事务绑定，同 Session 不会因换启动 workspace 而静默迁移。
