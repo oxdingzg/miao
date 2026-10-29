@@ -1942,10 +1942,18 @@ const layer = Layer.effect(
                     wake: input.wake,
                   }),
                 }),
-                goal: GoalTool.make((goal) =>
-                  GoalTool.record(events, input.sessionID, goal).pipe(
-                    Effect.mapError(() => new ToolFailure({ message: "Unable to record the goal" })),
-                  ),
+                goal: GoalTool.make(
+                  (goal) =>
+                    GoalTool.record(events, input.sessionID, goal).pipe(
+                      Effect.mapError(() => new ToolFailure({ message: "Unable to record the goal" })),
+                    ),
+                  // AGT-04 C2: refuse an objective change that would orphan open todos.
+                  () =>
+                    Effect.gen(function* () {
+                      const previous = yield* SessionGoal.current(db, input.sessionID)
+                      const list = yield* todos.get(input.sessionID)
+                      return { previous, todos: list }
+                    }),
                 ),
                 recall: Tool.withConcurrency(
                   RecallTool.make(() =>
