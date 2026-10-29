@@ -283,6 +283,7 @@ An interrupted call without completed usage remains an unmeasured attempt, not a
 - Execution is serial within a Session and parallel across Sessions; the M0 ceiling is 64 attached Sessions, 8 active executions, and a 25-provider-turn allowance per input.
 - The actor control loop can respond to cancel while waiting on the provider; tasks are cancelled and joined on shutdown.
 - When the same tool name/input/result accumulates 3 times with no new user input, `loop.detected` is recorded and the run stops; new input resets the count. This detection does not claim to identify every semantic loop.
+- A call refused because its identical input already ran 5 times may be refused 3 more times; the next refusal records `loop.stopped` and ends the run instead of asking the model again.
 - A provider panic reconciles only the current Session; a slow ephemeral progress consumer does not block execution, and other Sessions are unaffected by that failure.
 - The full assistant/tool-call projection and planned intents share one transaction; dispatched is recorded only after authorization passes; tool settlement and the tool-result projection share one transaction.
 - Location is bound in the same transaction as admission, so a Session never migrates silently when the startup workspace changes.
