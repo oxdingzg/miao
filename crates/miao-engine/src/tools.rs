@@ -197,14 +197,18 @@ pub struct Tools {
     context_sources: Arc<StdRwLock<Arc<Vec<crate::context::Source>>>>,
     workspace_instructions: bool,
     skill_directories: Arc<StdRwLock<Arc<Vec<crate::context::SkillDirectory>>>>,
-    references: Arc<StdRwLock<Arc<Vec<crate::context::Reference>>>>,
-    /// Read scope granted by `references`, resolved once when they change.
-    read_roots: Arc<StdRwLock<Arc<Vec<std::path::PathBuf>>>>,
+    references: Arc<StdRwLock<Arc<ReferenceScope>>>,
     hooks: Arc<StdRwLock<Arc<Vec<crate::hooks::Hook>>>>,
     edit_snapshots: Arc<std::sync::Mutex<Snapshots>>,
     edit_recovery: bool,
     lsp_diagnostics: bool,
     compact_disclosure: bool,
+}
+
+#[derive(Default)]
+struct ReferenceScope {
+    references: Arc<Vec<crate::context::Reference>>,
+    roots: Arc<Vec<PathBuf>>,
 }
 
 /// Take one consistent snapshot of a reloadable collection. A reload replaces
@@ -276,8 +280,7 @@ impl Tools {
             context_sources: Arc::new(StdRwLock::new(Arc::new(vec![]))),
             workspace_instructions: true,
             skill_directories: Arc::new(StdRwLock::new(Arc::new(vec![]))),
-            references: Arc::new(StdRwLock::new(Arc::new(vec![]))),
-            read_roots: Arc::new(StdRwLock::new(Arc::new(vec![]))),
+            references: Arc::new(StdRwLock::new(Arc::new(ReferenceScope::default()))),
             hooks: Arc::new(StdRwLock::new(Arc::new(vec![]))),
             edit_snapshots: Arc::new(std::sync::Mutex::new(Snapshots::new())),
             edit_recovery: true,
@@ -490,17 +493,29 @@ impl Tools {
         references: Vec<crate::context::Reference>,
         roots: Vec<PathBuf>,
     ) {
-        replace(&self.references, references);
-        replace(&self.read_roots, roots);
+        *self
+            .references
+            .write()
+            .unwrap_or_else(|held| held.into_inner()) = Arc::new(ReferenceScope {
+            references: Arc::new(references),
+            roots: Arc::new(roots),
+        });
+    }
+
+    fn reference_scope(&self) -> Arc<ReferenceScope> {
+        self.references
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone()
     }
 
     pub(crate) fn references(&self) -> Arc<Vec<crate::context::Reference>> {
-        snapshot(&self.references)
+        self.reference_scope().references.clone()
     }
 
     /// The read scope the current references grant; `contained` consults it.
     pub(crate) fn read_roots(&self) -> Arc<Vec<PathBuf>> {
-        snapshot(&self.read_roots)
+        self.reference_scope().roots.clone()
     }
 
     pub(crate) fn skill_directories(&self) -> Arc<Vec<crate::context::SkillDirectory>> {
@@ -2273,6 +2288,59 @@ fn report_diagnostics(value: &Value) -> Option<Value> {
         .take(20)
         .collect();
     (!report.is_empty()).then(|| json!(report))
+}
+
+#[cfg(test)]
+mod reference_generation_tests {
+    use super::Tools;
+    use crate::context::Reference;
+
+    #[tokio::test]
+    async fn concurrent_reference_reloads_publish_one_immutable_list_and_read_scope() {
+        let directory = tempfile::tempdir().unwrap();
+        let tools = Tools::new(directory.path()).await.unwrap();
+        let first = directory.path().join("first.md");
+        let second = directory.path().join("second.md");
+        std::fs::write(&first, "first").unwrap();
+        std::fs::write(&second, "second").unwrap();
+        tools.set_references(
+            vec![Reference {
+                path: first.to_str().unwrap().into(),
+                description: "first".into(),
+            }],
+            vec![first.clone()],
+        );
+        let original = tools.reference_scope();
+        let changing = tools.clone();
+        let writer = std::thread::spawn(move || {
+            for index in 0..20_000 {
+                let path = if index % 2 == 0 { &first } else { &second };
+                changing.set_references(
+                    vec![Reference {
+                        path: path.to_str().unwrap().into(),
+                        description: "generation".into(),
+                    }],
+                    vec![path.clone()],
+                );
+                std::thread::yield_now();
+            }
+        });
+        let mixed = (0..20_000).any(|_| {
+            let generation = tools.reference_scope();
+            std::thread::yield_now();
+            generation.roots[0].to_str() != Some(generation.references[0].path.as_str())
+        });
+        writer.join().unwrap();
+        assert!(
+            !mixed,
+            "published references and their read scope came from different reloads"
+        );
+        assert_eq!(original.references[0].description, "first");
+        assert_eq!(
+            original.roots[0].to_str(),
+            Some(original.references[0].path.as_str())
+        );
+    }
 }
 
 #[cfg(test)]
