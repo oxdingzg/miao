@@ -13,6 +13,7 @@ use std::path::Path;
 use tokio::sync::{mpsc, oneshot};
 
 const APPLICATION_ID: u32 = 0x4d494150;
+const SCHEMA_VERSION: u32 = 2;
 const NATIVE_PREFIX: &str = "psv_native_project_";
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -24,8 +25,8 @@ pub struct Authority {
 /// Bound by the trusted host once; individual operations cannot select a scope.
 #[derive(Clone)]
 pub struct Project {
-    authority: Authority,
-    project: String,
+    pub(crate) authority: Authority,
+    pub(crate) project: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,7 +94,7 @@ impl Authority {
         })
     }
 
-    async fn call<T: Send + 'static>(
+    pub(crate) async fn call<T: Send + 'static>(
         &self,
         f: impl FnOnce(&mut Connection) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
@@ -210,7 +211,7 @@ fn initialize(connection: &mut Connection) -> Result<(), Error> {
         [], |row| row.get(0),
     )?;
     if !((application == 0 && version == 0 && empty)
-        || (application == APPLICATION_ID && version == 1))
+        || (application == APPLICATION_ID && (1..=SCHEMA_VERSION).contains(&version)))
     {
         return Err(Error::Invalid(
             "unsupported project permission database".into(),
@@ -228,14 +229,17 @@ fn initialize(connection: &mut Connection) -> Result<(), Error> {
             [uuid::Uuid::new_v4().to_string()],
         )?;
         transaction.pragma_update(None, "application_id", APPLICATION_ID)?;
-        transaction.pragma_update(None, "user_version", 1)?;
     }
+    if version < 2 {
+        crate::permission_context::initialize(&transaction)?;
+    }
+    transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
     connection.pragma_update(None, "journal_mode", "WAL")?;
     Ok(())
 }
 
-fn view(connection: &Connection, project: &str) -> Result<Snapshot, Error> {
+pub(crate) fn view(connection: &Connection, project: &str) -> Result<Snapshot, Error> {
     let authority: String = connection.query_row(
         "SELECT id FROM permission_authority WHERE (SELECT count(*) FROM permission_authority)=1",
         [],
@@ -331,7 +335,7 @@ fn view(connection: &Connection, project: &str) -> Result<Snapshot, Error> {
     })
 }
 
-fn ensure_project(connection: &Connection, project: &str) -> Result<(), Error> {
+pub(crate) fn ensure_project(connection: &Connection, project: &str) -> Result<(), Error> {
     connection.execute(
         "INSERT OR IGNORE INTO permission_project(project) VALUES(?1)",
         [project],
@@ -354,7 +358,7 @@ fn budget(connection: &Connection, project: &str) -> Result<(), Error> {
     }
     Ok(())
 }
-fn rule_hash(rule: &Rule) -> Result<String, Error> {
+pub(crate) fn rule_hash(rule: &Rule) -> Result<String, Error> {
     Ok(digest(&serde_json::to_vec(rule)?))
 }
 fn native_id(project: &str, rule: &Rule) -> Result<String, Error> {
@@ -601,13 +605,15 @@ mod tests {
         connection
             .pragma_update(None, "application_id", APPLICATION_ID)
             .unwrap();
-        connection.pragma_update(None, "user_version", 2).unwrap();
+        connection
+            .pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+            .unwrap();
         assert!(Authority::open(&path).await.is_err());
         assert_eq!(
             connection
                 .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
                 .unwrap(),
-            2
+            SCHEMA_VERSION + 1
         );
     }
 
