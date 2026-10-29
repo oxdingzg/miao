@@ -796,3 +796,57 @@ fn panic_restores_terminal() {
     }
     harness.shutdown();
 }
+
+#[test]
+fn saved_permissions_review_and_revoke_through_the_engine_wire() {
+    let mut harness = Harness::spawn_engine("saved-permissions");
+    assert!(wait_for_plain(
+        &harness,
+        "Project A",
+        Duration::from_secs(3)
+    ));
+    harness.write(b"\r");
+    assert!(wait_for_plain(
+        &harness,
+        "hello from the fixture",
+        Duration::from_secs(3)
+    ));
+    harness.write(b"/permissions ");
+    std::thread::sleep(Duration::from_millis(100));
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "public/**", Duration::from_secs(3)),
+        "{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    assert!(wait_for_plain(
+        &harness,
+        "Directory:",
+        Duration::from_secs(3)
+    ));
+    let log = harness.dir.join("admit.log");
+    harness.write(b"\r"); // Keep is the safe default.
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(!std::fs::read_to_string(&log)
+        .unwrap_or_default()
+        .contains("permission_pattern_remove"));
+    harness.write(b"\r");
+    std::thread::sleep(Duration::from_millis(100));
+    harness.write(b"\x1b[C");
+    std::thread::sleep(Duration::from_millis(100));
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "Saved permission revoked", Duration::from_secs(3)),
+        "{}",
+        plain(&harness.text())
+    );
+    let recorded = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(recorded.matches("permission_pattern_remove").count(), 1);
+    assert!(recorded.contains(&format!("prule_{}", "a".repeat(64))));
+    harness.write(b"\x03");
+    assert!(wait_exit(&mut harness.child, Duration::from_secs(5))
+        .unwrap()
+        .success());
+    harness.shutdown();
+}
