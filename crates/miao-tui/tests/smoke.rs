@@ -73,7 +73,12 @@ impl Harness {
         if inject_panic {
             cmd.env("MIAO_TUI_TEST_PANIC", "1");
         }
+        let ready = dir.join("engine.ready");
+        if ready.exists() {
+            std::fs::remove_file(&ready).expect("reset fixture readiness");
+        }
         if engine {
+            cmd.env("MIAO_TUI_FAKE_READY_FILE", &ready);
             let db = dir.join("engine.db");
             std::fs::write(&db, b"").expect("engine db file");
             cmd.env(
@@ -129,14 +134,36 @@ impl Harness {
                 }
             }
         });
-        Self {
+        let mut harness = Self {
             pty: pair.master,
             child,
             writer,
             output,
             reader: reader_thread,
             dir,
+        };
+        if engine {
+            // Cold fixture executable startup is separate from the UI response
+            // deadlines below. The real child publishes this only after setup.
+            let start = Instant::now();
+            while !std::fs::read(&ready).is_ok_and(|bytes| bytes == b"ready") {
+                let exited = harness.child.try_wait().expect("fixture child status");
+                if exited.is_some() || start.elapsed() >= Duration::from_secs(10) {
+                    let output = harness.text();
+                    let _ = harness.child.kill();
+                    let _ = harness.child.wait();
+                    harness.shutdown();
+                    panic!("fixture did not become ready: {exited:?}\n{output}");
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            std::fs::write(
+                harness.dir.join("fixture-startup-ms"),
+                start.elapsed().as_millis().to_string(),
+            )
+            .unwrap();
         }
+        harness
     }
 
     fn text(&self) -> String {

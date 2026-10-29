@@ -34,6 +34,10 @@ fn main() {
     let mut stream_started = false;
     let mut permission_saved = true;
 
+    if let Some(path) = std::env::var_os("MIAO_TUI_FAKE_READY_FILE") {
+        std::fs::write(path, b"ready").expect("publish fixture process readiness");
+    }
+
     for line in stdin.lock().lines() {
         let Ok(line) = line else { return };
         let Ok(frame) = serde_json::from_str::<Value>(&line) else {
