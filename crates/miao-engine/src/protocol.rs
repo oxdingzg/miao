@@ -422,6 +422,16 @@ pub enum Command {
         #[serde(default)]
         selected: bool,
     },
+    /// One bounded page of the stored transcript, newest page first (AGT-01
+    /// C2, TUI paging). `history` answers with the whole Session because the
+    /// model needs it; a preview only needs the recent tail.
+    HistoryPage {
+        session_id: String,
+        #[serde(default)]
+        before_seq: Option<u64>,
+        #[serde(default = "history_page_limit")]
+        limit: usize,
+    },
     Job {
         session_id: String,
         job_id: String,
@@ -589,6 +599,10 @@ fn recall_limit() -> usize {
 }
 
 fn pending_input_limit() -> usize {
+    50
+}
+
+fn history_page_limit() -> usize {
     50
 }
 

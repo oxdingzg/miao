@@ -43,6 +43,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `approve` | `session_id`, `response` | `{accepted:true}` |
 | `approve_persistent` | `session_id`, `response` (allow only) | `{accepted:true}` |
 | `history` | `session_id`, `selected` | `Message[]` |
+| `history_page` | `session_id`, `before_seq?`, `limit?` | `{session_id, messages[], has_more, next_before}` |
 | `context` | `session_id`, `epoch?` | Context Epoch or null |
 | `compact` | `session_id`, `compaction_id`, `through_message_seq`, `summary` | checkpoint |
 | `recall` | `session_id`, `query`, `limit?`, `before_message_seq?` | bounded matches |
@@ -573,6 +574,28 @@ only when a file changes again.
 `{"type":"inject","session_id":"...","input_id":"optional-retry-key","text":"...","source":"skill:name"}` commits one `message.synthetic` history fact. The source is a bounded attribution label, not a command or credential. Injection creates no inbox row and does not start a provider turn. The host may request advisory `wake` afterwards; this drains eligible pending inbox work without forcing continuation. Unlike explicit `resume`, `wake` leaves an idle Session with no eligible input idle. An exact retry with the same Session and input identity reconciles; changed text/source conflicts. Forks preserve the synthetic record and original timestamp rather than promoting it as an operator prompt. Text is bounded to 1 MiB.
 
 If injected context arrives between a model tool call and its results, the immutable transcript keeps admission order; provider history defers that context until the tool block closes, preserving required tool-result adjacency.
+
+### Transcript page
+
+`history_page` reads one bounded window of the stored transcript, starting at
+its recent end, so a preview or a bottom-anchored view never serializes the
+whole Session. `limit` defaults to 50 and is clamped to 1–500. `before_seq`
+pages towards older messages; omitted, the window is the newest page.
+
+The reply is `{session_id, messages[], has_more, next_before}`. Messages are
+ordered oldest-to-newest *within* the page even though the read walks backwards,
+so a client can append them above the current view without reversing them.
+`has_more` says an older neighbour exists, and only then is `next_before` the
+seq to pass as the next `before_seq`; the last page answers `has_more: false`
+and a null cursor rather than inviting a round trip that returns nothing.
+
+Each message carries `seq`, `role`, `content`, `checkpoint`, `recorded_at_ms`
+and `synthetic`. The checkpoint is the stored-transcript identity that a revert
+names — unlike `history` with `selected: true`, which is the provider view and
+has no checkpoints. `synthetic: true` marks injected context, which is a
+message but not an operator prompt. Reverted and quarantined messages are
+absent, the same projection the rest of the Session reads. An empty Session is
+an empty page, not an error; an unknown `session_id` is `invalid_request`.
 
 ### Operator shell records
 

@@ -271,6 +271,16 @@ impl Host {
                 };
                 history.and_then(|value| serde_json::to_value(value).map_err(Error::from))
             }
+            Command::HistoryPage {
+                session_id,
+                before_seq,
+                limit,
+            } => {
+                runtime
+                    .store()
+                    .history_page(&session_id, before_seq, limit)
+                    .await
+            }
             Command::Job { session_id, job_id } => runtime
                 .store()
                 .job(&session_id, &job_id)
