@@ -1213,3 +1213,290 @@ async fn an_actual_foreign_process_is_preserved_while_live_and_cancelled_after_i
     assert!(context.snapshot().await.unwrap().patterns.is_empty());
     source.close().await.unwrap();
 }
+
+#[tokio::test]
+async fn root_request_notifications_project_once_and_keep_admission_distinct_from_resolution() {
+    use miao_engine::product_permission_request::Reply;
+    let (directory, store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    let pending = context
+        .admit_request(&source, assertion("projected", "public/file", &[]))
+        .await
+        .unwrap();
+    let first = context.project_request_events(&store, 16).await.unwrap();
+    assert_eq!(first.emitted, 1);
+    assert!(!first.has_more);
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        0
+    );
+    context
+        .reply_request(&source, response(&pending, Reply::Once))
+        .await
+        .unwrap();
+    let (left, right) = tokio::join!(
+        context.project_request_events(&store, 16),
+        context.project_request_events(&store, 16)
+    );
+    assert_eq!(left.unwrap().emitted + right.unwrap().emitted, 1);
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let projected = events
+        .iter()
+        .filter(|event| event.kind.starts_with("product.permission."))
+        .collect::<Vec<_>>();
+    assert_eq!(projected.len(), 2);
+    assert_eq!(projected[0].kind, "product.permission.requested");
+    assert_eq!(projected[1].kind, "product.permission.resolved");
+    assert_eq!(projected[1].data["reply"], "once");
+    runtime.shutdown().await;
+    drop(runtime);
+    store.close().await.unwrap();
+    let reopened = Store::open(directory.path().join("engine.db"))
+        .await
+        .unwrap();
+    assert_eq!(
+        context
+            .project_request_events(&reopened, 16)
+            .await
+            .unwrap()
+            .emitted,
+        0
+    );
+    assert_eq!(
+        reopened
+            .events("s", 0, 1000)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind.starts_with("product.permission."))
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn request_event_cursors_are_typed_root_bound_and_filter_the_actual_source_database() {
+    let (directory, store, runtime, wire) = running().await;
+    let workspace = directory.path().join("workspace");
+    let (_peer_directory, peer_store, peer, peer_wire, mut receive) =
+        running_in_workspace(None, Some(&workspace)).await;
+    tokio::spawn(async move { while receive.recv().await.is_some() {} });
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let peer_source = peer
+        .capture_permission_source(&peer.controller(), &peer_wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .admit_request(&source, assertion("own-event", "public", &[]))
+        .await
+        .unwrap();
+    context
+        .admit_request(&peer_source, assertion("foreign-event", "public", &[]))
+        .await
+        .unwrap();
+    let own = context.request_events(&store, None, 1).await.unwrap();
+    assert_eq!(own.events.len(), 1);
+    assert_eq!(own.events[0].record.id, "own-event");
+    assert!(!own.has_more);
+    let foreign = context.request_events(&peer_store, None, 1).await.unwrap();
+    assert_eq!(foreign.events[0].record.id, "foreign-event");
+    assert_eq!(
+        own.cursor, foreign.cursor,
+        "final cursors did not advance through filtered events"
+    );
+    assert!(context
+        .request_events(&store, Some(own.cursor.clone()), 1)
+        .await
+        .unwrap()
+        .events
+        .is_empty());
+    assert!(
+        serde_json::from_value::<miao_engine::shared_permission_events::Cursor>(
+            json!({"authority":own.cursor.authority,"seq":0})
+        )
+        .is_err()
+    );
+    let mut wrong = own.cursor.clone();
+    wrong.authority = uuid::Uuid::new_v4().to_string();
+    assert!(context
+        .request_events(&store, Some(wrong), 1)
+        .await
+        .is_err());
+    let mut future = own.cursor;
+    future.seq += 1;
+    assert!(context
+        .request_events(&store, Some(future), 1)
+        .await
+        .is_err());
+    assert!(context.request_events(&store, None, 0).await.is_err());
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        1
+    );
+    assert_eq!(
+        context
+            .project_request_events(&peer_store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        1
+    );
+    runtime.shutdown().await;
+    peer.shutdown().await;
+}
+
+#[tokio::test]
+async fn source_projection_failure_rolls_back_events_deduplication_and_cursor_together() {
+    let (directory, store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .admit_request(&source, assertion("project-a", "public", &[]))
+        .await
+        .unwrap();
+    context
+        .admit_request(&source, assertion("project-b", "public", &[]))
+        .await
+        .unwrap();
+    let sql = rusqlite::Connection::open(store.path()).unwrap();
+    sql.execute_batch("CREATE TRIGGER fixture_projection_failure BEFORE INSERT ON engine_event WHEN NEW.kind='product.permission.requested' AND json_extract(NEW.data,'$.id')='project-b' BEGIN SELECT RAISE(ABORT,'injected source projection failure'); END;").unwrap();
+    assert!(context.project_request_events(&store, 16).await.is_err());
+    assert_eq!(
+        sql.query_row(
+            "SELECT count(*) FROM engine_root_permission_event",
+            [],
+            |row| row.get::<_, u32>(0)
+        )
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        sql.query_row(
+            "SELECT count(*) FROM engine_root_permission_cursor",
+            [],
+            |row| row.get::<_, u32>(0)
+        )
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        store
+            .events("s", 0, 1000)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind.starts_with("product.permission."))
+            .count(),
+        0
+    );
+    sql.execute_batch("DROP TRIGGER fixture_projection_failure")
+        .unwrap();
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        2
+    );
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        0
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn initial_policy_decisions_do_not_fake_ui_replies_and_peer_rule_settlement_closes_the_question(
+) {
+    let (directory, store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .put(miao_engine::permission_rules::Rule {
+            action: "read".into(),
+            resource: "preallowed/**".into(),
+            effect: Decision::Allow,
+        })
+        .await
+        .unwrap();
+    context
+        .admit_request(&source, assertion("preallowed", "preallowed/file", &[]))
+        .await
+        .unwrap();
+    context
+        .admit_request(&source, assertion("predenied", "secret", &[]))
+        .await
+        .unwrap();
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        0
+    );
+    let pending = context
+        .admit_request(&source, assertion("rule-changed", "public/file", &[]))
+        .await
+        .unwrap();
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        1
+    );
+    context
+        .put(miao_engine::permission_rules::Rule {
+            action: "read".into(),
+            resource: "public/**".into(),
+            effect: Decision::Allow,
+        })
+        .await
+        .unwrap();
+    let settled = context.request_status(&source, pending.id).await.unwrap();
+    assert_eq!(
+        settled.reply,
+        Some(miao_engine::product_permission_request::Reply::Always)
+    );
+    assert_eq!(settled.reason.as_deref(), Some("saved_rules_allowed"));
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        1
+    );
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let final_event = events
+        .iter()
+        .find(|event| event.kind == "product.permission.resolved")
+        .unwrap();
+    assert_eq!(final_event.data["id"], "rule-changed");
+    assert_eq!(final_event.data["reply"], "always");
+    runtime.shutdown().await;
+}

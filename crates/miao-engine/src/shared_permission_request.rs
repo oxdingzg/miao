@@ -440,7 +440,7 @@ impl Context {
         )
     }
 
-    fn request_binding_for_origin(
+    pub(crate) fn request_binding_for_origin(
         &self,
         connection: &Connection,
         origin: &crate::permission_source_transaction::Origin,
@@ -542,6 +542,7 @@ impl Context {
         } else {
             State::Denied
         };
+        record.reply = (outcome.effect == Decision::Allow).then_some(Reply::Always);
         record.reason = Some(
             if outcome.effect == Decision::Allow {
                 "saved_rules_allowed"
