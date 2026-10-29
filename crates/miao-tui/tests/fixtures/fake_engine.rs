@@ -21,6 +21,16 @@ fn main() {
         std::process::exit(7);
     }
     if std::env::args().nth(1).as_deref() == Some("--editor") {
+        std::fs::write(
+            "editor-buffer-path",
+            std::env::args_os()
+                .nth(2)
+                .unwrap()
+                .to_string_lossy()
+                .as_bytes(),
+        )
+        .unwrap();
+        std::fs::write("editor-pid", std::process::id().to_string()).unwrap();
         let mut saved = Vec::new();
         for index in 1..=3 {
             println!("EDITOR_INPUT_{index}");

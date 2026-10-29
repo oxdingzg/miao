@@ -81,7 +81,7 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         .build()?;
     let termination = {
         let _entered = runtime.enter();
-        platform::signals::termination()?
+        platform::signals::Signals::new()?
     };
     let _restore = terminal::RestoreGuard;
     let mut terminal = terminal::init(preferences)?;
@@ -105,9 +105,8 @@ async fn drive(
     bus: event::Bus,
     launch: Launch,
     preferences: terminal::Preferences,
-    termination: impl std::future::Future<Output = ()>,
+    mut termination: platform::signals::Signals,
 ) -> Result<(), Box<dyn Error>> {
-    tokio::pin!(termination);
     match engine::settings(
         &launch.workspace,
         launch.db,
@@ -152,7 +151,7 @@ async fn drive(
             false => Duration::from_secs(60),
         };
         tokio::select! {
-            _ = &mut termination => return Ok(()),
+            _ = termination.next() => return Ok(()),
             event = events.recv() => match event {
                 Some(app_event) => {
                     if matches!(&app_event, AppEvent::Focus(true) | AppEvent::Resize { .. }) {
@@ -165,7 +164,21 @@ async fn drive(
                     if let Some(request) = app.take_editor_request() {
                         let paused = input.pause()?;
                         terminal::suspend();
-                        let result = platform::editor::run(&request);
+                        let editor = platform::editor::run(&request);
+                        tokio::pin!(editor);
+                        let result = loop {
+                            tokio::select! {
+                                biased;
+                                signal = termination.next() => {
+                                    // Cooked Ctrl+C also reaches the foreground
+                                    // editor. Let it cancel editing, not the UI.
+                                    if signal == platform::signals::Signal::Exit {
+                                        return Ok(());
+                                    }
+                                }
+                                result = &mut editor => break result,
+                            }
+                        };
                         terminal::resume(terminal, preferences)?;
                         drop(paused);
                         app.handle(AppEvent::EditorFinished(result));
