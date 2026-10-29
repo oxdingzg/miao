@@ -1,3 +1,4 @@
+import { engineFake } from "../fixture/engine-binary"
 import { expect, test } from "bun:test"
 import path from "node:path"
 import { EngineClient } from "@/engine/client"
@@ -62,7 +63,7 @@ real(
 test("an admission reply without durable admission metadata cannot become a product receipt", async () => {
   await using tmp = await tmpdir()
   const client = EngineClient.start({
-    binary: path.join(import.meta.dir, "../fixture/engine-fake.ts"),
+    binary: engineFake,
     db: path.join(tmp.path, "engine.db"),
     workspace: tmp.path,
     model: "fixture",

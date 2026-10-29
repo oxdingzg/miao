@@ -1,3 +1,4 @@
+import { engineFake } from "../fixture/engine-binary"
 import { expect, test } from "bun:test"
 import path from "node:path"
 import { EngineClient, EngineError } from "@/engine/client"
@@ -126,7 +127,7 @@ test("a timed-out read leaves other requests and the executing engine available"
   await using tmp = await tmpdir()
   const ready = path.join(tmp.path, "ready")
   const client = EngineClient.start({
-    binary: path.join(import.meta.dir, "../fixture/engine-fake.ts"),
+    binary: engineFake,
     db: path.join(tmp.path, "engine.db"),
     workspace: tmp.path,
     model: "fixture",
