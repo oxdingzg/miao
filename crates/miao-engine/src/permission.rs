@@ -270,6 +270,7 @@ impl Policy {
     /// Snapshot the same immutable Config whose matchers enforce each tool.
     pub(crate) fn descriptor(&self) -> Value {
         let mut descriptor = serde_json::json!({"semantics":"native-policy-v1","revision":self.revision,"config":self.config,"collaboration_mode":"checked_at_tool_dispatch"});
+        descriptor["mode"] = serde_json::json!(if self.auto { "auto" } else { "default" });
         if let Some(ordered) = &self.ordered {
             descriptor["ordered"] =
                 serde_json::to_value(ordered.descriptor()).expect("serializable agent policy");
