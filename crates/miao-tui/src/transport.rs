@@ -51,6 +51,8 @@ pub struct EngineEvent {
 pub enum TransportEvent {
     Event(EngineEvent),
     Progress(Value),
+    /// The engine reloaded part of its configuration, whoever asked for it.
+    Config(Value),
     Resync(String),
     Failure(EngineFailure),
 }
@@ -128,8 +130,9 @@ pub struct EngineClient {
 
 impl EngineClient {
     /// Spawn the engine child and start its writer, reader, stderr, and reaper
-    /// tasks. The receiver delivers durable events, ephemeral progress, resync
-    /// notices, and the one terminal failure. Must run inside a Tokio runtime.
+    /// tasks. The receiver delivers durable events, ephemeral progress, config
+    /// reload notices, resync notices, and the one terminal failure. Must run
+    /// inside a Tokio runtime.
     pub fn start(
         spawn: &EngineSpawn,
         request_timeout: Duration,
@@ -581,6 +584,9 @@ impl Reap {
             }
             Some("progress") => {
                 let _ = self.events.send(TransportEvent::Progress(params));
+            }
+            Some("config") => {
+                let _ = self.events.send(TransportEvent::Config(params));
             }
             Some("resync") => {
                 let reason = params

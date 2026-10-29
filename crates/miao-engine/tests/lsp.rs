@@ -693,6 +693,9 @@ async fn a_reload_reconciles_the_lsp_section_and_keeps_unchanged_connections() {
     assert_eq!(first["diagnostics"][0]["message"], "fixture diagnostic");
     assert_eq!(initializations.load(Ordering::SeqCst), 1);
 
+    // Every applied reload is announced to hosts that did not issue it; a
+    // reload that changed nothing stays silent.
+    let mut announced = runtime.config_events();
     // The manifest still names the same server: nothing is rebuilt, and the
     // second query reuses the connection instead of handshaking again.
     let report = runtime.reload_config().await.unwrap();
@@ -711,6 +714,13 @@ async fn a_reload_reconciles_the_lsp_section_and_keeps_unchanged_connections() {
         1,
         "an unchanged server keeps its connection"
     );
+    assert!(
+        matches!(
+            announced.try_recv(),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+        ),
+        "an unchanged reload announces nothing"
+    );
 
     // A changed configuration drops the connection and starts a new one on
     // next use; the reload itself does not spawn anything.
@@ -721,6 +731,7 @@ async fn a_reload_reconciles_the_lsp_section_and_keeps_unchanged_connections() {
     assert_eq!(report["unchanged"], json!([]));
     assert_eq!(report["lsp"]["changed"], json!(["rust"]));
     assert_eq!(initializations.load(Ordering::SeqCst), 1);
+    assert_eq!(announced.try_recv().unwrap(), report);
 
     // A server the plan did not have before counts as a change too: it has no
     // connection to keep, and the plan swap is what lets a later request reach
@@ -745,6 +756,14 @@ async fn a_reload_reconciles_the_lsp_section_and_keeps_unchanged_connections() {
     assert_eq!(
         runtime.reload_config().await.unwrap_err().to_string(),
         error.to_string()
+    );
+    // A failed reload changes nothing, so it announced nothing on its own; the
+    // poller reports its own failures, and a host must be able to show them.
+    assert!(announced.try_recv().is_err());
+    runtime.announce_config_failure("invalid LSP host config");
+    assert_eq!(
+        announced.try_recv().unwrap()["error"],
+        json!("invalid LSP host config")
     );
 }
 

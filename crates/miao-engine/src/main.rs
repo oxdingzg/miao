@@ -1,7 +1,7 @@
 use miao_engine::{
     credential::{Credential, Source},
     host::Host,
-    permission::{Config, Mode, Policy},
+    permission::{Mode, Policy},
     protocol::{Command, Error, Request},
     provider::Provider,
     runtime::Runtime,
@@ -442,46 +442,35 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         provider
     };
-    let mut config = if let Some(path) = options.get("--policy") {
-        let bytes = tokio::fs::read(path).await?;
-        if bytes.len() > 65536 {
-            return Err("permission config exceeds 64 KiB".into());
+    // An explicit flag wins over both the entry default and the policy file,
+    // so an operator can keep a shared policy and pick the mode per launch.
+    let mode = match options.get("--mode").map(String::as_str) {
+        None => None,
+        Some("read-only" | "read_only") => Some(Mode::ReadOnly),
+        Some("workspace") => Some(Mode::Workspace),
+        Some(other) => {
+            return Err(format!("unknown --mode `{other}`, expected read-only or workspace").into())
         }
-        serde_json::from_slice::<Config>(&bytes)?
+    };
+    // Where the base policy comes from. Kept for the process lifetime so
+    // `config_reload` derives it from exactly the sources startup used.
+    let policy_origin = if let Some(path) = options.get("--policy") {
+        miao_engine::config_derive::PolicyOrigin::File(path.into())
     } else if let Some(json) = options.get("--config-sources") {
         // The host forwards the ordered config source plan it resolved for
         // this Location, so the project chain overrides the global directory
         // exactly the way the product applies them. The plan supersedes the
         // single-directory fallback, which only sees the global files.
-        let sandbox = std::env::var("MIAO_SANDBOX").ok();
-        let sources = miao_engine::config_derive::plan(json)?;
-        miao_engine::config_derive::policy_from_sources(&sources, sandbox.as_deref())?
+        miao_engine::config_derive::PolicyOrigin::Sources(miao_engine::config_derive::plan(json)?)
     } else if let Some(directory) = options.get("--config-dir") {
         // No explicit operator policy: derive the product policy from the
         // config directory and the environment the host forwarded, the way
         // the product used to before materializing a temporary file.
-        let sandbox = std::env::var("MIAO_SANDBOX").ok();
-        miao_engine::config_derive::policy_from_directory(
-            std::path::Path::new(directory),
-            sandbox.as_deref(),
-        )?
+        miao_engine::config_derive::PolicyOrigin::Directory(directory.into())
     } else {
-        Config::for_entry(acp)
+        miao_engine::config_derive::PolicyOrigin::Entry { acp }
     };
-    // An explicit flag wins over both the entry default and the policy file,
-    // so an operator can keep a shared policy and pick the mode per launch.
-    if let Some(mode) = options.get("--mode") {
-        config.mode = match mode.as_str() {
-            "read-only" | "read_only" => Mode::ReadOnly,
-            "workspace" => Mode::Workspace,
-            other => {
-                return Err(
-                    format!("unknown --mode `{other}`, expected read-only or workspace").into(),
-                )
-            }
-        };
-    }
-    let policy = Policy::new(config)?;
+    let policy = Policy::new(policy_origin.derive(mode)?)?;
     let mut tools = Tools::new(workspace)
         .await?
         .with_workspace_instructions(
@@ -630,6 +619,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|_| "invalid plugin hooks host config")?,
         );
     }
+    let mut mcp_origin = None;
     if let Some(path) = options.get("--mcp-config") {
         if !policy.mcp_enabled() {
             return Err("MCP config requires explicit workspace allow_mcp authority".into());
@@ -638,18 +628,16 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         if path.starts_with(std::path::Path::new(tools.location())) {
             return Err("MCP host config must be outside model-writable workspace".into());
         }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("MCP config exceeds 64 KiB".into());
-        }
-        let configs = serde_json::from_slice::<Vec<miao_engine::mcp::Config>>(&bytes)
-            .map_err(|_| "invalid MCP host config")?;
-        let registry =
-            miao_engine::mcp::Registry::connect(configs, std::path::Path::new(tools.location()))
-                .await?;
+        let origin = miao_engine::config_derive::McpOrigin::Manifest(path.clone());
+        let registry = miao_engine::mcp::Registry::connect(
+            origin.derive()?,
+            std::path::Path::new(tools.location()),
+        )
+        .await?;
         let registry = Arc::new(registry);
         registry.start_watchers();
         tools = tools.with_protected_resource(&path).with_mcp(registry);
+        mcp_origin = Some(origin);
     }
     if let Some(path) = options.get("--formatter-config") {
         let path = tokio::fs::canonicalize(path).await?;
@@ -742,11 +730,30 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(limits) = context_limits {
         runtime.set_context_limits(Some(limits)).await;
     }
-    if let Some(origin) = lsp_origin {
+    if let Some(origin) = &lsp_origin {
         runtime.set_lsp_origin(origin.clone()).await;
-        // No host watches these files in the standalone entry, so the engine
-        // polls them itself; a hosted engine gets an explicit `config_reload`.
-        watch_config(runtime.clone(), origin);
+    }
+    if let Some(origin) = &mcp_origin {
+        runtime.set_mcp_origin(origin.clone()).await;
+    }
+    runtime.set_policy_origin(policy_origin.clone(), mode).await;
+    // No host watches these files in the standalone entry, so the engine polls
+    // them itself; a hosted engine gets an explicit `config_reload`. Both
+    // origins contribute: one reload re-derives every section from its source.
+    let watched = {
+        let mut files = policy_origin.files();
+        if let Some(origin) = &lsp_origin {
+            files.extend(origin.files());
+        }
+        if let Some(origin) = &mcp_origin {
+            files.extend(origin.files());
+        }
+        files.sort();
+        files.dedup();
+        files
+    };
+    if !watched.is_empty() {
+        watch_config(runtime.clone(), watched);
     }
     runtime.set_route_limits(route_limits).await;
     let roles = miao_engine::roles::Bindings {
@@ -843,12 +850,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// while a Session is draining is skipped, so a turn never observes half a
 /// change. A failed derivation is reported once and retried only when a file
 /// changes again, not on every tick.
-fn watch_config(runtime: Runtime, origin: miao_engine::config_derive::LspOrigin) {
+fn watch_config(runtime: Runtime, files: Vec<std::path::PathBuf>) {
     tokio::spawn(async move {
-        let mut stamp = config_stamp(&origin);
+        let mut stamp = config_stamp(&files);
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            let next = config_stamp(&origin);
+            let next = config_stamp(&files);
             if next == stamp {
                 continue;
             }
@@ -865,7 +872,10 @@ fn watch_config(runtime: Runtime, origin: miao_engine::config_derive::LspOrigin)
                     eprintln!("miao-engine configuration reloaded: {}", report["changed"]);
                 }
                 Ok(_) => {}
-                Err(error) => eprintln!("miao-engine configuration reload failed: {error}"),
+                Err(error) => {
+                    eprintln!("miao-engine configuration reload failed: {error}");
+                    runtime.announce_config_failure(&error.to_string());
+                }
             }
         }
     });
@@ -873,9 +883,8 @@ fn watch_config(runtime: Runtime, origin: miao_engine::config_derive::LspOrigin)
 
 /// Per-source `(mtime, size)`, `None` for a missing file. Nanosecond mtimes
 /// keep two edits in the same second distinguishable.
-fn config_stamp(origin: &miao_engine::config_derive::LspOrigin) -> Vec<Option<(u128, u64)>> {
-    origin
-        .files()
+fn config_stamp(files: &[std::path::PathBuf]) -> Vec<Option<(u128, u64)>> {
+    files
         .iter()
         .map(|path| {
             std::fs::metadata(path).ok().map(|meta| {
@@ -959,6 +968,7 @@ async fn serve(
     let mut input = BufReader::new(tokio::io::stdin());
     let mut bytes = Vec::new();
     let mut progress = runtime.progress();
+    let mut config_events = runtime.config_events();
     let mut poll = tokio::time::interval(Duration::from_millis(100));
     // Host-death watchdog: stdin EOF is unreliable because grandchild
     // processes (LSP servers, MCP workers) inherit the pipe write end, and
@@ -1042,6 +1052,15 @@ async fn serve(
                 notice=progress.recv()=>match notice {
                     Ok(notice)=>{if notice["session_id"].as_str().is_some_and(|s|host.subscribed(s)) {send(&output,json!({"method":"progress","params":notice})).await?;}},
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>send(&output,json!({"method":"resync","params":{"reason":"ephemeral_progress_lagged"}})).await?,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed)=>break,
+                },
+                report=config_events.recv()=>match report {
+                    // A reloaded configuration is process-wide, not
+                    // Session-scoped, so every subscriber is told. A lagged
+                    // listener skipped a notice it cannot replay; the next
+                    // reload still reports its own generation.
+                    Ok(report)=>send(&output,json!({"method":"config","params":report})).await?,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>{},
                     Err(tokio::sync::broadcast::error::RecvError::Closed)=>break,
                 },
                 _=signal_exit()=>{ break; },
@@ -1196,12 +1215,13 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("miao.json");
         let origin = miao_engine::config_derive::LspOrigin::Manifest(path.clone());
-        assert_eq!(super::config_stamp(&origin), vec![None]);
+        let files = origin.files();
+        assert_eq!(super::config_stamp(&files), vec![None]);
         std::fs::write(&path, "{}").unwrap();
-        let first = super::config_stamp(&origin);
+        let first = super::config_stamp(&files);
         assert!(first[0].is_some());
         std::fs::write(&path, "{ }").unwrap();
-        assert_ne!(super::config_stamp(&origin), first);
+        assert_ne!(super::config_stamp(&files), first);
     }
 
     #[tokio::test]
