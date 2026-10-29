@@ -87,7 +87,6 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
     let mut terminal = terminal::init(preferences)?;
     terminal::install_panic_hook();
     let (bus, mut events) = event::bus();
-    input::spawn(bus.clone());
     runtime.block_on(drive(
         &mut terminal,
         &mut app,
@@ -132,6 +131,7 @@ async fn drive(
         Err(message) => app.handle(AppEvent::EngineFailure(message)),
     }
     app.set_bus(bus.clone());
+    let input = input::spawn(bus);
     app.start();
     let mut title = terminal_title::Title::new(std::io::stdout());
     loop {
@@ -163,9 +163,11 @@ async fn drive(
                         terminal::redraw(terminal)?;
                     }
                     if let Some(request) = app.take_editor_request() {
+                        let paused = input.pause()?;
                         terminal::suspend();
                         let result = platform::editor::run(&request);
                         terminal::resume(terminal, preferences)?;
+                        drop(paused);
                         app.handle(AppEvent::EditorFinished(result));
                     }
                 }
