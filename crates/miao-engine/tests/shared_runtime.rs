@@ -676,3 +676,60 @@ async fn configured_allow_cannot_bypass_the_actual_captured_lease_after_takeover
         .any(|event| event.kind == "tool.dispatched" || event.kind == "tool.result"));
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn shared_runtime_refuses_a_root_database_inside_the_model_workspace() {
+    let directory = tempfile::tempdir().unwrap();
+    let workspace = directory.path().join("workspace");
+    std::fs::create_dir(&workspace).unwrap();
+    let store = Store::open(directory.path().join("engine.db"))
+        .await
+        .unwrap();
+    let project = Authority::open(workspace.join("permissions.db"))
+        .await
+        .unwrap()
+        .project("fixture".into())
+        .unwrap();
+    let snapshot = project.snapshot().await.unwrap();
+    project
+        .handoff(snapshot.authority.clone(), vec![])
+        .await
+        .unwrap();
+    let context = project.context(&workspace, None).await.unwrap();
+    let snapshot = context.snapshot().await.unwrap();
+    let prepared = store
+        .prepare_directory_permission_source(
+            snapshot.directory.clone(),
+            Target {
+                authority: snapshot.project.authority.clone(),
+                project: "fixture".into(),
+                directory: snapshot.directory,
+                workspace_id: None,
+            },
+        )
+        .await
+        .unwrap();
+    let imported = context
+        .handoff(snapshot.project.authority, prepared.patterns)
+        .await
+        .unwrap();
+    store
+        .complete_directory_permission_source(imported.directory.clone(), imported)
+        .await
+        .unwrap();
+    let binding = context.bind_handoff(&store).await.unwrap();
+    let error = Runtime::with_shared_permissions(
+        binding,
+        Arc::new(Caller("read_file")),
+        Tools::new(&workspace).await.unwrap(),
+        policy(true),
+    )
+    .await
+    .err()
+    .expect("model-writable Root must be refused");
+    assert!(
+        error.to_string().contains("outside the workspace"),
+        "{error}"
+    );
+    assert!(store.sessions().await.unwrap().is_empty());
+}
