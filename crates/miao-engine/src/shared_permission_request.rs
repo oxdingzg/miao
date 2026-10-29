@@ -110,61 +110,68 @@ impl Context {
         let source = source.clone();
         self.project
             .authority
-            .with_permission_source(&source.clone(), move |transaction| {
-                context.require_request_source(&source)?;
-                let mut record = context
-                    .load_request(transaction, &source, &response.request_id)?
-                    .ok_or_else(|| Error::Invalid("shared permission request not found".into()))?;
-                if record.input_hash != response.input_hash
-                    || record.authority_revision != response.authority_revision
-                {
-                    return Err(Error::Invalid(
-                        "shared permission response binding mismatch".into(),
-                    ));
-                }
-                if record.state != State::Pending {
-                    if record.reply == Some(response.reply) && record.feedback == feedback {
+            .call(move |connection| {
+                source.with_root_sources(connection, |transaction, sources| {
+                    context.require_request_source(&source)?;
+                    let mut record = context
+                        .load_request(transaction, &source, &response.request_id)?
+                        .ok_or_else(|| {
+                            Error::Invalid("shared permission request not found".into())
+                        })?;
+                    if record.input_hash != response.input_hash
+                        || record.authority_revision != response.authority_revision
+                    {
+                        return Err(Error::Invalid(
+                            "shared permission response binding mismatch".into(),
+                        ));
+                    }
+                    if record.state != State::Pending {
+                        if record.reply == Some(response.reply) && record.feedback == feedback {
+                            return Ok(record);
+                        }
+                        return Err(Error::Invalid(
+                            "shared permission request is already resolved".into(),
+                        ));
+                    }
+                    if expire_request(transaction, &mut record)? {
                         return Ok(record);
                     }
-                    return Err(Error::Invalid(
-                        "shared permission request is already resolved".into(),
-                    ));
-                }
-                if expire_request(transaction, &mut record)? {
-                    return Ok(record);
-                }
-                let outcome = context.evaluate_request(transaction, &source, &record.request)?;
-                let denied = response.reply == Reply::Reject || outcome.effect == Decision::Deny;
-                if !denied && response.reply == Reply::Always {
-                    for resource in record.request.save.as_deref().unwrap_or_default() {
-                        context.put_request_rule(
-                            transaction,
-                            Rule {
-                                action: record.request.facts.actions[0].clone(),
-                                resource: resource.clone(),
-                                effect: Decision::Allow,
-                            },
-                        )?;
+                    let outcome =
+                        context.evaluate_request(transaction, &source, &record.request)?;
+                    let denied =
+                        response.reply == Reply::Reject || outcome.effect == Decision::Deny;
+                    if !denied && response.reply == Reply::Always {
+                        for resource in record.request.save.as_deref().unwrap_or_default() {
+                            context.put_request_rule(
+                                transaction,
+                                Rule {
+                                    action: record.request.facts.actions[0].clone(),
+                                    resource: resource.clone(),
+                                    effect: Decision::Allow,
+                                },
+                            )?;
+                        }
                     }
-                }
-                record.state = if denied {
-                    State::Denied
-                } else {
-                    State::Allowed
-                };
-                record.reply = Some(response.reply);
-                record.feedback = feedback;
-                record.denial = (outcome.effect == Decision::Deny).then_some(outcome);
-                record.reason = denied.then(|| {
-                    match response.reply {
-                        Reply::Reject if record.feedback.is_some() => "user_corrected",
-                        Reply::Reject => "user_rejected",
-                        _ => "policy_denied",
-                    }
-                    .into()
-                });
-                resolve_request(transaction, &record)?;
-                Ok(record)
+                    record.state = if denied {
+                        State::Denied
+                    } else {
+                        State::Allowed
+                    };
+                    record.reply = Some(response.reply);
+                    record.feedback = feedback;
+                    record.denial = (outcome.effect == Decision::Deny).then_some(outcome);
+                    record.reason = denied.then(|| {
+                        match response.reply {
+                            Reply::Reject if record.feedback.is_some() => "user_corrected",
+                            Reply::Reject => "user_rejected",
+                            _ => "policy_denied",
+                        }
+                        .into()
+                    });
+                    resolve_request(transaction, &record)?;
+                    context.resolve_request_siblings(transaction, &source, sources, &record)?;
+                    Ok(record)
+                })
             })
             .await
     }
@@ -189,6 +196,128 @@ impl Context {
                 Ok(record)
             })
             .await
+    }
+
+    /// A trusted owner may withdraw its own captured source after the tool or
+    /// Runtime has ended. This operation only cancels; it never reads a grant,
+    /// saves a rule or revives an inactive source.
+    pub async fn retire_source_requests(&self, source: &Source) -> Result<usize, Error> {
+        let context = self.clone();
+        let source = source.clone();
+        self.project.authority.call(move |connection| {
+            context.require_request_source(&source)?;
+            let transaction=connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            let binding=context.request_binding(&transaction,&source)?;
+            let ids={
+                let mut statement=transaction.prepare("SELECT id FROM permission_request WHERE binding=?1 AND state='pending' ORDER BY id")?;
+                let rows=statement.query_map([binding],|row|row.get::<_,String>(0))?;
+                rows.collect::<Result<Vec<_>,_>>()?
+            };
+            for id in &ids {
+                let mut record=context.load_request(&transaction,&source,id)?.ok_or_else(||Error::Invalid("shared permission request disappeared".into()))?;
+                if expire_request(&transaction,&mut record)? {continue;}
+                record.state=State::Cancelled;
+                record.reason=Some("source_finished".into());
+                resolve_request(&transaction,&record)?;
+            }
+            transaction.commit()?;
+            Ok(ids.len())
+        }).await
+    }
+
+    fn resolve_request_siblings(
+        &self,
+        transaction: &Transaction<'_>,
+        source: &Source,
+        sources: &[(
+            crate::product_permission::Source,
+            &crate::product_permission::Authority,
+        )],
+        resolved: &Record,
+    ) -> Result<(), Error> {
+        let reject = resolved.reply == Some(Reply::Reject);
+        let remember = resolved.state == State::Allowed
+            && resolved.reply == Some(Reply::Always)
+            && resolved
+                .request
+                .save
+                .as_ref()
+                .is_some_and(|save| !save.is_empty());
+        if !reject && !remember {
+            return Ok(());
+        }
+        let records = {
+            let mut statement=transaction.prepare("SELECT data FROM permission_request WHERE project=?1 AND location=?2 AND owner=?3 AND state='pending' AND id!=?4 AND (?5 IS NULL OR session=?5) ORDER BY id")?;
+            let rows = statement.query_map(
+                params![
+                    self.project.project,
+                    self.location,
+                    source.context.owner,
+                    resolved.id,
+                    reject.then_some(&resolved.source.session_id)
+                ],
+                |row| row.get::<_, String>(0),
+            )?;
+            rows.map(|row| serde_json::from_str::<Record>(&row?).map_err(Error::from))
+                .collect::<Result<Vec<_>, Error>>()?
+        };
+        for mut record in records {
+            if expire_request(transaction, &mut record)? {
+                continue;
+            }
+            let authority = sources
+                .iter()
+                .find_map(|(peer, authority)| (peer == &record.source).then_some(*authority));
+            let authority = match authority {
+                Some(authority)
+                    if !authority.cancel.is_cancelled()
+                        && crate::product_permission::source_active_in(
+                            transaction,
+                            &record.source.session_id,
+                            &authority.run_id,
+                            &record.source.call_id,
+                            &self.directory,
+                            true,
+                        )? =>
+                {
+                    authority
+                }
+                _ => {
+                    record.state = State::Cancelled;
+                    record.reason = Some("source_finished".into());
+                    resolve_request(transaction, &record)?;
+                    continue;
+                }
+            };
+            let peer = Source {
+                path: source.path.clone(),
+                context: crate::product_permission_request::Context {
+                    source: record.source.clone(),
+                    authority: authority.clone(),
+                    ..source.context.clone()
+                },
+            };
+            self.load_request(transaction, &peer, &record.id)?
+                .ok_or_else(|| Error::Invalid("shared permission sibling disappeared".into()))?;
+            if !reject
+                && self
+                    .evaluate_request(transaction, &peer, &record.request)?
+                    .effect
+                    != Decision::Allow
+            {
+                continue;
+            }
+            record.state = if reject {
+                State::Denied
+            } else {
+                State::Allowed
+            };
+            record.reply = Some(if reject { Reply::Reject } else { Reply::Always });
+            record.reason = reject.then(|| "user_rejected".into());
+            record.feedback = None;
+            resolve_request(transaction, &record)?;
+        }
+        Ok(())
     }
 
     fn require_request_source(&self, source: &Source) -> Result<(), Error> {

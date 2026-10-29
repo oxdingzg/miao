@@ -1312,6 +1312,10 @@ for `Context.admit_request`, `request_status`, `reply_request`, and
 `cancel_request`. The Root UUID, context, source database, Runtime owner, run,
 and complete reverse-call identity bind retries. Always writes explicit saved
 patterns and its request receipt atomically in Root while the attached Session
-database remains read-only. Source shutdown cleanup, sibling reject/reevaluation,
-subscription wakeups and migration-aware Runtime activation remain unfinished;
-these methods must not be treated as an activated backend.
+database remains read-only. A reply also settles existing sibling assertions behind the real bridge-source
+lock: reject stays within the Session, while successful always reevaluates only
+live matching sources of the same Runtime/context. Foreign Runtime owners must
+refresh their own requests. `retire_source_requests` lets the trusted owner cancel
+its precisely captured source after it ends, without granting or saving anything.
+Runtime finalization calls, subscription wakeups and migration-aware activation
+remain unfinished; these methods must not be treated as an activated backend.
