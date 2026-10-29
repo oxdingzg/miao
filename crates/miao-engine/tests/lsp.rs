@@ -733,6 +733,22 @@ async fn a_reload_reconciles_the_lsp_section_and_keeps_unchanged_connections() {
     assert_eq!(initializations.load(Ordering::SeqCst), 1);
     assert_eq!(announced.try_recv().unwrap(), report);
 
+    // A server the plan did not have before counts as a change too: it has no
+    // connection to keep, and the plan swap is what lets a later request reach
+    // it. The kept server stays untouched.
+    std::fs::write(
+        &manifest,
+        r#"[{"name":"rust","argv":["fixture"],"extensions":["rs","toml"]},{"name":"extra","argv":["fixture-extra"],"extensions":["xt"]}]"#,
+    )
+    .unwrap();
+    let report = runtime.reload_config().await.unwrap();
+    assert_eq!(report["generation"], json!(3));
+    assert_eq!(report["changed"], json!(["lsp"]));
+    assert_eq!(report["lsp"]["changed"], json!(["extra"]));
+    assert_eq!(report["lsp"]["removed"], json!([]));
+    assert_eq!(report["lsp"]["unchanged"], json!(["rust"]));
+    assert_eq!(initializations.load(Ordering::SeqCst), 1);
+
     // A malformed manifest changes nothing and is reported as an error.
     std::fs::write(&manifest, "{").unwrap();
     let error = runtime.reload_config().await.unwrap_err();
