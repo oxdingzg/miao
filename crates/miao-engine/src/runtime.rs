@@ -5134,7 +5134,13 @@ async fn authorize(
             .await?
             .as_str()
         {
-            "allow" => return Ok(true),
+            "allow" => {
+                // The durable counterpart of the request record: a client
+                // projecting the session status needs to know the wait ended,
+                // or the phase reads as waiting for approval while a tool runs.
+                inner.store.record(session,"permission.approved",json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource()})).await?;
+                return Ok(true)
+            }
             "pending" => {}
             _ => {
                 inner.store.record(session,crate::events::Lifecycle::PermissionDenied.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"approval_denied"})).await?;

@@ -64,6 +64,24 @@ test("names the phase of a provider step from the durable events", () => {
   })
 })
 
+test("a parked permission ask is its own phase, and settling it returns to local work", () => {
+  expect(statusOf(event("permission_request", 1_700_000_000_400))).toEqual({
+    type: "busy",
+    phase: "approval",
+    since: 1_700_000_000_400,
+  })
+  expect(statusOf(event("permission.approved", 1_700_000_000_500))).toEqual({
+    type: "busy",
+    phase: "preparing",
+    since: 1_700_000_000_500,
+  })
+  expect(statusOf(event("permission_denied", 1_700_000_000_600))).toEqual({
+    type: "busy",
+    phase: "preparing",
+    since: 1_700_000_000_600,
+  })
+})
+
 test("a dispatched request is a phase a replay can reproduce", () => {
   // Status comes from durable events only. A phase derived from the live
   // progress pipe would be missing after a reconnect, and the replayed event

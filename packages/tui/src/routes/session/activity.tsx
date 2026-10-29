@@ -533,6 +533,7 @@ export function SessionWaiting(props: {
       return "Compacting context"
     }
     if (props.phase === "queued") return "Queued"
+    if (props.phase === "approval") return width() < 60 ? "Approval" : "Waiting for approval"
     if (props.waiting) return width() < 60 ? "Waiting" : "Waiting for model"
     if (props.activity) return props.activity
     if (props.phase === "preparing") return width() < 60 ? "Preparing" : "Preparing request"
@@ -628,7 +629,8 @@ function SessionSummary(props: { text?: string }) {
 
 // Name what is actually being waited on. `requesting` is a dispatched request
 // awaiting the first token (TTFT); `preparing` and `queued` have not reached the
-// provider yet, which is the distinction the old single label could not make.
+// provider yet, which is the distinction the old single label could not make;
+// `approval` is a permission ask that only a human resolves.
 function waitingText(
   phase: SessionPhase | undefined,
   elapsed: number,
@@ -643,20 +645,26 @@ function waitingText(
       ? `Compacting context${slices}`
       : phase === "queued"
         ? "Queued · waiting for a free slot"
-        : phase === "preparing"
-          ? "Preparing request"
-          : phase === "streaming"
-            ? "Receiving model response"
-            : phase === "retrying"
-              ? "Retrying"
-              : "Waiting for model response"
+        : phase === "approval"
+          ? "Waiting for approval"
+          : phase === "preparing"
+            ? "Preparing request"
+            : phase === "streaming"
+              ? "Receiving model response"
+              : phase === "retrying"
+                ? "Retrying"
+                : "Waiting for model response"
   const suffix =
     phase === "compacting"
       ? elapsed >= 30000
         ? ` · still waiting for summary; esc ${esc}`
         : " · making room to continue"
-      : elapsed >= 30000
-        ? ` · no readable output yet; esc ${esc}`
-        : ""
+      : phase === "approval"
+        ? elapsed >= 30000
+          ? ` · resolve the ask or esc ${esc}`
+          : ""
+        : elapsed >= 30000
+          ? ` · no readable output yet; esc ${esc}`
+          : ""
   return `${label} · ${Locale.duration(elapsed)}${suffix}`
 }

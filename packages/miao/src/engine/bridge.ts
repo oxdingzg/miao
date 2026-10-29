@@ -41,6 +41,16 @@ export function statusOf(event: EngineEvent): StatusInfo | undefined {
       return busy("requesting", event.recorded_at_ms)
     case "provider.retry":
       return busy("retrying", event.recorded_at_ms)
+    case "permission_request":
+      // A dispatch parked on a permission ask. The wait can outlast every
+      // provider phase many times over, and without it the status keeps
+      // reading whatever the turn was doing before the ask.
+      return busy("approval", event.recorded_at_ms)
+    case "permission.approved":
+    case "permission_denied":
+      // The ask settled: the tool runs or the denial streams back, both are
+      // local turn work again until the next request leaves for the provider.
+      return busy("preparing", event.recorded_at_ms)
     case "run.finished":
     case "stop":
     case "stop_failure":
@@ -52,7 +62,10 @@ export function statusOf(event: EngineEvent): StatusInfo | undefined {
   }
 }
 
-function busy(phase: "preparing" | "requesting" | "retrying", since?: number | null): StatusInfo {
+function busy(
+  phase: "preparing" | "requesting" | "retrying" | "approval",
+  since?: number | null,
+): StatusInfo {
   return { type: "busy", phase, ...(typeof since === "number" ? { since } : {}) }
 }
 

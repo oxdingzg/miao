@@ -200,6 +200,15 @@ async fn approval_matches_controller_input_policy_and_only_resolves_once() {
             .count(),
         1
     );
+    // The approved record is what lets a client retire the approval wait from
+    // the session status; without it the phase reads as asking while the tool
+    // runs.
+    assert!(store
+        .events("s", 0, 100)
+        .await
+        .unwrap()
+        .iter()
+        .any(|e| e.kind == "permission.approved"));
     assert!(store.history("s").await.unwrap()[2].content[0]["content"]
         .as_str()
         .unwrap()

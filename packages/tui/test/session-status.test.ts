@@ -165,6 +165,7 @@ test("normalizes a status to its phase", () => {
   expect(statusPhase({ type: "idle" })).toBeUndefined()
   expect(statusPhase({ type: "busy" })).toBe("preparing")
   expect(statusPhase({ type: "busy", phase: "queued" })).toBe("queued")
+  expect(statusPhase({ type: "busy", phase: "approval" })).toBe("approval")
   expect(statusPhase({ type: "busy", phase: "requesting", since: 1 })).toBe("requesting")
   expect(statusPhase({ type: "retry", attempt: 1, message: "rate limited", next: 2 })).toBe("retrying")
 })
