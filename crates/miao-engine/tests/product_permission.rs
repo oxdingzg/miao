@@ -2194,6 +2194,12 @@ async fn one_time_saved_rule_handoff_is_controller_bound_live_and_cannot_resurre
         .unwrap(),
         Value::Null
     );
+    let initial = host
+        .dispatch(serde_json::from_value(json!({"method":"permission_import_snapshot"})).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(initial["cursor"], 0);
+    assert_eq!(initial["migration"], Value::Null);
     let command = json!({"method":"permission_saved_migrate","params":{
         "project":"legacy-project", "rules":[{"id":"legacy-row", "rule":{"action":"read","resource":"public","effect":"allow"}}]
     }});
@@ -2311,6 +2317,35 @@ async fn one_time_saved_rule_handoff_is_controller_bound_live_and_cannot_resurre
                 resource: "public".into(),
                 effect: Decision::Allow
             }]
+        )
+        .await
+        .is_err());
+    let snapshot = host
+        .dispatch(serde_json::from_value(json!({"method":"permission_import_snapshot"})).unwrap())
+        .await
+        .unwrap();
+    assert!(snapshot["rules"].as_array().unwrap().is_empty());
+    let changes = host
+        .dispatch(
+            serde_json::from_value(
+                json!({"method":"permission_import_changes","params":{"after":0,"limit":256}}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(changes["changes"].as_array().unwrap().len(), 2);
+    assert_eq!(changes["changes"][0]["change"]["kind"], "migrated");
+    assert_eq!(changes["changes"][1]["change"]["kind"], "removed");
+    assert_eq!(snapshot["cursor"], changes["cursor"]);
+    assert!(runtime
+        .permission_import_snapshot(&other.controller())
+        .await
+        .is_err());
+    assert!(runtime
+        .permission_import_changes(
+            &other.controller(),
+            miao_engine::permission_import_changes::Input { after: 0, limit: 1 }
         )
         .await
         .is_err());

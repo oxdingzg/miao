@@ -4,7 +4,7 @@ use crate::{permission::digest, permission_rules::Rule, protocol::Error, store::
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LegacyRule {
     pub id: String,
@@ -24,7 +24,8 @@ pub struct Remove {
     pub id: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Receipt {
     pub project: String,
     pub fingerprint: String,
@@ -52,6 +53,7 @@ pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
          WHEN EXISTS(SELECT 1 FROM engine_permission_import WHERE workspace=OLD.workspace AND digest=OLD.digest AND removed_at_ms IS NULL)
          BEGIN SELECT RAISE(ABORT, 'saved permission ownership migrated'); END;",
     )?;
+    crate::permission_import_changes::initialize(connection)?;
     Ok(())
 }
 
@@ -75,27 +77,8 @@ impl Store {
     }
 
     pub async fn imported_permissions(&self, workspace: String) -> Result<Vec<LegacyRule>, Error> {
-        self.call(move |connection| {
-            crate::permission_patterns::require_workspace(&workspace)?;
-            let mut statement = connection.prepare(
-                "SELECT legacy_id,rule,digest FROM engine_permission_import WHERE workspace=?1 AND removed_at_ms IS NULL ORDER BY legacy_id LIMIT 257",
-            )?;
-            let rows = statement.query_map([&workspace], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)))?;
-            let mut result = Vec::new();
-            for row in rows {
-                let (id, encoded, hash) = row?;
-                let rule: Rule = serde_json::from_str(&encoded).map_err(|_| Error::Invalid("corrupt imported permission".into()))?;
-                crate::permission_patterns::require_rule(&rule)?;
-                if digest(encoded.as_bytes()) != hash {
-                    return Err(Error::Invalid("corrupt imported permission digest".into()));
-                }
-                result.push(LegacyRule { id, rule });
-            }
-            if result.len() > crate::permission_rules::MAX_RULES {
-                return Err(Error::Invalid("imported permission budget exceeded".into()));
-            }
-            Ok(result)
-        }).await
+        self.call(move |connection| imported(connection, &workspace))
+            .await
     }
 
     pub async fn remove_imported_permission(
@@ -108,7 +91,67 @@ impl Store {
     }
 }
 
-fn receipt(connection: &Connection, workspace: &str) -> Result<Option<Receipt>, Error> {
+pub(crate) fn imported(connection: &Connection, workspace: &str) -> Result<Vec<LegacyRule>, Error> {
+    crate::permission_patterns::require_workspace(workspace)?;
+    let mut statement = connection.prepare(
+                "SELECT legacy_id,rule,digest FROM engine_permission_import WHERE workspace=?1 AND removed_at_ms IS NULL ORDER BY legacy_id LIMIT 257",
+            )?;
+    let rows = statement.query_map([workspace], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        let (id, encoded, hash) = row?;
+        let rule: Rule = serde_json::from_str(&encoded)
+            .map_err(|_| Error::Invalid("corrupt imported permission".into()))?;
+        crate::permission_patterns::require_rule(&rule)?;
+        if digest(encoded.as_bytes()) != hash {
+            return Err(Error::Invalid("corrupt imported permission digest".into()));
+        }
+        result.push(LegacyRule { id, rule });
+    }
+    if result.len() > crate::permission_rules::MAX_RULES {
+        return Err(Error::Invalid("imported permission budget exceeded".into()));
+    }
+    Ok(result)
+}
+
+pub(crate) fn require_rules(project: &str, rules: &[LegacyRule]) -> Result<(), Error> {
+    if project.is_empty()
+        || project.len() > 512
+        || project.chars().any(char::is_control)
+        || rules.len() > crate::permission_rules::MAX_RULES
+    {
+        return Err(Error::Invalid("invalid legacy permission migration".into()));
+    }
+    for (index, item) in rules.iter().enumerate() {
+        require_id(&item.id)?;
+        if index > 0 && rules[index - 1].id >= item.id {
+            return Err(Error::Invalid(
+                "invalid legacy permission identity order".into(),
+            ));
+        }
+        crate::permission_patterns::require_rule(&item.rule)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn require_id(id: &str) -> Result<(), Error> {
+    if id.is_empty()
+        || id.starts_with("psv_native_")
+        || id.len() > 512
+        || id.chars().any(char::is_control)
+    {
+        return Err(Error::Invalid("invalid legacy permission identity".into()));
+    }
+    Ok(())
+}
+
+pub(crate) fn receipt(connection: &Connection, workspace: &str) -> Result<Option<Receipt>, Error> {
     crate::permission_patterns::require_workspace(workspace)?;
     Ok(connection.query_row(
         "SELECT project,fingerprint,imported FROM engine_permission_migration WHERE workspace=?1", [workspace],
@@ -123,25 +166,11 @@ fn migrate(
     mut rules: Vec<LegacyRule>,
 ) -> Result<Receipt, Error> {
     crate::permission_patterns::require_workspace(workspace)?;
-    if project.is_empty()
-        || project.len() > 512
-        || project.chars().any(char::is_control)
-        || rules.len() > crate::permission_rules::MAX_RULES
-    {
+    if rules.len() > crate::permission_rules::MAX_RULES {
         return Err(Error::Invalid("invalid legacy permission migration".into()));
     }
     rules.sort_by(|left, right| left.id.cmp(&right.id));
-    for (index, item) in rules.iter().enumerate() {
-        if item.id.is_empty()
-            || item.id.starts_with("psv_native_")
-            || item.id.len() > 512
-            || item.id.chars().any(char::is_control)
-            || index > 0 && rules[index - 1].id == item.id
-        {
-            return Err(Error::Invalid("invalid legacy permission identity".into()));
-        }
-        crate::permission_patterns::require_rule(&item.rule)?;
-    }
+    require_rules(project, &rules)?;
     let fingerprint = digest(&serde_json::to_vec(&(workspace, project, &rules))?);
     let transaction = crate::store::write_tx(connection)?;
     let before = receipt(&transaction, workspace)?;
@@ -176,13 +205,21 @@ fn migrate(
         "INSERT INTO engine_permission_migration(workspace,project,fingerprint,imported,migrated_at_ms) VALUES(?1,?2,?3,?4,?5)",
         params![workspace, project, receipt.fingerprint, receipt.imported, now],
     )?;
-    for item in rules {
+    for item in &rules {
         let encoded = serde_json::to_string(&item.rule)?;
         transaction.execute(
             "INSERT INTO engine_permission_import(workspace,legacy_id,digest,rule) VALUES(?1,?2,?3,?4)",
             params![workspace, item.id, digest(encoded.as_bytes()), encoded],
         )?;
     }
+    crate::permission_import_changes::append(
+        &transaction,
+        workspace,
+        &crate::permission_import_changes::Change::Migrated {
+            receipt: receipt.clone(),
+            rules,
+        },
+    )?;
     transaction.commit()?;
     Ok(receipt)
 }
@@ -211,6 +248,18 @@ fn remove(connection: &mut Connection, workspace: &str, id: &str) -> Result<bool
         "DELETE FROM engine_permission_rule WHERE workspace=?1 AND digest=?2
          AND NOT EXISTS(SELECT 1 FROM engine_permission_import WHERE workspace=?1 AND digest=?2 AND removed_at_ms IS NULL)",
         params![workspace, rule],
+    )?;
+    crate::permission_import_changes::append(
+        &transaction,
+        workspace,
+        &crate::permission_import_changes::Change::Removed {
+            id: id.into(),
+            fingerprint: receipt(&transaction, workspace)?
+                .ok_or_else(|| {
+                    Error::Invalid("imported permission has no migration receipt".into())
+                })?
+                .fingerprint,
+        },
     )?;
     transaction.commit()?;
     Ok(true)

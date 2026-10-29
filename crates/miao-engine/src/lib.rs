@@ -35,6 +35,8 @@ pub mod patch;
 pub mod pdf;
 pub mod permission;
 pub mod permission_grant;
+pub mod permission_import_changes;
+mod permission_journal;
 pub mod permission_migration;
 pub mod permission_pattern_changes;
 pub mod permission_patterns;

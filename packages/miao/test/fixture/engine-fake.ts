@@ -79,6 +79,8 @@ function handle(request: { id: number; method: string; params: Record<string, un
   if (
     process.env.ENGINE_FAKE_IGNORE_SNAPSHOT === "1" &&
     [
+      "permission_import_snapshot",
+      "permission_import_changes",
       "permission_saved_migration",
       "permission_saved_imported",
       "permission_pattern_list",
