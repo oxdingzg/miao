@@ -24,6 +24,16 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`permission_import_replica\` (
+          \`owner_key\` text PRIMARY KEY,
+          \`location\` text NOT NULL,
+          \`directory\` text NOT NULL,
+          \`cursor\` integer NOT NULL,
+          \`migration\` text,
+          \`rules\` text NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`remote_operation\` (
           \`subject\` text NOT NULL,
           \`id\` text NOT NULL,
