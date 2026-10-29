@@ -188,6 +188,74 @@ fn pending_inputs_is_a_wire_command_with_cursor_pagination() {
 }
 
 #[test]
+fn history_page_is_a_wire_command_with_a_durable_cursor() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        // Admit-only: the prompt is durable input, not a transcript message yet.
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"hello"},"resume":false}}),
+        json!({"id":2,"method":"history_page","params":{"session_id":"s"}}),
+        json!({"id":3,"method":"inject","params":{"session_id":"s","input_id":"ctx","text":"observed state","source":"skill:test"}}),
+        json!({"id":4,"method":"history_page","params":{"session_id":"s","limit":10}}),
+        json!({"id":5,"method":"history_page","params":{"session_id":"s","before_seq":0}}),
+        json!({"id":6,"method":"history_page","params":{"session_id":"missing"}}),
+        json!({"id":7,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let reply = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap().clone();
+    let page = reply(2)["result"].clone();
+    assert_eq!(page["messages"], json!([]), "{page}");
+    assert_eq!(page["has_more"], json!(false));
+    assert_eq!(page["next_before"], Value::Null);
+
+    let page = reply(4)["result"].clone();
+    let messages = page["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 1, "{page}");
+    assert_eq!(messages[0]["role"], json!("user"));
+    assert_eq!(messages[0]["synthetic"], json!(true));
+    assert_eq!(messages[0]["checkpoint"], Value::Null);
+    assert_eq!(page["has_more"], json!(false));
+    assert_eq!(page["next_before"], Value::Null);
+
+    // A cursor before the first message is a bounded empty page, not an error.
+    let page = reply(5)["result"].clone();
+    assert_eq!(page["messages"], json!([]));
+    assert_eq!(page["has_more"], json!(false));
+    // An identity that does not exist is refused.
+    assert!(reply(6)["error"].is_object(), "{:?}", reply(6));
+}
+
+#[test]
 fn archive_and_remove_are_wire_commands_with_a_durable_effect() {
     let dir = tempfile::tempdir().unwrap();
     let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))

@@ -1683,6 +1683,92 @@ impl Store {
         .await
     }
 
+    /// One bounded page of the stored transcript, newest page first.
+    ///
+    /// `history` and `selected_history` answer with the whole Session because
+    /// the model needs all of it; a view that only shows recent activity — a
+    /// parent previewing a child, a transcript scrolled to the bottom — must
+    /// not serialize twenty thousand messages to show forty. Messages come
+    /// back oldest-to-newest inside the page, and `next_before` is the cursor
+    /// for the page before it.
+    pub async fn history_page(
+        &self,
+        session: &str,
+        before_seq: Option<u64>,
+        limit: usize,
+    ) -> Result<Value, Error> {
+        let limit = limit.clamp(1, 500);
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let exists: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(Error::Invalid("Session does not exist".into()));
+            }
+            let mut stmt = conn.prepare(
+                // A message is projected from an event, so the join always
+                // matches today; a left join keeps a future writer that
+                // inserts the row alone from silently losing it from every
+                // page, and that row simply is not synthetic.
+                "SELECT m.seq,m.role,m.content,m.checkpoint,m.recorded_at_ms,e.kind
+                 FROM engine_message m
+                 LEFT JOIN engine_event e ON e.session_id=m.session_id AND e.seq=m.seq
+                 WHERE m.session_id=?1 AND m.reverted=0 AND m.quarantined=0
+                   AND (?2 IS NULL OR m.seq<?2)
+                 ORDER BY m.seq DESC LIMIT ?3",
+            )?;
+            let rows = stmt.query_map(
+                params![session, before_seq.map(|seq| seq as i64), limit as i64 + 1],
+                |row| {
+                    Ok((
+                        row.get::<_, u64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<u64>>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                    ))
+                },
+            )?;
+            let mut page = rows.collect::<Result<Vec<_>, _>>()?;
+            let has_more = page.len() > limit;
+            page.truncate(limit);
+            page.reverse();
+            let messages = page
+                .into_iter()
+                .map(|(seq, role, content, checkpoint, recorded_at_ms, kind)| {
+                    Ok(json!({
+                        "seq": seq,
+                        "role": role,
+                        "content": serde_json::from_str::<Value>(&content)?,
+                        "checkpoint": checkpoint,
+                        "recorded_at_ms": recorded_at_ms,
+                        // Injected context is a message too, but a view may want
+                        // to render it apart from what the model said.
+                        "synthetic": kind.as_deref() == Some("message.synthetic"),
+                    }))
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+            // Only a page with an older neighbour is a cursor; the last page
+            // must not invite another round trip.
+            let next_before = if has_more {
+                messages.first().and_then(|message| message["seq"].as_u64())
+            } else {
+                None
+            };
+            Ok(json!({
+                "session_id": session,
+                "messages": messages,
+                "has_more": has_more,
+                "next_before": next_before,
+            }))
+        })
+        .await
+    }
+
     pub async fn events(&self, session: &str, after: u64, limit: u32) -> Result<Vec<Event>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
