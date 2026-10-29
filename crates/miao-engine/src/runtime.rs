@@ -61,6 +61,8 @@ struct Inner {
     /// rules it started with.
     policy: StdRwLock<Arc<Policy>>,
     store: Store,
+    shared_permissions: Option<crate::permission_context::HandoffBinding>,
+    permission_sources: std::sync::Mutex<Vec<crate::permission_source_transaction::Source>>,
     /// The provider every turn resolves its binding against. A reload swaps
     /// the whole `Arc`, so a drain that already resolved a route keeps it and
     /// the next turn sees the new catalog.
@@ -132,7 +134,7 @@ struct Background {
 enum Command {
     Shell(crate::session_shell::Invocation),
     Wake(bool),
-    Cancel(oneshot::Sender<bool>),
+    Cancel(oneshot::Sender<Result<bool, Error>>),
     CancelIf(String, oneshot::Sender<Result<bool, Error>>),
     Approve(Response, bool, oneshot::Sender<Result<(), Error>>),
 }
@@ -225,6 +227,45 @@ impl Runtime {
         policy: Policy,
         tool_replay: Option<ToolReplay>,
     ) -> Result<Self, Error> {
+        Self::construct(store, provider, tools, policy, tool_replay, None).await
+    }
+
+    /// Explicit trusted-host selection after both migration drivers complete.
+    /// No legacy fallback is attempted once a directory source is frozen.
+    pub async fn with_shared_permissions(
+        binding: crate::permission_context::HandoffBinding,
+        provider: Arc<dyn Provider>,
+        tools: Tools,
+        policy: Policy,
+    ) -> Result<Self, Error> {
+        let snapshot = binding.snapshot().await?;
+        if snapshot.workspace_id.is_some()
+            || snapshot.directory != tools.location()
+            || snapshot.project.migration.is_none()
+        {
+            return Err(Error::Invalid(
+                "shared Runtime requires paired project and directory handoffs".into(),
+            ));
+        }
+        Self::construct(
+            binding.source(),
+            provider,
+            tools,
+            policy,
+            None,
+            Some(binding),
+        )
+        .await
+    }
+
+    async fn construct(
+        store: Store,
+        provider: Arc<dyn Provider>,
+        tools: Tools,
+        policy: Policy,
+        tool_replay: Option<ToolReplay>,
+        shared_permissions: Option<crate::permission_context::HandoffBinding>,
+    ) -> Result<Self, Error> {
         if tool_replay.is_some() && !tools.hooks().is_empty() {
             return Err(Error::Invalid(
                 "native tool replay does not execute configured hooks".into(),
@@ -245,6 +286,25 @@ impl Runtime {
         }
         let lease = store.claim_runtime()?;
         store.recover().await?;
+        if let Some(binding) = &shared_permissions {
+            let mut after = None;
+            loop {
+                let page = binding
+                    .context()
+                    .recover_source_requests(&store, after, 256)
+                    .await?;
+                if !page.has_more {
+                    break;
+                }
+                after = page.after;
+            }
+            while binding
+                .context()
+                .project_request_events(&store, 256)
+                .await?
+                .has_more
+            {}
+        }
         store.recover_jobs_unowned().await?;
         store.recover_questions_unowned().await?;
         store.adopt_wakeups().await?;
@@ -257,6 +317,8 @@ impl Runtime {
                 _lease: lease,
                 policy: StdRwLock::new(Arc::new(policy)),
                 store,
+                shared_permissions,
+                permission_sources: std::sync::Mutex::new(Vec::new()),
                 provider: StdRwLock::new(provider),
                 tools,
                 tool_replay,
@@ -439,6 +501,36 @@ impl Runtime {
         }
     }
 
+    pub async fn shared_permission_snapshot(
+        &self,
+        controller: &Controller,
+    ) -> Result<crate::permission_changefeed::Observation<crate::permission_context::Snapshot>, Error>
+    {
+        self.permission_pattern_workspace(controller)?;
+        let binding = self
+            .inner
+            .shared_permissions
+            .as_ref()
+            .ok_or_else(|| Error::Invalid("shared permissions are not selected".into()))?;
+        binding.snapshot().await?;
+        binding.context().observe().await
+    }
+
+    pub async fn shared_permission_changes(
+        &self,
+        controller: &Controller,
+        input: crate::permission_changefeed::Input,
+    ) -> Result<crate::permission_changefeed::Page, Error> {
+        self.permission_pattern_workspace(controller)?;
+        let binding = self
+            .inner
+            .shared_permissions
+            .as_ref()
+            .ok_or_else(|| Error::Invalid("shared permissions are not selected".into()))?;
+        binding.snapshot().await?;
+        binding.context().changes(input).await
+    }
+
     pub async fn permission_import_snapshot(
         &self,
         controller: &Controller,
@@ -489,6 +581,21 @@ impl Runtime {
         &self,
         controller: &Controller,
     ) -> Result<Vec<crate::permission_migration::LegacyRule>, Error> {
+        if let Some(binding) = &self.inner.shared_permissions {
+            self.permission_pattern_workspace(controller)?;
+            return Ok(binding
+                .snapshot()
+                .await?
+                .project
+                .rules
+                .into_iter()
+                .filter(|record| record.origin == crate::permission_project::Origin::Legacy)
+                .map(|record| crate::permission_migration::LegacyRule {
+                    id: record.id,
+                    rule: record.rule,
+                })
+                .collect());
+        }
         self.inner
             .store
             .imported_permissions(self.permission_pattern_workspace(controller)?)
@@ -500,6 +607,11 @@ impl Runtime {
         controller: &Controller,
         id: String,
     ) -> Result<bool, Error> {
+        if let Some(binding) = &self.inner.shared_permissions {
+            self.permission_pattern_workspace(controller)?;
+            binding.snapshot().await?;
+            return binding.context().project.remove(id).await;
+        }
         self.inner
             .store
             .remove_imported_permission(self.permission_pattern_workspace(controller)?, id)
@@ -510,6 +622,10 @@ impl Runtime {
         &self,
         controller: &Controller,
     ) -> Result<Vec<crate::permission_patterns::Pattern>, Error> {
+        if let Some(binding) = &self.inner.shared_permissions {
+            self.permission_pattern_workspace(controller)?;
+            return Ok(binding.snapshot().await?.patterns);
+        }
         self.inner
             .store
             .permission_patterns(self.permission_pattern_workspace(controller)?)
@@ -542,6 +658,19 @@ impl Runtime {
         controller: &Controller,
         rule: crate::permission_rules::Rule,
     ) -> Result<crate::permission_patterns::Pattern, Error> {
+        if let Some(binding) = &self.inner.shared_permissions {
+            self.permission_pattern_workspace(controller)?;
+            binding.snapshot().await?;
+            let id = crate::permission_context::pattern_id(self.inner.tools.location(), &rule)?;
+            return binding
+                .context()
+                .put(rule)
+                .await?
+                .patterns
+                .into_iter()
+                .find(|pattern| pattern.id == id)
+                .ok_or_else(|| Error::Invalid("shared permission pattern was not saved".into()));
+        }
         self.inner
             .store
             .put_permission_pattern(self.permission_pattern_workspace(controller)?, rule)
@@ -553,6 +682,11 @@ impl Runtime {
         controller: &Controller,
         id: String,
     ) -> Result<bool, Error> {
+        if let Some(binding) = &self.inner.shared_permissions {
+            self.permission_pattern_workspace(controller)?;
+            binding.snapshot().await?;
+            return binding.context().remove(id).await;
+        }
         self.inner
             .store
             .remove_permission_pattern(self.permission_pattern_workspace(controller)?, id)
@@ -574,6 +708,13 @@ impl Runtime {
         source: &crate::product_permission::Source,
         input: crate::product_permission_request::Input,
     ) -> Result<crate::product_permission_request::Record, Error> {
+        if let Some(binding) = &self.inner.shared_permissions {
+            binding.snapshot().await?;
+            let source = self.capture_permission_source(controller, source)?;
+            let record = binding.context().admit_request(&source, input).await?;
+            project_shared_permission_events(&self.inner).await?;
+            return Ok(record);
+        }
         self.inner
             .store
             .admit_product_permission(self.product_permission_context(controller, source)?, input)
@@ -586,6 +727,13 @@ impl Runtime {
         source: &crate::product_permission::Source,
         id: String,
     ) -> Result<crate::product_permission_request::Record, Error> {
+        if let Some(binding) = &self.inner.shared_permissions {
+            binding.snapshot().await?;
+            let source = self.capture_permission_source(controller, source)?;
+            let record = binding.context().request_status(&source, id).await?;
+            project_shared_permission_events(&self.inner).await?;
+            return Ok(record);
+        }
         self.inner
             .store
             .product_permission_status(self.product_permission_context(controller, source)?, id)
@@ -598,6 +746,13 @@ impl Runtime {
         source: &crate::product_permission::Source,
         id: String,
     ) -> Result<crate::product_permission_request::Record, Error> {
+        if let Some(binding) = &self.inner.shared_permissions {
+            binding.snapshot().await?;
+            let source = self.capture_permission_source(controller, source)?;
+            let record = binding.context().cancel_request(&source, id).await?;
+            project_shared_permission_events(&self.inner).await?;
+            return Ok(record);
+        }
         self.inner
             .store
             .cancel_product_permission(self.product_permission_context(controller, source)?, id)
@@ -610,6 +765,13 @@ impl Runtime {
         source: &crate::product_permission::Source,
         response: crate::product_permission_request::Response,
     ) -> Result<crate::product_permission_request::Record, Error> {
+        if let Some(binding) = &self.inner.shared_permissions {
+            binding.snapshot().await?;
+            let source = self.capture_permission_source(controller, source)?;
+            let record = binding.context().reply_request(&source, response).await?;
+            project_shared_permission_events(&self.inner).await?;
+            return Ok(record);
+        }
         self.inner
             .store
             .reply_product_permission(
@@ -624,6 +786,41 @@ impl Runtime {
         controller: &Controller,
         session: String,
     ) -> Result<Vec<crate::product_permission_request::Record>, Error> {
+        if let Some(binding) = &self.inner.shared_permissions {
+            self.permission_pattern_workspace(controller)?;
+            binding.snapshot().await?;
+            let sources: Vec<_> = self
+                .inner
+                .permission_sources
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|source| source.context.source.session_id == session)
+                .cloned()
+                .collect();
+            let mut records = Vec::new();
+            for source in sources {
+                // Cancellation can race this diagnostic listing; an inactive
+                // source is retired and must never turn into an approval.
+                match binding.context().pending_source_requests(&source).await {
+                    Ok(pending) => records.extend(pending),
+                    Err(error) => {
+                        if source
+                            .context
+                            .bridge
+                            .permission_authority(&source.context.source)
+                            .is_some()
+                            && !source.context.authority.cancel.is_cancelled()
+                        {
+                            return Err(error);
+                        }
+                        binding.context().retire_source_requests(&source).await?;
+                    }
+                }
+            }
+            project_shared_permission_events(&self.inner).await?;
+            return Ok(records);
+        }
         let workspace = self.permission_pattern_workspace(controller)?;
         self.inner
             .store
@@ -638,10 +835,25 @@ impl Runtime {
         controller: &Controller,
         source: &crate::product_permission::Source,
     ) -> Result<crate::permission_source_transaction::Source, Error> {
-        Ok(crate::permission_source_transaction::Source {
+        let source = crate::permission_source_transaction::Source {
             path: self.inner.store.path().to_path_buf(),
             context: self.product_permission_context(controller, source)?,
-        })
+            shared: self
+                .inner
+                .shared_permissions
+                .as_ref()
+                .map(|binding| binding.run_authority(self.inner.id.clone())),
+        };
+        if self.inner.shared_permissions.is_some() {
+            let mut sources = self.inner.permission_sources.lock().unwrap();
+            if !sources
+                .iter()
+                .any(|held| held.context.source == source.context.source)
+            {
+                sources.push(source.clone());
+            }
+        }
+        Ok(source)
     }
 
     fn product_permission_context(
@@ -677,6 +889,11 @@ impl Runtime {
         source: &crate::product_permission::Source,
         request: crate::product_permission::Request,
     ) -> Result<crate::permission_rules::Outcome, Error> {
+        if let Some(binding) = &self.inner.shared_permissions {
+            binding.snapshot().await?;
+            let source = self.capture_permission_source(controller, source)?;
+            return binding.context().evaluate_source(&source, request).await;
+        }
         if controller.runtime_id != self.inner.id {
             return Err(Error::Invalid(
                 "product permission controller mismatch".into(),
@@ -1104,6 +1321,11 @@ impl Runtime {
         workspace: String,
         rules: Vec<crate::permission_rules::Rule>,
     ) -> Result<(), Error> {
+        if self.inner.shared_permissions.is_some() {
+            return Err(Error::Invalid(
+                "shared permissions reject legacy saved-rule projection".into(),
+            ));
+        }
         if controller.runtime_id != self.inner.id {
             return Err(Error::Invalid("permission controller mismatch".into()));
         }
@@ -1719,7 +1941,7 @@ impl Runtime {
             .send(Command::Cancel(reply))
             .await
             .map_err(|_| Error::Closed)?;
-        result.await.map_err(|_| Error::Closed)
+        result.await.map_err(|_| Error::Closed)?
     }
 
     /// Check and cancel inside the owning actor. A stale UI execution ID must
@@ -1864,7 +2086,8 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                     refuse_shell_queue(&inner,&session,&mut shells).await;
                     if let Some(cancel)=&active { cancel.cancel(); }
                     withdraw_product_sources(&inner,&session,&mut notifications);
-                    let _=reply.send(active.is_some());
+                    let result = retire_shared_permission_sources(&inner,&session,None).await.map(|_|active.is_some());
+                    let _=reply.send(result);
                 }
                 Some(Command::CancelIf(expected,reply)) => {
                     // The actor cannot start another drain during this check:
@@ -1875,7 +2098,7 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                             refuse_shell_queue(&inner,&session,&mut shells).await;
                             if let Some(token) = &active { token.cancel(); }
                             withdraw_product_sources(&inner,&session,&mut notifications);
-                            Ok(true)
+                            retire_shared_permission_sources(&inner,&session,None).await.map(|_|true)
                         }
                         Ok(_) => Ok(false),
                         Err(error) => Err(error),
@@ -2025,11 +2248,20 @@ async fn drain(
     // first-turn provider rejection quarantines exactly what it promoted.
     let history_base = inner.store.max_message_seq(&session).await?;
     let run = uuid::Uuid::new_v4().to_string();
-    let Some(promoted) = inner
-        .store
-        .start_run_with_inputs_fenced(&session, &run, force, &lease)
-        .await?
-    else {
+    let promoted = match &inner.shared_permissions {
+        Some(binding) => {
+            binding
+                .start_run_with_inputs_fenced(&session, &run, force, &lease, inner.id.clone())
+                .await?
+        }
+        None => {
+            inner
+                .store
+                .start_run_with_inputs_fenced(&session, &run, force, &lease)
+                .await?
+        }
+    };
+    let Some(promoted) = promoted else {
         return Ok(());
     };
     let _keepalive = LeaseKeepalive(tokio::spawn(keep_lease(
@@ -2058,6 +2290,17 @@ async fn drain(
     } else {
         "failed"
     };
+    // Withdraw before Root cleanup: a concurrent host cannot admit another
+    // assertion in the gap between retirement and durable run completion.
+    let withdrawn = if inner.shared_permissions.is_some() {
+        inner.product.read().unwrap().bridge.clone().map(|bridge| {
+            let ids = bridge.withdraw_session(&session);
+            (bridge, ids)
+        })
+    } else {
+        None
+    };
+    retire_shared_permission_sources(&inner, &session, None).await?;
     inner
         .store
         .finish_run_fenced(&session, &run, reason, &lease)
@@ -2085,9 +2328,13 @@ async fn drain(
     // A settled run must not leave the host executing product-tool calls for a
     // parent that is gone: cancel, failure, and clean end each notify every
     // call still pending on the bridge.
-    let bridge = inner.product.read().unwrap().bridge.clone();
-    if let Some(bridge) = bridge {
-        bridge.cancel_session(&session).await;
+    if let Some((bridge, ids)) = withdrawn {
+        bridge.notify_cancellation(&session, &ids).await;
+    } else {
+        let bridge = inner.product.read().unwrap().bridge.clone();
+        if let Some(bridge) = bridge {
+            bridge.cancel_session(&session).await;
+        }
     }
     result
 }
@@ -3133,6 +3380,7 @@ command: None,
                                         policy: &policy,
                                         agent: manifest,
                                         delegated,
+                                        lease,
                                     },
                                 )
                                 .await?;
@@ -3503,6 +3751,7 @@ command: None,
                     && !is_error
                     && output.get("exit").is_some_and(Value::is_null);
                 if !batched {
+                    retire_shared_permission_sources(inner, session, Some(id)).await?;
                     inner
                         .store
                         .tool_result(session, run, id, output, is_error)
@@ -4056,19 +4305,90 @@ command: None,
     }
 }
 
+async fn saved_rules(inner: &Inner) -> Result<Vec<crate::permission_rules::Rule>, Error> {
+    match &inner.shared_permissions {
+        Some(binding) => {
+            let snapshot = binding.snapshot().await?;
+            Ok(snapshot
+                .project
+                .rules
+                .into_iter()
+                .map(|record| record.rule)
+                .chain(snapshot.patterns.into_iter().map(|pattern| pattern.rule))
+                .collect())
+        }
+        None => {
+            inner
+                .store
+                .saved_rules(inner.tools.location().to_owned())
+                .await
+        }
+    }
+}
+
+async fn project_shared_permission_events(inner: &Inner) -> Result<(), Error> {
+    let Some(binding) = &inner.shared_permissions else {
+        return Ok(());
+    };
+    while binding
+        .context()
+        .project_request_events(&inner.store, 256)
+        .await?
+        .has_more
+    {}
+    Ok(())
+}
+
+async fn retire_shared_permission_sources(
+    inner: &Inner,
+    session: &str,
+    call: Option<&str>,
+) -> Result<(), Error> {
+    let Some(binding) = &inner.shared_permissions else {
+        return Ok(());
+    };
+    let sources: Vec<_> = inner
+        .permission_sources
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|source| {
+            source.context.source.session_id == session
+                && call.is_none_or(|call| source.context.source.call_id == call)
+        })
+        .cloned()
+        .collect();
+    for source in &sources {
+        binding.context().retire_source_requests(source).await?;
+    }
+    // Retain handles until all Root cancellations committed, so a failed
+    // cleanup remains retryable and blocks the durable completion boundary.
+    inner.permission_sources.lock().unwrap().retain(|source| {
+        !sources
+            .iter()
+            .any(|retired| retired.context.source == source.context.source)
+    });
+    project_shared_permission_events(inner).await
+}
+
 // Saved rules can change during a running turn. This is the provider boundary's
 // diagnostic snapshot; each actual assertion still obtains its own native decision.
 async fn permission_profile(inner: &Inner, policy: &Policy) -> Result<Value, Error> {
     let workspace = inner.tools.location();
-    let saved = inner.store.saved_rules(workspace.to_string()).await?;
-    Ok(json!({
+    let saved = saved_rules(inner).await?;
+    let mut profile = json!({
         "semantics": "native-permission-snapshot-v1",
         "snapshot": "provider-boundary",
         "workspace": workspace,
         "policy": policy.descriptor(),
         "boundary": inner.tools.authority_descriptor(),
         "saved": saved,
-    }))
+    });
+    if let Some(binding) = &inner.shared_permissions {
+        let snapshot = binding.snapshot().await?;
+        profile["shared"] = json!({"authority":snapshot.project.authority,"project":snapshot.project.project,"directory":snapshot.directory,"workspace_id":snapshot.workspace_id});
+    }
+    Ok(profile)
 }
 
 async fn notify_admission(
@@ -5163,7 +5483,7 @@ async fn cancel_session(inner: &Arc<Inner>, session: &str) -> Result<bool, Error
         .send(Command::Cancel(reply))
         .await
         .map_err(|_| Error::Closed)?;
-    result.await.map_err(|_| Error::Closed)
+    result.await.map_err(|_| Error::Closed)?
 }
 
 /// Whether this Session was forked by `task` and therefore runs as a leaf.
@@ -5203,6 +5523,7 @@ fn billed_tokens(usage: &Value) -> u64 {
 /// Immutable authority chosen at the provider-turn boundary, shared by every
 /// call that reply produces. Never rebuilt from a mid-turn agent switch.
 struct TurnAuthority<'a> {
+    lease: &'a SessionLease,
     plan: bool,
     policy: &'a Policy,
     agent: Option<&'a crate::session_agent::AgentManifest>,
@@ -5224,7 +5545,11 @@ async fn authorize(
         policy,
         agent,
         delegated,
+        lease,
     } = authority;
+    if let Some(binding) = &inner.shared_permissions {
+        binding.require_run(run, &inner.id, lease).await?;
+    }
     if agent.is_some_and(|agent| !agent.permits(prepared.name())) {
         inner.store.record(session, crate::events::Lifecycle::PermissionDenied.name(),
             json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"agent_tool_surface","policy_revision":policy.revision()})).await?;
@@ -5291,10 +5616,7 @@ async fn authorize(
             // product's decide() would: a configured deny never reaches this
             // branch, and a saved "always allow" lifts the remaining ask. The
             // whole call stays a question unless every target is covered.
-            let saved = inner
-                .store
-                .saved_rules(inner.tools.location().to_string())
-                .await?;
+            let saved = saved_rules(inner).await?;
             if !saved.is_empty() {
                 let action = policy.bound_action(prepared.name());
                 let covered = auto_targets.iter().all(|target| {
@@ -5334,15 +5656,25 @@ async fn authorize(
         prepared.resource(),
         prepared.input(),
     )?;
-    let saved_authority = inner
-        .store
-        .saved_rules(inner.tools.location().to_string())
-        .await?;
-    let authority_revision = crate::permission::digest(&serde_json::to_vec(&json!({
+    let saved_authority = saved_rules(inner).await?;
+    let shared_authority = match &inner.shared_permissions {
+        Some(binding) => {
+            let snapshot = binding.snapshot().await?;
+            Some(
+                json!({"authority":snapshot.project.authority,"project":snapshot.project.project,"directory":snapshot.directory,"workspace_id":snapshot.workspace_id,"migration":snapshot.migration}),
+            )
+        }
+        None => None,
+    };
+    let mut descriptor = json!({
         "semantics":"exact-persistent-authority-v1","policy":policy.revision(),
         "boundary":inner.tools.grant_authority_descriptor(),"access":format!("{:?}",prepared.access()),
         "saved":saved_authority,
-    }))?);
+    });
+    if let Some(shared) = shared_authority {
+        descriptor["shared"] = shared;
+    }
+    let authority_revision = crate::permission::digest(&serde_json::to_vec(&descriptor)?);
     let mut targets = prepared.targets().to_vec();
     if targets.is_empty() {
         targets.push(prepared.resolved_path().to_string_lossy().into_owned());
@@ -5384,6 +5716,9 @@ async fn authorize(
     loop {
         if cancel.is_cancelled() {
             return Ok(false);
+        }
+        if let Some(binding) = &inner.shared_permissions {
+            binding.require_run(run, &inner.id, lease).await?;
         }
         match inner
             .store

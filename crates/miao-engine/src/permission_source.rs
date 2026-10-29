@@ -30,7 +30,7 @@ pub struct Record {
     pub state: State,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RunAuthority {
     pub target: Target,

@@ -2030,7 +2030,7 @@ impl Store {
     }
 
     pub async fn start_run(&self, session: &str, run: &str) -> Result<Event, Error> {
-        self.start_run_inner(session, run, None).await
+        self.start_run_inner(session, run, None, None).await
     }
 
     /// `start_run` under a Session claim: a superseded writer cannot open a run.
@@ -2040,7 +2040,7 @@ impl Store {
         run: &str,
         lease: &SessionLease,
     ) -> Result<Event, Error> {
-        self.start_run_inner(session, run, Some(lease.clone()))
+        self.start_run_inner(session, run, Some(lease.clone()), None)
             .await
     }
 
@@ -2093,11 +2093,12 @@ impl Store {
         .await
     }
 
-    async fn start_run_inner(
+    pub(crate) async fn start_run_inner(
         &self,
         session: &str,
         run: &str,
         lease: Option<SessionLease>,
+        authority: Option<crate::permission_source::RunAuthority>,
     ) -> Result<Event, Error> {
         let (session, run) = (session.to_owned(), run.to_owned());
         self.call(move |conn| {
@@ -2106,8 +2107,8 @@ impl Store {
                 require_lease(&tx, &session, lease)?;
             }
             tx.execute(
-                "INSERT INTO engine_run(id,session_id,state,lease_epoch) VALUES(?1,?2,'running',?3)",
-                params![run, session, lease.as_ref().map(|lease| lease.epoch)],
+                "INSERT INTO engine_run(id,session_id,state,lease_epoch,shared_permission) VALUES(?1,?2,'running',?3,?4)",
+                params![run, session, lease.as_ref().map(|lease| lease.epoch),authority.map(|authority|serde_json::to_string(&authority)).transpose()?],
             )?;
             let e = append(&tx, &session, "run.started", json!({"run_id":run}))?;
             tx.commit()?;

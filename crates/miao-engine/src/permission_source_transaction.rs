@@ -17,6 +17,7 @@ use std::{
 pub struct Source {
     pub(crate) path: PathBuf,
     pub(crate) context: Context,
+    pub(crate) shared: Option<crate::permission_source::RunAuthority>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -63,7 +64,13 @@ impl Source {
             )],
         ) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        with_sources(connection, &self.path, &self.context, execute)
+        with_sources(
+            connection,
+            &self.path,
+            &self.context,
+            self.shared.as_ref(),
+            execute,
+        )
     }
 }
 
@@ -71,6 +78,7 @@ fn with_sources<T>(
     connection: &mut Connection,
     path: &Path,
     context: &Context,
+    shared: Option<&crate::permission_source::RunAuthority>,
     execute: impl FnOnce(
         &Transaction<'_>,
         &[(
@@ -91,13 +99,13 @@ fn with_sources<T>(
         context
             .bridge
             .with_permission_sources(&context.source, |sources| {
-                require_active(&transaction, context)?;
+                require_active(&transaction, context, shared)?;
                 callback.store(true, Ordering::SeqCst);
                 let guard = CallbackPhase(callback.clone());
                 let result = execute(&transaction, sources);
                 drop(guard);
                 let result = result?;
-                require_active(&transaction, context)?;
+                require_active(&transaction, context, shared)?;
                 transaction.commit()?;
                 Ok(result)
             })
@@ -173,7 +181,28 @@ pub(crate) fn with_locked_source_database<T>(
     }
 }
 
-fn require_active(connection: &Connection, context: &Context) -> Result<(), Error> {
+fn require_active(
+    connection: &Connection,
+    context: &Context,
+    shared: Option<&crate::permission_source::RunAuthority>,
+) -> Result<(), Error> {
+    if let Some(expected) = shared {
+        let marker: Option<String> = connection.query_row(
+            "SELECT shared_permission FROM permission_source.engine_run WHERE id=?1",
+            [&context.authority.run_id],
+            |row| row.get(0),
+        )?;
+        let marker: crate::permission_source::RunAuthority = serde_json::from_str(
+            &marker.ok_or_else(|| Error::Invalid("shared run authority is missing".into()))?,
+        )?;
+        if &marker != expected
+            || marker.runtime != context.owner
+            || marker.owner_pid != std::process::id()
+        {
+            return Err(Error::Invalid("shared run authority mismatch".into()));
+        }
+    }
+
     if context.authority.cancel.is_cancelled()
         || !crate::product_permission::source_epoch_matches(
             connection,
