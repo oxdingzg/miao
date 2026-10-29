@@ -2,6 +2,258 @@
   "semantics": "configured-deny-first-then-last-match-v1",
   "cases": [
     {
+      "name": "explicit-without-an-agent-ruleset-still-filters-the-catch-all",
+      "request": {
+        "actions": [
+          "sandbox-escape"
+        ],
+        "resources": [
+          "host"
+        ],
+        "explicit": true
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": []
+      }
+    },
+    {
+      "name": "two-question-marks-deny-one-supplementary-character",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "😀.txt"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "??.txt",
+            "effect": "deny"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "deny",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "??.txt",
+            "effect": "deny"
+          }
+        ]
+      }
+    },
+    {
+      "name": "one-question-mark-does-not-deny-a-surrogate-pair",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "😀.txt"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "?.txt",
+            "effect": "deny"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "?.txt",
+            "effect": "deny"
+          }
+        ]
+      }
+    },
+    {
+      "name": "two-question-marks-do-not-grant-one-bmp-character",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "中.txt"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "??.txt",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "??.txt",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "star-can-consume-part-of-a-surrogate-pair-before-a-question",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "😀.txt"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "*?.txt",
+            "effect": "deny"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "deny",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "*?.txt",
+            "effect": "deny"
+          }
+        ]
+      }
+    },
+    {
+      "name": "literal-supplementary-characters-remain-exact",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "😀.txt"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "😀.txt",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "😀.txt",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "action-questions-also-count-utf16-units",
+      "request": {
+        "actions": [
+          "custom😀"
+        ],
+        "resources": [
+          "a.txt"
+        ],
+        "configured": [
+          {
+            "action": "*",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "custom??",
+            "resource": "*",
+            "effect": "deny"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "deny",
+        "rules": [
+          {
+            "action": "*",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "custom??",
+            "resource": "*",
+            "effect": "deny"
+          }
+        ]
+      }
+    },
+    {
+      "name": "optional-command-arguments-preserve-utf16-matching",
+      "request": {
+        "actions": [
+          "bash"
+        ],
+        "resources": [
+          "echo 😀"
+        ],
+        "configured": [
+          {
+            "action": "bash",
+            "resource": "echo ?? *",
+            "effect": "deny"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "deny",
+        "rules": [
+          {
+            "action": "bash",
+            "resource": "echo ?? *",
+            "effect": "deny"
+          }
+        ]
+      }
+    },
+    {
       "name": "last-rule-wins-so-a-later-scope-shadows-an-earlier-one",
       "request": {
         "actions": [
