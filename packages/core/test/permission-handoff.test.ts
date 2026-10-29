@@ -290,3 +290,33 @@ test("empty project preparation still freezes later legacy inserts", async () =>
     }),
   )
 })
+
+test("native receipt preflight rejects conflicts before freeze and missing receipts after completion", async () => {
+  await run(
+    ":memory:",
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      yield* seed(database.db)
+      const conflicting = { project: projectID, fingerprint: "f".repeat(64), imported: 2 }
+      expect(
+        (yield* PermissionHandoff.prepare(database.db, { projectID, authority, existing: conflicting }).pipe(
+          Effect.result,
+        ))._tag,
+      ).toBe("Failure")
+      expect(yield* PermissionHandoff.read(database.db, projectID)).toBeUndefined()
+      yield* PermissionHandoff.requireLegacy(database.db, projectID)
+      const prepared = yield* PermissionHandoff.prepare(database.db, { projectID, authority, existing: null })
+      expect(yield* PermissionHandoff.prepare(database.db, { projectID, authority, existing: null })).toEqual(prepared)
+      const receipt = { project: projectID, fingerprint: prepared.fingerprint, imported: 2 }
+      const completed = yield* PermissionHandoff.complete(database.db, { projectID, authority, receipt })
+      expect(
+        (yield* PermissionHandoff.prepare(database.db, { projectID, authority, existing: null }).pipe(Effect.result))
+          ._tag,
+      ).toBe("Failure")
+      expect(yield* PermissionHandoff.read(database.db, projectID)).toEqual(completed)
+      expect(yield* PermissionHandoff.prepare(database.db, { projectID, authority, existing: receipt })).toEqual(
+        completed,
+      )
+    }),
+  )
+})

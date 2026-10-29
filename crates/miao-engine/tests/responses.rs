@@ -222,7 +222,7 @@ async fn malformed_reasoning_and_tool_history_still_fail_before_sending() {
 async fn invalid_shapes_refusal_hosted_actions_and_truncation_fail_closed() {
     let cases = [
         stream(
-            json!([{"type":"function_call","call_id":"call","name":"read_file","arguments":"[]"}]),
+            json!([{"type":"function_call","name":"read_file","arguments":"{}"}]),
             "completed",
         ),
         stream(
@@ -243,16 +243,40 @@ async fn invalid_shapes_refusal_hosted_actions_and_truncation_fail_closed() {
         let (url, mut requests, server) = common::endpoint(vec![(200, body)]).await;
         let provider = OpenAIResponses::new(url, "fixture".into(), "fixture-model".into()).unwrap();
         let (progress, _receive) = mpsc::channel(64);
-        assert!(matches!(
-            provider
-                .stream(request(), progress, CancellationToken::new())
-                .await,
-            Err(ProviderError::Stream(_))
-        ));
+        let result = provider
+            .stream(request(), progress, CancellationToken::new())
+            .await;
+        assert!(
+            matches!(result, Err(ProviderError::Stream(_))),
+            "{result:?}"
+        );
         server.await.unwrap();
         assert!(requests.recv().await.is_some());
         assert!(requests.recv().await.is_none());
     }
+}
+
+#[tokio::test]
+async fn non_object_function_arguments_are_reported_without_replaying_the_provider() {
+    let body = stream(
+        json!([{"type":"function_call","call_id":"call","name":"read_file","arguments":"[]"}]),
+        "completed",
+    );
+    let (url, mut requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIResponses::new(url, "fixture".into(), "fixture-model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(reply.needs_tools);
+    assert_eq!(
+        reply.content,
+        json!([{"type":"tool_use","id":"call","name":"read_file","input":null,"input_error":"invalid_json"}])
+    );
+    server.await.unwrap();
+    assert!(requests.recv().await.is_some());
+    assert!(requests.recv().await.is_none());
 }
 
 #[tokio::test]

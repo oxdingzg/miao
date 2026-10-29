@@ -27,7 +27,7 @@ export class Conflict extends Schema.TaggedErrorClass<Conflict>()("PermissionHan
 /** Freeze before crossing databases. There is no unsafe abort after preparation. */
 export const prepare = Effect.fn("PermissionHandoff.prepare")(function* (
   db: Db,
-  input: { projectID: ProjectV2.ID; authority: string },
+  input: { projectID: ProjectV2.ID; authority: string; existing?: Receipt | null },
 ) {
   if (!uuid(input.authority)) return yield* new Conflict({ reason: "invalid_input" })
   return yield* db
@@ -36,10 +36,22 @@ export const prepare = Effect.fn("PermissionHandoff.prepare")(function* (
         const before = yield* read(tx, input.projectID)
         if (before) {
           if (before.authority !== input.authority) return yield* new Conflict({ reason: "destination_mismatch" })
+          if (
+            input.existing !== undefined &&
+            (input.existing === null
+              ? before.receipt !== null
+              : !matchesReceipt(input.projectID, before.fingerprint, before.rules.length, input.existing))
+          )
+            return yield* new Conflict({ reason: "receipt_mismatch" })
           return before
         }
         const rules = yield* source(tx, input.projectID)
         if (!valid(input.projectID, rules)) return yield* new Conflict({ reason: "invalid_input" })
+        if (
+          input.existing &&
+          !matchesReceipt(input.projectID, fingerprint(input.projectID, rules), rules.length, input.existing)
+        )
+          return yield* new Conflict({ reason: "receipt_mismatch" })
         // Installing the guards and freezing the exact source is one SQL commit.
         for (const statement of guards) yield* tx.run(sql.raw(statement))
         const state = {
@@ -141,6 +153,9 @@ const source = Effect.fn("PermissionHandoff.source")(function* (db: Pick<Db, "se
     .sort((left, right) => Buffer.compare(Buffer.from(left.id), Buffer.from(right.id)))
 })
 
+function matchesReceipt(project: string, fingerprint: string, count: number, receipt: Receipt) {
+  return receipt.project === project && receipt.fingerprint === fingerprint && receipt.imported === count
+}
 function uuid(value: string) {
   return /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value)
 }

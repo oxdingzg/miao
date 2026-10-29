@@ -229,7 +229,7 @@ async fn tool_call_text_for_another_function_is_not_borrowed() {
 }
 
 #[tokio::test]
-async fn truncation_refusal_length_and_invalid_shapes_never_complete_or_retry() {
+async fn truncation_refusal_and_invalid_shapes_never_complete_or_retry() {
     let bodies = [
         frames(
             vec![chunk(json!({"content":"partial"}), json!("stop"))],
@@ -238,7 +238,7 @@ async fn truncation_refusal_length_and_invalid_shapes_never_complete_or_retry() 
         frames(vec![chunk(json!({"refusal":"no"}), json!("stop"))], true),
         frames(
             vec![chunk(
-                json!({"tool_calls":[{"index":0,"id":"call","function":{"name":"read_file","arguments":"[]"}}]}),
+                json!({"tool_calls":[{"id":"call","function":{"name":"read_file","arguments":"{}"}}]}),
                 json!("tool_calls"),
             )],
             true,
@@ -252,16 +252,43 @@ async fn truncation_refusal_length_and_invalid_shapes_never_complete_or_retry() 
         let (url, mut requests, server) = common::endpoint(vec![(200, body)]).await;
         let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
         let (progress, _receive) = mpsc::channel(64);
-        assert!(matches!(
-            provider
-                .stream(request(), progress, CancellationToken::new())
-                .await,
-            Err(ProviderError::Stream(_))
-        ));
+        let result = provider
+            .stream(request(), progress, CancellationToken::new())
+            .await;
+        assert!(
+            matches!(result, Err(ProviderError::Stream(_))),
+            "{result:?}"
+        );
         server.await.unwrap();
         assert!(requests.recv().await.is_some());
         assert!(requests.recv().await.is_none());
     }
+}
+
+#[tokio::test]
+async fn non_object_tool_arguments_are_reported_without_replaying_the_provider() {
+    let body = frames(
+        vec![chunk(
+            json!({"tool_calls":[{"index":0,"id":"call","function":{"name":"read_file","arguments":"[]"}}]}),
+            json!("tool_calls"),
+        )],
+        true,
+    );
+    let (url, mut requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(reply.needs_tools);
+    assert_eq!(
+        reply.content,
+        json!([{"type":"tool_use","id":"call","name":"read_file","input":null,"input_error":"invalid_json"}])
+    );
+    server.await.unwrap();
+    assert!(requests.recv().await.is_some());
+    assert!(requests.recv().await.is_none());
 }
 
 /// Some gateways close the stream with `[DONE]` and never send a finish
