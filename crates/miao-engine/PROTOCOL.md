@@ -34,6 +34,8 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `select_account` | `session_id`, `credential_id` (string or null) | `{binding, account, changed}` |
 | `product_permission_evaluate` | `source`, `request` (active reverse-call facts) | `{effect, rules, authority_revision}` |
 | `permission_pattern_list` | — | native-owned standing patterns for this Runtime's workspace |
+| `permission_pattern_snapshot` | — | atomic native standing-rule snapshot and change cursor |
+| `permission_pattern_changes` | `after`, `limit` (1–256) | ordered durable changes after a workspace cursor |
 | `permission_pattern_put` | `rule` (allow only) | persisted pattern with ID, workspace, source and timestamp |
 | `permission_pattern_remove` | `rule_id` | `{removed:bool}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
@@ -754,3 +756,26 @@ record's admission binding; the latter stays unchanged for exact reply retries.
 User rejection, cancellation and allowance do not manufacture policy evidence.
 Legacy records without `denial` decode as unknown evidence and omit the field.
 These are engine-produced diagnostics, not caller-provided policy or a new grant.
+
+### Durable standing-rule projection cursor
+
+`permission_pattern_changes: 1` advertises the snapshot and changes commands.
+Both are controller operations bound to the Runtime’s canonical workspace;
+callers cannot select a workspace. Bootstrap a product projection with
+`permission_pattern_snapshot` (`workspace`, `patterns`, `cursor`), then consume
+`permission_pattern_changes` with `after=cursor` and `limit` from 1 to 256.
+The snapshot reads patterns and its cursor in one SQLite transaction, including
+rules created before the journal existed. Do not bootstrap from the feed alone.
+
+A page returns `workspace`, ordered `changes`, `cursor` and `has_more`. Each
+change has `seq`, `recorded_at_ms` and either `{kind:"upsert",pattern}` or
+`{kind:"remove",id}`. Resume after the returned cursor; an empty page retains
+the supplied cursor. Sequence gaps can belong to other workspaces. A receipt is
+committed in the same transaction as the pattern mutation, including patterns
+saved by an always reply. Content retries and absent/foreign revocations add
+no receipt. Receipt failure rolls back the mutation; a corrupt receipt fails
+the page. This journal is projection evidence, never a second rule authority.
+
+Product-side durable projection, acknowledgements, import retirement and
+complete S6 migration remain separate work. This revision does not prune the
+journal; retention and consumer acknowledgements require a separate design.

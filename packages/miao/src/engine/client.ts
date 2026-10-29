@@ -448,7 +448,19 @@ export class EngineClient {
         // An expensive catalog read must not kill unrelated active Sessions.
         // A timed-out mutation still retires the transport: its durable outcome
         // must be inspected before another attempt.
-        if (["snapshot", "sessions", "history", "events", "usage", "timer_sessions"].includes(method)) {
+        if (
+          [
+            "snapshot",
+            "sessions",
+            "history",
+            "events",
+            "usage",
+            "timer_sessions",
+            "permission_pattern_list",
+            "permission_pattern_snapshot",
+            "permission_pattern_changes",
+          ].includes(method)
+        ) {
           this.pending.delete(id)
           reject(error)
           return

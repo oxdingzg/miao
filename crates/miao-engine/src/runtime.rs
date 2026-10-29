@@ -358,6 +358,27 @@ impl Runtime {
             .await
     }
 
+    pub async fn permission_pattern_snapshot(
+        &self,
+        controller: &Controller,
+    ) -> Result<crate::permission_pattern_changes::Snapshot, Error> {
+        self.inner
+            .store
+            .permission_pattern_snapshot(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn permission_pattern_changes(
+        &self,
+        controller: &Controller,
+        input: crate::permission_pattern_changes::Input,
+    ) -> Result<crate::permission_pattern_changes::Page, Error> {
+        self.inner
+            .store
+            .permission_pattern_changes(self.permission_pattern_workspace(controller)?, input)
+            .await
+    }
+
     pub async fn put_permission_pattern(
         &self,
         controller: &Controller,
