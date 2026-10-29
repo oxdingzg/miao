@@ -16,6 +16,10 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 fn main() {
+    if let Ok(error) = std::env::var("MIAO_TUI_FAKE_STARTUP_ERROR") {
+        eprintln!("{error}");
+        std::process::exit(7);
+    }
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
     let durable = durable_events();

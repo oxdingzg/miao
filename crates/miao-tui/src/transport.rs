@@ -459,7 +459,7 @@ const EXIT_STATUS_GRACE: Duration = Duration::from_millis(500);
 /// The most stderr to quote back in one status line.
 const STDERR_DETAIL_CHARS: usize = 300;
 
-/// The last few non-empty stderr lines, joined into one bounded line.
+/// Prefer the startup diagnostic over the stack frames that follow it.
 fn stderr_detail(tail: &Mutex<String>) -> String {
     let buffer = tail.lock().expect("stderr tail");
     let lines: Vec<&str> = buffer
@@ -467,12 +467,21 @@ fn stderr_detail(tail: &Mutex<String>) -> String {
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .collect();
-    let detail = lines[lines.len().saturating_sub(3)..].join(" | ");
+    let detail = lines
+        .iter()
+        .rev()
+        .find(|line| {
+            line.starts_with("miao engine-shim: ")
+                || line.starts_with("Error: ")
+                || line.starts_with("error: ")
+        })
+        .map(|line| (*line).to_owned())
+        .unwrap_or_else(|| lines[lines.len().saturating_sub(3)..].join(" | "));
     let length = detail.chars().count();
     if length <= STDERR_DETAIL_CHARS {
         return detail;
     }
-    detail.chars().skip(length - STDERR_DETAIL_CHARS).collect()
+    detail.chars().take(STDERR_DETAIL_CHARS).collect()
 }
 
 /// Why the engine stopped, in the words the user needs. The exit code alone
