@@ -822,3 +822,33 @@ whole page; a fresh atomic snapshot can rebuild from authoritative rows.
 These commands supply projection evidence, never another authorization path.
 Product imported-rule replicas, automatic handoff and broader scope migration
 remain separate activation work.
+
+### Model-free project permission control
+
+`permission_project_store: 1` advertises the separate local stdio entry point
+`miao-engine permissions --db PATH --project ID`. It opens only the dedicated
+project permission database and binds one project for the process lifetime; no
+workspace, model, provider, Session store or reverse tool bridge is initialized.
+The inherited environment in the product client contains process basics without
+provider credentials. The ordinary runtime protocol remains unchanged.
+
+Requests retain the usual scalar `id`, `method` and optional `params` framing:
+
+- `snapshot`: authority identity, bound project, revision, migration receipt and
+  active rules in one read transaction.
+- `migrate {rules:[{id,rule}]}`: one-time immutable legacy handoff, returning the
+  current snapshot. An exact retry never restores revoked identities.
+- `put {rule}`: idempotent native standing allow rule, returning the snapshot.
+- `remove {id}`: scoped revoke, returning `{removed}`; duplicate removal is false.
+- `shutdown`: acknowledge and exit after the response flushes.
+
+Requests cannot choose another project, workspace or database. Unknown fields,
+invalid input, deny patterns and unsupported databases are refused. The shared
+16 MiB framing bound and discard/resynchronization behavior apply. The process
+exits after five minutes without input, on EOF, shutdown or termination signal.
+Read timeouts do not imply a rule mutation; write timeouts retire the transport
+and require inspection of the durable snapshot before deciding on another write.
+
+This is trusted local rule-management control, not a model authorization tool or
+a Session execution owner. Runtime source/pending/always integration, directory
+scope preservation, product activation and legacy write retirement remain open.

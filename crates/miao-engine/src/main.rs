@@ -63,6 +63,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "permission_pattern_changes": 1,
                 "saved_permission_migration": 1,
                 "permission_import_changes": 1,
+                "permission_project_store": 1,
                 "product_permission_requests": 1,
                 "product_permission_replies": 1,
                 "product_permission_cancel": 1,
@@ -71,6 +72,29 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             })
         );
         return Ok(());
+    }
+    if args.first().map(String::as_str) == Some("permissions") {
+        let (flags, remainder) = args[1..].as_chunks::<2>();
+        let mut options = HashMap::new();
+        for flag in flags {
+            if !["--db", "--project"].contains(&flag[0].as_str())
+                || options.insert(flag[0].clone(), flag[1].clone()).is_some()
+            {
+                return Err("unknown or duplicate permissions option".into());
+            }
+        }
+        if !remainder.is_empty() || options.len() != 2 {
+            return Err("Usage: miao-engine permissions --db PATH --project ID".into());
+        }
+        let project = options.remove("--project").unwrap();
+        let path = options.remove("--db").unwrap();
+        let result = serve_permissions(&path, project).await;
+        if let Err(error) = &result {
+            eprintln!("miao-engine permissions: {error}");
+        }
+        // Idle/signal termination can leave Tokio's blocking stdin reader parked.
+        // All accepted database operations and stdout replies have settled here.
+        std::process::exit(if result.is_ok() { 0 } else { 1 });
     }
     if args.first().map(String::as_str) == Some("doctor") {
         let path = match &args[1..] {
@@ -187,7 +211,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\n       miao-engine permissions --db PATH --project ID\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
         std::process::exit(2);
     }
     let acp = mode == Some("acp");
@@ -845,6 +869,49 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("miao-engine stdio: {error}");
     }
     std::process::exit(if result.is_ok() { 0 } else { 1 });
+}
+
+async fn serve_permissions(path: &str, project: String) -> io::Result<()> {
+    let controller = miao_engine::permission_control::Controller::open(path, project)
+        .await
+        .map_err(io::Error::other)?;
+    let mut input = BufReader::new(tokio::io::stdin());
+    let mut output = tokio::io::stdout();
+    let mut bytes = Vec::new();
+    loop {
+        let line = tokio::select! {
+            line=read_line(&mut input, &mut bytes)=>line,
+            _=signal_exit()=>break,
+            _=tokio::time::sleep(Duration::from_secs(300))=>break,
+        };
+        let (response, shutdown) = match line {
+            Ok(Some(line)) => match serde_json::from_slice::<Value>(&line) {
+                Ok(value) => controller.dispatch(value).await,
+                Err(_) => (
+                    json!({"id":null,"error":{"code":"invalid_request","message":"expected JSON"}}),
+                    false,
+                ),
+            },
+            Ok(None) => break,
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+                let id = leading_request_id(&bytes);
+                discard_line(&mut input, &mut bytes).await?;
+                (
+                    json!({"id":id,"error":{"code":"request_too_large","message":error.to_string()}}),
+                    false,
+                )
+            }
+            Err(error) => return Err(error),
+        };
+        let mut line = serde_json::to_vec(&response).map_err(io::Error::other)?;
+        line.push(b'\n');
+        output.write_all(&line).await?;
+        output.flush().await?;
+        if shutdown {
+            break;
+        }
+    }
+    Ok(())
 }
 
 async fn serve(
