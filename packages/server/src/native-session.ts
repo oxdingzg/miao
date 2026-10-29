@@ -49,6 +49,11 @@ export function nativeSessionInfo(input: {
   const created = number(input.snapshot["created_at_ms"])
   const updated = number(input.snapshot["updated_at_ms"])
   const archived = number(input.snapshot["archived_at_ms"])
+  const pinnedAt = number(input.snapshot["pinned_at_ms"])
+  // The engine owns the pin, so its snapshot is the authority. The catalog
+  // mirror stays as a fallback for a Session the engine has not reported on
+  // yet, and a pin must never be dropped from a listing because of that.
+  const pinned = pinnedAt === undefined ? input.pinned : DateTime.makeUnsafe(pinnedAt)
   const account = Schema.decodeUnknownOption(Schema.Struct({ credential_id: Schema.NullOr(Credential.ID) }))(
     input.snapshot["account_selection"],
   )
@@ -88,7 +93,7 @@ export function nativeSessionInfo(input: {
       created: DateTime.makeUnsafe(created ?? 0),
       updated: DateTime.makeUnsafe(updated ?? created ?? 0),
       ...(archived !== undefined ? { archived: DateTime.makeUnsafe(archived) } : {}),
-      ...(input.pinned !== undefined ? { pinned: input.pinned } : {}),
+      ...(pinned !== undefined ? { pinned } : {}),
     },
     model,
     title: typeof title === "string" ? title : "",
@@ -298,10 +303,9 @@ export function selectNativeSessions(input: {
 
 /**
  * The catalog's paging comparator, shared by selection and the final merge.
- * A pin is a list preference the catalog owns rather than an engine fact, so a
- * pinned Session leads the list in either direction exactly as it does in
- * `V2Session.list`: SQLite sorts a NULL last, and this mirror keeps the native
- * and catalog prefixes cut at the same element.
+ * A pin outranks the requested order, exactly as it does in `V2Session.list`:
+ * both sides of the merge must cut the page at the same element, so the native
+ * prefix has to group pinned Sessions first too.
  */
 export function compareSessions(order: "asc" | "desc") {
   return (left: SessionInfo.Info, right: SessionInfo.Info) => {
@@ -315,12 +319,11 @@ export function compareSessions(order: "asc" | "desc") {
 }
 
 /**
- * The pins the catalog holds. The engine records no pin of its own — its
- * `engine_session` row carries an archive timestamp and nothing about ordering
- * — so a native projection reads the pin from the catalog row that mirrors the
- * Session, the same row the pin handler writes. Pinned Sessions are a handful
- * by definition, so one read of the catalog's own table serves both a listing
- * page and a single `session.get`.
+ * The pins the catalog mirrors from the engine. The engine owns `pinned_at_ms`,
+ * so a native projection reads the snapshot first and falls back to the catalog
+ * row the pin handler's `Info.Updated` event writes — the same row TypeScript
+ * Sessions use. Pinned Sessions are a handful by definition, so one read of the
+ * catalog's own table serves both a listing page and a single `session.get`.
  */
 export const nativePins = Effect.fn("NativeSession.pins")(function* (db: Database.Interface["db"]) {
   const rows = yield* db
