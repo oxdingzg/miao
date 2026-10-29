@@ -964,10 +964,25 @@ fn config_stamp(files: &[std::path::PathBuf]) -> Vec<Option<(u128, u64)>> {
         .collect()
 }
 
-async fn serve_permissions(path: &str, project: String) -> io::Result<()> {
-    let controller = miao_engine::permission_control::Controller::open(path, project)
-        .await
-        .map_err(io::Error::other)?;
+async fn serve_permissions(
+    path: &str,
+    project: String,
+    directory: Option<String>,
+    workspace_id: Option<String>,
+) -> io::Result<()> {
+    let controller = match directory {
+        Some(directory) => {
+            miao_engine::permission_control::Controller::open_context(
+                path,
+                project,
+                directory,
+                workspace_id,
+            )
+            .await
+        }
+        None => miao_engine::permission_control::Controller::open(path, project).await,
+    }
+    .map_err(io::Error::other)?;
     let mut input = BufReader::new(tokio::io::stdin());
     let mut output = tokio::io::stdout();
     let mut bytes = Vec::new();
