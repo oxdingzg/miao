@@ -51,6 +51,74 @@ impl HandoffBinding {
         self.source.path()
     }
 
+    pub(crate) fn run_authority(&self, runtime: String) -> crate::permission_source::RunAuthority {
+        crate::permission_source::RunAuthority {
+            target: self.receipt.target.clone(),
+            fingerprint: self.receipt.fingerprint.clone(),
+            runtime,
+            owner_pid: std::process::id(),
+        }
+    }
+
+    pub(crate) fn source(&self) -> crate::store::Store {
+        self.source.clone()
+    }
+
+    pub(crate) fn context(&self) -> &Context {
+        &self.context
+    }
+
+    /// Verify the captured execution claim, not a lease rediscovered after a
+    /// takeover. The runtime UUID must be the process owner's actual identity.
+    pub(crate) async fn require_run(
+        &self,
+        run: &str,
+        runtime: &str,
+        lease: &crate::store::SessionLease,
+    ) -> Result<(), Error> {
+        self.snapshot().await?;
+        let run = run.to_owned();
+        let runtime = runtime.to_owned();
+        let lease = lease.clone();
+        let receipt = self.receipt.clone();
+        self.source.call(move |connection| {
+            let transaction = connection.transaction()?;
+            crate::store::require_lease(&transaction, &lease.session, &lease)?;
+            let marker: Option<String> = transaction.query_row(
+                "SELECT r.shared_permission FROM engine_run r JOIN engine_lease e ON e.session_id=r.session_id JOIN engine_location l ON l.session_id=r.session_id WHERE r.id=?1 AND r.session_id=?2 AND r.state='running' AND r.lease_epoch=?3 AND e.owner_pid=?4 AND l.root=?5",
+                params![run,lease.session,lease.epoch,std::process::id(),receipt.workspace],
+                |row|row.get(0),
+            ).optional()?.flatten();
+            let marker: crate::permission_source::RunAuthority = serde_json::from_str(
+                &marker.ok_or_else(||Error::Invalid("shared run authority is missing".into()))?
+            )?;
+            if marker.target!=receipt.target || marker.fingerprint!=receipt.fingerprint || marker.runtime!=runtime || marker.owner_pid!=std::process::id() {
+                return Err(Error::Invalid("shared run authority mismatch".into()));
+            }
+            transaction.commit()?;
+            Ok(())
+        }).await
+    }
+
+    pub(crate) async fn start_run_fenced(
+        &self,
+        session: &str,
+        run: &str,
+        lease: &crate::store::SessionLease,
+        runtime: String,
+    ) -> Result<(), Error> {
+        self.snapshot().await?;
+        self.source
+            .start_run_inner(
+                session,
+                run,
+                Some(lease.clone()),
+                Some(self.run_authority(runtime)),
+            )
+            .await?;
+        Ok(())
+    }
+
     /// Admit a run explicitly marked for the future shared Runtime backend.
     /// Existing legacy run entry points remain fenced after handoff.
     pub async fn start_run_with_inputs_fenced(
