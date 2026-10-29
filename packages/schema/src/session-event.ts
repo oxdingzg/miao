@@ -516,7 +516,8 @@ export type Retried = typeof Retried.Type
  * concurrency slot; `preparing` is local turn work (history, model, tools,
  * request build, compaction, snapshot); `requesting` is a dispatched request
  * awaiting the provider's first event (TTFT); `streaming` is at least one
- * provider event received; `retrying` is a bounded retry of a failed attempt.
+ * provider event received; `retrying` is a bounded retry of a failed attempt;
+ * `approval` is a dispatch parked on a permission ask a human must resolve.
  */
 export const BusyPhase = Schema.Literals([
   "queued",
@@ -525,6 +526,7 @@ export const BusyPhase = Schema.Literals([
   "streaming",
   "retrying",
   "compacting",
+  "approval",
 ]).annotate({
   identifier: "session.next.busy_phase",
 })

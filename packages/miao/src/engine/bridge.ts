@@ -39,8 +39,41 @@ export function statusOf(event: EngineEvent): StatusInfo | undefined {
       // phase a long time-to-first-token is indistinguishable from local work,
       // which is what makes a slow provider read as a stalled turn.
       return busy("requesting", event.recorded_at_ms)
-    case "provider.retry":
-      return busy("retrying", event.recorded_at_ms)
+    case "provider.retry": {
+      // The durable fact carries the pause the engine computed, so the status
+      // can name when the next attempt leaves instead of an unbounded
+      // "Retrying". A fact without the recorded pieces falls back to the
+      // anonymous retrying phase rather than inventing them.
+      const data = event.data
+      const read = (key: string) =>
+        typeof data === "object" && data !== null ? Reflect.get(data, key) : undefined
+      const attempt = read("attempt")
+      const reason = read("reason")
+      const delay = read("delay_ms")
+      if (
+        typeof attempt !== "number" ||
+        typeof reason !== "string" ||
+        typeof event.recorded_at_ms !== "number"
+      )
+        return busy("retrying", event.recorded_at_ms)
+      return {
+        type: "retry",
+        attempt,
+        message: reason,
+        next:
+          event.recorded_at_ms + (typeof delay === "number" && delay >= 0 ? delay : 0),
+      }
+    }
+    case "permission_request":
+      // A dispatch parked on a permission ask. The wait can outlast every
+      // provider phase many times over, and without it the status keeps
+      // reading whatever the turn was doing before the ask.
+      return busy("approval", event.recorded_at_ms)
+    case "permission.approved":
+    case "permission_denied":
+      // The ask settled: the tool runs or the denial streams back, both are
+      // local turn work again until the next request leaves for the provider.
+      return busy("preparing", event.recorded_at_ms)
     case "run.finished":
     case "stop":
     case "stop_failure":
@@ -52,7 +85,10 @@ export function statusOf(event: EngineEvent): StatusInfo | undefined {
   }
 }
 
-function busy(phase: "preparing" | "requesting" | "retrying", since?: number | null): StatusInfo {
+function busy(
+  phase: "preparing" | "requesting" | "retrying" | "approval",
+  since?: number | null,
+): StatusInfo {
   return { type: "busy", phase, ...(typeof since === "number" ? { since } : {}) }
 }
 
