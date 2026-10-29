@@ -12,6 +12,7 @@ import type { ModelV2 } from "@miao/core/model"
 import { EngineError, type EngineEvent, type EngineProgress, type EngineTransport } from "./client"
 import { adoptSession, messageID, promotedInputMessageID } from "./identity"
 import { decodeAttachments, encodeAttachments, type NativeAttachment } from "./prompt-attachments"
+import { ProductPermissionRequest } from "./product-permission-request"
 import {
   type BufferedUsage,
   PromptBridge,
@@ -440,9 +441,9 @@ export class EngineTranslator {
     if (event.kind === "run.finished") this.#providerModels.delete(event.session_id)
     const result = this.#tools.result(event)
     if (result) publish({ type: result.type, data: result })
-    const asked = translateApproval(event)
+    const asked = translateApproval(event) ?? ProductPermissionRequest.asked(event)
     if (asked) publish({ type: "permission.v2.asked", data: asked })
-    const replied = translateApprovalResolved(event)
+    const replied = translateApprovalResolved(event) ?? ProductPermissionRequest.replied(event)
     if (replied) publish({ type: "permission.v2.replied", data: replied })
     const question = translateQuestion(event)
     if (question) publish({ type: "question.v2.asked", data: question })

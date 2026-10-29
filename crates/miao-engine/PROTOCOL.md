@@ -34,6 +34,10 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `request_compact` | `session_id` | `{accepted:true, duplicate, pending}` |
 | `select_agent` | `session_id`, `agent` | `{agent_hash, changed}` |
 | `select_account` | `session_id`, `credential_id` (string or null) | `{binding, account, changed}` |
+| `product_permission_evaluate` | `source`, `request` (active reverse-call facts) | `{effect, rules, authority_revision}` |
+| `permission_pattern_list` | — | native-owned standing patterns for this Runtime's workspace |
+| `permission_pattern_put` | `rule` (allow only) | persisted pattern with ID, workspace, source and timestamp |
+| `permission_pattern_remove` | `rule_id` | `{removed:bool}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id`, `metadata_only?` | committed Session snapshot; metadata-only replies omit `messages` |
 | `sessions` | — | `string[]` (Session ids) |
@@ -478,6 +482,39 @@ become wildcard rules or TypeScript permission rules. Caller-owned extension
 transports use per-instance identity so grants cannot outlive that boundary.
 The Store also exposes exact revocation primitives.
 
+### Rule queries bound to a product-tool call
+
+`product_permission_evaluation: 1` in `--capabilities` advertises
+`product_permission_evaluate`. The controller copies `session_id`, `bridge_id`,
+`call_id` and `message_seq` from its current `product_tool` reverse frame into
+`source`. `request` contains nonempty `actions`, nonempty `resources`, and an
+optional `explicit` flag. Both objects reject unknown fields; clients cannot
+supply configured/saved rules or select another workspace.
+
+```json
+{"id":41,"method":"product_permission_evaluate","params":{"source":{"session_id":"s","bridge_id":1,"call_id":"host-call","message_seq":7},"request":{"actions":["read"],"resources":["public"]}}}
+```
+
+The Runtime captures the turn's resolved ordered agent rules and effective
+policy revision when dispatching the host call. A later agent selection does
+not rewrite that call's snapshot. Saved rules come from the attached canonical
+workspace. Configured deny precedes saved allow. The returned authority revision
+binds the workspace, captured policy/agent, native boundary descriptor and
+layered rules; it is not an action token.
+
+The source must still be pending on this controller's product connection, its
+run must be running and its tool dispatched in the same workspace. Other
+Sessions/calls/messages, replied or cancelled calls, replaced connections and
+already-settled tools are refused. Hook frames and calls lacking Runtime-captured
+authority cannot borrow this query.
+
+This is a pattern-rule query only: it executes no action and creates no approval,
+grant or remembered pattern. It does not replace capability/plan checks, host
+cancellation handling or durable approval lifetimes. Product adapters must also
+require saved-rule snapshot refresh before using the result for S6 migration;
+the older additive projection cannot communicate revocation. Unsupported engines
+must be rejected rather than falling back to caller-supplied rule evaluation.
+
 ### Captured commands and named agent references
 
 `admit.input.command` captures `name`, raw `arguments`, optional attribution `source`,
@@ -697,3 +734,149 @@ Generation overrides support bounded `inferenceConfig` and
 Host-declared prompt caching adds SDK cache points to the system prefix and
 latest user message. Native engine release archives include the AWS dependency
 notice and Apache 2.0 license alongside the project license.
+
+### Native-owned standing permission patterns
+
+`permission_patterns: 1` advertises the three pattern methods. They are
+controller operations bound to the Runtime's canonical workspace; callers cannot
+choose a workspace or provenance in their payload. IDs bind the workspace and
+rule content, repeated puts preserve identity/timestamp, and removing an absent
+ID is idempotent. Only allow rules are accepted; configured deny still wins.
+
+Native rows live separately from the host projection in the additive optional
+`engine_owned_permission_rule` table. They join saved rules during evaluation;
+removal does not delete projected rows or exact-call grants. A compatible older
+read-only database without this optional table has no native-owned patterns.
+SQLite insertion constraints enforce the combined saved-rule budget for both
+native and projected rows; full-budget content replays remain idempotent.
+Writes fail transactionally. Capability
+negotiation, not a guessed version string, identifies support.
+
+These methods provide standing-policy storage and explicit controller editing.
+They do not turn a rule query into an execution ticket, bind an `always` answer
+to a pending subrequest, project changes into the product database, or retire
+the existing TypeScript permission evaluator. Those S6 integration gates remain.
+
+### Durable host permission assertions
+
+`product_permission_requests: 1` advertises `product_permission_admit`,
+`product_permission_status`, `product_permission_reply`, and
+`product_permission_pending`. Admission takes the live `source` identity used by
+`product_permission_evaluate` plus `input`: a host-generated `request_id`,
+`facts` (ordered primary action followed by aliases, resources, explicit),
+optional `save` patterns, display `metadata`, and optional `timeout_ms`.
+Controller input cannot provide configured/saved rules or choose a workspace.
+Every distinct assertion needs a new ID, even for identical facts. An exact
+retry with the same ID returns its durable record; conflicting reuse fails.
+
+Records bind runtime owner, workspace, Session, bridge, source tool, assistant
+message, input hash, and captured authority revision. Replies provide source,
+request ID, input hash, authority revision, and `once`, `always`, or `reject`.
+The source must still be running and dispatched on the same connection. The
+source slot remains locked through SQL commit, serializing mutations with reply
+removal and bridge replacement. Current saved rules are re-read before replying;
+a new deny prevents approval. Identical settled replies are idempotent while the
+source is live; conflicting replies fail.
+
+`always` atomically stores the explicitly supplied `save` patterns for the
+primary action and resolves this request. Omitted/empty `save` remembers nothing,
+matching the host permission contract. These are standing allow rules, never
+exact-call grants. A pattern write failure rolls back every pattern and the
+reply. Approval of this assertion does not execute or schedule a host action.
+Host executors must still honor cancellation and their capability boundaries.
+
+Pending requests emit `product.permission.requested` and resolution emits
+`product.permission.resolved`. Source tool completion, run cancellation, and
+abandoned-run recovery cancel pending requests transactionally; recovery does
+not retry provider work. Requests default to no deadline; an optional deadline
+is 1–600000 ms. Each Session admits at most 64 pending requests and admission
+payloads are bounded to 16 KiB. The additive optional request table leaves the
+existing schema version unchanged.
+
+This is the durable backend for host subrequests. The product compatibility
+adapter, product event projection, and removal
+of the TypeScript evaluator remain separate S6 gates. Existing host tools do
+not switch permission ownership merely because the capability is present.
+
+#### Withdrawing one assertion
+
+`product_permission_cancel: 1` advertises `product_permission_cancel` with
+`source` and `request_id`. A live, bound caller can withdraw its own pending
+assertion when its wait is interrupted. This resolves only that record as
+`cancelled` with reason `caller_cancelled`; it does not reject siblings, save
+patterns, or grant permission. The update and resolution event are atomic.
+Exact retries do not emit duplicate events. Already terminal records are
+returned unchanged, and an expired request remains expired. Foreign or inactive
+sources fail the same binding checks as status and replies.
+
+#### Replies and already-pending peers
+
+A reject resolves this request and the already-pending requests in the same
+Session. It does not reject another Session or a request admitted afterwards.
+An allowed `always` with nonempty save patterns rechecks pending requests owned
+by this Runtime in the same canonical workspace, including other Sessions.
+Each live source uses its own captured agent/authority and the newly saved
+rules: only allow results resolve; unmatched asks and configured denies are
+preserved. Expired or inactive sources cannot inherit approval.
+
+The bridge's source slots remain locked through the shared SQL transaction.
+Patterns, the selected reply, peer resolutions, and their events commit or roll
+back together. An exact retry of an already-resolved reply performs no sweep and
+does not restore rules removed since that reply. These semantics match the host
+permission service without enabling the product compatibility adapter.
+
+#### Corrected rejection feedback
+
+`product_permission_replies: 1` identifies peer-reply semantics plus optional
+`message` on `product_permission_reply`. A nonempty reject message is preserved
+as `feedback` on the selected durable record and its resolution event, with
+reason `user_corrected`. Other requests swept by that rejection remain ordinary
+`user_rejected` declines and do not receive the correction. Empty reject messages
+mean ordinary decline; messages on once/always have no semantic effect, matching
+the host service. Messages are bounded to 4096 UTF-8 bytes and reject NUL.
+
+An exact response retry must match both the reply and normalized correction;
+it cannot replace an existing correction. Invalid feedback leaves the request
+pending without a resolution event. Legacy records without `feedback` decode
+with no correction, and records without a correction omit the field. Consumers
+must check this capability before sending message-bearing responses. The
+capability does not activate the product adapter or turn a reply into an action
+execution ticket.
+
+#### Host auto-mode classification
+
+`product_permission_auto: 1` advertises classification during host permission
+admission. The dispatched source captures its agent's auto flag; selecting a
+new agent or mode cannot change an already-running source. Configured denies
+remain denied. Only an ask proven safe by the deterministic edit/bash classifier
+becomes allowed, with reason `auto_allowed`; no standing pattern or exact grant
+is written. Any defined `metadata.stdin`, including null, keeps bash an ask.
+Other actions and unknown operations keep asking. Bash stays unknown on Windows.
+
+A product-tool manifest may include `host_context: { directory, cwd }`. Directory
+must canonicalize to the Runtime's Location; cwd, when present, must be absolute.
+The host supplies its Location spelling and process cwd at startup so relative
+edit resources resolve as they do in the host. Each source captures that context.
+An absent context uses the native Location and native process cwd. No permission
+request can override mode, cwd, workspace or this context. Rules continue matching
+the original resources; only classification resolves paths lexically. The root
+itself, escaping paths and sensitive paths remain unknown. Sensitive raw and
+resolved paths are both checked conservatively.
+
+Admission authority hashes bind captured mode and path context. Echo the record's
+hashes when replying; `product_permission_evaluate` remains the rule-only query
+and does not substitute for full admission. Classification does not execute an
+operation or replace the executor's filesystem/capability checks. The product
+permission adapter and complete S6 acceptance remain outstanding.
+
+#### Policy denial evidence
+
+`product_permission_diagnostics: 1` adds optional `denial` to records whose
+reason is `policy_denied`. It is the actual native outcome (`effect: deny`,
+effective `rules`, `authority_revision`) captured when admission or reply-time
+rechecking denies the assertion. Later saved-rule changes do not rewrite it.
+A reply-time denial can have a different diagnostic authority revision from the
+record's admission binding; the latter stays unchanged for exact reply retries.
+User rejection, cancellation and allowance do not manufacture policy evidence.
+Legacy records without `denial` decode as unknown evidence and omit the field.
+These are engine-produced diagnostics, not caller-provided policy or a new grant.
