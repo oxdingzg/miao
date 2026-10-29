@@ -344,13 +344,13 @@ impl Context<'_> {
                 .or_else(|| agent.and_then(|agent| agent.model.clone()));
             let binding = match self.inner.store.account_selection(self.session).await? {
                 Some(account) => crate::session_account::resolve(
-                    &self.inner.provider,
+                    &self.inner.provider(),
                     binding.as_ref(),
                     account.credential_id.as_deref(),
                 )?,
                 None => binding,
             };
-            let provider = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+            let provider = crate::session_model::select(&self.inner.provider(), binding.as_ref())?;
             if let Some(request) = agent.and_then(|agent| agent.request.as_ref()) {
                 provider
                     .with_request_options(request.clone())

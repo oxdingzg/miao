@@ -46,7 +46,10 @@ struct Inner {
     /// rules it started with.
     policy: StdRwLock<Arc<Policy>>,
     store: Store,
-    provider: Arc<dyn Provider>,
+    /// The provider every turn resolves its binding against. A reload swaps
+    /// the whole `Arc`, so a drain that already resolved a route keeps it and
+    /// the next turn sees the new catalog.
+    provider: StdRwLock<Arc<dyn Provider>>,
     tools: Tools,
     tool_replay: Option<ToolReplay>,
     actors: Mutex<HashMap<String, Actor>>,
@@ -76,6 +79,13 @@ struct Inner {
     lsp_origin: Mutex<Option<crate::config_derive::LspOrigin>>,
     /// Where the MCP server list was derived from at startup.
     mcp_origin: Mutex<Option<crate::config_derive::McpOrigin>>,
+    /// Where the model route manifest lives and the base provider it layers
+    /// over, so a reload rebuilds the same catalog from the same sources.
+    model_origin: Mutex<Option<crate::model_routes::Origin>>,
+    /// Fingerprint of the manifest the running catalog was derived from, so
+    /// an edit that changes credentials but not the visible catalog still
+    /// counts as a change.
+    model_digest: Mutex<Option<String>>,
     /// Where the base policy was derived from at startup, so a reload derives
     /// it the same way, including the operator's `--mode` override.
     policy_origin: Mutex<Option<(crate::config_derive::PolicyOrigin, Option<Mode>)>>,
@@ -121,6 +131,20 @@ impl Inner {
     }
     fn set_policy(&self, policy: Policy) {
         *self.policy.write().unwrap_or_else(|held| held.into_inner()) = Arc::new(policy);
+    }
+    /// The provider a turn resolves its binding against. Callers hold the
+    /// returned `Arc` for the turn; a reload replaces the cell.
+    fn provider(&self) -> Arc<dyn Provider> {
+        self.provider
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone()
+    }
+    fn set_provider(&self, provider: Arc<dyn Provider>) {
+        *self
+            .provider
+            .write()
+            .unwrap_or_else(|held| held.into_inner()) = provider;
     }
 }
 
@@ -216,7 +240,7 @@ impl Runtime {
                 _lease: lease,
                 policy: StdRwLock::new(Arc::new(policy)),
                 store,
-                provider,
+                provider: StdRwLock::new(provider),
                 tools,
                 tool_replay,
                 actors: Mutex::new(HashMap::new()),
@@ -239,6 +263,8 @@ impl Runtime {
                 route_limits: Mutex::new(crate::model_routes::RouteLimits::default()),
                 lsp_origin: Mutex::new(None),
                 mcp_origin: Mutex::new(None),
+                model_origin: Mutex::new(None),
+                model_digest: Mutex::new(None),
                 policy_origin: Mutex::new(None),
                 config_generation: Mutex::new(1),
                 verification: Mutex::new(None),
@@ -392,6 +418,20 @@ impl Runtime {
         *self.inner.mcp_origin.lock().await = Some(origin);
     }
 
+    /// Record the route manifest and the base provider startup layered it
+    /// over, so `config_reload` rebuilds the catalog those produced. The
+    /// manifest is fingerprinted now, so a later reload can tell an edit from
+    /// a replay of this exact content.
+    pub async fn set_model_origin(&self, origin: crate::model_routes::Origin) -> Result<(), Error> {
+        let digest = origin
+            .digest()
+            .await
+            .map_err(|error| Error::Invalid(error.to_string()))?;
+        *self.inner.model_digest.lock().await = Some(digest);
+        *self.inner.model_origin.lock().await = Some(origin);
+        Ok(())
+    }
+
     /// Record where the base policy came from, including the operator's
     /// `--mode` override, so `config_reload` derives it the way startup did.
     pub async fn set_policy_origin(
@@ -423,7 +463,7 @@ impl Runtime {
     /// new policy, never permit a call the old one denied; a turn that already
     /// took its policy snapshot keeps it, and the next turn reads the new one.
     pub async fn reload_config(&self) -> Result<Value, Error> {
-        let mut unsupported = vec!["models", "context", "tools"];
+        let mut unsupported = vec!["context", "tools"];
         // The LSP registry only exists when startup found at least one server;
         // a plan that starts empty cannot grow without rebuilding Tools, so
         // that case is reported rather than silently accepted. The MCP
@@ -444,6 +484,8 @@ impl Runtime {
             .await
             .clone()
             .zip(self.inner.tools.mcp_registry().cloned());
+        let model_origin = self.inner.model_origin.lock().await.clone();
+        let model_digest = self.inner.model_digest.lock().await.clone();
         if policy_origin.is_none() {
             unsupported.insert(0, "policy");
         }
@@ -452,6 +494,9 @@ impl Runtime {
         }
         if mcp_origin.is_none() {
             unsupported.insert(0, "mcp");
+        }
+        if model_origin.is_none() {
+            unsupported.insert(0, "models");
         }
         // Derive every section before touching any of them, then validate, then
         // apply: a derivation or boundary error leaves every section as it was.
@@ -468,7 +513,7 @@ impl Runtime {
                 policy,
                 &self.inner.store,
                 &self.inner.tools,
-                self.inner.provider.as_ref(),
+                self.inner.provider().as_ref(),
             )
             .await?;
         }
@@ -480,6 +525,28 @@ impl Runtime {
             Some((origin, _)) => Some(origin.derive().map_err(Error::Invalid)?),
             None => None,
         };
+        // The catalog is rebuilt from the same manifest and base provider
+        // startup used. Deriving it before any section is applied means a
+        // malformed manifest fails the reload and the old catalog keeps
+        // serving, alongside every other section.
+        let rebuilt = match &model_origin {
+            Some(origin) => Some(
+                origin
+                    .reload()
+                    .await
+                    .map_err(|error| Error::Invalid(error.to_string()))?,
+            ),
+            None => None,
+        };
+        let models_changed = match &rebuilt {
+            Some((provider, limits, fingerprint)) => {
+                let current = self.inner.route_limits.lock().await;
+                model_digest.as_ref() != Some(fingerprint)
+                    || provider.model_catalog() != self.inner.provider().model_catalog()
+                    || *limits != *current
+            }
+            None => false,
+        };
         let reconciled = match (configs, &lsp_origin) {
             (Some(configs), Some((_, registry))) => Some(registry.reconcile(configs).await?),
             _ => None,
@@ -490,6 +557,13 @@ impl Runtime {
             (Some(servers), Some((_, registry))) => Some(registry.reconcile(servers).await?),
             _ => None,
         };
+        if let Some((provider, limits, fingerprint)) = rebuilt.filter(|_| models_changed) {
+            // Limits go first: a turn that already holds the old provider never
+            // sees new capacity paired with an old limit, only the reverse.
+            *self.inner.route_limits.lock().await = limits;
+            self.inner.set_provider(provider);
+            *self.inner.model_digest.lock().await = Some(fingerprint);
+        }
         if let Some(policy) = policy {
             self.inner
                 .tools
@@ -511,6 +585,7 @@ impl Runtime {
         let mut unchanged = Vec::new();
         for (section, changed_here, supported) in [
             ("policy", policy_changed, policy_origin.is_some()),
+            ("models", models_changed, model_origin.is_some()),
             ("lsp", lsp_changed, lsp_origin.is_some()),
             ("mcp", mcp_changed, mcp_origin.is_some()),
         ] {
@@ -600,13 +675,13 @@ impl Runtime {
             .or_else(|| agent.model.clone());
         let binding = match self.inner.store.account_selection(session).await? {
             Some(account) => crate::session_account::resolve(
-                &self.inner.provider,
+                &self.inner.provider(),
                 binding.as_ref(),
                 account.credential_id.as_deref(),
             )?,
             None => binding,
         };
-        let provider = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        let provider = crate::session_model::select(&self.inner.provider(), binding.as_ref())?;
         if let Some(request) = &agent.request {
             provider
                 .with_request_options(request.clone())
@@ -741,13 +816,13 @@ impl Runtime {
             return Err(Error::Conflict);
         }
         let provider =
-            crate::session_model::select(&self.inner.provider, Some(&preparation.binding))?;
+            crate::session_model::select(&self.inner.provider(), Some(&preparation.binding))?;
         if provider.identity() != Some(preparation.identity.clone()) {
             return Err(Error::Conflict);
         }
         if let Some(account) = &preparation.account {
             let binding = crate::session_account::resolve(
-                &self.inner.provider,
+                &self.inner.provider(),
                 Some(&preparation.binding),
                 account.credential_id.as_deref(),
             )?;
@@ -884,7 +959,7 @@ impl Runtime {
                     validate_agent(&self.inner, agent)?;
                 }
                 if let Some(model) = &authority.model {
-                    crate::session_model::select(&self.inner.provider, Some(model))?;
+                    crate::session_model::select(&self.inner.provider(), Some(model))?;
                 }
             }
         }
@@ -988,7 +1063,7 @@ impl Runtime {
     }
 
     pub fn model_catalog(&self) -> Vec<crate::model_catalog::Info> {
-        self.inner.provider.model_catalog()
+        self.inner.provider().model_catalog()
     }
 
     pub async fn inject(
@@ -1044,11 +1119,11 @@ impl Runtime {
                 .and_then(|(agent, _)| agent.model),
         };
         let binding = crate::session_account::resolve(
-            &self.inner.provider,
+            &self.inner.provider(),
             current.as_ref(),
             credential_id.as_deref(),
         )?;
-        let provider = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        let provider = crate::session_model::select(&self.inner.provider(), binding.as_ref())?;
         let (history, _) = self.inner.store.selected_input(session).await?;
         crate::session_model::validate_history(&history, binding.as_ref(), provider.identity())?;
         self.inner
@@ -1072,7 +1147,7 @@ impl Runtime {
         let explicit = binding
             .as_ref()
             .and_then(|binding| binding.route_id.as_ref())
-            .and_then(|route| self.inner.provider.route_account(route))
+            .and_then(|route| self.inner.provider().route_account(route))
             .filter(|account| !account.is_default);
         let account = match &explicit {
             Some(account) => account
@@ -1088,14 +1163,14 @@ impl Runtime {
         } else {
             match &account {
                 Some(account) => crate::session_account::resolve(
-                    &self.inner.provider,
+                    &self.inner.provider(),
                     binding.as_ref(),
                     account.credential_id.as_deref(),
                 )?,
                 None => binding.clone(),
             }
         };
-        let selected = crate::session_model::select(&self.inner.provider, effective.as_ref())?;
+        let selected = crate::session_model::select(&self.inner.provider(), effective.as_ref())?;
         let (history, _) = self.inner.store.selected_input(session).await?;
         crate::session_model::validate_history(&history, effective.as_ref(), selected.identity())?;
         if explicit.is_some() {
@@ -1785,13 +1860,13 @@ async fn execute(
         let account = inner.store.account_selection(session).await?;
         let binding = match account.as_ref() {
             Some(account) => crate::session_account::resolve(
-                &inner.provider,
+                &inner.provider(),
                 binding.as_ref(),
                 account.credential_id.as_deref(),
             )?,
             None => binding,
         };
-        let selected_provider = crate::session_model::select(&inner.provider, binding.as_ref())?;
+        let selected_provider = crate::session_model::select(&inner.provider(), binding.as_ref())?;
         let provider = match manifest.and_then(|agent| agent.request.as_ref()) {
             Some(request) => selected_provider
                 .with_request_options(request.clone())
@@ -4263,14 +4338,14 @@ async fn delegate(
         .or_else(|| selected.as_ref().and_then(|agent| agent.model.as_ref()));
     let receipt = match context.account {
         Some(account) => crate::session_account::resolve(
-            &inner.provider,
+            &inner.provider(),
             effective,
             account.credential_id.as_deref(),
         ),
         None => Ok(effective.cloned()),
     }
     .map_err(|error| ToolError::External(error.to_string()))?;
-    let provider = crate::session_model::select(&inner.provider, receipt.as_ref())
+    let provider = crate::session_model::select(&inner.provider(), receipt.as_ref())
         .map_err(|error| ToolError::External(error.to_string()))?;
     if let Some(agent) = &selected {
         validate_agent(inner, agent).map_err(|error| ToolError::External(error.to_string()))?;
@@ -5527,7 +5602,7 @@ fn validate_agent(inner: &Inner, agent: &crate::session_agent::AgentManifest) ->
     agent.validate()?;
     inner.policy().for_agent(Some(agent))?;
     if let Some(model) = &agent.model {
-        crate::session_model::select(&inner.provider, Some(model))?;
+        crate::session_model::select(&inner.provider(), Some(model))?;
     }
     if let Some(surface) = &agent.tools {
         let known = inner
