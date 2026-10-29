@@ -872,3 +872,11 @@ Additional methods use the same frame validation and timeout behavior:
 Per-frame requests cannot change any binding. The combined project/directory
 budget counts unique rule content; directory rules never become project grants.
 This API does not freeze the old source or activate automatic product migration.
+
+`permission_project_handoff: 1` advertises `handoff {authority,rules}` on the
+project control endpoint. The expected durable authority identity is checked
+inside the same write transaction before importing rules **or accepting an
+existing receipt retry**. A mismatching destination fails without modifying
+rules, receipt or revision. Hosts freezing a source must use this method instead
+of unbound `migrate`, and probe support before preparing the source. A database
+pathname alone is not a durable destination identity.

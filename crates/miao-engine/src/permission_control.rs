@@ -24,6 +24,7 @@ struct Request {
 enum Command {
     Snapshot,
     Migrate(Migrate),
+    Handoff(Handoff),
     Put(crate::permission_patterns::Put),
     Remove(Remove),
     ContextSnapshot,
@@ -35,6 +36,12 @@ enum Command {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Migrate {
+    rules: Vec<LegacyRule>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Handoff {
+    authority: String,
     rules: Vec<LegacyRule>,
 }
 #[derive(Deserialize)]
@@ -121,6 +128,9 @@ impl Controller {
                 Command::Snapshot => serde_json::to_value(self.project.snapshot().await?)?,
                 Command::Migrate(input) => {
                     serde_json::to_value(self.project.migrate(input.rules).await?)?
+                }
+                Command::Handoff(input) => {
+                    serde_json::to_value(self.project.handoff(input.authority, input.rules).await?)?
                 }
                 Command::Put(input) => serde_json::to_value(self.project.put(input.rule).await?)?,
                 Command::Remove(input) => json!({"removed": self.project.remove(input.id).await?}),
