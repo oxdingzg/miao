@@ -379,6 +379,20 @@ fn redraw_preserves_the_open_transcript_and_unsent_draft() {
         "keep this draft survives",
         Duration::from_secs(2)
     ));
+    harness.write(b"\x10");
+    harness.write(b"redraw");
+    assert!(wait_for_screen(
+        &harness,
+        "Redraw terminal",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"\r");
+    assert!(wait_for_screen(
+        &harness,
+        "keep this draft survives",
+        Duration::from_secs(2)
+    ));
+    assert!(!harness.dir.join("admit.log").exists());
     harness.write(b"\x03");
     harness.write(b"\x03");
     let status =

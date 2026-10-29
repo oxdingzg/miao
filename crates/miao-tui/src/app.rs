@@ -583,6 +583,7 @@ impl App {
 
     fn run_builtin(&mut self, builtin: Builtin) {
         match builtin {
+            Builtin::Redraw => self.redraw_requested = true,
             Builtin::Models => self.open_models(),
             Builtin::Permissions => {
                 self.permission_generation += 1;
@@ -1899,6 +1900,9 @@ mod tests {
         assert!(!app.take_redraw_request());
         app.handle(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
         app.handle(key(KeyCode::Char('r'), KeyModifiers::NONE));
+        assert!(app.take_redraw_request());
+        assert_eq!(app.shell.composer.editor.text(), "keep this draft");
+        app.run_builtin(Builtin::from_name("redraw").unwrap());
         assert!(app.take_redraw_request());
         assert_eq!(app.shell.composer.editor.text(), "keep this draft");
     }
