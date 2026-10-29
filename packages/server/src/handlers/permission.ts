@@ -1,6 +1,8 @@
 import { Location } from "@miao/core/location"
 import { PermissionV2 } from "@miao/core/permission"
 import { PermissionSaved } from "@miao/core/permission/saved"
+import { Database } from "@miao/core/database/database"
+import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { Effect, Option } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
@@ -14,11 +16,25 @@ function missingRequest(id: PermissionV2.ID) {
 
 export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", (handlers) =>
   Effect.gen(function* () {
+    const database = yield* Database.Service
     return handlers
       .handle(
         "permission.request.list",
         Effect.fn(function* () {
-          return yield* response((yield* PermissionV2.Service).list())
+          const permission = yield* PermissionV2.Service
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const host = yield* permission.list()
+          if (Option.isNone(native)) return yield* response(Effect.succeed(host))
+          const location = yield* Location.Service
+          const placements = yield* SessionEnginePlacement.list(database.db)
+          const pending = yield* Effect.forEach(
+            placements.filter(
+              (item) => item.location.directory === location.directory && item.location.workspaceID === location.workspaceID,
+            ),
+            (item) => native.value.permissions(item).pipe(Effect.orDie),
+            { concurrency: 4 },
+          )
+          return yield* response(Effect.succeed([...host, ...pending.flat()]))
         }),
       )
       .handle(
