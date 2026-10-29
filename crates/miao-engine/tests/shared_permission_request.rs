@@ -499,3 +499,225 @@ async fn independent_runtimes_share_rules_but_never_reply_for_each_others_source
     runtime.shutdown().await;
     peer.shutdown().await;
 }
+
+#[tokio::test]
+async fn shared_always_settles_only_matching_live_assertions_and_reject_affects_existing_waiters() {
+    use miao_engine::product_permission_request::{Reply, State};
+    let (directory, _store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    let first = context
+        .admit_request(
+            &source,
+            assertion("remember", "public/first", &["public/**"]),
+        )
+        .await
+        .unwrap();
+    let matching = context
+        .admit_request(&source, assertion("matching", "public/second", &[]))
+        .await
+        .unwrap();
+    let unrelated = context
+        .admit_request(&source, assertion("unrelated", "private/file", &[]))
+        .await
+        .unwrap();
+    context
+        .reply_request(&source, response(&first, Reply::Always))
+        .await
+        .unwrap();
+    let sql = rusqlite::Connection::open(directory.path().join("permissions.db")).unwrap();
+    assert_eq!(
+        sql.query_row(
+            "SELECT state FROM permission_request WHERE id='matching'",
+            [],
+            |row| row.get::<_, String>(0)
+        )
+        .unwrap(),
+        "allowed"
+    );
+    assert_eq!(
+        context
+            .request_status(&source, matching.id)
+            .await
+            .unwrap()
+            .reply,
+        Some(Reply::Always)
+    );
+    assert_eq!(
+        context
+            .request_status(&source, unrelated.id.clone())
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    let peer = context
+        .admit_request(&source, assertion("peer-reject", "another/file", &[]))
+        .await
+        .unwrap();
+    let mut reject = response(&unrelated, Reply::Reject);
+    reject.message = Some("Use a narrower path".into());
+    context.reply_request(&source, reject).await.unwrap();
+    let rejected = context.request_status(&source, peer.id).await.unwrap();
+    assert_eq!(rejected.state, State::Denied);
+    assert_eq!(rejected.reason.as_deref(), Some("user_rejected"));
+    assert!(rejected.feedback.is_none());
+    let later = context
+        .admit_request(&source, assertion("after-reject", "another/file", &[]))
+        .await
+        .unwrap();
+    assert_eq!(later.state, State::Pending);
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn owner_retirement_cancels_its_finished_source_without_touching_peer_owners_or_rules() {
+    use miao_engine::product_permission_request::{Reply, State};
+    let (directory, _store, runtime, wire) = running().await;
+    let workspace = directory.path().join("workspace");
+    let (_peer_directory, _peer_store, peer, peer_wire, mut receive) =
+        running_in_workspace(None, Some(&workspace)).await;
+    tokio::spawn(async move { while receive.recv().await.is_some() {} });
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let peer_source = peer
+        .capture_permission_source(&peer.controller(), &peer_wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    let pending = context
+        .admit_request(
+            &source,
+            assertion("retiring", "public/file", &["public/**"]),
+        )
+        .await
+        .unwrap();
+    let other = context
+        .admit_request(&peer_source, assertion("remaining", "public/file", &[]))
+        .await
+        .unwrap();
+    assert!(runtime.cancel("s").await.unwrap());
+    assert_eq!(context.retire_source_requests(&source).await.unwrap(), 1);
+    assert_eq!(context.retire_source_requests(&source).await.unwrap(), 0);
+    let sql = rusqlite::Connection::open(directory.path().join("permissions.db")).unwrap();
+    assert_eq!(
+        sql.query_row(
+            "SELECT state FROM permission_request WHERE id='retiring'",
+            [],
+            |row| row.get::<_, String>(0)
+        )
+        .unwrap(),
+        "cancelled"
+    );
+    assert!(context
+        .reply_request(&source, response(&pending, Reply::Always))
+        .await
+        .is_err());
+    assert_eq!(
+        context
+            .request_status(&peer_source, other.id)
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    assert!(context.snapshot().await.unwrap().patterns.is_empty());
+    runtime.shutdown().await;
+    peer.shutdown().await;
+}
+
+#[tokio::test]
+async fn same_runtime_always_resolves_another_live_session_but_reject_never_crosses_sessions() {
+    use miao_engine::product_permission_request::{Reply, State};
+    let (directory, _store, runtime, wire, mut receive) = running_with_sources().await;
+    runtime
+        .admit(
+            Input {
+                session_id: "peer-session".into(),
+                input_id: "peer-input".into(),
+                prompt: "call host".into(),
+                delivery: Delivery::Steer,
+                command: None,
+                agent_references: Default::default(),
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    runtime.set_agent("peer-session",serde_json::from_value(json!({"name":"peer-agent","ordered_permissions":{"semantics":"ordered-wildcard-v1","rules":[{"action":"*","resource":"*","effect":"allow"},{"action":"read","resource":"*","effect":"ask"},{"action":"read","resource":"secret","effect":"deny"}]}})).unwrap()).await.unwrap();
+    runtime.resume("peer-session").await.unwrap();
+    let frame = tokio::time::timeout(std::time::Duration::from_secs(5), receive.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(frame["method"], "product_tool");
+    let peer_wire = Source {
+        session_id: "peer-session".into(),
+        bridge_id: frame["bridge_id"].as_u64().unwrap(),
+        call_id: frame["params"]["call_id"].as_str().unwrap().into(),
+        message_seq: frame["params"]["message_seq"].as_u64().unwrap(),
+    };
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let peer_source = runtime
+        .capture_permission_source(&runtime.controller(), &peer_wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    let first = context
+        .admit_request(
+            &source,
+            assertion("session-a", "public/file", &["public/**"]),
+        )
+        .await
+        .unwrap();
+    let second = context
+        .admit_request(&peer_source, assertion("session-b", "public/file", &[]))
+        .await
+        .unwrap();
+    context
+        .reply_request(&source, response(&first, Reply::Always))
+        .await
+        .unwrap();
+    let sql = rusqlite::Connection::open(directory.path().join("permissions.db")).unwrap();
+    assert_eq!(
+        sql.query_row(
+            "SELECT state FROM permission_request WHERE id='session-b'",
+            [],
+            |row| row.get::<_, String>(0)
+        )
+        .unwrap(),
+        "allowed"
+    );
+    assert_eq!(
+        context
+            .request_status(&peer_source, second.id)
+            .await
+            .unwrap()
+            .reply,
+        Some(Reply::Always)
+    );
+    let rejected = context
+        .admit_request(&source, assertion("reject-a", "other/file", &[]))
+        .await
+        .unwrap();
+    let untouched = context
+        .admit_request(&peer_source, assertion("untouched-b", "other/file", &[]))
+        .await
+        .unwrap();
+    context
+        .reply_request(&source, response(&rejected, Reply::Reject))
+        .await
+        .unwrap();
+    assert_eq!(
+        context
+            .request_status(&peer_source, untouched.id)
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    runtime.shutdown().await;
+}
