@@ -42,6 +42,7 @@ import { capabilities } from "./discovery"
 import { NativeHostPermission } from "./native-host-permission"
 import { ProductPermissionRequest } from "./product-permission-request"
 import { moveEngine } from "./transfer"
+import { agentManifest } from "./product-agent"
 import { PluginTools } from "./plugin-tools"
 import type { EngineSession } from "./session"
 import { readTranscriptEntries } from "./transcript"
@@ -577,7 +578,8 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
         if (found?.engine !== "rust")
           return yield* new ToolFailure({ message: "Workflow subagents require a native engine placement." })
         const selection = yield* select(input.agent ?? "general")
-        if (!selection.info) return yield* new ToolFailure({ message: `Unknown agent type: ${input.agent}` })
+        const info = selection.info
+        if (!info) return yield* new ToolFailure({ message: `Unknown agent type: ${input.agent}` })
         const owner = yield* router.get({
           storage: found.storage,
           engineID: found.storage,
@@ -597,10 +599,27 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
               () => new ToolFailure({ message: `Spawning the ${selection.id} subagent was not permitted.` }),
             ),
           )
+        const manifest = yield* Effect.tryPromise({
+          try: async () => {
+            const catalog = Schema.decodeUnknownSync(
+              Schema.Array(Schema.Struct({
+                route_id: Schema.NullOr(Schema.String),
+                protocol: Schema.String,
+                model: Schema.String,
+                variants: Schema.optionalKey(Schema.Array(Schema.String)),
+              })),
+            )(await owner.client.request("model_catalog"))
+            return agentManifest(info, catalog)
+          },
+          catch: (error) => new ToolFailure({ message: `Could not resolve the subagent: ${String(error)}` }),
+        })
         const child = SessionSchema.ID.create()
         yield* Effect
           .tryPromise({
-            try: () => owner.client.request("initialize", { session_id: child, title: input.description }),
+            try: async () => {
+              await owner.client.request("initialize", { session_id: child, title: input.description })
+              await owner.client.request("select_agent", { session_id: child, agent: manifest })
+            },
             catch: (error) => new ToolFailure({ message: `Could not create the subagent Session: ${String(error)}` }),
           })
           .pipe(

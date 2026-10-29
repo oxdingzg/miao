@@ -29,6 +29,7 @@ if (binary)
       const policyFile = path.join(tmp.path, "policy.json")
       await Bun.write(policyFile, JSON.stringify({ mode: "workspace" }))
       const tools: string[] = []
+      const childRequests: { body: string; agent: string | null }[] = []
       let calls = 0
       let childCalls = 0
       const releaseChildren = Promise.withResolvers<void>()
@@ -46,6 +47,7 @@ if (binary)
             (message) =>
               message.role === "user" && JSON.stringify(message.content).includes("workflow-child-acceptance"),
           )
+          if (childTurn) childRequests.push({ body: JSON.stringify(body), agent: request.headers.get("x-workflow-agent") })
           if (childTurn && outcome === "cancel-peer") {
             childCalls++
             await releaseChildren.promise
@@ -135,12 +137,21 @@ if (binary)
           XDG_CACHE_HOME: path.join(tmp.path, "cache"),
           MIAO_CONFIG_CONTENT: JSON.stringify({
             model: "fixture/fixture",
-            permission:
-              outcome === "denied"
-                ? toolName === "workflow"
-                  ? { "*": "allow", task: { "*": "allow", explore: "deny" } }
-                  : { "*": "allow", external_directory: "deny" }
-                : "allow",
+            agents: {
+              explore: {
+                system: "WORKFLOW_EXPLORE_SYSTEM_MARKER",
+                model: "fixture/fixture",
+                steps: 3,
+                budget: 123,
+                request: { body: { temperature: 0.2 }, headers: { "x-workflow-agent": "explore" } },
+              },
+            },
+            permissions: [
+              { action: "*", resource: "*", effect: "allow" },
+              ...(outcome === "denied"
+                ? [{ action: toolName === "workflow" ? "task" : "external_directory", resource: toolName === "workflow" ? "explore" : "*", effect: "deny" }]
+                : []),
+            ],
             providers: {
               fixture: {
                 name: "Fixture",
@@ -296,6 +307,21 @@ if (binary)
             const result = await fetch(url + "/api/session/" + spawned.id + "/context", { headers })
             expect(result.status).toBe(200)
             expect(await result.text()).toContain("workflow-child-acceptance")
+            const placement = db.query<{ native_storage: string }, [string]>(
+              "select native_storage from session_engine_placement where session_id = ?",
+            ).get(spawned.id)
+            if (!placement) throw new Error("child native placement is missing")
+            using native = new Database(placement.native_storage, { readonly: true })
+            const selected = native.query<{ data: string }, [string]>(
+              "select data from engine_event where session_id = ? and kind = 'session.agent.selected' order by seq desc limit 1",
+            ).get(spawned.id)
+            expect(JSON.parse(selected?.data ?? "{}").agent).toMatchObject({
+              name: "explore", instructions: "WORKFLOW_EXPLORE_SYSTEM_MARKER", steps: 3, budget: 123,
+              model: { protocol: "openai-chat", model: "fixture" },
+            })
+            expect(childRequests).toHaveLength(1)
+            expect(childRequests[0]?.body).toContain("WORKFLOW_EXPLORE_SYSTEM_MARKER")
+            expect(childRequests[0]?.agent).toBe("explore")
           }
         }
         const states = transcript.data.flatMap(
