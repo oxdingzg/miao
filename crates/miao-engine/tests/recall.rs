@@ -1,10 +1,14 @@
 use miao_engine::{
-    protocol::{Delivery, Input},
+    host::Host,
+    protocol::{Command, Delivery, Input, ModelRequest},
+    provider::{Provider, ProviderError, Reply},
     recall::Query,
+    runtime::Runtime,
     store::Store,
     tools::Tools,
 };
-use serde_json::json;
+use serde_json::{json, Value};
+use std::sync::Arc;
 fn query(text: &str, limit: usize, before: Option<u64>) -> Query {
     Query {
         query: text.into(),
@@ -152,7 +156,8 @@ async fn recall_input_is_session_local_and_permission_resource_is_explicit() {
         json!({"query":"needle","before_message_seq":-1}),
         json!({"tool_use_id":""}),
         json!({"tool_use_id":"h","query":"needle"}),
-        json!({"tool_use_id":"h","before_message_seq":3}),
+        json!({"tool_use_id":"h","before_message_seq":-1}),
+        json!({"tool_use_id":"h","before_message_seq":u64::MAX}),
     ] {
         assert!(tools.prepare("recall", value).await.is_err());
     }
@@ -282,4 +287,192 @@ async fn an_archived_tool_output_comes_back_by_handle_across_bounded_windows() {
     assert_eq!(missing["text"], json!(null));
     assert_eq!(missing["exhausted"], json!(true));
     assert!(store.recall("other", handle("call-1", 0)).await.unwrap()["text"].is_null());
+}
+
+#[tokio::test]
+async fn archived_handle_scan_resumes_after_compaction_and_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let database = dir.path().join("engine.db");
+    let store = Store::open(&database).await.unwrap();
+    store
+        .admit(Input {
+            agent_references: Default::default(),
+            command: None,
+            session_id: "s".into(),
+            input_id: "one".into(),
+            prompt: "start".into(),
+            delivery: Delivery::Steer,
+        })
+        .await
+        .unwrap();
+    store.promote("s", true).await.unwrap();
+    store
+        .message(
+            "s",
+            "assistant",
+            json!([{"type":"tool_use","id":"old-output","name":"read","input":{}}]),
+        )
+        .await
+        .unwrap();
+    let original = store.message("s", "user", json!([{"type":"tool_result","tool_use_id":"old-output","content":"原文-MIDDLE","is_error":false}])).await.unwrap();
+    for _ in 0..1001 {
+        store
+            .message(
+                "s",
+                "assistant",
+                json!([{"type":"text","text":"later message"}]),
+            )
+            .await
+            .unwrap();
+    }
+    let end = store
+        .message("s", "assistant", json!([{"type":"text","text":"complete"}]))
+        .await
+        .unwrap();
+    store
+        .compact(
+            "s",
+            "checkpoint",
+            end.seq,
+            "summary without the archived output".into(),
+        )
+        .await
+        .unwrap();
+    store.close().await.unwrap();
+    let store = Store::open(&database).await.unwrap();
+    let first = store.recall("s", handle("old-output", 0)).await.unwrap();
+    assert!(first["text"].is_null());
+    assert_eq!(first["scanned_messages"], 1000);
+    assert_eq!(first["exhausted"], false);
+    let cursor = first["next_before_message_seq"].as_u64().unwrap();
+    let input = json!({"tool_use_id":"old-output","before_message_seq":cursor});
+    let tools = Tools::new(dir.path()).await.unwrap();
+    tools.prepare("recall", input.clone()).await.unwrap();
+    let page = store
+        .recall("s", Query::parse(input.clone()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(page["message_seq"], original.seq);
+    assert_eq!(page["text"], "原文-MIDDLE");
+    assert_eq!(page["is_error"], false);
+    let referenced = store.archived_output("s", "old-output", 0).await.unwrap();
+    assert_eq!(referenced["text"], "原文-MIDDLE");
+    assert_eq!(referenced["message_seq"], original.seq);
+    assert!(store
+        .archived_output("other", "old-output", 0)
+        .await
+        .unwrap()["text"]
+        .is_null());
+    assert!(store
+        .recall("other", Query::parse(input).unwrap())
+        .await
+        .unwrap()["text"]
+        .is_null());
+    assert!(store
+        .recall(
+            "s",
+            Query::parse(json!({"tool_use_id":"old-output","before_message_seq":original.seq}))
+                .unwrap()
+        )
+        .await
+        .unwrap()["text"]
+        .is_null());
+}
+
+struct NoProvider;
+#[async_trait::async_trait]
+impl Provider for NoProvider {
+    async fn stream(
+        &self,
+        _: ModelRequest,
+        _: tokio::sync::mpsc::Sender<Value>,
+        _: tokio_util::sync::CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        panic!("history recall must not invoke a provider")
+    }
+}
+
+#[tokio::test]
+async fn recall_rpc_restores_archived_windows_and_preserves_search_requests() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store
+        .admit(Input {
+            agent_references: Default::default(),
+            command: None,
+            session_id: "s".into(),
+            input_id: "one".into(),
+            prompt: "original needle".into(),
+            delivery: Delivery::Steer,
+        })
+        .await
+        .unwrap();
+    store.promote("s", true).await.unwrap();
+    store
+        .message(
+            "s",
+            "assistant",
+            json!([{"type":"tool_use","id":"call-archive","name":"read","input":{}}]),
+        )
+        .await
+        .unwrap();
+    let original = format!("{}MIDDLE{}", "左".repeat(13000), "右".repeat(13000));
+    store.message("s", "user", json!([{"type":"tool_result","tool_use_id":"call-archive","content":original,"is_error":false}])).await.unwrap();
+    let runtime = Runtime::new(
+        store,
+        Arc::new(NoProvider),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    let mut host = Host::new(runtime.clone());
+    let search = host
+        .dispatch(
+            serde_json::from_value(
+                json!({"method":"recall","params":{"session_id":"s","query":"needle","limit":1}}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(search["matches"].as_array().unwrap().len(), 1);
+    let mut restored = String::new();
+    let mut offset = 0;
+    for page in 0..4 {
+        let output = host.dispatch(serde_json::from_value(json!({"method":"recall","params":{"session_id":"s","tool_use_id":"call-archive","offset":offset}})).expect("handle-only recall must decode")).await.unwrap();
+        assert_eq!(output["offset"], offset);
+        restored.push_str(output["text"].as_str().unwrap());
+        if let Some(next) = output["next_offset"].as_u64() {
+            assert!(next > offset);
+            offset = next;
+            continue;
+        }
+        assert!(page > 0, "fixture must span multiple output windows");
+        break;
+    }
+    assert_eq!(restored, original);
+    let missing = host.dispatch(serde_json::from_value(json!({"method":"recall","params":{"session_id":"other","tool_use_id":"call-archive"}})).unwrap()).await.unwrap();
+    assert!(missing["text"].is_null());
+    for params in [
+        json!({"session_id":"s"}),
+        json!({"session_id":"s","tool_use_id":"call-archive","query":"needle"}),
+        json!({"session_id":"s","tool_use_id":""}),
+        json!({"session_id":"s","tool_use_id":"call-archive","offset":67108865}),
+    ] {
+        assert!(host
+            .dispatch(serde_json::from_value(json!({"method":"recall","params":params})).unwrap())
+            .await
+            .is_err());
+    }
+    let before = host.dispatch(serde_json::from_value(json!({"method":"recall","params":{"session_id":"s","tool_use_id":"call-archive","before_message_seq":0}})).unwrap()).await.unwrap();
+    assert!(before["text"].is_null());
+    for params in [
+        json!({"session_id":"s","tool_use_id":"call-archive","offset":-1}),
+        json!({"session_id":"s","tool_use_id":"call-archive","before_message_seq":-1}),
+    ] {
+        assert!(
+            serde_json::from_value::<Command>(json!({"method":"recall","params":params})).is_err()
+        );
+    }
+    runtime.shutdown().await;
 }

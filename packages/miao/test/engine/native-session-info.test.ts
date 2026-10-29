@@ -5,7 +5,7 @@ import { Project } from "@miao/schema/project"
 import { DateTime, Schema } from "effect"
 import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
-import { nativeSessionInfo, nativeSessionUsage } from "@miao/server/native-session"
+import { compareSessions, nativeSessionInfo, nativeSessionUsage } from "@miao/server/native-session"
 
 const sessionID = Schema.decodeUnknownSync(Schema.String.pipe(Schema.brand("SessionID")))("ses_native") as never
 const projectID = Schema.decodeUnknownSync(Project.ID)("prj_one")
@@ -34,6 +34,37 @@ test("engine snapshot projects to the product record without inventing facts", (
   // The engine knows collaboration mode, not product identities.
   expect(info.agent).toBeUndefined()
   expect(info.model).toBeUndefined()
+})
+
+test("a pin comes from the engine snapshot and leads the merged listing", () => {
+  const entry = (id: string, created: number, pinned?: number) =>
+    nativeSessionInfo({
+      sessionID: SessionID.make(id),
+      projectID,
+      location,
+      snapshot: {
+        session_id: id,
+        created_at_ms: created,
+        updated_at_ms: created,
+        ...(pinned === undefined ? {} : { pinned_at_ms: pinned }),
+      },
+    })
+  const pinned = entry("ses_pinned", 1_000, 1_500)
+  // The projection keeps the engine's timestamp instead of inventing one, and an
+  // unpinned Session carries no pin at all.
+  expect(DateTime.toEpochMillis(pinned.time.pinned!)).toBe(1_500)
+  expect(entry("ses_fresh", 2_000).time.pinned).toBeUndefined()
+  // A pin outranks the requested order in both directions, so the native prefix
+  // and the catalog prefix cut their page at the same element.
+  const rows = [entry("ses_fresh", 2_000), pinned]
+  expect([...rows].sort(compareSessions("asc")).map((row) => row.id)).toEqual([
+    SessionID.make("ses_pinned"),
+    SessionID.make("ses_fresh"),
+  ])
+  expect([...rows].sort(compareSessions("desc")).map((row) => row.id)).toEqual([
+    SessionID.make("ses_pinned"),
+    SessionID.make("ses_fresh"),
+  ])
 })
 
 test("unknown metadata degrades honestly instead of fabricating", () => {

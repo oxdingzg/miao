@@ -1,6 +1,8 @@
 {
   "tui": [
     "crates/miao-tui/**",
+    "crates/build-version.rs",
+    "package.json",
     ".github/workflows/tui.yml",
     "packages/tui/src/config/**",
     "packages/tui/src/theme/**",
@@ -13,9 +15,11 @@
   ],
   "engine": [
     "crates/miao-engine/**",
+    "crates/build-version.rs",
     "crates/miao-sandbox/**",
     "package.json",
     ".github/workflows/engine.yml",
+    ".github/workflows/engine-artifacts.yml",
     "packages/core/src/patch.ts",
     "packages/core/src/flag/**",
     "packages/native/**",
