@@ -372,3 +372,10 @@ HandoffBinding 的运行准入入口，才携带 Root/项目/目录/原始指纹
 SQL 还核对 completed 回执及当前执行租约。失败时连同 inbox 提升一起回滚。活跃共享运行
 的目录不能删除或移走，同目录的重复输入准入仍可继续。此处只提供存储运行准入栅栏，
 默认 Runtime 仍走旧入口；共享规则判定、审批及来源清理实际接线完成前不启用共享执行。
+
+MIAP schema v5 在每条共享请求持久化实际来源数据库、run、捕获的租约 epoch 与 PID，并将
+这些事实纳入来源/输入摘要。来源字段不可改写；实际回复、只读判定和兄弟结算均核对捕获
+的 epoch，不能因同 PID 下 run/lease 同时改为新 epoch 就让旧回调重新获得权限。v4 的已有
+pending 没有可证明的持久来源，升级只保留历史并结算为 source_metadata_unavailable 取消；
+不猜 run、不重试 provider、不追加规则。旧请求 INSERT 缺来源字段会被 SQL 拒绝，已有
+standing 规则、Root UUID 与规则变更游标保持不变。任一旧请求损坏时整个升级回滚。

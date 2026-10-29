@@ -19,7 +19,25 @@ pub struct Source {
     pub(crate) context: Context,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Origin {
+    pub database: PathBuf,
+    pub run_id: String,
+    pub lease_epoch: u64,
+    pub owner_pid: u32,
+}
+
 impl Source {
+    pub(crate) fn origin(&self) -> Origin {
+        Origin {
+            database: self.path.clone(),
+            run_id: self.context.authority.run_id.clone(),
+            lease_epoch: self.context.authority.lease_epoch,
+            owner_pid: std::process::id(),
+        }
+    }
+
     /// Execute trusted shared-store work while the captured Session source is
     /// live and locked. Call this on the store's blocking worker. Only the main
     /// shared database may be written; the attached Session source is read-only.
@@ -147,6 +165,12 @@ fn with_sources<T>(
 
 fn require_active(connection: &Connection, context: &Context) -> Result<(), Error> {
     if context.authority.cancel.is_cancelled()
+        || !crate::product_permission::source_epoch_matches(
+            connection,
+            &context.authority.run_id,
+            context.authority.lease_epoch,
+            true,
+        )?
         || !crate::product_permission::source_active_in(
             connection,
             &context.source.session_id,
