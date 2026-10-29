@@ -18,23 +18,23 @@ struct Harness {
 
 impl Harness {
     fn spawn(label: &str, inject_panic: bool) -> Self {
-        Self::spawn_with(label, inject_panic, false, false, false)
+        Self::spawn_with(label, inject_panic, false, false, false, false)
     }
 
     /// Boot the TUI against the scripted engine so the smoke test can enter a
     /// Session without a database, a provider, or a model.
     fn spawn_engine(label: &str) -> Self {
-        Self::spawn_with(label, false, true, false, false)
+        Self::spawn_with(label, false, true, false, false, false)
     }
 
     fn spawn_engine_approval(label: &str) -> Self {
-        Self::spawn_with(label, false, true, true, false)
+        Self::spawn_with(label, false, true, true, false, false)
     }
 
     /// A workspace with one markdown template command, so the slash path can
     /// be exercised against the engine wire.
     fn spawn_engine_with_commands(label: &str) -> Self {
-        Self::spawn_with(label, false, true, false, true)
+        Self::spawn_with(label, false, true, false, true, false)
     }
 
     fn spawn_with(
@@ -43,6 +43,7 @@ impl Harness {
         engine: bool,
         approval: bool,
         commands: bool,
+        launch_prefix: bool,
     ) -> Self {
         let dir =
             std::env::temp_dir().join(format!("miao-tui-smoke-{}-{label}", std::process::id()));
@@ -81,6 +82,14 @@ impl Harness {
                 env!("CARGO_BIN_EXE_miao-tui-fake-engine"),
             );
             cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
+            if launch_prefix {
+                let prefix = r#"literal "prefix" with spaces"#;
+                cmd.env(
+                    "MIAO_ENGINE_LAUNCH_PREFIX",
+                    serde_json::to_string(&[prefix]).unwrap(),
+                );
+                cmd.env("MIAO_TUI_FAKE_EXPECT_PREFIX", prefix);
+            }
             cmd.env("MIAO_TUI_FAKE_ADMIT_LOG", dir.join("admit.log"));
             if approval {
                 cmd.env("MIAO_TUI_FAKE_APPROVAL", "1");
@@ -256,6 +265,27 @@ fn boots_renders_panes_and_quits_on_ctrl_c() {
     let status = wait_exit(&mut harness.child, Duration::from_secs(5))
         .expect("process did not exit after Ctrl+C");
     assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
+fn a_literal_launcher_prefix_reaches_the_child_without_shell_parsing() {
+    let mut harness = Harness::spawn_with("launch-prefix", false, true, false, false, true);
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(3)),
+        "{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(3)),
+        "{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\x03");
+    let status =
+        wait_exit(&mut harness.child, Duration::from_secs(5)).expect("prefixed child did not exit");
+    assert!(status.success());
     harness.shutdown();
 }
 

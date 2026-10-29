@@ -275,23 +275,30 @@ export async function runEngineShim(args: string[]): Promise<number> {
 /**
  * Writes the shim script the Rust TUI starts in place of the engine. The TUI
  * appends its engine argv, so the script inserts the hidden shim command and
- * forwards everything else. Windows has no POSIX wrapper to write here; it
- * keeps the direct engine spawn.
+ * forwards everything else. Windows passes the executable and literal argument
+ * prefix directly to the Rust launcher without a shell wrapper.
  */
 export async function rustEngineShim(environment: Record<string, string | undefined> = process.env) {
-  if (process.platform === "win32") return undefined
   const engine = environment.MIAO_ENGINE_BIN ?? discoveredEngine()
   if (!engine) return undefined
   const self =
     typeof MIAO_PACKAGED !== "undefined" && MIAO_PACKAGED
       ? [process.execPath]
       : [process.execPath, ...process.execArgv, process.argv[1]]
+  if (process.platform === "win32")
+    return {
+      program: self[0]!,
+      args: [...self.slice(1), "__engine-shim"],
+      engine,
+      dispose: async () => {},
+    }
   const directory = await mkdtemp(path.join(os.tmpdir(), "miao-engine-shim-"))
   const program = path.join(directory, "miao-engine")
   await Bun.write(program, `#!/bin/sh\nexec ${self.map(quote).join(" ")} __engine-shim "$@"\n`)
   await chmod(program, 0o700)
   return {
     program,
+    args: [],
     engine,
     dispose: () => rm(directory, { recursive: true, force: true }),
   }
