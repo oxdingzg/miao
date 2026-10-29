@@ -190,17 +190,55 @@ pub struct Tools {
     web: Arc<StdRwLock<Option<Arc<crate::web::Client>>>>,
     worker: Option<Arc<crate::worker::Registry>>,
     lsp: Option<Arc<crate::lsp::Registry>>,
-    formatter: Option<Arc<crate::formatter::Registry>>,
-    context_sources: Arc<Vec<crate::context::Source>>,
+    /// The context-carrying configuration below is reloadable: a reload swaps
+    /// the whole `Arc`, so a turn that already took its snapshot keeps it and
+    /// the next turn reads the new one.
+    formatter: Arc<StdRwLock<Option<Arc<crate::formatter::Registry>>>>,
+    context_sources: Arc<StdRwLock<Arc<Vec<crate::context::Source>>>>,
     workspace_instructions: bool,
-    skill_directories: Arc<Vec<crate::context::SkillDirectory>>,
-    references: Arc<Vec<crate::context::Reference>>,
-    read_roots: Arc<Vec<std::path::PathBuf>>,
-    hooks: Arc<Vec<crate::hooks::Hook>>,
+    skill_directories: Arc<StdRwLock<Arc<Vec<crate::context::SkillDirectory>>>>,
+    references: Arc<StdRwLock<Arc<ReferenceScope>>>,
+    hooks: Arc<StdRwLock<Arc<Vec<crate::hooks::Hook>>>>,
     edit_snapshots: Arc<std::sync::Mutex<Snapshots>>,
     edit_recovery: bool,
     lsp_diagnostics: bool,
     compact_disclosure: bool,
+}
+
+#[derive(Default)]
+struct ReferenceScope {
+    references: Arc<Vec<crate::context::Reference>>,
+    roots: Arc<Vec<PathBuf>>,
+}
+
+/// Take one consistent snapshot of a reloadable collection. A reload replaces
+/// the whole `Arc`, so whoever holds a snapshot keeps the values it began with.
+fn snapshot<T>(cell: &StdRwLock<Arc<Vec<T>>>) -> Arc<Vec<T>> {
+    cell.read().unwrap_or_else(|held| held.into_inner()).clone()
+}
+
+fn replace<T>(cell: &StdRwLock<Arc<Vec<T>>>, value: Vec<T>) {
+    *cell.write().unwrap_or_else(|held| held.into_inner()) = Arc::new(value);
+}
+
+/// Validate references and resolve the exact read scope they grant. Startup
+/// and a reload both go through here, so the two cannot derive different
+/// scopes from the same list.
+pub(crate) fn resolve_references(
+    references: Vec<crate::context::Reference>,
+) -> Result<(Vec<crate::context::Reference>, Vec<PathBuf>), ToolError> {
+    crate::context::validate_references(&references)?;
+    let mut roots = Vec::new();
+    for reference in &references {
+        let canonical =
+            std::fs::canonicalize(&reference.path).map_err(|_| ToolError::InvalidInput)?;
+        // A file reference authorizes that exact file, not its siblings.
+        // Directory references retain their explicitly granted subtree.
+        if !roots.contains(&canonical) {
+            roots.push(canonical);
+        }
+    }
+    Ok((references, roots))
 }
 
 impl Tools {
@@ -238,13 +276,12 @@ impl Tools {
             web: Arc::new(StdRwLock::new(None)),
             worker: None,
             lsp: None,
-            formatter: None,
-            context_sources: Arc::new(vec![]),
+            formatter: Arc::new(StdRwLock::new(None)),
+            context_sources: Arc::new(StdRwLock::new(Arc::new(vec![]))),
             workspace_instructions: true,
-            skill_directories: Arc::new(vec![]),
-            references: Arc::new(vec![]),
-            read_roots: Arc::new(vec![]),
-            hooks: Arc::new(vec![]),
+            skill_directories: Arc::new(StdRwLock::new(Arc::new(vec![]))),
+            references: Arc::new(StdRwLock::new(Arc::new(ReferenceScope::default()))),
+            hooks: Arc::new(StdRwLock::new(Arc::new(vec![]))),
             edit_snapshots: Arc::new(std::sync::Mutex::new(Snapshots::new())),
             edit_recovery: true,
             lsp_diagnostics: true,
@@ -343,12 +380,18 @@ impl Tools {
         self.workspace_instructions
     }
     pub fn with_context_sources(
-        mut self,
+        self,
         sources: Vec<crate::context::Source>,
     ) -> Result<Self, ToolError> {
         crate::context::validate(&sources)?;
-        self.context_sources = Arc::new(sources);
+        self.set_context_sources(sources);
         Ok(self)
+    }
+
+    /// Swap the instruction sources. The caller validates first: a reload
+    /// derives and validates every part before it swaps any of them.
+    pub(crate) fn set_context_sources(&self, sources: Vec<crate::context::Source>) {
+        replace(&self.context_sources, sources);
     }
 
     pub fn with_web(self, client: crate::web::Client) -> Self {
@@ -385,13 +428,19 @@ impl Tools {
         }
         serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)
     }
-    pub fn with_hooks(mut self, hooks: Vec<crate::hooks::Hook>) -> Result<Self, ToolError> {
+    pub fn with_hooks(self, hooks: Vec<crate::hooks::Hook>) -> Result<Self, ToolError> {
         crate::hooks::validate(&hooks)?;
-        self.hooks = Arc::new(hooks);
+        self.set_hooks(hooks);
         Ok(self)
     }
-    pub(crate) fn hooks(&self) -> &[crate::hooks::Hook] {
-        &self.hooks
+
+    /// Swap the lifecycle hooks. The caller validates first.
+    pub(crate) fn set_hooks(&self, hooks: Vec<crate::hooks::Hook>) {
+        replace(&self.hooks, hooks);
+    }
+
+    pub(crate) fn hooks(&self) -> Arc<Vec<crate::hooks::Hook>> {
+        snapshot(&self.hooks)
     }
     pub(crate) async fn run_hook(
         &self,
@@ -414,32 +463,67 @@ impl Tools {
     }
 
     pub fn with_skill_directories(
-        mut self,
+        self,
         directories: Vec<crate::context::SkillDirectory>,
     ) -> Result<Self, ToolError> {
         crate::context::validate_skills(&directories)?;
-        self.skill_directories = Arc::new(directories);
+        self.set_skill_directories(directories);
         Ok(self)
     }
 
+    /// Swap the host-selected skill directories. The caller validates first.
+    pub(crate) fn set_skill_directories(&self, directories: Vec<crate::context::SkillDirectory>) {
+        replace(&self.skill_directories, directories);
+    }
+
     pub fn with_references(
-        mut self,
+        self,
         references: Vec<crate::context::Reference>,
     ) -> Result<Self, ToolError> {
-        crate::context::validate_references(&references)?;
-        let mut roots = Vec::new();
-        for reference in &references {
-            let canonical =
-                std::fs::canonicalize(&reference.path).map_err(|_| ToolError::InvalidInput)?;
-            // A file reference authorizes that exact file, not its siblings.
-            // Directory references retain their explicitly granted subtree.
-            if !roots.contains(&canonical) {
-                roots.push(canonical);
-            }
-        }
-        self.references = Arc::new(references);
-        self.read_roots = Arc::new(roots);
+        let (references, roots) = resolve_references(references)?;
+        self.set_references(references, roots);
         Ok(self)
+    }
+
+    /// Swap the read-only references and the read scope they grant. The roots
+    /// were resolved from the same references, so a swap can never pair one
+    /// with another's scope.
+    pub(crate) fn set_references(
+        &self,
+        references: Vec<crate::context::Reference>,
+        roots: Vec<PathBuf>,
+    ) {
+        *self
+            .references
+            .write()
+            .unwrap_or_else(|held| held.into_inner()) = Arc::new(ReferenceScope {
+            references: Arc::new(references),
+            roots: Arc::new(roots),
+        });
+    }
+
+    fn reference_scope(&self) -> Arc<ReferenceScope> {
+        self.references
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone()
+    }
+
+    pub(crate) fn references(&self) -> Arc<Vec<crate::context::Reference>> {
+        self.reference_scope().references.clone()
+    }
+
+    /// The read scope the current references grant; `contained` consults it.
+    pub(crate) fn read_roots(&self) -> Arc<Vec<PathBuf>> {
+        self.reference_scope().roots.clone()
+    }
+
+    pub(crate) fn skill_directories(&self) -> Arc<Vec<crate::context::SkillDirectory>> {
+        snapshot(&self.skill_directories)
+    }
+
+    pub(crate) fn context_sources(&self) -> Arc<Vec<crate::context::Source>> {
+        snapshot(&self.context_sources)
     }
 
     /// Snapshot the immutable capability/boundary closure used by prepare and
@@ -461,11 +545,11 @@ impl Tools {
                 }
                 json!({"path":path})
             }).collect::<Vec<_>>(),
-            "readRoots":self.read_roots.as_ref(),"writes":gates.writes,"process":gates.process,
+            "readRoots":self.read_roots(),"writes":gates.writes,"process":gates.process,
             "background":gates.background,"delegation":gates.delegation,
             "wakeup":gates.wakeup,"cron":gates.cron,"processNetwork":gates.process_network,
             "processRunnerConfigured":self.runner.is_some(),"mcpAttached":self.mcp.is_some(),
-            "workerAttached":self.worker.is_some(),"lspAttached":self.lsp.is_some(),"formatter":self.formatter.as_ref().map(|registry| registry.descriptor()),"web":self.web().map(|client|client.descriptor())})
+            "workerAttached":self.worker.is_some(),"lspAttached":self.lsp.is_some(),"formatter":self.formatter().map(|registry| registry.descriptor()),"web":self.web().map(|client|client.descriptor())})
     }
     /// Grants bind host registration identity without changing replay's tool
     /// boundary vocabulary. Caller-owned IO transports have a per-instance id.
@@ -474,19 +558,7 @@ impl Tools {
             "mcp":self.mcp.as_ref().map(|registry|registry.authority()),
             "worker":self.worker.as_ref().map(|registry|registry.authority()),
             "lsp":self.lsp.as_ref().map(|registry|registry.authority()),"processRunner":self.runner,
-            "hooks":self.hooks.iter().map(|hook|json!({"event":hook.event.name(),"tool":hook.tool,"argv":hook.argv,"timeout_ms":hook.timeout_ms})).collect::<Vec<_>>()})
-    }
-
-    pub(crate) fn references(&self) -> &[crate::context::Reference] {
-        &self.references
-    }
-
-    pub(crate) fn skill_directories(&self) -> &[crate::context::SkillDirectory] {
-        &self.skill_directories
-    }
-
-    pub(crate) fn context_sources(&self) -> std::slice::Iter<'_, crate::context::Source> {
-        self.context_sources.iter()
+            "hooks":self.hooks().iter().map(|hook|json!({"event":hook.event.name(),"tool":hook.tool,"argv":hook.argv,"timeout_ms":hook.timeout_ms})).collect::<Vec<_>>()})
     }
 
     pub fn with_mcp(mut self, registry: Arc<mcp::Registry>) -> Self {
@@ -494,13 +566,29 @@ impl Tools {
         self
     }
 
-    pub fn with_formatter(mut self, registry: Arc<crate::formatter::Registry>) -> Self {
-        self.formatter = Some(registry);
+    pub fn with_formatter(self, registry: Arc<crate::formatter::Registry>) -> Self {
+        self.set_formatter(registry);
         self
     }
 
+    /// Swap the formatter registry. Startup builds it from the host file; a
+    /// reload builds the next one before this call, so a swap is a move.
+    pub(crate) fn set_formatter(&self, registry: Arc<crate::formatter::Registry>) {
+        *self
+            .formatter
+            .write()
+            .unwrap_or_else(|held| held.into_inner()) = Some(registry);
+    }
+
+    pub(crate) fn formatter(&self) -> Option<Arc<crate::formatter::Registry>> {
+        self.formatter
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone()
+    }
+
     async fn format_mutation(&self, path: &Path, value: &mut Value, cancel: &CancellationToken) {
-        let (Some(registry), Some(runner)) = (&self.formatter, &self.runner) else {
+        let (Some(registry), Some(runner)) = (self.formatter(), &self.runner) else {
             return;
         };
         // The mutation was committed already. Formatting failures must not
@@ -1958,8 +2046,8 @@ impl Tools {
 
     async fn contained(&self, path: &str) -> Result<PathBuf, ToolError> {
         let path = tokio::fs::canonicalize(self.root.join(path)).await?;
-        if path.starts_with(&self.root) || self.read_roots.iter().any(|root| path.starts_with(root))
-        {
+        let roots = self.read_roots();
+        if path.starts_with(&self.root) || roots.iter().any(|root| path.starts_with(root)) {
             return Ok(path);
         }
         Err(ToolError::OutsideWorkspace)
@@ -2200,6 +2288,59 @@ fn report_diagnostics(value: &Value) -> Option<Value> {
         .take(20)
         .collect();
     (!report.is_empty()).then(|| json!(report))
+}
+
+#[cfg(test)]
+mod reference_generation_tests {
+    use super::Tools;
+    use crate::context::Reference;
+
+    #[tokio::test]
+    async fn concurrent_reference_reloads_publish_one_immutable_list_and_read_scope() {
+        let directory = tempfile::tempdir().unwrap();
+        let tools = Tools::new(directory.path()).await.unwrap();
+        let first = directory.path().join("first.md");
+        let second = directory.path().join("second.md");
+        std::fs::write(&first, "first").unwrap();
+        std::fs::write(&second, "second").unwrap();
+        tools.set_references(
+            vec![Reference {
+                path: first.to_str().unwrap().into(),
+                description: "first".into(),
+            }],
+            vec![first.clone()],
+        );
+        let original = tools.reference_scope();
+        let changing = tools.clone();
+        let writer = std::thread::spawn(move || {
+            for index in 0..20_000 {
+                let path = if index % 2 == 0 { &first } else { &second };
+                changing.set_references(
+                    vec![Reference {
+                        path: path.to_str().unwrap().into(),
+                        description: "generation".into(),
+                    }],
+                    vec![path.clone()],
+                );
+                std::thread::yield_now();
+            }
+        });
+        let mixed = (0..20_000).any(|_| {
+            let generation = tools.reference_scope();
+            std::thread::yield_now();
+            generation.roots[0].to_str() != Some(generation.references[0].path.as_str())
+        });
+        writer.join().unwrap();
+        assert!(
+            !mixed,
+            "published references and their read scope came from different reloads"
+        );
+        assert_eq!(original.references[0].description, "first");
+        assert_eq!(
+            original.roots[0].to_str(),
+            Some(original.references[0].path.as_str())
+        );
+    }
 }
 
 #[cfg(test)]
