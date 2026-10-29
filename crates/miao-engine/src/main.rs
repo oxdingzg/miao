@@ -65,6 +65,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "product_permission_cancel": 1,
                 "product_permission_diagnostics": 1,
                 "product_permission_auto": 1,
+                // The engine persists the product's saved "always allow" rules
+                // through `permission_saved_project`. The product only wires its
+                // native permission bridge when this is advertised, so omitting
+                // it left every native assertion without a source.
+                "saved_rules_snapshot": 1,
             })
         );
         return Ok(());
