@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "ea4fda3a-72e0-4b0f-aa9d-a56e1d117f6b",
+  "id": "68be3934-6677-44fc-be18-d5b3b4897a82",
   "prevIds": [
-    "5711317a-e729-4ddf-bf5c-07fa1861c8c5"
+    "ea4fda3a-72e0-4b0f-aa9d-a56e1d117f6b"
   ],
   "ddl": [
     {
@@ -12,6 +12,10 @@
     },
     {
       "name": "data_migration",
+      "entityType": "tables"
+    },
+    {
+      "name": "permission_handoff",
       "entityType": "tables"
     },
     {
@@ -55,7 +59,7 @@
       "entityType": "tables"
     },
     {
-      "name": "permission",
+      "name": "permission_legacy",
       "entityType": "tables"
     },
     {
@@ -217,6 +221,56 @@
       "name": "time_completed",
       "entityType": "columns",
       "table": "data_migration"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "project_id",
+      "entityType": "columns",
+      "table": "permission_handoff"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "authority",
+      "entityType": "columns",
+      "table": "permission_handoff"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fingerprint",
+      "entityType": "columns",
+      "table": "permission_handoff"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "rules",
+      "entityType": "columns",
+      "table": "permission_handoff"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "receipt",
+      "entityType": "columns",
+      "table": "permission_handoff"
     },
     {
       "type": "text",
@@ -896,7 +950,7 @@
       "generated": null,
       "name": "id",
       "entityType": "columns",
-      "table": "permission"
+      "table": "permission_legacy"
     },
     {
       "type": "text",
@@ -906,7 +960,7 @@
       "generated": null,
       "name": "project_id",
       "entityType": "columns",
-      "table": "permission"
+      "table": "permission_legacy"
     },
     {
       "type": "text",
@@ -916,7 +970,7 @@
       "generated": null,
       "name": "action",
       "entityType": "columns",
-      "table": "permission"
+      "table": "permission_legacy"
     },
     {
       "type": "text",
@@ -926,7 +980,7 @@
       "generated": null,
       "name": "resource",
       "entityType": "columns",
-      "table": "permission"
+      "table": "permission_legacy"
     },
     {
       "type": "integer",
@@ -936,7 +990,7 @@
       "generated": null,
       "name": "time_created",
       "entityType": "columns",
-      "table": "permission"
+      "table": "permission_legacy"
     },
     {
       "type": "integer",
@@ -946,7 +1000,7 @@
       "generated": null,
       "name": "time_updated",
       "entityType": "columns",
-      "table": "permission"
+      "table": "permission_legacy"
     },
     {
       "type": "text",
@@ -2375,6 +2429,21 @@
     },
     {
       "columns": [
+        "project_id"
+      ],
+      "tableTo": "project",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_permission_handoff_project_id_project_id_fk",
+      "entityType": "fks",
+      "table": "permission_handoff"
+    },
+    {
+      "columns": [
         "active_account_id"
       ],
       "tableTo": "account",
@@ -2416,7 +2485,7 @@
       "nameExplicit": false,
       "name": "fk_permission_project_id_project_id_fk",
       "entityType": "fks",
-      "table": "permission"
+      "table": "permission_legacy"
     },
     {
       "columns": [
@@ -2709,6 +2778,15 @@
     },
     {
       "columns": [
+        "project_id"
+      ],
+      "nameExplicit": false,
+      "name": "permission_handoff_pk",
+      "table": "permission_handoff",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
         "owner_key"
       ],
       "nameExplicit": false,
@@ -2785,7 +2863,7 @@
       ],
       "nameExplicit": false,
       "name": "permission_pk",
-      "table": "permission",
+      "table": "permission_legacy",
       "entityType": "pks"
     },
     {
@@ -2989,7 +3067,7 @@
       "origin": "manual",
       "name": "permission_project_action_resource_idx",
       "entityType": "indexes",
-      "table": "permission"
+      "table": "permission_legacy"
     },
     {
       "columns": [
@@ -3362,5 +3440,7 @@
       "table": "session_migration"
     }
   ],
-  "renames": []
+  "renames": [
+    "permission->permission_legacy"
+  ]
 }

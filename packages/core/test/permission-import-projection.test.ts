@@ -36,7 +36,7 @@ test("migration and revocation replay survive reopen without writing legacy auth
           { seq: 3, type: "removed", id: rules[0]!.id, fingerprint: migration.fingerprint },
         ],
       })
-      expect(yield* database.db.get(sql`SELECT count(*) AS count FROM permission`)).toEqual({ count: 0 })
+      expect(yield* database.db.get(sql`SELECT count(*) AS count FROM permission_legacy`)).toEqual({ count: 0 })
     }),
   )
   await run(
