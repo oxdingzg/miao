@@ -197,7 +197,6 @@ prior release. Raw verdict: `drill-0.2.25.json` (drill host).
 
 ## Not covered
 
->>>>>>> main
 - Windows direct release-endpoint connectivity: the release host is
   unreachable from the Windows build host without a proxy (three failed probes,
   see the Windows section). Accept a staged-asset workflow there or route the
