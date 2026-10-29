@@ -2497,6 +2497,8 @@ impl Store {
                 completed["display"] = display;
             }
             crate::product_permission_request::cancel_pending(&tx, &session, &run, Some(&key))?;
+            cancel_approvals(&tx, &session, &run, Some(&key))?;
+            crate::question::cancel_pending(&tx, &session, &run, Some(&id))?;
             append(&tx,&session,"tool.completed",completed)?;
             let mut content = vec![json!({"type":"tool_result","tool_use_id":id,"content":serde_json::to_string(&result)?,"is_error":is_error})];
             content.extend(attachments);
@@ -2665,7 +2667,7 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx=write_tx(conn)?;
-            let row:Option<(String,String,bool)>=tx.query_row("SELECT a.binding,a.state,r.state='running' FROM engine_approval a JOIN engine_run r ON r.id=a.run_id WHERE a.id=?1 AND a.session_id=?2",params![response.request_id,session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+            let row:Option<(String,String,bool)>=tx.query_row("SELECT a.binding,a.state,r.state='running' AND t.state='planned' FROM engine_approval a JOIN engine_run r ON r.id=a.run_id JOIN engine_tool t ON t.id=a.call_id AND t.run_id=r.id WHERE a.id=?1 AND a.session_id=?2",params![response.request_id,session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
             let (binding,state,active)=row.ok_or(Error::ApprovalResolved)?;
             if state!="pending"||!active {return Err(Error::ApprovalResolved);}
             let approval:Approval=serde_json::from_str(&binding)?;
@@ -3329,15 +3331,31 @@ fn reconcile_tools(tx: &Transaction<'_>, session: &str, run: &str) -> Result<(),
         "UPDATE engine_tool SET state='not_executed' WHERE run_id=?1 AND state='planned'",
         [run],
     )?;
+    cancel_approvals(tx, session, run, None)
+}
+
+// Tool and run settlement share the same approval boundary. A late reply must
+// not create authority for a call that already has a durable result.
+fn cancel_approvals(
+    tx: &Transaction<'_>,
+    session: &str,
+    run: &str,
+    call: Option<&str>,
+) -> Result<(), Error> {
     let approvals: Vec<String> = {
-        let mut stmt =
-            tx.prepare("SELECT id FROM engine_approval WHERE run_id=?1 AND state='pending'")?;
-        let rows = stmt.query_map([run], |r| r.get(0))?;
+        let mut statement = tx.prepare(
+            "SELECT id FROM engine_approval WHERE run_id=?1 AND state='pending' AND (?2 IS NULL OR call_id=?2)",
+        )?;
+        let rows = statement.query_map(params![run, call], |row| row.get(0))?;
         rows.collect::<Result<_, _>>()?
     };
     for id in approvals {
         tx.execute(
             "UPDATE engine_approval SET state='cancelled' WHERE id=?1",
+            [&id],
+        )?;
+        tx.execute(
+            "DELETE FROM engine_permission_request_scope WHERE request_id=?1",
             [&id],
         )?;
         append(

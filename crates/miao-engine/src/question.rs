@@ -137,8 +137,8 @@ impl Store {
                 if resolved["state"] == "rejected" { return Ok(()); }
                 return Err(Error::Invalid("question is already resolved".into()));
             }
-            let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_run WHERE id=?1 AND session_id=?2 AND state='running')",params![data["run_id"].as_str(),session],|row|row.get(0))?;
-            if !active { return Err(Error::Invalid("question run is no longer active".into())); }
+            let active = active_source(&tx, &session, &data)?;
+            if !active { return Err(Error::Invalid("question source tool is no longer active".into())); }
             if now_ms() >= data["expires_at_ms"].as_u64().unwrap_or(0) {
                 append(&tx,&session,"question.resolved",json!({"question_id":rejection.question_id,"state":"expired"}))?;
                 tx.commit()?;
@@ -212,8 +212,8 @@ impl Store {
                 if resolved["state"]=="answered"&&resolved["answers"]==json!(answer.answers){return Ok(());}
                 return Err(Error::Invalid("question is already resolved".into()));
             }
-            let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_run WHERE id=?1 AND session_id=?2 AND state='running')",params![data["run_id"].as_str(),session],|row|row.get(0))?;
-            if !active{return Err(Error::Invalid("question run is no longer active".into()));}
+            let active = active_source(&tx, &session, &data)?;
+            if !active{return Err(Error::Invalid("question source tool is no longer active".into()));}
             if now_ms()>=data["expires_at_ms"].as_u64().unwrap_or(0){
                 append(&tx,&session,"question.resolved",json!({"question_id":answer.question_id,"state":"expired"}))?;tx.commit()?;return Err(Error::Invalid("question has expired".into()));
             }
@@ -287,15 +287,216 @@ pub(crate) fn pending(conn: &Connection, session: &str) -> Result<Vec<Value>, Er
     Ok(questions)
 }
 pub(crate) fn reconcile(tx: &Transaction<'_>, session: &str, run: &str) -> Result<(), Error> {
+    cancel_pending(tx, session, run, None)
+}
+
+/// Settle only questions owned by this run and optional source call. The caller
+/// commits this alongside the tool or run result, before exposing completion.
+pub(crate) fn cancel_pending(
+    tx: &Transaction<'_>,
+    session: &str,
+    run: &str,
+    call: Option<&str>,
+) -> Result<(), Error> {
     for question in pending(tx, session)? {
-        if question["run_id"] == run {
-            append(
-                tx,
-                session,
-                "question.resolved",
-                json!({"question_id":question["question_id"],"state":"cancelled"}),
-            )?;
+        if question["run_id"] != run || call.is_some_and(|call| question["call_id"] != call) {
+            continue;
         }
+        append(
+            tx,
+            session,
+            "question.resolved",
+            json!({"question_id":question["question_id"],"state":"cancelled"}),
+        )?;
     }
     Ok(())
+}
+
+fn active_source(conn: &Connection, session: &str, request: &Value) -> Result<bool, Error> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM engine_tool t JOIN engine_run r ON t.run_id=r.id WHERE t.id=(?1 || '/' || ?3) AND t.state='dispatched' AND r.id=?1 AND r.session_id=?2 AND r.state='running')",
+        params![request["run_id"].as_str(), session, request["call_id"].as_str()],
+        |row| row.get(0),
+    ).map_err(Error::from)
+}
+
+#[cfg(test)]
+mod lifetime_tests {
+    use super::{Answer, Input, Rejection};
+    use crate::store::Store;
+    use serde_json::{json, Value};
+
+    async fn pending() -> (tempfile::TempDir, Store, Vec<Value>) {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(directory.path().join("engine.db"))
+            .await
+            .unwrap();
+        store
+            .initialize("s", "question lifetime", "/workspace")
+            .await
+            .unwrap();
+        store.start_run("s", "run").await.unwrap();
+        let input =
+            json!({"questions":[{"question":"Choose", "options":[{"label":"A"},{"label":"B"}]}]});
+        store
+            .assistant_reply(
+                "s",
+                "run",
+                None,
+                json!([
+                    {"type":"tool_use","id":"first","name":"question","input":input},
+                    {"type":"tool_use","id":"other","name":"question","input":input}
+                ]),
+            )
+            .await
+            .unwrap();
+        let mut requests = Vec::new();
+        for call in ["first", "other"] {
+            store.mark_dispatched("s", "run", call).await.unwrap();
+            requests.push(
+                store
+                    .request_question(
+                        "s",
+                        "run",
+                        call,
+                        "/workspace",
+                        Input::parse(input.clone()).unwrap(),
+                    )
+                    .await
+                    .unwrap(),
+            );
+        }
+        (directory, store, requests)
+    }
+
+    fn answer(request: &Value) -> Answer {
+        Answer {
+            question_id: request["question_id"].as_str().unwrap().into(),
+            input_hash: request["input_hash"].as_str().unwrap().into(),
+            answers: vec![vec!["A".into()]],
+        }
+    }
+    fn rejection(request: &Value) -> Rejection {
+        Rejection {
+            question_id: request["question_id"].as_str().unwrap().into(),
+            input_hash: request["input_hash"].as_str().unwrap().into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn tool_completion_cancels_only_its_own_pending_question() {
+        let (_directory, store, requests) = pending().await;
+        store
+            .tool_result("s", "run", "first", json!({"error":"cancelled"}), true)
+            .await
+            .unwrap();
+        let pending = store.questions("s").await.unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0]["question_id"], requests[1]["question_id"]);
+        assert!(store
+            .answer_question("s", answer(&requests[0]))
+            .await
+            .is_err());
+        assert!(store
+            .reject_question("s", rejection(&requests[0]))
+            .await
+            .is_err());
+        store
+            .answer_question("s", answer(&requests[1]))
+            .await
+            .unwrap();
+        let events = store.events("s", 0, 100).await.unwrap();
+        let cancelled = events
+            .iter()
+            .position(|event| {
+                event.kind == "question.resolved"
+                    && event.data["question_id"] == requests[0]["question_id"]
+                    && event.data["state"] == "cancelled"
+            })
+            .unwrap();
+        let completed = events
+            .iter()
+            .position(|event| {
+                event.kind == "tool.completed" && event.data["call_id"] == "run/first"
+            })
+            .unwrap();
+        assert!(cancelled < completed);
+        assert!(store.questions("s").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn legacy_completed_source_rejects_a_first_answer_or_rejection() {
+        let (_directory, store, requests) = pending().await;
+        // Reproduce the old persisted boundary directly, bypassing the new
+        // completion cleanup so the independent source fence is exercised.
+        store
+            .call(|conn| {
+                conn.execute(
+                    "UPDATE engine_tool SET state='completed' WHERE id='run/first'",
+                    [],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        assert!(store
+            .answer_question("s", answer(&requests[0]))
+            .await
+            .is_err());
+        assert!(store
+            .reject_question("s", rejection(&requests[0]))
+            .await
+            .is_err());
+        store
+            .answer_question("s", answer(&requests[1]))
+            .await
+            .unwrap();
+        assert_eq!(store.questions("s").await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn failed_question_cancellation_rolls_back_tool_completion() {
+        let (_directory, store, requests) = pending().await;
+        store.call(|conn| {
+            conn.execute_batch("CREATE TRIGGER fail_question_resolution BEFORE INSERT ON engine_event WHEN NEW.kind='question.resolved' BEGIN SELECT RAISE(ABORT, 'fixture question cancellation fault'); END;")?;
+            Ok(())
+        }).await.unwrap();
+        assert!(store
+            .tool_result("s", "run", "first", json!({"error":"cancelled"}), true)
+            .await
+            .is_err());
+        let state: String = store
+            .call(|conn| {
+                Ok(conn.query_row(
+                    "SELECT state FROM engine_tool WHERE id='run/first'",
+                    [],
+                    |row| row.get(0),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(state, "dispatched");
+        assert_eq!(store.questions("s").await.unwrap().len(), 2);
+        assert!(!store
+            .events("s", 0, 100)
+            .await
+            .unwrap()
+            .iter()
+            .any(|event| event.kind == "tool.completed"));
+        store
+            .call(|conn| {
+                conn.execute_batch("DROP TRIGGER fail_question_resolution")?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        store
+            .answer_question("s", answer(&requests[0]))
+            .await
+            .unwrap();
+        store
+            .answer_question("s", answer(&requests[1]))
+            .await
+            .unwrap();
+    }
 }
