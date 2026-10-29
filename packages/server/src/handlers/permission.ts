@@ -40,6 +40,12 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
       .handle(
         "session.permission.create",
         Effect.fn(function* (ctx) {
+          const placement = yield* SessionEnginePlacement.find(database.db, ctx.params.sessionID)
+          if (placement?.engine === "rust")
+            return yield* new ConflictError({
+              resource: ctx.params.sessionID,
+              message: "Native permission requests require an active engine-owned tool invocation",
+            })
           const permission = yield* PermissionV2.Service
           return {
             data: yield* permission

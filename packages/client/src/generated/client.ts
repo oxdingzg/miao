@@ -1364,7 +1364,7 @@ export function make(options: ClientOptions) {
               agent: input["agent"],
             },
             successStatus: 200,
-            declaredStatuses: [404, 400, 410, 409, 401],
+            declaredStatuses: [404, 409, 400, 410, 401],
             empty: false,
           },
           requestOptions,
