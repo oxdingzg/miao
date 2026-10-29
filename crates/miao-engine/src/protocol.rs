@@ -281,6 +281,14 @@ pub enum Command {
         session_id: String,
         input_id: String,
     },
+    /// Where one admitted input is now: waiting for promotion (with its place
+    /// in that delivery's queue), promoted into a message, or cancelled. An id
+    /// this Session never admitted answers `state: "unknown"` rather than
+    /// failing, because another Session's admission is not this caller's fact.
+    InputStatus {
+        session_id: String,
+        input_id: String,
+    },
     /// Rewrite a still-pending input in place. The id, delivery class and
     /// admission order stay; only the text the eventual user message carries
     /// changes (RUN-02).

@@ -481,6 +481,67 @@ fn agent_selection_is_a_wire_command_that_reports_its_derived_hash() {
 }
 
 #[test]
+fn input_status_is_a_wire_command_that_survives_cancellation() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"hello"},"resume":false}}),
+        json!({"id":2,"method":"input_status","params":{"session_id":"s","input_id":"one"}}),
+        json!({"id":3,"method":"input_status","params":{"session_id":"s","input_id":"missing"}}),
+        json!({"id":4,"method":"cancel_input","params":{"session_id":"s","input_id":"one"}}),
+        json!({"id":5,"method":"input_status","params":{"session_id":"s","input_id":"one"}}),
+        json!({"id":6,"method":"input_status","params":{"session_id":"missing","input_id":"one"}}),
+        json!({"id":7,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let reply = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap().clone();
+    let result = |id: u64| reply(id)["result"].clone();
+    let pending = result(2);
+    assert_eq!(pending["state"], "pending");
+    assert_eq!(pending["delivery"], "steer");
+    assert_eq!(pending["pending_ahead"], 0);
+    assert!(pending["admitted_at_ms"].is_number(), "{replies:?}");
+    // An id this Session never admitted is answered, not refused.
+    assert_eq!(result(3)["state"], "unknown");
+    assert_eq!(result(4)["accepted"], true);
+    let cancelled = result(5);
+    assert_eq!(cancelled["state"], "cancelled");
+    assert!(cancelled["cancelled"]["seq"].is_number(), "{replies:?}");
+    // An unknown Session has no inbox to ask about.
+    assert!(reply(6)["error"].is_object(), "{replies:?}");
+}
+
+#[test]
 fn version_uses_root_manifest_and_no_provider_configuration() {
     let output = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
         .arg("--version")
