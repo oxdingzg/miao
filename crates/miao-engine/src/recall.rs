@@ -43,13 +43,12 @@ impl Query {
         }
         match query.tool_use_id.as_deref() {
             Some(handle) => {
-                // One handle restores one output; the search fields belong to
-                // the other mode, so mixing them is ambiguous.
+                // A handle restores one output. The message cursor can resume a
+                // bounded archive scan; a text query belongs to search mode.
                 if handle.is_empty()
                     || handle.len() > MAX_HANDLE
                     || handle.contains('\0')
                     || !query.query.is_empty()
-                    || query.before_message_seq.is_some()
                 {
                     return Err(ToolError::InvalidInput);
                 }
@@ -73,9 +72,19 @@ impl Store {
         tool_use_id: &str,
         offset: usize,
     ) -> Result<Value, Error> {
-        let (session, tool_use_id) = (session.to_owned(), tool_use_id.to_owned());
-        self.call(move |conn| archived_window(conn, &session, &tool_use_id, offset))
-            .await
+        let mut before = None;
+        loop {
+            let (session, tool_use_id) = (session.to_owned(), tool_use_id.to_owned());
+            // References do not have a model to follow scan cursors. Yield the
+            // Store worker between bounded pages until the handle is resolved.
+            let window = self
+                .call(move |conn| archived_window(conn, &session, &tool_use_id, offset, before))
+                .await?;
+            match window["next_before_message_seq"].as_u64() {
+                Some(cursor) => before = Some(cursor),
+                None => return Ok(window),
+            }
+        }
     }
 
     /// Search immutable messages, never a generated compaction summary. A scan
@@ -87,7 +96,13 @@ impl Store {
         let session = session.to_owned();
         let handle = query.tool_use_id.clone();
         self.call(move |conn| match handle.as_deref() {
-            Some(handle) => archived_window(conn, &session, handle, query.offset),
+            Some(handle) => archived_window(
+                conn,
+                &session,
+                handle,
+                query.offset,
+                query.before_message_seq,
+            ),
             None => search_history(conn, &session, &query),
         })
         .await
@@ -155,6 +170,7 @@ fn archived_window(
     session: &str,
     handle: &str,
     offset: usize,
+    before_message_seq: Option<u64>,
 ) -> Result<Value, Error> {
     let shell:Option<(u64,String)>=conn.query_row("SELECT seq,data FROM engine_event WHERE session_id=?1 AND kind='shell.ended' AND json_extract(data,'$.call_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,handle],|row|Ok((row.get(0)?,row.get(1)?))).optional()?;
     if let Some((seq, data)) = shell {
@@ -172,7 +188,10 @@ fn archived_window(
     let mut stmt = conn.prepare(
         "SELECT seq,content FROM engine_message WHERE session_id=?1 AND seq<?2 ORDER BY seq DESC LIMIT 1001",
     )?;
-    let mut rows = stmt.query(params![session, i64::MAX])?;
+    let mut rows = stmt.query(params![
+        session,
+        before_message_seq.unwrap_or(i64::MAX as u64)
+    ])?;
     let mut scanned = 0;
     let mut cursor = None;
     let mut exhausted = true;
