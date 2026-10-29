@@ -8,8 +8,12 @@ on:
     - cron: "41 4 * * *"
   workflow_dispatch:
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+  # PR and merge-group runs keep their per-number group so a new push cancels
+  # only that PR's older run. Pushes to main share one group: a squash merge
+  # supersedes the previous main run, which at merge-storm pace would
+  # otherwise queue tens of full verifications that no one consumes.
+  group: ${{ github.event_name == 'push' && 'ci-main-push' || format('ci-{0}', github.event.pull_request.number || github.sha) }}
+  cancel-in-progress: true
 permissions:
   contents: read
   checks: write
