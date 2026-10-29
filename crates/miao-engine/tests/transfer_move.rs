@@ -225,6 +225,14 @@ async fn move_export_stages_into_a_fresh_location() {
         .await
         .unwrap();
     assert_eq!(activated["state"], "active");
+    assert_eq!(
+        destination.location("s").await.unwrap().as_deref(),
+        destination_dir.canonicalize().unwrap().to_str(),
+    );
+    destination_runtime
+        .activate_transfer("move-1", &digest, &product_db)
+        .await
+        .unwrap();
     let history = destination.history("s").await.unwrap();
     assert!(serde_json::to_string(&history)
         .unwrap()
@@ -249,5 +257,19 @@ async fn move_export_stages_into_a_fresh_location() {
         "compaction boundary must remap onto the imported row: {:?}",
         compacted.data
     );
+    destination_runtime
+        .admit(
+            Input {
+                session_id: "s".into(),
+                input_id: "after-move".into(),
+                prompt: "continue in destination".into(),
+                delivery: Default::default(),
+                command: None,
+                agent_references: Default::default(),
+            },
+            false,
+        )
+        .await
+        .unwrap();
     destination_runtime.shutdown().await;
 }
