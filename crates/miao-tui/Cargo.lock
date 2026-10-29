@@ -667,6 +667,7 @@ version = "0.0.1"
 dependencies = [
  "base64",
  "crossterm",
+ "nix 0.28.0",
  "portable-pty",
  "ratatui",
  "serde",

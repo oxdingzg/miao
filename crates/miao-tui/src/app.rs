@@ -172,6 +172,7 @@ pub struct App {
     bus: Option<Bus>,
     pending_editor: Option<editor::Request>,
     redraw_requested: bool,
+    suspend_requested: bool,
     terminal_title_enabled: bool,
     terminal_title_allowed: bool,
     /// Approval and question ids already announced.
@@ -233,6 +234,7 @@ impl App {
             bus: None,
             pending_editor: None,
             redraw_requested: false,
+            suspend_requested: false,
             terminal_title_enabled: true,
             terminal_title_allowed: true,
             notified: Vec::new(),
@@ -273,6 +275,10 @@ impl App {
     /// The editor the drive loop should run after suspending the terminal.
     pub fn take_editor_request(&mut self) -> Option<editor::Request> {
         self.pending_editor.take()
+    }
+
+    pub fn take_suspend_request(&mut self) -> bool {
+        std::mem::take(&mut self.suspend_requested)
     }
 
     pub fn take_redraw_request(&mut self) -> bool {
@@ -537,6 +543,11 @@ impl App {
             self.run_builtin(Builtin::TerminalTitle);
             return;
         }
+        if self.keys.matches(keybinds::Action::TerminalSuspend, &key) {
+            self.leader = false;
+            self.run_builtin(Builtin::Suspend);
+            return;
+        }
         if self.keys.matches(keybinds::Action::TerminalRedraw, &key) {
             self.redraw_requested = true;
             self.leader = false;
@@ -615,6 +626,7 @@ impl App {
             Some(keybinds::Action::CopyMessage) => self.copy_last_response(),
             Some(keybinds::Action::AppExit) => self.run_builtin(Builtin::Quit),
             Some(keybinds::Action::TerminalRedraw) => self.redraw_requested = true,
+            Some(keybinds::Action::TerminalSuspend) => self.run_builtin(Builtin::Suspend),
             Some(keybinds::Action::TerminalTitleToggle) => self.run_builtin(Builtin::TerminalTitle),
             _ => {}
         }
@@ -623,6 +635,14 @@ impl App {
     fn run_builtin(&mut self, builtin: Builtin) {
         match builtin {
             Builtin::Redraw => self.redraw_requested = true,
+            Builtin::Suspend => {
+                #[cfg(unix)]
+                {
+                    self.suspend_requested = true;
+                }
+                #[cfg(windows)]
+                self.notice("Shell suspend is not supported on Windows");
+            }
             Builtin::TerminalTitle => {
                 if !self.terminal_title_allowed {
                     self.notice("Terminal titles are disabled by MIAO_DISABLE_TERMINAL_TITLE");
