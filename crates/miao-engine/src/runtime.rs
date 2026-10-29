@@ -27,6 +27,13 @@ use tokio_util::sync::CancellationToken;
 /// further identical calls are refused with a corrective error result.
 const MAX_IDENTICAL_TOOL_CALLS: u32 = 5;
 
+/// How many refused identical calls one run tolerates before it stops. The cap
+/// above only settles a corrective error result, which assumes the model reads
+/// it and changes approach; a degenerate model re-issues the same call instead
+/// and would otherwise be re-asked forever (a Flash-tier model kept doing it
+/// for three hours and 275 provider turns on a ~750K-token context).
+const MAX_IDENTICAL_REFUSALS: u32 = 3;
+
 #[derive(Clone)]
 pub struct Runtime {
     inner: Arc<Inner>,
@@ -1759,6 +1766,9 @@ async fn execute(
     // Consecutive failed completion checks for the configured verification.
     let mut verification_failures = 0;
     let mut repeats = HashMap::<String, u32>::new();
+    // Per-run count of calls refused because their input already spent
+    // MAX_IDENTICAL_TOOL_CALLS. Scoped to the run so a new prompt starts clean.
+    let mut refusals = HashMap::<String, u32>::new();
     // Signatures whose bound exhaustion already fired loop.detected, so a
     // signature is reported once instead of on every refused call.
     let mut loop_reported = HashSet::<String>::new();
@@ -2617,6 +2627,22 @@ command: None,
                         )}),
                         true,
                     ).await?;
+                    let refused = refusals.entry(repeat_key).or_default();
+                    *refused += 1;
+                    if *refused > MAX_IDENTICAL_REFUSALS {
+                        // The model ignored every corrective result. Asking it
+                        // again only buys the same answer, and each turn is a
+                        // full prompt on the whole context, so end the run with
+                        // something the user can act on.
+                        inner.store.record(
+                            session,
+                            "loop.stopped",
+                            json!({"run_id":run,"name":name,"reason":"refused-tool-call","refusals":*refused}),
+                        ).await?;
+                        return Err(Error::Invalid(format!(
+                            "the model kept re-issuing the same {name} call after {MAX_IDENTICAL_REFUSALS} refusals, so the run stopped instead of asking again. Change the approach in a new prompt, or switch models."
+                        )));
+                    }
                     continue;
                 }
                 let (output, is_error) = if let Some((output, is_error)) = reads.remove(id) {
