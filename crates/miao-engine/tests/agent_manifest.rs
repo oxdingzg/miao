@@ -129,13 +129,20 @@ fn manifest() -> AgentManifest {
 }
 
 async fn setup(path: &std::path::Path) -> (Runtime, Store, Arc<Answer>) {
+    setup_with_default_agent(path, None).await
+}
+
+async fn setup_with_default_agent(
+    path: &std::path::Path,
+    agent: Option<AgentManifest>,
+) -> (Runtime, Store, Arc<Answer>) {
     // The database lives outside the workspace: a process-enabled runtime
     // refuses to let a model-writable directory hold its own storage.
     let workspace = path.join("work");
     std::fs::create_dir_all(&workspace).unwrap();
     let store = Store::open(path.join("engine.db")).await.unwrap();
     let provider = Arc::new(Answer::new());
-    let runtime = Runtime::with_policy(
+    let runtime = Runtime::with_policy_agent_and_tool_replay(
         store.clone(),
         provider.clone(),
         Tools::new(&workspace).await.unwrap(),
@@ -150,6 +157,8 @@ async fn setup(path: &std::path::Path) -> (Runtime, Store, Arc<Answer>) {
             ..Config::default()
         })
         .unwrap(),
+        None,
+        agent,
     )
     .await
     .unwrap();
@@ -771,4 +780,194 @@ async fn real_adapter_permission_profile_tracks_saved_rules_and_native_scope() {
     );
     runtime.shutdown().await;
     server.abort();
+}
+
+#[tokio::test]
+async fn startup_agent_is_admitted_atomically_and_never_overwrites_an_explicit_choice() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, provider) = setup_with_default_agent(dir.path(), Some(manifest())).await;
+    let input = Input {
+        session_id: "s".into(),
+        input_id: "default".into(),
+        prompt: "hold".into(),
+        delivery: Delivery::Steer,
+        command: None,
+        agent_references: Default::default(),
+    };
+    runtime.admit(input.clone(), false).await.unwrap();
+    runtime.admit(input.clone(), false).await.unwrap();
+    assert_eq!(store.agent("s").await.unwrap().unwrap().0.name, "reviewer");
+    assert_eq!(
+        store
+            .events("s", 0, 100)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind == "session.agent.selected")
+            .count(),
+        1
+    );
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+    let mut explicit = manifest();
+    explicit.name = "explicit".into();
+    runtime.set_agent("s", explicit).await.unwrap();
+    runtime
+        .admit(
+            Input {
+                input_id: "next".into(),
+                ..input
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(store.agent("s").await.unwrap().unwrap().0.name, "explicit");
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn failed_startup_agent_capture_rolls_back_the_input_admission() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, _) = setup_with_default_agent(dir.path(), Some(manifest())).await;
+    let connection = rusqlite::Connection::open(store.path()).unwrap();
+    connection.execute_batch("CREATE TRIGGER fixture_agent_failure BEFORE INSERT ON engine_event WHEN NEW.kind='session.agent.selected' BEGIN SELECT RAISE(ABORT,'fixture agent failure'); END").unwrap();
+    let input = Input {
+        session_id: "s".into(),
+        input_id: "atomic".into(),
+        prompt: "hold".into(),
+        delivery: Delivery::Steer,
+        command: None,
+        agent_references: Default::default(),
+    };
+    assert!(runtime.admit(input.clone(), false).await.is_err());
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM engine_input WHERE id='atomic'",
+                [],
+                |row| row.get::<_, u64>(0)
+            )
+            .unwrap(),
+        0
+    );
+    assert!(store.agent("s").await.unwrap().is_none());
+    connection
+        .execute_batch("DROP TRIGGER fixture_agent_failure")
+        .unwrap();
+    runtime.admit(input, false).await.unwrap();
+    assert_eq!(store.agent("s").await.unwrap().unwrap().0.name, "reviewer");
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn startup_agent_denial_applies_at_real_dispatch() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut agent = manifest();
+    agent.tools = None;
+    agent.permissions = Some(vec![miao_engine::permission::Rule {
+        tool: "write_file".into(),
+        path: "**".into(),
+        decision: miao_engine::permission::Decision::Deny,
+    }]);
+    let (runtime, store, _) = setup_with_default_agent(dir.path(), Some(agent)).await;
+    turn(&runtime, &store, "default-deny").await;
+    assert!(!dir.path().join("work/note.txt").exists());
+    assert!(store
+        .events("s", 0, 100)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| event.kind == "permission_denied"));
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn startup_agent_ask_blocks_execution_before_user_approval() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut agent = manifest();
+    agent.tools = None;
+    agent.ordered_permissions = Some(serde_json::from_value(json!({"semantics":"ordered-wildcard-v1","rules":[{"action":"edit","resource":"*","effect":"ask"}],"bindings":{"write_file":{"action":"edit"}}})).unwrap());
+    let (runtime, store, _) = setup_with_default_agent(dir.path(), Some(agent)).await;
+    runtime
+        .admit(
+            Input {
+                session_id: "s".into(),
+                input_id: "default-ask".into(),
+                prompt: "write".into(),
+                delivery: Delivery::Steer,
+                command: None,
+                agent_references: Default::default(),
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if store
+                .events("s", 0, 100)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "approval.requested")
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .expect("default agent ask never became visible");
+    assert!(!dir.path().join("work/note.txt").exists());
+    runtime.cancel("s").await.unwrap();
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn startup_agent_is_captured_before_waking_an_older_admitted_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut agent = manifest();
+    agent.tools = None;
+    agent.permissions = Some(vec![miao_engine::permission::Rule {
+        tool: "write_file".into(),
+        path: "**".into(),
+        decision: miao_engine::permission::Decision::Deny,
+    }]);
+    let (runtime, store, _) = setup_with_default_agent(dir.path(), Some(agent)).await;
+    runtime.initialize("older-session", "older").await.unwrap();
+    store
+        .admit(Input {
+            session_id: "older-session".into(),
+            input_id: "older".into(),
+            prompt: "write".into(),
+            delivery: Delivery::Steer,
+            command: None,
+            agent_references: Default::default(),
+        })
+        .await
+        .unwrap();
+    assert!(store.agent("older-session").await.unwrap().is_none());
+    runtime.wake_pending("older-session").await.unwrap();
+    let events = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let events = store.events("older-session", 0, 100).await.unwrap();
+            if events.iter().any(|event| event.kind == "stop") {
+                break events;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .expect("older input did not settle");
+    let selected = events
+        .iter()
+        .find(|event| event.kind == "session.agent.selected")
+        .unwrap();
+    let started = events
+        .iter()
+        .find(|event| event.kind == "provider.started")
+        .unwrap();
+    assert!(selected.seq < started.seq);
+    assert!(!dir.path().join("work/note.txt").exists());
+    runtime.shutdown().await;
 }

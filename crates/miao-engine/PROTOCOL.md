@@ -1233,3 +1233,20 @@ Format publication and schema changes share an immediate SQLite transaction.
 Upgrading an older store is refused while a recorded running-run owner process
 is alive; its schema, format and rows remain available to that older owner.
 Finished runs and dead owners do not require provider recovery to upgrade.
+
+### Host default-agent capture
+
+The `session_agent_defaults: 1` capability advertises `serve`/`acp` startup
+`--agent-config PATH`, a trusted-host `AgentManifest` JSON file bounded to 4 MiB.
+The manifest is validated before background execution is armed. It supplies
+default data for Sessions without a recorded agent; it never overrides an
+existing explicit selection. A product TUI must refuse a kernel without this
+capability rather than silently lose its configured ordered permission rules.
+
+Input admission and the first default-agent selection commit in one transaction,
+including admit-only calls. Selection failure rolls back the input. Exact input
+retries do not append another selection. Older admitted inputs drained by a wake
+or explicit resume capture a still-missing default before constructing provider
+policy. The native Session ledger and policy remain authoritative; the host
+resolves manifest data and does not decide tool permissions. Standalone callers
+that omit the option retain their existing entry policy.
