@@ -123,13 +123,13 @@ async fn repeated_identical_calls_are_refused_with_a_corrective_error() {
     .await
     .unwrap();
     runtime.admit(input("s", "loop"), true).await.unwrap();
-    assert_eq!(terminal(&store, "s").await, "completed");
+    // Five executions, then four refusals: the fourth refusal ends the run
+    // instead of buying another provider turn that asks for the same call.
+    assert_eq!(terminal(&store, "s").await, "failed");
     let events = store.events("s", 0, 2000).await.unwrap();
-    // The last allowed provider turn closes the prompt instead of running the
-    // tool it asks for, so 25 allowed turns leave 24 tool rounds.
     assert_eq!(
         events.iter().filter(|e| e.kind == "tool.completed").count(),
-        24
+        9
     );
     assert!(events.iter().any(|e| e.kind == "tool.completed"
         && e.data["result"]["error"]
@@ -139,6 +139,10 @@ async fn repeated_identical_calls_are_refused_with_a_corrective_error() {
         events.iter().filter(|e| e.kind == "loop.detected").count(),
         1
     );
+    let stopped: Vec<_> = events.iter().filter(|e| e.kind == "loop.stopped").collect();
+    assert_eq!(stopped.len(), 1);
+    assert_eq!(stopped[0].data["reason"], "refused-tool-call");
+    assert_eq!(stopped[0].data["refusals"], 4);
     runtime.shutdown().await;
 }
 
