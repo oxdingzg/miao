@@ -147,6 +147,7 @@ pub struct App {
     pub quit: bool,
     dialog: Option<Dialog>,
     permission_generation: u64,
+    workspace_changes_generation: u64,
     /// `Ctrl+X` was pressed; the next key completes the chord.
     leader: bool,
     keys: Keymap,
@@ -212,6 +213,7 @@ impl App {
             quit: false,
             dialog: None,
             permission_generation: 0,
+            workspace_changes_generation: 0,
             leader: false,
             keys,
             workspace,
@@ -459,6 +461,13 @@ impl App {
                     }
                 }
             }
+            AppEvent::WorkspaceChanges { generation, result } => {
+                if let Some(Dialog::WorkspaceChanges(dialog)) = self.dialog.as_mut() {
+                    if dialog.generation == generation {
+                        dialog.loaded(result);
+                    }
+                }
+            }
             AppEvent::ActionFailed(message) => {
                 self.shell.composer.notice = Some(message);
             }
@@ -572,6 +581,21 @@ impl App {
                     None => dialog.loaded(Err("Engine is not connected".into())),
                 }
                 self.open_dialog(Dialog::SavedPermissions(dialog));
+            }
+            Builtin::WorkspaceChanges => {
+                let Some(session_id) = self.session_id() else {
+                    self.update_status();
+                    return;
+                };
+                self.workspace_changes_generation += 1;
+                let generation = self.workspace_changes_generation;
+                let mut dialog =
+                    crate::workspace_changes::Dialog::new(generation, &session_id);
+                match self.engine.as_ref() {
+                    Some(engine) => engine.vcs_changes(generation, &session_id),
+                    None => dialog.loaded(Err("Engine is not connected".into())),
+                }
+                self.open_dialog(Dialog::WorkspaceChanges(dialog));
             }
             Builtin::Theme => self.open_theme(),
             Builtin::Sessions => self.open_sessions(),
@@ -689,6 +713,15 @@ impl App {
                 if let Some(Dialog::SavedPermissions(dialog)) = self.dialog.as_mut() {
                     if let Some(engine) = self.engine.as_ref() {
                         engine.saved_permissions(dialog.generation);
+                    } else {
+                        dialog.loaded(Err("Engine is not connected".into()));
+                    }
+                }
+            }
+            DialogAction::RefreshWorkspaceChanges(session_id) => {
+                if let Some(Dialog::WorkspaceChanges(dialog)) = self.dialog.as_mut() {
+                    if let Some(engine) = self.engine.as_ref() {
+                        engine.vcs_changes(dialog.generation, &session_id);
                     } else {
                         dialog.loaded(Err("Engine is not connected".into()));
                     }
@@ -2287,6 +2320,48 @@ mod tests {
         assert!(matches!(
             dialog.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
             DialogAction::RefreshPermissions
+        ));
+    }
+
+    #[test]
+    fn workspace_changes_opens_with_generation_and_tracks_the_session() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_vcs", 1)),
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        let (engine, mut requests) = engine::Handle::recording();
+        app.attach_engine(engine);
+        app.run_builtin(Builtin::WorkspaceChanges);
+        let engine::Request::VcsChanges { generation, session_id } = requests.try_recv().unwrap()
+        else {
+            panic!("vcs_status request");
+        };
+        assert_eq!(session_id, "ses_vcs");
+        app.handle(AppEvent::WorkspaceChanges {
+            generation,
+            result: Ok(crate::workspace_changes::VcsState {
+                branch: Some("main".into()),
+                detached: false,
+                ahead: Some(1),
+                behind: None,
+                files: vec![crate::workspace_changes::Change {
+                    path: "src/lib.rs".into(),
+                    original_path: None,
+                    kind: "modified".into(),
+                }],
+                truncated: false,
+                file_count: Some(1),
+                repository: true,
+            }),
+        });
+        let Some(Dialog::WorkspaceChanges(dialog)) = app.dialog.as_mut() else {
+            panic!("workspace changes dialog");
+        };
+        assert!(matches!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+            DialogAction::RefreshWorkspaceChanges(_)
         ));
     }
 

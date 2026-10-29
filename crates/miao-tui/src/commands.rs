@@ -17,6 +17,7 @@ const COMMAND_DIRS: [&str; 2] = ["commands", "command"];
 pub enum Builtin {
     Models,
     Permissions,
+    WorkspaceChanges,
     Theme,
     Sessions,
     NewSession,
@@ -35,9 +36,10 @@ pub enum Builtin {
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 17] = [
+    pub const ALL: [Builtin; 18] = [
         Builtin::Models,
         Builtin::Permissions,
+        Builtin::WorkspaceChanges,
         Builtin::Theme,
         Builtin::Sessions,
         Builtin::NewSession,
@@ -60,6 +62,7 @@ impl Builtin {
         match self {
             Builtin::Models => "model",
             Builtin::Permissions => "permissions",
+            Builtin::WorkspaceChanges => "changes",
             Builtin::Theme => "theme",
             Builtin::Sessions => "sessions",
             Builtin::NewSession => "new",
@@ -82,6 +85,7 @@ impl Builtin {
         match self {
             Builtin::Models => "Select a model",
             Builtin::Permissions => "Review saved permissions",
+            Builtin::WorkspaceChanges => "Show workspace file changes",
             Builtin::Theme => "Select a theme",
             Builtin::Sessions => "Browse sessions",
             Builtin::NewSession => "New session",
@@ -105,6 +109,7 @@ impl Builtin {
         match self {
             Builtin::Models => "<leader>m",
             Builtin::Permissions => "",
+            Builtin::WorkspaceChanges => "",
             Builtin::Theme => "<leader>t",
             Builtin::Sessions => "<leader>l",
             Builtin::NewSession => "<leader>n",
