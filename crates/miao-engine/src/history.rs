@@ -107,7 +107,22 @@ impl Store {
         &self,
         session: &str,
     ) -> Result<(Vec<Message>, Value), Error> {
+        self.selected_input_through(session, u64::MAX).await
+    }
+
+    /// The same selection with an upper cut: everything at or below `through`.
+    /// A directed compaction summarizes this range while the messages after it
+    /// stay in the provider prefix verbatim.
+    pub(crate) async fn selected_input_through(
+        &self,
+        session: &str,
+        cut: u64,
+    ) -> Result<(Vec<Message>, Value), Error> {
         let session = session.to_owned();
+        // SQLite compares against a signed integer, so an unbounded cut is the
+        // largest sequence the column can hold rather than `u64::MAX` (which
+        // rusqlite refuses to bind).
+        let cut = cut.min(i64::MAX as u64);
         self.call(move |conn| {
             let tx=conn.transaction()?;
             let checkpoint:Option<(u64,String)>=tx.query_row("SELECT through_seq,summary FROM engine_compaction WHERE session_id=?1 ORDER BY created_seq DESC LIMIT 1",[&session],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
@@ -119,8 +134,8 @@ impl Store {
             let mut pending_tools=std::collections::HashSet::new();
             let mut deferred_context=Vec::new();
             let mut count=selected.len();
-            let mut stmt=tx.prepare("SELECT m.role,m.content,m.recorded_at_ms,e.kind FROM engine_message m JOIN engine_event e ON e.session_id=m.session_id AND e.seq=m.seq WHERE m.session_id=?1 AND m.seq>?2 AND m.reverted=0 AND m.quarantined=0 ORDER BY m.seq LIMIT 20001")?;
-            let mut rows=stmt.query(params![session,through])?;
+            let mut stmt=tx.prepare("SELECT m.role,m.content,m.recorded_at_ms,e.kind FROM engine_message m JOIN engine_event e ON e.session_id=m.session_id AND e.seq=m.seq WHERE m.session_id=?1 AND m.seq>?2 AND m.seq<=?3 AND m.reverted=0 AND m.quarantined=0 ORDER BY m.seq LIMIT 20001")?;
+            let mut rows=stmt.query(params![session,through,cut])?;
             while let Some(row)=rows.next()? {
                 let content:String=row.get(1)?;bytes+=content.len();count+=1;
                 // The selection must carry a whole Session so the budget gate

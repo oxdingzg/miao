@@ -1065,7 +1065,19 @@ impl Runtime {
     /// Session with no inbox row has nothing to drain, so the request stays
     /// durable until its next provider turn.
     pub async fn request_compact(&self, session: &str) -> Result<Value, Error> {
-        let result = self.inner.store.request_compaction(session).await?;
+        self.request_compact_with(session, crate::protocol::CompactScope::default())
+            .await
+    }
+
+    /// The same durable request with a scope: an explicit cut and a retention
+    /// target. Both are honoured exactly or refused with a reason — the request
+    /// is never clamped to a nearby boundary behind the operator's back.
+    pub async fn request_compact_with(
+        &self,
+        session: &str,
+        scope: crate::protocol::CompactScope,
+    ) -> Result<Value, Error> {
+        let result = self.inner.store.request_compaction(session, scope).await?;
         let _ = self.wake(session, false).await;
         Ok(result)
     }
@@ -3668,6 +3680,8 @@ command: None,
                     run,
                     boundary: assistant_boundary,
                     forced: requested.is_some(),
+                    through: requested.as_ref().and_then(|request| request.through),
+                    focus: requested.as_ref().and_then(|request| request.focus.clone()),
                     budget: &limits.budget(),
                     per_pass: limits.per_pass,
                     breaker: &mut breaker,
@@ -3687,13 +3701,13 @@ command: None,
                     .await
                     .insert(session.to_owned());
             }
-            if let Some(seq) = requested {
+            if let Some(request) = requested {
                 // One attempt answers the request either way, so a summarizer the
                 // provider keeps refusing cannot pin the Session: asking again is
                 // what asks for another try.
                 let _ = inner
                     .store
-                    .settle_compaction_request(session, seq, compacted)
+                    .settle_compaction_request(session, request.seq, compacted)
                     .await;
             }
         }

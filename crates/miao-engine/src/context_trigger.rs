@@ -135,6 +135,13 @@ pub struct CompactRequest<'a, P: FnMut(Value)> {
     pub run: &'a str,
     /// The settled assistant boundary the checkpoint cuts through.
     pub boundary: u64,
+    /// An operator-selected cut. Messages after it stay verbatim, so this is
+    /// also the retention target; the checkpoint commits at this sequence
+    /// instead of at the settled boundary. `None` keeps the boundary.
+    pub through: Option<u64>,
+    /// What the summary must keep, in the operator's own words. Carried into
+    /// the summarizer prompt; the durable state block is retained regardless.
+    pub focus: Option<String>,
     /// An operator request: one pass happens at this boundary even when the
     /// budget gate is under its threshold. Every other gate still applies, so a
     /// forced pass cannot cut a tool continuation or a reverted transcript.
@@ -192,6 +199,8 @@ where
         session,
         run,
         boundary,
+        through,
+        focus,
         forced,
         budget,
         per_pass,
@@ -199,6 +208,9 @@ where
         notify,
         count,
     } = request;
+    // A directed cut replaces the settled boundary: the checkpoint commits where
+    // the operator asked, and everything newer stays in the prefix verbatim.
+    let boundary = through.unwrap_or(boundary);
     let channel = |kind: &str| json!({"session_id": session, "run_id": run, "kind": kind});
     if !breaker.allows() {
         notify(channel("compaction.skipped"));
@@ -228,8 +240,12 @@ where
         return Ok(false);
     }
     // The summary covers the warm prefix the next turn would re-send, which is
-    // the selected history rather than the uncounted delta.
-    let messages = store.selected_history(session).await?;
+    // the selected history rather than the uncounted delta. A directed cut
+    // summarizes exactly the range it names.
+    let messages = match through {
+        Some(cut) => store.selected_input_through(session, cut).await?.0,
+        None => store.selected_history(session).await?,
+    };
     if messages.is_empty() {
         return Ok(false);
     }
@@ -239,12 +255,18 @@ where
         "kind": "compaction.started", "segments": plan.segments.len(),
     }));
     let mut parts = Vec::new();
-    if budget.window.is_some_and(|window| {
-        context
-            .saturating_add(pending_tokens)
-            .saturating_add(budget.headroom)
-            < window
-    }) {
+    // The prefix path retains the exact last provider request, which describes
+    // one particular cut. A scoped request names its own range and target, so it
+    // always takes the segment path.
+    if through.is_none()
+        && focus.is_none()
+        && budget.window.is_some_and(|window| {
+            context
+                .saturating_add(pending_tokens)
+                .saturating_add(budget.headroom)
+                < window
+        })
+    {
         match tokio::time::timeout(SUMMARY_TIMEOUT, prefix()).await {
             Ok(Some(Ok(summary))) if !summary.trim().is_empty() => {
                 parts.push(summary);
@@ -268,16 +290,17 @@ where
     if parts.is_empty() {
         for (nth, (start, end)) in plan.segments.iter().enumerate() {
             let body = summarizer_body(&messages[*start..*end], SUMMARIZER_MESSAGE_CHARS);
+            // A retention target is an operator instruction, not a replacement
+            // for the durable block: the checkpoint carries both.
+            let instruction = match &focus {
+                Some(focus) => format!(
+                    "Summarize this portion of the conversation:\n{body}\n\nRetention target: {focus}"
+                ),
+                None => format!("Summarize this portion of the conversation:\n{body}"),
+            };
             // A summarizer that never returns must not hold the turn: the call is
             // bounded, and a timeout degrades like any other summary failure.
-            match tokio::time::timeout(
-                SUMMARY_TIMEOUT,
-                summarize(format!(
-                    "Summarize this portion of the conversation:\n{body}"
-                )),
-            )
-            .await
-            {
+            match tokio::time::timeout(SUMMARY_TIMEOUT, summarize(instruction)).await {
                 Err(_) => {
                     breaker.rejected();
                     notify(json!({

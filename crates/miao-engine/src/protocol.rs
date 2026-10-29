@@ -129,6 +129,20 @@ pub struct Message {
     pub recorded_at_ms: Option<u64>,
 }
 
+/// One operator compaction request's scope. The default scope is the behaviour
+/// a bare `request_compact` has always had: cut at the boundary that honours
+/// the request and summarize the whole selected history.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CompactScope {
+    /// Message sequence the checkpoint must cut at. Messages after it stay
+    /// verbatim, so this is also the retention target: everything newer is kept.
+    pub through: Option<u64>,
+    /// What the summary must keep, in the operator's own words. Carried into
+    /// the summarizer prompt and recorded with the durable request.
+    pub focus: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Admission {
     pub input_id: String,
@@ -359,9 +373,14 @@ pub enum Command {
     },
     /// Ask for one compaction at the next settled assistant boundary, even when
     /// the automatic trigger's budget gate is under its threshold. The request is
-    /// durable and idempotent; one attempt answers it, either way.
+    /// durable and idempotent; one attempt answers it, either way. `through` and
+    /// `focus` are refusals-or-honoured, never silently adjusted.
     RequestCompact {
         session_id: String,
+        #[serde(default)]
+        through: Option<u64>,
+        #[serde(default)]
+        focus: Option<String>,
     },
     /// Build a human-facing recap of the Session. A review artifact only: it
     /// appends no message and writes no checkpoint, so unlike `request_compact`

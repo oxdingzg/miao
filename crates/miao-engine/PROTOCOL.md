@@ -34,6 +34,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `remove` | `session_id` | `{accepted:bool, reason?}` |
 | `request_compact` | `session_id` | `{accepted:true, duplicate, pending}` |
 | `recap` | `session_id` | `{seq, text, through_message_seq, messages_after_checkpoint, total_messages}` |
+| `request_compact` | `session_id`, `through?`, `focus?` | `{accepted:true, duplicate, pending}` |
 | `select_agent` | `session_id`, `agent` | `{agent_hash, changed}` |
 | `select_account` | `session_id`, `credential_id` (string or null) | `{binding, account, changed}` |
 | `product_permission_evaluate` | `source`, `request` (active reverse-call facts) | `{effect, rules, authority_revision}` |
@@ -377,6 +378,20 @@ A location that is not inside a repository answers `{"repository": false,
 workspace sets `truncated: true` and still reports the true `file_count`. A git
 call that does not finish within ten seconds fails with a reason rather than
 holding the drain.
+A request may name a **scope**. `through` is the message sequence the checkpoint
+must cut at: that range is summarized and everything newer stays in the selected
+history verbatim, so the cut doubles as the retention target. `focus` is the
+operator's own words for what the summary must keep; it is carried into the
+summarizer prompt next to the excerpt, and the durable state block is retained
+regardless. Both fields are optional and absent means the previous behaviour.
+
+A scope is honoured exactly or refused, never clamped: a `through` that is not a
+closed assistant boundary fails the attempt with a reason (reported through the
+run's `compaction.failed` progress notice and recorded as
+`compaction.settled{compacted:false}`), and a `focus` that is empty or longer than
+2000 characters is refused when the request is recorded. A retry while a request
+is pending is idempotent only for the same scope; a different scope is a
+conflict rather than a silent replacement.
 
 ### Archiving
 

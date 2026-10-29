@@ -1077,9 +1077,15 @@ impl Store {
     ///
     /// The request is durable rather than in-memory because the serialized drain
     /// reads it where the automatic trigger's machinery already lives: a settled
-    /// assistant boundary. An unanswered request is idempotent, so a retried
-    /// command neither queues a second compaction nor loses the intent.
-    pub async fn request_compaction(&self, session: &str) -> Result<Value, Error> {
+    /// assistant boundary. A retried identical request is idempotent, so it
+    /// neither queues a second compaction nor loses the intent; a retry that asks
+    /// for a different scope is a conflict rather than a silent replacement.
+    pub async fn request_compaction(
+        &self,
+        session: &str,
+        scope: crate::protocol::CompactScope,
+    ) -> Result<Value, Error> {
+        let scope = normalize_scope(scope)?;
         let session = session.to_owned();
         self.call(move |conn| {
             let tx = write_tx(conn)?;
@@ -1091,14 +1097,21 @@ impl Store {
             if !exists {
                 return Err(Error::Invalid("Session does not exist".into()));
             }
-            if pending_compaction_request_seq(&tx, &session)?.is_some() {
-                return Ok(json!({"accepted": true, "duplicate": true, "pending": true}));
+            if let Some(pending) = pending_compaction(&tx, &session)? {
+                if pending.through == scope.through && pending.focus == scope.focus {
+                    return Ok(json!({"accepted": true, "duplicate": true, "pending": true}));
+                }
+                return Err(Error::Conflict);
             }
             append(
                 &tx,
                 &session,
                 "compaction.requested",
-                json!({"requested_at_ms": now_ms()}),
+                json!({
+                    "requested_at_ms": now_ms(),
+                    "through": scope.through,
+                    "focus": scope.focus,
+                }),
             )?;
             tx.commit()?;
             Ok(json!({"accepted": true, "duplicate": false, "pending": true}))
@@ -1106,10 +1119,13 @@ impl Store {
         .await
     }
 
-    /// The seq of the operator request no attempt has answered yet.
-    pub async fn pending_compaction_request(&self, session: &str) -> Result<Option<u64>, Error> {
+    /// The operator request no attempt has answered yet.
+    pub async fn pending_compaction_request(
+        &self,
+        session: &str,
+    ) -> Result<Option<PendingCompaction>, Error> {
         let session = session.to_owned();
-        self.call(move |conn| pending_compaction_request_seq(conn, &session))
+        self.call(move |conn| pending_compaction(conn, &session))
             .await
     }
 
@@ -1125,7 +1141,7 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx = write_tx(conn)?;
-            if pending_compaction_request_seq(&tx, &session)? != Some(request_seq) {
+            if pending_compaction(&tx, &session)?.map(|pending| pending.seq) != Some(request_seq) {
                 return Ok(None);
             }
             let event = append(
@@ -2891,21 +2907,69 @@ fn pid_alive(_pid: u32) -> bool {
 /// run regardless of provider field names (`input_tokens` vs `prompt_tokens`, or
 /// nested `*_details`). Non-numeric leaves take the latest value.
 /// The newest operator compaction request that no settled attempt has answered.
-fn pending_compaction_request_seq(conn: &Connection, session: &str) -> Result<Option<u64>, Error> {
-    let requested: Option<u64> = conn.query_row(
-        "SELECT MAX(seq) FROM engine_event WHERE session_id=?1 AND kind='compaction.requested'",
-        [session],
-        |row| row.get(0),
-    )?;
-    let Some(requested) = requested else {
+fn pending_compaction(
+    conn: &Connection,
+    session: &str,
+) -> Result<Option<PendingCompaction>, Error> {
+    let requested: Option<(u64, String)> = conn
+        .query_row(
+            "SELECT seq,data FROM engine_event WHERE session_id=?1 AND kind='compaction.requested' ORDER BY seq DESC LIMIT 1",
+            [session],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((seq, data)) = requested else {
         return Ok(None);
     };
     let settled: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND kind='compaction.settled' AND json_extract(data,'$.request_seq')=?2)",
-        params![session, requested],
+        params![session, seq],
         |row| row.get(0),
     )?;
-    Ok((!settled).then_some(requested))
+    if settled {
+        return Ok(None);
+    }
+    let data: Value = serde_json::from_str(&data)?;
+    Ok(Some(PendingCompaction {
+        seq,
+        through: data["through"].as_u64(),
+        focus: data["focus"].as_str().map(str::to_owned),
+    }))
+}
+
+/// The durable operator request the drain reads at a settled boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingCompaction {
+    /// The `compaction.requested` event that no attempt has answered yet.
+    pub seq: u64,
+    pub through: Option<u64>,
+    pub focus: Option<String>,
+}
+
+/// What a retention target may be: enough text to name what matters, not a
+/// second transcript. Refused rather than truncated, so an operator sees a
+/// request that was not honoured exactly as asked.
+pub const MAX_COMPACTION_FOCUS_CHARS: usize = 2_000;
+
+fn normalize_scope(
+    mut scope: crate::protocol::CompactScope,
+) -> Result<crate::protocol::CompactScope, Error> {
+    scope.focus = match scope.focus {
+        Some(focus) => {
+            let focus = focus.trim();
+            if focus.is_empty() {
+                return Err(Error::Invalid("compaction focus is empty".into()));
+            }
+            if focus.chars().count() > MAX_COMPACTION_FOCUS_CHARS {
+                return Err(Error::Invalid(format!(
+                    "compaction focus exceeds {MAX_COMPACTION_FOCUS_CHARS} characters"
+                )));
+            }
+            Some(focus.to_owned())
+        }
+        None => None,
+    };
+    Ok(scope)
 }
 
 fn merge_usage(acc: &mut Value, next: &Value) {

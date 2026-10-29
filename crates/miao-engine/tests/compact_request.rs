@@ -142,7 +142,8 @@ async fn an_operator_request_compacts_at_the_next_boundary_without_configured_li
         .pending_compaction_request("s")
         .await
         .unwrap()
-        .unwrap();
+        .unwrap()
+        .seq;
 
     // The request is honoured by the next drain's settled boundary even though
     // the budget gate would not have triggered.
@@ -194,7 +195,8 @@ async fn a_forced_pass_that_cannot_summarize_answers_the_request_once() {
         .pending_compaction_request("s")
         .await
         .unwrap()
-        .unwrap();
+        .unwrap()
+        .seq;
     turn(&runtime, &store, "two", "second").await;
     for _ in 0..100 {
         if store
