@@ -59,3 +59,37 @@ AGT-03 说子交回什么，本文说父在界面上如何看见与进入。源�
 
 设计对齐，不带验收。落地时以最小改动验证：委派子在父转写显示活状态并随子完成而更新（C1）、
 父可内联展开子最近历史且有界只读（C2）、进入子再一键返回父（C3）。真实隔离覆盖随 SEC-04。
+
+## 8. Rust 面（引擎侧）
+
+C1 需要的数据必须由引擎回答：TS 侧 `parent_id` 只是产品库的一列，引擎库的父子事实在
+`engine_lineage(session_id, parent_session_id, message_seq)`，子的执行状态在 `engine_run`。
+TS 迁移到 Rust 引擎后，父看子的观测面若仍留在 TS，就得读两份库，所以这里先补引擎侧只读面。
+
+**命令 `session_children { session_id }`**（S1 已实现）：
+
+```
+{ session_id, truncated, children: [{
+    session_id, title, parent_message_seq, message_count,
+    created_at_ms, updated_at_ms, archived_at_ms, pinned_at_ms,
+    status, run }] }
+```
+
+- 数据源：`engine_lineage` 边 + `engine_session` 目录行 + `engine_message` 计数 + 子的最新
+  `engine_run`；不新造事件类型，也不复制 TS 的 `session.next.status` 状态机。
+- `status` 只区分 `busy`（子有 running run）/ `idle`，与 C1 复用的 busy/idle 词表一致；子怎么结束
+  的由 `run.state` 回答（`completed`/`failed`/`cancelled`/`interrupted`），两者分开是因为
+  "跑完了"和"从没跑过"在产品上要显示成不同的一行。
+- `run` 为 `{id, state, started_at_ms}` 或 null；`started_at_ms` 取该 run 的 `run.started` 事件本地
+  时间，让父界面能自己算已经跑了多久，无需回放事件。
+- 排序按子创建时间，最多 200 条，`truncated` 说明是否截断；归档的子仍在列表里（归档是目录偏好，
+  不是撤回委派）。无子回答空列表；未知 Session 报 `invalid_request`。
+
+**仍归产品侧（未实现）**：C1 的 TUI 渲染行、C2 的内联只读历史（需要一个按父预算有界的子历史页，
+可与 `history` 的游标化一起做）、C3 的父子导航栈。引擎侧后续可补 `session_children` 的分页
+（若 200 条不够）与子历史的有界页，TUI 域再按 §6 的边界接。
+
+**验证（S1）**：`tests/children.rs` 4 条（空列表与未知 Session、fork 边界/归档仍可见、running→busy
+与结束后 `run.state`、截断计数）全部对真实 sqlite 运行；`tests/stdio.rs` 增加一条 wire 用例
+（admit-only 的父边界为 0、子的空列表、未知 Session 报错）；`--lib`、`cargo test` 全量、clippy
+`-D warnings`、`cargo fmt --check` 均干净。

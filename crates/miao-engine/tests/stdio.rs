@@ -486,6 +486,7 @@ fn agent_selection_is_a_wire_command_that_reports_its_derived_hash() {
 
 #[test]
 fn input_status_is_a_wire_command_that_survives_cancellation() {
+fn session_children_is_a_wire_command_over_the_lineage_edge() {
     let dir = tempfile::tempdir().unwrap();
     let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
         .args([
@@ -510,6 +511,11 @@ fn input_status_is_a_wire_command_that_survives_cancellation() {
         json!({"id":4,"method":"cancel_input","params":{"session_id":"s","input_id":"one"}}),
         json!({"id":5,"method":"input_status","params":{"session_id":"s","input_id":"one"}}),
         json!({"id":6,"method":"input_status","params":{"session_id":"missing","input_id":"one"}}),
+        json!({"id":2,"method":"session_children","params":{"session_id":"s"}}),
+        json!({"id":3,"method":"fork","params":{"session_id":"s","target_session_id":"child"}}),
+        json!({"id":4,"method":"session_children","params":{"session_id":"s"}}),
+        json!({"id":5,"method":"session_children","params":{"session_id":"child"}}),
+        json!({"id":6,"method":"session_children","params":{"session_id":"missing"}}),
         json!({"id":7,"method":"shutdown"}),
     ];
     let mut stdin = process.stdin.take().unwrap();
@@ -542,6 +548,20 @@ fn input_status_is_a_wire_command_that_survives_cancellation() {
     assert_eq!(cancelled["state"], "cancelled");
     assert!(cancelled["cancelled"]["seq"].is_number(), "{replies:?}");
     // An unknown Session has no inbox to ask about.
+    // Before the fork the parent has no children, which is an answer.
+    assert_eq!(result(2)["children"], json!([]));
+    assert_eq!(result(2)["truncated"], json!(false));
+    let children = result(4);
+    assert_eq!(children["children"][0]["session_id"], "child");
+    // An admit-only prompt was never promoted, so the fork boundary is the
+    // parent's empty history rather than the pending input.
+    assert_eq!(children["children"][0]["parent_message_seq"], 0);
+    // A child that was created but never ran has no run to report.
+    assert_eq!(children["children"][0]["status"], "idle");
+    assert_eq!(children["children"][0]["run"], Value::Null);
+    // The edge is one-directional: the child has no children of its own.
+    assert_eq!(result(5)["children"], json!([]));
+    // An unknown identity is refused rather than reported as childless.
     assert!(reply(6)["error"].is_object(), "{replies:?}");
 }
 

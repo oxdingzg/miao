@@ -456,6 +456,10 @@ pub enum Command {
     /// is not inside a repository answers `{"repository": false}` rather than
     /// failing, because "there is no repository here" is a normal answer.
     VcsStatus {
+    /// Sessions forked from or delegated to by this one, with the latest run
+    /// that decides whether a child is still working (AGT-01). A Session with
+    /// no children answers an empty list; an unknown Session is an error.
+    SessionChildren {
         session_id: String,
     },
     UpdateState {

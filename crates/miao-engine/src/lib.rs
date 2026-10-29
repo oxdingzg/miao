@@ -6,6 +6,7 @@ pub mod bedrock;
 mod bedrock_input;
 mod bedrock_stream;
 mod cache_affinity;
+pub mod children;
 pub mod config_derive;
 pub mod config_explain;
 pub mod config_scope;
