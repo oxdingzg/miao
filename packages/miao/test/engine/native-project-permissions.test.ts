@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import path from "node:path"
+import { rename } from "node:fs/promises"
 import { Schema } from "effect"
 import { EngineClient, permissionEnvironment } from "@/engine/client"
 import { capabilities } from "@/engine/discovery"
@@ -160,3 +161,265 @@ function failure(request: Promise<unknown>) {
     (error: unknown) => error,
   )
 }
+
+const ContextSnapshot = Schema.Struct({
+  project: Snapshot,
+  directory: Schema.String,
+  workspace_id: Schema.NullOr(Schema.String),
+  revision: Schema.Number,
+  migration: Schema.Unknown,
+  patterns: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      workspace: Schema.String,
+      rule: Schema.Struct({ action: Schema.String, resource: Schema.String, effect: Schema.Literal("allow") }),
+      source: Schema.Literal("native"),
+      created_at_ms: Schema.Number,
+    }),
+  ),
+})
+const contextSnapshot = async (client: EngineClient) =>
+  Schema.decodeUnknownSync(ContextSnapshot)(await client.request("context_snapshot"))
+
+test.skipIf(!binary)(
+  "directory handoff binds its destination through receipt retries and same-path replacement",
+  async () => {
+    await using tmp = await tmpdir()
+    const db = path.join(tmp.path, "permissions.db")
+    const open = (db: string) =>
+      EngineClient.startPermissionStore({
+        binary: binary!,
+        db,
+        project: "project",
+        context: { directory: tmp.path },
+      })
+    const first = open(db)
+    const peer = open(db)
+    const source = open(path.join(tmp.path, "source.db"))
+    const clients = [first, peer, source]
+    try {
+      expect(capabilities(binary!)?.permissionContextHandoff).toBe(1)
+      const initial = await contextSnapshot(first)
+      await source.request("context_put", { rule: { action: "read", resource: "a/**", effect: "allow" } })
+      const foreign = Schema.decodeUnknownSync(ContextSnapshot)(
+        await source.request("context_put", { rule: { action: "read", resource: "b/**", effect: "allow" } }),
+      )
+      const patterns = foreign.patterns
+      expect(
+        await failure(first.request("context_handoff", { authority: foreign.project.authority, patterns })),
+      ).toMatchObject({ code: "invalid_request", message: expect.stringContaining("destination mismatch") })
+      expect(await contextSnapshot(first)).toEqual(initial)
+      const imported = Schema.decodeUnknownSync(ContextSnapshot)(
+        await first.request("context_handoff", { authority: initial.project.authority, patterns }),
+      )
+      expect(imported.patterns).toEqual(patterns)
+      expect(await peer.request("context_remove", { id: patterns[0].id })).toEqual({ removed: true })
+      const revoked = await contextSnapshot(first)
+      expect(
+        Schema.decodeUnknownSync(ContextSnapshot)(
+          await peer.request("context_handoff", {
+            authority: initial.project.authority,
+            patterns: [...patterns].reverse(),
+          }),
+        ),
+      ).toEqual(revoked)
+      expect(
+        await failure(first.request("context_handoff", { authority: foreign.project.authority, patterns })),
+      ).toMatchObject({ code: "invalid_request" })
+      expect(await contextSnapshot(first)).toEqual(revoked)
+      for (const override of [{ project: "foreign" }, { directory: "/foreign" }, { workspace_id: "explicit" }])
+        expect(
+          await failure(
+            first.request("context_handoff", { authority: initial.project.authority, patterns, ...override }),
+          ),
+        ).toMatchObject({ code: "invalid_request" })
+      expect(await contextSnapshot(first)).toEqual(revoked)
+      await first.close()
+      await peer.close()
+      await rename(db, path.join(tmp.path, "previous.db"))
+      const replacement = open(db)
+      clients.push(replacement)
+      const replaced = await contextSnapshot(replacement)
+      expect(replaced.project.authority).not.toBe(initial.project.authority)
+      expect(
+        await failure(replacement.request("context_handoff", { authority: initial.project.authority, patterns })),
+      ).toMatchObject({ code: "invalid_request", message: expect.stringContaining("destination mismatch") })
+      expect(await contextSnapshot(replacement)).toEqual(replaced)
+      expect(
+        Schema.decodeUnknownSync(ContextSnapshot)(
+          await replacement.request("context_handoff", { authority: replaced.project.authority, patterns }),
+        ).patterns,
+      ).toEqual(patterns)
+    } finally {
+      await Promise.all(clients.map((client) => client.close()))
+    }
+  },
+  30_000,
+)
+
+test.skipIf(!binary)(
+  "bound directory controllers share project rules without leaking directory grants or reviving revocations",
+  async () => {
+    await using tmp = await tmpdir()
+    const directory = path.join(tmp.path, "a")
+    const otherDirectory = path.join(tmp.path, "b")
+    await Bun.write(path.join(directory, "keep"), "fixture")
+    await Bun.write(path.join(otherDirectory, "keep"), "fixture")
+    const db = path.join(tmp.path, "permissions.db")
+    const open = (project: string, directory: string, workspaceID?: string) =>
+      EngineClient.startPermissionStore({ binary: binary!, db, project, context: { directory, workspaceID } })
+    const first = open("project", directory)
+    const peer = open("project", directory)
+    const other = open("project", otherDirectory)
+    const explicit = open("project", directory, "explicit-workspace")
+    const foreign = open("foreign", directory)
+    const clients = [first, peer, other, explicit, foreign]
+    try {
+      expect(capabilities(binary!)?.permissionContextStore).toBe(1)
+      const initial = await Promise.all(clients.map(contextSnapshot))
+      expect(initial.map((value) => value.patterns)).toEqual([[], [], [], [], []])
+      expect(initial[0].workspace_id).toBeNull()
+      expect(initial[3].workspace_id).toBe("explicit-workspace")
+      const project = Schema.decodeUnknownSync(Snapshot)(
+        await peer.request("put", { rule: { action: "read", resource: "project/**", effect: "allow" } }),
+      )
+      const own = Schema.decodeUnknownSync(ContextSnapshot)(
+        await first.request("context_put", { rule: { action: "read", resource: "directory/**", effect: "allow" } }),
+      )
+      expect(own.project).toEqual(project)
+      expect(own.directory).toBe(process.platform === "win32" ? path.toNamespacedPath(directory) : directory)
+      expect(await contextSnapshot(peer)).toEqual(own)
+      expect((await contextSnapshot(other)).project).toEqual(project)
+      expect((await contextSnapshot(other)).patterns).toEqual([])
+      expect((await contextSnapshot(explicit)).patterns).toEqual([])
+      expect((await contextSnapshot(foreign)).project.rules).toEqual([])
+      expect(await first.request("context_remove", { id: project.rules[0].id })).toEqual({ removed: false })
+      await foreign.request("context_put", { rule: { action: "read", resource: "legacy-a/**", effect: "allow" } })
+      const input = Schema.decodeUnknownSync(ContextSnapshot)(
+        await foreign.request("context_put", { rule: { action: "read", resource: "legacy-b/**", effect: "allow" } }),
+      ).patterns
+      const migrated = Schema.decodeUnknownSync(ContextSnapshot)(
+        await first.request("context_migrate", { patterns: input }),
+      )
+      expect(migrated.patterns).toHaveLength(3)
+      expect(migrated.patterns).toEqual(expect.arrayContaining(input))
+      expect(await peer.request("context_remove", { id: input[0].id })).toEqual({ removed: true })
+      const revoked = await contextSnapshot(first)
+      expect(revoked.revision).toBe(3)
+      expect(
+        Schema.decodeUnknownSync(ContextSnapshot)(
+          await peer.request("context_migrate", { patterns: [...input].reverse() }),
+        ),
+      ).toEqual(revoked)
+      expect(await failure(first.request("context_migrate", { patterns: [] }))).toMatchObject({
+        code: "invalid_request",
+      })
+      expect(
+        await failure(
+          first.request("context_put", {
+            directory: otherDirectory,
+            rule: { action: "read", resource: "escape/**", effect: "allow" },
+          }),
+        ),
+      ).toMatchObject({ code: "invalid_request" })
+      await first.close()
+      const reopened = open("project", directory)
+      clients.push(reopened)
+      expect(await contextSnapshot(reopened)).toEqual(revoked)
+      expect((await contextSnapshot(foreign)).patterns).toEqual(input)
+      expect((await contextSnapshot(other)).patterns).toEqual([])
+    } finally {
+      await Promise.all(clients.map((client) => client.close()))
+    }
+  },
+  30_000,
+)
+
+test.skipIf(!binary)(
+  "unbound and invalid directory controls fail without creating a database",
+  async () => {
+    await using tmp = await tmpdir()
+    const unbound = EngineClient.startPermissionStore({
+      binary: binary!,
+      db: path.join(tmp.path, "unbound.db"),
+      project: "project",
+    })
+    try {
+      expect(await failure(unbound.request("context_snapshot"))).toMatchObject({ code: "invalid_request" })
+      expect((await snapshot(unbound)).rules).toEqual([])
+    } finally {
+      await unbound.close()
+    }
+    await Bun.write(path.join(tmp.path, "file"), "fixture")
+    for (const directory of ["", path.join(tmp.path, "missing"), path.join(tmp.path, "file")]) {
+      const db = path.join(tmp.path, `invalid-${directory.length}.db`)
+      const client = EngineClient.startPermissionStore({
+        binary: binary!,
+        db,
+        project: "project",
+        context: { directory },
+      })
+      try {
+        expect(await failure(client.request("context_snapshot"))).toBeInstanceOf(Error)
+        expect(await Bun.file(db).exists()).toBe(false)
+      } finally {
+        await client.close()
+      }
+    }
+  },
+  30_000,
+)
+
+test.skipIf(!binary)(
+  "handoff checks its durable destination before writes and before receipt retries",
+  async () => {
+    await using tmp = await tmpdir()
+    const first = EngineClient.startPermissionStore({
+      binary: binary!,
+      db: path.join(tmp.path, "first.db"),
+      project: "project",
+    })
+    const other = EngineClient.startPermissionStore({
+      binary: binary!,
+      db: path.join(tmp.path, "other.db"),
+      project: "project",
+    })
+    const rules = ["legacy-a", "legacy-b"].map((id) => ({
+      id,
+      rule: { action: "read", resource: `${id}/**`, effect: "allow" },
+    }))
+    try {
+      expect(capabilities(binary!)?.permissionProjectHandoff).toBe(1)
+      const initial = await snapshot(first)
+      const foreign = await snapshot(other)
+      expect(initial.authority).not.toBe(foreign.authority)
+      expect(await failure(other.request("handoff", { authority: initial.authority, rules }))).toMatchObject({
+        code: "invalid_request",
+        message: expect.stringContaining("destination mismatch"),
+      })
+      expect(await snapshot(other)).toEqual(foreign)
+      const imported = Schema.decodeUnknownSync(Snapshot)(
+        await first.request("handoff", { authority: initial.authority, rules }),
+      )
+      expect(imported.rules).toHaveLength(2)
+      expect(await first.request("remove", { id: "legacy-a" })).toEqual({ removed: true })
+      const revoked = await snapshot(first)
+      expect(
+        Schema.decodeUnknownSync(Snapshot)(
+          await first.request("handoff", { authority: initial.authority, rules: [...rules].reverse() }),
+        ),
+      ).toEqual(revoked)
+      expect(await failure(first.request("handoff", { authority: foreign.authority, rules }))).toMatchObject({
+        code: "invalid_request",
+      })
+      expect(await snapshot(first)).toEqual(revoked)
+      expect(
+        await failure(first.request("handoff", { authority: initial.authority, project: "other", rules })),
+      ).toMatchObject({ code: "invalid_request" })
+      expect(await snapshot(first)).toEqual(revoked)
+    } finally {
+      await Promise.all([first.close(), other.close()])
+    }
+  },
+  30_000,
+)

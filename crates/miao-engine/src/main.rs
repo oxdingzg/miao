@@ -64,6 +64,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "saved_permission_migration": 1,
                 "permission_import_changes": 1,
                 "permission_project_store": 1,
+                "permission_context_store": 1,
+                "permission_project_handoff": 1,
+                "permission_context_handoff": 1,
                 "product_permission_requests": 1,
                 "product_permission_replies": 1,
                 "product_permission_cancel": 1,
@@ -77,18 +80,28 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let (flags, remainder) = args[1..].as_chunks::<2>();
         let mut options = HashMap::new();
         for flag in flags {
-            if !["--db", "--project"].contains(&flag[0].as_str())
+            if !["--db", "--project", "--directory", "--workspace-id"].contains(&flag[0].as_str())
                 || options.insert(flag[0].clone(), flag[1].clone()).is_some()
             {
                 return Err("unknown or duplicate permissions option".into());
             }
         }
-        if !remainder.is_empty() || options.len() != 2 {
-            return Err("Usage: miao-engine permissions --db PATH --project ID".into());
+        if !remainder.is_empty()
+            || !options.contains_key("--db")
+            || !options.contains_key("--project")
+            || (options.contains_key("--workspace-id") && !options.contains_key("--directory"))
+        {
+            return Err("Usage: miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]".into());
         }
         let project = options.remove("--project").unwrap();
         let path = options.remove("--db").unwrap();
-        let result = serve_permissions(&path, project).await;
+        let result = serve_permissions(
+            &path,
+            project,
+            options.remove("--directory"),
+            options.remove("--workspace-id"),
+        )
+        .await;
         if let Err(error) = &result {
             eprintln!("miao-engine permissions: {error}");
         }
@@ -871,10 +884,25 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     std::process::exit(if result.is_ok() { 0 } else { 1 });
 }
 
-async fn serve_permissions(path: &str, project: String) -> io::Result<()> {
-    let controller = miao_engine::permission_control::Controller::open(path, project)
-        .await
-        .map_err(io::Error::other)?;
+async fn serve_permissions(
+    path: &str,
+    project: String,
+    directory: Option<String>,
+    workspace_id: Option<String>,
+) -> io::Result<()> {
+    let controller = match directory {
+        Some(directory) => {
+            miao_engine::permission_control::Controller::open_context(
+                path,
+                project,
+                directory,
+                workspace_id,
+            )
+            .await
+        }
+        None => miao_engine::permission_control::Controller::open(path, project).await,
+    }
+    .map_err(io::Error::other)?;
     let mut input = BufReader::new(tokio::io::stdin());
     let mut output = tokio::io::stdout();
     let mut bytes = Vec::new();

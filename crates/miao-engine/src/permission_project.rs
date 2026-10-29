@@ -122,7 +122,24 @@ impl Project {
             .await
     }
 
-    pub async fn migrate(&self, mut rules: Vec<LegacyRule>) -> Result<Snapshot, Error> {
+    pub async fn migrate(&self, rules: Vec<LegacyRule>) -> Result<Snapshot, Error> {
+        self.migrate_bound(None, rules).await
+    }
+
+    /// The source is frozen for one durable destination, never just a path.
+    pub async fn handoff(
+        &self,
+        authority: String,
+        rules: Vec<LegacyRule>,
+    ) -> Result<Snapshot, Error> {
+        self.migrate_bound(Some(authority), rules).await
+    }
+
+    async fn migrate_bound(
+        &self,
+        authority: Option<String>,
+        mut rules: Vec<LegacyRule>,
+    ) -> Result<Snapshot, Error> {
         let project = self.project.clone();
         rules.sort_by(|left, right| left.id.cmp(&right.id));
         crate::permission_migration::require_rules(&project, &rules)?;
@@ -130,6 +147,9 @@ impl Project {
         self.authority.call(move |connection| {
             let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let before = view(&transaction, &project)?;
+            if authority.as_ref().is_some_and(|expected| expected != &before.authority) {
+                return Err(Error::Invalid("project permission handoff destination mismatch".into()));
+            }
             if let Some(receipt) = &before.migration {
                 if receipt.fingerprint != fingerprint {
                     return Err(Error::Invalid("project permission migration input changed".into()));
@@ -403,6 +423,56 @@ mod tests {
             id: id.into(),
             rule: rule(resource),
         }
+    }
+
+    #[tokio::test]
+    async fn handoff_checks_the_durable_destination_before_import_or_retry() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("permissions.db");
+        let project = Authority::open(&path)
+            .await
+            .unwrap()
+            .project("project".into())
+            .unwrap();
+        let before = project.put(rule("native/**")).await.unwrap();
+        let input = vec![LegacyRule {
+            id: "legacy".into(),
+            rule: rule("legacy/**"),
+        }];
+        assert!(project
+            .handoff(uuid::Uuid::new_v4().to_string(), input.clone())
+            .await
+            .is_err());
+        assert_eq!(project.snapshot().await.unwrap(), before);
+        let imported = project
+            .handoff(before.authority.clone(), input.clone())
+            .await
+            .unwrap();
+        assert_eq!(imported.migration.as_ref().unwrap().imported, 1);
+        project.remove("legacy".into()).await.unwrap();
+        let revoked = project.snapshot().await.unwrap();
+        let peer = Authority::open(&path)
+            .await
+            .unwrap()
+            .project("project".into())
+            .unwrap();
+        assert_eq!(
+            peer.handoff(before.authority.clone(), input.clone())
+                .await
+                .unwrap(),
+            revoked
+        );
+        let replacement = uuid::Uuid::new_v4().to_string();
+        Connection::open(&path)
+            .unwrap()
+            .execute("UPDATE permission_authority SET id=?1", [&replacement])
+            .unwrap();
+        assert!(peer.handoff(before.authority, input).await.is_err());
+        let after = peer.snapshot().await.unwrap();
+        assert_eq!(after.authority, replacement);
+        assert_eq!(after.rules, revoked.rules);
+        assert_eq!(after.revision, revoked.revision);
+        assert_eq!(after.migration, revoked.migration);
     }
 
     #[tokio::test]

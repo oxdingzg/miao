@@ -850,5 +850,43 @@ Read timeouts do not imply a rule mutation; write timeouts retire the transport
 and require inspection of the durable snapshot before deciding on another write.
 
 This is trusted local rule-management control, not a model authorization tool or
-a Session execution owner. Runtime source/pending/always integration, directory
-scope preservation, product activation and legacy write retirement remain open.
+a Session execution owner. Runtime source/pending/always integration, product
+activation and legacy write retirement remain open.
+
+`permission_context_store: 1` additionally advertises startup binding with
+`--directory PATH [--workspace-id ID]`. The directory is canonicalized and must
+exist; explicit workspace identity is isolated from omitted implicit-local
+placement. Invalid bindings fail before opening the database. The project-only
+entry point remains compatible and refuses context requests without a binding.
+Additional methods use the same frame validation and timeout behavior:
+
+- `context_snapshot`: project snapshot plus canonical `directory`, nullable
+  `workspace_id`, directory `revision`, nullable directory migration receipt,
+  and active native `patterns`, all in one read transaction.
+- `context_put {rule}`: directory-only standing allow, returning that snapshot.
+- `context_remove {id}`: revoke only in the bound directory and workspace identity.
+- `context_migrate {patterns}`: explicit one-time handoff of native directory
+  patterns, retaining their IDs and timestamps. Changed inputs fail; exact retry
+  does not resurrect revoked patterns.
+
+Per-frame requests cannot change any binding. The combined project/directory
+budget counts unique rule content; directory rules never become project grants.
+This API does not freeze the old source or activate automatic product migration.
+
+`permission_project_handoff: 1` advertises `handoff {authority,rules}` on the
+project control endpoint. The expected durable authority identity is checked
+inside the same write transaction before importing rules **or accepting an
+existing receipt retry**. A mismatching destination fails without modifying
+rules, receipt or revision. Hosts freezing a source must use this method instead
+of unbound `migrate`, and probe support before preparing the source. A database
+pathname alone is not a durable destination identity.
+
+`permission_context_handoff: 1` similarly advertises
+`context_handoff {authority,patterns}` on a directory-bound controller. It checks
+the expected project database identity inside the directory write transaction,
+before the first import and before accepting a receipt retry. IDs, timestamps,
+revocations and the combined rule budget follow `context_migrate`. A mismatched
+identity changes neither directory nor project state. The request cannot change
+the startup project, canonical directory or workspace identity. Frozen directory
+sources must use this method and probe its capability before preparing a handoff;
+this destination operation does not itself freeze or retire their old writer.

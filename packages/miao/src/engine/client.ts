@@ -425,13 +425,31 @@ export class EngineClient {
   }
 
   /** Project control starts without model configuration or provider credentials. */
-  static startPermissionStore(options: { binary: string; db: string; project: string; requestTimeoutMs?: number }) {
-    const child = spawn([options.binary, "permissions", "--db", options.db, "--project", options.project], {
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-      env: permissionEnvironment(),
-    })
+  static startPermissionStore(options: {
+    binary: string
+    db: string
+    project: string
+    context?: { directory: string; workspaceID?: string }
+    requestTimeoutMs?: number
+  }) {
+    const child = spawn(
+      [
+        options.binary,
+        "permissions",
+        "--db",
+        options.db,
+        "--project",
+        options.project,
+        ...(options.context ? ["--directory", options.context.directory] : []),
+        ...(options.context?.workspaceID !== undefined ? ["--workspace-id", options.context.workspaceID] : []),
+      ],
+      {
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: permissionEnvironment(),
+      },
+    )
     return new EngineClient(child, undefined, undefined, undefined, undefined, false, options.requestTimeoutMs)
   }
 
@@ -473,6 +491,7 @@ export class EngineClient {
         if (
           [
             "snapshot",
+            "context_snapshot",
             "sessions",
             "history",
             "events",
