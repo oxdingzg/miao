@@ -1227,7 +1227,7 @@ Historical and deliberately unfenced storage rows keep a NULL epoch during
 upgrade; current lease data is never used to fabricate old execution provenance.
 Such rows cannot act as live permission sources. This does not resume provider
 work or create another Session/drain identity. Older Session-store writers refuse
-schema 22; the separate project permission database retains its own schema v2.
+schema 22; the separate project permission database retains its own schema version.
 
 Format publication and schema changes share an immediate SQLite transaction.
 Upgrading an older store is refused while a recorded running-run owner process
@@ -1295,3 +1295,29 @@ directory are refused; durable prompt admission remains separate, and failed run
 start rolls promotion back without a provider request. Other directory scopes
 remain available. Successful completion retains the freeze until shared Runtime
 ownership is configured; this control does not enable that backend automatically.
+
+### Shared permission changefeed
+
+`permission_changefeed: 1` adds `observe`, `changes {after:{authority,seq},limit}`,
+`context_observe`, and `context_changes` to model-free permission control.
+`observe` returns `{snapshot,cursor}` in one read transaction. Changes contain
+only standing-rule invalidations: `{seq,scope,revision,recorded_at_ms}`, with a
+`project` scope or a `directory` scope naming its canonical directory and
+optional explicit workspace identity. Consumers reload the corresponding
+snapshot; a journal invalidation is not a permission grant.
+
+The separate MIAP authority schema v3 appends invalidations through revision
+triggers, including writes by already-open v2 connections. Rule, handoff receipt,
+revision, and invalidation commit or roll back together. Updates and deletes of
+journal rows are refused. Upgrading preserves the Root UUID, rules, revisions,
+and receipts; older history is represented by the initial observation rather
+than synthesized journal events. Existing `snapshot` response shapes stay intact.
+
+Cursors belong to the authority UUID and its own monotonic sequence, never a
+Session journal. Replaced-Root, future, unsafe-integer and invalid-page cursors
+are rejected; page limits are 1..256. Project controllers see only their bound
+project; directory controllers see that project's standing-rule changes plus
+only their own directory/workspace changes. A nonfinal page advances through
+its last returned change; a final page advances to the captured Root watermark,
+including filtered-out changes, without skipping later matching writes.
+This does not activate shared Runtime authorization or settle pending requests.

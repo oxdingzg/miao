@@ -13,7 +13,7 @@ use std::path::Path;
 use tokio::sync::{mpsc, oneshot};
 
 const APPLICATION_ID: u32 = 0x4d494150;
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 const NATIVE_PREFIX: &str = "psv_native_project_";
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -110,6 +110,36 @@ impl Authority {
 }
 
 impl Project {
+    pub async fn observe(
+        &self,
+    ) -> Result<crate::permission_changefeed::Observation<Snapshot>, Error> {
+        let project = self.project.clone();
+        self.authority
+            .call(move |connection| {
+                let transaction = connection.transaction()?;
+                let snapshot = view(&transaction, &project)?;
+                let cursor = crate::permission_changefeed::cursor(&transaction)?;
+                transaction.commit()?;
+                Ok(crate::permission_changefeed::Observation { snapshot, cursor })
+            })
+            .await
+    }
+
+    pub async fn changes(
+        &self,
+        input: crate::permission_changefeed::Input,
+    ) -> Result<crate::permission_changefeed::Page, Error> {
+        let project = self.project.clone();
+        self.authority
+            .call(move |connection| {
+                let transaction = connection.transaction()?;
+                let page = crate::permission_changefeed::page(&transaction, &project, None, input)?;
+                transaction.commit()?;
+                Ok(page)
+            })
+            .await
+    }
+
     pub async fn snapshot(&self) -> Result<Snapshot, Error> {
         let project = self.project.clone();
         self.authority
@@ -252,6 +282,9 @@ fn initialize(connection: &mut Connection) -> Result<(), Error> {
     }
     if version < 2 {
         crate::permission_context::initialize(&transaction)?;
+    }
+    if version < 3 {
+        crate::permission_changefeed::initialize(&transaction)?;
     }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
