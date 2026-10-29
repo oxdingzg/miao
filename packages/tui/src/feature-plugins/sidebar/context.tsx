@@ -4,6 +4,7 @@ import type { BuiltinTuiPlugin } from "../builtins"
 import { contextUsage } from "../../util/context-usage"
 import { Currency } from "../../util/currency"
 import { cacheEconomy } from "../../util/cache-economy"
+import { CacheBreakNotice, cacheBreak } from "../../util/cache-break"
 import { CachePricing, isOffPeak, isTimeOfDayPriced, priceMultiplier } from "../../util/cache-pricing"
 import { cacheTrend } from "../../util/cache-trend"
 import { cacheTtl } from "../../util/cache-ttl"
@@ -113,6 +114,12 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     const amount = economy().saved
     return amount < 0 ? `${money(-amount)} cache cost` : `${money(amount)} saved`
   })
+
+  // Only a transcript that records why the prefix stopped being reused names a
+  // cause: a collapse with no compaction or switch behind it stays unreported.
+  const breakNotice = createMemo(() =>
+    props.api.kv.get(CacheBreakNotice.KV, CacheBreakNotice.DEFAULT) ? cacheBreak(msg()) : undefined,
+  )
 
   // A recorded amount is real regardless of which model the session has
   // selected now; a session that priced nothing is only unknown when its turns
@@ -289,6 +296,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         read {compact(economy().read)} · write {compact(economy().write)} · {savedRow()}
         {pricing() ? ` · ${pricing()}` : ""}
       </text>
+      <Show when={breakNotice()}>
+        {(notice) => <text fg={theme().warning}>cache broke · {notice().detail}</text>}
+      </Show>
       <Show when={ttl()}>
         {(cache) => (
           <text fg={theme()[TTL_COLOR[cache().state]]}>
@@ -340,6 +350,21 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
 }
 
 const tui: TuiPlugin = async (api) => {
+  api.keymap.registerLayer({
+    commands: [
+      {
+        name: "context.cache-break-notice",
+        title: "Toggle cache break notice",
+        category: "System",
+        namespace: "palette",
+        run() {
+          const shown = api.kv.get(CacheBreakNotice.KV, CacheBreakNotice.DEFAULT)
+          api.kv.set(CacheBreakNotice.KV, !shown)
+        },
+      },
+    ],
+    bindings: [],
+  })
   api.slots.register({
     order: 100,
     slots: {
