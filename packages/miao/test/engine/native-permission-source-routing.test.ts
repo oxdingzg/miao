@@ -27,7 +27,6 @@ test.skipIf(!binary)(
           yield* setup(fixture)
           const permission = yield* PermissionV2.Service
           const sources = yield* PermissionSource.Service
-          yield* sources.enable
           const request = fixture.request("source", "*")
           if (request.source?.type !== "tool") throw new Error("tool source required")
           yield* sources.bind({ sessionID: request.sessionID, source: request.source, executor: fixture.permission })
@@ -60,7 +59,7 @@ test.skipIf(!binary)(
 )
 
 test.skipIf(!binary)(
-  "native routing rejects missing, duplicate and released bindings without restoring TS authorization",
+  "native placement requires a binding from its first permission call and rejects duplicate or released sources",
   async () => {
     await using fixture = await nativeHostSource()
     await Effect.runPromise(
@@ -69,9 +68,14 @@ test.skipIf(!binary)(
           yield* setup(fixture)
           const permission = yield* PermissionV2.Service
           const sources = yield* PermissionSource.Service
+          const agents = yield* AgentV2.Service
+          yield* agents.transform((editor) =>
+            editor.update(AgentV2.ID.make("test"), (agent) => {
+              agent.permissions = [{ action: "*", resource: "*", effect: "allow" }]
+            }),
+          )
           const request = fixture.request("bound", "*", { action: "noop" })
           if (request.source?.type !== "tool") throw new Error("tool source required")
-          yield* sources.enable
           const missing = yield* Effect.exit(permission.assert(request))
           expect(Exit.isFailure(missing)).toBe(true)
           if (Exit.isFailure(missing))

@@ -192,3 +192,13 @@ psv_native_ 标识，并携带 origin=native、规范目录 scope；查询其他
 提供的工作目录或原生 ID。重复撤销幂等，不会撤销另一目录的规则；旧产品规则保持独立。
 不能控制原生规则的 TS 模式返回明确 Conflict，而不是假装撤销成功。该切片提供 API 和
 生成 SDK 的投影/撤销能力；管理界面、事件驱动的持久投影与完整 S6 验收仍待收口。
+
+### 7.10 Native placement 的判定切换
+
+Core 的 ask/assert 每次先读取 Session 的持久 placement。Native Session 从第一次权限调用
+起必须有当前工具的来源绑定；没有绑定、来源缺失、能力不足而未能接线、绑定释放后，均失败
+关闭，不再以 Location 是否曾启用路由作为退回 TS 判定的条件。Location 服务只保存当前绑定，
+没有可恢复旧判定的模式开关。TS-owned Session 保留原有判定，供兼容与对照验收。
+
+此切片只移除 Native ask/assert 的第二判定路径；旧产品保存规则的导入/持久投影退役、
+Native 权限 profile 诊断及 §4 的完整脚本验收仍须分别完成。能力缺失不能制造 Native 授权。

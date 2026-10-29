@@ -15,9 +15,6 @@ export class Unavailable extends Schema.TaggedErrorClass<Unavailable>()("Permiss
 }) {}
 
 export interface Interface {
-  /** Once enabled, closing a call must never restore legacy authorization. */
-  readonly enable: Effect.Effect<void>
-  readonly required: Effect.Effect<boolean>
   readonly get: (input: Invocation) => Effect.Effect<Executor | undefined>
   readonly bind: (input: {
     sessionID: SessionID
@@ -32,19 +29,12 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const bindings = new Map<string, Executor>()
-    // This Location's routing mode is monotonic. Retained plugin callbacks must
-    // fail closed after their scoped binding or even the Location has closed.
-    const mode = { required: false }
     const key = (input: Invocation) =>
       input.source?.type === "tool"
         ? JSON.stringify([input.sessionID, input.source.messageID, input.source.callID])
         : undefined
     yield* Effect.addFinalizer(() => Effect.sync(() => bindings.clear()))
     return Service.of({
-      enable: Effect.sync(() => {
-        mode.required = true
-      }),
-      required: Effect.sync(() => mode.required),
       get: (input) =>
         Effect.sync(() => {
           const id = key(input)
