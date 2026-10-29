@@ -16,6 +16,7 @@ function missingRequest(id: PermissionV2.ID) {
 
 export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", (handlers) =>
   Effect.gen(function* () {
+    const database = yield* Database.Service
     return handlers
       .handle(
         "permission.request.list",
@@ -25,7 +26,6 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
           const host = yield* permission.list()
           if (Option.isNone(native)) return yield* response(Effect.succeed(host))
           const location = yield* Location.Service
-          const database = yield* Database.Service
           const placements = yield* SessionEnginePlacement.list(database.db)
           const pending = yield* Effect.forEach(
             placements.filter(
