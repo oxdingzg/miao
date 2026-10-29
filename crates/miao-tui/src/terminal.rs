@@ -16,6 +16,15 @@ use crate::config::{Cursor, CursorShape};
 
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 
+/// Covers normal exit and every error after raw-mode initialization begins.
+pub struct RestoreGuard;
+
+impl Drop for RestoreGuard {
+    fn drop(&mut self) {
+        restore();
+    }
+}
+
 /// Terminal settings that must be re-applied after the external editor gives
 /// the screen back.
 #[derive(Debug, Clone, Copy, Default)]

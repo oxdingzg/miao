@@ -5,4 +5,5 @@
 pub mod attention;
 pub mod clipboard;
 pub mod editor;
+pub mod signals;
 pub mod zed;

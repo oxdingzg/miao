@@ -800,6 +800,36 @@ fn panic_restores_terminal() {
     harness.shutdown();
 }
 
+#[cfg(unix)]
+#[test]
+fn exit_signals_restore_the_terminal() {
+    for signal in ["TERM", "HUP", "INT"] {
+        let mut harness = Harness::spawn(&format!("signal-{signal}"), false);
+        assert!(wait_for_plain(
+            &harness,
+            "miao-tui-smoke",
+            Duration::from_secs(3)
+        ));
+        let pid = harness.child.process_id().expect("child pid").to_string();
+        assert!(std::process::Command::new("kill")
+            .args([&format!("-{signal}"), &pid])
+            .status()
+            .expect("send exit signal")
+            .success());
+        let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+            .expect("signal did not stop the UI");
+        assert!(status.success(), "{signal}: {status:?}");
+        assert!(
+            wait_for(&harness, "\x1b[?1049l", Duration::from_secs(2)),
+            "{signal} did not leave the alternate screen: {}",
+            harness.text()
+        );
+        assert!(harness.text().contains("\x1b[?2004l"));
+        assert!(harness.text().contains("\x1b[?1004l"));
+        harness.shutdown();
+    }
+}
+
 #[test]
 fn saved_permissions_review_and_revoke_through_the_engine_wire() {
     let mut harness = Harness::spawn_engine("saved-permissions");
