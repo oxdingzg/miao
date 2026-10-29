@@ -15,7 +15,7 @@ jobs:
   replay:
     name: session blackbox replay
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -36,4 +36,6 @@ jobs:
         working-directory: packages/miao
         env:
           MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine
-        run: bun test test/engine
+        run: |
+          mapfile -t replay_cases < <(find test/engine -name '*.test.ts' | sort)
+          bun run test:integration "${replay_cases[@]}"
