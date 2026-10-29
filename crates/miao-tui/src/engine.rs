@@ -30,6 +30,10 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const EVENTS_PAGE: usize = 100;
 
 pub enum Request {
+    VcsChanges {
+        generation: u64,
+        session_id: String,
+    },
     SavedPermissions {
         generation: u64,
     },
@@ -147,6 +151,13 @@ impl Handle {
 }
 
 impl Handle {
+    pub fn vcs_changes(&self, generation: u64, session_id: &str) {
+        let _ = self.tx.send(Request::VcsChanges {
+            generation,
+            session_id: session_id.into(),
+        });
+    }
+
     pub fn saved_permissions(&self, generation: u64) {
         let _ = self.tx.send(Request::SavedPermissions { generation });
     }
@@ -612,6 +623,14 @@ async fn run(
                             bus.send(AppEvent::ActionFailed(format!("reject failed: {error}")))
                         }
                     }
+                }
+                Some(Request::VcsChanges { generation, session_id }) => {
+                    let result = client
+                        .request("vcs_status", json!({ "session_id": session_id }))
+                        .await
+                        .map_err(|error| error.to_string())
+                        .and_then(crate::workspace_changes::decode);
+                    bus.send(AppEvent::WorkspaceChanges { generation, result });
                 }
                 Some(Request::SavedPermissions { generation }) => {
                     let result = client.command("permission_pattern_list").await

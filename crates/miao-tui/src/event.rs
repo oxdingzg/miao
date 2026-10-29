@@ -46,6 +46,10 @@ pub enum AppEvent {
         id: String,
         result: Result<(), String>,
     },
+    WorkspaceChanges {
+        generation: u64,
+        result: Result<crate::workspace_changes::VcsState, String>,
+    },
     /// The selectable accounts named by the same catalog.
     Accounts(Vec<AccountInfo>),
     /// The open Session's billed usage, for the status dialog.

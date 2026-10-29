@@ -224,6 +224,7 @@ impl ConfirmDialog {
 
 pub enum Dialog {
     SavedPermissions(crate::saved_permissions::Dialog),
+    WorkspaceChanges(crate::workspace_changes::Dialog),
     Models(ListDialog),
     Theme(ListDialog),
     Sessions(ListDialog),
@@ -465,6 +466,7 @@ impl Dialog {
         }
         match self {
             Dialog::SavedPermissions(dialog) => dialog.handle_key(key),
+            Dialog::WorkspaceChanges(dialog) => dialog.handle_key(key),
             Dialog::Models(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
@@ -483,6 +485,7 @@ impl Dialog {
     pub fn title(&self) -> &'static str {
         match self {
             Dialog::SavedPermissions(_) => "saved permissions",
+            Dialog::WorkspaceChanges(_) => "workspace changes",
             Dialog::Models(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
@@ -577,6 +580,7 @@ impl Dialog {
 pub enum Action {
     RefreshPermissions,
     RevokePermission(String),
+    RefreshWorkspaceChanges(String),
     None,
     Close,
     Chosen(usize),
