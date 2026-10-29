@@ -901,3 +901,13 @@ Format publication and schema changes share an immediate SQLite transaction.
 Upgrading an older store is refused while a recorded running-run owner process
 is alive; its schema, format and rows remain available to that older owner.
 Finished runs and dead owners do not require provider recovery to upgrade.
+
+Local `cancel` and matching `cancel_if` withdraw the Session's product bridge
+sources before acknowledging acceptance. Withdrawal serializes with the same
+bridge lock held through a permission commit: an already-entered commit may
+finish before the acknowledgement, but cannot finish after it. Stale conditional
+interrupts leave the current run's sources intact. Cancellation notices to the
+host are delivered separately so output backpressure does not delay this fence;
+their tasks remain owned by the Session actor. Detach waits for pending notices,
+while global shutdown can abort their delivery. A foreign owner's durable
+`run.cancel_requested` remains an advisory request for that owner to consume.

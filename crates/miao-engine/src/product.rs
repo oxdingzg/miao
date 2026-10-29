@@ -290,21 +290,30 @@ impl Bridge {
     /// stop its children instead of waiting on a parent that is gone; the
     /// dropped senders fail every awaiting call, hook dispatches included.
     pub async fn cancel_session(&self, session: &str) -> Vec<u64> {
-        let product_ids: Vec<u64> = {
-            let mut pending = self.pending.lock().unwrap();
-            let mut product_ids = Vec::new();
-            pending.retain(|id, call| {
-                if call.session != session {
-                    return true;
-                }
-                if call.method == "product_tool" {
-                    product_ids.push(*id);
-                }
-                false
-            });
-            product_ids
-        };
-        for id in &product_ids {
+        let product_ids = self.withdraw_session(session);
+        self.notify_cancellation(session, &product_ids).await;
+        product_ids
+    }
+
+    /// Withdraw authority synchronously with the authorization commit lock.
+    /// Host notification may be backpressured and is not the cancellation fence.
+    pub(crate) fn withdraw_session(&self, session: &str) -> Vec<u64> {
+        let mut pending = self.pending.lock().unwrap();
+        let mut product_ids = Vec::new();
+        pending.retain(|id, call| {
+            if call.session != session {
+                return true;
+            }
+            if call.method == "product_tool" {
+                product_ids.push(*id);
+            }
+            false
+        });
+        product_ids
+    }
+
+    pub(crate) async fn notify_cancellation(&self, session: &str, product_ids: &[u64]) {
+        for id in product_ids {
             let notice = serde_json::json!({
                 "bridge_id": id,
                 "method": "product_tool.cancel",
@@ -314,7 +323,6 @@ impl Bridge {
                 break;
             }
         }
-        product_ids
     }
 }
 

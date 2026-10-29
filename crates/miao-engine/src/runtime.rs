@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod cancel_authority_tests;
 mod command;
 mod shell;
 use crate::{
@@ -1372,8 +1374,26 @@ async fn refuse_shell_queue(
     }
 }
 
+fn withdraw_product_sources(inner: &Inner, session: &str, notifications: &mut JoinSet<()>) {
+    let (bridge, ids) = {
+        let product = inner.product.read().unwrap();
+        let Some(bridge) = &product.bridge else {
+            return;
+        };
+        (bridge.clone(), bridge.withdraw_session(session))
+    };
+    if ids.is_empty() {
+        return;
+    }
+    let session = session.to_owned();
+    // A stalled host must not hold the interrupt acknowledgement hostage.
+    // Source withdrawal, including any in-flight commit, already finished.
+    notifications.spawn(async move { bridge.notify_cancellation(&session, &ids).await });
+}
+
 async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Receiver<Command>) {
     let mut tasks = JoinSet::new();
+    let mut notifications = JoinSet::new();
     let mut active: Option<CancellationToken> = None;
     let mut wake = None;
     let mut shells = std::collections::VecDeque::<crate::session_shell::Invocation>::new();
@@ -1413,6 +1433,7 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                     wake=None;
                     refuse_shell_queue(&inner,&session,&mut shells).await;
                     if let Some(cancel)=&active { cancel.cancel(); }
+                    withdraw_product_sources(&inner,&session,&mut notifications);
                     let _=reply.send(active.is_some());
                 }
                 Some(Command::CancelIf(expected,reply)) => {
@@ -1423,6 +1444,7 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                             wake = None;
                             refuse_shell_queue(&inner,&session,&mut shells).await;
                             if let Some(token) = &active { token.cancel(); }
+                            withdraw_product_sources(&inner,&session,&mut notifications);
                             Ok(true)
                         }
                         Ok(_) => Ok(false),
@@ -1434,8 +1456,19 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                     let result=if active.as_ref().is_none_or(|token|token.is_cancelled()){Err(Error::ApprovalResolved)}else if persistent {inner.store.resolve_approval_persistent(&session,response).await.map(|_|())} else {inner.store.resolve_approval(&session,response).await.map(|_|())};
                     let _=reply.send(result);
                 },
-                None => break,
+                None => {
+                    // Detach retains the old notification delivery guarantee;
+                    // global shutdown drops this scoped set with the actor.
+                    while !notifications.is_empty() {
+                        tokio::select! {
+                            _=inner.stop.cancelled() => break,
+                            _=notifications.join_next() => {},
+                        }
+                    }
+                    break;
+                },
             },
+            _=notifications.join_next(), if !notifications.is_empty() => {},
             result=tasks.join_next(), if active.is_some() => {
                 active=None;
                 active_shell=None;
