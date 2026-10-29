@@ -166,7 +166,7 @@ miao
 
 - `lsp: true` 启用后，读/写文件会懒激活语言服务器，编辑后把诊断回灌给模型（`LSP errors detected… please fix`）。
 - `formatter: true` 启用后，`edit`/`write`/`apply_patch` 成功后按扩展名跑格式化命令。
-- 侧边栏 LSP 一栏显示服务器连接状态；**改配置后需重启 miao 才生效**。
+- 侧边栏 LSP 一栏显示服务器连接状态；原生引擎会自己发现配置改动并就地增删语言服务器，不必重启；TypeScript 引擎仍在启动时读取配置。
 
 ### 5.6 内核级沙箱（需开启）
 
@@ -238,7 +238,7 @@ V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或
 ## 7. 常见问题（FAQ）
 
 **Q：侧边栏 LSP 一直显示 “LSPs are disabled”？**
-配置里没写 `lsp`（省略即禁用）。在 `miao.jsonc` 加 `"lsp": true` 并**重启 miao**（当前会话读的是启动时配置）。
+配置里没写 `lsp`（省略即禁用）。在 `miao.jsonc` 加 `"lsp": true` 即可：原生引擎会重载配置并连上语言服务器，不必重启；TypeScript 引擎仍需重启 miao。
 
 **Q：`ctrl+x b` 打不开侧边栏？**
 子会话（由 task/subagent 派生、`parent_id` 非空）侧边栏被强制隐藏；顶层会话可用。窄终端（宽度 ≤120）auto 模式也不默认显示，但手动 toggle 有效。
