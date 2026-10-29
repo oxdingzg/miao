@@ -411,6 +411,12 @@ pub enum Command {
     Usage {
         session_id: String,
     },
+    /// Read-only Git state of the Session's workspace (WSP-02). A location that
+    /// is not inside a repository answers `{"repository": false}` rather than
+    /// failing, because "there is no repository here" is a normal answer.
+    VcsStatus {
+        session_id: String,
+    },
     UpdateState {
         session_id: String,
         operation_id: String,

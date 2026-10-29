@@ -246,6 +246,7 @@ impl Host {
             Command::ConfigReload => runtime.reload_config().await,
             Command::State { session_id } => runtime.store().state(&session_id).await,
             Command::Usage { session_id } => runtime.store().usage_report(&session_id).await,
+            Command::VcsStatus { session_id } => runtime.store().vcs_status(&session_id).await,
             Command::UpdateState {
                 session_id,
                 operation_id,
