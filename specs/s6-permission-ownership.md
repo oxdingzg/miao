@@ -400,3 +400,17 @@ Session schema25 为投影保存 Root事件摘要与分范围游标，事件、�
 重新导入旧规则。原生提交后响应丢失或 Core 保存回执失败，只保留 prepared 边界；使用
 新连接重试仍交给原生原始输入凭据核对，不复活已撤销行。不同目标库和并发宿主均通过
 实际控制进程测试。这个驱动没有注册到模型工具、启动迁移或 Runtime 授权路径。
+
+
+### 显式共享 Runtime 与启动门禁
+
+可信宿主现在可以用配对回执显式构造共享 Runtime。run 标记使用实际 Runtime UUID、PID
+和捕获的 Session lease；原生 configured allow 也先检查此归属。standing 规则和精确缓存
+命名空间来自 Root；精确调用 grant 继续留在 Source。宿主断言走 Root，取消及执行结束先
+撤回来源并清理 pending，再确认相应完成边界。旧执行已从 Source 删除时，通知只推进游标，
+不重新生成历史；同 Session ID 后来被重用也不接收旧执行的问题。
+
+CLI 的成对 Root/project 参数只接受已经完成的项目与目录交接，不隐式迁移或回退。
+显式 model-free 初始化入口只建 Source 存储，不建 Session 或启动 provider；旧控制入口仍
+拒绝缺失数据库。Root 文件须在模型工作目录之外，且作为受保护资源包含 WAL/SHM。
+这些草稿能力尚未接入受管理产品启动、跨进程变更唤醒及 TUI，仍不代表 §4 总体验收完成。

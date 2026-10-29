@@ -35,6 +35,8 @@ export type Capabilities = {
   permissionProjectHandoff?: number
   permissionContextHandoff?: number
   permissionSourceHandoff?: number
+  permissionSourceInitialize?: number
+  sharedPermissionRuntime?: number
   permissionChangefeed?: number
   permissionProjectStore?: number
   permissionImportChanges?: number
@@ -99,6 +101,9 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (wire.permission_patterns !== undefined && !isRevision(wire.permission_patterns)) return undefined
     if (wire.permission_project_handoff !== undefined && !isRevision(wire.permission_project_handoff)) return undefined
     if (wire.permission_context_handoff !== undefined && !isRevision(wire.permission_context_handoff)) return undefined
+    if (wire.permission_source_initialize !== undefined && !isRevision(wire.permission_source_initialize))
+      return undefined
+    if (wire.shared_permission_runtime !== undefined && !isRevision(wire.shared_permission_runtime)) return undefined
     if (wire.permission_source_handoff !== undefined && !isRevision(wire.permission_source_handoff)) return undefined
     if (wire.permission_changefeed !== undefined && !isRevision(wire.permission_changefeed)) return undefined
     if (wire.permission_context_store !== undefined && !isRevision(wire.permission_context_store)) return undefined
@@ -117,6 +122,12 @@ export function capabilities(binary: string): Capabilities | undefined {
         ? { permissionContextHandoff: wire.permission_context_handoff }
         : {}),
       ...(typeof wire.permission_changefeed === "number" ? { permissionChangefeed: wire.permission_changefeed } : {}),
+      ...(typeof wire.permission_source_initialize === "number"
+        ? { permissionSourceInitialize: wire.permission_source_initialize }
+        : {}),
+      ...(typeof wire.shared_permission_runtime === "number"
+        ? { sharedPermissionRuntime: wire.shared_permission_runtime }
+        : {}),
       ...(typeof wire.permission_source_handoff === "number"
         ? { permissionSourceHandoff: wire.permission_source_handoff }
         : {}),
@@ -173,6 +184,7 @@ export function resolveEngine(
     executable?: string
     launcher?: string
     requireSavedRulesSnapshot?: boolean
+    requireSharedPermissions?: boolean
   } = {},
 ): { binary: string; capabilities: Capabilities } | undefined {
   const environment = input.environment ?? process.env
@@ -181,14 +193,15 @@ export function resolveEngine(
   const compatible = (found: Capabilities) =>
     found.protocol >= REQUIRED_PROTOCOL &&
     (found.routesSchema === undefined || found.routesSchema >= REQUIRED_ROUTES_SCHEMA) &&
-    (!input.requireSavedRulesSnapshot || (found.savedRulesSnapshot ?? 0) >= REQUIRED_SAVED_RULES_SNAPSHOT)
+    (!input.requireSavedRulesSnapshot || (found.savedRulesSnapshot ?? 0) >= REQUIRED_SAVED_RULES_SNAPSHOT) &&
+    (!input.requireSharedPermissions || found.sharedPermissionRuntime === 1)
   const explicit = environment.MIAO_ENGINE_BIN
   if (explicit) {
     const found = exists(explicit) ? probe(explicit) : undefined
     if (!found || !compatible(found)) {
       throw new Error(
         found
-          ? `MIAO_ENGINE_BIN=${explicit} reports protocol ${found.protocol} and route schema ${found.routesSchema ?? "unknown"} but this build requires protocol ${REQUIRED_PROTOCOL} and route schema ${REQUIRED_ROUTES_SCHEMA}${input.requireSavedRulesSnapshot ? ` and saved-rule snapshots ${REQUIRED_SAVED_RULES_SNAPSHOT}` : ""}`
+          ? `MIAO_ENGINE_BIN=${explicit} reports protocol ${found.protocol} and route schema ${found.routesSchema ?? "unknown"} but this build requires protocol ${REQUIRED_PROTOCOL} and route schema ${REQUIRED_ROUTES_SCHEMA}${input.requireSavedRulesSnapshot ? ` and saved-rule snapshots ${REQUIRED_SAVED_RULES_SNAPSHOT}` : ""}${input.requireSharedPermissions ? " and shared permission Runtime 1" : ""}`
           : `MIAO_ENGINE_BIN=${explicit} cannot report capabilities`,
       )
     }
