@@ -163,6 +163,7 @@ test.skipIf(!binary)(
               { id: "declined", resource: "declined", reply: "reject" },
               { id: "corrected", resource: "corrected", reply: "reject", feedback: "Inspect settings first" },
               { id: "after-rejection", resource: "future", reply: "once" },
+              { id: "cancelled", resource: "cancelled", cancel: true },
             ] as const
             for (const step of steps) {
               const input = fixture.request(step.id, step.resource, {
@@ -170,10 +171,12 @@ test.skipIf(!binary)(
                 ...("save" in step ? { save: step.save } : {}),
               })
               const fiber = yield* permission.assert(input).pipe(Effect.exit, Effect.forkScoped)
-              if ("reply" in step) {
+              if ("reply" in step || "cancel" in step) {
                 const message = "feedback" in step ? step.feedback : undefined
-                if (native)
-                  yield* Effect.promise(async () => fixture.reply(await fixture.wait(step.id), step.reply, message))
+                if (native) {
+                  const pending = yield* Effect.promise(() => fixture.wait(step.id))
+                  if ("reply" in step) yield* Effect.promise(() => fixture.reply(pending, step.reply, message))
+                }
                 if (!native) {
                   yield* Effect.promise(async () => {
                     const deadline = Date.now() + 5_000
@@ -182,8 +185,25 @@ test.skipIf(!binary)(
                       await Bun.sleep(5)
                     }
                   })
-                  yield* permission.reply({ requestID: input.id!, reply: step.reply, message })
+                  if ("reply" in step) yield* permission.reply({ requestID: input.id!, reply: step.reply, message })
                 }
+              }
+              if ("cancel" in step) {
+                yield* Fiber.interrupt(fiber)
+                const interrupted = yield* Fiber.await(fiber)
+                expect(Exit.isFailure(interrupted)).toBe(true)
+                if (Exit.isFailure(interrupted)) expect(Cause.hasInterruptsOnly(interrupted.cause)).toBe(true)
+                if (native)
+                  expect(
+                    yield* Effect.promise(() =>
+                      fixture.client.request("product_permission_status", {
+                        source: fixture.source,
+                        request_id: input.id,
+                      }),
+                    ),
+                  ).toMatchObject({ state: "cancelled", reason: "caller_cancelled" })
+                outcomes.push("interrupted")
+                continue
               }
               const result = yield* Fiber.join(fiber)
               if (Exit.isSuccess(result)) {
@@ -227,8 +247,17 @@ test.skipIf(!binary)(
         "declined",
         "corrected:Inspect settings first",
         "allowed",
+        "interrupted",
       ],
-      asks: ["per_once-one", "per_once-two", "per_always", "per_declined", "per_corrected", "per_after-rejection"],
+      asks: [
+        "per_once-one",
+        "per_once-two",
+        "per_always",
+        "per_declined",
+        "per_corrected",
+        "per_after-rejection",
+        "per_cancelled",
+      ],
     })
   },
   45_000,
