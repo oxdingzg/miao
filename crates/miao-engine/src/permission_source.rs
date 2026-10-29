@@ -314,6 +314,10 @@ mod tests {
         assert_eq!(prepared.state, State::Prepared);
         assert_eq!(prepared.patterns.len(), 2);
         assert!(source
+            .replace_saved_rules(workspace.clone(), Vec::new())
+            .await
+            .is_err());
+        assert!(source
             .complete_directory_permission_source(workspace.clone(), initial)
             .await
             .is_err());

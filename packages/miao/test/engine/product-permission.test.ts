@@ -28,8 +28,12 @@ async function storedRules(filename: string) {
   const { Database } = await import("bun:sqlite")
   const database = new Database(filename, { readonly: true })
   try {
+    const table =
+      (database.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version ?? 0) >= 23
+        ? "engine_permission_rule_legacy"
+        : "engine_permission_rule"
     return database
-      .query<{ rule: string }, []>("SELECT rule FROM engine_permission_rule ORDER BY digest")
+      .query<{ rule: string }, []>(`SELECT rule FROM ${table} ORDER BY digest`)
       .all()
       .map((row) => JSON.parse(row.rule) as { action: string; resource: string; effect: string })
   } finally {
