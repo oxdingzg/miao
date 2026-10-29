@@ -145,6 +145,13 @@ impl Context {
             )
             .await?;
         let has_more = page.has_more;
+        if page.cursor.seq == seq && page.events.is_empty() {
+            return Ok(Projection {
+                cursor: page.cursor,
+                emitted: 0,
+                has_more,
+            });
+        }
         source.call(move |connection| {
             let transaction=crate::store::write_tx(connection)?;
             let current=transaction.query_row("SELECT seq FROM engine_root_permission_cursor WHERE authority=?1 AND project=?2 AND location=?3",params![authority,project,location],|row|row.get::<_,u64>(0)).optional()?.unwrap_or(0);

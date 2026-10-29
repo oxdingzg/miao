@@ -83,6 +83,7 @@ struct Inner {
     draining: std::sync::Mutex<std::collections::HashSet<String>>,
     stop: CancellationToken,
     heartbeat: Mutex<Option<JoinHandle<()>>>,
+    permission_refresh: Mutex<Option<JoinHandle<()>>>,
     progress: broadcast::Sender<Value>,
     /// Reports of reloads that actually changed something, so a host can show
     /// them without having issued the reload itself.
@@ -341,6 +342,7 @@ impl Runtime {
                 draining: std::sync::Mutex::new(std::collections::HashSet::new()),
                 stop: CancellationToken::new(),
                 heartbeat: Mutex::new(None),
+                permission_refresh: Mutex::new(None),
                 progress,
                 config_changes,
                 product: Arc::new(std::sync::RwLock::new(crate::product::State::default())),
@@ -440,6 +442,34 @@ impl Runtime {
             }
         });
         *runtime.inner.heartbeat.lock().await = Some(heartbeat);
+        if runtime.inner.shared_permissions.is_some() {
+            let inner = runtime.inner.clone();
+            let refresh = tokio::spawn(async move {
+                let mut cursor = None;
+                let mut failure = None;
+                loop {
+                    tokio::select! {
+                        biased;
+                        _ = inner.stop.cancelled() => return,
+                        _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
+                    }
+                    match refresh_shared_permissions(&inner, cursor.clone()).await {
+                        Ok(next) => {
+                            cursor = Some(next);
+                            failure = None;
+                        }
+                        Err(error) => {
+                            let message = error.to_string();
+                            if failure.as_ref() != Some(&message) {
+                                eprintln!("shared permission refresh failed: {message}");
+                            }
+                            failure = Some(message);
+                        }
+                    }
+                }
+            });
+            *runtime.inner.permission_refresh.lock().await = Some(refresh);
+        }
         Ok(runtime)
     }
 
@@ -1992,6 +2022,9 @@ impl Runtime {
         self.inner.stop.cancel();
         if let Some(heartbeat) = self.inner.heartbeat.lock().await.take() {
             let _ = heartbeat.await;
+        }
+        if let Some(refresh) = self.inner.permission_refresh.lock().await.take() {
+            let _ = refresh.await;
         }
         self.inner.terminals.shutdown().await;
         let actors = std::mem::take(&mut *self.inner.actors.lock().await);
@@ -4331,6 +4364,66 @@ async fn saved_rules(inner: &Inner) -> Result<Vec<crate::permission_rules::Rule>
                 .await
         }
     }
+}
+
+// Root changes invalidate only actual local sources. A journal cursor carries
+// no execution authority: every refresh still enters the fenced transaction.
+async fn refresh_shared_permissions(
+    inner: &Inner,
+    cursor: Option<crate::permission_changefeed::Cursor>,
+) -> Result<crate::permission_changefeed::Cursor, Error> {
+    let binding = inner
+        .shared_permissions
+        .as_ref()
+        .ok_or_else(|| Error::Invalid("shared permissions are not selected".into()))?;
+    binding.snapshot().await?;
+    let next = match cursor {
+        None => binding.context().observe().await?.cursor,
+        Some(cursor) => {
+            let page = binding
+                .context()
+                .changes(crate::permission_changefeed::Input {
+                    after: cursor,
+                    limit: 256,
+                })
+                .await?;
+            page.cursor
+        }
+    };
+    let sources = inner.permission_sources.lock().unwrap().clone();
+    for source in sources {
+        let active = {
+            let product = inner.product.read().unwrap();
+            product
+                .bridge
+                .as_ref()
+                .is_some_and(|bridge| bridge.same_connection(&source.context.bridge))
+                && !source.context.authority.cancel.is_cancelled()
+                && source
+                    .context
+                    .bridge
+                    .permission_authority(&source.context.source)
+                    .is_some()
+        };
+        if !active {
+            // Replaced/withdrawn bridges are cancelled even without a rule
+            // change. Failure retains the handle and cursor for a later retry.
+            binding.context().retire_source_requests(&source).await?;
+            inner
+                .permission_sources
+                .lock()
+                .unwrap()
+                .retain(|held| held.context.source != source.context.source);
+            continue;
+        }
+        // Deadlines must settle even without a rule invalidation or a host
+        // status call. This also rechecks the captured execution claim.
+        binding.context().pending_source_requests(&source).await?;
+    }
+    // Request replies have their own durable stream, independent of rule
+    // changes. Projection is deduplicated and never creates a permission grant.
+    project_shared_permission_events(inner).await?;
+    Ok(next)
 }
 
 async fn project_shared_permission_events(inner: &Inner) -> Result<(), Error> {

@@ -1426,6 +1426,16 @@ packaged and source invocations reach the same hidden shim without `.cmd` quotin
 or bypassing product preparation. Direct invocation of `miao-engine` retains the
 explicit flag contract above.
 
-This preview does not enable migration by default. Shared changefeed supervision,
-legacy TS-session retirement and final product acceptance remain requirements
-before default activation.
+A shared Runtime supervises Root invalidations using a Root-bound rule cursor.
+Rule changes re-evaluate only captured sources belonging to the actual local
+bridge, inside the existing Source/run/lease-fenced Root transactions. Replaced
+or withdrawn local bridges retire their requests by cancellation, even without a
+rule change. Pending request deadlines are also settled without a host poll.
+Request notifications use their independent durable stream and are
+projected without a status/list call from the host. These notifications never
+authorize execution. An idle stream performs no Session database writes. Refresh
+failures retain the cursor for retry; execution still requires its own current
+fenced transaction. Shutdown stops and joins the supervisor.
+
+This preview does not enable migration by default. Legacy TS-session retirement
+and final product acceptance remain requirements before default activation.
