@@ -753,6 +753,10 @@ export const fromOwners = (
           archived: input.archived,
         }),
       ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+    pin: (input) =>
+      read<unknown>(input, (connection) =>
+        connection.client.request("pin", { session_id: input.sessionID, pinned: input.pinned }),
+      ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
     remove: (input) =>
       read<unknown>(input, (connection) => connection.client.request("remove", { session_id: input.sessionID })).pipe(
         Effect.asVoid,
