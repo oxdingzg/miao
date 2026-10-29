@@ -16,6 +16,11 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 fn main() {
+    if let Ok(expected) = std::env::var("MIAO_TUI_FAKE_EXPECT_PREFIX") {
+        let mut args = std::env::args().skip(1);
+        assert_eq!(args.next().as_deref(), Some(expected.as_str()));
+        assert_eq!(args.next().as_deref(), Some("serve"));
+    }
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
     let durable = durable_events();
