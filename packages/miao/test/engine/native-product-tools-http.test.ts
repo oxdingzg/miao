@@ -13,6 +13,7 @@ if (binary)
     ["workflow", "success"],
     ["workflow", "denied"],
     ["workflow", "cancel-peer"],
+    ["workflow", "nested"],
     ["switch_workspace", "success"],
     ["switch_workspace", "missing"],
     ["switch_workspace", "denied"],
@@ -53,6 +54,7 @@ if (binary)
             await releaseChildren.promise
           }
           const first = !childTurn && !body.messages.some((message) => message.role === "tool")
+          const nested = childTurn && outcome === "nested" && !body.messages.some((message) => message.role === "tool")
           const switched =
             toolName === "switch_workspace" &&
             outcome === "success" &&
@@ -92,6 +94,13 @@ if (binary)
                   },
                 ],
               }
+            : nested
+              ? {
+                  role: "assistant",
+                  tool_calls: [{ index: 0, id: "nested-call", type: "function", function: {
+                    name: "workflow", arguments: JSON.stringify({script: 'return await tools.workflow.agent({agent:"explore",description:"Forbidden grandchild",prompt:"spawn nested"})'}),
+                  } }],
+                }
             : switched
               ? {
                   role: "assistant",
@@ -109,7 +118,7 @@ if (binary)
                 }
               : { content: childTurn ? "workflow-child-acceptance" : "completed-product-tool-turn" }
           return new Response(
-            `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta, finish_reason: first || switched ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`,
+            `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta, finish_reason: first || switched || nested ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`,
             { headers: { "content-type": "text/event-stream" } },
           )
         },
@@ -270,7 +279,7 @@ if (binary)
         expect(context.status).toBe(200)
         const transcript = await context.json()
         const rendered = JSON.stringify(transcript.data)
-        if (outcome === "success")
+        if (outcome === "success" || outcome === "nested")
           expect(rendered).toContain(
             toolName === "switch_workspace"
               ? "destination-workspace-marker"
@@ -302,7 +311,7 @@ if (binary)
             .all(target.id)
           expect(children).toHaveLength(outcome === "denied" ? 0 : 1)
           const spawned = children.at(0)
-          if (outcome === "success") {
+          if (outcome === "success" || outcome === "nested") {
             if (!spawned) throw new Error("workflow child was not projected")
             const result = await fetch(url + "/api/session/" + spawned.id + "/context", { headers })
             expect(result.status).toBe(200)
@@ -315,11 +324,27 @@ if (binary)
             const selected = native.query<{ data: string }, [string]>(
               "select data from engine_event where session_id = ? and kind = 'session.agent.selected' order by seq desc limit 1",
             ).get(spawned.id)
+            const lineage = native.query<{ parent_session_id: string; message_seq: number }, [string]>(
+              "select parent_session_id, message_seq from engine_lineage where session_id = ?",
+            ).get(spawned.id)
+            expect(lineage).toEqual({ parent_session_id: target.id, message_seq: 0 })
+            expect(native.query<{ count: number }, [string]>(
+              "select count(*) as count from engine_input where session_id = ?",
+            ).get(spawned.id)?.count).toBe(1)
+            const childBody = JSON.parse(childRequests[0]?.body ?? "{}") as { tools: { function: { name: string } }[] }
+            expect(childBody.tools.map((tool) => tool.function.name)).not.toContain("workflow")
+            expect(childBody.tools.map((tool) => tool.function.name)).not.toContain("task")
             expect(JSON.parse(selected?.data ?? "{}").agent).toMatchObject({
               name: "explore", instructions: "WORKFLOW_EXPLORE_SYSTEM_MARKER", steps: 3, budget: 123,
               model: { protocol: "openai-chat", model: "fixture" },
             })
-            expect(childRequests).toHaveLength(1)
+            if (outcome === "nested") {
+              expect(db.query("select id from session where parent_id in (select id from session where parent_id = ?)").all(target.id)).toHaveLength(0)
+              expect(native.query<{ count: number }, [string]>(
+                "select count(*) as count from engine_event where session_id = ? and kind = 'permission_denied' and json_extract(data, '$.reason') = 'nested_delegation'",
+              ).get(spawned.id)?.count).toBe(1)
+            }
+            expect(childRequests).toHaveLength(outcome === "nested" ? 2 : 1)
             expect(childRequests[0]?.body).toContain("WORKFLOW_EXPLORE_SYSTEM_MARKER")
             expect(childRequests[0]?.agent).toBe("explore")
           }
@@ -330,7 +355,7 @@ if (binary)
         )
         expect(states).toContain(outcome === "denied" || outcome === "missing" ? "error" : "completed")
         expect(calls).toBe(
-          (toolName === "workflow" || toolName === "switch_workspace") && outcome === "success" ? 3 : 2,
+          outcome === "nested" ? 4 : (toolName === "workflow" || toolName === "switch_workspace") && outcome === "success" ? 3 : 2,
         )
         expect(tools).toContain("workflow")
       } finally {

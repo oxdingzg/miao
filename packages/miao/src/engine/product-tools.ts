@@ -617,7 +617,14 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
         yield* Effect
           .tryPromise({
             try: async () => {
-              await owner.client.request("initialize", { session_id: child, title: input.description })
+              // An empty closed prefix records native lineage without copying
+              // the parent's conversation into the delegated task.
+              await owner.client.request("fork", {
+                session_id: sessionID,
+                target_session_id: child,
+                message_seq: 0,
+              })
+              await owner.client.request("rename", { session_id: child, title: input.description })
               await owner.client.request("select_agent", { session_id: child, agent: manifest })
             },
             catch: (error) => new ToolFailure({ message: `Could not create the subagent Session: ${String(error)}` }),
