@@ -701,3 +701,74 @@ async fn exhausting_the_provider_turn_allowance_pauses_instead_of_failing() {
     assert_eq!(stop.data["reason"], "completed");
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn real_adapter_permission_profile_tracks_saved_rules_and_native_scope() {
+    let body = format!(
+        "data: {}\n\ndata: [DONE]\n\n",
+        json!({"choices":[{"index":0,"delta":{"role":"assistant","content":"done"},"finish_reason":"stop"}]})
+    );
+    let (url, mut requests, server) =
+        common::endpoint(vec![(200, body.clone()), (200, body.clone()), (200, body)]).await;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let tools = Tools::new(dir.path()).await.unwrap();
+    let workspace = tools.location().to_string();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(
+            miao_engine::openai_chat::OpenAIChat::new(url, "fixture".into(), "model".into())
+                .unwrap(),
+        ),
+        tools,
+        Policy::new(Config::default()).unwrap(),
+    )
+    .await
+    .unwrap();
+    turn(&runtime, &store, "before").await;
+    requests.recv().await.unwrap();
+    let saved = store
+        .put_permission_pattern(
+            workspace.clone(),
+            miao_engine::permission_rules::Rule {
+                action: "read".into(),
+                resource: "public/**".into(),
+                effect: miao_engine::permission::Decision::Allow,
+            },
+        )
+        .await
+        .unwrap();
+    turn(&runtime, &store, "remembered").await;
+    requests.recv().await.unwrap();
+    store
+        .remove_permission_pattern(workspace.clone(), saved.id)
+        .await
+        .unwrap();
+    turn(&runtime, &store, "revoked").await;
+    requests.recv().await.unwrap();
+    let events = store.events("s", 0, 500).await.unwrap();
+    let profiles: Vec<_> = events
+        .iter()
+        .filter(|event| event.kind == "provider.request")
+        .collect();
+    assert_eq!(profiles.len(), 3);
+    assert_ne!(
+        profiles[0].data["profile"]["permissionHash"],
+        profiles[1].data["profile"]["permissionHash"]
+    );
+    assert_eq!(profiles[0].data["permissions"]["workspace"], workspace);
+    assert_eq!(profiles[0].data["permissions"]["saved"], json!([]));
+    assert_eq!(
+        profiles[1].data["permissions"]["saved"],
+        json!([{
+            "action":"read", "resource":"public/**", "effect":"allow"
+        }])
+    );
+    assert_eq!(profiles[2].data["permissions"]["saved"], json!([]));
+    assert_eq!(
+        profiles[0].data["profile"]["permissionHash"],
+        profiles[2].data["profile"]["permissionHash"]
+    );
+    runtime.shutdown().await;
+    server.abort();
+}

@@ -2458,6 +2458,7 @@ async fn execute(
         // output has been emitted it is not. Retry the bounded pre-output case so
         // a transient reset (for example a proxy dropping the stream) does not
         // fail the turn.
+        let permissions = permission_profile(inner, &policy).await?;
         let mut produced = false;
         let mut ttft_ms: Option<u64> = None;
         let mut attempts = 0;
@@ -2483,7 +2484,7 @@ async fn execute(
                             json!({"name":"native-runtime","semantics":"native-runtime-v1","collaborationMode":if plan {"plan"} else {"build"}})
                         }
                     },
-                    permissions: json!({"policy":policy.descriptor(),"boundary":inner.tools.authority_descriptor()}),
+                    permissions: permissions.clone(),
                 },
                 crate::provider::scoped(
                     transport_budget.clone(),
@@ -3516,12 +3517,13 @@ command: None,
                 })
             };
             let mut breaker = inner.breaker.lock().await;
+            let permissions = permission_profile(inner, &policy).await?;
             let mut prefix = || {
                 let provider = Arc::clone(&prefix_provider);
                 let store = inner.store.clone();
                 let stop = inner.stop.clone();
                 let mut snapshot = request.clone();
-                let permissions = json!({"policy":policy.descriptor(),"boundary":inner.tools.authority_descriptor()});
+                let permissions = permissions.clone();
                 async move {
                     if !prefix_allowed {
                         return None;
@@ -3879,6 +3881,21 @@ command: None,
         }
         step += 1;
     }
+}
+
+// Saved rules can change during a running turn. This is the provider boundary's
+// diagnostic snapshot; each actual assertion still obtains its own native decision.
+async fn permission_profile(inner: &Inner, policy: &Policy) -> Result<Value, Error> {
+    let workspace = inner.tools.location();
+    let saved = inner.store.saved_rules(workspace.to_string()).await?;
+    Ok(json!({
+        "semantics": "native-permission-snapshot-v1",
+        "snapshot": "provider-boundary",
+        "workspace": workspace,
+        "policy": policy.descriptor(),
+        "boundary": inner.tools.authority_descriptor(),
+        "saved": saved,
+    }))
 }
 
 async fn notify_admission(
