@@ -288,19 +288,28 @@ impl Bridge {
     /// Cancel every pending reverse call for one Session. Notify the host with
     /// the matching method so its callback can release its own scoped work.
     pub async fn cancel_session(&self, session: &str) -> Vec<u64> {
-        let calls: Vec<(u64, String)> = {
-            let mut pending = self.pending.lock().unwrap();
-            let mut calls = Vec::new();
-            pending.retain(|id, call| {
-                if call.session != session {
-                    return true;
-                }
-                calls.push((*id, call.method.clone()));
-                false
-            });
-            calls
-        };
-        for (id, method) in &calls {
+        let calls = self.withdraw_session(session);
+        self.notify_cancellation(session, &calls).await;
+        calls.into_iter().map(|(id, _)| id).collect()
+    }
+
+    /// Withdraw authority synchronously with the authorization commit lock.
+    /// Host notification may be backpressured and is not the cancellation fence.
+    pub(crate) fn withdraw_session(&self, session: &str) -> Vec<(u64, String)> {
+        let mut pending = self.pending.lock().unwrap();
+        let mut calls = Vec::new();
+        pending.retain(|id, call| {
+            if call.session != session {
+                return true;
+            }
+            calls.push((*id, call.method.clone()));
+            false
+        });
+        calls
+    }
+
+    pub(crate) async fn notify_cancellation(&self, session: &str, calls: &[(u64, String)]) {
+        for (id, method) in calls {
             let notice = serde_json::json!({
                 "bridge_id": id,
                 "method": format!("{method}.cancel"),
@@ -310,7 +319,6 @@ impl Bridge {
                 break;
             }
         }
-        calls.into_iter().map(|(id, _)| id).collect()
     }
 }
 
