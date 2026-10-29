@@ -281,6 +281,14 @@ pub enum Command {
         session_id: String,
         input_id: String,
     },
+    /// Rewrite a still-pending input in place. The id, delivery class and
+    /// admission order stay; only the text the eventual user message carries
+    /// changes (RUN-02).
+    EditInput {
+        session_id: String,
+        input_id: String,
+        prompt: String,
+    },
     ModelCatalog,
     SelectModel {
         session_id: String,
