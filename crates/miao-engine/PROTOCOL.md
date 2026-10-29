@@ -1325,3 +1325,12 @@ actual completed native directory source and current Root receipt. Its snapshot
 rechecks Root identity, scope, original fingerprint/count and source receipt while
 preserving later revocation. This proves only the native directory handoff; it
 neither proves the product project handoff nor unfreezes or authorizes execution.
+
+Session schema v24 adds an immutable nullable `engine_run.shared_permission`
+marker. Old INSERT statements omit it and remain refused in a frozen directory.
+The explicit verified-handoff run-admission method carries Root/context/receipt,
+Runtime UUID and PID; SQLite checks the completed source and current lease before
+committing inbox promotion and the run. Active shared placement is immutable,
+while same-directory input admission remains available. Default Runtime startup
+still uses the legacy entry; this storage boundary alone does not activate the
+shared rule/approval backend or authorize a provider/tool operation.

@@ -133,7 +133,7 @@ mod tests {
         assert_eq!(
             old.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
                 .unwrap(),
-            23
+            crate::store::SCHEMA_VERSION
         );
         assert!(prepared
             .query_row([], |_| Ok(()))

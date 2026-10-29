@@ -23,7 +23,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 // Older readers do not understand inactive semantic imports and could execute
 // a destination before its host has switched the authoritative placement.
-pub const SCHEMA_VERSION: u32 = 23;
+pub const SCHEMA_VERSION: u32 = 24;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -422,6 +422,13 @@ impl Store {
                 )?;
                 if !has_run_epoch {
                     conn.execute("ALTER TABLE engine_run ADD COLUMN lease_epoch INTEGER", [])?;
+                }
+                let has_shared_authority: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_run') WHERE name='shared_permission')", [], |row| row.get(0))?;
+                if !has_shared_authority {
+                    conn.execute(
+                        "ALTER TABLE engine_run ADD COLUMN shared_permission TEXT",
+                        [],
+                    )?;
                 }
                 crate::permission_source::initialize(&conn)?;
                 conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -2046,6 +2053,18 @@ impl Store {
         force: bool,
         lease: &SessionLease,
     ) -> Result<Option<Vec<Event>>, Error> {
+        self.start_run_with_shared_authority(session, run, force, lease, None)
+            .await
+    }
+
+    pub(crate) async fn start_run_with_shared_authority(
+        &self,
+        session: &str,
+        run: &str,
+        force: bool,
+        lease: &SessionLease,
+        authority: Option<crate::permission_source::RunAuthority>,
+    ) -> Result<Option<Vec<Event>>, Error> {
         let (session, run, lease) = (session.to_owned(), run.to_owned(), lease.clone());
         self.call(move |conn| {
             let tx = write_tx(conn)?;
@@ -2063,8 +2082,8 @@ impl Store {
                 return Err(Error::Invalid("Session has no admitted history".into()));
             }
             tx.execute(
-                "INSERT INTO engine_run(id,session_id,state,lease_epoch) VALUES(?1,?2,'running',?3)",
-                params![run, session, lease.epoch],
+                "INSERT INTO engine_run(id,session_id,state,lease_epoch,shared_permission) VALUES(?1,?2,'running',?3,?4)",
+                params![run, session, lease.epoch, authority.map(|authority|serde_json::to_string(&authority)).transpose()?],
             )?;
             append(&tx, &session, "run.started", json!({"run_id":run}))?;
             tx.commit()?;
