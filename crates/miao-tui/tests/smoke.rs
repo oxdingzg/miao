@@ -18,23 +18,23 @@ struct Harness {
 
 impl Harness {
     fn spawn(label: &str, inject_panic: bool) -> Self {
-        Self::spawn_with(label, inject_panic, false, false, false)
+        Self::spawn_with(label, inject_panic, false, false, false, &[])
     }
 
     /// Boot the TUI against the scripted engine so the smoke test can enter a
     /// Session without a database, a provider, or a model.
     fn spawn_engine(label: &str) -> Self {
-        Self::spawn_with(label, false, true, false, false)
+        Self::spawn_with(label, false, true, false, false, &[])
     }
 
     fn spawn_engine_approval(label: &str) -> Self {
-        Self::spawn_with(label, false, true, true, false)
+        Self::spawn_with(label, false, true, true, false, &[])
     }
 
     /// A workspace with one markdown template command, so the slash path can
     /// be exercised against the engine wire.
     fn spawn_engine_with_commands(label: &str) -> Self {
-        Self::spawn_with(label, false, true, false, true)
+        Self::spawn_with(label, false, true, false, true, &[])
     }
 
     fn spawn_with(
@@ -43,9 +43,9 @@ impl Harness {
         engine: bool,
         approval: bool,
         commands: bool,
+        environment: &[(&str, &str)],
     ) -> Self {
-        let dir =
-            std::env::temp_dir().join(format!("miao-tui-smoke-{}-{label}", std::process::id()));
+        let dir = workspace(label);
         std::fs::create_dir_all(&dir).expect("workspace dir");
         if commands {
             // Project commands live under `.miao/command(s)/`, the same
@@ -70,6 +70,8 @@ impl Harness {
         cmd.arg(&dir);
         cmd.cwd(&dir);
         cmd.env("TERM", "xterm-256color");
+        cmd.env("MIAO_TUI_STATE_DIR", dir.join("state"));
+        cmd.env("MIAO_DISABLE_TERMINAL_TITLE", "0");
         if inject_panic {
             cmd.env("MIAO_TUI_TEST_PANIC", "1");
         }
@@ -95,6 +97,9 @@ impl Harness {
             cmd.env("MIAO_TUI_STATE_DIR", dir.join("state"));
             cmd.arg("--db");
             cmd.arg(&db);
+        }
+        for (key, value) in environment {
+            cmd.env(key, value);
         }
         let child = pair.slave.spawn_command(cmd).expect("spawn miao-tui");
         drop(pair.slave);
@@ -201,6 +206,10 @@ impl Harness {
     }
 }
 
+fn workspace(label: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("miao-tui-smoke-{}-{label}", std::process::id()))
+}
+
 /// Strip terminal control sequences so assertions read the cells a person
 /// sees; ratatui emits a cursor motion between separately styled cells (every
 /// freshly typed character), which would otherwise split typed text.
@@ -212,13 +221,25 @@ fn plain(text: &str) -> String {
             out.push(c);
             continue;
         }
-        // CSI runs to a final byte in @..=~; other escapes are two bytes.
-        if chars.next() == Some('[') {
-            for c in chars.by_ref() {
-                if ('@'..='~').contains(&c) {
-                    break;
+        match chars.next() {
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
                 }
             }
+            Some(']') => {
+                // Window-title payloads are not visible terminal cells.
+                let mut escaped = false;
+                for c in chars.by_ref() {
+                    if c == '\x07' || (escaped && c == '\\') {
+                        break;
+                    }
+                    escaped = c == '\x1b';
+                }
+            }
+            _ => {}
         }
     }
     out
@@ -469,10 +490,10 @@ fn multiline_paste_reaches_the_engine_verbatim() {
     // break instead of treating it as a submit.
     harness.write("\x1b[200~第一行\n第二行\x1b[201~".as_bytes());
     assert!(
-        wait_for_plain(&harness, "第一行", Duration::from_secs(2))
-            && plain(&harness.text()).contains("第二行"),
+        wait_for_screen(&harness, "第一行", Duration::from_secs(2))
+            && wait_for_screen(&harness, "第二行", Duration::from_secs(2)),
         "CJK paste did not render:\n{}",
-        plain(&harness.text())
+        harness.screen()
     );
     harness.write(b"\r");
     let log = harness.dir.join("admit.log");
@@ -1010,4 +1031,94 @@ fn saved_permissions_review_and_revoke_through_the_engine_wire() {
         .unwrap()
         .success());
     harness.shutdown();
+}
+
+#[test]
+fn terminal_title_toggle_persists_across_restart_and_an_environment_disable_wins() {
+    let dir = workspace("title-toggle");
+    std::fs::create_dir_all(dir.join(".miao")).unwrap();
+    std::fs::write(
+        dir.join(".miao/tui.json"),
+        r#"{"keybinds":{"terminal_title_toggle":"ctrl+t"}}"#,
+    )
+    .unwrap();
+    let mut first = Harness::spawn_engine("title-toggle");
+    assert!(wait_for_screen(&first, "Project A", Duration::from_secs(3)));
+    assert!(wait_for(&first, "\x1b]0;miao\x07", Duration::from_secs(2)));
+    first.write(b"\x14");
+    assert!(wait_for_screen(
+        &first,
+        "Terminal title disabled",
+        Duration::from_secs(2)
+    ));
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("state/preferences.json")).unwrap())
+            .unwrap();
+    assert_eq!(saved["terminal_title_enabled"], false);
+    first.write(b"\x03");
+    assert!(wait_exit(&mut first.child, Duration::from_secs(5))
+        .unwrap()
+        .success());
+    let mut second = Harness::spawn_engine("title-toggle");
+    assert!(wait_for_screen(
+        &second,
+        "Project A",
+        Duration::from_secs(3)
+    ));
+    assert!(!second.text().contains("\x1b]0;miao\x07"));
+    second.write(b"\x14");
+    assert!(wait_for_screen(
+        &second,
+        "Terminal title enabled",
+        Duration::from_secs(2)
+    ));
+    assert!(wait_for(&second, "\x1b]0;miao\x07", Duration::from_secs(2)));
+    second.write(b"\x03");
+    assert!(wait_exit(&mut second.child, Duration::from_secs(5))
+        .unwrap()
+        .success());
+    second.shutdown();
+    first.shutdown();
+
+    let dir = workspace("title-disabled");
+    std::fs::create_dir_all(dir.join(".miao")).unwrap();
+    std::fs::write(
+        dir.join(".miao/tui.json"),
+        r#"{"keybinds":{"terminal_title_toggle":"ctrl+t"}}"#,
+    )
+    .unwrap();
+    let mut disabled = Harness::spawn_with(
+        "title-disabled",
+        false,
+        true,
+        false,
+        false,
+        &[("MIAO_DISABLE_TERMINAL_TITLE", "TrUe")],
+    );
+    assert!(wait_for_screen(
+        &disabled,
+        "Project A",
+        Duration::from_secs(3)
+    ));
+    assert!(!disabled.text().contains("\x1b]0;miao\x07"));
+    disabled.write(b"\x14");
+    assert!(wait_for_screen(
+        &disabled,
+        "disabled by MIAO_DISABLE_TERMINAL_TITLE",
+        Duration::from_secs(2)
+    ));
+    assert!(!dir.join("state/preferences.json").exists());
+    disabled.write(b"\x03");
+    assert!(wait_exit(&mut disabled.child, Duration::from_secs(5))
+        .unwrap()
+        .success());
+    disabled.shutdown();
+}
+
+#[test]
+fn title_payloads_cannot_satisfy_visible_text_assertions() {
+    assert_eq!(
+        plain("\x1b]0;hidden\x07visible\x1b]2;also hidden\x1b\\"),
+        "visible"
+    );
 }
