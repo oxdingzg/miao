@@ -4112,6 +4112,8 @@ export type PermissionsListSavedOutput = {
     readonly projectID: string
     readonly action: string
     readonly resource: string
+    readonly origin?: "native" | undefined
+    readonly scope?: { readonly type: "directory"; readonly directory: string } | undefined
   }>
 }["data"]
 
