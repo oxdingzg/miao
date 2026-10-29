@@ -207,6 +207,10 @@ A product "take back and rewrite" therefore needs no separate command: read the
 input with `pending_inputs`, `edit_input` it, or `cancel_input` it and restore
 the text in its composer.
 
+Because the edit changes what the admission identity now means, a later exact
+retry of the original `admit` — same id, pre-edit text — conflicts instead of
+silently reverting the rewrite.
+
 ### Session agent selection
 
 `select_agent` accepts a host-resolved `agent` manifest (ADR-0017): `name`,
