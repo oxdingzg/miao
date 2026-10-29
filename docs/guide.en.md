@@ -174,7 +174,9 @@ Configure local or remote servers under `mcp.servers`; their tools appear as
 - With `lsp: true`, servers lazily activate as files are read, and diagnostics are fed back after
   edits (`LSP errors detected… please fix`).
 - With `formatter: true`, `edit` / `write` / `apply_patch` run the matching formatter on success.
-- The sidebar shows LSP connection status; **a config change requires restarting miao**.
+- The sidebar shows LSP connection status. The native engine notices config changes itself and
+  adds or removes language servers in place, so no restart is needed; the TypeScript engine still
+  reads configuration at startup.
 
 ### 5.6 Kernel-level sandbox (opt-in)
 
@@ -250,8 +252,8 @@ All shipped clients use the single V2 session runtime; the V1 session runtime an
 ## 7. FAQ
 
 **Sidebar LSP always says "LSPs are disabled"?**
-`lsp` is omitted (omitted means disabled). Add `"lsp": true` and **restart miao** (the running
-session reads config at startup).
+`lsp` is omitted (omitted means disabled). Add `"lsp": true`: the native engine reloads the config
+and connects the server without a restart; the TypeScript engine still needs a restart.
 
 **`ctrl+x b` does not open the sidebar?**
 Child sessions (spawned by task/subagent, non-empty `parent_id`) force-hide the sidebar;
