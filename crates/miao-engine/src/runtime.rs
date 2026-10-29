@@ -379,6 +379,33 @@ impl Runtime {
         state.marker = plugin_hooks;
     }
 
+    /// Bind the host's path spelling to this Runtime's actual Location. This
+    /// startup context is captured by each source, never supplied by an ask.
+    pub async fn set_product_context(
+        &self,
+        context: crate::product::HostContext,
+    ) -> Result<(), Error> {
+        let bounded = |path: &str| {
+            !path.is_empty()
+                && path.len() <= 4096
+                && !path.contains('\0')
+                && std::path::Path::new(path).is_absolute()
+        };
+        if !bounded(&context.directory) || context.cwd.as_ref().is_some_and(|cwd| !bounded(cwd)) {
+            return Err(Error::Invalid("invalid product host path context".into()));
+        }
+        let directory = tokio::fs::canonicalize(&context.directory)
+            .await
+            .map_err(|_| Error::Invalid("invalid product host directory".into()))?;
+        if directory != std::path::Path::new(self.inner.tools.location()) {
+            return Err(Error::Invalid(
+                "product host directory does not match Location".into(),
+            ));
+        }
+        self.inner.product.write().unwrap().host_context = Some(context);
+        Ok(())
+    }
+
     /// Route a host reply for a product-tool bridge call.
     pub fn deliver_product_reply(&self, bridge_id: u64, value: Value) -> bool {
         match self
@@ -399,6 +426,202 @@ impl Runtime {
         Controller {
             runtime_id: self.inner.id.clone(),
         }
+    }
+
+    pub async fn permission_patterns(
+        &self,
+        controller: &Controller,
+    ) -> Result<Vec<crate::permission_patterns::Pattern>, Error> {
+        self.inner
+            .store
+            .permission_patterns(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn put_permission_pattern(
+        &self,
+        controller: &Controller,
+        rule: crate::permission_rules::Rule,
+    ) -> Result<crate::permission_patterns::Pattern, Error> {
+        self.inner
+            .store
+            .put_permission_pattern(self.permission_pattern_workspace(controller)?, rule)
+            .await
+    }
+
+    pub async fn remove_permission_pattern(
+        &self,
+        controller: &Controller,
+        id: String,
+    ) -> Result<bool, Error> {
+        self.inner
+            .store
+            .remove_permission_pattern(self.permission_pattern_workspace(controller)?, id)
+            .await
+    }
+
+    fn permission_pattern_workspace(&self, controller: &Controller) -> Result<String, Error> {
+        if controller.runtime_id != self.inner.id {
+            return Err(Error::Invalid(
+                "permission pattern controller mismatch".into(),
+            ));
+        }
+        Ok(self.inner.tools.location().into())
+    }
+
+    pub async fn admit_product_permission(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        input: crate::product_permission_request::Input,
+    ) -> Result<crate::product_permission_request::Record, Error> {
+        self.inner
+            .store
+            .admit_product_permission(self.product_permission_context(controller, source)?, input)
+            .await
+    }
+
+    pub async fn product_permission_status(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        id: String,
+    ) -> Result<crate::product_permission_request::Record, Error> {
+        self.inner
+            .store
+            .product_permission_status(self.product_permission_context(controller, source)?, id)
+            .await
+    }
+
+    pub async fn cancel_product_permission(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        id: String,
+    ) -> Result<crate::product_permission_request::Record, Error> {
+        self.inner
+            .store
+            .cancel_product_permission(self.product_permission_context(controller, source)?, id)
+            .await
+    }
+
+    pub async fn reply_product_permission(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        response: crate::product_permission_request::Response,
+    ) -> Result<crate::product_permission_request::Record, Error> {
+        self.inner
+            .store
+            .reply_product_permission(
+                self.product_permission_context(controller, source)?,
+                response,
+            )
+            .await
+    }
+
+    pub async fn pending_product_permissions(
+        &self,
+        controller: &Controller,
+        session: String,
+    ) -> Result<Vec<crate::product_permission_request::Record>, Error> {
+        let workspace = self.permission_pattern_workspace(controller)?;
+        self.inner
+            .store
+            .pending_product_permissions(self.inner.id.clone(), workspace, session)
+            .await
+    }
+
+    fn product_permission_context(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+    ) -> Result<crate::product_permission_request::Context, Error> {
+        let workspace = self.permission_pattern_workspace(controller)?;
+        let product = self.inner.product.read().unwrap();
+        let bridge = product
+            .bridge
+            .clone()
+            .ok_or_else(|| Error::Invalid("inactive product permission source".into()))?;
+        let authority = bridge
+            .permission_authority(source)
+            .ok_or_else(|| Error::Invalid("inactive product permission source".into()))?;
+        Ok(crate::product_permission_request::Context {
+            owner: self.inner.id.clone(),
+            source: source.clone(),
+            authority,
+            workspace,
+            boundary: self.inner.tools.grant_authority_descriptor(),
+            bridge,
+            product: self.inner.product.clone(),
+        })
+    }
+
+    /// Evaluate against the authority captured by the active reverse call.
+    /// This is a bounded query, not an execution or persistent-approval ticket.
+    pub async fn evaluate_product_permission(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        request: crate::product_permission::Request,
+    ) -> Result<crate::permission_rules::Outcome, Error> {
+        if controller.runtime_id != self.inner.id {
+            return Err(Error::Invalid(
+                "product permission controller mismatch".into(),
+            ));
+        }
+        if request.actions.is_empty() || request.resources.is_empty() {
+            return Err(Error::Invalid(
+                "product permission requires actions and resources".into(),
+            ));
+        }
+        let bridge = self
+            .inner
+            .product
+            .read()
+            .unwrap()
+            .bridge
+            .clone()
+            .ok_or_else(|| Error::Invalid("inactive product permission source".into()))?;
+        let authority = bridge
+            .permission_authority(source)
+            .ok_or_else(|| Error::Invalid("inactive product permission source".into()))?;
+        let saved = self
+            .inner
+            .store
+            .product_permission_rules(
+                source.session_id.clone(),
+                authority.run_id.clone(),
+                source.call_id.clone(),
+                self.inner.tools.location().into(),
+            )
+            .await?;
+        let mut outcome = crate::permission_rules::evaluate(&crate::permission_rules::Request {
+            actions: request.actions,
+            resources: request.resources,
+            explicit: request.explicit,
+            configured: authority.configured.clone(),
+            saved: Some(saved),
+        })?;
+        outcome.authority_revision = crate::permission::digest(&serde_json::to_vec(&json!({
+            "semantics":"product-permission-authority-v1",
+            "workspace":self.inner.tools.location(),
+            "policy":authority.policy_revision,
+            "boundary":self.inner.tools.grant_authority_descriptor(),
+            "rules":outcome.authority_revision,
+        }))?);
+        let connected = self
+            .inner
+            .product
+            .read()
+            .unwrap()
+            .bridge
+            .as_ref()
+            .is_some_and(|current| current.same_connection(&bridge));
+        if !connected || bridge.permission_authority(source).is_none() {
+            return Err(Error::Invalid("inactive product permission source".into()));
+        }
+        Ok(outcome)
     }
 
     /// Configure automatic context management (roadmap §2.13). `None` keeps it
@@ -2898,12 +3121,13 @@ command: None,
                                 }
                                 name if inner.product.read().unwrap().has(name) => {
                                     let input = prepared.input().clone();
-                                    let bridge = inner
-                                        .product
-                                        .read()
-                                        .unwrap()
-                                        .bridge
-                                        .clone();
+                                    let (bridge, host) = {
+                                        let product = inner.product.read().unwrap();
+                                        (product.bridge.clone(), product.host_context.clone().unwrap_or_else(|| crate::product::HostContext {
+                                            directory: inner.tools.location().into(),
+                                            cwd: std::env::current_dir().ok().and_then(|cwd| cwd.to_str().map(str::to_owned)),
+                                        }))
+                                    };
                                     match bridge {
                                         Some(bridge) => {
                                             // The host names a real permission source from
@@ -2920,7 +3144,17 @@ command: None,
                                                     bridge.cancel_session(session).await;
                                                     Err(ToolError::Interrupted)
                                                 }
-                                                outcome = bridge.call(session, name, input, context) => match outcome {
+                                                outcome = bridge.call_authorized(session, name, input, crate::product_permission::Authority {
+                                                    run_id: run.into(),
+                                                    context,
+                                                    policy_revision: policy.revision().into(),
+                                                    configured: manifest.and_then(|agent| agent.ordered_permissions.as_ref()).map(|ordered| ordered.rules.iter().map(|rule| crate::permission_rules::Rule {
+                                                        action: rule.action.clone(), resource: rule.resource.clone(), effect: rule.effect,
+                                                    }).collect()),
+                                                    auto: manifest.is_some_and(|agent| agent.permission_mode == Some(crate::session_agent::PermissionMode::Auto)),
+                                                    host,
+                                                    cancel: cancel.clone(),
+                                                }) => match outcome {
                                                     Ok(output) => {
                                                         if output.get("moved").is_some_and(|value| value.as_bool() == Some(true)) {
                                                             moved = true;

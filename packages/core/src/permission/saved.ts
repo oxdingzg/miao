@@ -8,6 +8,8 @@ import { ProjectV2 } from "../project"
 import { PermissionTable } from "./sql"
 import { PermissionSaved } from "@miao/schema/permission-saved"
 
+export const NativePrefix = PermissionSaved.NativePrefix
+
 export const ID = PermissionSaved.ID
 export type ID = typeof ID.Type
 
