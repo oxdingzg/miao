@@ -58,6 +58,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "schema": miao_engine::store::SCHEMA_VERSION,
                 "routes_schema": miao_engine::model_routes::SCHEMA,
                 "catalog": 1,
+                "product_permission_evaluation": 1,
+                "permission_patterns": 1,
+                "product_permission_requests": 1,
+                "product_permission_replies": 1,
+                "product_permission_cancel": 1,
+                "product_permission_diagnostics": 1,
+                "product_permission_auto": 1,
+                // The engine persists the product's saved "always allow" rules
+                // through `permission_saved_project`. The product only wires its
+                // native permission bridge when this is advertised, so omitting
+                // it left every native assertion without a source.
+                "saved_rules_snapshot": 1,
             })
         );
         return Ok(());
@@ -887,6 +899,14 @@ async fn serve(
             miao_engine::product::Bridge::new(output.clone()),
             plugin_hooks,
         );
+        if let Some(context) = manifest.get("host_context") {
+            runtime
+                .set_product_context(
+                    serde_json::from_value(context.clone()).map_err(io::Error::other)?,
+                )
+                .await
+                .map_err(io::Error::other)?;
+        }
     }
     let writer_stop = tokio_util::sync::CancellationToken::new();
     let stop_output = writer_stop.clone();

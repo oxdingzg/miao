@@ -23,6 +23,7 @@ import { LSP } from "./lsp"
 import { MCP } from "./mcp"
 import { LocationServiceMap } from "./location-service-map"
 import { PermissionV2 } from "./permission"
+import { PermissionSource } from "./permission/source"
 import { PluginV2 } from "./plugin"
 import { PluginInternal } from "./plugin/internal"
 import { Policy } from "./policy"
@@ -83,6 +84,7 @@ export const locationServices = LayerNode.group([
   FileMutation.node,
   Format.node,
   PermissionV2.node,
+  PermissionSource.node,
   LSP.node,
   MCP.node,
   ToolOutputStore.node,
