@@ -1122,3 +1122,58 @@ fn title_payloads_cannot_satisfy_visible_text_assertions() {
         "visible"
     );
 }
+
+#[test]
+fn external_editor_exclusively_reads_stdin_then_returns_the_saved_draft() {
+    let editor = format!("{} --editor", env!("CARGO_BIN_EXE_miao-tui-fake-engine"));
+    let mut harness = Harness::spawn_with(
+        "editor-input",
+        false,
+        true,
+        false,
+        false,
+        &[("VISUAL", &editor)],
+    );
+    assert!(wait_for_screen(
+        &harness,
+        "Project A",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"\r");
+    assert!(wait_for_screen(
+        &harness,
+        "hello from the fixture",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"old draft");
+    harness.write(b"\x18e");
+    for (index, text) in [(1, "first"), (2, "second"), (3, "third")] {
+        assert!(
+            wait_for(
+                &harness,
+                &format!("EDITOR_INPUT_{index}"),
+                Duration::from_secs(2)
+            ),
+            "editor did not receive exclusive input: {}",
+            harness.text()
+        );
+        harness.write(format!("{text}\r").as_bytes());
+    }
+    assert!(
+        wait_for_screen(&harness, "first second third", Duration::from_secs(2)),
+        "saved editor draft did not render: {}",
+        harness.screen()
+    );
+    harness.write(b"!");
+    assert!(wait_for_screen(
+        &harness,
+        "first second third!",
+        Duration::from_secs(2)
+    ));
+    assert!(!harness.dir.join("admit.log").exists());
+    harness.write(b"\x03");
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5)).expect("editor UI exit");
+    assert!(status.success());
+    harness.shutdown();
+}
