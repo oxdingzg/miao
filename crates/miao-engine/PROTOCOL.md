@@ -36,7 +36,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id`, `metadata_only?` | committed Session snapshot; metadata-only replies omit `messages` |
 | `sessions` | — | `string[]` (Session ids) |
-| `config_reload` | — | `{generation, changed, unchanged, unsupported}` |
+| `config_reload` | — | `{generation, changed, unchanged, unsupported, lsp?, mcp?}` |
 | `fork` | `session_id`, `target_session_id`, `message_seq?` | `{target_session_id}` |
 | `revert` | `session_id`, `checkpoint` | `{checkpoint, from_seq, reverted}` |
 | `unrevert` | `session_id` | `{restored}` |
@@ -60,7 +60,16 @@ retaining the same cursor, identity, pending work and Session state. An omitted
 
 `event` notifications are committed canonical events; `progress` notifications
 are ephemeral provider frames that are not durable and may be followed by a
-`resync`. A slow stdout consumer applies backpressure through the pipe: the
+`resync`. A `config` notification carries the report of a reload that changed
+at least one section — the same object `config_reload` replies with — and is
+sent to every stdio subscriber because a reloaded configuration is
+process-wide rather than Session-scoped. It arrives whether the host, another
+client, or the standalone poller triggered the reload, so a host can show a
+change it did not request; an unchanged reload sends nothing. A reload the
+engine refuses on its own — a standalone poller reading a malformed file —
+is announced on the same channel as `{"changed": [], "error": "..."}`, because
+that failure otherwise exists only in the engine's stderr. A slow stdout
+consumer applies backpressure through the pipe: the
 writer waits for the reader instead of terminating the engine, and only a
 closed pipe (a dead host) or `shutdown` ends the stream. The durable cursor
 still makes replay→live independent of any transient frame, so a client that
@@ -491,12 +500,29 @@ recorded. The `snapshot` reply reports the staged revert when one exists.
 ### Incremental configuration reload
 
 `config_reload` re-derives the configuration sections the engine owns from the
-same origin startup used (`--lsp-config`, `--config-sources` or `--config-dir`)
-and reconciles the ones this build can swap in place. The reply is
+same origin startup used (`--policy`, `--config-sources` or `--config-dir` for
+the policy; `--lsp-config`, `--config-sources` or `--config-dir` for LSP) and
+reconciles the ones this build can swap in place. The reply is
 `{generation, changed, unchanged, unsupported, …}`: `generation` advances only
 when a section changed, `changed`/`unchanged` name top-level sections, and
 `unsupported` names the sections this build does not reload yet rather than
-implying they were applied.
+implying they were applied. Every section is derived and validated before any is
+applied, so a malformed edit or a boundary violation leaves all of them as they
+were.
+
+The policy section replaces the base policy a turn is derived from and, in the
+same swap, the capability gates and web client that policy implies — a
+tightened policy left running beside the old gates would check one thing and
+enforce another. Gates are applied first, then the policy: that order can only
+add a refusal ahead of the new rules, never permit a call the old ones denied.
+A turn that already took its policy snapshot keeps it and the next turn reads
+the new one; approvals carry the old revision and are therefore refused with
+`ApprovalMismatch`, so a tightened policy never inherits an approval granted
+under the looser one. The startup invariants are re-checked and a reload that
+would break one is refused: process authority requires the database outside the
+workspace and credentials outside it, and MCP requires external authority.
+A Session with no recorded policy origin (`unsupported` contains `policy`)
+cannot reload that section.
 
 The LSP server set is reconciled per server by name and configuration. An
 unchanged server keeps its connection and is never restarted; a changed or
@@ -507,6 +533,20 @@ JSON, unknown key, duplicate extension) changes nothing and fails the command;
 the running configuration stays as it was. A Session that never had an LSP
 registry at startup (`unsupported` contains `lsp`) cannot gain one without
 restarting the engine.
+
+The MCP server set is reconciled by server name and configuration fingerprint.
+An unchanged server keeps its connection, its catalog watcher and its child
+process. A changed or added server is connected before its predecessor is
+closed, so a rebuild that fails leaves the previous connection serving and is
+reported in `mcp.failed` as `{server, error}` instead of failing the reload; a
+failed server that had no predecessor simply stays absent. A removed server's
+tools disappear, its watcher exits and its child process is killed. The `mcp`
+object lists the exact `changed`, `unchanged`, `removed` and `failed` names.
+List-level violations (more than eight servers, duplicate names, an invalid
+authority revision) are refused before anything is touched, and a derivation
+error (invalid JSON, unknown key) fails the command with every section as it
+was. A Session started without `--mcp-config` (`unsupported` contains `mcp`)
+cannot gain MCP servers without restarting the engine.
 
 The standalone entry has no host to call the command, so it polls the same
 sources every two seconds (`mtime` plus size, not an OS watcher) and runs the

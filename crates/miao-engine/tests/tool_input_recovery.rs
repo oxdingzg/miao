@@ -192,6 +192,7 @@ async fn real_wire_correction_preserves_completed_write_and_durable_error_withou
                 store.snapshot("s").await.unwrap()["cursor"]
                     .as_u64()
                     .unwrap(),
+                true,
             )
             .await
             .unwrap();
