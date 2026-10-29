@@ -436,6 +436,32 @@ install_from_binary() {
     publish_binary "$binary_path"
 }
 
+# Stage on the destination filesystem so publication never falls back to
+# copying over executable pages held by a running engine or TUI.
+publish_companion() {
+    local source="$1" name="$2" stage hash target
+    stage=$(mktemp -d "$INSTALL_DIR/.install-XXXXXXXX")
+    trap 'rm -rf "$stage"; trap - RETURN' RETURN
+    cp "$source" "$stage/$name"
+    chmod 755 "$stage/$name"
+    if [[ "$EXE" == ".exe" ]]; then
+        mv -f "$stage/$name" "$INSTALL_DIR/$name"
+        return
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+        hash=$(sha256sum "$stage/$name" | cut -d' ' -f1)
+    else
+        hash=$(shasum -a 256 "$stage/$name" | cut -d' ' -f1)
+    fi
+    target="$INSTALL_DIR/.versions/native-$hash/$name"
+    mkdir -p "$(dirname "$target")"
+    if ! ln "$stage/$name" "$target" 2>/dev/null; then
+        cmp -s "$stage/$name" "$target" || { print_message error "Conflicting native build identity"; return 1; }
+    fi
+    ln -s "$target" "$stage/launcher"
+    mv -f "$stage/launcher" "$INSTALL_DIR/$name"
+}
+
 # The native engine rides the same release. It is optional: an older product or
 # an incompatible archive leaves miao on TypeScript sessions instead of failing
 # the install.
@@ -484,7 +510,7 @@ install_engine() {
         rm -rf "$tmp_dir"
         return 0
     fi
-    mv -f "$engine" "$INSTALL_DIR/miao-engine${EXE}"
+    publish_companion "$engine" "miao-engine${EXE}"
     print_message info "${MUTED}Native engine installed: ${NC}$INSTALL_DIR/miao-engine${EXE}"
     rm -rf "$tmp_dir"
 }
@@ -497,8 +523,7 @@ install_engine_binary() {
         print_message error "Engine binary not found at ${engine_binary}"
         return 1
     fi
-    cp "$engine_binary" "$INSTALL_DIR/miao-engine${EXE}"
-    chmod 755 "$INSTALL_DIR/miao-engine${EXE}"
+    publish_companion "$engine_binary" "miao-engine${EXE}"
     print_message info "${MUTED}Native engine installed: ${NC}$INSTALL_DIR/miao-engine${EXE}"
 }
 
@@ -544,7 +569,7 @@ install_tui() {
         rm -rf "$tmp_dir"
         return 0
     fi
-    mv -f "$tui" "$INSTALL_DIR/miao-tui${EXE}"
+    publish_companion "$tui" "miao-tui${EXE}"
     print_message info "${MUTED}Rust TUI installed: ${NC}$INSTALL_DIR/miao-tui${EXE}"
     rm -rf "$tmp_dir"
 }
@@ -557,8 +582,7 @@ install_tui_binary() {
         print_message error "TUI binary not found at ${tui_binary}"
         return 1
     fi
-    cp "$tui_binary" "$INSTALL_DIR/miao-tui${EXE}"
-    chmod 755 "$INSTALL_DIR/miao-tui${EXE}"
+    publish_companion "$tui_binary" "miao-tui${EXE}"
     print_message info "${MUTED}Rust TUI installed: ${NC}$INSTALL_DIR/miao-tui${EXE}"
 }
 
