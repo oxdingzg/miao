@@ -1416,6 +1416,12 @@ project without its owning native Location fail explicitly. Explicit workspace
 placement, an in-memory Core database and manual legacy saved-rule snapshots are
 unsupported for this startup path and fail before either source freezes.
 
-This preview does not enable migration by default or configure the direct Rust
-TUI shim. Shared changefeed supervision, legacy TS-session retirement and final
-product acceptance remain separate requirements before default activation.
+The product's Rust TUI engine shim uses the same paired preparation and persisted
+ownership check before launching its engine. A failed product plan exits without
+starting an engine from the original raw arguments. The existing POSIX launcher
+uses this shim; the Windows TUI launcher still needs its equivalent wrapper.
+Direct invocation of `miao-engine` retains the explicit flag contract above.
+
+This preview does not enable migration by default. Shared changefeed supervision,
+legacy TS-session retirement, Windows TUI launcher integration and final product
+acceptance remain requirements before default activation.
