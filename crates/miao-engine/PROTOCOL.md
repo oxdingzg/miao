@@ -881,6 +881,16 @@ rules, receipt or revision. Hosts freezing a source must use this method instead
 of unbound `migrate`, and probe support before preparing the source. A database
 pathname alone is not a durable destination identity.
 
+`permission_context_handoff: 1` similarly advertises
+`context_handoff {authority,patterns}` on a directory-bound controller. It checks
+the expected project database identity inside the directory write transaction,
+before the first import and before accepting a receipt retry. IDs, timestamps,
+revocations and the combined rule budget follow `context_migrate`. A mismatched
+identity changes neither directory nor project state. The request cannot change
+the startup project, canonical directory or workspace identity. Frozen directory
+sources must use this method and probe its capability before preparing a handoff;
+this destination operation does not itself freeze or retire their old writer.
+
 ### Permission source execution claim
 
 Session-store schema 22 persists `engine_run.lease_epoch` when a fenced run
