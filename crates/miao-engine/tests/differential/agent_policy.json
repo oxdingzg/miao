@@ -39,9 +39,29 @@
       "action": "read",
       "resource": "file?.txt",
       "effect": "ask"
+    },
+    {
+      "action": "read",
+      "resource": "??.txt",
+      "effect": "deny"
     }
   ],
   "cases": [
+    {
+      "action": "read",
+      "resource": "😀.txt",
+      "expected": "deny"
+    },
+    {
+      "action": "read",
+      "resource": "中.txt",
+      "expected": "allow"
+    },
+    {
+      "action": "read",
+      "resource": "file😀.txt",
+      "expected": "allow"
+    },
     {
       "action": "read",
       "resource": "src/file.ts",
