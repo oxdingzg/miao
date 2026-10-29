@@ -4,6 +4,9 @@
   "id": "68be3934-6677-44fc-be18-d5b3b4897a82",
   "prevIds": [
     "ea4fda3a-72e0-4b0f-aa9d-a56e1d117f6b"
+  "id": "4bcd50da-1836-406f-8809-fbe0e1eba003",
+  "prevIds": [
+    "5711317a-e729-4ddf-bf5c-07fa1861c8c5"
   ],
   "ddl": [
     {
@@ -20,6 +23,11 @@
     },
     {
       "name": "permission_import_replica",
+      "name": "permission_native_cursor",
+      "entityType": "tables"
+    },
+    {
+      "name": "permission_native_projection",
       "entityType": "tables"
     },
     {
@@ -231,6 +239,9 @@
       "name": "project_id",
       "entityType": "columns",
       "table": "permission_handoff"
+      "name": "owner_key",
+      "entityType": "columns",
+      "table": "permission_native_cursor"
     },
     {
       "type": "text",
@@ -241,6 +252,9 @@
       "name": "authority",
       "entityType": "columns",
       "table": "permission_handoff"
+      "name": "location",
+      "entityType": "columns",
+      "table": "permission_native_cursor"
     },
     {
       "type": "text",
@@ -254,6 +268,12 @@
     },
     {
       "type": "text",
+      "name": "directory",
+      "entityType": "columns",
+      "table": "permission_native_cursor"
+    },
+    {
+      "type": "integer",
       "notNull": true,
       "autoincrement": false,
       "default": null,
@@ -275,12 +295,20 @@
     {
       "type": "text",
       "notNull": false,
+      "name": "cursor",
+      "entityType": "columns",
+      "table": "permission_native_cursor"
+    },
+    {
+      "type": "text",
+      "notNull": true,
       "autoincrement": false,
       "default": null,
       "generated": null,
       "name": "owner_key",
       "entityType": "columns",
       "table": "permission_import_replica"
+      "table": "permission_native_projection"
     },
     {
       "type": "text",
@@ -291,6 +319,9 @@
       "name": "location",
       "entityType": "columns",
       "table": "permission_import_replica"
+      "name": "id",
+      "entityType": "columns",
+      "table": "permission_native_projection"
     },
     {
       "type": "text",
@@ -321,6 +352,9 @@
       "name": "migration",
       "entityType": "columns",
       "table": "permission_import_replica"
+      "name": "action",
+      "entityType": "columns",
+      "table": "permission_native_projection"
     },
     {
       "type": "text",
@@ -331,6 +365,9 @@
       "name": "rules",
       "entityType": "columns",
       "table": "permission_import_replica"
+      "name": "resource",
+      "entityType": "columns",
+      "table": "permission_native_projection"
     },
     {
       "type": "text",
@@ -2441,6 +2478,18 @@
       "name": "fk_permission_handoff_project_id_project_id_fk",
       "entityType": "fks",
       "table": "permission_handoff"
+        "owner_key"
+      ],
+      "tableTo": "permission_native_cursor",
+      "columnsTo": [
+        "owner_key"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_permission_native_projection_owner_key_permission_native_cursor_owner_key_fk",
+      "entityType": "fks",
+      "table": "permission_native_projection"
     },
     {
       "columns": [
@@ -2699,6 +2748,16 @@
     },
     {
       "columns": [
+        "owner_key",
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "permission_native_projection_pk",
+      "entityType": "pks",
+      "table": "permission_native_projection"
+    },
+    {
+      "columns": [
         "subject",
         "id"
       ],
@@ -2792,6 +2851,11 @@
       "nameExplicit": false,
       "name": "permission_import_replica_pk",
       "table": "permission_import_replica",
+        "owner_key"
+      ],
+      "nameExplicit": false,
+      "name": "permission_native_cursor_pk",
+      "table": "permission_native_cursor",
       "entityType": "pks"
     },
     {

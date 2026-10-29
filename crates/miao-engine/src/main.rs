@@ -655,6 +655,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         tools = tools.with_protected_resource(&path).with_mcp(registry);
         mcp_origin = Some(origin);
     }
+    if let Some(path) = options.get("--formatter-config") {
+        let path = tokio::fs::canonicalize(path).await?;
+        if path.starts_with(std::path::Path::new(tools.location())) {
+            return Err("formatter host config must be outside model-writable workspace".into());
+        }
+        let bytes = tokio::fs::read(&path).await?;
+        if bytes.len() > 65536 {
+            return Err("formatter config exceeds 64 KiB".into());
+        }
+        let configs = serde_json::from_slice::<Vec<miao_engine::formatter::Config>>(&bytes)
+            .map_err(|_| "invalid formatter host config")?;
+        let registry =
+            miao_engine::formatter::Registry::new(configs, std::path::Path::new(tools.location()))?;
+        tools = tools
+            .with_protected_resource(&path)
+            .with_formatter(Arc::new(registry));
+    }
     // The origin a reload re-derives from. Every branch below records one, so
     // `config_reload` reads exactly the files startup read.
     let mut lsp_origin = None;

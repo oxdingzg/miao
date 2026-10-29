@@ -433,6 +433,16 @@ fn diff(previous: &[Config], next: &[Config]) -> (Vec<String>, Vec<String>) {
     let changed = next
         .iter()
         .filter(|config| !previous.iter().any(|other| other == *config))
+/// Server names whose connection the new plan makes stale, split into the ones
+/// whose configuration changed and the ones the plan no longer contains.
+fn diff(previous: &[Config], next: &[Config]) -> (Vec<String>, Vec<String>) {
+    let name = |config: &Config| config.name.clone();
+    let changed = previous
+        .iter()
+        .filter(|config| {
+            next.iter()
+                .any(|other| other.name == config.name && other != *config)
+        })
         .map(name)
         .collect();
     let removed = previous

@@ -96,6 +96,7 @@ test.skipIf(!binary)(
       database
         .query(
           "INSERT INTO permission_legacy(id,project_id,action,resource,time_created,time_updated) VALUES(?1,?2,?3,?4,?5,?6)",
+          "INSERT INTO permission(id,project_id,action,resource,time_created,time_updated) VALUES(?1,?2,?3,?4,?5,?6)",
         )
         .run("psv_legacy_fixture", saved[0].projectID, "read", "legacy", Date.now(), Date.now())
     } finally {

@@ -22,6 +22,10 @@ export async function nativeHostSource(options: { mode?: PermissionV2.Mode; rule
       { action: "read", resource: "*", effect: "ask" },
       { action: "read", resource: "secret", effect: "deny" },
     ] satisfies PermissionV2.Ruleset)
+export async function nativeHostSource() {
+  if (!binary) throw new Error("native engine required")
+  const supported = capabilities(binary)
+  if (!supported) throw new Error("native capabilities required")
   const tmp = await tmpdir()
   const provider = Bun.serve({
     hostname: "127.0.0.1",
@@ -106,6 +110,13 @@ export async function nativeHostSource(options: { mode?: PermissionV2.Mode; rule
         ordered_permissions: {
           semantics: "ordered-wildcard-v1",
           rules,
+        ordered_permissions: {
+          semantics: "ordered-wildcard-v1",
+          rules: [
+            { action: "*", resource: "*", effect: "allow" },
+            { action: "read", resource: "*", effect: "ask" },
+            { action: "read", resource: "secret", effect: "deny" },
+          ],
         },
       },
     })

@@ -45,6 +45,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `snapshot` | `session_id`, `metadata_only?` | committed Session snapshot; metadata-only replies omit `messages` |
 | `sessions` | — | `string[]` (Session ids) |
 | `config_reload` | — | `{generation, changed, unchanged, unsupported, lsp?, mcp?, context?}` |
+| `config_reload` | — | `{generation, changed, unchanged, unsupported, lsp?, mcp?}` |
 | `fork` | `session_id`, `target_session_id`, `message_seq?` | `{target_session_id}` |
 | `revert` | `session_id`, `checkpoint` | `{checkpoint, from_seq, reverted}` |
 | `unrevert` | `session_id` | `{restored}` |
@@ -652,6 +653,7 @@ the policy; `--lsp-config`, `--config-sources` or `--config-dir` for LSP;
 `--mcp-config` for MCP; `--model-routes-config` for the model catalog;
 `--context-config`, `--skills-config`, `--references-config`, `--hooks-config`
 and `--formatter-config` for the context carriers) and
+`--mcp-config` for MCP; `--model-routes-config` for the model catalog) and
 reconciles the ones this build can swap in place. The reply is
 `{generation, changed, unchanged, unsupported, …}`: `generation` advances only
 when a section changed, `changed`/`unchanged` name top-level sections, and
@@ -681,6 +683,9 @@ again on next use, so a reload never spawns a process by itself. A server the
 plan adds counts as a change: the reconcile swaps the plan, and only then can a
 later request reach the new server. The `lsp` object in the reply lists the
 exact `changed`, `unchanged` and `removed` server names. A derivation error (invalid
+removed server is dropped and started again on next use, so a reload never
+spawns a process by itself. The `lsp` object in the reply lists the exact
+`changed`, `unchanged` and `removed` server names. A derivation error (invalid
 JSON, unknown key, duplicate extension) changes nothing and fails the command;
 the running configuration stays as it was. A Session that never had an LSP
 registry at startup (`unsupported` contains `lsp`) cannot gain one without

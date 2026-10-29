@@ -116,6 +116,9 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
           if (Option.isSome(native) && placement && !request) {
             const pending = yield* native.value.permissions({ sessionID: ctx.params.sessionID, ...placement })
             if (!pending.some((p) => p.id === ctx.params.requestID))
+          if (Option.isSome(native) && placement) {
+            const pending = yield* native.value.permissions({ sessionID: ctx.params.sessionID, ...placement })
+            if (!pending.some((request) => request.id === ctx.params.requestID))
               return yield* missingRequest(ctx.params.requestID)
             yield* native.value.replyPermission({
               sessionID: ctx.params.sessionID,

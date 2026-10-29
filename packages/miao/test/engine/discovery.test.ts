@@ -147,6 +147,7 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
     { wire: { permission_context_handoff: 1 }, normalized: undefined, accepted: true },
     { wire: { permission_patterns: 1 }, normalized: undefined, accepted: true },
     { wire: { permission_pattern_changes: 1 }, normalized: undefined, accepted: true },
+    { wire: { permission_patterns: 1 }, normalized: undefined, accepted: true },
     { wire: { routesSchema: 2 }, normalized: 2, accepted: true },
     { wire: { routes_schema: 2, routesSchema: 2 }, normalized: 2, accepted: true },
   ]) {
@@ -180,6 +181,7 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
     { permission_context_handoff: "1" },
     { permission_patterns: "1" },
     { permission_pattern_changes: "1" },
+    { permission_patterns: "1" },
     { product_permission_requests: "1" },
     { product_permission_cancel: "1" },
     { product_permission_diagnostics: false },

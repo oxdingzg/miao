@@ -180,6 +180,7 @@
    冒出来；五个路径并入 standalone 轮询的观察集合。验证：`tests/config_reload_context.rs`
    覆盖"首轮装载五项 / 同内容不换代 / 单项变化只报该项 / reference 换代后读范围即时移动 /
    畸形文件报文件名且不换任何项 / 无法 canonicalize 的 reference 报文件名且旧范围仍在"。
+5. **context / hooks / skills / references**：各自载体的换代。
 6. **standalone 轮询**：`--config-dir` 模式的 mtime 观察。
 7. **宿主可见性（引擎侧与 Rust TUI 已实现）**：`Runtime` 增加 `config_changes` 广播，
    只有真正改动了至少一节的 reload 才发布，内容与 `config_reload` 的回复相同；stdio 适配器

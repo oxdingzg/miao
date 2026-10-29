@@ -550,6 +550,11 @@ impl Tools {
             "wakeup":gates.wakeup,"cron":gates.cron,"processNetwork":gates.process_network,
             "processRunnerConfigured":self.runner.is_some(),"mcpAttached":self.mcp.is_some(),
             "workerAttached":self.worker.is_some(),"lspAttached":self.lsp.is_some(),"formatter":self.formatter().map(|registry| registry.descriptor()),"web":self.web().map(|client|client.descriptor())})
+            "readRoots":self.read_roots.as_ref(),"writes":gates.writes,"process":gates.process,
+            "background":gates.background,"delegation":gates.delegation,
+            "wakeup":gates.wakeup,"cron":gates.cron,"processNetwork":gates.process_network,
+            "processRunnerConfigured":self.runner.is_some(),"mcpAttached":self.mcp.is_some(),
+            "workerAttached":self.worker.is_some(),"lspAttached":self.lsp.is_some(),"formatter":self.formatter.as_ref().map(|registry| registry.descriptor()),"web":self.web().map(|client|client.descriptor())})
     }
     /// Grants bind host registration identity without changing replay's tool
     /// boundary vocabulary. Caller-owned IO transports have a per-instance id.

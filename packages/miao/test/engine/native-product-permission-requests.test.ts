@@ -103,6 +103,7 @@ test.skipIf(!binary)(
           expect(await failure(admit({ ...input, facts: { ...facts, resources: ["different"] } }))).toBeInstanceOf(
             Error,
           )
+          await expect(admit({ ...input, facts: { ...facts, resources: ["different"] } })).rejects.toBeInstanceOf(Error)
           expect(await client.request("product_permission_pending", { session_id: call.sessionID })).toEqual([pending])
           expect(await client.request("product_permission_status", { source, request_id: pending.id })).toEqual(pending)
           const withdrawal = await admit({ request_id: "withdraw", facts: { ...facts, resources: ["withdraw"] } })
@@ -118,6 +119,7 @@ test.skipIf(!binary)(
             state: "pending",
           })
           expect(await failure(reply(withdrawal, "always"))).toBeInstanceOf(Error)
+          await expect(reply(withdrawal, "always")).rejects.toBeInstanceOf(Error)
           expect(await client.request("permission_pattern_list")).toEqual([])
           await withdraw(other.id)
           const sibling = await admit({ request_id: "peer", facts })
@@ -155,6 +157,7 @@ test.skipIf(!binary)(
           expect(denied).toMatchObject({ state: "denied", reason: "user_corrected", feedback })
           expect(await reply(corrected, "reject", feedback)).toEqual(denied)
           expect(await failure(reply(corrected, "reject", "different correction"))).toBeInstanceOf(Error)
+          await expect(reply(corrected, "reject", "different correction")).rejects.toBeInstanceOf(Error)
           expect(await client.request("product_permission_status", { source, request_id: declined.id })).toMatchObject({
             state: "denied",
             reason: "user_rejected",
@@ -212,6 +215,17 @@ test.skipIf(!binary)(
           }),
         ),
       ).toBeInstanceOf(Error)
+      await expect(
+        client.request("product_permission_reply", {
+          source: result.source,
+          response: {
+            request_id: result.pending.id,
+            input_hash: result.pending.input_hash,
+            authority_revision: result.pending.authority_revision,
+            reply: "always",
+          },
+        }),
+      ).rejects.toBeInstanceOf(Error)
       // Cancel acknowledges the interruption; run.finished publishes its durable cleanup.
       await Promise.race([
         finished.promise,

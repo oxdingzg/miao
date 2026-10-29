@@ -634,6 +634,7 @@ pub enum Command {
     PermissionPatternList,
     PermissionPatternSnapshot,
     PermissionPatternChanges(crate::permission_pattern_changes::Input),
+    PermissionPatternList,
     PermissionPatternPut(crate::permission_patterns::Put),
     PermissionPatternRemove(crate::permission_patterns::Remove),
     /// Project the product's saved "always allow" rules into the engine store

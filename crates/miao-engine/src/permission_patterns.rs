@@ -99,6 +99,7 @@ pub(crate) fn rules(connection: &Connection, workspace: &str) -> Result<Vec<Rule
 }
 
 pub(crate) fn records(connection: &Connection, workspace: &str) -> Result<Vec<Pattern>, Error> {
+fn records(connection: &Connection, workspace: &str) -> Result<Vec<Pattern>, Error> {
     require_workspace(workspace)?;
     // Older compatible databases may be opened read-only by a catalog. Missing
     // optional native patterns mean no additional allow, never an implicit grant.
@@ -163,6 +164,7 @@ pub(crate) fn put_in(
     require_rule(rule)?;
     let id = rule_digest(workspace, rule)?;
     let inserted = transaction.execute(
+    transaction.execute(
         "INSERT OR IGNORE INTO engine_owned_permission_rule(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
         params![workspace, id, serde_json::to_string(rule)?, crate::approval::now_ms()],
     )?;
@@ -214,6 +216,7 @@ fn remove(connection: &mut Connection, workspace: &str, id: &str) -> Result<bool
 }
 
 pub(crate) fn require_workspace(workspace: &str) -> Result<(), Error> {
+fn require_workspace(workspace: &str) -> Result<(), Error> {
     if workspace.is_empty() || workspace.len() > 8192 || workspace.contains('\0') {
         return Err(Error::Invalid("invalid native permission workspace".into()));
     }
@@ -221,6 +224,7 @@ pub(crate) fn require_workspace(workspace: &str) -> Result<(), Error> {
 }
 
 pub(crate) fn require_rule(rule: &Rule) -> Result<(), Error> {
+fn require_rule(rule: &Rule) -> Result<(), Error> {
     if rule.effect != Decision::Allow {
         return Err(Error::Invalid("native saved patterns must allow".into()));
     }
@@ -233,6 +237,7 @@ pub(crate) fn require_rule(rule: &Rule) -> Result<(), Error> {
 }
 
 pub(crate) fn rule_digest(workspace: &str, rule: &Rule) -> Result<String, Error> {
+fn rule_digest(workspace: &str, rule: &Rule) -> Result<String, Error> {
     Ok(digest(&serde_json::to_vec(
         &json!({"semantics":"native-permission-pattern-v1","workspace":workspace,"rule":rule}),
     )?))

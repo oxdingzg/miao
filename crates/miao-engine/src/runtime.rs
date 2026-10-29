@@ -802,6 +802,8 @@ impl Runtime {
     /// snapshot it took and the next one sees the edit.
     pub async fn reload_config(&self) -> Result<Value, Error> {
         let mut unsupported = vec!["tools"];
+    pub async fn reload_config(&self) -> Result<Value, Error> {
+        let mut unsupported = vec!["context", "tools"];
         // The LSP registry only exists when startup found at least one server;
         // a plan that starts empty cannot grow without rebuilding Tools, so
         // that case is reported rather than silently accepted. The MCP

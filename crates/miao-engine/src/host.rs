@@ -488,6 +488,18 @@ impl Host {
             } => {
                 runtime
                     .store()
+            } => {
+                runtime
+                    .store()
+                    .revert_stage(&session_id, boundary_seq, files)
+                    .await
+            }
+            Command::RevertPreview {
+                session_id,
+                boundary_seq,
+            } => {
+                runtime
+                    .store()
                     .revert_preview(&session_id, boundary_seq)
                     .await
             }

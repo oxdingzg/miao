@@ -359,6 +359,9 @@ function services(fixture: Awaited<ReturnType<typeof nativeHostSource>>) {
       PermissionV2.node,
       PermissionSource.node,
     ]),
+function services(fixture: Awaited<ReturnType<typeof nativeHostSource>>) {
+  return AppNodeBuilder.build(
+    LayerNode.group([Database.node, Location.node, AgentV2.node, PermissionV2.node, PermissionSource.node]),
     [
       [Database.node, Database.layerFromPath(":memory:")],
       [
@@ -373,6 +376,7 @@ function services(fixture: Awaited<ReturnType<typeof nativeHostSource>>) {
 }
 
 function setup(fixture: Awaited<ReturnType<typeof nativeHostSource>>, native = true) {
+function setup(fixture: Awaited<ReturnType<typeof nativeHostSource>>) {
   return Effect.gen(function* () {
     const database = yield* Database.Service
     const agents = yield* AgentV2.Service
@@ -392,6 +396,14 @@ function setup(fixture: Awaited<ReturnType<typeof nativeHostSource>>, native = t
           location: Location.Ref.make({ directory: AbsolutePath.make(fixture.directory) }),
         },
       }).pipe(Effect.orDie)
+    yield* SessionEnginePlacement.claim(database.db, {
+      sessionID,
+      placement: {
+        engine: "rust",
+        storage: AbsolutePath.make(fixture.storage),
+        location: Location.Ref.make({ directory: AbsolutePath.make(fixture.directory) }),
+      },
+    }).pipe(Effect.orDie)
     yield* database.db
       .insert(SessionTable)
       .values({

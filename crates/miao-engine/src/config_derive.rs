@@ -8,6 +8,7 @@
 //! implementations, one set of samples.
 
 use crate::{config_scope, context, formatter, hooks, lsp, mcp, permission, tools};
+use crate::{config_scope, lsp, mcp, permission};
 use serde_json::Value;
 use std::{path::Path, path::PathBuf, sync::Arc};
 
