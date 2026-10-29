@@ -103,6 +103,7 @@ const commandLoaders: Array<[string, CommandLoader]> = [
   ["marketplace", () => import("./cli/cmd/marketplace").then((m) => m.MarketplaceCommand)],
   ["db", () => import("./cli/cmd/db").then((m) => m.DbCommand)],
   ["doctor", () => import("./cli/cmd/doctor").then((m) => m.DoctorCommand)],
+  ["memory", () => import("./cli/cmd/memory").then((m) => m.MemoryCommand)],
 ]
 const defaultCommand: CommandLoader = () => import("./cli/cmd/tui").then((m) => m.TuiThreadCommand)
 

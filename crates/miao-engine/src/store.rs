@@ -711,6 +711,80 @@ impl Store {
         .await
     }
 
+    /// Rewrite the text of an input that has not been promoted yet, keeping its
+    /// identity, delivery class and queue position.
+    ///
+    /// Admission identity is the retry key, so a second `admit` with the same
+    /// id and different text conflicts; this is the operator's explicit way to
+    /// change a committed prompt without silently reordering the inbox. Only
+    /// pending work is editable: a promoted input is already a transcript
+    /// message, and a cancelled one is a settled decision.
+    pub async fn edit_input(
+        &self,
+        session: &str,
+        input_id: &str,
+        prompt: &str,
+    ) -> Result<Value, Error> {
+        if session.is_empty()
+            || input_id.is_empty()
+            || prompt.is_empty()
+            || session.len() > 256
+            || input_id.len() > 256
+            || prompt.len() > 1024 * 1024
+        {
+            return Err(Error::Invalid(
+                "session_id, input_id and prompt must be nonempty".into(),
+            ));
+        }
+        let (session, input_id, prompt) =
+            (session.to_owned(), input_id.to_owned(), prompt.to_owned());
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let row: Option<(String, String, String)> = tx
+                .query_row(
+                    "SELECT state,prompt,delivery FROM engine_input WHERE id=?1 AND session_id=?2",
+                    params![input_id, session],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .optional()?;
+            let Some((state, previous, delivery)) = row else {
+                return Err(Error::Invalid("input does not exist".into()));
+            };
+            if state != "pending" {
+                return Err(Error::Invalid(format!("input is {state}")));
+            }
+            // An edit that changes nothing is a retry, not a new history fact.
+            let duplicate = previous == prompt;
+            if !duplicate {
+                tx.execute(
+                    "UPDATE engine_input SET prompt=?1 WHERE id=?2",
+                    params![prompt, input_id],
+                )?;
+                // The transcript never shows this event; it is an audit of how
+                // the queued text changed, so it carries digests rather than a
+                // second copy of the prompt.
+                append(
+                    &tx,
+                    &session,
+                    "input.edited",
+                    json!({
+                        "input_id": input_id,
+                        "previous_digest": crate::permission::digest(previous.as_bytes()),
+                        "prompt_digest": crate::permission::digest(prompt.as_bytes()),
+                    }),
+                )?;
+            }
+            tx.commit()?;
+            Ok(json!({
+                "session_id": session,
+                "input_id": input_id,
+                "delivery": delivery,
+                "duplicate": duplicate,
+            }))
+        })
+        .await
+    }
+
     pub async fn active_run(&self, session: &str) -> Result<Option<String>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {

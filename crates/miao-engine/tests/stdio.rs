@@ -611,3 +611,55 @@ async fn a_slow_reader_does_not_kill_the_engine() {
     // the pipe buffer and the output queue that the old deadline choked on.
     assert_eq!(events["result"].as_array().unwrap().len(), 100);
 }
+
+#[test]
+fn input_edit_is_a_wire_command_that_rewrites_a_queued_prompt() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"first draft","delivery":"queue"},"resume":false}}),
+        json!({"id":2,"method":"edit_input","params":{"session_id":"s","input_id":"one","prompt":"second draft"}}),
+        json!({"id":3,"method":"pending_inputs","params":{"session_id":"s"}}),
+        json!({"id":4,"method":"edit_input","params":{"session_id":"s","input_id":"missing","prompt":"text"}}),
+        json!({"id":5,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let reply = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap().clone();
+    let edited = reply(2)["result"].clone();
+    assert_eq!(edited["duplicate"], json!(false), "{edited}");
+    assert_eq!(edited["delivery"], json!("queue"));
+    let pending = reply(3)["result"].clone();
+    assert_eq!(pending["inputs"][0]["prompt"], json!("second draft"));
+    // The identity, not the text, is what an unknown edit is refused on.
+    assert!(reply(4)["error"].is_object(), "{:?}", reply(4));
+}

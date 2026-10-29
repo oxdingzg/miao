@@ -27,6 +27,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `resume` | `session_id` | `{accepted:true}` |
 | `cancel_input` | `session_id`, `input_id` | `{accepted:bool, reason?}` |
 | `input_status` | `session_id`, `input_id` | admission receipt (see below) |
+| `edit_input` | `session_id`, `input_id`, `prompt` | `{session_id, input_id, delivery, duplicate}` |
 | `cancel` | `session_id` | `{accepted:bool}` |
 | `archive` | `session_id`, `archived` | `{accepted:true, archived}` |
 | `pin` | `session_id`, `pinned` | `{accepted:true, pinned}` |
@@ -218,6 +219,32 @@ without replaying every `input.*` event:
 - Execution and failure are deliberately absent. Promotion starts a run whose
   outcome belongs to that run — `run.finished` and the Session's run state —
   not to the admission receipt.
+### Pending-input editing
+
+`edit_input` takes `session_id`, `input_id` and the new `prompt`, and rewrites a
+still-pending input in place. The admission identity, delivery class and
+admission order are preserved, so an edited steer keeps its place among steers
+and an edited queued item keeps its place in the queue; only the text the
+eventual user message carries changes. Editing appends an `input.edited` event
+carrying digests of the previous and new text — an audit of the change, not a
+second copy of the prompt — and appends nothing when the text is unchanged,
+which instead reports `duplicate: true`.
+
+Only `pending` inputs are editable. A promoted input is already a transcript
+message that a revert, not an edit, would move; a cancelled identity is
+terminal. Both fail with `invalid_request` naming the input's state, as does an
+id this Session never admitted. `prompt` is bounded to 1 MiB, matching
+admission. Attachments, command references and agent references are not part of
+an edit: they were admitted with the prompt, and a client that needs different
+media or references cancels and admits again under a fresh id.
+
+A product "take back and rewrite" therefore needs no separate command: read the
+input with `pending_inputs`, `edit_input` it, or `cancel_input` it and restore
+the text in its composer.
+
+Because the edit changes what the admission identity now means, a later exact
+retry of the original `admit` — same id, pre-edit text — conflicts instead of
+silently reverting the rewrite.
 
 ### Session agent selection
 
