@@ -64,7 +64,19 @@ function substitute(value: unknown, session: string, inputID: string): unknown {
   return value
 }
 
-function handle(request: { id: number; method: string; params: Record<string, unknown> }) {
+function handle(request: {
+  id: number
+  method: string
+  params: Record<string, unknown>
+  bridge_id?: number
+  result?: unknown
+  error?: unknown
+}) {
+  if (typeof request.bridge_id === "number") {
+    if (process.env.ENGINE_FAKE_BRIDGE_LOG)
+      appendFileSync(process.env.ENGINE_FAKE_BRIDGE_LOG, JSON.stringify(request) + "\n")
+    return
+  }
   const { id, method, params } = request
   if (requestLog) appendFileSync(requestLog, method + "\n")
   if (method === "fixture_exit") {

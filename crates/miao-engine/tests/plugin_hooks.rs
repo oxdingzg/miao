@@ -310,6 +310,7 @@ async fn cancelled_hook(work: &str) {
     if finished.is_err() {
         runtime.deliver_product_reply(bridge_id, json!({"error":"fixture cleanup"}));
     }
+    let notice = tokio::time::timeout(std::time::Duration::from_secs(1), bridge_rx.recv()).await;
     drop(bridge_rx);
     tokio::time::timeout(std::time::Duration::from_secs(5), runtime.shutdown())
         .await
@@ -317,6 +318,13 @@ async fn cancelled_hook(work: &str) {
     assert!(
         finished.is_ok(),
         "cancel waited for the unanswered {work} hook"
+    );
+    assert_eq!(
+        notice.unwrap().unwrap(),
+        json!({
+            "method": "hook_tool.cancel", "bridge_id": bridge_id,
+            "params": {"session_id": "s", "bridge_id": bridge_id}
+        })
     );
     assert!(!runtime.deliver_product_reply(bridge_id, json!({"result":{}})));
     let events = store.events("s", 0, 1000).await.unwrap();
@@ -355,6 +363,8 @@ async fn shutdown_settles_unanswered_plugin_hooks() {
         assert_eq!(params["kind"], work);
         let finished =
             tokio::time::timeout(std::time::Duration::from_secs(2), runtime.shutdown()).await;
+        let notice =
+            tokio::time::timeout(std::time::Duration::from_secs(1), bridge_rx.recv()).await;
         if finished.is_err() {
             runtime.deliver_product_reply(bridge_id, json!({"error":"fixture cleanup"}));
             drop(bridge_rx);
@@ -365,6 +375,13 @@ async fn shutdown_settles_unanswered_plugin_hooks() {
         assert!(
             finished.is_ok(),
             "shutdown waited for the unanswered {work} hook"
+        );
+        assert_eq!(
+            notice.unwrap().unwrap(),
+            json!({
+                "method": "hook_tool.cancel", "bridge_id": bridge_id,
+                "params": {"session_id": "s", "bridge_id": bridge_id}
+            })
         );
         assert!(!runtime.deliver_product_reply(bridge_id, json!({"result":{}})));
         assert!(store

@@ -1,13 +1,17 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { AgentV2 } from "@miao/core/agent"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { SessionStore } from "@miao/core/session/store"
 import { ToolOutputStore } from "@miao/core/tool-output-store"
 import { ToolPlugins } from "@miao/core/tool/plugins"
-import { Effect, Layer, Scope } from "effect"
+import { Deferred, Effect, Layer, Scope } from "effect"
 import { PluginHooks } from "../../src/engine/plugin-hooks"
 import { testEffect } from "../lib/effect"
+import path from "node:path"
+import { mkdir } from "node:fs/promises"
+import { EngineClient } from "../../src/engine/client"
+import { tmpdir } from "../fixture/fixture"
 
 const outputStore = Layer.mock(ToolOutputStore.Service, {
   bound: (input) => Effect.succeed({ output: input.output, outputPaths: [] }),
@@ -120,3 +124,110 @@ describe("PluginHooks", () => {
     }),
   )
 })
+
+for (const kind of ["before", "after", "definition"] as const)
+  it.effect(`interrupts the actual ${kind} hook Effect when its callback signal aborts`, () =>
+    Effect.gen(function* () {
+      const plugins = yield* ToolPlugins.Service
+      const scope = yield* Scope.make()
+      const release = yield* Deferred.make<void>()
+      const started = Promise.withResolvers<void>()
+      const finalized = Promise.withResolvers<void>()
+      yield* plugins.hook[kind](() =>
+        Effect.sync(() => started.resolve()).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.ensuring(Effect.sync(() => finalized.resolve())),
+        ),
+      ).pipe(Scope.provide(scope))
+      const options = yield* PluginHooks.prepare(configuration, { store })
+      const controller = new AbortController()
+      const pending = options.onHookTool!({ ...call(kind), signal: controller.signal }).catch(() => undefined)
+      yield* Effect.promise(() => started.promise)
+      controller.abort()
+      const interrupted = yield* Effect.promise(() =>
+        Promise.race([finalized.promise.then(() => true), Bun.sleep(500).then(() => false)]),
+      )
+      // Release old implementations too, so a failed regression leaves no live Effect.
+      yield* Deferred.succeed(release, undefined)
+      yield* Effect.promise(() => pending)
+      expect(interrupted).toBe(true)
+    }),
+  )
+
+for (const kind of ["before", "after", "definition"] as const) {
+  const binary = process.env.MIAO_ENGINE_BIN
+  if (!binary) {
+    test.skip(`native cancellation releases the actual ${kind} plugin callback`, () => {})
+    continue
+  }
+  it.effect(
+    `native cancellation releases the actual ${kind} plugin callback`,
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* Effect.acquireRelease(
+          Effect.promise(() => tmpdir()),
+          (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+        )
+        const workspace = path.join(tmp.path, "workspace")
+        yield* Effect.promise(() => mkdir(workspace))
+        yield* Effect.promise(() => Bun.write(path.join(workspace, "a.txt"), "fixture"))
+        const policyFile = path.join(tmp.path, "policy.json")
+        yield* Effect.promise(() =>
+          Bun.write(policyFile, JSON.stringify({ rules: [{ tool: "*", path: "**", decision: "allow" }] })),
+        )
+        const productToolsFile = path.join(tmp.path, "product-tools.json")
+        yield* Effect.promise(() => Bun.write(productToolsFile, JSON.stringify({ tools: [] })))
+        const provider = Bun.serve({
+          hostname: "127.0.0.1",
+          port: 0,
+          fetch: () =>
+            new Response(
+              `data: ${JSON.stringify({ choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "read-fixture", type: "function", function: { name: "read_file", arguments: JSON.stringify({ path: "a.txt" }) } }] }, finish_reason: "tool_calls" }] })}\n\ndata: [DONE]\n\n`,
+              { headers: { "content-type": "text/event-stream" } },
+            ),
+        })
+        yield* Effect.addFinalizer(() => Effect.sync(() => provider.stop(true)))
+        const plugins = yield* ToolPlugins.Service
+        const scope = yield* Scope.make()
+        const release = yield* Deferred.make<void>()
+        yield* Effect.addFinalizer(() => Deferred.succeed(release, undefined))
+        const started = Promise.withResolvers<void>()
+        const finalized = Promise.withResolvers<void>()
+        yield* plugins.hook[kind](() =>
+          Effect.sync(() => started.resolve()).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.ensuring(Effect.sync(() => finalized.resolve())),
+          ),
+        ).pipe(Scope.provide(scope))
+        const options = yield* PluginHooks.prepare(configuration, { store })
+        const client = EngineClient.start({
+          binary,
+          workspace,
+          db: path.join(tmp.path, "engine.db"),
+          model: "fixture",
+          provider: "openai-chat",
+          endpoint: new URL("chat/completions", provider.url).toString(),
+          policyFile,
+          productToolsFile,
+          ...options,
+          env: { OPENAI_API_KEY: "fixture-only" },
+        })
+        yield* Effect.addFinalizer(() => Effect.promise(() => client.close()))
+        yield* Effect.promise(() =>
+          client.admit({ session_id: "ses_plugin_hooks", input_id: "native-hook", prompt: "read the file" }),
+        )
+        expect(
+          yield* Effect.promise(() =>
+            Promise.race([started.promise.then(() => true), Bun.sleep(3_000).then(() => false)]),
+          ),
+        ).toBe(true)
+        yield* Effect.promise(() => client.cancel("ses_plugin_hooks"))
+        expect(
+          yield* Effect.promise(() =>
+            Promise.race([finalized.promise.then(() => true), Bun.sleep(2_000).then(() => false)]),
+          ),
+        ).toBe(true)
+      }),
+    15_000,
+  )
+}

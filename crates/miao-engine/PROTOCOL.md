@@ -17,6 +17,17 @@ One JSON object per line on stdin/stdout. A request carries a string or number
 Notifications carry no request id. Only local stdio is defined here; the engine
 does not claim ACP or the existing miao HttpApi is compatible.
 
+### Reverse-call cancellation
+
+Host reverse calls use `product_tool` or `hook_tool` with a `bridge_id` and
+`params.session_id`. Cancelling the Session removes its pending reply slots and
+emits the corresponding `product_tool.cancel` or `hook_tool.cancel` notification
+with the same `bridge_id` and `params: {session_id, bridge_id}`. The host should
+interrupt only the matching Session's active callback, release scoped resources,
+and suppress late replies. Unknown notices are safe to ignore. Connection loss
+or client close must also release host callbacks. A host that ignores a notice
+does not prevent the engine from settling its own cancelled drain.
+
 ## Methods
 
 | Method | Params | Result |
@@ -1191,3 +1202,24 @@ represent revocation. Managed product owners use the snapshot command before
 admission, including for an empty set, and fail startup/admission if the engine
 cannot synchronize it. This command does not transfer native rule-writing
 ownership or remove the compatibility TypeScript permission evaluator.
+
+### Permission source execution claim
+
+Session-store schema 22 persists `engine_run.lease_epoch` when a fenced run
+starts, in the same transaction as the run and any first input promotions.
+Permission evaluation, admission and replies require the dispatched tool and
+running run to retain that exact Session epoch and the current process owner.
+Renewing the same epoch preserves authority; a superseding claim invalidates the
+old source even before its asynchronous drain notices the loss. The saved-rule
+write and reply remain in the guarded transaction.
+
+Historical and deliberately unfenced storage rows keep a NULL epoch during
+upgrade; current lease data is never used to fabricate old execution provenance.
+Such rows cannot act as live permission sources. This does not resume provider
+work or create another Session/drain identity. Older Session-store writers refuse
+schema 22; the separate project permission database retains its own schema v2.
+
+Format publication and schema changes share an immediate SQLite transaction.
+Upgrading an older store is refused while a recorded running-run owner process
+is alive; its schema, format and rows remain available to that older owner.
+Finished runs and dead owners do not require provider recovery to upgrade.
