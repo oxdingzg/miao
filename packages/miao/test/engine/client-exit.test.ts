@@ -18,7 +18,8 @@ test("a failed child rejects pending and later requests with its startup diagnos
     expect(failure).toBeInstanceOf(EngineError)
     expect(failure).toMatchObject({ code: "engine_closed" })
     if (!(failure instanceof EngineError)) throw failure
-    expect(failure.message).toContain("serve")
+    expect(client.stderrText.trim().length).toBeGreaterThan(0)
+    expect(failure.message).toContain(client.stderrText.trim())
     await expect(client.request("snapshot", { session_id: "s" })).rejects.toBe(failure)
     await expect(client.request("sessions")).rejects.toBe(failure)
   } finally {

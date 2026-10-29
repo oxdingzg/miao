@@ -475,8 +475,7 @@ export class EngineClient {
         },
       })
       try {
-        this.child.stdin.write(JSON.stringify({ id, method, params }) + EOL)
-        void Promise.resolve(this.child.stdin.flush()).catch(() => this.inputClosed())
+        void this.writeInput(JSON.stringify({ id, method, params }) + EOL).catch(() => this.inputClosed())
       } catch {
         this.inputClosed()
       }
@@ -485,6 +484,11 @@ export class EngineClient {
 
   get available() {
     return !this.closed && !this.failure
+  }
+
+  private async writeInput(frame: string) {
+    await this.child.stdin.write(frame)
+    await this.child.stdin.flush()
   }
 
   private inputClosed() {
@@ -537,10 +541,9 @@ export class EngineClient {
     if (this.ephemeral) this.child.kill()
     if (!this.ephemeral) {
       await Promise.resolve()
-        .then(() => {
-          this.child.stdin.write(JSON.stringify({ id: this.next++, method: "shutdown" }) + EOL)
-          void Promise.resolve(this.child.stdin.flush()).catch(() => {})
-          this.child.stdin.end()
+        .then(async () => {
+          await this.writeInput(JSON.stringify({ id: this.next++, method: "shutdown" }) + EOL)
+          await this.child.stdin.end()
         })
         .catch(() => {})
     }
@@ -600,7 +603,8 @@ export class EngineClient {
         | { session_id?: string; name?: string; input?: unknown; call_id?: unknown; message_seq?: unknown }
         | undefined
       const reply = (value: Record<string, unknown>) => {
-        if (this.available) this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+        if (this.available)
+          void this.writeInput(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL).catch(() => this.inputClosed())
       }
       if (typeof bridgeID !== "number" || !params?.name || !this.onProductTool) {
         reply({ error: "product tool is not available on this host" })
@@ -651,7 +655,8 @@ export class EngineClient {
           }
         | undefined
       const reply = (value: Record<string, unknown>) => {
-        if (this.available) this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+        if (this.available)
+          void this.writeInput(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL).catch(() => this.inputClosed())
       }
       if (typeof bridgeID !== "number" || !params?.kind || !this.onHookTool) {
         reply({ error: "tool hooks are not available on this host" })
