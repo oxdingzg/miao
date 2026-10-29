@@ -903,15 +903,20 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.pin",
         Effect.fn(function* (ctx) {
-          // A native Session is owned by the engine, but the pin is a list
-          // preference the catalog owns and the engine has no pin of its own —
-          // its `engine_session` table only carries an archive timestamp. So
-          // the pin is recorded in the catalog the way an accepted native
-          // archive is mirrored, without routing through the engine and without
-          // claiming TypeScript execution authority. The middleware has already
-          // resolved the placement, so this Session exists.
+          // A native Session is owned by the engine, and so is its pin: the
+          // engine records `pinned_at_ms` and emits a durable `session.pinned`
+          // event, which is what lets a second client order the shared catalog
+          // the same way. Mirror the accepted fact without claiming TypeScript
+          // execution authority over the Session.
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
           const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
-          if (placement) {
+          if (Option.isSome(native) && placement) {
+            yield* native.value.pin({
+              sessionID: ctx.params.sessionID,
+              storage: placement.storage,
+              location: placement.location,
+              pinned: ctx.payload.pinned,
+            })
             yield* events.publish(SessionEvent.Info.Updated, {
               sessionID: ctx.params.sessionID,
               timestamp: yield* DateTime.now,
@@ -919,6 +924,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             })
             return
           }
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.pin")
           yield* session.pin({ sessionID: ctx.params.sessionID, pinned: ctx.payload.pinned }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
               Effect.fail(
