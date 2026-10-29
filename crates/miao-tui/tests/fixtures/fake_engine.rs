@@ -97,6 +97,15 @@ fn main() {
                     next += 1;
                 }
             }
+            // A reload the host did not ask for is announced process-wide; the
+            // TUI shows it as a composer notice rather than a Session event.
+            "reload" => {
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+                send(
+                    &mut out,
+                    json!({"method":"config","params":{"generation":2,"changed":["policy","context"],"unchanged":[],"unsupported":["tools"]}}),
+                );
+            }
             "product_tool" => {
                 send(&mut out, json!({"id":id,"result":{"ok":true}}));
                 send(
@@ -119,6 +128,7 @@ fn main() {
                     "cursor": 2,
                     "updated_at_ms": updated,
                     "archived_at_ms": null,
+                    "pinned_at_ms": null,
                     "parent_session_id": null,
                     "location": "/tmp",
                     "model_selection": {"protocol": "chat", "model": "fake/glm"},
@@ -247,6 +257,10 @@ fn main() {
             }
             "archive" if sessions => {
                 log_action(&frame["params"], "archive");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "pin" if sessions => {
+                log_action(&frame["params"], "pin");
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
             }
             "remove" if sessions => {
