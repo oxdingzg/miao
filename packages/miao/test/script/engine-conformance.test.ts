@@ -60,7 +60,14 @@ console.log(JSON.stringify({type:"step_finish", part:{sessionID:id, cost:0.01, t
           "5",
         ],
         {
-          env: { ...process.env, CONFORMANCE_FIXTURE_INTERRUPTED: interrupted ? "1" : "" },
+          env: {
+            ...process.env,
+            // The conformance harness seeds from the operator's home database.
+            // This synthetic CLI must start with its own empty profile instead.
+            HOME: directory,
+            USERPROFILE: directory,
+            CONFORMANCE_FIXTURE_INTERRUPTED: interrupted ? "1" : "",
+          },
           stdout: "pipe",
           stderr: "pipe",
         },
@@ -71,7 +78,7 @@ console.log(JSON.stringify({type:"step_finish", part:{sessionID:id, cost:0.01, t
         new Response(child.stderr).text(),
       ])
       expect(stderr).toBe("")
-      expect(code).toBe(interrupted ? 1 : 0)
+      expect(code, stdout).toBe(interrupted ? 1 : 0)
       expect(stdout).toContain(
         interrupted ? "native run ended as interrupted despite exit code 0" : "SUMMARY pass=4 fail=0",
       )
