@@ -67,6 +67,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "permission_context_store": 1,
                 "permission_project_handoff": 1,
                 "permission_context_handoff": 1,
+                "permission_source_handoff": 1,
                 "product_permission_requests": 1,
                 "product_permission_replies": 1,
                 "product_permission_cancel": 1,
@@ -77,6 +78,33 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             })
         );
         return Ok(());
+    }
+    if args.first().map(String::as_str) == Some("permission-source") {
+        let (flags, remainder) = args[1..].as_chunks::<2>();
+        let mut options = HashMap::new();
+        for flag in flags {
+            if !["--db", "--project", "--directory"].contains(&flag[0].as_str())
+                || options.insert(flag[0].clone(), flag[1].clone()).is_some()
+            {
+                return Err("unknown or duplicate permission-source option".into());
+            }
+        }
+        if !remainder.is_empty() || options.len() != 3 {
+            return Err(
+                "Usage: miao-engine permission-source --db PATH --project ID --directory PATH"
+                    .into(),
+            );
+        }
+        let result = serve_permission_source(
+            &options["--db"],
+            options["--project"].clone(),
+            &options["--directory"],
+        )
+        .await;
+        if let Err(error) = &result {
+            eprintln!("miao-engine permission-source: {error}");
+        }
+        std::process::exit(if result.is_ok() { 0 } else { 1 });
     }
     if args.first().map(String::as_str) == Some("permissions") {
         let (flags, remainder) = args[1..].as_chunks::<2>();
@@ -265,8 +293,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\n       miao-engine permissions --db PATH --project ID\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\n       miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]\n       miao-engine permission-source --db PATH --project ID --directory PATH\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
         std::process::exit(2);
     }
     let acp = mode == Some("acp");
@@ -993,6 +1020,24 @@ async fn serve_permissions(
         None => miao_engine::permission_control::Controller::open(path, project).await,
     }
     .map_err(io::Error::other)?;
+    serve_permission_control(|value| controller.dispatch(value)).await
+}
+
+async fn serve_permission_source(path: &str, project: String, directory: &str) -> io::Result<()> {
+    let controller =
+        miao_engine::permission_source_control::Controller::open(path, project, directory)
+            .await
+            .map_err(io::Error::other)?;
+    let result = serve_permission_control(|value| controller.dispatch(value)).await;
+    controller.close().await.map_err(io::Error::other)?;
+    result
+}
+
+async fn serve_permission_control<F, Reply>(dispatch: F) -> io::Result<()>
+where
+    F: Fn(Value) -> Reply,
+    Reply: std::future::Future<Output = (Value, bool)>,
+{
     let mut input = BufReader::new(tokio::io::stdin());
     let mut output = tokio::io::stdout();
     let mut bytes = Vec::new();
@@ -1004,7 +1049,7 @@ async fn serve_permissions(
         };
         let (response, shutdown) = match line {
             Ok(Some(line)) => match serde_json::from_slice::<Value>(&line) {
-                Ok(value) => controller.dispatch(value).await,
+                Ok(value) => dispatch(value).await,
                 Err(_) => (
                     json!({"id":null,"error":{"code":"invalid_request","message":"expected JSON"}}),
                     false,

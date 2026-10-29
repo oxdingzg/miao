@@ -209,12 +209,7 @@ impl Context {
         Ok(())
     }
     fn fingerprint(&self, patterns: &[Pattern]) -> Result<String, Error> {
-        Ok(digest(&serde_json::to_vec(&(
-            "directory-permissions-v1",
-            &self.project.project,
-            &self.location,
-            patterns,
-        ))?))
+        migration_fingerprint(&self.project.project, &self.location, patterns)
     }
     fn view(&self, connection: &Connection) -> Result<Snapshot, Error> {
         let project = permission_project::view(connection, &self.project.project)?;
@@ -288,6 +283,19 @@ impl Context {
             patterns,
         })
     }
+}
+
+pub(crate) fn migration_fingerprint(
+    project: &str,
+    location: &str,
+    patterns: &[Pattern],
+) -> Result<String, Error> {
+    Ok(digest(&serde_json::to_vec(&(
+        "directory-permissions-v1",
+        project,
+        location,
+        patterns,
+    ))?))
 }
 
 fn pattern_id(directory: &str, rule: &Rule) -> Result<String, Error> {

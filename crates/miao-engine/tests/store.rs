@@ -742,7 +742,8 @@ async fn fenced_run_start_persists_the_exact_claim_and_unfenced_storage_does_not
 
 #[tokio::test]
 async fn format_upgrade_waits_for_old_run_owners_without_changing_their_format_or_data() {
-    for claimed_version in [21, miao_engine::store::SCHEMA_VERSION] {
+    // Both shapes precede the schema-23 legacy-table rename.
+    for claimed_version in [21, 22] {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("engine.db");
         let connection = rusqlite::Connection::open(&path).unwrap();
