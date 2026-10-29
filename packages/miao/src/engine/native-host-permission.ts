@@ -7,6 +7,16 @@ import type { Capabilities } from "./discovery"
 import { messageID } from "./identity"
 import { ProductPermissionRequest } from "./product-permission-request"
 
+export function supports(capabilities: Capabilities | undefined): capabilities is Capabilities {
+  return (
+    capabilities?.productPermissionRequests === 1 &&
+    capabilities.productPermissionReplies === 1 &&
+    capabilities.productPermissionCancel === 1 &&
+    capabilities.productPermissionDiagnostics === 1 &&
+    capabilities.productPermissionAuto === 1
+  )
+}
+
 /** One live reverse call's permission adapter; authority stays in its engine. */
 export function make(input: {
   client: Pick<EngineClient, "request">
@@ -32,13 +42,7 @@ export function make(input: {
     return info
   })
   const admit = Effect.fn("Engine.hostPermission.admit")(function* (request: PermissionV2.AssertInput) {
-    if (
-      input.capabilities.productPermissionRequests !== 1 ||
-      input.capabilities.productPermissionReplies !== 1 ||
-      input.capabilities.productPermissionCancel !== 1 ||
-      input.capabilities.productPermissionDiagnostics !== 1 ||
-      input.capabilities.productPermissionAuto !== 1
-    )
+    if (!supports(input.capabilities))
       return yield* Effect.die(
         new EngineError("host_permission_unsupported", "Native permission capabilities are missing"),
       )

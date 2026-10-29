@@ -125,6 +125,8 @@ export interface EngineOptions {
     bridgeID: number
     /** The calling assistant message's durable seq, when the engine reports it. */
     messageSeq?: number
+    /** The source callback must carry cancellation before native permission routing is enabled. */
+    signal?: AbortSignal
   }) => Promise<unknown>
   /**
    * A run settled while this bridge call was still pending (cancel, failure,
