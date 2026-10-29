@@ -1795,12 +1795,7 @@ mod tests {
     }
 
     fn wheel(kind: MouseEventKind) -> AppEvent {
-        AppEvent::Mouse(MouseEvent {
-            kind,
-            column: 0,
-            row: 0,
-            modifiers: KeyModifiers::NONE,
-        })
+        AppEvent::Mouse(MouseEvent::new(kind, 0, 0, KeyModifiers::NONE))
     }
 
     #[test]
