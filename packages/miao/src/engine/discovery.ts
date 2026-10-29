@@ -30,6 +30,7 @@ export type Capabilities = {
   catalog?: number
   savedRulesSnapshot?: number
   savedPermissionMigration?: number
+  permissionProjectStore?: number
   permissionImportChanges?: number
   productPermissionRequests?: number
   productPermissionReplies?: number
@@ -90,6 +91,7 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (wire.product_permission_auto !== undefined && !isRevision(wire.product_permission_auto)) return undefined
     if (wire.permission_pattern_changes !== undefined && !isRevision(wire.permission_pattern_changes)) return undefined
     if (wire.permission_patterns !== undefined && !isRevision(wire.permission_patterns)) return undefined
+    if (wire.permission_project_store !== undefined && !isRevision(wire.permission_project_store)) return undefined
     return {
       name: "miao-engine",
       version: wire.version,
@@ -97,6 +99,9 @@ export function capabilities(binary: string): Capabilities | undefined {
       schema: wire.schema,
       ...(typeof routesSchema === "number" ? { routesSchema } : {}),
       ...(typeof wire.catalog === "number" ? { catalog: wire.catalog } : {}),
+      ...(typeof wire.permission_project_store === "number"
+        ? { permissionProjectStore: wire.permission_project_store }
+        : {}),
       ...(typeof wire.permission_import_changes === "number"
         ? { permissionImportChanges: wire.permission_import_changes }
         : {}),
