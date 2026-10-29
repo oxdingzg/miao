@@ -11,11 +11,15 @@ export const ID = Schema.String.pipe(
 )
 export type ID = typeof ID.Type
 
+export const NativePrefix = "psv_native_"
+
 export const Info = Schema.Struct({
   id: ID,
   projectID: ProjectID,
   action: Schema.String,
   resource: Schema.String,
+  origin: Schema.Literal("native").pipe(Schema.optional),
+  scope: Schema.Struct({ type: Schema.Literal("directory"), directory: Schema.String }).pipe(Schema.optional),
 }).annotate({ identifier: "PermissionSaved.Info" })
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 
