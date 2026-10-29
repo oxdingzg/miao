@@ -12,6 +12,7 @@ if (binary)
     ["list_sessions", "success"],
     ["workflow", "success"],
     ["workflow", "denied"],
+    ["workflow", "cancel-peer"],
     ["switch_workspace", "success"],
     ["switch_workspace", "missing"],
     ["switch_workspace", "denied"],
@@ -29,6 +30,8 @@ if (binary)
       await Bun.write(policyFile, JSON.stringify({ mode: "workspace" }))
       const tools: string[] = []
       let calls = 0
+      let childCalls = 0
+      const releaseChildren = Promise.withResolvers<void>()
       const provider = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
@@ -43,6 +46,10 @@ if (binary)
             (message) =>
               message.role === "user" && JSON.stringify(message.content).includes("workflow-child-acceptance"),
           )
+          if (childTurn && outcome === "cancel-peer") {
+            childCalls++
+            await releaseChildren.promise
+          }
           const first = !childTurn && !body.messages.some((message) => message.role === "tool")
           const switched =
             toolName === "switch_workspace" &&
@@ -188,6 +195,55 @@ if (binary)
           body: JSON.stringify({ id: "msg_native_product", prompt: { text: "list the other sessions" } }),
         })
         expect(prompt.status).toBe(200)
+        if (outcome === "cancel-peer") {
+          const second = await fetch(url + "/api/session/" + peer.id + "/prompt", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ id: "msg_native_product_peer", prompt: { text: "delegate concurrently" } }),
+          })
+          expect(second.status).toBe(200)
+          const deadline = Date.now() + 15_000
+          while (childCalls < 2 && Date.now() < deadline) await Bun.sleep(50)
+          expect(childCalls).toBe(2)
+          using db = new Database(path.join(tmp.path, "miao.db"), { readonly: true })
+          const children = db.query<{ id: string; parent_id: string }, []>(
+            "select id, parent_id from session where parent_id is not null",
+          ).all()
+          expect(children).toHaveLength(2)
+          const stopped = children.find((child) => child.parent_id === target.id)
+          const live = children.find((child) => child.parent_id === peer.id)
+          if (!stopped || !live) throw new Error("concurrent workflow children are missing")
+          const placement = db.query<{ native_storage: string }, [string]>(
+            "select native_storage from session_engine_placement where session_id = ?",
+          ).get(target.id)
+          if (!placement) throw new Error("native placement is missing")
+          using native = new Database(placement.native_storage, { readonly: true })
+          const running = (id: string) => native.query<{ count: number }, [string]>(
+            "select count(*) as count from engine_run where session_id = ? and state = 'running'",
+          ).get(id)?.count ?? 0
+          expect(running(stopped.id)).toBe(1)
+          expect(running(live.id)).toBe(1)
+          const cancelled = await fetch(url + "/api/session/" + target.id + "/interrupt", {
+            method: "POST", headers,
+          })
+          expect(cancelled.status).toBe(204)
+          const cancellationDeadline = Date.now() + 5_000
+          while (running(stopped.id) && Date.now() < cancellationDeadline) await Bun.sleep(50)
+          expect(running(stopped.id)).toBe(0)
+          expect(running(live.id)).toBe(1)
+          releaseChildren.resolve()
+          let history = ""
+          while (Date.now() < deadline) {
+            const response = await fetch(url + "/api/session/" + peer.id + "/history", { headers })
+            history = await response.text()
+            if (history.includes("completed-product-tool-turn")) break
+            await Bun.sleep(50)
+          }
+          expect(history).toContain("completed-product-tool-turn")
+          const response = await fetch(url + "/api/session/" + target.id + "/history", { headers })
+          expect(await response.text()).not.toContain("completed-product-tool-turn")
+          return
+        }
         const deadline = Date.now() + 60_000
         let history = ""
         while (Date.now() < deadline) {
@@ -252,6 +308,7 @@ if (binary)
         )
         expect(tools).toContain("workflow")
       } finally {
+        releaseChildren.resolve()
         clearTimeout(timer)
         child.kill()
         await child.exited
