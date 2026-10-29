@@ -1,3 +1,4 @@
+import { engineFake } from "../fixture/engine-binary"
 import { describe, expect, test } from "bun:test"
 import { readdir } from "node:fs/promises"
 import path from "node:path"
@@ -5,7 +6,7 @@ import { runBaselineRust, runBaselineTs, startInterruptionProxy } from "@/engine
 import { baselineContract } from "@/engine/baseline"
 import { tmpdir } from "../fixture/fixture"
 
-const fake = path.join(import.meta.dir, "..", "fixture", "engine-fake.ts")
+const fake = engineFake
 const revision = "a".repeat(40)
 const hash = (char: string) => char.repeat(64)
 

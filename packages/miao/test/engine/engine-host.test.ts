@@ -1,3 +1,4 @@
+import { engineFake } from "../fixture/engine-binary"
 import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
@@ -5,7 +6,7 @@ import path from "path"
 import { EngineClient } from "@/engine/client"
 import { runEnginePrompt } from "@/engine/run"
 
-const fake = path.join(import.meta.dir, "..", "fixture", "engine-fake.ts")
+const fake = engineFake
 const realBinary = process.env.MIAO_ENGINE_BIN
 const realTest = realBinary ? test : test.skip
 

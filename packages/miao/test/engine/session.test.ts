@@ -1,3 +1,4 @@
+import { engineFake } from "../fixture/engine-binary"
 import { expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
@@ -5,7 +6,7 @@ import path from "path"
 import { EngineClient } from "@/engine/client"
 import { EngineSession, LIVE_ORDINAL_BASE, type EngineSessionEvent } from "@/engine/session"
 
-const fake = path.join(import.meta.dir, "..", "fixture", "engine-fake.ts")
+const fake = engineFake
 const tmp = () => fs.mkdtemp(path.join(os.tmpdir(), "miao-engine-session-"))
 
 async function waitFor(check: () => boolean, timeoutMs = 5000) {

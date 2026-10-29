@@ -596,6 +596,12 @@ impl Host {
                     .await?;
                 Ok(json!({ "accepted": true }))
             }
+            Command::PermissionSavedSnapshot { workspace, rules } => {
+                runtime
+                    .replace_saved_rules(&self.controller, workspace, rules)
+                    .await?;
+                Ok(json!({ "accepted": true }))
+            }
             Command::Approve {
                 session_id,
                 response,

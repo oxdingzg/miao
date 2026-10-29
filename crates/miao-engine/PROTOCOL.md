@@ -50,6 +50,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `unrevert` | `session_id` | `{restored}` |
 | `approve` | `session_id`, `response` | `{accepted:true}` |
 | `approve_persistent` | `session_id`, `response` (allow only) | `{accepted:true}` |
+| `permission_saved_snapshot` | `workspace`, `rules` (complete saved-allowance snapshot, including empty) | `{accepted:true}` |
 | `history` | `session_id`, `selected` | `Message[]` |
 | `history_page` | `session_id`, `before_seq?`, `limit?` | `{session_id, messages[], has_more, next_before}` |
 | `context` | `session_id`, `epoch?` | Context Epoch or null |
@@ -1129,3 +1130,17 @@ identity changes neither directory nor project state. The request cannot change
 the startup project, canonical directory or workspace identity. Frozen directory
 sources must use this method and probe its capability before preparing a handoff;
 this destination operation does not itself freeze or retire their old writer.
+## Saved-allowance snapshot capability
+
+`saved_rules_snapshot: 1` in `--capabilities` advertises
+`permission_saved_snapshot`. The command atomically replaces the workspace's
+complete projected saved-allowance set; `rules: []` revokes the last saved rule.
+Rules must be bounded allow rules. Invalid input or a failed insert leaves the
+previous snapshot intact. The workspace must resolve to the attached Runtime's
+own directory. Exact persistent approval grants remain separate.
+
+`permission_saved_project` retains legacy additive-import behavior and cannot
+represent revocation. Managed product owners use the snapshot command before
+admission, including for an empty set, and fail startup/admission if the engine
+cannot synchronize it. This command does not transfer native rule-writing
+ownership or remove the compatibility TypeScript permission evaluator.

@@ -101,10 +101,10 @@ export const connectEngine = Effect.fn("Engine.connect")(function* (
   // store before the first prompt can ask, so a rule the user already granted
   // projects here and a failed import refuses the owner instead of asking
   // twice.
-  if (options.savedRules) {
+  if (options.savedRules !== undefined) {
     yield* Effect.tryPromise({
       try: () =>
-        client.request("permission_saved_project", {
+        client.request("permission_saved_snapshot", {
           workspace: options.location.directory,
           rules: JSON.parse(options.savedRules!),
         }),

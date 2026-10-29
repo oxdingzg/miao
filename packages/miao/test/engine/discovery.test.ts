@@ -11,6 +11,16 @@ const engine = (protocol: number) => ({
   schema: 12,
 })
 
+test("saved-rule snapshot owners refuse additive-only engines before startup", () => {
+  const input = { environment: { MIAO_ENGINE_BIN: "/chosen" }, exists: () => true, requireSavedRulesSnapshot: true }
+  expect(() => resolveEngine({ ...input, probe: () => engine(2) })).toThrow("saved-rule snapshots 1")
+  expect(() => resolveEngine({ ...input, probe: () => ({ ...engine(2), savedRulesSnapshot: 0 }) })).toThrow(
+    "saved-rule snapshots 1",
+  )
+  expect(resolveEngine({ ...input, probe: () => ({ ...engine(2), savedRulesSnapshot: 1 }) })?.binary).toBe("/chosen")
+  expect(resolveEngine({ ...input, environment: {}, probe: () => engine(2) })).toBeUndefined()
+})
+
 test("a discovered engine is used only when its protocol is new enough", () => {
   const probe = () => engine(2)
   const exists = () => true
