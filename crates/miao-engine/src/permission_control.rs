@@ -31,6 +31,7 @@ enum Command {
     ContextPut(crate::permission_patterns::Put),
     ContextRemove(Remove),
     ContextMigrate(ContextMigrate),
+    ContextHandoff(ContextHandoff),
     Shutdown,
 }
 #[derive(Deserialize)]
@@ -47,6 +48,12 @@ struct Handoff {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ContextMigrate {
+    patterns: Vec<crate::permission_patterns::Pattern>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContextHandoff {
+    authority: String,
     patterns: Vec<crate::permission_patterns::Pattern>,
 }
 #[derive(Deserialize)]
@@ -146,6 +153,11 @@ impl Controller {
                 Command::ContextMigrate(input) => {
                     serde_json::to_value(self.context()?.migrate(input.patterns).await?)?
                 }
+                Command::ContextHandoff(input) => serde_json::to_value(
+                    self.context()?
+                        .handoff(input.authority, input.patterns)
+                        .await?,
+                )?,
                 Command::Shutdown => json!({"accepted":true}),
             })
         }
