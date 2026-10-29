@@ -589,8 +589,7 @@ impl App {
                 };
                 self.workspace_changes_generation += 1;
                 let generation = self.workspace_changes_generation;
-                let mut dialog =
-                    crate::workspace_changes::Dialog::new(generation, &session_id);
+                let mut dialog = crate::workspace_changes::Dialog::new(generation, &session_id);
                 match self.engine.as_ref() {
                     Some(engine) => engine.vcs_changes(generation, &session_id),
                     None => dialog.loaded(Err("Engine is not connected".into())),
@@ -2334,7 +2333,10 @@ mod tests {
         let (engine, mut requests) = engine::Handle::recording();
         app.attach_engine(engine);
         app.run_builtin(Builtin::WorkspaceChanges);
-        let engine::Request::VcsChanges { generation, session_id } = requests.try_recv().unwrap()
+        let engine::Request::VcsChanges {
+            generation,
+            session_id,
+        } = requests.try_recv().unwrap()
         else {
             panic!("vcs_status request");
         };
