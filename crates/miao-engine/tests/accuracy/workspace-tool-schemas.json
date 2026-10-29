@@ -14,19 +14,14 @@
   "edit_file": {
     "additionalProperties": false,
     "properties": {
-      "anchor": {
-        "type": "string"
-      },
       "expected_sha256": {
         "type": "string"
       },
       "new_string": {
         "type": "string"
       },
-      "new_text": {
-        "type": "string"
-      },
       "old_string": {
+        "minLength": 1,
         "type": "string"
       },
       "path": {
@@ -38,6 +33,8 @@
     },
     "required": [
       "path",
+      "old_string",
+      "new_string",
       "expected_sha256"
     ],
     "type": "object"
