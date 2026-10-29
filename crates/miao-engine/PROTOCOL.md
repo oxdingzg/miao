@@ -850,5 +850,25 @@ Read timeouts do not imply a rule mutation; write timeouts retire the transport
 and require inspection of the durable snapshot before deciding on another write.
 
 This is trusted local rule-management control, not a model authorization tool or
-a Session execution owner. Runtime source/pending/always integration, directory
-scope preservation, product activation and legacy write retirement remain open.
+a Session execution owner. Runtime source/pending/always integration, product
+activation and legacy write retirement remain open.
+
+`permission_context_store: 1` additionally advertises startup binding with
+`--directory PATH [--workspace-id ID]`. The directory is canonicalized and must
+exist; explicit workspace identity is isolated from omitted implicit-local
+placement. Invalid bindings fail before opening the database. The project-only
+entry point remains compatible and refuses context requests without a binding.
+Additional methods use the same frame validation and timeout behavior:
+
+- `context_snapshot`: project snapshot plus canonical `directory`, nullable
+  `workspace_id`, directory `revision`, nullable directory migration receipt,
+  and active native `patterns`, all in one read transaction.
+- `context_put {rule}`: directory-only standing allow, returning that snapshot.
+- `context_remove {id}`: revoke only in the bound directory and workspace identity.
+- `context_migrate {patterns}`: explicit one-time handoff of native directory
+  patterns, retaining their IDs and timestamps. Changed inputs fail; exact retry
+  does not resurrect revoked patterns.
+
+Per-frame requests cannot change any binding. The combined project/directory
+budget counts unique rule content; directory rules never become project grants.
+This API does not freeze the old source or activate automatic product migration.
