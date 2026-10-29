@@ -292,6 +292,29 @@ pub struct Settings {
     pub model: String,
 }
 
+/// The stand-in model a Session uses when nothing supplied a route. The engine
+/// resolves it to whatever provider its defaults name, so a turn through it
+/// fails on the upstream instead of on the missing route.
+pub const UNROUTED_MODEL: &str = "unavailable/model";
+
+/// A startup notice for a Session that has no model route. The product launcher
+/// runs the engine through a shim (`MIAO_ENGINE_REAL_BIN`) that builds the
+/// product's routes and credentials, so only a TUI started directly is
+/// unrouted — and it would otherwise fail its first prompt with an
+/// authentication error from a provider the operator never chose.
+pub fn unrouted_notice(args: &[String], model: &str, supplied_by_shim: bool) -> Option<String> {
+    if supplied_by_shim || model != UNROUTED_MODEL {
+        return None;
+    }
+    if args.iter().any(|arg| arg == "--model-routes-config") {
+        return Some("no model selected: choose one with /model".to_string());
+    }
+    Some(
+        "no model routes: start the product with `miao`, or set MIAO_ENGINE_MODEL_ROUTES_CONFIG"
+            .to_string(),
+    )
+}
+
 pub fn settings(
     workspace: &Path,
     db: Option<PathBuf>,
@@ -306,7 +329,7 @@ pub fn settings(
     // the first launch of the Rust TUI fail before the engine can initialize.
     let model = model
         .or_else(|| std::env::var("MIAO_TUI_MODEL").ok())
-        .unwrap_or_else(|| "unavailable/model".to_string());
+        .unwrap_or_else(|| UNROUTED_MODEL.to_string());
     let config_dir = config_dir.or_else(crate::config::global_dir);
     let spawn = EngineSpawn {
         program: engine_binary(),
@@ -1053,6 +1076,36 @@ mod tests {
             .map(|(name, value)| (name.to_string(), value.to_string()))
             .collect();
         move |name| pairs.get(name).cloned()
+    }
+
+    #[test]
+    fn an_unrouted_model_is_announced_unless_the_product_supplied_routes() {
+        let bare = vec![
+            "serve".to_string(),
+            "--model".to_string(),
+            UNROUTED_MODEL.to_string(),
+        ];
+        assert_eq!(
+            unrouted_notice(&bare, UNROUTED_MODEL, false).as_deref(),
+            Some("no model routes: start the product with `miao`, or set MIAO_ENGINE_MODEL_ROUTES_CONFIG")
+        );
+        // The product's shim replaces the engine's model with the default route,
+        // so the placeholder in argv says nothing about this Session.
+        assert_eq!(unrouted_notice(&bare, UNROUTED_MODEL, true), None);
+        // A manifest makes the picker usable; the Session just has no model yet.
+        let mut routed = bare.clone();
+        routed.extend([
+            "--model-routes-config".to_string(),
+            "/routes.json".to_string(),
+        ]);
+        assert_eq!(
+            unrouted_notice(&routed, UNROUTED_MODEL, false).as_deref(),
+            Some("no model selected: choose one with /model")
+        );
+        assert_eq!(
+            unrouted_notice(&routed, "google/gemini-3.8-flash", false),
+            None
+        );
     }
 
     #[test]
