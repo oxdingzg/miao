@@ -727,6 +727,7 @@ impl Runtime {
                 authority.run_id.clone(),
                 source.call_id.clone(),
                 self.inner.tools.location().into(),
+                authority.lease_epoch,
             )
             .await?;
         let mut outcome = crate::permission_rules::evaluate(&crate::permission_rules::Request {
@@ -3413,6 +3414,7 @@ command: None,
                                                 }
                                                 outcome = bridge.call_authorized(session, name, input, crate::product_permission::Authority {
                                                     run_id: run.into(),
+                                                    lease_epoch: lease.epoch,
                                                     context,
                                                     policy_revision: policy.revision().into(),
                                                     configured: manifest.and_then(|agent| agent.ordered_permissions.as_ref()).map(|ordered| ordered.rules.iter().map(|rule| crate::permission_rules::Rule {

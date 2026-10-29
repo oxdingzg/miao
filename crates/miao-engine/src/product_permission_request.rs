@@ -397,7 +397,14 @@ fn source_active(connection: &Connection, context: &Context) -> Result<bool, Err
         &context.source.call_id,
         &context.workspace,
     )?;
-    Ok(active && !context.authority.cancel.is_cancelled())
+    Ok(active
+        && !context.authority.cancel.is_cancelled()
+        && crate::product_permission::source_epoch_matches(
+            connection,
+            &context.authority.run_id,
+            context.authority.lease_epoch,
+            false,
+        )?)
 }
 
 fn resolve_siblings(

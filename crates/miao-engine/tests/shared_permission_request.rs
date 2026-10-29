@@ -721,3 +721,206 @@ async fn same_runtime_always_resolves_another_live_session_but_reject_never_cros
     );
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn durable_source_metadata_records_the_real_database_run_epoch_and_pid_and_is_immutable() {
+    let (directory, store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .admit_request(&source, assertion("origin", "public/file", &[]))
+        .await
+        .unwrap();
+    let sql = rusqlite::Connection::open(directory.path().join("permissions.db")).unwrap();
+    let encoded: String = sql
+        .query_row(
+            "SELECT origin FROM permission_request WHERE id='origin'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let origin: Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(origin["database"], store.path().to_str().unwrap());
+    assert_eq!(
+        origin["run_id"],
+        store.active_run("s").await.unwrap().unwrap()
+    );
+    assert_eq!(origin["owner_pid"], std::process::id());
+    let native = rusqlite::Connection::open(store.path()).unwrap();
+    let epoch: u64 = native
+        .query_row(
+            "SELECT lease_epoch FROM engine_run WHERE state='running'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(origin["lease_epoch"], epoch);
+    assert!(sql
+        .execute(
+            "UPDATE permission_request SET origin='{}' WHERE id='origin'",
+            []
+        )
+        .is_err());
+    assert!(sql
+        .execute(
+            "UPDATE permission_request SET owner='different' WHERE id='origin'",
+            []
+        )
+        .is_err());
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_old_source_cannot_adopt_a_rewritten_run_lease_epoch_even_in_the_same_process() {
+    use miao_engine::product_permission_request::Reply;
+    let (directory, store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    let pending = context
+        .admit_request(
+            &source,
+            assertion("superseded", "public/file", &["public/**"]),
+        )
+        .await
+        .unwrap();
+    let native = rusqlite::Connection::open(store.path()).unwrap();
+    native
+        .busy_timeout(std::time::Duration::from_secs(2))
+        .unwrap();
+    native.execute_batch("BEGIN IMMEDIATE; UPDATE engine_lease SET epoch=epoch+1; UPDATE engine_run SET lease_epoch=(SELECT epoch FROM engine_lease WHERE session_id=engine_run.session_id) WHERE state='running'; COMMIT;").unwrap();
+    assert!(context
+        .reply_request(&source, response(&pending, Reply::Always))
+        .await
+        .is_err());
+    assert!(runtime
+        .evaluate_product_permission(&runtime.controller(), &wire, request("public/file"))
+        .await
+        .is_err());
+    assert!(context.snapshot().await.unwrap().patterns.is_empty());
+    assert_eq!(context.retire_source_requests(&source).await.unwrap(), 1);
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn schema_four_requests_without_a_provable_source_are_cancelled_without_replaying_or_changing_rules(
+) {
+    let (directory, _store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .put(miao_engine::permission_rules::Rule {
+            action: "read".into(),
+            resource: "unrelated/**".into(),
+            effect: Decision::Allow,
+        })
+        .await
+        .unwrap();
+    context
+        .admit_request(&source, assertion("old-request", "public/file", &[]))
+        .await
+        .unwrap();
+    let before = context.observe().await.unwrap();
+    let sql = rusqlite::Connection::open(directory.path().join("permissions.db")).unwrap();
+    // Reconstruct precisely the v4 table shape; this is a schema compatibility
+    // fixture, not a claim that a second binary was run in this test.
+    sql.execute_batch("DROP TRIGGER permission_request_origin_required; DROP TRIGGER permission_request_binding_immutable; ALTER TABLE permission_request DROP COLUMN origin; PRAGMA user_version=4;").unwrap();
+    let mut old_insert=sql.prepare("INSERT INTO permission_request(id,project,location,owner,session,binding,state,data) SELECT 'old-writer',project,location,owner,session,binding,state,data FROM permission_request WHERE id='old-request'").unwrap();
+    let upgraded = shared(directory.path()).await;
+    assert_eq!(upgraded.observe().await.unwrap().cursor, before.cursor);
+    assert_eq!(upgraded.snapshot().await.unwrap(), before.snapshot);
+    let encoded: String = sql
+        .query_row(
+            "SELECT data FROM permission_request WHERE id='old-request'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let cancelled: Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(cancelled["state"], "cancelled");
+    assert_eq!(cancelled["reason"], "source_metadata_unavailable");
+    assert_eq!(
+        sql.query_row("SELECT count(*) FROM permission_request_event", [], |row| {
+            row.get::<_, u32>(0)
+        })
+        .unwrap(),
+        2
+    );
+    assert!(old_insert
+        .execute([])
+        .unwrap_err()
+        .to_string()
+        .contains("durable permission source metadata"));
+    assert!(upgraded
+        .request_status(&source, "old-request".into())
+        .await
+        .is_err());
+    assert_eq!(
+        upgraded
+            .admit_request(&source, assertion("fresh-request", "public/file", &[]))
+            .await
+            .unwrap()
+            .state,
+        miao_engine::product_permission_request::State::Pending
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_corrupt_legacy_request_rolls_back_the_entire_source_metadata_upgrade() {
+    let (directory, _store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .admit_request(&source, assertion("corrupt-old", "public", &[]))
+        .await
+        .unwrap();
+    let before = context.observe().await.unwrap();
+    let sql = rusqlite::Connection::open(directory.path().join("permissions.db")).unwrap();
+    sql.execute_batch("DROP TRIGGER permission_request_origin_required; DROP TRIGGER permission_request_binding_immutable; ALTER TABLE permission_request DROP COLUMN origin; PRAGMA user_version=4; UPDATE permission_request SET data='not JSON' WHERE id='corrupt-old';").unwrap();
+    assert!(miao_engine::permission_project::Authority::open(
+        directory.path().join("permissions.db")
+    )
+    .await
+    .is_err());
+    assert_eq!(
+        sql.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+            .unwrap(),
+        4
+    );
+    assert_eq!(
+        sql.query_row(
+            "SELECT count(*) FROM pragma_table_info('permission_request') WHERE name='origin'",
+            [],
+            |row| row.get::<_, u32>(0)
+        )
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        sql.query_row("SELECT count(*) FROM permission_request_event", [], |row| {
+            row.get::<_, u32>(0)
+        })
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        sql.query_row(
+            "SELECT state FROM permission_request WHERE id='corrupt-old'",
+            [],
+            |row| row.get::<_, String>(0)
+        )
+        .unwrap(),
+        "pending"
+    );
+    assert_eq!(context.observe().await.unwrap().cursor, before.cursor);
+    assert_eq!(context.snapshot().await.unwrap(), before.snapshot);
+    runtime.shutdown().await;
+}
