@@ -733,3 +733,43 @@ async fn shared_runtime_refuses_a_root_database_inside_the_model_workspace() {
     );
     assert!(store.sessions().await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn shared_startup_agent_is_captured_and_denial_applies_at_real_dispatch() {
+    let (directory, store, _, binding) = setup(true).await;
+    let agent = serde_json::from_value(json!({
+        "name":"startup-reviewer",
+        "semantics":"product-agent-v1",
+        "permissions":[{"tool":"read_file","path":"**","decision":"deny"}]
+    }))
+    .unwrap();
+    let runtime = Runtime::with_shared_permissions_and_agent(
+        binding,
+        Arc::new(Caller("read_file")),
+        Tools::new(directory.path().join("workspace"))
+            .await
+            .unwrap(),
+        policy(true),
+        Some(agent),
+    )
+    .await
+    .unwrap();
+    runtime.admit(input("startup-deny"), true).await.unwrap();
+    event(&store, "startup-deny", "run.finished").await;
+    assert_eq!(
+        store.agent("startup-deny").await.unwrap().unwrap().0.name,
+        "startup-reviewer"
+    );
+    let events = store.events("startup-deny", 0, 256).await.unwrap();
+    assert!(
+        events.iter().any(|event| event.kind == "permission_denied"),
+        "{events:?}"
+    );
+    assert!(!events
+        .iter()
+        .any(|event| event.kind == "permission.saved_allowed"));
+    assert!(!events
+        .iter()
+        .any(|event| event.kind == "approval.requested"));
+    runtime.shutdown().await;
+}
