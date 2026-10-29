@@ -57,6 +57,23 @@ Before a later explicit continuation, provider-facing history neutralizes repeti
 text/reasoning (including recognizable historical loops). Durable messages remain intact, and
 recorded tool calls/results remain in context so completed side effects are not hidden.
 
+## Run-level bound on a refused call
+
+The within-stream detector above cannot see a loop that repeats *whole responses*: each turn is
+internally varied prose, so no 64-line window looks repetitive, while the model re-emits the same
+plan turn after turn. A 2026-10-29 Session (`mimo-v2.6-flash` over `openai-chat` through a Chinese
+token plan) did exactly that — 239 cycles between 22:42 and 01:55, 275 provider requests on a
+~750K-token context, 471 assistant text blocks with only 6 distinct contents.
+
+The engine already refused the repeated call: after the same input executes
+`MAX_IDENTICAL_TOOL_CALLS` (5) times, later calls settle a corrective error result instead of
+running. That refusal assumed the model reads the correction. A run now also counts refusals per
+call signature; past `MAX_IDENTICAL_REFUSALS` (3) of the same signature it records
+`loop.stopped` with reason `refused-tool-call` and ends the run with a visible error instead of
+asking the model again. The bound is per run, so a new prompt starts clean, and the earlier
+refusals still give the model its chance to change approach (TS parity for the first refusals is
+unchanged).
+
 ## Verification and limits
 
 A local-only replay corpus contained 263 text/reasoning parts from four concurrent sessions:
