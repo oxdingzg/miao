@@ -49,6 +49,7 @@ import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
 import { DialogRemote, RemoteLocalProvider, type RemoteLocalFactory } from "./component/dialog-remote"
 import { DialogStatus } from "./component/dialog-status"
+import { DialogSavedPermissions } from "./component/dialog-saved-permissions"
 import { DialogDebug } from "./component/dialog-debug"
 import { DialogThemeList } from "./component/dialog-theme-list"
 import { DialogCurrencyList } from "./component/dialog-currency-list"
@@ -1208,6 +1209,15 @@ function App(props: {
           kv.set("session_directory_filter_enabled", !kv.get("session_directory_filter_enabled", true))
           await sync.session.refresh()
           dialog.clear()
+        },
+      },
+      {
+        name: "permission.saved",
+        title: "Review saved permissions",
+        category: "System",
+        slashName: "permissions",
+        run: () => {
+          dialog.replace(() => <DialogSavedPermissions />)
         },
       },
       {
