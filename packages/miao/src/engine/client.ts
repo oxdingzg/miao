@@ -355,6 +355,7 @@ interface Pending {
 export class EngineClient {
   private next = 1
   private readonly pending = new Map<number, Pending>()
+  private readonly productCalls = new Map<number, { sessionID: string; controller: AbortController }>()
   private readonly eventHandlers: Array<(event: EngineEvent) => void> = []
   private readonly progressHandlers: Array<(progress: EngineProgress) => void> = []
   private readonly failureHandlers: Array<(error: Error) => void> = []
@@ -631,7 +632,11 @@ export class EngineClient {
 
   private fail(error: Error, terminal = false) {
     const notify = terminal && !this.failure && !this.closed
-    if (terminal) this.failure ??= error
+    if (terminal) {
+      this.failure ??= error
+      for (const call of this.productCalls.values()) call.controller.abort(error)
+      this.productCalls.clear()
+    }
     for (const pending of this.pending.values()) pending.reject(this.failure ?? error)
     this.pending.clear()
     if (notify) for (const handler of this.failureHandlers) handler(this.failure ?? error)
@@ -678,27 +683,53 @@ export class EngineClient {
         reply({ error: "product tool is not available on this host" })
         return
       }
-      void this.onProductTool({
-        sessionID: params.session_id ?? "",
-        name: params.name,
-        input: params.input,
-        // Newer engines name the real provider call; older ones only have the
-        // bridge routing key, which stays a stable fallback identity.
-        callID: typeof params.call_id === "string" && params.call_id.length > 0 ? params.call_id : String(bridgeID),
-        bridgeID,
-        ...(typeof params.message_seq === "number" ? { messageSeq: params.message_seq } : {}),
-      })
-        .then(
-          (result) => reply({ result }),
-          (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
+      if (this.productCalls.has(bridgeID)) {
+        this.fail(new EngineError("engine_protocol", "duplicate active product tool bridge"), true)
+        this.child.kill()
+        return
+      }
+      const active = { sessionID: params.session_id ?? "", controller: new AbortController() }
+      this.productCalls.set(bridgeID, active)
+      const execute = this.onProductTool
+      void Promise.resolve()
+        .then(() =>
+          active.controller.signal.aborted
+            ? undefined
+            : execute({
+                sessionID: active.sessionID,
+                name: params.name!,
+                input: params.input,
+                callID:
+                  typeof params.call_id === "string" && params.call_id.length > 0 ? params.call_id : String(bridgeID),
+                bridgeID,
+                ...(typeof params.message_seq === "number" ? { messageSeq: params.message_seq } : {}),
+                signal: active.controller.signal,
+              }),
         )
+        .then(
+          (result) => {
+            if (this.productCalls.get(bridgeID) === active && !active.controller.signal.aborted) reply({ result })
+          },
+          (error) => {
+            if (this.productCalls.get(bridgeID) === active && !active.controller.signal.aborted)
+              reply({ error: error instanceof Error ? error.message : String(error) })
+          },
+        )
+        .finally(() => {
+          if (this.productCalls.get(bridgeID) === active) this.productCalls.delete(bridgeID)
+        })
         .catch(() => this.inputClosed())
       return
     }
     if (message.method === "product_tool.cancel") {
       const bridgeID = message.bridge_id
       const params = message.params as { session_id?: string } | undefined
-      if (typeof bridgeID === "number") this.onProductToolCancel?.({ sessionID: params?.session_id ?? "", bridgeID })
+      if (typeof bridgeID !== "number") return
+      const active = this.productCalls.get(bridgeID)
+      if (!active || active.sessionID !== params?.session_id) return
+      this.productCalls.delete(bridgeID)
+      active.controller.abort(new EngineError("engine_product_tool_cancelled", "native product call was cancelled"))
+      this.onProductToolCancel?.({ sessionID: active.sessionID, bridgeID })
       return
     }
     if (message.method === "hook_tool") {
