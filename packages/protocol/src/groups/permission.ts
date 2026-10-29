@@ -6,7 +6,7 @@ import { Project } from "@miao/schema/project"
 import { Session } from "@miao/schema/session"
 import { Context, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
-import { PermissionNotFoundError, SessionNotFoundError } from "../errors"
+import { ConflictError, PermissionNotFoundError, SessionNotFoundError } from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
 export const makePermissionGroup = <
@@ -37,6 +37,7 @@ export const makePermissionGroup = <
       HttpApiEndpoint.get("permission.saved.list", "/api/permission/saved", {
         query: Schema.Struct({ projectID: Project.ID.pipe(Schema.optional) }),
         success: Schema.Struct({ data: Schema.Array(PermissionSaved.Info) }),
+        error: ConflictError,
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "v2.permission.saved.list",
@@ -49,6 +50,7 @@ export const makePermissionGroup = <
       HttpApiEndpoint.delete("permission.saved.remove", "/api/permission/saved/:id", {
         params: { id: PermissionSaved.ID },
         success: HttpApiSchema.NoContent,
+        error: ConflictError,
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "v2.permission.saved.remove",
