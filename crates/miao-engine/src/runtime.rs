@@ -413,6 +413,18 @@ impl Runtime {
             .await
     }
 
+    pub async fn cancel_product_permission(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        id: String,
+    ) -> Result<crate::product_permission_request::Record, Error> {
+        self.inner
+            .store
+            .cancel_product_permission(self.product_permission_context(controller, source)?, id)
+            .await
+    }
+
     pub async fn reply_product_permission(
         &self,
         controller: &Controller,

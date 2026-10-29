@@ -1847,3 +1847,153 @@ async fn host_path_context_is_location_bound_and_cannot_change_a_live_source() {
     assert_eq!(before.authority_revision, after.authority_revision);
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn withdrawing_one_assertion_preserves_siblings_and_cannot_be_answered_later() {
+    use miao_engine::product_permission_request::{Reply, State};
+    let (_directory, store, runtime, source) = running().await;
+    let first = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("withdraw-first", "public"),
+        )
+        .await
+        .unwrap();
+    let sibling = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("withdraw-sibling", "other"),
+        )
+        .await
+        .unwrap();
+    let mut host = Host::new(runtime.clone());
+    let cancel = json!({"method":"product_permission_cancel","params":{"source":source,"request_id":first.id}});
+    let cancelled = host
+        .dispatch(serde_json::from_value(cancel.clone()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(cancelled["state"], "cancelled");
+    assert_eq!(cancelled["reason"], "caller_cancelled");
+    assert_eq!(cancelled["reply"], Value::Null);
+    assert_eq!(
+        host.dispatch(serde_json::from_value(cancel).unwrap())
+            .await
+            .unwrap(),
+        cancelled
+    );
+    assert_eq!(
+        runtime
+            .pending_product_permissions(&runtime.controller(), "s".into())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        runtime
+            .product_permission_status(&runtime.controller(), &source, sibling.id)
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    assert!(runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&first, Reply::Always)
+        )
+        .await
+        .is_err());
+    assert!(runtime
+        .permission_patterns(&runtime.controller())
+        .await
+        .unwrap()
+        .is_empty());
+    let events = store.events("s", 0, 1000).await.unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "product.permission.resolved")
+            .count(),
+        1
+    );
+    let allowed = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("withdraw-resolved", "public"),
+        )
+        .await
+        .unwrap();
+    runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&allowed, Reply::Once),
+        )
+        .await
+        .unwrap();
+    let result = host.dispatch(serde_json::from_value(json!({"method":"product_permission_cancel","params":{"source":source,"request_id":allowed.id}})).unwrap()).await.unwrap();
+    assert_eq!(result["state"], "allowed");
+    let mut foreign = source.clone();
+    foreign.message_seq += 1;
+    assert!(host.dispatch(serde_json::from_value(json!({"method":"product_permission_cancel","params":{"source":foreign,"request_id":first.id}})).unwrap()).await.is_err());
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn withdrawing_an_assertion_rolls_back_if_its_resolution_event_cannot_commit() {
+    use miao_engine::product_permission_request::State;
+    let (_directory, store, runtime, source) = running().await;
+    let pending = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("withdraw-atomic", "public"),
+        )
+        .await
+        .unwrap();
+    let connection = rusqlite::Connection::open(store.path()).unwrap();
+    connection.execute_batch("CREATE TRIGGER fail_permission_withdraw BEFORE INSERT ON engine_event WHEN NEW.kind='product.permission.resolved' BEGIN SELECT RAISE(ABORT,'fixture withdrawal fault'); END;").unwrap();
+    let mut host = Host::new(runtime.clone());
+    let cancel = json!({"method":"product_permission_cancel","params":{"source":source,"request_id":pending.id}});
+    assert!(host
+        .dispatch(serde_json::from_value(cancel.clone()).unwrap())
+        .await
+        .is_err());
+    assert_eq!(
+        runtime
+            .product_permission_status(&runtime.controller(), &source, pending.id.clone())
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    assert_eq!(
+        runtime
+            .pending_product_permissions(&runtime.controller(), "s".into())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(!store
+        .events("s", 0, 1000)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| event.kind == "product.permission.resolved"));
+    connection
+        .execute_batch("DROP TRIGGER fail_permission_withdraw")
+        .unwrap();
+    assert_eq!(
+        host.dispatch(serde_json::from_value(cancel).unwrap())
+            .await
+            .unwrap()["state"],
+        "cancelled"
+    );
+    runtime.shutdown().await;
+}

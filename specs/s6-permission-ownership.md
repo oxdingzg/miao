@@ -148,3 +148,12 @@ reason=auto_allowed，不保存模式规则或精确 grant。stdin 字段存在�
 product_permission_auto:1 为单独门禁，准入 authority hash 绑定模式及路径上下文；rule-only
 查询不等于完整准入。仍须用真实 TS 分类器对照自动/手动模式、相对路径与 stdin，再完成
 产品适配、事件投影和 §4 总体验收，不能将后端能力当成 TS 判定已退役。
+
+### 7.6 单个断言等待的撤销
+
+`product_permission_cancel: 1` 提供绑定活跃 source 与 request_id 的撤销命令，供宿主等待被
+中断时清理自己的断言。仅将本条 pending 结算为 cancelled/caller_cancelled，不应用用户
+reject 对同 Session 已等待请求的清扫语义，不保存模式或 grant；记录与事件同事务提交。
+重复撤销不重复发事件，已结算记录保持原结果，过期记录保持 expired。旧 always 回复不能
+重新批准已撤销请求，外来/失活来源不能撤销。这只是兼容适配器的中断清理前置，尚未启用
+该适配器，也不代表 §4 的询问次数与取消验收已完成。
