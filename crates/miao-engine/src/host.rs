@@ -274,6 +274,12 @@ impl Host {
             Command::State { session_id } => runtime.store().state(&session_id).await,
             Command::Usage { session_id } => runtime.store().usage_report(&session_id).await,
             Command::VcsStatus { session_id } => runtime.store().vcs_status(&session_id).await,
+            Command::SessionChildren { session_id } => {
+                runtime
+                    .store()
+                    .children(&session_id, crate::children::MAX_CHILDREN)
+                    .await
+            }
             Command::UpdateState {
                 session_id,
                 operation_id,

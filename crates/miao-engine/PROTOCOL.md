@@ -47,6 +47,8 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `snapshot` | `session_id`, `metadata_only?` | committed Session snapshot; metadata-only replies omit `messages` |
 | `sessions` | — | `string[]` (Session ids) |
 | `config_reload` | — | `{generation, changed, unchanged, unsupported, lsp?, mcp?, context?}` |
+| `session_children` | `session_id` | `{session_id, children[], truncated}` (see below) |
+| `config_reload` | — | `{generation, changed, unchanged, unsupported, lsp?, mcp?}` |
 | `fork` | `session_id`, `target_session_id`, `message_seq?` | `{target_session_id}` |
 | `revert` | `session_id`, `checkpoint` | `{checkpoint, from_seq, reverted}` |
 | `unrevert` | `session_id` | `{restored}` |
@@ -180,6 +182,24 @@ live committed events and ephemeral `progress` frames. The durable `seq` cursor
 is authoritative, so replay→live has no gap or duplicate and a lagged progress
 subscriber only receives a `resync` frame; a slow client can never block the
 provider or the run loop.
+
+### Session children
+
+`session_children` takes `session_id` and answers the Sessions forked from or
+delegated to by it: `{session_id, children[], truncated}`. Each child carries
+`session_id`, `title`, `parent_message_seq`, `message_count`, the catalog
+timestamps (`created_at_ms`, `updated_at_ms`, `archived_at_ms`, `pinned_at_ms`),
+`status` and `run`. Order is oldest first; at most 200 children are returned and
+`truncated` says whether any were left out.
+
+`status` is `busy` while the child has a running run and `idle` otherwise, so it
+reuses the execution vocabulary instead of inventing a second one. `run` is the
+child's most recently opened run — `{id, state, started_at_ms}` or null when it
+never ran — because `state` is how the child ended (`completed`, `failed`,
+`cancelled`, `interrupted`), which is the difference between "finished" and
+"never started". Archived children stay in the list: archiving is a catalog
+preference, not a retraction of the delegation. A Session without children
+answers an empty list; an unknown `session_id` is `invalid_request`.
 
 ### Question rejection
 
