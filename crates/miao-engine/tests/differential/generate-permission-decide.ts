@@ -10,6 +10,37 @@ const rule = (action: string, resource: string, effect: PermissionV2.Effect) => 
 })
 
 const cases = [
+  { name: "explicit-without-an-agent-ruleset-still-filters-the-catch-all", request: {
+    actions: ["sandbox-escape"], resources: ["host"], explicit: true,
+  } },
+  { name: "two-question-marks-deny-one-supplementary-character", request: {
+    actions: ["read"], resources: ["😀.txt"],
+    configured: [rule("read", "*", "allow"), rule("read", "??.txt", "deny")],
+  } },
+  { name: "one-question-mark-does-not-deny-a-surrogate-pair", request: {
+    actions: ["read"], resources: ["😀.txt"],
+    configured: [rule("read", "*", "allow"), rule("read", "?.txt", "deny")],
+  } },
+  { name: "two-question-marks-do-not-grant-one-bmp-character", request: {
+    actions: ["read"], resources: ["中.txt"],
+    configured: [rule("read", "??.txt", "allow")],
+  } },
+  { name: "star-can-consume-part-of-a-surrogate-pair-before-a-question", request: {
+    actions: ["read"], resources: ["😀.txt"],
+    configured: [rule("read", "*", "allow"), rule("read", "*?.txt", "deny")],
+  } },
+  { name: "literal-supplementary-characters-remain-exact", request: {
+    actions: ["read"], resources: ["😀.txt"],
+    configured: [rule("read", "😀.txt", "allow")],
+  } },
+  { name: "action-questions-also-count-utf16-units", request: {
+    actions: ["custom😀"], resources: ["a.txt"],
+    configured: [rule("*", "*", "allow"), rule("custom??", "*", "deny")],
+  } },
+  { name: "optional-command-arguments-preserve-utf16-matching", request: {
+    actions: ["bash"], resources: ["echo 😀"],
+    configured: [rule("bash", "echo ?? *", "deny")],
+  } },
   { name: "last-rule-wins-so-a-later-scope-shadows-an-earlier-one", request: {
     actions: ["bash"],
     resources: ["rm -rf x"],
