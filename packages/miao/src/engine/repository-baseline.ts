@@ -31,6 +31,19 @@ const source: RepositorySource = {
   archiveSha256: "e583d1dc235852ac06506b9db72aeb6d8ce426b913b6e4c37e149f4fd80f1362",
 }
 
+const foreignSource: RepositorySource = {
+  repository: "sindresorhus/escape-string-regexp",
+  commit: "a7f7dabaf336bda98d2166848af15d9168b10bcf",
+  tree: "d61e3c09b705663f24473a8b05242a3e124eef18",
+  archiveSha256: "57e81aae81daa18b2d99fd47fd124252cc5eca03786cb4d2187cf7d7dc6caf3f",
+}
+
+export function repositoryBaselineSource(repository = source.repository): RepositorySource {
+  if (repository === source.repository) return structuredClone(source)
+  if (repository === foreignSource.repository) return structuredClone(foreignSource)
+  throw new Error(`Unknown frozen repository: ${repository}`)
+}
+
 const tasks = [
   {
     id: "repository-lazy-cache",
@@ -73,6 +86,35 @@ strict.deepEqual(inserted.map(value => value.id), ["a","b","c"]);`,
   },
 ] as const
 
+const foreignTasks = [
+  {
+    id: "repository-unicode-escaping",
+    prompt:
+      "In this frozen JavaScript utility repository, escaping a hyphen produces an unintended range when used inside a Unicode character class. Find and repair the owning implementation. Preserve literal matching, input validation, exports, and all unrelated files.",
+    file: "index.js",
+    before: String.raw`.replace(/-/g, '\\x2d')`,
+    seeded: ".replace(/-/g, '-')",
+    check: String.raw`import { strict } from "node:assert";
+import escape from "./index.js";
+strict.equal(escape("-"), "\\x2d");
+for (const value of ["", "plain", "a-z", "[x].*+?^$(){}|", "back\\slash", "你好🙂"]) {
+  const pattern = new RegExp("^(?:" + escape(value) + ")$", "u");
+  strict.equal(pattern.test(value), true);
+  strict.equal(pattern.test(value + "extra"), false);
+}
+const character = new RegExp("^[" + escape("a-z") + "]$", "u");
+for (const value of ["a", "-", "z"]) strict.equal(character.test(value), true);
+strict.equal(character.test("m"), false);
+strict.throws(() => escape(7), TypeError);`,
+  },
+] as const
+
+function tasksFor(snapshot: RepositorySource) {
+  if (snapshot.repository === source.repository) return tasks
+  if (snapshot.repository === foreignSource.repository) return foreignTasks
+  throw new Error(`Unknown frozen repository: ${snapshot.repository}`)
+}
+
 const digest = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex")
 
 /** Separate contract: existing suite-v6 identities and reports remain frozen. */
@@ -105,7 +147,7 @@ export function repositoryBaselineContract(profile: RepositoryProfile, snapshot:
     version: 1,
     source: snapshot,
     profile,
-    tasks: tasks.map((task) => ({ ...task, verifierHash: digest(task.check) })),
+    tasks: tasksFor(snapshot).map((task) => ({ ...task, verifierHash: digest(task.check) })),
   }
   return structuredClone({ ...contract, suiteHash: digest(JSON.stringify(contract)) })
 }
@@ -205,7 +247,7 @@ function validateContract(contract: ReturnType<typeof repositoryBaselineContract
   if (
     digest(JSON.stringify(frozen)) !== contract.suiteHash ||
     JSON.stringify(contract.tasks) !==
-      JSON.stringify(tasks.map((task) => ({ ...task, verifierHash: digest(task.check) })))
+      JSON.stringify(tasksFor(contract.source).map((task) => ({ ...task, verifierHash: digest(task.check) })))
   )
     throw new Error("Repository fixture contract changed")
 }

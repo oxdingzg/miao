@@ -7,6 +7,7 @@ import {
   assessRepositoryBaseline,
   initializeRepositoryBaseline,
   repositoryBaselineContract,
+  repositoryBaselineSource,
 } from "@/engine/repository-baseline"
 
 const profile = {
@@ -74,6 +75,39 @@ test("frozen repository tasks reject seeded defects and accept repairs without c
   }
 }, 60_000)
 
+test("the licensed external repository archive exposes a Unicode range defect without network access", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "miao-foreign-repository-"))
+  try {
+    const snapshot = repositoryBaselineSource("sindresorhus/escape-string-regexp")
+    const contract = repositoryBaselineContract(profile, snapshot)
+    const task = contract.tasks[0]
+    const directory = path.join(root, "workspace")
+    const metadata = await initializeRepositoryBaseline({
+      archive: path.join(import.meta.dir, "../fixture/repository-baseline/escape-string-regexp.tar"),
+      directory,
+      task: task.id,
+      contract,
+    })
+    expect(await Bun.file(path.join(directory, "license")).text()).toContain("Copyright (c) Sindre Sorhus")
+    expect((await assessRepositoryBaseline({ directory, metadata, contract })).artifactPass).toBe(false)
+    const file = path.join(directory, task.file)
+    await Bun.write(file, (await Bun.file(file).text()).replace(task.seeded, task.before))
+    const repaired = await assessRepositoryBaseline({ directory, metadata, contract })
+    expect(repaired.artifactPass).toBe(true)
+    expect(repaired.executionVerdict).toBe("unverified")
+    expect(repaired.source.commit).toBe("a7f7dabaf336bda98d2166848af15d9168b10bcf")
+    await Bun.write(path.join(directory, "license"), "removed")
+    const tampered = await assessRepositoryBaseline({ directory, metadata, contract })
+    expect(tampered.check).toBeNull()
+    expect(tampered.unexpected).toEqual(["license"])
+    snapshot.commit = "0".repeat(40)
+    expect(repositoryBaselineSource("sindresorhus/escape-string-regexp").commit).not.toBe(snapshot.commit)
+    expect(() => repositoryBaselineSource("unknown/repository")).toThrow("Unknown frozen repository")
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test("immutable file changes and symlink replacement prevent verifier execution", async () => {
   const workspace = await fixture()
   try {
@@ -119,6 +153,10 @@ test("source identity, verifier, metadata and profile validation reject mismatch
     expect(() => repositoryBaselineContract({ ...profile, maxCost: Number.NaN })).toThrow("budget")
     expect(() => repositoryBaselineContract({ ...profile, model: "" })).toThrow("profile")
     expect(repositoryBaselineContract(profile).suiteHash).toBe(repositoryBaselineContract(profile).suiteHash)
+    // Frozen before adding the external repository; historical miao evidence stays comparable.
+    expect(repositoryBaselineContract(profile).suiteHash).toBe(
+      "afb47d03c7cfe5fecf1c6811b7ed3a1c2e41430c097d4e28e1f23b67de4f857e",
+    )
     expect(repositoryBaselineContract({ ...profile, maxAttempts: 3 }).suiteHash).not.toBe(
       repositoryBaselineContract(profile).suiteHash,
     )

@@ -41,7 +41,25 @@ source mismatches, and contract validation without provider charges.
 
 An artifact pass always retains `executionVerdict: "unverified"`. It does not
 prove model completion, provider accounting, or Rust/TypeScript/Codex parity.
-This initial snapshot is miao itself, not an unfamiliar external repository.
-Additional repository snapshots, task categories, execution-runner integration,
+The initial snapshot is miao itself. A separate unfamiliar repository snapshot
+is available through `repositoryBaselineSource("sindresorhus/escape-string-regexp")`:
+
+- Commit: `a7f7dabaf336bda98d2166848af15d9168b10bcf`
+- Tree: `d61e3c09b705663f24473a8b05242a3e124eef18`
+- Raw Git archive SHA-256: `57e81aae81daa18b2d99fd47fd124252cc5eca03786cb4d2187cf7d7dc6caf3f`
+
+Its complete 20 KiB source archive is stored at
+`packages/miao/test/fixture/repository-baseline/escape-string-regexp.tar`.
+The upstream MIT license and Sindre Sorhus copyright notice remain inside the
+archive, with a readable copy alongside it. The archive was produced with
+`git archive --format=tar` at the pinned commit; no dependency install or network
+access is required for its verifier. The original external code is not repaired
+in the fixture: initialization injects a Unicode character-class range defect,
+and the test proves that restoring the frozen source repairs it. Literal Unicode
+matching, metacharacters, input validation, and immutable-license enforcement are
+also checked. This is one small external JavaScript repository, not evidence of
+general unfamiliar-repository quality. The default miao contract stays identical.
+
+Additional task categories, execution-runner integration,
 budget enforcement, repeated model trials and complete failure receipts remain
 required for VAL-01 acceptance.
