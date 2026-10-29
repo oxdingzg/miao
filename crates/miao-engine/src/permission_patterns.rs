@@ -99,6 +99,11 @@ pub(crate) fn rules(connection: &Connection, workspace: &str) -> Result<Vec<Rule
 }
 
 pub(crate) fn records(connection: &Connection, workspace: &str) -> Result<Vec<Pattern>, Error> {
+    crate::permission_source::require_legacy(connection, workspace)?;
+    raw_records(connection, workspace)
+}
+
+pub(crate) fn raw_records(connection: &Connection, workspace: &str) -> Result<Vec<Pattern>, Error> {
     require_workspace(workspace)?;
     // Older compatible databases may be opened read-only by a catalog. Missing
     // optional native patterns mean no additional allow, never an implicit grant.
@@ -157,6 +162,7 @@ pub(crate) fn put_in(
     workspace: &str,
     rule: &Rule,
 ) -> Result<Pattern, Error> {
+    crate::permission_source::require_legacy(transaction, workspace)?;
     require_workspace(workspace)?;
     require_rule(rule)?;
     let id = rule_digest(workspace, rule)?;
@@ -194,6 +200,7 @@ fn remove(connection: &mut Connection, workspace: &str, id: &str) -> Result<bool
         .filter(|id| id.len() == 64 && id.bytes().all(|byte| byte.is_ascii_hexdigit()))
         .ok_or_else(|| Error::Invalid("invalid native permission pattern id".into()))?;
     let transaction = crate::store::write_tx(connection)?;
+    crate::permission_source::require_legacy(&transaction, workspace)?;
     let removed = transaction.execute(
         "DELETE FROM engine_owned_permission_rule_legacy WHERE workspace=?1 AND digest=?2",
         params![workspace, id],

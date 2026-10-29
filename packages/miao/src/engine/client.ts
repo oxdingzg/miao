@@ -453,6 +453,29 @@ export class EngineClient {
     return new EngineClient(child, undefined, undefined, undefined, undefined, false, options.requestTimeoutMs)
   }
 
+  static startPermissionSource(options: {
+    binary: string
+    db: string
+    project: string
+    directory: string
+    requestTimeoutMs?: number
+  }) {
+    const child = spawn(
+      [
+        options.binary,
+        "permission-source",
+        "--db",
+        options.db,
+        "--project",
+        options.project,
+        "--directory",
+        options.directory,
+      ],
+      { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: permissionEnvironment() },
+    )
+    return new EngineClient(child, undefined, undefined, undefined, undefined, false, options.requestTimeoutMs)
+  }
+
   onEvent(handler: (event: EngineEvent) => void) {
     this.eventHandlers.push(handler)
   }

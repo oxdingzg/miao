@@ -934,4 +934,33 @@ the new format on reopen. Live older run owners still block a format upgrade.
 Current read-only catalogs can inspect older schemas without upgrading them.
 A schema-23 reader never falls back to old, missing or ambiguous table names.
 This format boundary does not itself freeze a directory or activate shared
-Runtime authorization; its explicit ownership handshake remains separate work.
+Runtime authorization; the separate ownership handshake is described below.
+
+### Explicit directory source retirement
+
+`permission_source_handoff: 1` advertises a separate model-free entry point:
+`miao-engine permission-source --db PATH --project ID --directory PATH`. It
+requires an existing native Session database and canonicalizes the directory
+before opening it. The implicit-local placement and project stay bound for the
+process lifetime. Provider flags, credentials and model execution are absent.
+
+- `snapshot`: nullable immutable source record, including target identity,
+  original native patterns, destination fingerprint and `prepared/completed` state.
+- `prepare {authority}`: require a quiescent directory with no live or unknown
+  run owner, retain its exact pattern IDs/timestamps and freeze its old authority
+  in one source transaction. An exact retry adopts that record; changing its
+  destination fails. There is no abort/unfreeze operation.
+- `complete {snapshot}`: verify the actual destination Context snapshot's
+  authority, project, directory, workspace identity, migration fingerprint and
+  original imported count. The active destination pattern list may already have
+  revocations. A lost destination response or source acknowledgement leaves a
+  durable prepared record; retries cannot resurrect revoked rules.
+- `shutdown`: flush the acknowledgement and close the source store.
+
+Preparation refuses old rule reads, projection/import APIs, mutation and change
+feeds. SQL triggers protect both rule tables and immutable handoff facts against
+old writers, including moves between scopes. New legacy model runs in that
+directory are refused; durable prompt admission remains separate, and failed run
+start rolls promotion back without a provider request. Other directory scopes
+remain available. Successful completion retains the freeze until shared Runtime
+ownership is configured; this control does not enable that backend automatically.

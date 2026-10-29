@@ -412,6 +412,7 @@ impl Store {
                 if !has_run_epoch {
                     conn.execute("ALTER TABLE engine_run ADD COLUMN lease_epoch INTEGER", [])?;
                 }
+                crate::permission_source::initialize(&conn)?;
                 conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
                 conn.execute_batch("COMMIT")?;
                 // The schema is current; serving is shared from here on.
@@ -2576,7 +2577,7 @@ pub(crate) fn lease_live(last_ms: i64, interval_ms: i64, pid: Option<u32>) -> bo
 }
 
 #[cfg(unix)]
-fn pid_alive(pid: u32) -> bool {
+pub(crate) fn pid_alive(pid: u32) -> bool {
     // Signal 0 probes existence without delivering anything; EPERM still means
     // the process exists.
     let result = unsafe { libc::kill(pid as i32, 0) };
@@ -2584,7 +2585,7 @@ fn pid_alive(pid: u32) -> bool {
 }
 
 #[cfg(windows)]
-fn pid_alive(pid: u32) -> bool {
+pub(crate) fn pid_alive(pid: u32) -> bool {
     use std::ffi::c_void;
     #[link(name = "kernel32")]
     unsafe extern "system" {
@@ -2611,7 +2612,7 @@ fn pid_alive(pid: u32) -> bool {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn pid_alive(_pid: u32) -> bool {
+pub(crate) fn pid_alive(_pid: u32) -> bool {
     true
 }
 

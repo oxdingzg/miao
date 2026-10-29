@@ -46,6 +46,8 @@ pub mod permission_patterns;
 pub mod permission_project;
 pub mod permission_rules;
 pub mod permission_saved;
+pub mod permission_source;
+pub mod permission_source_control;
 mod persona;
 pub mod process;
 pub mod protocol;

@@ -44,10 +44,12 @@ pub(crate) fn project(
     workspace: &str,
     rules: &[Rule],
 ) -> Result<(), Error> {
+    crate::permission_source::require_legacy(connection, workspace)?;
     if !bounded(workspace) || rules.len() > MAX_RULES {
         return Err(Error::Invalid("invalid saved permission projection".into()));
     }
     let tx = crate::store::write_tx(connection)?;
+    crate::permission_source::require_legacy(&tx, workspace)?;
     let now = crate::approval::now_ms();
     for rule in rules {
         tx.execute(
@@ -61,6 +63,7 @@ pub(crate) fn project(
 
 /// The workspace's projected rules, in projection order.
 pub(crate) fn rules(connection: &Connection, workspace: &str) -> Result<Vec<Rule>, Error> {
+    crate::permission_source::require_legacy(connection, workspace)?;
     if !bounded(workspace) {
         return Err(Error::Invalid("invalid saved permission workspace".into()));
     }

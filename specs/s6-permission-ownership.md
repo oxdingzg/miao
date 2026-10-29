@@ -303,3 +303,16 @@ Session schema 23 在格式事务内将旧项目投影和目录原生规则表�
 规则身份、时间、迁移原始凭据、撤销和变更游标。旧 SQL 名称失效，旧内核重新打开时拒绝
 新版格式；活跃旧 run 的归属进程仍阻止升级。新只读 catalog 可查看旧格式，当前格式缺表
 或新旧名称并存时不回退。这个格式边界本身还不是目录来源冻结或 Shared Runtime 激活。
+
+显式来源控制 `permission-source --db PATH --project ID --directory PATH` 只打开已有的
+Native Session 库，不初始化 provider、Session 执行或后台迁移。隐式本地目录先规范化，
+项目及目录在进程启动时绑定。`prepare {authority}` 要求目录内没有活跃或归属不明的 run，
+在来源事务内保存原始原生规则、目标持久身份及目的端指纹，并冻结旧读写、投影与变更流。
+SQL 保护同时约束旧直接写入、规则跨范围移动及新 legacy model run；持久输入准入与执行
+仍分开，冻结期间输入可保留 pending，不提升消息或调用 provider。其他目录不受该范围冻结。
+
+目的端使用 `context_handoff` 接收同一原始输入；来源 `complete {snapshot}` 核对真实目的端
+身份、项目、目录、workspace、迁移指纹及原始数量，不能以当前剩余规则数代替原始回执。
+目的端提交后响应丢失、来源保存失败或重启，均保留 prepared 与旧来源冻结；精确重试接纳
+目的端已存在的原始回执，不恢复已撤销规则。完成也不解冻旧来源。Shared Runtime 的权限
+pending/always 原子结算与产品自动交接仍是后续接线，不把本控制入口当成 Runtime 激活。

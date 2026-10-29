@@ -92,6 +92,7 @@ impl Store {
 }
 
 pub(crate) fn imported(connection: &Connection, workspace: &str) -> Result<Vec<LegacyRule>, Error> {
+    crate::permission_source::require_legacy(connection, workspace)?;
     crate::permission_patterns::require_workspace(workspace)?;
     let mut statement = connection.prepare(
                 "SELECT legacy_id,rule,digest FROM engine_permission_import WHERE workspace=?1 AND removed_at_ms IS NULL ORDER BY legacy_id LIMIT 257",
@@ -152,6 +153,7 @@ pub(crate) fn require_id(id: &str) -> Result<(), Error> {
 }
 
 pub(crate) fn receipt(connection: &Connection, workspace: &str) -> Result<Option<Receipt>, Error> {
+    crate::permission_source::require_legacy(connection, workspace)?;
     crate::permission_patterns::require_workspace(workspace)?;
     Ok(connection.query_row(
         "SELECT project,fingerprint,imported FROM engine_permission_migration WHERE workspace=?1", [workspace],
