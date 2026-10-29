@@ -1054,7 +1054,10 @@ async fn original_catalog_identity_survives_approval_reopen_and_fork() {
         runtime.shutdown().await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         drop(runtime);
-        drop(store);
+        // Dropping a Store only starts its worker's exit; reopening without
+        // waiting races the first connection's teardown and intermittently
+        // fails with SQLITE_BUSY.
+        store.close().await.unwrap();
         let reopened = Store::open(&database).await.unwrap();
         reopened.fork("s", "fork", None).await.unwrap();
         for session in ["s", "fork"] {
