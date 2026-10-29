@@ -52,6 +52,35 @@ test.skipIf(!binary)(
     const saved = await list(first)
     expect(saved).toHaveLength(1)
     const client = OpenCode.make({ baseUrl: server.url, headers: headers(first) })
+    const created = await fetch(`${server.url}/api/session`, {
+      method: "POST",
+      headers: headers(first),
+      body: JSON.stringify({}),
+    })
+    expect(created.status).toBe(200)
+    const session = Schema.decodeUnknownSync(Schema.Struct({ data: Schema.Struct({ id: Schema.String }) }))(
+      await created.json(),
+    )
+    const unbound = await fetch(`${server.url}/api/session/${session.data.id}/permission`, {
+      method: "POST",
+      headers: headers(first),
+      body: JSON.stringify({ action: "read", resources: ["public"] }),
+    })
+    expect(unbound.status).toBe(409)
+    expect(await unbound.json()).toMatchObject({ _tag: "ConflictError", resource: session.data.id })
+    const forged = await fetch(`${server.url}/api/session/${session.data.id}/permission`, {
+      method: "POST",
+      headers: headers(first),
+      body: JSON.stringify({
+        action: "read",
+        resources: ["public"],
+        source: { type: "tool", messageID: "msg_forged", callID: "call_forged" },
+      }),
+    })
+    expect(forged.status).toBe(409)
+    const pending = await fetch(`${server.url}/api/session/${session.data.id}/permission`, { headers: headers(first) })
+    expect(pending.status).toBe(200)
+    expect(await pending.json()).toMatchObject({ data: [] })
     expect(await client.permissions.listSaved()).toEqual(saved)
     expect(saved[0]).toEqual({
       id: PermissionSaved.ID.make(`${PermissionSaved.NativePrefix}${stored.id}`),
@@ -91,6 +120,22 @@ test.skipIf(!binary)(
         })
       ).status,
     ).toBe(409)
+    const legacySession = await fetch(`${legacyServer.url}/api/session`, {
+      method: "POST",
+      headers: headers(first),
+      body: JSON.stringify({}),
+    })
+    expect(legacySession.status).toBe(200)
+    const legacyID = Schema.decodeUnknownSync(Schema.Struct({ data: Schema.Struct({ id: Schema.String }) }))(
+      await legacySession.json(),
+    ).data.id
+    const evaluated = await fetch(`${legacyServer.url}/api/session/${legacyID}/permission`, {
+      method: "POST",
+      headers: headers(first),
+      body: JSON.stringify({ action: "read", resources: ["public"] }),
+    })
+    expect(evaluated.status).toBe(200)
+    expect(await evaluated.json()).toMatchObject({ data: { effect: "allow" } })
     const legacyClient = OpenCode.make({ baseUrl: legacyServer.url, headers: headers(first) })
     await expect(legacyClient.permissions.removeSaved({ id: saved[0].id })).rejects.toMatchObject({
       _tag: "ConflictError",
