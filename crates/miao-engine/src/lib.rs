@@ -39,6 +39,7 @@ pub mod permission_control;
 pub mod permission_grant;
 pub mod permission_import_changes;
 mod permission_journal;
+mod permission_legacy;
 pub mod permission_migration;
 pub mod permission_pattern_changes;
 pub mod permission_patterns;

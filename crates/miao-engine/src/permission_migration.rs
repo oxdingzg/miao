@@ -45,11 +45,11 @@ pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
            FOREIGN KEY(workspace) REFERENCES engine_permission_migration(workspace)
          );
          CREATE TRIGGER IF NOT EXISTS engine_permission_migration_no_legacy_insert
-         BEFORE INSERT ON engine_permission_rule
+         BEFORE INSERT ON engine_permission_rule_legacy
          WHEN EXISTS(SELECT 1 FROM engine_permission_migration WHERE workspace=NEW.workspace)
          BEGIN SELECT RAISE(ABORT, 'saved permission ownership migrated'); END;
          CREATE TRIGGER IF NOT EXISTS engine_permission_migration_no_legacy_delete
-         BEFORE DELETE ON engine_permission_rule
+         BEFORE DELETE ON engine_permission_rule_legacy
          WHEN EXISTS(SELECT 1 FROM engine_permission_import WHERE workspace=OLD.workspace AND digest=OLD.digest AND removed_at_ms IS NULL)
          BEGIN SELECT RAISE(ABORT, 'saved permission ownership migrated'); END;",
     )?;
@@ -185,14 +185,14 @@ fn migrate(
         return Ok(before);
     }
     transaction.execute(
-        "DELETE FROM engine_permission_rule WHERE workspace=?1",
+        "DELETE FROM engine_permission_rule_legacy WHERE workspace=?1",
         [workspace],
     )?;
     let now = crate::approval::now_ms();
     for item in &rules {
         let encoded = serde_json::to_string(&item.rule)?;
         transaction.execute(
-            "INSERT OR IGNORE INTO engine_permission_rule(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
+            "INSERT OR IGNORE INTO engine_permission_rule_legacy(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
             params![workspace, digest(encoded.as_bytes()), encoded, now],
         )?;
     }
@@ -245,7 +245,7 @@ fn remove(connection: &mut Connection, workspace: &str, id: &str) -> Result<bool
         params![workspace, id, crate::approval::now_ms()],
     )?;
     transaction.execute(
-        "DELETE FROM engine_permission_rule WHERE workspace=?1 AND digest=?2
+        "DELETE FROM engine_permission_rule_legacy WHERE workspace=?1 AND digest=?2
          AND NOT EXISTS(SELECT 1 FROM engine_permission_import WHERE workspace=?1 AND digest=?2 AND removed_at_ms IS NULL)",
         params![workspace, rule],
     )?;
@@ -323,7 +323,7 @@ mod tests {
         assert!(crate::permission_saved::project(&mut connection, "/repo", &[same.rule]).is_err());
         assert!(connection
             .execute(
-                "DELETE FROM engine_permission_rule WHERE workspace='/repo'",
+                "DELETE FROM engine_permission_rule_legacy WHERE workspace='/repo'",
                 []
             )
             .is_err());
@@ -379,7 +379,7 @@ mod tests {
         for index in 0..255 {
             let rule = rule("psv_native", &format!("native-{index}")).rule;
             transaction.execute(
-                "INSERT INTO engine_owned_permission_rule(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,0)",
+                "INSERT INTO engine_owned_permission_rule_legacy(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,0)",
                 params!["/repo", crate::permission_patterns::rule_digest("/repo", &rule).unwrap(), serde_json::to_string(&rule).unwrap()],
             ).unwrap();
         }
@@ -464,7 +464,7 @@ mod tests {
             vec![rule("psv_a", "a")],
         )
         .unwrap();
-        connection.execute_batch("CREATE TRIGGER fail_revoke BEFORE DELETE ON engine_permission_rule BEGIN SELECT RAISE(ABORT, 'injected revoke failure'); END;").unwrap();
+        connection.execute_batch("CREATE TRIGGER fail_revoke BEFORE DELETE ON engine_permission_rule_legacy BEGIN SELECT RAISE(ABORT, 'injected revoke failure'); END;").unwrap();
         assert!(remove(&mut connection, "/repo", "psv_a").is_err());
         assert_eq!(
             connection

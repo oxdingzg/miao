@@ -42,7 +42,7 @@ pub struct Remove {
 
 pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
     connection.execute_batch(&format!(
-        "CREATE TABLE IF NOT EXISTS engine_owned_permission_rule(
+        "CREATE TABLE IF NOT EXISTS engine_owned_permission_rule_legacy(
            workspace TEXT NOT NULL,
            digest TEXT NOT NULL,
            rule TEXT NOT NULL,
@@ -50,16 +50,16 @@ pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
            PRIMARY KEY(workspace, digest)
          );
          CREATE TRIGGER IF NOT EXISTS engine_projected_permission_budget
-         BEFORE INSERT ON engine_permission_rule
-         WHEN NOT EXISTS(SELECT 1 FROM engine_permission_rule WHERE workspace=NEW.workspace AND digest=NEW.digest)
-         AND (SELECT COUNT(*) FROM engine_permission_rule WHERE workspace=NEW.workspace)
-             +(SELECT COUNT(*) FROM engine_owned_permission_rule WHERE workspace=NEW.workspace)>={MAX_RULES}
+         BEFORE INSERT ON engine_permission_rule_legacy
+         WHEN NOT EXISTS(SELECT 1 FROM engine_permission_rule_legacy WHERE workspace=NEW.workspace AND digest=NEW.digest)
+         AND (SELECT COUNT(*) FROM engine_permission_rule_legacy WHERE workspace=NEW.workspace)
+             +(SELECT COUNT(*) FROM engine_owned_permission_rule_legacy WHERE workspace=NEW.workspace)>={MAX_RULES}
          BEGIN SELECT RAISE(ABORT, 'saved permission rule budget exceeded'); END;
          CREATE TRIGGER IF NOT EXISTS engine_owned_permission_budget
-         BEFORE INSERT ON engine_owned_permission_rule
-         WHEN NOT EXISTS(SELECT 1 FROM engine_owned_permission_rule WHERE workspace=NEW.workspace AND digest=NEW.digest)
-         AND (SELECT COUNT(*) FROM engine_permission_rule WHERE workspace=NEW.workspace)
-             +(SELECT COUNT(*) FROM engine_owned_permission_rule WHERE workspace=NEW.workspace)>={MAX_RULES}
+         BEFORE INSERT ON engine_owned_permission_rule_legacy
+         WHEN NOT EXISTS(SELECT 1 FROM engine_owned_permission_rule_legacy WHERE workspace=NEW.workspace AND digest=NEW.digest)
+         AND (SELECT COUNT(*) FROM engine_permission_rule_legacy WHERE workspace=NEW.workspace)
+             +(SELECT COUNT(*) FROM engine_owned_permission_rule_legacy WHERE workspace=NEW.workspace)>={MAX_RULES}
          BEGIN SELECT RAISE(ABORT, 'saved permission rule budget exceeded'); END;"
     ))?;
     crate::permission_pattern_changes::initialize(connection)?;
@@ -102,15 +102,13 @@ pub(crate) fn records(connection: &Connection, workspace: &str) -> Result<Vec<Pa
     require_workspace(workspace)?;
     // Older compatible databases may be opened read-only by a catalog. Missing
     // optional native patterns mean no additional allow, never an implicit grant.
-    let present: bool = connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='engine_owned_permission_rule')",
-        [], |row| row.get(0),
-    )?;
-    if !present {
+    let Some(table) =
+        crate::permission_legacy::read_table(connection, crate::permission_legacy::Table::Native)?
+    else {
         return Ok(Vec::new());
-    }
+    };
     let mut statement = connection.prepare(
-        "SELECT digest,rule,created_at_ms FROM engine_owned_permission_rule WHERE workspace=?1 ORDER BY created_at_ms,digest LIMIT ?2",
+        &format!("SELECT digest,rule,created_at_ms FROM {table} WHERE workspace=?1 ORDER BY created_at_ms,digest LIMIT ?2"),
     )?;
     let rows = statement.query_map(params![workspace, MAX_RULES + 1], |row| {
         Ok((
@@ -163,7 +161,7 @@ pub(crate) fn put_in(
     require_rule(rule)?;
     let id = rule_digest(workspace, rule)?;
     let inserted = transaction.execute(
-        "INSERT OR IGNORE INTO engine_owned_permission_rule(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
+        "INSERT OR IGNORE INTO engine_owned_permission_rule_legacy(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
         params![workspace, id, serde_json::to_string(rule)?, crate::approval::now_ms()],
     )?;
     // Validate the complete saved rule set before committing the new row. A
@@ -197,7 +195,7 @@ fn remove(connection: &mut Connection, workspace: &str, id: &str) -> Result<bool
         .ok_or_else(|| Error::Invalid("invalid native permission pattern id".into()))?;
     let transaction = crate::store::write_tx(connection)?;
     let removed = transaction.execute(
-        "DELETE FROM engine_owned_permission_rule WHERE workspace=?1 AND digest=?2",
+        "DELETE FROM engine_owned_permission_rule_legacy WHERE workspace=?1 AND digest=?2",
         params![workspace, id],
     )? != 0;
     if removed {
@@ -267,7 +265,7 @@ mod tests {
         // tick prove that replay cannot overwrite existing metadata.
         connection
             .execute(
-                "UPDATE engine_owned_permission_rule SET created_at_ms=1",
+                "UPDATE engine_owned_permission_rule_legacy SET created_at_ms=1",
                 [],
             )
             .unwrap();
@@ -399,7 +397,7 @@ mod tests {
         let first = put(&mut connection, "/repo", &rule("*")).unwrap();
         connection
             .execute(
-                "UPDATE engine_owned_permission_rule SET rule=?1",
+                "UPDATE engine_owned_permission_rule_legacy SET rule=?1",
                 [serde_json::to_string(&Rule {
                     effect: Decision::Deny,
                     ..rule("*")
@@ -408,7 +406,7 @@ mod tests {
             )
             .unwrap();
         assert!(records(&connection, "/repo").is_err());
-        connection.execute("UPDATE engine_owned_permission_rule SET rule=?1,workspace='/other' WHERE digest=?2", params![serde_json::to_string(&rule("*")).unwrap(), first.id.strip_prefix("prule_").unwrap()]).unwrap();
+        connection.execute("UPDATE engine_owned_permission_rule_legacy SET rule=?1,workspace='/other' WHERE digest=?2", params![serde_json::to_string(&rule("*")).unwrap(), first.id.strip_prefix("prule_").unwrap()]).unwrap();
         assert!(records(&connection, "/other").is_err());
     }
     #[test]

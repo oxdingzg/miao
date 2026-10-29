@@ -787,7 +787,7 @@ async fn failed_always_pattern_writes_roll_back_the_reply_and_all_patterns() {
         .await
         .unwrap();
     let connection = rusqlite::Connection::open(directory.path().join("engine.db")).unwrap();
-    connection.execute_batch("CREATE TRIGGER fail_second_pattern BEFORE INSERT ON engine_owned_permission_rule WHEN json_extract(NEW.rule,'$.resource')='second' BEGIN SELECT RAISE(ABORT,'fixture pattern fault'); END;").unwrap();
+    connection.execute_batch("CREATE TRIGGER fail_second_pattern BEFORE INSERT ON engine_owned_permission_rule_legacy WHEN json_extract(NEW.rule,'$.resource')='second' BEGIN SELECT RAISE(ABORT,'fixture pattern fault'); END;").unwrap();
     assert!(runtime
         .reply_product_permission(
             &runtime.controller(),

@@ -1,0 +1,227 @@
+{
+  "source_schema": 22,
+  "source_application_id": 1296646469,
+  "source_version": "0.3.16",
+  "source_binary_sha256": "456fad856ac5269edaf00f0c82eb625b26cb51f4f4531e7b05041de1de83d29f",
+  "provider_calls": 0,
+  "workspace": "/private/tmp/miao-native-permissions-v22-s6bxqigr/workspace",
+  "generated_at": "2026-10-29T08:42:41.827023+00:00",
+  "sql_sha256": "60bda576e74467c18b6689bef4c90e0fb234a9e010426a85de310a671749adc4",
+  "expected": {
+    "patterns": {
+      "cursor": 3,
+      "patterns": [
+        {
+          "created_at_ms": 1793263361682,
+          "id": "prule_af5eb6ba8a0dcd2e663116e884caa6be708e3409368505ba434b15b7b2b24866",
+          "rule": {
+            "action": "read",
+            "effect": "allow",
+            "resource": "native-b/**"
+          },
+          "source": "native",
+          "workspace": "/private/tmp/miao-native-permissions-v22-s6bxqigr/workspace"
+        }
+      ],
+      "workspace": "/private/tmp/miao-native-permissions-v22-s6bxqigr/workspace"
+    },
+    "imports": {
+      "cursor": 2,
+      "migration": {
+        "fingerprint": "a940aa4eb1774cc2e813857ee6d6ac5e17f289786cb19d22a034e620563caa40",
+        "imported": 2,
+        "project": "fixture-project"
+      },
+      "rules": [
+        {
+          "id": "legacy-b",
+          "rule": {
+            "action": "read",
+            "effect": "allow",
+            "resource": "legacy-b/**"
+          }
+        }
+      ],
+      "workspace": "/private/tmp/miao-native-permissions-v22-s6bxqigr/workspace"
+    },
+    "migration": {
+      "fingerprint": "a940aa4eb1774cc2e813857ee6d6ac5e17f289786cb19d22a034e620563caa40",
+      "imported": 2,
+      "project": "fixture-project"
+    }
+  },
+  "control_trace": [
+    {
+      "request": {
+        "id": 1,
+        "method": "permission_pattern_put",
+        "params": {
+          "rule": {
+            "action": "read",
+            "resource": "native-a/**",
+            "effect": "allow"
+          }
+        }
+      },
+      "result": {
+        "created_at_ms": 1793263361645,
+        "id": "prule_8bd91a0ab078a45d866b510e4dfbbe2cb1aadc1b4fda8b0be02f0287022f710e",
+        "rule": {
+          "action": "read",
+          "effect": "allow",
+          "resource": "native-a/**"
+        },
+        "source": "native",
+        "workspace": "/private/tmp/miao-native-permissions-v22-s6bxqigr/workspace"
+      }
+    },
+    {
+      "request": {
+        "id": 2,
+        "method": "permission_pattern_put",
+        "params": {
+          "rule": {
+            "action": "read",
+            "resource": "native-b/**",
+            "effect": "allow"
+          }
+        }
+      },
+      "result": {
+        "created_at_ms": 1793263361682,
+        "id": "prule_af5eb6ba8a0dcd2e663116e884caa6be708e3409368505ba434b15b7b2b24866",
+        "rule": {
+          "action": "read",
+          "effect": "allow",
+          "resource": "native-b/**"
+        },
+        "source": "native",
+        "workspace": "/private/tmp/miao-native-permissions-v22-s6bxqigr/workspace"
+      }
+    },
+    {
+      "request": {
+        "id": 3,
+        "method": "permission_pattern_remove",
+        "params": {
+          "rule_id": "prule_8bd91a0ab078a45d866b510e4dfbbe2cb1aadc1b4fda8b0be02f0287022f710e"
+        }
+      },
+      "result": {
+        "removed": true
+      }
+    },
+    {
+      "request": {
+        "id": 4,
+        "method": "permission_saved_migrate",
+        "params": {
+          "project": "fixture-project",
+          "rules": [
+            {
+              "id": "legacy-a",
+              "rule": {
+                "action": "read",
+                "resource": "legacy-a/**",
+                "effect": "allow"
+              }
+            },
+            {
+              "id": "legacy-b",
+              "rule": {
+                "action": "read",
+                "resource": "legacy-b/**",
+                "effect": "allow"
+              }
+            }
+          ]
+        }
+      },
+      "result": {
+        "fingerprint": "a940aa4eb1774cc2e813857ee6d6ac5e17f289786cb19d22a034e620563caa40",
+        "imported": 2,
+        "project": "fixture-project"
+      }
+    },
+    {
+      "request": {
+        "id": 5,
+        "method": "permission_saved_remove",
+        "params": {
+          "id": "legacy-a"
+        }
+      },
+      "result": {
+        "removed": true
+      }
+    },
+    {
+      "request": {
+        "id": 6,
+        "method": "permission_pattern_snapshot"
+      },
+      "result": {
+        "cursor": 3,
+        "patterns": [
+          {
+            "created_at_ms": 1793263361682,
+            "id": "prule_af5eb6ba8a0dcd2e663116e884caa6be708e3409368505ba434b15b7b2b24866",
+            "rule": {
+              "action": "read",
+              "effect": "allow",
+              "resource": "native-b/**"
+            },
+            "source": "native",
+            "workspace": "/private/tmp/miao-native-permissions-v22-s6bxqigr/workspace"
+          }
+        ],
+        "workspace": "/private/tmp/miao-native-permissions-v22-s6bxqigr/workspace"
+      }
+    },
+    {
+      "request": {
+        "id": 7,
+        "method": "permission_import_snapshot"
+      },
+      "result": {
+        "cursor": 2,
+        "migration": {
+          "fingerprint": "a940aa4eb1774cc2e813857ee6d6ac5e17f289786cb19d22a034e620563caa40",
+          "imported": 2,
+          "project": "fixture-project"
+        },
+        "rules": [
+          {
+            "id": "legacy-b",
+            "rule": {
+              "action": "read",
+              "effect": "allow",
+              "resource": "legacy-b/**"
+            }
+          }
+        ],
+        "workspace": "/private/tmp/miao-native-permissions-v22-s6bxqigr/workspace"
+      }
+    },
+    {
+      "request": {
+        "id": 8,
+        "method": "permission_saved_migration"
+      },
+      "result": {
+        "fingerprint": "a940aa4eb1774cc2e813857ee6d6ac5e17f289786cb19d22a034e620563caa40",
+        "imported": 2,
+        "project": "fixture-project"
+      }
+    },
+    {
+      "request": {
+        "id": 9,
+        "method": "shutdown"
+      },
+      "result": {
+        "accepted": true
+      }
+    }
+  ]
+}

@@ -620,7 +620,7 @@ rule content, repeated puts preserve identity/timestamp, and removing an absent
 ID is idempotent. Only allow rules are accepted; configured deny still wins.
 
 Native rows live separately from the host projection in the additive optional
-`engine_owned_permission_rule` table. They join saved rules during evaluation;
+`engine_owned_permission_rule_legacy` table (schema 23; earlier formats use the unsuffixed name). They join saved rules during evaluation;
 removal does not delete projected rows or exact-call grants. A compatible older
 read-only database without this optional table has no native-owned patterns.
 SQLite insertion constraints enforce the combined saved-rule budget for both
@@ -921,3 +921,17 @@ host are delivered separately so output backpressure does not delay this fence;
 their tasks remain owned by the Session actor. Detach waits for pending notices,
 while global shutdown can abort their delivery. A foreign owner's durable
 `run.cancel_requested` remains an advisory request for that owner to consume.
+
+### Legacy Session permission storage names
+
+Session schema 23 renames the projected and native-owned standing-rule tables
+to `engine_permission_rule_legacy` and `engine_owned_permission_rule_legacy`.
+The rename shares the schema publication transaction and preserves rules,
+original identities/timestamps, receipts, revocation state, journals and cursors.
+Already-open old SQL readers lose their old table names; older kernels refuse
+the new format on reopen. Live older run owners still block a format upgrade.
+
+Current read-only catalogs can inspect older schemas without upgrading them.
+A schema-23 reader never falls back to old, missing or ambiguous table names.
+This format boundary does not itself freeze a directory or activate shared
+Runtime authorization; its explicit ownership handshake remains separate work.

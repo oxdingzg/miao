@@ -18,7 +18,7 @@ const MAX_WORKSPACE_BYTES: usize = 8192;
 
 pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
     connection.execute_batch(
-        "CREATE TABLE IF NOT EXISTS engine_permission_rule(
+        "CREATE TABLE IF NOT EXISTS engine_permission_rule_legacy(
            workspace TEXT NOT NULL,
            digest TEXT NOT NULL,
            rule TEXT NOT NULL,
@@ -51,7 +51,7 @@ pub(crate) fn project(
     let now = crate::approval::now_ms();
     for rule in rules {
         tx.execute(
-            "INSERT OR IGNORE INTO engine_permission_rule(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
+            "INSERT OR IGNORE INTO engine_permission_rule_legacy(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
             params![workspace, rule_digest(rule)?, serde_json::to_string(rule)?, now],
         )?;
     }
@@ -64,8 +64,14 @@ pub(crate) fn rules(connection: &Connection, workspace: &str) -> Result<Vec<Rule
     if !bounded(workspace) {
         return Err(Error::Invalid("invalid saved permission workspace".into()));
     }
-    let mut statement = connection
-        .prepare("SELECT rule FROM engine_permission_rule WHERE workspace = ?1 ORDER BY created_at_ms, digest")?;
+    let table = crate::permission_legacy::read_table(
+        connection,
+        crate::permission_legacy::Table::Projected,
+    )?
+    .ok_or_else(|| Error::Invalid("missing legacy permission projection".into()))?;
+    let mut statement = connection.prepare(&format!(
+        "SELECT rule FROM {table} WHERE workspace = ?1 ORDER BY created_at_ms, digest"
+    ))?;
     let rows = statement.query_map(params![workspace], |row| row.get::<_, String>(0))?;
     let mut rules = Vec::new();
     for row in rows {
@@ -152,7 +158,7 @@ mod tests {
         let connection = connection();
         connection
             .execute(
-                "INSERT INTO engine_permission_rule(workspace,digest,rule,created_at_ms) VALUES('/repo','x','{bogus',1)",
+                "INSERT INTO engine_permission_rule_legacy(workspace,digest,rule,created_at_ms) VALUES('/repo','x','{bogus',1)",
                 [],
             )
             .unwrap();

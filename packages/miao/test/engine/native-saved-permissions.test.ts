@@ -118,7 +118,7 @@ async function legacyCount(filename: string) {
   const { Database } = await import("bun:sqlite")
   const database = new Database(filename, { readonly: true })
   try {
-    return database.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM engine_permission_rule").get()?.count
+    return database.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM engine_permission_rule_legacy").get()?.count
   } finally {
     database.close()
   }
