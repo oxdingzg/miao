@@ -251,6 +251,12 @@ Native 权限 profile 诊断及 §4 的完整脚本验收仍须分别完成。�
 记录 default/auto 模式。诊断快照不参与授权，活跃 turn 内的每个断言仍取得当时的原生判定；
 它不宣称整个 turn 的可变规则被冻结，也不替代断言自己的 authority_revision 证据。
 
+本地取消和匹配当前 run 的条件取消，先同步撤回 product bridge 来源，再回复接受。
+撤回与授权提交使用同一来源锁：已经进入的提交可以在取消回复前完成，但不能在回复后
+继续落盘。宿主取消通知由 Session actor 持有的任务发送，输出背压不推迟来源撤回；detach
+等待通知，全局 shutdown 可中止其发送。过期 run 的条件取消保持当前来源不变。跨进程的
+`run.cancel_requested` 仍是提交给归属进程消费的意图，不据此宣称远端已经停机。
+
 ### 真实执行归属的权限来源栅栏
 
 Session 库 schema 22 在创建原生 run 时持久记录启动它的 Session lease epoch；首次
