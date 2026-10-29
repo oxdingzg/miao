@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "5711317a-e729-4ddf-bf5c-07fa1861c8c5",
+  "id": "4bcd50da-1836-406f-8809-fbe0e1eba003",
   "prevIds": [
-    "97000bb1-774c-4eef-97d6-2ff62f1b45f0"
+    "5711317a-e729-4ddf-bf5c-07fa1861c8c5"
   ],
   "ddl": [
     {
@@ -12,6 +12,14 @@
     },
     {
       "name": "data_migration",
+      "entityType": "tables"
+    },
+    {
+      "name": "permission_native_cursor",
+      "entityType": "tables"
+    },
+    {
+      "name": "permission_native_projection",
       "entityType": "tables"
     },
     {
@@ -213,6 +221,86 @@
       "name": "time_completed",
       "entityType": "columns",
       "table": "data_migration"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "owner_key",
+      "entityType": "columns",
+      "table": "permission_native_cursor"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "location",
+      "entityType": "columns",
+      "table": "permission_native_cursor"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "directory",
+      "entityType": "columns",
+      "table": "permission_native_cursor"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cursor",
+      "entityType": "columns",
+      "table": "permission_native_cursor"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "owner_key",
+      "entityType": "columns",
+      "table": "permission_native_projection"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "permission_native_projection"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "action",
+      "entityType": "columns",
+      "table": "permission_native_projection"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "resource",
+      "entityType": "columns",
+      "table": "permission_native_projection"
     },
     {
       "type": "text",
@@ -2311,6 +2399,21 @@
     },
     {
       "columns": [
+        "owner_key"
+      ],
+      "tableTo": "permission_native_cursor",
+      "columnsTo": [
+        "owner_key"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_permission_native_projection_owner_key_permission_native_cursor_owner_key_fk",
+      "entityType": "fks",
+      "table": "permission_native_projection"
+    },
+    {
+      "columns": [
         "active_account_id"
       ],
       "tableTo": "account",
@@ -2566,6 +2669,16 @@
     },
     {
       "columns": [
+        "owner_key",
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "permission_native_projection_pk",
+      "entityType": "pks",
+      "table": "permission_native_projection"
+    },
+    {
+      "columns": [
         "subject",
         "id"
       ],
@@ -2641,6 +2754,15 @@
       "nameExplicit": false,
       "name": "data_migration_pk",
       "table": "data_migration",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "owner_key"
+      ],
+      "nameExplicit": false,
+      "name": "permission_native_cursor_pk",
+      "table": "permission_native_cursor",
       "entityType": "pks"
     },
     {
