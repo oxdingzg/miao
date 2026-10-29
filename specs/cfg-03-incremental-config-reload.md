@@ -98,7 +98,8 @@
 - **standalone**：`serve --config-dir` 没有宿主，由引擎自己轮询源文件的 mtime（默认 2s，
   去抖后按摘要判定），走同一条换入路径。
 - 不用 OS 文件监听：网络文件系统、容器挂载和编辑器原子写入的语义在各平台不一致，轮询
-  mtime + 内容摘要更可预测。轮询只在 `--config-dir`/`--config-sources` 模式开启。
+  mtime + 内容摘要更可预测。轮询覆盖每个 origin 命名的文件并集（policy 与 LSP 两侧，内联
+  `content` 除外）；宿主若用显式 `config_reload`，轮询只是幂等的兜底。
 
 ## 4. 验收映射
 
@@ -136,11 +137,47 @@
    按 server 名 + 配置 diff——未变的连接保留，变更/删除的在下次使用前关闭。启动来源
    （`--lsp-config` / `--config-sources` / `--config-dir`）记为 `LspOrigin`，重载重读同一来源。
    reload 自身不 spawn 子进程；派生失败不改动任何一节。
-2. **policy 与工具闸门**：见 §3.2——单独换 policy 会让收紧的规则与旧闸门并存，必须同时
-   换入能力闸门。
-3. **MCP reconcile**：现有 `servers: Vec<Arc<Server>>` 与 `tools` 表要改成可替换结构；子进程
-   按 server 归属（与 LSP 相同），避免 registry 级 child 列表。
-4. **Provider 路由替换**：模型目录与路由表的换代。
+2. **policy 与工具闸门（已实现）**：见 §3.2——单独换 policy 会让收紧的规则与旧闸门并存，
+   必须同时换入能力闸门。`Inner.policy` 改为 `RwLock<Arc<Policy>>`（每 turn 取一次快照，
+   turn 内不变，未决审批按 revision 自动失效）；`Tools` 的八个能力闸门收进 `Gates`，放在
+   共享 cell 里整体换入，web 客户端同为可换载体；启动来源记为 `PolicyOrigin`（`--policy` /
+   `--config-sources` / `--config-dir` / entry 默认，`--mode` 每次重新施加），重载重读同一来源。
+   启动时的不变式（process 需要数据库与凭证在工作区外、MCP 需要外部授权）在换入前重跑，
+   违反则整份拒绝且不改动任何一节。换入顺序为先闸门后 policy：该方向只会比旧 policy 更严。
+   standalone 轮询的观察面扩为 policy 与 LSP 两侧文件的并集。验证：`tests/config_reload_policy.rs`
+   覆盖"收紧/放宽换入闸门与工具面、同内容不换代、畸形配置不改动、越界 process 被拒"；
+   真实引擎以 `--config-dir` 运行、只改 `sandbox.mode` 两次，轮询各打印一次
+   `configuration reloaded: ["policy"]`，generation 1→2→3 而 LSP 三台服务器始终 `unchanged`。
+3. **MCP reconcile（已实现）**：`Registry` 的 `authority`/`servers`/`configs` 改为可替换载体，
+   `children` 按 server 名归属（与 LSP 相同），不再有 registry 级 child 列表。每台 server 记录
+   配置摘要 `fingerprint`；`Registry::reconcile` 按名字 + 摘要 diff：未变复用连接、watcher 与
+   子进程，变更/新增先连接新实例再关闭旧连接（失败保留旧连接并写入 `mcp.failed`），删除则移除
+   工具、通知 watcher 退出并杀子进程。列表级不变量（8 台上限、重名、authority revision）在任何
+   连接被替换前校验。启动来源记为 `McpOrigin::Manifest`，`config_reload` 报告新增
+   `mcp: {changed, unchanged, removed, failed}`；standalone 轮询文件并集包含 `--mcp-config`。
+   验证：`tests/config_reload_mcp.rs` 4 个用例（连接计数证明未变 server 不重连、换配置只重建该
+   server、失败保留旧连接仍可调用、非法清单不改动任何状态）；`cargo test` 全量通过；
+   `cargo clippy --all-targets -- -D warnings` 与 `cargo fmt --check` 在构建机通过。
+4. **Provider 路由替换（已实现）**：`Inner.provider` 改为 `RwLock<Arc<dyn Provider>>`，每 turn 取
+   一次快照；启动时把**未路由的 base provider** 与 `--model-routes-config` 路径、工作区一并记为
+   `model_routes::Origin`。`config_reload` 用同一 base 重新叠加清单，得到新目录与
+   `RouteLimits`，与运行中的目录逐项比较（`model_catalog()` + 限额），只有真变化才换入；
+   限额先换、目录后换，避免"新容量配旧限额"。派生失败（含文件名）整份拒绝，旧目录继续服务；
+   Session 的绑定是持久事实，`session_model::select` 在新目录里找不到 route 时该 turn 显式报错，
+   不静默回退。standalone 轮询文件并集加入清单路径。验证：`tests/config_reload_models.rs`
+   覆盖"同内容不换代 / 增删 route 换代且目录即时可见 / 畸形清单报文件名且旧目录仍在 /
+   失败后恢复原清单不推进 generation"。
 5. **context / hooks / skills / references**：各自载体的换代。
 6. **standalone 轮询**：`--config-dir` 模式的 mtime 观察。
-7. **宿主接线**：TS 与 Rust TUI 在配置写入后调用 `config_reload`，并把报告显示为一行状态。
+7. **宿主可见性（引擎侧与 Rust TUI 已实现）**：`Runtime` 增加 `config_changes` 广播，
+   只有真正改动了至少一节的 reload 才发布，内容与 `config_reload` 的回复相同；stdio 适配器
+   把它转成 `{"method":"config","params":report}` 通知发给每个订阅者（配置是进程级、不分
+   Session），HTTP SSE 仍按 Session 分片、不转发，托管宿主自己调用 `config_reload` 时本来就有
+   回复。这样宿主不必是触发者也能显示变化：standalone 轮询、另一个客户端或 CLI 触发的 reload
+   都会到达。轮询读到畸形文件时（引擎自己拒绝的 reload）同一条通道发
+   `{"changed":[],"error":"..."}`，否则这类失败只留在引擎 stderr 里。Rust TUI 在
+   `TransportEvent::Config` 上把它显示成 composer 的一行
+   `configuration reloaded: <节>` 或 `configuration reload failed: <错误>`。TUI 用
+   `--config-dir` 启动，引擎自己的轮询已经完成换入，
+   所以宿主侧**不需要**再调 `config_reload`；它不是触发器，只是观察者。TS 宿主在退役中，
+   本次不改：它把未知 method 忽略，行为不变，需要显示时再补同样的处理。

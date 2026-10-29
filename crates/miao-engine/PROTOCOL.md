@@ -28,6 +28,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `cancel_input` | `session_id`, `input_id` | `{accepted:bool, reason?}` |
 | `cancel` | `session_id` | `{accepted:bool}` |
 | `archive` | `session_id`, `archived` | `{accepted:true, archived}` |
+| `pin` | `session_id`, `pinned` | `{accepted:true, pinned}` |
 | `remove` | `session_id` | `{accepted:bool, reason?}` |
 | `request_compact` | `session_id` | `{accepted:true, duplicate, pending}` |
 | `select_agent` | `session_id`, `agent` | `{agent_hash, changed}` |
@@ -36,6 +37,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id`, `metadata_only?` | committed Session snapshot; metadata-only replies omit `messages` |
 | `sessions` | — | `string[]` (Session ids) |
+| `config_reload` | — | `{generation, changed, unchanged, unsupported, lsp?, mcp?}` |
 | `fork` | `session_id`, `target_session_id`, `message_seq?` | `{target_session_id}` |
 | `revert` | `session_id`, `checkpoint` | `{checkpoint, from_seq, reverted}` |
 | `unrevert` | `session_id` | `{restored}` |
@@ -59,7 +61,16 @@ retaining the same cursor, identity, pending work and Session state. An omitted
 
 `event` notifications are committed canonical events; `progress` notifications
 are ephemeral provider frames that are not durable and may be followed by a
-`resync`. A slow stdout consumer applies backpressure through the pipe: the
+`resync`. A `config` notification carries the report of a reload that changed
+at least one section — the same object `config_reload` replies with — and is
+sent to every stdio subscriber because a reloaded configuration is
+process-wide rather than Session-scoped. It arrives whether the host, another
+client, or the standalone poller triggered the reload, so a host can show a
+change it did not request; an unchanged reload sends nothing. A reload the
+engine refuses on its own — a standalone poller reading a malformed file —
+is announced on the same channel as `{"changed": [], "error": "..."}`, because
+that failure otherwise exists only in the engine's stderr. A slow stdout
+consumer applies backpressure through the pipe: the
 writer waits for the reader instead of terminating the engine, and only a
 closed pipe (a dead host) or `shutdown` ends the stream. The durable cursor
 still makes replay→live independent of any transient frame, so a client that
@@ -251,9 +262,17 @@ Session may be archived while a drain is active and restored with
 Session reports `null`. Archiving never initializes a Session: an unknown id
 fails with `invalid_request`.
 
-### Removal
+### Pinning
 
-`remove` takes `session_id` and deletes everything the Session owns — its
+`pin` takes `session_id` and `pinned`. A pin is a list preference the engine
+owns, so a second client orders the shared catalog the same way: it writes the
+Session's `pinned_at_ms` (null when cleared), appends `session.pinned`, and
+deliberately leaves `updated_at_ms` alone — a pin is not Session activity and
+must not read as the Session having been used. The snapshot and `catalog_info`
+report `pinned_at_ms`. Unlike `archive` an unknown id fails with
+`invalid_request`: pinning never initializes a Session.
+
+ — its
 conversation, inbox, runs, tools, approvals, jobs, schedules, placement, lease
 and event log — after interrupting any active drain and stopping the
 in-process tasks that belong to it. Stopping those tasks is required, not
@@ -511,6 +530,77 @@ soft-reverts messages at or after the boundary (rows stay for audit and
 staged intent. All phases refuse symlinks or paths that escape the Session's
 workspace. A restore whose blob is missing fails before any staged intent is
 recorded. The `snapshot` reply reports the staged revert when one exists.
+
+### Incremental configuration reload
+
+`config_reload` re-derives the configuration sections the engine owns from the
+same origin startup used (`--policy`, `--config-sources` or `--config-dir` for
+the policy; `--lsp-config`, `--config-sources` or `--config-dir` for LSP;
+`--mcp-config` for MCP; `--model-routes-config` for the model catalog) and
+reconciles the ones this build can swap in place. The reply is
+`{generation, changed, unchanged, unsupported, …}`: `generation` advances only
+when a section changed, `changed`/`unchanged` name top-level sections, and
+`unsupported` names the sections this build does not reload yet rather than
+implying they were applied. Every section is derived and validated before any is
+applied, so a malformed edit or a boundary violation leaves all of them as they
+were.
+
+The policy section replaces the base policy a turn is derived from and, in the
+same swap, the capability gates and web client that policy implies — a
+tightened policy left running beside the old gates would check one thing and
+enforce another. Gates are applied first, then the policy: that order can only
+add a refusal ahead of the new rules, never permit a call the old ones denied.
+A turn that already took its policy snapshot keeps it and the next turn reads
+the new one; approvals carry the old revision and are therefore refused with
+`ApprovalMismatch`, so a tightened policy never inherits an approval granted
+under the looser one. The startup invariants are re-checked and a reload that
+would break one is refused: process authority requires the database outside the
+workspace and credentials outside it, and MCP requires external authority.
+A Session with no recorded policy origin (`unsupported` contains `policy`)
+cannot reload that section.
+
+The LSP server set is reconciled per server by name and configuration. An
+unchanged server keeps its connection and is never restarted; a changed or
+removed server is dropped and started again on next use, so a reload never
+spawns a process by itself. The `lsp` object in the reply lists the exact
+`changed`, `unchanged` and `removed` server names. A derivation error (invalid
+JSON, unknown key, duplicate extension) changes nothing and fails the command;
+the running configuration stays as it was. A Session that never had an LSP
+registry at startup (`unsupported` contains `lsp`) cannot gain one without
+restarting the engine.
+
+The MCP server set is reconciled by server name and configuration fingerprint.
+An unchanged server keeps its connection, its catalog watcher and its child
+process. A changed or added server is connected before its predecessor is
+closed, so a rebuild that fails leaves the previous connection serving and is
+reported in `mcp.failed` as `{server, error}` instead of failing the reload; a
+failed server that had no predecessor simply stays absent. A removed server's
+tools disappear, its watcher exits and its child process is killed. The `mcp`
+object lists the exact `changed`, `unchanged`, `removed` and `failed` names.
+List-level violations (more than eight servers, duplicate names, an invalid
+authority revision) are refused before anything is touched, and a derivation
+error (invalid JSON, unknown key) fails the command with every section as it
+was. A Session started without `--mcp-config` (`unsupported` contains `mcp`)
+cannot gain MCP servers without restarting the engine.
+
+The model catalog is rebuilt from `--model-routes-config` layered over the base
+provider startup built from the operator's transport flags. The derived catalog
+and its per-model context limits are compared with what is running and swapped
+only when they differ; `models` appears in `changed`/`unchanged` with no
+per-route sub-object. Session model bindings are durable facts and are not
+rewritten: a binding whose route the new catalog no longer registers fails its
+next turn with an explicit error instead of silently falling back to another
+model. A malformed manifest names its file, changes nothing and fails the
+reload, so the previous catalog keeps serving. A Session started without
+`--model-routes-config` (`unsupported` contains `models`) cannot gain routes
+without restarting the engine, and the manifest path joins the standalone
+poller's watched set.
+
+The standalone entry has no host to call the command, so it polls the same
+sources every two seconds (`mtime` plus size, not an OS watcher) and runs the
+same reconcile. A tick that lands while a Session is draining is skipped, so no
+turn observes half a change; a failed derivation is reported once and retried
+only when a file changes again.
 
 ### Injected context
 

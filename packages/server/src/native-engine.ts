@@ -197,6 +197,17 @@ export interface Interface {
     archived: boolean
   }) => Effect.Effect<void, ConflictError>
   /**
+   * Set or clear the engine's pin timestamp. The engine owns it so every client
+   * orders the shared catalog the same way; a pin is a list preference and
+   * never counts as Session activity.
+   */
+  readonly pin: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    pinned: boolean
+  }) => Effect.Effect<void, ConflictError>
+  /**
    * Delete the engine's copy of a Session: its conversation, inbox, runs,
    * approvals, background work and schedules. Children keep their Sessions and
    * lose only their lineage edge, matching the product's rule that removing a

@@ -27,6 +27,10 @@ async fn snapshot_and_fork_preserve_history_beyond_a_thousand_messages() {
         messages.last().unwrap()["content"][0]["text"],
         "message-1101"
     );
+    // Clients compare this against the projection they received: a matching
+    // size proves the snapshot is whole, which a long Session can no longer
+    // be assumed to be from its length alone.
+    assert_eq!(original["message_count"], json!(1102));
     let selected = store.selected_history("s").await.unwrap();
     assert_eq!(
         selected.len(),

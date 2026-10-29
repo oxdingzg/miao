@@ -137,7 +137,7 @@ impl Context<'_> {
                 Err(error) => return Err(Error::Invalid(error.to_string())),
             };
             let call = call_id(&input.input_id, "reference", index);
-            let policy = self.inner.policy.for_agent(target.as_ref())?;
+            let policy = self.inner.policy().for_agent(target.as_ref())?;
             self.inner.store.plan_command_call(self.session,self.run,&call,json!({"name":prepared.name(),"input":prepared.input(),"input_id":input.input_id,"resource":prepared.resource()}),self.lease).await?;
             let allowed = authorize(
                 self.inner,
@@ -242,7 +242,7 @@ impl Context<'_> {
                 )
                 .await
                 .map_err(|error| Error::Invalid(error.to_string()))?;
-            let policy = self.inner.policy.for_agent(parent.as_ref())?;
+            let policy = self.inner.policy().for_agent(parent.as_ref())?;
             self.inner.store.plan_command_call(self.session,self.run,&call,json!({"name":"task","input":prepared.input(),"input_id":input.input_id,"resource":target.name}),self.lease).await?;
             let allowed = authorize(
                 self.inner,
@@ -344,13 +344,13 @@ impl Context<'_> {
                 .or_else(|| agent.and_then(|agent| agent.model.clone()));
             let binding = match self.inner.store.account_selection(self.session).await? {
                 Some(account) => crate::session_account::resolve(
-                    &self.inner.provider,
+                    &self.inner.provider(),
                     binding.as_ref(),
                     account.credential_id.as_deref(),
                 )?,
                 None => binding,
             };
-            let provider = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+            let provider = crate::session_model::select(&self.inner.provider(), binding.as_ref())?;
             if let Some(request) = agent.and_then(|agent| agent.request.as_ref()) {
                 provider
                     .with_request_options(request.clone())
