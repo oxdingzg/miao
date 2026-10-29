@@ -428,6 +428,27 @@ impl Runtime {
         }
     }
 
+    pub async fn permission_import_snapshot(
+        &self,
+        controller: &Controller,
+    ) -> Result<crate::permission_import_changes::Snapshot, Error> {
+        self.inner
+            .store
+            .permission_import_snapshot(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn permission_import_changes(
+        &self,
+        controller: &Controller,
+        input: crate::permission_import_changes::Input,
+    ) -> Result<crate::permission_import_changes::Page, Error> {
+        self.inner
+            .store
+            .permission_import_changes(self.permission_pattern_workspace(controller)?, input)
+            .await
+    }
+
     pub async fn migrate_saved_permissions(
         &self,
         controller: &Controller,
