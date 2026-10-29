@@ -24,6 +24,17 @@ export interface BaselineAttempt {
   cacheWriteTokens: number | null
   reasoningTokens: number | null
   cost: number | null
+  /** Provenance for auxiliary work and unreported primary failures. */
+  source?: {
+    kind: "auxiliary" | "primary"
+    role: string | null
+    protocol: string | null
+    model: string | null
+    receiptSeq: number | null
+    recordedAtMs: number | null
+    accepted: boolean | null
+    providerSuccess: boolean | null
+  }
 }
 
 export interface BaselinePhase {
@@ -296,7 +307,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     assessment,
     answer: committedText(events),
     terminal: terminalFromEvents(events),
-    attempts: events.flatMap(usageAttempt),
+    attempts: usageAttempts(events),
     receipts: engineReceipts(events),
     loops: engineLoops(events),
     profile: engineProfile(events),
@@ -407,9 +418,7 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
     await stdout
     stderrText = await stderr
     bundles.push(
-      session
-        ? await BlackboxTape.load(path.join(recording, `${session}.json`)).catch(() => undefined)
-        : undefined,
+      session ? await BlackboxTape.load(path.join(recording, `${session}.json`)).catch(() => undefined) : undefined,
     )
     if (exit !== 0) break
   }
@@ -614,11 +623,47 @@ function committedText(events: EngineEvent[]) {
     .join("\n")
 }
 
-function usageAttempt(event: EngineEvent): BaselineAttempt[] {
-  if (event.kind !== "usage") return []
+function usageAttempts(events: EngineEvent[]) {
+  const accounted = new Set(
+    events.flatMap((event) => {
+      if (event.kind !== "usage") return []
+      const data = BlackboxTape.json(event.data)
+      if (!BlackboxTape.isObject(data) || !BlackboxTape.isObject(data.usage)) return []
+      const key = providerTurnKey(event)
+      return key ? [key] : []
+    }),
+  )
+  return events.flatMap((event) => {
+    if (event.kind !== "provider.failed") return usageAttempt(event)
+    // A partial usage receipt can follow the failure; inspect the complete
+    // turn before adding unknowns or that interrupted call is counted twice.
+    const key = providerTurnKey(event)
+    if (key && accounted.has(key)) return []
+    if (key) accounted.add(key)
+    return usageAttempt(event)
+  })
+}
+
+function providerTurnKey(event: EngineEvent) {
   const data = BlackboxTape.json(event.data)
-  if (!BlackboxTape.isObject(data) || !BlackboxTape.isObject(data.usage)) return []
-  const usage = data.usage
+  if (
+    !BlackboxTape.isObject(data) ||
+    typeof data.run_id !== "string" ||
+    typeof data.step !== "number" ||
+    !Number.isSafeInteger(data.step) ||
+    data.step < 0
+  )
+    return
+  return JSON.stringify([event.session_id, data.run_id, data.step])
+}
+
+function usageAttempt(event: EngineEvent): BaselineAttempt[] {
+  if (event.kind !== "usage" && event.kind !== "role.provider.completed" && event.kind !== "provider.failed") return []
+  const data = BlackboxTape.json(event.data)
+  if (!BlackboxTape.isObject(data)) return []
+  if (event.kind === "usage" && !BlackboxTape.isObject(data.usage)) return []
+  const usage = BlackboxTape.isObject(data.usage) ? data.usage : {}
+  const identity = BlackboxTape.isObject(data.identity) ? data.identity : {}
   return [
     {
       inputTokens: numberOrNull(usage.inputTokens),
@@ -627,6 +672,26 @@ function usageAttempt(event: EngineEvent): BaselineAttempt[] {
       cacheWriteTokens: numberOrNull(usage.cacheWriteInputTokens),
       reasoningTokens: numberOrNull(usage.reasoningTokens),
       cost: null,
+      ...(event.kind !== "usage"
+        ? {
+            source: {
+              kind: event.kind === "role.provider.completed" ? ("auxiliary" as const) : ("primary" as const),
+              role: typeof data.role === "string" ? data.role : null,
+              protocol: typeof identity.protocol === "string" ? identity.protocol : null,
+              model: typeof identity.model === "string" ? identity.model : null,
+              receiptSeq: Number.isSafeInteger(event.seq) && event.seq >= 0 ? event.seq : null,
+              recordedAtMs: numberOrNull(event.recorded_at_ms),
+              accepted:
+                event.kind === "provider.failed" ? false : typeof data.accepted === "boolean" ? data.accepted : null,
+              providerSuccess:
+                event.kind === "provider.failed"
+                  ? false
+                  : typeof data.providerSuccess === "boolean"
+                    ? data.providerSuccess
+                    : null,
+            },
+          }
+        : {}),
     },
   ]
 }
