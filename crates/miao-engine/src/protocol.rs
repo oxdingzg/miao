@@ -281,6 +281,14 @@ pub enum Command {
         session_id: String,
         input_id: String,
     },
+    /// Rewrite a still-pending input in place. The id, delivery class and
+    /// admission order stay; only the text the eventual user message carries
+    /// changes (RUN-02).
+    EditInput {
+        session_id: String,
+        input_id: String,
+        prompt: String,
+    },
     ModelCatalog,
     SelectModel {
         session_id: String,
@@ -324,6 +332,14 @@ pub enum Command {
     Archive {
         session_id: String,
         archived: bool,
+    },
+    /// Set or clear a Session's pin. A pin is a catalog preference, owned here
+    /// so every client orders the shared catalog the same way; it changes no
+    /// message, run or inbox row and leaves `updated_at_ms` untouched, so
+    /// pinning does not make a Session look recently used.
+    Pin {
+        session_id: String,
+        pinned: bool,
     },
     /// Delete everything a Session owns. Not a tombstone: the conversation,
     /// inbox, runs, approvals, jobs and schedules are gone and the identity can
@@ -501,6 +517,10 @@ pub enum Command {
         import_id: String,
     },
     Sessions,
+    /// Re-derive the configuration sections the engine owns and reconcile them
+    /// in place. The reply names what changed, what kept its connection, and
+    /// what this build cannot reload yet.
+    ConfigReload,
     Fork {
         session_id: String,
         target_session_id: String,
@@ -515,6 +535,17 @@ pub enum Command {
         session_id: String,
     },
     RevertStage {
+        session_id: String,
+        boundary_seq: u64,
+        /// Restore the recorded file set with the conversation rewind. `false`
+        /// stages a history-only revert, for a caller that wants the transcript
+        /// rewound and the workspace left as it is.
+        #[serde(default = "yes")]
+        files: bool,
+    },
+    /// What a revert at `boundary_seq` would change, including paths that
+    /// changed outside the Session since it last recorded them.
+    RevertPreview {
         session_id: String,
         boundary_seq: u64,
     },

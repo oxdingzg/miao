@@ -35,6 +35,12 @@ class GateTest(unittest.TestCase):
         ]:
             self.assertTrue(gate.classify([path])["engine"], path)
 
+    def test_shared_product_version_inputs_require_both_rust_checks(self):
+        for path in ["crates/build-version.rs", "package.json"]:
+            flags = gate.classify([path])
+            for name in ["engine", "tui"]:
+                self.assertTrue(flags[name], f"{path}: {name}")
+
     def test_successful_and_intentionally_skipped_results_pass(self):
         flags = {name: "false" for name in gate.CHECKS}
         needs = {name: {"result": "skipped"} for name in gate.CHECKS}

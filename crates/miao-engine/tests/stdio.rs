@@ -213,6 +213,18 @@ fn archive_and_remove_are_wire_commands_with_a_durable_effect() {
         json!({"id":4,"method":"archive","params":{"session_id":"s","archived":false}}),
         json!({"id":5,"method":"snapshot","params":{"session_id":"s"}}),
         json!({"id":6,"method":"archive","params":{"session_id":"missing","archived":true}}),
+        json!({"id":11,"method":"pin","params":{"session_id":"s","pinned":true}}),
+        json!({"id":12,"method":"snapshot","params":{"session_id":"s"}}),
+        json!({"id":13,"method":"pin","params":{"session_id":"s","pinned":false}}),
+        json!({"id":14,"method":"snapshot","params":{"session_id":"s"}}),
+        json!({"id":15,"method":"pin","params":{"session_id":"missing","pinned":true}}),
+        json!({"id":16,"method":"revert_preview","params":{"session_id":"s","boundary_seq":1}}),
+        json!({"id":17,"method":"revert_stage","params":{"session_id":"s","boundary_seq":1}}),
+        json!({"id":18,"method":"revert_stage","params":{"session_id":"s","boundary_seq":1,"files":false}}),
+        json!({"id":19,"method":"revert_commit","params":{"session_id":"s"}}),
+        json!({"id":20,"method":"snapshot","params":{"session_id":"s"}}),
+        json!({"id":21,"method":"unrevert","params":{"session_id":"s"}}),
+        json!({"id":22,"method":"snapshot","params":{"session_id":"s"}}),
         json!({"id":7,"method":"remove","params":{"session_id":"s"}}),
         json!({"id":8,"method":"sessions"}),
         json!({"id":9,"method":"remove","params":{"session_id":"s"}}),
@@ -242,6 +254,29 @@ fn archive_and_remove_are_wire_commands_with_a_durable_effect() {
     assert!(result(5)["archived_at_ms"].is_null());
     // Archiving never invents a Session, so the wire reports a refusal instead.
     assert!(reply(6)["error"].is_object(), "{replies:?}");
+    assert_eq!(result(11), json!({"accepted": true, "pinned": true}));
+    assert!(result(12)["pinned_at_ms"].is_number(), "{replies:?}");
+    // A pin is a list preference, not activity: the update time stays put.
+    // Compared with the snapshot taken just before the pin, since archiving
+    // above legitimately moved that timestamp.
+    assert_eq!(result(12)["updated_at_ms"], result(5)["updated_at_ms"]);
+    assert_eq!(result(13), json!({"accepted": true, "pinned": false}));
+    assert!(result(14)["pinned_at_ms"].is_null());
+    assert!(reply(15)["error"].is_object(), "{replies:?}");
+    // Revert vocabulary: the preview is a read, a file stage refuses when no
+    // snapshot exists, and the explicit history-only stage still records the
+    // intent so the conversation can be rewound without touching files.
+    assert_eq!(
+        result(16),
+        json!({"available": false, "reason": "no-file-snapshot"})
+    );
+    assert!(reply(17)["error"].is_object(), "{replies:?}");
+    assert_eq!(result(18)["restored"], json!([]));
+    assert_eq!(result(18)["removed"], json!([]));
+    assert!(result(19)["seq"].is_number(), "{replies:?}");
+    assert_eq!(result(20)["reverted_count"], result(19)["reverted"]);
+    assert_eq!(result(21)["restored"], result(19)["reverted"]);
+    assert_eq!(result(22)["reverted_count"], json!(0));
     assert_eq!(result(7), json!({"accepted": true}));
     assert_eq!(result(8), json!([]));
     assert_eq!(result(9), json!({"accepted": false, "reason": "unknown"}));
@@ -514,4 +549,56 @@ async fn a_slow_reader_does_not_kill_the_engine() {
     // `events` returns one bounded page; the reply is still far larger than
     // the pipe buffer and the output queue that the old deadline choked on.
     assert_eq!(events["result"].as_array().unwrap().len(), 100);
+}
+
+#[test]
+fn input_edit_is_a_wire_command_that_rewrites_a_queued_prompt() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"first draft","delivery":"queue"},"resume":false}}),
+        json!({"id":2,"method":"edit_input","params":{"session_id":"s","input_id":"one","prompt":"second draft"}}),
+        json!({"id":3,"method":"pending_inputs","params":{"session_id":"s"}}),
+        json!({"id":4,"method":"edit_input","params":{"session_id":"s","input_id":"missing","prompt":"text"}}),
+        json!({"id":5,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let reply = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap().clone();
+    let edited = reply(2)["result"].clone();
+    assert_eq!(edited["duplicate"], json!(false), "{edited}");
+    assert_eq!(edited["delivery"], json!("queue"));
+    let pending = reply(3)["result"].clone();
+    assert_eq!(pending["inputs"][0]["prompt"], json!("second draft"));
+    // The identity, not the text, is what an unknown edit is refused on.
+    assert!(reply(4)["error"].is_object(), "{:?}", reply(4));
 }

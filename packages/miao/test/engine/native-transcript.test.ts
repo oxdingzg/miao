@@ -271,11 +271,14 @@ test("replay uses the captured snapshot even when the native journal advances", 
 })
 
 test("a snapshot cut at the legacy projection limit fails instead of hiding the tail", async () => {
+  // A pre-0.3.8 engine returned exactly 1001 messages and left the rest in the
+  // journal, so the snapshot's last commit is not the Session's last commit.
   const events = [
     ...Array.from({ length: 1001 }, (_, index) => row(index + 1, "instructions_loaded", {})),
-    row(1002, "assistant.identity", {
+    row(1002, "message.committed", { role: "assistant", anchor_seq: 1000, content: [{ type: "text", text: "kept" }] }),
+    row(1003, "assistant.identity", {
       anchor_seq: 1000,
-      assistant_seq: 1000,
+      assistant_seq: 1002,
       agent: null,
       provider: { protocol: "openai-chat", model: "fixture" },
     }),
@@ -289,14 +292,73 @@ test("a snapshot cut at the legacy projection limit fails instead of hiding the 
       request: request(
         {
           session_id: session,
-          cursor: 1002,
+          cursor: 1003,
           messages: Array.from({ length: 1001 }, (_, index) => ({ seq: index + 1, role: "assistant" })),
           selection: null,
         },
         events,
       ),
     }),
-  ).rejects.toThrow(/truncates long Session snapshots/)
+  ).rejects.toThrow(/the journal names later commits/)
+})
+
+test("a complete long snapshot renders its tail instead of reporting a cut", async () => {
+  // Every commit the journal names is in the snapshot, so nothing was cut — a
+  // Session longer than the pre-0.3.8 limit is not evidence of one. Both engine
+  // generations are covered: one reports the projection size, the other does not.
+  const events = Array.from({ length: 1349 }, (_, index) => [
+    row(index * 2 + 1, "message.committed", {
+      role: "assistant",
+      anchor_seq: index * 2 + 1,
+      content: [{ type: "text", text: "native answer" }],
+    }),
+    row(index * 2 + 2, "assistant.identity", {
+      anchor_seq: index * 2 + 1,
+      assistant_seq: index * 2 + 1,
+      agent: null,
+      provider: { protocol: "openai-chat", model: "fixture" },
+    }),
+  ])
+    .flat()
+    .concat(row(2699, "instructions_loaded", {}))
+  const snapshot = {
+    session_id: session,
+    cursor: 2699,
+    messages: Array.from({ length: 1349 }, (_, index) => ({ seq: index * 2 + 1, role: "assistant" })),
+    selection: null,
+  }
+  for (const reported of [snapshot, { ...snapshot, message_count: 1349 }]) {
+    const messages = await readTranscript({
+      sessionID: session,
+      engineID: "store",
+      location,
+      selected: false,
+      request: request(reported, events),
+    })
+    expect(messages).toHaveLength(1349)
+    expect(messages.at(-1)?.id).toBe(messageID(session, 2697))
+  }
+})
+
+test("a snapshot shorter than the size its engine reports is refused", async () => {
+  await expect(
+    readTranscript({
+      sessionID: session,
+      engineID: "store",
+      location,
+      selected: false,
+      request: request(
+        {
+          session_id: session,
+          cursor: 1350,
+          message_count: 1349,
+          messages: Array.from({ length: 1001 }, (_, index) => ({ seq: index + 1, role: "assistant" })),
+          selection: null,
+        },
+        Array.from({ length: 1350 }, (_, index) => row(index + 1, "instructions_loaded", {})),
+      ),
+    }),
+  ).rejects.toThrow("native snapshot returned 1001 of 1349 messages")
 })
 
 test("a snapshot without provenance/selection fails rather than returning TS history", async () => {
