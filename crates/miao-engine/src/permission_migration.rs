@@ -534,7 +534,16 @@ mod tests {
             .await
             .unwrap());
         drop(store);
-        let reopened = Store::open(&filename).await.unwrap();
+        // The previous store's in-process path lease is released when its
+        // worker thread finishes dropping it, which races a fast reopen on a
+        // loaded runner. Retry briefly instead of failing on the window.
+        let reopened = loop {
+            match Store::open(&filename).await {
+                Ok(store) => break store,
+                Err(Error::Busy) => tokio::time::sleep(std::time::Duration::from_millis(50)).await,
+                Err(error) => panic!("store reopen failed: {error}"),
+            }
+        };
         assert_eq!(
             reopened
                 .legacy_permission_migration("/repo".into())
