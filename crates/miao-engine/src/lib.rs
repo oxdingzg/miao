@@ -40,6 +40,7 @@ mod permission_journal;
 pub mod permission_migration;
 pub mod permission_pattern_changes;
 pub mod permission_patterns;
+pub mod permission_project;
 pub mod permission_rules;
 pub mod permission_saved;
 mod persona;
