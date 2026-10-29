@@ -1,5 +1,5 @@
 use miao_engine::{
-    protocol::{Delivery, Error, Input},
+    protocol::{CompactScope, Delivery, Error, Input},
     store::Store,
 };
 use serde_json::json;
@@ -144,12 +144,15 @@ async fn an_operator_compaction_request_is_durable_idempotent_and_settled_once()
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     assert!(matches!(
-        store.request_compaction("s").await,
+        store.request_compaction("s", CompactScope::default()).await,
         Err(Error::Invalid(_))
     ));
     store.admit(input("one", Delivery::Steer)).await.unwrap();
     assert_eq!(
-        store.request_compaction("s").await.unwrap(),
+        store
+            .request_compaction("s", CompactScope::default())
+            .await
+            .unwrap(),
         json!({"accepted": true, "duplicate": false, "pending": true})
     );
     let request = store
@@ -159,28 +162,34 @@ async fn an_operator_compaction_request_is_durable_idempotent_and_settled_once()
         .unwrap();
     // A retried command neither queues a second request nor loses the intent.
     assert_eq!(
-        store.request_compaction("s").await.unwrap(),
+        store
+            .request_compaction("s", CompactScope::default())
+            .await
+            .unwrap(),
         json!({"accepted": true, "duplicate": true, "pending": true})
     );
     assert_eq!(
         store.pending_compaction_request("s").await.unwrap(),
-        Some(request)
+        Some(request.clone())
     );
     // One attempt answers it, either way, and a second settle is a no-op.
     assert!(store
-        .settle_compaction_request("s", request, false)
+        .settle_compaction_request("s", request.seq, false)
         .await
         .unwrap()
         .is_some());
     assert_eq!(store.pending_compaction_request("s").await.unwrap(), None);
     assert!(store
-        .settle_compaction_request("s", request, true)
+        .settle_compaction_request("s", request.seq, true)
         .await
         .unwrap()
         .is_none());
     // Asking again is what asks for another try.
     assert_eq!(
-        store.request_compaction("s").await.unwrap(),
+        store
+            .request_compaction("s", CompactScope::default())
+            .await
+            .unwrap(),
         json!({"accepted": true, "duplicate": false, "pending": true})
     );
     assert!(store

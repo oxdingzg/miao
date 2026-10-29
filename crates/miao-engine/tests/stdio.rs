@@ -374,8 +374,9 @@ fn compaction_requests_are_a_wire_command_with_a_durable_audit_trail() {
         json!({"id":2,"method":"request_compact","params":{"session_id":"missing"}}),
         json!({"id":3,"method":"request_compact","params":{"session_id":"s"}}),
         json!({"id":4,"method":"request_compact","params":{"session_id":"s"}}),
-        json!({"id":5,"method":"events","params":{"session_id":"s","after":0}}),
-        json!({"id":6,"method":"shutdown"}),
+        json!({"id":5,"method":"request_compact","params":{"session_id":"s","through":null,"focus":"keep the file list"}}),
+        json!({"id":6,"method":"events","params":{"session_id":"s","after":0}}),
+        json!({"id":7,"method":"shutdown"}),
     ];
     let mut stdin = process.stdin.take().unwrap();
     for request in requests {
@@ -406,7 +407,10 @@ fn compaction_requests_are_a_wire_command_with_a_durable_audit_trail() {
         result(4),
         json!({"accepted": true, "duplicate": true, "pending": true})
     );
-    let events = result(5);
+    // A retry that names a different scope is a conflict, not a silent
+    // replacement: the wire form carries the scope through camelCase fields.
+    assert!(reply(5)["error"].is_object(), "{replies:?}");
+    let events = result(6);
     assert_eq!(
         events
             .as_array()
