@@ -18,6 +18,9 @@ pub struct SessionSummary {
     pub parent_id: Option<String>,
     pub updated_at_ms: Option<u64>,
     pub archived_at_ms: Option<u64>,
+    /// When the operator pinned this Session. The engine owns the timestamp so
+    /// every client sorts the same shared catalog the same way.
+    pub pinned_at_ms: Option<u64>,
     pub directory: Option<String>,
     /// The Session's explicit model pin, as `model · protocol[ · variant]`.
     /// `None` means the engine's default.
@@ -45,6 +48,7 @@ impl SessionSummary {
             parent_id: text(snapshot.get("parent_session_id")),
             updated_at_ms: snapshot.get("updated_at_ms").and_then(Value::as_u64),
             archived_at_ms: snapshot.get("archived_at_ms").and_then(Value::as_u64),
+            pinned_at_ms: snapshot.get("pinned_at_ms").and_then(Value::as_u64),
             // The engine snapshot carries the workspace root as a string.
             directory: snapshot
                 .get("location")
@@ -65,8 +69,9 @@ impl SessionSummary {
     }
 }
 
-/// Only root, unarchived Sessions, most recently updated first. The engine
-/// answers `sessions` in id order, which is stable but not what a picker needs.
+/// Only root, unarchived Sessions, pinned first and then most recently updated.
+/// The engine answers `sessions` in id order, which is stable but not what a
+/// picker needs.
 pub fn home_rows(mut rows: Vec<SessionSummary>) -> Vec<SessionSummary> {
     rows.retain(|row| row.parent_id.is_none() && row.archived_at_ms.is_none());
     sort_rows(&mut rows);
@@ -82,9 +87,14 @@ pub fn catalog_rows(mut rows: Vec<SessionSummary>) -> Vec<SessionSummary> {
 }
 
 fn sort_rows(rows: &mut [SessionSummary]) {
+    // A pin is an explicit list preference, so it outranks recency even for a
+    // Session that has not been touched in days; within each group the most
+    // recently updated Session comes first.
     rows.sort_by(|a, b| {
-        b.updated_at_ms
-            .cmp(&a.updated_at_ms)
+        a.pinned_at_ms
+            .is_none()
+            .cmp(&b.pinned_at_ms.is_none())
+            .then_with(|| b.updated_at_ms.cmp(&a.updated_at_ms))
             .then_with(|| a.id.cmp(&b.id))
     });
 }
@@ -228,6 +238,9 @@ pub struct SessionState {
     pub pending: usize,
     pub approvals: Vec<ApprovalView>,
     pub questions: Vec<QuestionView>,
+    /// Messages a redo would restore. The engine keeps reverted rows in its
+    /// ledger, so this count is the durable answer to "can I redo?".
+    pub reverted: usize,
 }
 
 impl SessionState {
@@ -252,7 +265,118 @@ impl SessionState {
                 .and_then(Value::as_array)
                 .map(|items| items.iter().filter_map(QuestionView::from_value).collect())
                 .unwrap_or_default(),
+            reverted: snapshot
+                .get("reverted_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
         }
+    }
+}
+
+/// What a revert at one boundary would change, projected from the engine's
+/// `revert_preview`. The engine decides every path; the TUI only says what it
+/// was told and asks before touching the workspace.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RevertPlan {
+    /// False when the boundary has no recorded file state. The revert is then
+    /// history-only, which the engine still performs.
+    pub available: bool,
+    /// Why a file plan is missing, as the engine names it.
+    pub reason: String,
+    pub restore: Vec<String>,
+    pub remove: Vec<String>,
+    /// Paths whose disk content differs from what the Session last recorded.
+    /// Restoring them overwrites an edit this Session did not make.
+    pub conflicts: Vec<String>,
+}
+
+impl RevertPlan {
+    pub fn from_value(value: &Value) -> Self {
+        let available = value
+            .get("available")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let paths = |field: &str| {
+            value
+                .get(field)
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        Self {
+            available,
+            reason: value
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            restore: paths("restore"),
+            remove: paths("remove"),
+            conflicts: value
+                .get("conflicts")
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| {
+                            let path = item.get("path")?.as_str()?;
+                            let disk = item
+                                .get("disk")
+                                .and_then(Value::as_str)
+                                .unwrap_or("modified");
+                            Some(format!("{path} ({disk})"))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }
+    }
+
+    /// One sentence for the confirm dialog. The dialog renders a single
+    /// wrapped line, so this stays a paragraph rather than a list.
+    pub fn summary(&self) -> String {
+        let head = "Revert to this message: it and everything after it leave the transcript.";
+        if !self.available {
+            return format!(
+                "{head} The Session recorded no file changes at this boundary, so the workspace stays as it is. Shell commands and other side effects cannot be undone."
+            );
+        }
+        let mut text = format!(
+            "{head} Restore {} file(s), remove {}.",
+            self.restore.len(),
+            self.remove.len()
+        );
+        if !self.conflicts.is_empty() {
+            text.push_str(&format!(
+                " {} path(s) changed outside this Session will be overwritten: {}.",
+                self.conflicts.len(),
+                listed(&self.conflicts)
+            ));
+        }
+        text.push_str(" Shell commands and other side effects cannot be undone.");
+        text
+    }
+
+    /// Whether the staged revert should restore files. The engine refuses a
+    /// file revert at a boundary that has no file record.
+    pub fn files(&self) -> bool {
+        self.available
+    }
+}
+
+/// At most three names, so one outside edit does not push the rest of the
+/// message out of the dialog.
+fn listed(paths: &[String]) -> String {
+    let shown = paths.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
+    match paths.len() {
+        0..=3 => shown,
+        _ => format!("{shown}, and {} more", paths.len() - 3),
     }
 }
 
@@ -278,12 +402,19 @@ pub enum Part {
 pub enum Entry {
     User {
         text: String,
+        /// The message's sequence, which is the revert boundary that removes it
+        /// and everything after it.
+        seq: u64,
     },
     Assistant {
         agent: Option<String>,
         model: Option<String>,
         parts: Vec<Part>,
     },
+    /// A drain that ended in failure. A failed turn commits no assistant
+    /// message, so the snapshot cannot project this: it comes from the
+    /// `stop_failure` event and is carried across refreshes like `displays`.
+    Error { message: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -301,6 +432,12 @@ pub struct Transcript {
     /// Display diffs by tool-call id. They live on the committed event, not in
     /// the message content the snapshot projects.
     pub displays: HashMap<String, Vec<DisplayFile>>,
+    /// Terminal failure of the newest run, with the event's sequence. Also
+    /// event-only: `push_failure` turns it into an entry.
+    pub failure: Option<(u64, String)>,
+    /// Sequence of the newest projected message. Messages and events share one
+    /// sequence, so it says whether a failure still trails the conversation.
+    pub tail_seq: u64,
 }
 
 impl Transcript {
@@ -316,6 +453,9 @@ impl Transcript {
     }
 
     fn push_message(&mut self, message: &Value) {
+        self.tail_seq = self
+            .tail_seq
+            .max(message.get("seq").and_then(Value::as_u64).unwrap_or(0));
         let role = message
             .get("role")
             .and_then(Value::as_str)
@@ -347,7 +487,8 @@ impl Transcript {
                 (!joined.is_empty()).then_some(joined)
             });
         if let Some(text) = text.filter(|text| !text.is_empty()) {
-            self.entries.push(Entry::User { text });
+            let seq = message.get("seq").and_then(Value::as_u64).unwrap_or(0);
+            self.entries.push(Entry::User { text, seq });
         }
         for block in blocks {
             if block.get("type").and_then(Value::as_str) != Some("tool_result") {
@@ -441,13 +582,49 @@ impl Transcript {
         }
     }
 
-    /// Fold one committed event into the view. Only the display diff is kept:
-    /// message content is re-read from a snapshot, which is the engine's own
-    /// projection and cannot drift from the journal.
-    pub fn apply_event(&mut self, kind: &str, data: &Value) {
-        if kind != "tool.completed" {
+    /// Fold one committed event into the view. Message content is re-read from
+    /// a snapshot, which is the engine's own projection and cannot drift from
+    /// the journal; only the display diff and the terminal failure live on
+    /// events alone, so both are carried here.
+    pub fn apply_event(&mut self, seq: u64, kind: &str, data: &Value) {
+        match kind {
+            "stop_failure" => self.failure = failure_of(seq, data),
+            // A later drain that ended any other way supersedes the failure.
+            "stop" => self.failure = None,
+            "tool.completed" => self.push_display(data),
+            _ => {}
+        }
+    }
+
+    /// The user turns this transcript can rewind to, oldest first. Reverting at
+    /// a boundary removes that message and everything after it, so the newest
+    /// boundary is "undo the last turn".
+    pub fn boundaries(&self) -> Vec<(u64, String)> {
+        self.entries
+            .iter()
+            .filter_map(|entry| match entry {
+                // A projected user message without a sequence cannot be named
+                // as a boundary, so it is not offered as one.
+                Entry::User { text, seq } if *seq > 0 => Some((*seq, text.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Append the failure once the snapshot and the replayed events are folded
+    /// in. It belongs to the transcript only while it is the tail: a message
+    /// committed after it means the user has already moved past that turn.
+    pub fn push_failure(&mut self) {
+        let Some((seq, message)) = self.failure.clone() else {
+            return;
+        };
+        if seq <= self.tail_seq {
             return;
         }
+        self.entries.push(Entry::Error { message });
+    }
+
+    fn push_display(&mut self, data: &Value) {
         let Some(call_id) = data.get("call_id").and_then(Value::as_str) else {
             return;
         };
@@ -494,6 +671,12 @@ fn text(value: Option<&Value>) -> Option<String> {
         .map(str::to_string)
 }
 
+/// The drain's own error text, which `stop_failure` carries. A payload without
+/// one must not render an empty block.
+fn failure_of(seq: u64, data: &Value) -> Option<(u64, String)> {
+    Some((seq, text(data.get("message"))?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -532,6 +715,39 @@ mod tests {
         assert_eq!(ids, ["ses_b", "ses_a"]);
         assert_eq!(rows[0].label(), "newer");
         assert_eq!(rows[0].directory.as_deref(), Some("/work/miao"));
+    }
+
+    #[test]
+    fn a_pin_outranks_recency_in_both_lists() {
+        let pinned = |id: &str, updated: u64, pinned: Option<u64>| {
+            SessionSummary::from_snapshot(&json!({
+                "session_id": id,
+                "title": id,
+                "updated_at_ms": updated,
+                "pinned_at_ms": pinned,
+            }))
+            .expect("row")
+        };
+        let rows = home_rows(vec![
+            pinned("ses_newer", 900, None),
+            pinned("ses_pinned_old", 10, Some(1)),
+            pinned("ses_pinned_new", 20, Some(2)),
+        ]);
+        let ids: Vec<_> = rows.iter().map(|row| row.id.as_str()).collect();
+        // The pin groups come first, newest pin first; an unpinned, fresher
+        // Session stays below them.
+        assert_eq!(ids, ["ses_pinned_new", "ses_pinned_old", "ses_newer"]);
+        let catalog = catalog_rows(vec![
+            pinned("ses_newer", 900, None),
+            pinned("ses_pinned_old", 10, Some(1)),
+        ]);
+        assert_eq!(
+            catalog
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
+            ["ses_pinned_old", "ses_newer"]
+        );
     }
 
     #[test]
@@ -591,7 +807,8 @@ mod tests {
         assert_eq!(
             transcript.entries[0],
             Entry::User {
-                text: "hello".into()
+                text: "hello".into(),
+                seq: 0
             }
         );
         let Entry::Assistant {
@@ -646,6 +863,7 @@ mod tests {
     fn a_display_event_attaches_its_files_to_the_call() {
         let mut transcript = Transcript::default();
         transcript.apply_event(
+            12,
             "tool.completed",
             &json!({
                 "call_id": "run-1/call_1",
@@ -712,7 +930,120 @@ mod tests {
     #[test]
     fn an_event_without_a_display_is_ignored() {
         let mut transcript = Transcript::default();
-        transcript.apply_event("tool.completed", &json!({ "call_id": "run-1/call_1" }));
+        transcript.apply_event(9, "tool.completed", &json!({ "call_id": "run-1/call_1" }));
         assert!(transcript.displays.is_empty());
+    }
+
+    #[test]
+    fn a_failed_run_reaches_the_transcript_as_an_error_entry() {
+        let mut transcript = Transcript::from_snapshot(&json!({
+            "session_id": "ses_a",
+            "messages": [{ "seq": 4, "role": "user", "content": "hello" }]
+        }));
+        transcript.apply_event(
+            9,
+            "stop_failure",
+            &json!({ "run_id": "run-1", "reason": "failed", "message": "provider unavailable" }),
+        );
+        transcript.push_failure();
+        assert_eq!(
+            transcript.entries.last(),
+            Some(&Entry::Error {
+                message: "provider unavailable".into()
+            })
+        );
+    }
+
+    #[test]
+    fn a_failure_before_the_newest_message_is_history() {
+        let mut transcript = Transcript::from_snapshot(&json!({
+            "session_id": "ses_a",
+            "messages": [{ "seq": 12, "role": "user", "content": "try again" }]
+        }));
+        transcript.apply_event(
+            9,
+            "stop_failure",
+            &json!({ "run_id": "run-1", "reason": "failed", "message": "provider unavailable" }),
+        );
+        transcript.push_failure();
+        assert_eq!(
+            transcript.entries,
+            vec![Entry::User {
+                text: "try again".into(),
+                seq: 12
+            }],
+            "the retry has already moved past the old failure"
+        );
+    }
+
+    #[test]
+    fn boundaries_are_the_user_turns_the_session_can_rewind_to() {
+        let transcript = Transcript::from_snapshot(&json!({
+            "session_id": "ses_a",
+            "messages": [
+                { "seq": 2, "role": "user", "content": "first" },
+                { "seq": 3, "role": "assistant", "content": [{ "type": "text", "text": "answer" }] },
+                // A projected message without a sequence cannot name a
+                // boundary, so it is not offered as one.
+                { "role": "user", "content": "unanchored" },
+                { "seq": 8, "role": "user", "content": "second" }
+            ]
+        }));
+        assert_eq!(
+            transcript.boundaries(),
+            vec![(2, "first".to_string()), (8, "second".to_string())]
+        );
+        assert_eq!(transcript.boundaries().last().map(|(seq, _)| *seq), Some(8));
+    }
+
+    #[test]
+    fn a_revert_plan_names_the_paths_an_outside_edit_loses() {
+        let plan = RevertPlan::from_value(&json!({
+            "available": true,
+            "boundary_seq": 8,
+            "restore": ["a.txt", "b.txt"],
+            "remove": ["c.txt"],
+            "conflicts": [{ "path": "a.txt", "action": "restore", "disk": "modified" }]
+        }));
+        assert!(plan.files());
+        let summary = plan.summary();
+        assert!(summary.contains("Restore 2 file(s), remove 1"));
+        assert!(summary.contains("a.txt (modified)"), "got {summary}");
+        assert!(summary.contains("cannot be undone"), "got {summary}");
+    }
+
+    #[test]
+    fn a_boundary_without_a_file_record_reverts_history_only() {
+        let plan = RevertPlan::from_value(&json!({
+            "available": false,
+            "reason": "no-file-snapshot"
+        }));
+        assert!(!plan.files(), "the engine would refuse a file revert");
+        assert!(plan.summary().contains("workspace stays as it is"));
+    }
+
+    #[test]
+    fn the_snapshot_reverted_count_says_whether_a_redo_is_possible() {
+        assert_eq!(
+            SessionState::from_snapshot(&json!({ "reverted_count": 3 })).reverted,
+            3
+        );
+        assert_eq!(SessionState::from_snapshot(&json!({})).reverted, 0);
+    }
+
+    #[test]
+    fn a_stop_that_did_not_fail_clears_the_failure() {
+        let mut transcript = Transcript::default();
+        transcript.apply_event(
+            9,
+            "stop_failure",
+            &json!({ "run_id": "run-1", "reason": "failed", "message": "boom" }),
+        );
+        transcript.apply_event(
+            11,
+            "stop",
+            &json!({ "run_id": "run-2", "reason": "completed" }),
+        );
+        assert_eq!(transcript.failure, None);
     }
 }

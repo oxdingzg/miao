@@ -10,8 +10,10 @@ import { SessionID } from "@miao/schema/session-id"
 import { ModelV2 } from "@miao/core/model"
 import { SessionCost } from "@miao/core/session/cost"
 import { Cause, DateTime, Deferred, Effect, Option, Schema } from "effect"
+import { isNotNull } from "drizzle-orm"
 import { Database } from "@miao/core/database/database"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
+import { SessionTable } from "@miao/core/session/sql"
 import { NativeEngine } from "./native-engine"
 import { nativeIdle } from "./native-state"
 
@@ -34,6 +36,7 @@ export function nativeSessionInfo(input: {
   location: Location.Ref
   snapshot: Readonly<Record<string, unknown>>
   usage?: SessionInfo.Usage
+  pinned?: DateTime.Utc
 }): SessionInfo.Info {
   const selection = Schema.decodeUnknownOption(Schema.NullOr(SessionModelRoute.Binding))(
     input.snapshot["model_selection"],
@@ -46,6 +49,11 @@ export function nativeSessionInfo(input: {
   const created = number(input.snapshot["created_at_ms"])
   const updated = number(input.snapshot["updated_at_ms"])
   const archived = number(input.snapshot["archived_at_ms"])
+  const pinnedAt = number(input.snapshot["pinned_at_ms"])
+  // The engine owns the pin, so its snapshot is the authority. The catalog
+  // mirror stays as a fallback for a Session the engine has not reported on
+  // yet, and a pin must never be dropped from a listing because of that.
+  const pinned = pinnedAt === undefined ? input.pinned : DateTime.makeUnsafe(pinnedAt)
   const account = Schema.decodeUnknownOption(Schema.Struct({ credential_id: Schema.NullOr(Credential.ID) }))(
     input.snapshot["account_selection"],
   )
@@ -85,6 +93,7 @@ export function nativeSessionInfo(input: {
       created: DateTime.makeUnsafe(created ?? 0),
       updated: DateTime.makeUnsafe(updated ?? created ?? 0),
       ...(archived !== undefined ? { archived: DateTime.makeUnsafe(archived) } : {}),
+      ...(pinned !== undefined ? { pinned } : {}),
     },
     model,
     title: typeof title === "string" ? title : "",
@@ -292,15 +301,41 @@ export function selectNativeSessions(input: {
   return direction === "previous" ? listed.toReversed() : listed
 }
 
-/** The catalog's paging comparator, shared by selection and the final merge. */
+/**
+ * The catalog's paging comparator, shared by selection and the final merge.
+ * A pin outranks the requested order, exactly as it does in `V2Session.list`:
+ * both sides of the merge must cut the page at the same element, so the native
+ * prefix has to group pinned Sessions first too.
+ */
 export function compareSessions(order: "asc" | "desc") {
   return (left: SessionInfo.Info, right: SessionInfo.Info) => {
+    const pin = (left.time.pinned === undefined ? 1 : 0) - (right.time.pinned === undefined ? 1 : 0)
+    if (pin !== 0) return pin
     const delta = DateTime.toEpochMillis(left.time.created) - DateTime.toEpochMillis(right.time.created)
     if (delta !== 0) return order === "asc" ? delta : -delta
     const ids = left.id < right.id ? -1 : left.id > right.id ? 1 : 0
     return order === "asc" ? ids : -ids
   }
 }
+
+/**
+ * The pins the catalog mirrors from the engine. The engine owns `pinned_at_ms`,
+ * so a native projection reads the snapshot first and falls back to the catalog
+ * row the pin handler's `Info.Updated` event writes — the same row TypeScript
+ * Sessions use. Pinned Sessions are a handful by definition, so one read of the
+ * catalog's own table serves both a listing page and a single `session.get`.
+ */
+export const nativePins = Effect.fn("NativeSession.pins")(function* (db: Database.Interface["db"]) {
+  const rows = yield* db
+    .select({ id: SessionTable.id, pinned: SessionTable.time_pinned })
+    .from(SessionTable)
+    .where(isNotNull(SessionTable.time_pinned))
+    .all()
+    .pipe(Effect.orDie)
+  return new Map(
+    rows.flatMap((row) => (row.pinned == null ? [] : [[row.id, DateTime.makeUnsafe(row.pinned)] as const])),
+  )
+})
 
 /** Merge in traversal order so previous pages keep the nearest candidates. */
 export function mergeListingPage(input: {
@@ -350,6 +385,7 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
   projects: { resolve: (directory: AbsolutePath) => Effect.Effect<{ id: Project.ID }> }
 }) {
   const placements = yield* SessionEnginePlacement.list(input.db)
+  const pins = yield* nativePins(input.db)
   const groups = new Map<string, { storage: AbsolutePath; location: Location.Ref; sessions: string[] }>()
   for (const placement of placements) {
     if (input.directory && placement.location.directory !== input.directory) continue
@@ -412,7 +448,14 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
                 snapshot,
               })
             : undefined
-          return nativeSessionInfo({ sessionID, projectID: project, location: group.location, snapshot, usage })
+          return nativeSessionInfo({
+            sessionID,
+            projectID: project,
+            location: group.location,
+            snapshot,
+            usage,
+            pinned: pins.get(sessionID),
+          })
         }).pipe(
           Effect.catchCause((cause) =>
             Cause.hasInterrupts(cause)

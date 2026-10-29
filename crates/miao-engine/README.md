@@ -711,6 +711,25 @@ record is retained. It searches text/tool input/result in raw messages and does 
 summaries or opaque provider continuation. A search does not modify the transcript or a checkpoint,
 nor does it schedule execution automatically.
 
+
+Host RPC callers can also restore the original output named by a pruning marker,
+without rerunning the tool:
+
+```jsonl
+{"id":51,"method":"recall","params":{"session_id":"s","tool_use_id":"call-archive","offset":0}}
+```
+
+Omit `query` in handle mode; a nonempty query and a handle are mutually exclusive.
+Each UTF-8-safe output window is about 32 KiB and returns `next_offset` when more
+bytes remain. Use that value as `offset` to continue; offsets are bounded to
+64 MiB. A handle older than the bounded message scan may initially return null
+text with `exhausted: false` and `next_before_message_seq`. Pass that cursor as
+`before_message_seq`, keeping the handle and output offset, to scan older messages.
+An exhausted null result means the handle was not found in the selected Session.
+Old text-search requests retain their shape. Older engines without handle RPC
+support reject the handle-only frame, so callers must surface that error rather
+than treating it as empty history. This adds no product HTTP route or TUI action.
+
 ## Durable Session state: todos / goal
 
 The `session_state`, `todowrite`, and `goal` model tools are automatically bound to the current

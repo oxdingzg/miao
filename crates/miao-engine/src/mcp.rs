@@ -17,12 +17,15 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     future::Future,
-    path::Path,
+    path::{Path, PathBuf},
     pin::Pin,
     process::Stdio,
-    sync::{Arc, RwLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, RwLock,
+    },
     task::{Context, Poll},
     time::Duration,
 };
@@ -33,7 +36,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub name: String,
@@ -58,7 +61,7 @@ pub struct Config {
     pub timeout: Option<Timeout>,
 }
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Timeout {
     pub startup: Option<u64>,
@@ -68,7 +71,7 @@ pub struct Timeout {
 /// A host-provisioned refresh grant. The browser part of the authorization
 /// code flow belongs to the product host; the engine only exchanges the
 /// refresh token for a bearer access token when a connection starts.
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Oauth {
     pub token_endpoint: String,
@@ -103,6 +106,9 @@ enum Operation {
 }
 struct Server {
     name: String,
+    /// Digest of the configuration this connection was built from; a reload
+    /// compares it to decide whether the connection can be kept.
+    fingerprint: String,
     client: Mutex<RunningService<RoleClient, CatalogWatch>>,
     changed: Arc<Notify>,
     request_timeout: Duration,
@@ -140,21 +146,57 @@ impl ClientHandler for CatalogWatch {
     }
 }
 
+/// What a reload did to the server set. A server appears in `unchanged` only
+/// when its connection and process were kept, so a reload that changes nothing
+/// is distinguishable from one that rebuilt everything. A rebuild that failed
+/// is reported in `failed`; its previous connection keeps serving.
+#[derive(Debug, Default, PartialEq)]
+pub struct Reconcile {
+    pub changed: Vec<String>,
+    pub unchanged: Vec<String>,
+    pub removed: Vec<String>,
+    pub failed: Vec<Failure>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Failure {
+    pub server: String,
+    pub error: String,
+}
+
 /// Connections are explicitly trusted host services, not model-selected URLs
 /// or commands. Tool calls are separate External authority and remain gated.
 pub struct Registry {
-    authority: String,
+    authority: RwLock<String>,
     tools: RwLock<BTreeMap<String, Tool>>,
-    servers: Vec<Arc<Server>>,
-    children: Mutex<Vec<Child>>,
+    servers: RwLock<Vec<Arc<Server>>>,
+    /// Child processes are owned by the server that started them, so replacing
+    /// or removing one server never disturbs another's process.
+    children: Mutex<BTreeMap<String, Child>>,
+    /// The configuration set the servers were built from, in manifest order.
+    configs: RwLock<Vec<Config>>,
+    /// Where process servers spawn. Caller-owned streams have no workspace and
+    /// therefore cannot be reconciled.
+    workspace: Option<PathBuf>,
+    watching: AtomicBool,
 }
 impl Registry {
     pub(crate) fn authority(&self) -> String {
         // Identity templates are resolved at call time. Bind their effective
         // values too, without exposing them in approval events or tool inputs.
+        let authority = self
+            .authority
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone();
+        let servers = self
+            .servers
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone();
         digest(&serde_json::to_vec(&json!({
-            "configuration": self.authority,
-            "metadata": self.servers.iter().map(|server| (&server.name,
+            "configuration": authority,
+            "metadata": servers.iter().map(|server| (&server.name,
                 server.call_meta.iter().map(|(key,value)| (key,expand_call_meta(value).ok())).collect::<BTreeMap<_,_>>()
             )).collect::<BTreeMap<_,_>>()
         })).expect("MCP authority is JSON"))
@@ -163,15 +205,18 @@ impl Registry {
         if configs.len() > 8 {
             return Err(Error::Invalid("MCP server limit".into()));
         }
-        let mut registry = Self {
-            authority: registration_authority(&configs)?,
+        let registry = Self {
+            authority: RwLock::new(registration_authority(&configs)?),
             tools: RwLock::new(BTreeMap::new()),
-            servers: vec![],
-            children: Mutex::new(vec![]),
+            servers: RwLock::new(vec![]),
+            children: Mutex::new(BTreeMap::new()),
+            configs: RwLock::new(vec![]),
+            workspace: Some(workspace.to_path_buf()),
+            watching: AtomicBool::new(false),
         };
-        for config in configs {
+        for config in &configs {
             validate_name(&config.name)?;
-            let timeout = config.timeout.unwrap_or_default();
+            let timeout = config.timeout.clone().unwrap_or_default();
             if timeout.startup == Some(0) || timeout.request == Some(0) {
                 return Err(Error::Invalid(
                     "MCP timeouts must be positive milliseconds".into(),
@@ -211,12 +256,15 @@ impl Registry {
             }
             if registry
                 .servers
+                .read()
+                .unwrap_or_else(|held| held.into_inner())
                 .iter()
                 .any(|server| server.name == config.name)
             {
                 return Err(Error::Invalid("duplicate MCP server name".into()));
             }
-            if let Some(endpoint) = config.url {
+            let fingerprint = fingerprint(config)?;
+            if let Some(endpoint) = config.url.clone() {
                 if !config.argv.is_empty()
                     || !config.env.is_empty()
                     || config.cwd.is_some()
@@ -248,7 +296,7 @@ impl Registry {
                     return Err(Error::Invalid("invalid MCP HTTP URL".into()));
                 }
                 let mut headers = std::collections::HashMap::new();
-                for (name, value) in config.headers {
+                for (name, value) in &config.headers {
                     let name = http::HeaderName::from_bytes(name.as_bytes())
                         .map_err(|_| Error::Invalid("invalid MCP HTTP header".into()))?;
                     if value.len() > 8192
@@ -266,7 +314,7 @@ impl Registry {
                     {
                         return Err(Error::Invalid("invalid MCP HTTP header".into()));
                     }
-                    let mut value = http::HeaderValue::from_str(&value)
+                    let mut value = http::HeaderValue::from_str(value)
                         .map_err(|_| Error::Invalid("invalid MCP HTTP header".into()))?;
                     value.set_sensitive(true);
                     if headers.insert(name, value).is_some() {
@@ -297,11 +345,12 @@ impl Registry {
                 .map_err(|_| Error::Invalid("MCP HTTP initialization failed".into()))?;
                 registry
                     .attach(
-                        config.name,
+                        config.name.clone(),
                         client,
                         changed,
                         request_timeout,
-                        config.call_meta,
+                        config.call_meta.clone(),
+                        fingerprint,
                     )
                     .await?;
                 continue;
@@ -316,6 +365,7 @@ impl Registry {
             }
             let cwd = config
                 .cwd
+                .clone()
                 .map(|cwd| workspace.join(cwd))
                 .unwrap_or_else(|| workspace.to_path_buf());
             let mut command = Command::new(&config.argv[0]);
@@ -325,7 +375,7 @@ impl Registry {
                     command.env(key, value);
                 }
             }
-            command.envs(config.env);
+            command.envs(config.env.clone());
             command
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -355,15 +405,24 @@ impl Registry {
             .map_err(|_| Error::Invalid("MCP initialization failed".into()))?;
             registry
                 .attach(
-                    config.name,
+                    config.name.clone(),
                     client,
                     changed,
                     request_timeout,
-                    config.call_meta,
+                    config.call_meta.clone(),
+                    fingerprint.clone(),
                 )
                 .await?;
-            registry.children.lock().await.push(child);
+            registry
+                .children
+                .lock()
+                .await
+                .insert(config.name.clone(), child);
         }
+        *registry
+            .configs
+            .write()
+            .unwrap_or_else(|held| held.into_inner()) = configs;
         Ok(registry)
     }
 
@@ -384,13 +443,16 @@ impl Registry {
         .await
         .map_err(|_| Error::Invalid("MCP initialization timed out".into()))?
         .map_err(|_| Error::Invalid("MCP initialization failed".into()))?;
-        let mut registry = Self {
+        let registry = Self {
             // Unidentified caller-owned streams cannot share durable grants
             // with a later transport merely because its logical name matches.
-            authority: uuid::Uuid::new_v4().to_string(),
+            authority: RwLock::new(uuid::Uuid::new_v4().to_string()),
             tools: RwLock::new(BTreeMap::new()),
-            servers: vec![],
-            children: Mutex::new(vec![]),
+            servers: RwLock::new(vec![]),
+            children: Mutex::new(BTreeMap::new()),
+            configs: RwLock::new(vec![]),
+            workspace: None,
+            watching: AtomicBool::new(false),
         };
         registry
             .attach(
@@ -399,18 +461,22 @@ impl Registry {
                 changed,
                 Duration::from_secs(60),
                 BTreeMap::new(),
+                // A caller-owned stream has no configuration to compare, and
+                // the registry has no workspace, so reconcile refuses it.
+                String::new(),
             )
             .await?;
         Ok(registry)
     }
 
     async fn attach(
-        &mut self,
+        &self,
         name: String,
         client: RunningService<RoleClient, CatalogWatch>,
         changed: Arc<Notify>,
         request_timeout: Duration,
         call_meta: BTreeMap<String, String>,
+        fingerprint: String,
     ) -> Result<(), Error> {
         let capabilities = client
             .peer_info()
@@ -446,6 +512,7 @@ impl Registry {
         }
         let server = Arc::new(Server {
             name: name.clone(),
+            fingerprint,
             client: Mutex::new(client),
             changed,
             request_timeout,
@@ -518,7 +585,10 @@ impl Registry {
                 return Err(Error::Invalid("duplicate MCP tool alias".into()));
             }
         }
-        self.servers.push(server);
+        self.servers
+            .write()
+            .unwrap_or_else(|held| held.into_inner())
+            .push(server);
         Ok(())
     }
     pub fn definitions(&self) -> Vec<ToolDefinition> {
@@ -534,6 +604,8 @@ impl Registry {
     pub async fn refresh(&self, name: &str) -> Result<(), Error> {
         let server = self
             .servers
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
             .iter()
             .find(|server| server.name == name)
             .ok_or_else(|| Error::Invalid("unknown MCP server".into()))?
@@ -552,21 +624,225 @@ impl Registry {
     /// Spawn one debounced watcher per connected server. Dropping the registry
     /// ends the watchers; a refresh failure only keeps the previous catalog.
     pub fn start_watchers(self: &Arc<Self>) {
-        for server in self.servers.clone() {
-            let weak = Arc::downgrade(self);
-            let name = server.name.clone();
-            let changed = server.changed.clone();
-            tokio::spawn(async move {
-                loop {
-                    changed.notified().await;
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                    let Some(registry) = weak.upgrade() else {
-                        break;
-                    };
-                    let _ = registry.refresh(&name).await;
-                }
-            });
+        self.watching.store(true, Ordering::Relaxed);
+        let servers = self
+            .servers
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone();
+        for server in servers {
+            self.watch(server);
         }
+    }
+
+    /// One server's watcher exits when the server is no longer current, which
+    /// a reconciling reload signals through the same notification.
+    fn watch(self: &Arc<Self>, server: Arc<Server>) {
+        let weak = Arc::downgrade(self);
+        tokio::spawn(async move {
+            loop {
+                server.changed.notified().await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                let Some(registry) = weak.upgrade() else {
+                    break;
+                };
+                let current = registry
+                    .servers
+                    .read()
+                    .unwrap_or_else(|held| held.into_inner())
+                    .iter()
+                    .any(|candidate| Arc::ptr_eq(candidate, &server));
+                if !current {
+                    break;
+                }
+                let _ = registry.refresh(&server.name).await;
+            }
+        });
+    }
+
+    /// Replace the server set in place, keeping every connection whose name and
+    /// configuration are unchanged. A changed or added server is connected
+    /// before its predecessor is closed, so a rebuild that fails leaves the
+    /// previous connection serving and is reported in `failed` instead of
+    /// rolling back the rest of the manifest. Nothing is touched until the
+    /// whole manifest has been validated.
+    pub async fn reconcile(self: &Arc<Self>, configs: Vec<Config>) -> Result<Reconcile, Error> {
+        let Some(workspace) = self.workspace.clone() else {
+            return Err(Error::Invalid(
+                "MCP reload requires a workspace-backed registry".into(),
+            ));
+        };
+        if configs.len() > 8 {
+            return Err(Error::Invalid("MCP server limit".into()));
+        }
+        let mut names = BTreeSet::new();
+        let mut fingerprints = BTreeMap::new();
+        for config in &configs {
+            validate_name(&config.name)?;
+            if !names.insert(config.name.clone()) {
+                return Err(Error::Invalid("duplicate MCP server name".into()));
+            }
+            fingerprints.insert(config.name.clone(), fingerprint(config)?);
+        }
+        // List-level invariants are checked before any server is replaced.
+        registration_authority(&configs)?;
+        let previous = self
+            .configs
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .iter()
+            .map(|config| (config.name.clone(), config.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let current = self
+            .servers
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .iter()
+            .map(|server| (server.name.clone(), server.fingerprint.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let mut changed = Vec::new();
+        let mut unchanged = Vec::new();
+        for config in &configs {
+            if current.get(&config.name) == Some(&fingerprints[&config.name]) {
+                unchanged.push(config.name.clone());
+            } else {
+                changed.push(config.name.clone());
+            }
+        }
+        let removed = previous
+            .keys()
+            .filter(|name| !fingerprints.contains_key(*name))
+            .cloned()
+            .collect::<Vec<_>>();
+        // Connect everything that changed before touching the live set.
+        let mut connections = Vec::new();
+        let mut failed = Vec::new();
+        for config in configs
+            .iter()
+            .filter(|config| !unchanged.contains(&config.name))
+        {
+            match Registry::connect(vec![config.clone()], &workspace).await {
+                Ok(connection) => connections.push((config.name.clone(), connection)),
+                Err(error) => failed.push(Failure {
+                    server: config.name.clone(),
+                    error: error.to_string(),
+                }),
+            }
+        }
+        // Only a server whose new configuration is now serving counts as
+        // changed; an attempted rebuild that failed appears in `failed` alone,
+        // so the reply never claims an unapplied configuration is running.
+        let failed_names = failed
+            .iter()
+            .map(|failure| failure.server.clone())
+            .collect::<BTreeSet<_>>();
+        changed.retain(|name| !failed_names.contains(name));
+        // What is actually connected after this reload: the new configuration
+        // for applied servers, the old one for a failed rebuild.
+        let accepted = configs
+            .iter()
+            .filter_map(|config| {
+                if unchanged.contains(&config.name)
+                    || connections.iter().any(|(name, _)| name == &config.name)
+                {
+                    return Some(config.clone());
+                }
+                previous.get(&config.name).cloned()
+            })
+            .collect::<Vec<_>>();
+        let authority = registration_authority(&accepted)?;
+        for (name, connection) in connections {
+            let Registry {
+                tools,
+                servers,
+                children,
+                ..
+            } = connection;
+            let incoming = tools.into_inner().unwrap_or_else(|held| held.into_inner());
+            let server = servers
+                .into_inner()
+                .unwrap_or_else(|held| held.into_inner())
+                .pop()
+                .ok_or_else(|| Error::Invalid("MCP server did not attach".into()))?;
+            let child = children.into_inner().remove(&name);
+            {
+                let mut tools = self.tools.write().unwrap_or_else(|held| held.into_inner());
+                // Two servers must not share an alias; refuse before mutating.
+                if incoming.keys().any(|alias| {
+                    tools
+                        .get(alias)
+                        .is_some_and(|tool| tool.server.name != name)
+                }) {
+                    return Err(Error::Invalid("duplicate MCP tool alias".into()));
+                }
+                tools.retain(|_, tool| tool.server.name != name);
+                tools.extend(incoming);
+            }
+            let displaced = {
+                let mut servers = self
+                    .servers
+                    .write()
+                    .unwrap_or_else(|held| held.into_inner());
+                match servers.iter().position(|server| server.name == name) {
+                    Some(index) => Some(std::mem::replace(&mut servers[index], server.clone())),
+                    None => {
+                        servers.push(server.clone());
+                        None
+                    }
+                }
+            };
+            let old_child = self.children.lock().await.remove(&name);
+            if let Some(child) = child {
+                self.children.lock().await.insert(name.clone(), child);
+            }
+            if let Some(displaced) = displaced {
+                retire(displaced).await;
+            }
+            if let Some(mut child) = old_child {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+            }
+            if self.watching.load(Ordering::Relaxed) {
+                self.watch(server);
+            }
+        }
+        for name in &removed {
+            self.tools
+                .write()
+                .unwrap_or_else(|held| held.into_inner())
+                .retain(|_, tool| tool.server.name != *name);
+            let displaced = {
+                let mut servers = self
+                    .servers
+                    .write()
+                    .unwrap_or_else(|held| held.into_inner());
+                servers
+                    .iter()
+                    .position(|server| server.name == *name)
+                    .map(|index| servers.remove(index))
+            };
+            if let Some(displaced) = displaced {
+                retire(displaced).await;
+            }
+            if let Some(mut child) = self.children.lock().await.remove(name) {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+            }
+        }
+        *self
+            .configs
+            .write()
+            .unwrap_or_else(|held| held.into_inner()) = accepted;
+        *self
+            .authority
+            .write()
+            .unwrap_or_else(|held| held.into_inner()) = authority;
+        Ok(Reconcile {
+            changed,
+            unchanged,
+            removed,
+            failed,
+        })
     }
 
     async fn list_catalog(
@@ -789,33 +1065,70 @@ impl Registry {
         Ok(result)
     }
     pub async fn shutdown(&self) {
-        for server in &self.servers {
+        let servers = self
+            .servers
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone();
+        for server in servers {
             let mut client = server.client.lock().await;
             let _ = client.close_with_timeout(Duration::from_secs(2)).await;
         }
-        for child in self.children.lock().await.iter_mut() {
+        for child in self.children.lock().await.values_mut() {
             let _ = child.kill().await;
             let _ = child.wait().await;
         }
     }
 }
+/// Stop accepting calls on a connection no configuration refers to any more,
+/// and wake its watcher so it exits instead of refreshing it.
+async fn retire(server: Arc<Server>) {
+    server.changed.notify_waiters();
+    let mut client = server.client.lock().await;
+    let _ = client.close_with_timeout(Duration::from_secs(2)).await;
+}
+
 fn registration_authority(configs: &[Config]) -> Result<String, Error> {
-    let descriptors = configs.iter().map(|config| {
-        let mut descriptor = serde_json::to_value(config)?;
-        if let Some(revision) = &config.authority_revision {
-            let url = config.url.as_deref().and_then(|value| reqwest::Url::parse(value).ok());
-            if revision.len() != 64 || !revision.bytes().all(|value| value.is_ascii_hexdigit())
-                || !config.argv.is_empty() || !config.headers.is_empty() || config.oauth.is_some()
-                || !url.is_some_and(|url| url.scheme() == "http" && matches!(url.host_str(), Some("127.0.0.1" | "[::1]" | "::1"))) {
-                return Err(Error::Invalid("MCP authority revision requires a trusted loopback transport and SHA256 digest".into()));
-            }
-            // The host attests the original remote registration. Only the
-            // ephemeral loopback address is normalized; all other config stays.
-            descriptor["url"] = json!("product-owned-oauth-loopback");
-        }
-        Ok(descriptor)
-    }).collect::<Result<Vec<Value>, Error>>()?;
+    let descriptors = configs
+        .iter()
+        .map(descriptor)
+        .collect::<Result<Vec<Value>, Error>>()?;
     Ok(digest(&serde_json::to_vec(&descriptors)?))
+}
+
+/// One server's configuration with the normalization the registration
+/// authority applies. A reload compares fingerprints of this form.
+fn fingerprint(config: &Config) -> Result<String, Error> {
+    Ok(digest(&serde_json::to_vec(&descriptor(config)?)?))
+}
+
+fn descriptor(config: &Config) -> Result<Value, Error> {
+    let mut descriptor = serde_json::to_value(config)?;
+    if let Some(revision) = &config.authority_revision {
+        let url = config
+            .url
+            .as_deref()
+            .and_then(|value| reqwest::Url::parse(value).ok());
+        if revision.len() != 64
+            || !revision.bytes().all(|value| value.is_ascii_hexdigit())
+            || !config.argv.is_empty()
+            || !config.headers.is_empty()
+            || config.oauth.is_some()
+            || !url.is_some_and(|url| {
+                url.scheme() == "http"
+                    && matches!(url.host_str(), Some("127.0.0.1" | "[::1]" | "::1"))
+            })
+        {
+            return Err(Error::Invalid(
+                "MCP authority revision requires a trusted loopback transport and SHA256 digest"
+                    .into(),
+            ));
+        }
+        // The host attests the original remote registration. Only the
+        // ephemeral loopback address is normalized; all other config stays.
+        descriptor["url"] = json!("product-owned-oauth-loopback");
+    }
+    Ok(descriptor)
 }
 
 fn validate_name(name: &str) -> Result<(), Error> {

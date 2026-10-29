@@ -47,6 +47,19 @@ async fn a_subscription_replays_from_its_cursor_and_then_streams_live() {
 }
 
 #[tokio::test]
+async fn a_config_notice_reaches_the_host_even_with_no_session_open() {
+    let (mut connection, mut events) = Connection::start(fake(), TIMEOUT).expect("start");
+    let client = connection.connect().await.expect("connect");
+    client.request("reload", json!({})).await.expect("reload");
+    let report = match next(&mut events).await {
+        TransportEvent::Config(report) => report,
+        other => panic!("expected a config notice, got {other:?}"),
+    };
+    assert_eq!(report["changed"], json!(["policy", "context"]));
+    assert_eq!(report["generation"], json!(2));
+}
+
+#[tokio::test]
 async fn an_engine_error_settles_one_request_without_retiring_the_transport() {
     let (mut connection, _events) = Connection::start(fake(), TIMEOUT).expect("start");
     let client = connection.connect().await.expect("connect");
