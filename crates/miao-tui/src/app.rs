@@ -428,7 +428,6 @@ impl App {
                 self.update_status();
                 self.continue_prompt();
             }
-<<<<<<< HEAD
             AppEvent::RevertPreview {
                 session_id,
                 boundary_seq,
@@ -459,7 +458,6 @@ impl App {
                         dialog.revoked(&id, result);
                     }
                 }
-            }
             }
             AppEvent::ActionFailed(message) => {
                 self.shell.composer.notice = Some(message);
