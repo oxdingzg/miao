@@ -205,7 +205,6 @@ const layer = Layer.effect(
     )
 
     const route = EffectRuntime.fn("PermissionV2.route")(function* (input: AssertInput) {
-      if (!(yield* sources.required)) return undefined
       const placement = yield* SessionEnginePlacement.find(database.db, input.sessionID)
       if (placement?.engine !== "rust") return undefined
       const executor = yield* sources.get(input)

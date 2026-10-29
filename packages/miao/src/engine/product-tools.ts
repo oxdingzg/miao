@@ -133,7 +133,6 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
   const sources = yield* PermissionSource.Service
   const supported = capabilities(configuration.binary)
   const nativePermissions = NativeHostPermission.supports(supported) && supported.savedRulesSnapshot === 1
-  if (nativePermissions) yield* sources.enable
   const question = yield* QuestionV2.Service
   const events = yield* EventV2.Service
   const todos = yield* SessionTodo.Service
