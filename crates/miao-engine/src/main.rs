@@ -65,6 +65,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "permission_import_changes": 1,
                 "permission_project_store": 1,
                 "permission_context_store": 1,
+                "permission_project_handoff": 1,
+                "permission_context_handoff": 1,
                 "product_permission_requests": 1,
                 "product_permission_replies": 1,
                 "product_permission_cancel": 1,

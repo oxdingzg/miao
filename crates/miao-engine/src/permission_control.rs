@@ -24,12 +24,14 @@ struct Request {
 enum Command {
     Snapshot,
     Migrate(Migrate),
+    Handoff(Handoff),
     Put(crate::permission_patterns::Put),
     Remove(Remove),
     ContextSnapshot,
     ContextPut(crate::permission_patterns::Put),
     ContextRemove(Remove),
     ContextMigrate(ContextMigrate),
+    ContextHandoff(ContextHandoff),
     Shutdown,
 }
 #[derive(Deserialize)]
@@ -39,7 +41,19 @@ struct Migrate {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct Handoff {
+    authority: String,
+    rules: Vec<LegacyRule>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ContextMigrate {
+    patterns: Vec<crate::permission_patterns::Pattern>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContextHandoff {
+    authority: String,
     patterns: Vec<crate::permission_patterns::Pattern>,
 }
 #[derive(Deserialize)]
@@ -122,6 +136,9 @@ impl Controller {
                 Command::Migrate(input) => {
                     serde_json::to_value(self.project.migrate(input.rules).await?)?
                 }
+                Command::Handoff(input) => {
+                    serde_json::to_value(self.project.handoff(input.authority, input.rules).await?)?
+                }
                 Command::Put(input) => serde_json::to_value(self.project.put(input.rule).await?)?,
                 Command::Remove(input) => json!({"removed": self.project.remove(input.id).await?}),
                 Command::ContextSnapshot => {
@@ -136,6 +153,11 @@ impl Controller {
                 Command::ContextMigrate(input) => {
                     serde_json::to_value(self.context()?.migrate(input.patterns).await?)?
                 }
+                Command::ContextHandoff(input) => serde_json::to_value(
+                    self.context()?
+                        .handoff(input.authority, input.patterns)
+                        .await?,
+                )?,
                 Command::Shutdown => json!({"accepted":true}),
             })
         }
