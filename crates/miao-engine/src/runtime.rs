@@ -442,6 +442,82 @@ impl Runtime {
         Ok(self.inner.tools.location().into())
     }
 
+    pub async fn admit_product_permission(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        input: crate::product_permission_request::Input,
+    ) -> Result<crate::product_permission_request::Record, Error> {
+        self.inner
+            .store
+            .admit_product_permission(self.product_permission_context(controller, source)?, input)
+            .await
+    }
+
+    pub async fn product_permission_status(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        id: String,
+    ) -> Result<crate::product_permission_request::Record, Error> {
+        self.inner
+            .store
+            .product_permission_status(self.product_permission_context(controller, source)?, id)
+            .await
+    }
+
+    pub async fn reply_product_permission(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        response: crate::product_permission_request::Response,
+    ) -> Result<crate::product_permission_request::Record, Error> {
+        self.inner
+            .store
+            .reply_product_permission(
+                self.product_permission_context(controller, source)?,
+                response,
+            )
+            .await
+    }
+
+    pub async fn pending_product_permissions(
+        &self,
+        controller: &Controller,
+        session: String,
+    ) -> Result<Vec<crate::product_permission_request::Record>, Error> {
+        let workspace = self.permission_pattern_workspace(controller)?;
+        self.inner
+            .store
+            .pending_product_permissions(self.inner.id.clone(), workspace, session)
+            .await
+    }
+
+    fn product_permission_context(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+    ) -> Result<crate::product_permission_request::Context, Error> {
+        let workspace = self.permission_pattern_workspace(controller)?;
+        let product = self.inner.product.read().unwrap();
+        let bridge = product
+            .bridge
+            .clone()
+            .ok_or_else(|| Error::Invalid("inactive product permission source".into()))?;
+        let authority = bridge
+            .permission_authority(source)
+            .ok_or_else(|| Error::Invalid("inactive product permission source".into()))?;
+        Ok(crate::product_permission_request::Context {
+            owner: self.inner.id.clone(),
+            source: source.clone(),
+            authority,
+            workspace,
+            boundary: self.inner.tools.grant_authority_descriptor(),
+            bridge,
+            product: self.inner.product.clone(),
+        })
+    }
+
     /// Evaluate against the authority captured by the active reverse call.
     /// This is a bounded query, not an execution or persistent-approval ticket.
     pub async fn evaluate_product_permission(

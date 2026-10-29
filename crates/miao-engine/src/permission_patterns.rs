@@ -6,7 +6,7 @@ use crate::{
     protocol::Error,
     store::Store,
 };
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -147,10 +147,20 @@ fn records(connection: &Connection, workspace: &str) -> Result<Vec<Pattern>, Err
 }
 
 fn put(connection: &mut Connection, workspace: &str, rule: &Rule) -> Result<Pattern, Error> {
+    let transaction = crate::store::write_tx(connection)?;
+    let record = put_in(&transaction, workspace, rule)?;
+    transaction.commit()?;
+    Ok(record)
+}
+
+pub(crate) fn put_in(
+    transaction: &Transaction<'_>,
+    workspace: &str,
+    rule: &Rule,
+) -> Result<Pattern, Error> {
     require_workspace(workspace)?;
     require_rule(rule)?;
     let id = rule_digest(workspace, rule)?;
-    let transaction = crate::store::write_tx(connection)?;
     transaction.execute(
         "INSERT OR IGNORE INTO engine_owned_permission_rule(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
         params![workspace, id, serde_json::to_string(rule)?, crate::approval::now_ms()],
@@ -159,14 +169,13 @@ fn put(connection: &mut Connection, workspace: &str, rule: &Rule) -> Result<Patt
     // budget failure must not leave behind policy that cannot be evaluated.
     crate::permission_rules::evaluate(&Request {
         configured: Some(Vec::new()),
-        saved: Some(crate::permission_saved::rules(&transaction, workspace)?),
+        saved: Some(crate::permission_saved::rules(transaction, workspace)?),
         ..Request::default()
     })?;
-    let record = records(&transaction, workspace)?
+    let record = records(transaction, workspace)?
         .into_iter()
         .find(|record| record.id == format!("{ID_PREFIX}{id}"))
         .ok_or_else(|| Error::Invalid("native permission pattern was not stored".into()))?;
-    transaction.commit()?;
     Ok(record)
 }
 

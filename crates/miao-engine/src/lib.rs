@@ -95,3 +95,4 @@ pub mod model_routes;
 mod monitor;
 pub mod product;
 pub mod product_permission;
+pub mod product_permission_request;

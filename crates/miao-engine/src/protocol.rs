@@ -580,6 +580,21 @@ pub enum Command {
         source: crate::product_permission::Source,
         request: crate::product_permission::Request,
     },
+    ProductPermissionAdmit {
+        source: crate::product_permission::Source,
+        input: crate::product_permission_request::Input,
+    },
+    ProductPermissionStatus {
+        source: crate::product_permission::Source,
+        request_id: String,
+    },
+    ProductPermissionReply {
+        source: crate::product_permission::Source,
+        response: crate::product_permission_request::Response,
+    },
+    ProductPermissionPending {
+        session_id: String,
+    },
     /// Standing allow patterns owned by this Runtime's canonical workspace.
     PermissionPatternList,
     PermissionPatternPut(crate::permission_patterns::Put),

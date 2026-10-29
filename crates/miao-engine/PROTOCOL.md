@@ -748,3 +748,44 @@ These methods provide standing-policy storage and explicit controller editing.
 They do not turn a rule query into an execution ticket, bind an `always` answer
 to a pending subrequest, project changes into the product database, or retire
 the existing TypeScript permission evaluator. Those S6 integration gates remain.
+
+### Durable host permission assertions
+
+`product_permission_requests: 1` advertises `product_permission_admit`,
+`product_permission_status`, `product_permission_reply`, and
+`product_permission_pending`. Admission takes the live `source` identity used by
+`product_permission_evaluate` plus `input`: a host-generated `request_id`,
+`facts` (ordered primary action followed by aliases, resources, explicit),
+optional `save` patterns, display `metadata`, and optional `timeout_ms`.
+Controller input cannot provide configured/saved rules or choose a workspace.
+Every distinct assertion needs a new ID, even for identical facts. An exact
+retry with the same ID returns its durable record; conflicting reuse fails.
+
+Records bind runtime owner, workspace, Session, bridge, source tool, assistant
+message, input hash, and captured authority revision. Replies provide source,
+request ID, input hash, authority revision, and `once`, `always`, or `reject`.
+The source must still be running and dispatched on the same connection. The
+source slot remains locked through SQL commit, serializing mutations with reply
+removal and bridge replacement. Current saved rules are re-read before replying;
+a new deny prevents approval. Identical settled replies are idempotent while the
+source is live; conflicting replies fail.
+
+`always` atomically stores the explicitly supplied `save` patterns for the
+primary action and resolves this request. Omitted/empty `save` remembers nothing,
+matching the host permission contract. These are standing allow rules, never
+exact-call grants. A pattern write failure rolls back every pattern and the
+reply. Approval of this assertion does not execute or schedule a host action.
+Host executors must still honor cancellation and their capability boundaries.
+
+Pending requests emit `product.permission.requested` and resolution emits
+`product.permission.resolved`. Source tool completion, run cancellation, and
+abandoned-run recovery cancel pending requests transactionally; recovery does
+not retry provider work. Requests default to no deadline; an optional deadline
+is 1–600000 ms. Each Session admits at most 64 pending requests and admission
+payloads are bounded to 16 KiB. The additive optional request table leaves the
+existing schema version unchanged.
+
+This is the durable backend for host subrequests. The product compatibility
+adapter, sibling-request reply semantics, product event projection, and removal
+of the TypeScript evaluator remain separate S6 gates. Existing host tools do
+not switch permission ownership merely because the capability is present.

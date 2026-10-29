@@ -499,3 +499,745 @@ async fn pattern_control_is_runtime_scoped_and_cannot_select_a_workspace_or_orig
     runtime.shutdown().await;
     other.shutdown().await;
 }
+
+fn assertion(id: &str, resource: &str) -> miao_engine::product_permission_request::Input {
+    miao_engine::product_permission_request::Input {
+        request_id: id.into(),
+        facts: request(resource),
+        save: None,
+        metadata: None,
+        timeout_ms: None,
+    }
+}
+
+fn response(
+    record: &miao_engine::product_permission_request::Record,
+    reply: miao_engine::product_permission_request::Reply,
+) -> miao_engine::product_permission_request::Response {
+    miao_engine::product_permission_request::Response {
+        request_id: record.id.clone(),
+        input_hash: record.input_hash.clone(),
+        authority_revision: record.authority_revision.clone(),
+        reply,
+    }
+}
+
+#[tokio::test]
+async fn durable_host_assertions_distinguish_new_asks_from_exact_retries() {
+    use miao_engine::product_permission_request::{Reply, State};
+    let (_directory, _store, runtime, source) = running().await;
+    let first = runtime
+        .admit_product_permission(&runtime.controller(), &source, assertion("first", "public"))
+        .await
+        .unwrap();
+    assert_eq!(first.state, State::Pending);
+    assert_eq!(
+        serde_json::to_value(&first).unwrap(),
+        serde_json::to_value(
+            runtime
+                .admit_product_permission(
+                    &runtime.controller(),
+                    &source,
+                    assertion("first", "public")
+                )
+                .await
+                .unwrap()
+        )
+        .unwrap()
+    );
+    assert!(runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("first", "different")
+        )
+        .await
+        .is_err());
+    let second = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("second", "public"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(second.state, State::Pending);
+    let allowed = runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&first, Reply::Once),
+        )
+        .await
+        .unwrap();
+    assert_eq!(allowed.state, State::Allowed);
+    assert_eq!(
+        runtime
+            .reply_product_permission(
+                &runtime.controller(),
+                &source,
+                response(&first, Reply::Once)
+            )
+            .await
+            .unwrap()
+            .state,
+        State::Allowed
+    );
+    assert!(runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&first, Reply::Always)
+        )
+        .await
+        .is_err());
+    assert!(runtime
+        .permission_patterns(&runtime.controller())
+        .await
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        runtime
+            .pending_product_permissions(&runtime.controller(), "s".into())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        runtime
+            .reply_product_permission(
+                &runtime.controller(),
+                &source,
+                response(&second, Reply::Reject)
+            )
+            .await
+            .unwrap()
+            .state,
+        State::Denied
+    );
+    assert_eq!(
+        runtime
+            .admit_product_permission(&runtime.controller(), &source, assertion("third", "public"))
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    let secret = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("secret", "secret"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(secret.state, State::Denied);
+    assert!(runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&secret, Reply::Always)
+        )
+        .await
+        .is_err());
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn always_responses_atomically_save_patterns_without_creating_exact_grants() {
+    use miao_engine::product_permission_request::{Reply, State};
+    let (directory, _store, runtime, source) = running().await;
+    let mut input = assertion("always", "public");
+    input.save = Some(vec!["*".into(), "other".into()]);
+    let pending = runtime
+        .admit_product_permission(&runtime.controller(), &source, input)
+        .await
+        .unwrap();
+    let allowed = runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&pending, Reply::Always),
+        )
+        .await
+        .unwrap();
+    assert_eq!(allowed.state, State::Allowed);
+    assert_eq!(
+        runtime
+            .permission_patterns(&runtime.controller())
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+    runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&pending, Reply::Always),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        runtime
+            .permission_patterns(&runtime.controller())
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        runtime
+            .admit_product_permission(&runtime.controller(), &source, assertion("next", "public"))
+            .await
+            .unwrap()
+            .state,
+        State::Allowed
+    );
+    assert_eq!(
+        runtime
+            .admit_product_permission(
+                &runtime.controller(),
+                &source,
+                assertion("secret", "secret")
+            )
+            .await
+            .unwrap()
+            .state,
+        State::Denied
+    );
+    for pattern in runtime
+        .permission_patterns(&runtime.controller())
+        .await
+        .unwrap()
+    {
+        runtime
+            .remove_permission_pattern(&runtime.controller(), pattern.id)
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        runtime
+            .admit_product_permission(
+                &runtime.controller(),
+                &source,
+                assertion("after-revoke", "public")
+            )
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    let connection = rusqlite::Connection::open(directory.path().join("engine.db")).unwrap();
+    assert_eq!(
+        connection
+            .query_row::<u64, _, _>("SELECT COUNT(*) FROM engine_permission_grant", [], |row| {
+                row.get(0)
+            })
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        connection
+            .query_row::<u64, _, _>(
+                "SELECT COUNT(*) FROM engine_event WHERE kind='product.permission.resolved'",
+                [],
+                |row| row.get(0)
+            )
+            .unwrap(),
+        1
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn failed_always_pattern_writes_roll_back_the_reply_and_all_patterns() {
+    use miao_engine::product_permission_request::{Reply, State};
+    let (directory, _store, runtime, source) = running().await;
+    let mut input = assertion("rollback", "public");
+    input.save = Some(vec!["first".into(), "second".into()]);
+    let pending = runtime
+        .admit_product_permission(&runtime.controller(), &source, input)
+        .await
+        .unwrap();
+    let connection = rusqlite::Connection::open(directory.path().join("engine.db")).unwrap();
+    connection.execute_batch("CREATE TRIGGER fail_second_pattern BEFORE INSERT ON engine_owned_permission_rule WHEN json_extract(NEW.rule,'$.resource')='second' BEGIN SELECT RAISE(ABORT,'fixture pattern fault'); END;").unwrap();
+    assert!(runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&pending, Reply::Always)
+        )
+        .await
+        .is_err());
+    assert!(runtime
+        .permission_patterns(&runtime.controller())
+        .await
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        runtime
+            .product_permission_status(&runtime.controller(), &source, pending.id.clone())
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    connection
+        .execute_batch("DROP TRIGGER fail_second_pattern")
+        .unwrap();
+    runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&pending, Reply::Always),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        runtime
+            .permission_patterns(&runtime.controller())
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn durable_assertions_enforce_source_bindings_and_recheck_denies_before_response() {
+    use miao_engine::product_permission_request::{Reply, State};
+    let (_directory, store, runtime, source) = running().await;
+    let (_other, _other_store, other, _other_source) = running().await;
+    let pending = runtime
+        .admit_product_permission(&runtime.controller(), &source, assertion("bound", "public"))
+        .await
+        .unwrap();
+    assert!(runtime
+        .product_permission_status(&other.controller(), &source, pending.id.clone())
+        .await
+        .is_err());
+    for wrong in [
+        Source {
+            session_id: "foreign".into(),
+            ..source.clone()
+        },
+        Source {
+            bridge_id: source.bridge_id + 1,
+            ..source.clone()
+        },
+        Source {
+            call_id: "different".into(),
+            ..source.clone()
+        },
+        Source {
+            message_seq: source.message_seq + 1,
+            ..source.clone()
+        },
+    ] {
+        assert!(runtime
+            .reply_product_permission(
+                &runtime.controller(),
+                &wrong,
+                response(&pending, Reply::Always)
+            )
+            .await
+            .is_err());
+    }
+    let mut wrong = response(&pending, Reply::Once);
+    wrong.input_hash = "0".repeat(64);
+    assert!(runtime
+        .reply_product_permission(&runtime.controller(), &source, wrong)
+        .await
+        .is_err());
+    let workspace = store.location("s").await.unwrap().unwrap();
+    store
+        .project_saved_rules(
+            workspace,
+            vec![permission_rules::Rule {
+                action: "read".into(),
+                resource: "public".into(),
+                effect: Decision::Deny,
+            }],
+        )
+        .await
+        .unwrap();
+    let denied = runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&pending, Reply::Always),
+        )
+        .await
+        .unwrap();
+    assert_eq!(denied.state, State::Denied);
+    assert_eq!(denied.reason.as_deref(), Some("policy_denied"));
+    assert!(runtime
+        .permission_patterns(&runtime.controller())
+        .await
+        .unwrap()
+        .is_empty());
+    runtime.shutdown().await;
+    other.shutdown().await;
+}
+
+#[tokio::test]
+async fn source_tool_settlement_and_cancel_clear_pending_host_assertions() {
+    use miao_engine::product_permission_request::Reply;
+    for finish in [false, true] {
+        let (_directory, store, runtime, source) = running().await;
+        let pending = runtime
+            .admit_product_permission(
+                &runtime.controller(),
+                &source,
+                assertion("cancel", "public"),
+            )
+            .await
+            .unwrap();
+        if finish {
+            let run = store.snapshot("s").await.unwrap()["active_run"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            store
+                .tool_result(
+                    "s",
+                    &run,
+                    &source.call_id,
+                    json!({"error":"cancelled"}),
+                    true,
+                )
+                .await
+                .unwrap();
+        }
+        if !finish {
+            runtime.cancel("s").await.unwrap();
+        }
+        runtime.shutdown().await;
+        assert!(runtime
+            .reply_product_permission(
+                &runtime.controller(),
+                &source,
+                response(&pending, Reply::Always)
+            )
+            .await
+            .is_err());
+        assert!(runtime
+            .pending_product_permissions(&runtime.controller(), "s".into())
+            .await
+            .unwrap()
+            .is_empty());
+        let events = store.events("s", 0, 500).await.unwrap();
+        let resolved = events
+            .iter()
+            .find(|event| event.kind == "product.permission.resolved")
+            .unwrap();
+        assert_eq!(resolved.data["state"], "cancelled");
+        assert!(runtime
+            .permission_patterns(&runtime.controller())
+            .await
+            .unwrap()
+            .is_empty());
+    }
+}
+
+#[tokio::test]
+async fn host_assertion_expiry_and_pending_budgets_are_bounded() {
+    use miao_engine::product_permission_request::State;
+    let (_directory, _store, runtime, source) = running().await;
+    let mut input = assertion("expires", "public");
+    input.timeout_ms = Some(1);
+    let pending = runtime
+        .admit_product_permission(&runtime.controller(), &source, input)
+        .await
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    assert_eq!(
+        runtime
+            .product_permission_status(&runtime.controller(), &source, pending.id)
+            .await
+            .unwrap()
+            .state,
+        State::Expired
+    );
+    for index in 0..64 {
+        runtime
+            .admit_product_permission(
+                &runtime.controller(),
+                &source,
+                assertion(&format!("pending-{index}"), "public"),
+            )
+            .await
+            .unwrap();
+    }
+    assert!(runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("over-budget", "public")
+        )
+        .await
+        .is_err());
+    assert_eq!(
+        runtime
+            .pending_product_permissions(&runtime.controller(), "s".into())
+            .await
+            .unwrap()
+            .len(),
+        64
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn always_without_save_patterns_does_not_remember_requested_resources() {
+    use miao_engine::product_permission_request::{Reply, State};
+    let (_directory, _store, runtime, source) = running().await;
+    for (index, save) in [None, Some(vec![])].into_iter().enumerate() {
+        let mut input = assertion(&format!("no-save-{index}"), "public");
+        input.save = save;
+        let pending = runtime
+            .admit_product_permission(&runtime.controller(), &source, input)
+            .await
+            .unwrap();
+        let allowed = runtime
+            .reply_product_permission(
+                &runtime.controller(),
+                &source,
+                response(&pending, Reply::Always),
+            )
+            .await
+            .unwrap();
+        assert_eq!(allowed.state, State::Allowed);
+        assert!(runtime
+            .permission_patterns(&runtime.controller())
+            .await
+            .unwrap()
+            .is_empty());
+    }
+    assert_eq!(
+        runtime
+            .admit_product_permission(
+                &runtime.controller(),
+                &source,
+                assertion("still-asks", "public")
+            )
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn late_always_replies_cannot_cross_bridge_replacement_or_source_reply() {
+    use miao_engine::product_permission_request::Reply;
+    for replace in [false, true] {
+        let (_directory, _store, runtime, source) = running().await;
+        let mut input = assertion("late", "public");
+        input.save = Some(vec!["*".into()]);
+        let pending = runtime
+            .admit_product_permission(&runtime.controller(), &source, input)
+            .await
+            .unwrap();
+        if replace {
+            let (send, _receive) = mpsc::channel(8);
+            runtime.with_product_tools(vec![], Bridge::new(send), None);
+        }
+        if !replace {
+            assert!(runtime.deliver_product_reply(source.bridge_id, json!({"result":{}})));
+        }
+        assert!(runtime
+            .reply_product_permission(
+                &runtime.controller(),
+                &source,
+                response(&pending, Reply::Always)
+            )
+            .await
+            .is_err());
+        assert!(runtime
+            .permission_patterns(&runtime.controller())
+            .await
+            .unwrap()
+            .is_empty());
+        runtime.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn recovery_cancels_abandoned_assertions_without_retrying_provider_work() {
+    let (directory, store, runtime, source) = running().await;
+    let pending = runtime
+        .admit_product_permission(&runtime.controller(), &source, assertion("crash", "public"))
+        .await
+        .unwrap();
+    let copy = directory.path().join("abandoned.db");
+    let connection = rusqlite::Connection::open(store.path()).unwrap();
+    connection
+        .execute("VACUUM INTO ?1", [copy.to_str().unwrap()])
+        .unwrap();
+    let copied = rusqlite::Connection::open(&copy).unwrap();
+    copied.execute("DELETE FROM engine_lease", []).unwrap();
+    let recovered = Store::open(&copy).await.unwrap();
+    let before = recovered
+        .events("s", 0, 1000)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind == "provider.started")
+        .count();
+    recovered.recover().await.unwrap();
+    assert_eq!(
+        copied
+            .query_row::<String, _, _>(
+                "SELECT state FROM engine_product_permission_request WHERE id=?1",
+                [&pending.id],
+                |row| row.get(0)
+            )
+            .unwrap(),
+        "cancelled"
+    );
+    let events = recovered.events("s", 0, 1000).await.unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "provider.started")
+            .count(),
+        before
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "product.permission.resolved")
+            .count(),
+        1
+    );
+    recovered.recover().await.unwrap();
+    assert_eq!(
+        recovered
+            .events("s", 0, 1000)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind == "product.permission.resolved")
+            .count(),
+        1
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn source_completion_failure_rolls_back_permission_cancellation() {
+    use miao_engine::product_permission_request::State;
+    let (_directory, store, runtime, source) = running().await;
+    let pending = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("tool-rollback", "public"),
+        )
+        .await
+        .unwrap();
+    let connection = rusqlite::Connection::open(store.path()).unwrap();
+    connection.execute_batch("CREATE TRIGGER fail_tool_completed BEFORE INSERT ON engine_event WHEN NEW.kind='tool.completed' BEGIN SELECT RAISE(ABORT,'fixture completion fault'); END;").unwrap();
+    let run = store.active_run("s").await.unwrap().unwrap();
+    assert!(store
+        .tool_result("s", &run, &source.call_id, json!({}), false)
+        .await
+        .is_err());
+    assert_eq!(
+        runtime
+            .product_permission_status(&runtime.controller(), &source, pending.id)
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    assert!(!store
+        .events("s", 0, 1000)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| event.kind == "product.permission.resolved"));
+    connection
+        .execute_batch("DROP TRIGGER fail_tool_completed")
+        .unwrap();
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn competing_host_replies_have_one_durable_outcome() {
+    use miao_engine::product_permission_request::Reply;
+    let (_directory, store, runtime, source) = running().await;
+    let mut input = assertion("race", "public");
+    input.save = Some(vec!["*".into()]);
+    let pending = runtime
+        .admit_product_permission(&runtime.controller(), &source, input)
+        .await
+        .unwrap();
+    let controller = runtime.controller();
+    let (allow, deny) = tokio::join!(
+        runtime.reply_product_permission(&controller, &source, response(&pending, Reply::Always)),
+        runtime.reply_product_permission(&controller, &source, response(&pending, Reply::Reject)),
+    );
+    assert_ne!(allow.is_ok(), deny.is_ok());
+    let resolved = runtime
+        .product_permission_status(&controller, &source, pending.id)
+        .await
+        .unwrap();
+    let patterns = runtime.permission_patterns(&controller).await.unwrap();
+    assert_eq!(
+        patterns.len(),
+        usize::from(resolved.reply == Some(Reply::Always))
+    );
+    assert_eq!(
+        store
+            .events("s", 0, 1000)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind == "product.permission.resolved")
+            .count(),
+        1
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn assertion_wire_refuses_caller_authority_and_unbounded_inputs() {
+    let (_directory, store, runtime, source) = running().await;
+    for field in ["configured", "saved", "workspace", "owner"] {
+        let mut input = serde_json::to_value(assertion("invalid", "public")).unwrap();
+        input[field] = json!([]);
+        assert!(serde_json::from_value::<miao_engine::protocol::Command>(json!({"method":"product_permission_admit","params":{"source":source,"input":input}})).is_err(), "{field}");
+    }
+    for index in 0..5 {
+        let mut input = assertion("invalid", "public");
+        match index {
+            0 => input.request_id = "bad\nidentity".into(),
+            1 => input.timeout_ms = Some(0),
+            2 => input.timeout_ms = Some(600_001),
+            3 => input.save = Some(vec!["pattern".into(); 65]),
+            _ => input.metadata = Some(json!({"large":"x".repeat(16_384)})),
+        }
+        assert!(runtime
+            .admit_product_permission(&runtime.controller(), &source, input)
+            .await
+            .is_err());
+    }
+    assert!(runtime
+        .pending_product_permissions(&runtime.controller(), "s".into())
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(!store
+        .events("s", 0, 1000)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| event.kind == "product.permission.requested"));
+    runtime.shutdown().await;
+}
