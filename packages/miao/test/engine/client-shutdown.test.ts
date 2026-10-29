@@ -18,7 +18,7 @@ test.skipIf(!binary)("shutdown uses the native unit-command envelope and waits f
   })
   try {
     await client.request("model_catalog")
-    await expect(client.shutdown()).resolves.toBeDefined()
+    expect(await client.shutdown()).toEqual({ accepted: true })
   } finally {
     await client.close()
   }

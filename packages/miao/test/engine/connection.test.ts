@@ -1,3 +1,4 @@
+import { engineFake } from "../fixture/engine-binary"
 import { expect, test } from "bun:test"
 import path from "node:path"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
@@ -201,7 +202,7 @@ it.live("engine exit settles busy Sessions without inventing durable events", ()
     )
     yield* Effect.addFinalizer(() => unsubscribe)
     const owner = yield* connectEngine({
-      binary: path.join(import.meta.dir, "../fixture/engine-fake.ts"),
+      binary: engineFake,
       db: path.join(tmp.path, "engine.db"),
       workspace: tmp.path,
       model: "fixture",

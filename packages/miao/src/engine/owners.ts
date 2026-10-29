@@ -1,7 +1,7 @@
 import { Location } from "@miao/schema/location"
 import { ClientEvents } from "@miao/server/client-events"
 import { Effect, Exit, Scope, Semaphore } from "effect"
-import { EngineError, type EngineOptions, type EngineEvent } from "./client"
+import { EngineError, type EngineOptions, type EngineEvent, type EngineClient } from "./client"
 import { connectEngine } from "./connection"
 import type { CredentialExpiredTrigger, EnginePricing } from "./session"
 
@@ -12,6 +12,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
     {
       options: Partial<EngineOptions>
       refresh: Effect.Effect<void, EngineError>
+      refreshPermissions?: (client: Pick<EngineClient, "request">) => Effect.Effect<void, EngineError>
       pricing?: EnginePricing
       onCredentialExpired?: CredentialExpiredTrigger
       onEngineEvent?: (event: EngineEvent) => void
@@ -111,13 +112,16 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
                   Effect.provideService(Scope.Scope, ownerScope),
                   Effect.provideService(ClientEvents.Service, clients),
                 )
+                if (context.refreshPermissions) yield* context.refreshPermissions(connection.client)
                 return { context, connection }
               }),
             ).pipe(Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(ownerScope, exit) : Effect.void)))
             // Publish a fully prepared owner atomically with respect to interruption.
             owners.set(input.storage, {
               input,
-              refresh: ready.context.refresh,
+              refresh: (ready.context.refreshPermissions?.(ready.connection.client) ?? Effect.void).pipe(
+                Effect.andThen(ready.context.refresh),
+              ),
               engineID: input.engineID,
               location: { ...input.location },
               pricing: ready.context.pricing,

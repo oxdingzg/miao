@@ -1,15 +1,18 @@
+import { engineFake, engineReplayFake } from "../fixture/engine-binary"
 import { expect, test } from "bun:test"
 import path from "node:path"
 import { EngineClient } from "@/engine/client"
 import { EngineSession, type EngineSessionEvent } from "@/engine/session"
 import { tmpdir } from "../fixture/fixture"
 
+const failure = (request: Promise<unknown>) => request.then(() => undefined, (error: unknown) => error)
+
 test.each(["cursor", "session", "gap", "time", "empty"])(
   "restore refuses %s corruption before live attachment",
   async (scenario) => {
     await using tmp = await tmpdir()
     const client = EngineClient.start({
-      binary: path.join(import.meta.dir, "../fixture/engine-replay-fake.ts"),
+      binary: engineReplayFake,
       db: path.join(tmp.path, "engine.db"),
       workspace: tmp.path,
       model: "fixture",
@@ -18,13 +21,13 @@ test.each(["cursor", "session", "gap", "time", "empty"])(
     const events: EngineSessionEvent[] = []
     const facade = new EngineSession(client, (event) => events.push(event))
     try {
-      await expect(facade.restore("ses_restore_invalid")).rejects.toMatchObject({
+      expect(await failure(facade.restore("ses_restore_invalid"))).toMatchObject({
         code: scenario === "cursor" ? "engine_snapshot_invalid" : "engine_replay_invalid",
       })
       expect(events).toHaveLength(0)
       const first = await client.request("calls", {})
       expect(first).not.toContain("subscribe")
-      await expect(facade.restore("ses_restore_invalid")).rejects.toMatchObject({
+      expect(await failure(facade.restore("ses_restore_invalid"))).toMatchObject({
         code: scenario === "cursor" ? "engine_snapshot_invalid" : "engine_replay_invalid",
       })
       const retried = await client.request("calls", {})
@@ -39,7 +42,7 @@ test.each(["cursor", "session", "gap", "time", "empty"])(
 test("restore refuses an already live-attached Session instead of mixing replay cursors", async () => {
   await using tmp = await tmpdir()
   const client = EngineClient.start({
-    binary: path.join(import.meta.dir, "../fixture/engine-fake.ts"),
+    binary: engineFake,
     db: path.join(tmp.path, "engine.db"),
     workspace: tmp.path,
     model: "fixture",

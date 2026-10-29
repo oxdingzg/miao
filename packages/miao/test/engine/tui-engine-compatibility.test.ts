@@ -14,7 +14,7 @@ for (const scenario of ["old-protocol", "old-routes", "compatible", "launcher"] 
         binary,
         `#!/bin/sh
 if [ "$1" = "--capabilities" ]; then
-  printf '%s' '${JSON.stringify({ name: "miao-engine", version: "0.3.6", protocol: scenario === "old-protocol" || scenario === "launcher" ? 1 : 2, schema: 21, routes_schema: scenario === "old-routes" ? 1 : 2 })}'
+  printf '%s' '${JSON.stringify({ name: "miao-engine", version: "0.3.6", protocol: scenario === "old-protocol" || scenario === "launcher" ? 1 : 2, schema: 21, routes_schema: scenario === "old-routes" ? 1 : 2, saved_rules_snapshot: 1 })}'
   exit 0
 fi
 printf started > "$0.started"
