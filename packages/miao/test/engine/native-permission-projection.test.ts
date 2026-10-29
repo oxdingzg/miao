@@ -105,6 +105,19 @@ if (binary)
         const external = simultaneous[0].find((item) => item.resource === "external/**")!
         yield* native.removeSavedPermission({ location: first, id: external.id })
         expect(yield* native.savedPermissions(input)).toEqual(saved)
+        // More than one durable page, with removals leaving no extra standing rules.
+        yield* Effect.promise(async () => {
+          for (let index = 0; index < 129; index++) {
+            const pattern = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.String }))(
+              await connection.client.request("permission_pattern_put", {
+                rule: { action: "read", resource: `paged-${index}`, effect: "allow" },
+              }),
+            )
+            await connection.client.request("permission_pattern_remove", { rule_id: pattern.id })
+          }
+        })
+        expect(yield* native.savedPermissions(input)).toEqual(saved)
+        expect((yield* PermissionProjection.read(database.db, replicaOwner))?.cursor).toBeGreaterThan(256)
         yield* Effect.promise(() => connection.client.close())
         expect(yield* native.savedPermissions(input)).toEqual(saved)
         const second = yield* owners.get({
