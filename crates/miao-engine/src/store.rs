@@ -264,6 +264,7 @@ impl Store {
                 crate::permission_grant::initialize(&conn)?;
                 crate::permission_saved::initialize(&conn)?;
                 crate::permission_patterns::initialize(&conn)?;
+                crate::permission_migration::initialize(&conn)?;
                 crate::product_permission_request::initialize(&conn)?;
                 // ADR-0019: content-addressed Session file snapshots and the one
                 // staged revert intent. Blobs live beside the database.

@@ -530,6 +530,22 @@ impl Host {
                 .pending_product_permissions(&self.controller, session_id)
                 .await
                 .and_then(|records| serde_json::to_value(records).map_err(Error::from)),
+            Command::PermissionSavedMigrate(input) => runtime
+                .migrate_saved_permissions(&self.controller, input)
+                .await
+                .and_then(|receipt| serde_json::to_value(receipt).map_err(Error::from)),
+            Command::PermissionSavedMigration => runtime
+                .saved_permission_migration(&self.controller)
+                .await
+                .and_then(|receipt| serde_json::to_value(receipt).map_err(Error::from)),
+            Command::PermissionSavedImported => runtime
+                .imported_permissions(&self.controller)
+                .await
+                .and_then(|rules| serde_json::to_value(rules).map_err(Error::from)),
+            Command::PermissionSavedRemove(input) => runtime
+                .remove_imported_permission(&self.controller, input.id)
+                .await
+                .map(|removed| json!({"removed":removed})),
             Command::PermissionPatternList => runtime
                 .permission_patterns(&self.controller)
                 .await
