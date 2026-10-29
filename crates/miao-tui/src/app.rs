@@ -146,6 +146,7 @@ pub struct App {
     pub state: SessionState,
     pub quit: bool,
     dialog: Option<Dialog>,
+    permission_generation: u64,
     /// `Ctrl+X` was pressed; the next key completes the chord.
     leader: bool,
     keys: Keymap,
@@ -210,6 +211,7 @@ impl App {
             state: SessionState::default(),
             quit: false,
             dialog: None,
+            permission_generation: 0,
             leader: false,
             keys,
             workspace,
@@ -300,6 +302,10 @@ impl App {
         match event {
             AppEvent::Key(key) => self.handle_key(key),
             AppEvent::Paste(text) => {
+                if let Some(Dialog::SavedPermissions(dialog)) = self.dialog.as_mut() {
+                    dialog.paste(&text);
+                    return;
+                }
                 if self.screen == Screen::Session {
                     // Windows Terminal can surface an image-only clipboard as an
                     // empty bracketed paste; reading the clipboard is the only
@@ -422,6 +428,7 @@ impl App {
                 self.update_status();
                 self.continue_prompt();
             }
+<<<<<<< HEAD
             AppEvent::RevertPreview {
                 session_id,
                 boundary_seq,
@@ -434,6 +441,25 @@ impl App {
                     return;
                 }
                 self.open_dialog(Dialog::confirm_revert(boundary_seq, &plan));
+            }
+            AppEvent::SavedPermissions { generation, result } => {
+                if let Some(Dialog::SavedPermissions(dialog)) = self.dialog.as_mut() {
+                    if dialog.generation == generation {
+                        dialog.loaded(result);
+                    }
+                }
+            }
+            AppEvent::PermissionRevoked {
+                generation,
+                id,
+                result,
+            } => {
+                if let Some(Dialog::SavedPermissions(dialog)) = self.dialog.as_mut() {
+                    if dialog.generation == generation {
+                        dialog.revoked(&id, result);
+                    }
+                }
+            }
             }
             AppEvent::ActionFailed(message) => {
                 self.shell.composer.notice = Some(message);
@@ -539,6 +565,16 @@ impl App {
     fn run_builtin(&mut self, builtin: Builtin) {
         match builtin {
             Builtin::Models => self.open_models(),
+            Builtin::Permissions => {
+                self.permission_generation += 1;
+                let generation = self.permission_generation;
+                let mut dialog = crate::saved_permissions::Dialog::new(generation, &self.workspace);
+                match self.engine.as_ref() {
+                    Some(engine) => engine.saved_permissions(generation),
+                    None => dialog.loaded(Err("Engine is not connected".into())),
+                }
+                self.open_dialog(Dialog::SavedPermissions(dialog));
+            }
             Builtin::Theme => self.open_theme(),
             Builtin::Sessions => self.open_sessions(),
             Builtin::NewSession => {
@@ -651,6 +687,24 @@ impl App {
 
     fn dialog_action(&mut self, action: DialogAction) {
         match action {
+            DialogAction::RefreshPermissions => {
+                if let Some(Dialog::SavedPermissions(dialog)) = self.dialog.as_mut() {
+                    if let Some(engine) = self.engine.as_ref() {
+                        engine.saved_permissions(dialog.generation);
+                    } else {
+                        dialog.loaded(Err("Engine is not connected".into()));
+                    }
+                }
+            }
+            DialogAction::RevokePermission(id) => {
+                if let Some(Dialog::SavedPermissions(dialog)) = self.dialog.as_mut() {
+                    if let Some(engine) = self.engine.as_ref() {
+                        engine.revoke_permission(dialog.generation, id);
+                    } else {
+                        dialog.revoked(&id, Err("Engine is not connected".into()));
+                    }
+                }
+            }
             DialogAction::None => {}
             DialogAction::Close => self.dialog = None,
             DialogAction::Chosen(index) => self.choose(index),
@@ -2173,6 +2227,49 @@ mod tests {
     fn leader(app: &mut App, letter: char) {
         app.handle(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
         app.handle(key(KeyCode::Char(letter), KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn saved_permissions_ignore_closed_dialog_results_and_keep_paste_out_of_the_prompt() {
+        let mut app = session_app();
+        let (engine, mut requests) = engine::Handle::recording();
+        app.attach_engine(engine);
+        app.run_builtin(Builtin::Permissions);
+        let engine::Request::SavedPermissions { generation: first } = requests.try_recv().unwrap()
+        else {
+            panic!("list");
+        };
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        app.run_builtin(Builtin::Permissions);
+        let engine::Request::SavedPermissions { generation: second } = requests.try_recv().unwrap()
+        else {
+            panic!("second list");
+        };
+        assert_ne!(first, second);
+        app.handle(AppEvent::SavedPermissions {
+            generation: first,
+            result: Err("stale".into()),
+        });
+        let Some(Dialog::SavedPermissions(dialog)) = app.dialog.as_mut() else {
+            panic!("dialog");
+        };
+        assert!(matches!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+            DialogAction::None
+        ));
+        app.handle(AppEvent::SavedPermissions {
+            generation: second,
+            result: Ok(Vec::new()),
+        });
+        app.handle(AppEvent::Paste("private-target".into()));
+        assert!(app.shell.composer.editor.is_empty());
+        let Some(Dialog::SavedPermissions(dialog)) = app.dialog.as_mut() else {
+            panic!("dialog");
+        };
+        assert!(matches!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+            DialogAction::RefreshPermissions
+        ));
     }
 
     #[test]
