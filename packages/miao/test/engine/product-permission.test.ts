@@ -1,3 +1,4 @@
+import { projectedPermissionTable } from "../fixture/native-permission-storage"
 import { expect, test } from "bun:test"
 import path from "node:path"
 import { mkdir } from "node:fs/promises"
@@ -29,7 +30,7 @@ async function storedRules(filename: string) {
   const database = new Database(filename, { readonly: true })
   try {
     return database
-      .query<{ rule: string }, []>("SELECT rule FROM engine_permission_rule ORDER BY digest")
+      .query<{ rule: string }, []>(`SELECT rule FROM ${projectedPermissionTable(database)} ORDER BY digest`)
       .all()
       .map((row) => JSON.parse(row.rule) as { action: string; resource: string; effect: string })
   } finally {

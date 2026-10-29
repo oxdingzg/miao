@@ -75,6 +75,7 @@ import { Question } from "@miao/schema/question"
 import { translateApproval, translateQuestion } from "./bridge"
 import { ProductPermissionRequest } from "./product-permission-request"
 import { NativePermissionPattern } from "./native-permission-pattern"
+import { NativePermissionContext } from "./native-permission-context"
 import { PermissionSaved } from "@miao/schema/permission-saved"
 
 const ApprovalBindings = Schema.Struct({
@@ -120,10 +121,7 @@ import { readTranscript } from "./transcript"
  * engine is installed separately: a newer product can still reach one that
  * emits this refusal, so it stays recognised.
  */
-const OVERFLOW = [
-  "selected history exceeds budget",
-  "selected input including Session state exceeds budget",
-]
+const OVERFLOW = ["selected history exceeds budget", "selected input including Session state exceeds budget"]
 
 export const overflows = (error: unknown) =>
   error instanceof Error && OVERFLOW.some((message) => error.message.includes(message))
@@ -511,6 +509,12 @@ export const fromOwners = (
       return read<readonly PermissionSaved.Info[]>(
         { storage: SessionEnginePlacement.storageFor(storageRoot, input.location), location: input.location },
         async (connection) => {
+          if (connection.client.sharedPermission) {
+            const observed = Schema.decodeUnknownSync(NativePermissionContext.Observation)(
+              await connection.client.request("shared_permission_snapshot"),
+            )
+            return NativePermissionContext.saved(observed.snapshot, input.projectID)
+          }
           if (preparation.permissionProjection) {
             const value = await preparation.permissionProjection(connection.client, {
               storage: SessionEnginePlacement.storageFor(storageRoot, input.location),
@@ -537,6 +541,21 @@ export const fromOwners = (
       return read(
         { storage: SessionEnginePlacement.storageFor(storageRoot, input.location), location: input.location },
         async (connection) => {
+          if (connection.client.sharedPermission) {
+            const observed = Schema.decodeUnknownSync(NativePermissionContext.Observation)(
+              await connection.client.request("shared_permission_snapshot"),
+            )
+            const project = observed.snapshot.project.rules.find((record) => record.id === input.id)
+            if (project) {
+              await connection.client.request("permission_saved_remove", { id: project.id })
+              return
+            }
+            const pattern = observed.snapshot.patterns.find(
+              (pattern) => `${PermissionSaved.NativePrefix}${pattern.id}` === input.id,
+            )
+            if (pattern) await connection.client.request("permission_pattern_remove", { rule_id: pattern.id })
+            return
+          }
           const patterns = Schema.decodeUnknownSync(NativePermissionPattern.List)(
             await connection.client.request("permission_pattern_list"),
           )
@@ -752,8 +771,7 @@ export const fromOwners = (
     cancelInput: (input) =>
       read<boolean>(input, (connection) =>
         cancelPendingInput(
-          (inputID) =>
-            connection.client.request("cancel_input", { session_id: input.sessionID, input_id: inputID }),
+          (inputID) => connection.client.request("cancel_input", { session_id: input.sessionID, input_id: inputID }),
           input.inputID,
         ),
       ),
@@ -906,7 +924,8 @@ export const fromOwners = (
         })
         if (!preparation.hostPermissions) return approvals
         const pending = await connection.client.request("product_permission_pending", { session_id: input.sessionID })
-        if (!Array.isArray(pending)) throw new EngineError("host_permission_invalid", "Invalid native host permission list")
+        if (!Array.isArray(pending))
+          throw new EngineError("host_permission_invalid", "Invalid native host permission list")
         return [
           ...approvals,
           ...pending.map((value) => {
@@ -923,7 +942,8 @@ export const fromOwners = (
           if (!preparation.hostPermissions)
             throw new EngineError("host_permission_unsupported", "Native host permission replies are not supported")
           const pending = await connection.client.request("product_permission_pending", { session_id: input.sessionID })
-          if (!Array.isArray(pending)) throw new EngineError("host_permission_invalid", "Invalid native host permission list")
+          if (!Array.isArray(pending))
+            throw new EngineError("host_permission_invalid", "Invalid native host permission list")
           const records = pending.map((value) => {
             const info = ProductPermissionRequest.parse(value, input.sessionID)
             if (!info || info.state !== "pending")
@@ -1149,21 +1169,26 @@ const layer = Layer.effect(
     // is fire-and-forget; the engine journal stays the ordering authority.
     const projectEngineEvent = (event: EngineEvent) => {
       void Effect.gen(function* () {
-        yield* projectInputAdmitted(
-          { db: database.db, events, wake: (sessionID) => execution.wake(sessionID) },
-          event,
-        )
+        yield* projectInputAdmitted({ db: database.db, events, wake: (sessionID) => execution.wake(sessionID) }, event)
         yield* projectSubagentStarted({ db: database.db, create: creation?.create }, event)
-      }).pipe(
-        Effect.catchCause((cause) => Effect.logWarning("engine projection failed", { cause: Cause.pretty(cause) })),
-        Effect.runPromise,
-      ).catch(() => undefined)
+      })
+        .pipe(
+          Effect.catchCause((cause) => Effect.logWarning("engine projection failed", { cause: Cause.pretty(cause) })),
+          Effect.runPromise,
+        )
+        .catch(() => undefined)
     }
-    const owners = yield* makeEngineOwners({ ...configuration, ...mcp }, (location) =>
+    const owners = yield* makeEngineOwners({ ...configuration, ...mcp }, (location, storage) =>
       Effect.gen(function* () {
         // A shared transport must not probe or reject binaries for TS-only
         // Sessions. Validate when an actual native owner is opened.
-        const permission = yield* ProductPermission.prepare(location)
+        const permission = yield* ProductPermission.prepare(location, {
+          binary: configuration.binary,
+          source: storage,
+          database,
+          enabled: process.env.MIAO_SHARED_PERMISSIONS === "1",
+          savedRules: configuration.savedRules,
+        })
         yield* Effect.try({
           try: () =>
             resolveEngine({

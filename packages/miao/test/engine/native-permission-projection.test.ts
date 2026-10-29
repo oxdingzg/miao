@@ -1,3 +1,4 @@
+import { projectedPermissionTable } from "../fixture/native-permission-storage"
 import { Database } from "@miao/core/database/database"
 import { PermissionProjection } from "@miao/core/permission/projection"
 import { makeNativePermissionProjection } from "@/engine/native-permission-projection"
@@ -169,7 +170,9 @@ async function legacyCount(filename: string) {
   const { Database } = await import("bun:sqlite")
   const database = new Database(filename, { readonly: true })
   try {
-    return database.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM engine_permission_rule").get()?.count
+    return database
+      .query<{ count: number }, []>(`SELECT COUNT(*) AS count FROM ${projectedPermissionTable(database)}`)
+      .get()?.count
   } finally {
     database.close()
   }
