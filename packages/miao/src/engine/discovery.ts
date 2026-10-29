@@ -30,6 +30,7 @@ export type Capabilities = {
   catalog?: number
   savedRulesSnapshot?: number
   savedPermissionMigration?: number
+  permissionImportChanges?: number
   productPermissionRequests?: number
   productPermissionReplies?: number
   productPermissionCancel?: number
@@ -77,6 +78,7 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (camel !== undefined && snake !== undefined && camel !== snake) return undefined
     const routesSchema = camel ?? snake
     if (wire.catalog !== undefined && !isRevision(wire.catalog)) return undefined
+    if (wire.permission_import_changes !== undefined && !isRevision(wire.permission_import_changes)) return undefined
     if (wire.saved_permission_migration !== undefined && !isRevision(wire.saved_permission_migration)) return undefined
     if (wire.saved_rules_snapshot !== undefined && !isRevision(wire.saved_rules_snapshot)) return undefined
     if (wire.product_permission_requests !== undefined && !isRevision(wire.product_permission_requests))
@@ -95,6 +97,9 @@ export function capabilities(binary: string): Capabilities | undefined {
       schema: wire.schema,
       ...(typeof routesSchema === "number" ? { routesSchema } : {}),
       ...(typeof wire.catalog === "number" ? { catalog: wire.catalog } : {}),
+      ...(typeof wire.permission_import_changes === "number"
+        ? { permissionImportChanges: wire.permission_import_changes }
+        : {}),
       ...(typeof wire.saved_permission_migration === "number"
         ? { savedPermissionMigration: wire.saved_permission_migration }
         : {}),

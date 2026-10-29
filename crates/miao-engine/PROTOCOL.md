@@ -801,3 +801,24 @@ budget, receipt, provenance and revocation updates share SQLite transactions.
 This does not create exact-call grants or widen workspace scope. Product
 activation, imported-rule change projection and project/global/worktree scope
 migration remain separate work; existing product owners do not invoke handoff.
+
+### Imported-rule change projection
+
+`permission_import_changes: 1` adds `permission_import_snapshot` and
+`permission_import_changes {after,limit}` (1–256). Both bind to the controller's
+canonical workspace. The snapshot pins the immutable migration receipt, active
+imported IDs/rules and cursor in one read transaction, including pre-journal
+imports and empty rule sets. Its cursor is independent of the native-pattern
+journal; older pattern consumers receive no new variant.
+
+One `migrated` change carries the receipt and full imported identity set, so a
+handoff cannot be projected as a partial list across page boundaries. Actual
+revocations append `removed {id,fingerprint}` in the same transaction; the
+fingerprint binds each removal to its immutable workspace migration receipt. Exact import retries,
+duplicate/foreign revokes and restarts do not append changes. Journal failure
+rolls back the grant or revoke. Receipt/scope/identity corruption refuses the
+whole page; a fresh atomic snapshot can rebuild from authoritative rows.
+
+These commands supply projection evidence, never another authorization path.
+Product imported-rule replicas, automatic handoff and broader scope migration
+remain separate activation work.

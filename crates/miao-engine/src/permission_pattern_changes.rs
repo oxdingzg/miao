@@ -11,34 +11,15 @@ pub enum Change {
     Remove { id: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Entry {
-    pub seq: u64,
-    pub change: Change,
-    pub recorded_at_ms: u64,
-}
+pub type Entry = crate::permission_journal::Entry<Change>;
+pub type Page = crate::permission_journal::Page<Change>;
+pub use crate::permission_journal::Input;
 
 #[derive(Debug, Serialize)]
 pub struct Snapshot {
     pub workspace: String,
     pub cursor: u64,
     pub patterns: Vec<Pattern>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Input {
-    pub after: u64,
-    pub limit: usize,
-}
-
-#[derive(Debug, Serialize)]
-pub struct Page {
-    pub workspace: String,
-    pub cursor: u64,
-    pub changes: Vec<Entry>,
-    pub has_more: bool,
 }
 
 pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
@@ -109,29 +90,13 @@ pub(crate) fn changes(
     workspace: &str,
     input: Input,
 ) -> Result<Page, Error> {
-    crate::permission_patterns::require_workspace(workspace)?;
-    if input.limit == 0 || input.limit > 256 || input.after > i64::MAX as u64 {
-        return Err(Error::Invalid(
-            "invalid permission change cursor or page size".into(),
-        ));
-    }
-    let mut statement = connection.prepare(
-        "SELECT seq,change,recorded_at_ms FROM engine_permission_pattern_change
-         WHERE workspace=?1 AND seq>?2 ORDER BY seq LIMIT ?3",
-    )?;
-    let rows = statement.query_map(params![workspace, input.after, input.limit + 1], |row| {
-        Ok((
-            row.get::<_, u64>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, u64>(2)?,
-        ))
-    })?;
-    let mut entries = rows
-        .map(|row| {
-            let (seq, encoded, recorded_at_ms) = row?;
-            let change: Change = serde_json::from_str(&encoded)
-                .map_err(|_| Error::Invalid("corrupt permission change receipt".into()))?;
-            match &change {
+    crate::permission_journal::page(
+        connection,
+        "engine_permission_pattern_change",
+        workspace,
+        input,
+        |change| {
+            match change {
                 Change::Upsert { pattern } => {
                     crate::permission_patterns::require_rule(&pattern.rule)?;
                     if pattern.workspace != workspace
@@ -155,20 +120,7 @@ pub(crate) fn changes(
                     }
                 }
             }
-            Ok(Entry {
-                seq,
-                change,
-                recorded_at_ms,
-            })
-        })
-        .collect::<Result<Vec<_>, Error>>()?;
-    let has_more = entries.len() > input.limit;
-    entries.truncate(input.limit);
-    let cursor = entries.last().map_or(input.after, |entry| entry.seq);
-    Ok(Page {
-        workspace: workspace.into(),
-        cursor,
-        changes: entries,
-        has_more,
-    })
+            Ok(())
+        },
+    )
 }
