@@ -3,7 +3,7 @@ mod shell;
 use crate::{
     approval::{now_ms, Approval, Response},
     context_trigger::{self, ContextLimits},
-    permission::{input_digest, Config, Decision, Policy},
+    permission::{input_digest, Config, Decision, Mode, Policy},
     protocol::{Admission, Attachment, Delivery, Error, Input, ModelRequest},
     provider::{Provider, ProviderError},
     store::{RuntimeLease, SessionLease, Store},
@@ -15,7 +15,7 @@ use futures_util::StreamExt;
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{Arc, RwLock as StdRwLock},
 };
 use tokio::io::AsyncBufReadExt;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex, Semaphore};
@@ -41,7 +41,10 @@ pub struct Controller {
 struct Inner {
     id: String,
     _lease: RuntimeLease,
-    policy: Policy,
+    /// The base policy every turn derives from. A reload swaps the whole
+    /// `Arc`, so a turn that already took its snapshot keeps running under the
+    /// rules it started with.
+    policy: StdRwLock<Arc<Policy>>,
     store: Store,
     provider: Arc<dyn Provider>,
     tools: Tools,
@@ -61,10 +64,24 @@ struct Inner {
     stop: CancellationToken,
     heartbeat: Mutex<Option<JoinHandle<()>>>,
     progress: broadcast::Sender<Value>,
+    /// Reports of reloads that actually changed something, so a host can show
+    /// them without having issued the reload itself.
+    config_changes: broadcast::Sender<Value>,
     product: Arc<std::sync::RwLock<crate::product::State>>,
     context: Mutex<Option<ContextLimits>>,
     roles: Mutex<crate::roles::Bindings>,
     route_limits: Mutex<crate::model_routes::RouteLimits>,
+    /// Where LSP servers were derived from at startup, so a reload re-reads the
+    /// same sources instead of guessing at them.
+    lsp_origin: Mutex<Option<crate::config_derive::LspOrigin>>,
+    /// Where the MCP server list was derived from at startup.
+    mcp_origin: Mutex<Option<crate::config_derive::McpOrigin>>,
+    /// Where the base policy was derived from at startup, so a reload derives
+    /// it the same way, including the operator's `--mode` override.
+    policy_origin: Mutex<Option<(crate::config_derive::PolicyOrigin, Option<Mode>)>>,
+    /// Number of reloads that changed at least one section. Replaying the same
+    /// configuration does not advance it.
+    config_generation: Mutex<u64>,
     /// Task-specific verification command run before a run may finish.
     verification: Mutex<Option<String>>,
     breaker: Mutex<context_trigger::Breaker>,
@@ -91,6 +108,55 @@ enum Command {
     Cancel(oneshot::Sender<bool>),
     CancelIf(String, oneshot::Sender<Result<bool, Error>>),
     Approve(Response, bool, oneshot::Sender<Result<(), Error>>),
+}
+
+impl Inner {
+    /// The base policy a turn starts from. Callers hold the returned `Arc` for
+    /// the whole turn; a reload replaces the cell, never the policy in place.
+    fn policy(&self) -> Arc<Policy> {
+        self.policy
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone()
+    }
+    fn set_policy(&self, policy: Policy) {
+        *self.policy.write().unwrap_or_else(|held| held.into_inner()) = Arc::new(policy);
+    }
+}
+
+/// The invariants that keep a policy honest about what the process can do.
+/// Startup and every reload run the same checks, so a reload that would enable
+/// process authority inside the workspace or MCP without external authority is
+/// refused and the running configuration stays in place.
+async fn validate_policy_boundary(
+    policy: &Policy,
+    store: &Store,
+    tools: &Tools,
+    provider: &dyn Provider,
+) -> Result<(), Error> {
+    if policy.process_enabled()
+        && store
+            .path()
+            .starts_with(std::path::Path::new(tools.location()))
+    {
+        return Err(Error::Invalid(
+            "process-enabled runtime requires its database outside the workspace".into(),
+        ));
+    }
+    if tools.has_mcp() && !policy.mcp_enabled() {
+        return Err(Error::Invalid(
+            "MCP services require explicit workspace external authority".into(),
+        ));
+    }
+    for path in provider.protected_resources() {
+        let path = tokio::fs::canonicalize(path).await?;
+        if policy.process_enabled() && path.starts_with(std::path::Path::new(tools.location())) {
+            return Err(Error::Invalid(
+                "process credential resources must be outside workspace".into(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl Runtime {
@@ -123,42 +189,17 @@ impl Runtime {
                 "native tool replay does not execute configured hooks".into(),
             ));
         }
-        if policy.process_enabled()
-            && store
-                .path()
-                .starts_with(std::path::Path::new(tools.location()))
-        {
-            return Err(Error::Invalid(
-                "process-enabled runtime requires its database outside the workspace".into(),
-            ));
-        }
-        if tools.has_mcp() && !policy.mcp_enabled() {
-            return Err(Error::Invalid(
-                "MCP services require explicit workspace external authority".into(),
-            ));
-        }
-        let mut tools = tools
-            .enable_web(policy.web_enabled())
-            .map_err(|error| Error::Invalid(error.to_string()))?
-            .with_cron(policy.cron_enabled())
-            .with_wakeup(policy.wakeup_enabled())
-            .with_writes(policy.writes_enabled())
-            .with_process(
-                policy.process_enabled(),
-                policy.process_network(),
-                policy.process_sandbox(),
-            )
-            .with_background(policy.background_enabled())
-            .with_delegation(policy.subagents_enabled())
-            .protect_store(store.path());
+        validate_policy_boundary(&policy, &store, &tools, provider.as_ref()).await?;
+        let mut tools = tools.protect_store(store.path());
+        tools
+            .set_web(policy.web_enabled())
+            .map_err(|error| Error::Invalid(error.to_string()))?;
+        tools.set_gates(crate::tools::Gates::derive(
+            &policy,
+            tools.process_runner().is_some(),
+        ));
         for path in provider.protected_resources() {
             let path = tokio::fs::canonicalize(path).await?;
-            if policy.process_enabled() && path.starts_with(std::path::Path::new(tools.location()))
-            {
-                return Err(Error::Invalid(
-                    "process credential resources must be outside workspace".into(),
-                ));
-            }
             tools = tools.with_protected_resource(&path);
         }
         let lease = store.claim_runtime()?;
@@ -168,11 +209,12 @@ impl Runtime {
         store.adopt_wakeups().await?;
         store.adopt_crons().await?;
         let (progress, _) = broadcast::channel(256);
+        let (config_changes, _) = broadcast::channel(16);
         let runtime = Self {
             inner: Arc::new(Inner {
                 id: uuid::Uuid::new_v4().to_string(),
                 _lease: lease,
-                policy,
+                policy: StdRwLock::new(Arc::new(policy)),
                 store,
                 provider,
                 tools,
@@ -190,10 +232,15 @@ impl Runtime {
                 stop: CancellationToken::new(),
                 heartbeat: Mutex::new(None),
                 progress,
+                config_changes,
                 product: Arc::new(std::sync::RwLock::new(crate::product::State::default())),
                 context: Mutex::new(None),
                 roles: Mutex::new(crate::roles::Bindings::default()),
                 route_limits: Mutex::new(crate::model_routes::RouteLimits::default()),
+                lsp_origin: Mutex::new(None),
+                mcp_origin: Mutex::new(None),
+                policy_origin: Mutex::new(None),
+                config_generation: Mutex::new(1),
                 verification: Mutex::new(None),
                 breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
                 restore_pending: Mutex::new(std::collections::HashSet::new()),
@@ -333,6 +380,187 @@ impl Runtime {
         *self.inner.context.lock().await = limits;
     }
 
+    /// Record where startup derived the LSP servers from, so `config_reload`
+    /// re-reads those sources rather than a caller-supplied snapshot.
+    pub async fn set_lsp_origin(&self, origin: crate::config_derive::LspOrigin) {
+        *self.inner.lsp_origin.lock().await = Some(origin);
+    }
+
+    /// Record where startup read the MCP server list, so `config_reload`
+    /// re-reads that file instead of a caller-supplied snapshot.
+    pub async fn set_mcp_origin(&self, origin: crate::config_derive::McpOrigin) {
+        *self.inner.mcp_origin.lock().await = Some(origin);
+    }
+
+    /// Record where the base policy came from, including the operator's
+    /// `--mode` override, so `config_reload` derives it the way startup did.
+    pub async fn set_policy_origin(
+        &self,
+        origin: crate::config_derive::PolicyOrigin,
+        mode: Option<Mode>,
+    ) {
+        *self.inner.policy_origin.lock().await = Some((origin, mode));
+    }
+
+    /// Whether any Session in this process is inside a drain. A standalone
+    /// reload waits for this to clear, so no turn observes half a change.
+    pub fn is_draining(&self) -> bool {
+        self.inner
+            .draining
+            .lock()
+            .map(|draining| !draining.is_empty())
+            .unwrap_or(false)
+    }
+
+    /// Re-derive the sections this build can reload and apply them in place.
+    /// Everything is derived before anything is touched: a malformed edit
+    /// leaves the running configuration intact and fails the command. The
+    /// report names every section the engine did not reload instead of
+    /// implying it did.
+    ///
+    /// The policy swaps together with the capability gates and web client it
+    /// implies. Gates go first because they can only add a refusal ahead of the
+    /// new policy, never permit a call the old one denied; a turn that already
+    /// took its policy snapshot keeps it, and the next turn reads the new one.
+    pub async fn reload_config(&self) -> Result<Value, Error> {
+        let mut unsupported = vec!["models", "context", "tools"];
+        // The LSP registry only exists when startup found at least one server;
+        // a plan that starts empty cannot grow without rebuilding Tools, so
+        // that case is reported rather than silently accepted. The MCP
+        // registry exists whenever the host supplied `--mcp-config`, even with
+        // an empty list, so it can grow from nothing.
+        let policy_origin = self.inner.policy_origin.lock().await.clone();
+        let lsp_origin = self
+            .inner
+            .lsp_origin
+            .lock()
+            .await
+            .clone()
+            .zip(self.inner.tools.lsp_registry());
+        let mcp_origin = self
+            .inner
+            .mcp_origin
+            .lock()
+            .await
+            .clone()
+            .zip(self.inner.tools.mcp_registry().cloned());
+        if policy_origin.is_none() {
+            unsupported.insert(0, "policy");
+        }
+        if lsp_origin.is_none() {
+            unsupported.insert(0, "lsp");
+        }
+        if mcp_origin.is_none() {
+            unsupported.insert(0, "mcp");
+        }
+        // Derive every section before touching any of them, then validate, then
+        // apply: a derivation or boundary error leaves every section as it was.
+        let policy = match &policy_origin {
+            Some((origin, mode)) => {
+                let derived = Policy::new(origin.derive(*mode).map_err(Error::Invalid)?)?;
+                (self.inner.policy().revision() != derived.revision()).then_some(derived)
+            }
+            None => None,
+        };
+        let policy_changed = policy.is_some();
+        if let Some(policy) = &policy {
+            validate_policy_boundary(
+                policy,
+                &self.inner.store,
+                &self.inner.tools,
+                self.inner.provider.as_ref(),
+            )
+            .await?;
+        }
+        let configs = match &lsp_origin {
+            Some((origin, _)) => Some(origin.derive().map_err(Error::Invalid)?),
+            None => None,
+        };
+        let servers = match &mcp_origin {
+            Some((origin, _)) => Some(origin.derive().map_err(Error::Invalid)?),
+            None => None,
+        };
+        let reconciled = match (configs, &lsp_origin) {
+            (Some(configs), Some((_, registry))) => Some(registry.reconcile(configs).await?),
+            _ => None,
+        };
+        // A failed MCP rebuild keeps its previous connection and is reported
+        // inside the section, so it does not fail the rest of the reload.
+        let repaired = match (servers, &mcp_origin) {
+            (Some(servers), Some((_, registry))) => Some(registry.reconcile(servers).await?),
+            _ => None,
+        };
+        if let Some(policy) = policy {
+            self.inner
+                .tools
+                .set_web(policy.web_enabled())
+                .map_err(|error| Error::Invalid(error.to_string()))?;
+            self.inner.tools.set_gates(crate::tools::Gates::derive(
+                &policy,
+                self.inner.tools.process_runner().is_some(),
+            ));
+            self.inner.set_policy(policy);
+        }
+        let lsp_changed = reconciled.as_ref().is_some_and(|reconciled| {
+            !reconciled.changed.is_empty() || !reconciled.removed.is_empty()
+        });
+        let mcp_changed = repaired
+            .as_ref()
+            .is_some_and(|repaired| !repaired.changed.is_empty() || !repaired.removed.is_empty());
+        let mut changed = Vec::new();
+        let mut unchanged = Vec::new();
+        for (section, changed_here, supported) in [
+            ("policy", policy_changed, policy_origin.is_some()),
+            ("lsp", lsp_changed, lsp_origin.is_some()),
+            ("mcp", mcp_changed, mcp_origin.is_some()),
+        ] {
+            if !supported {
+                continue;
+            }
+            if changed_here {
+                changed.push(section);
+            } else {
+                unchanged.push(section);
+            }
+        }
+        let any_changed = !changed.is_empty();
+        let mut generation = self.inner.config_generation.lock().await;
+        if any_changed {
+            *generation += 1;
+        }
+        let mut report = json!({
+            "generation": *generation,
+            "changed": changed,
+            "unchanged": unchanged,
+            "unsupported": unsupported,
+        });
+        if let Some(reconciled) = reconciled {
+            report["lsp"] = json!({
+                "changed": reconciled.changed,
+                "unchanged": reconciled.unchanged,
+                "removed": reconciled.removed,
+            });
+        }
+        if let Some(repaired) = repaired {
+            report["mcp"] = json!({
+                "changed": repaired.changed,
+                "unchanged": repaired.unchanged,
+                "removed": repaired.removed,
+                "failed": repaired.failed.iter().map(|failure| json!({
+                    "server": failure.server,
+                    "error": failure.error,
+                })).collect::<Vec<_>>(),
+            });
+        }
+        // Announced only when a section moved: a replayed configuration has
+        // nothing to tell the user, and a host that issued the reload already
+        // has the report as the reply.
+        if any_changed {
+            let _ = self.inner.config_changes.send(report.clone());
+        }
+        Ok(report)
+    }
+
     /// Purpose-role model bindings (ADR-14): a binding is a model id on the
     /// Session's own provider. Unbound roles — and roles the provider
     /// rejects — run on the primary model.
@@ -433,7 +661,7 @@ impl Runtime {
         let agent = self.inner.store.agent(session).await?;
         let policy = self
             .inner
-            .policy
+            .policy()
             .for_agent(agent.as_ref().map(|(manifest, _)| manifest))?;
         if controller.runtime_id != self.inner.id || response.policy_revision != policy.revision() {
             return Err(Error::ApprovalMismatch);
@@ -594,6 +822,23 @@ impl Runtime {
     /// resynchronize from committed messages, never block provider execution.
     pub fn progress(&self) -> broadcast::Receiver<Value> {
         self.inner.progress.subscribe()
+    }
+
+    /// Reports of reloads that changed at least one section. A host that issues
+    /// `config_reload` already gets the report as the reply; this channel lets a
+    /// host show a reload it did not cause, such as the standalone poller's.
+    pub fn config_events(&self) -> broadcast::Receiver<Value> {
+        self.inner.config_changes.subscribe()
+    }
+
+    /// Tell every listening host that a reload was refused. A host that issued
+    /// the reload gets the error as its reply, but a poller-driven failure would
+    /// otherwise exist only in the engine's stderr, which no host reads live.
+    pub fn announce_config_failure(&self, message: &str) {
+        let _ = self
+            .inner
+            .config_changes
+            .send(json!({ "changed": [], "error": message }));
     }
 
     pub async fn admit(&self, input: Input, resume: bool) -> Result<Admission, Error> {
@@ -1406,7 +1651,7 @@ async fn execute(
     history_base: u64,
 ) -> Result<(), Error> {
     let mut step = 0;
-    let mut allowance = inner.policy.max_provider_turns();
+    let mut allowance = inner.policy().max_provider_turns();
     // Billed tokens this prompt has spent. The soft budget is per prompt, so
     // the same external admission that refills the allowance resets it.
     let mut budget_spent = 0u64;
@@ -1472,7 +1717,7 @@ async fn execute(
         // model only while the Session has no explicit selection of its own.
         let agent = inner.store.agent(session).await?;
         let manifest = agent.as_ref().map(|(manifest, _)| manifest);
-        let policy = inner.policy.for_agent(manifest)?;
+        let policy = inner.policy().for_agent(manifest)?;
         // A newly promoted external input gets the selected agent's whole
         // allowance, even if that input also switched agents. Internal loop
         // continuations never reset it.
@@ -1872,10 +2117,23 @@ async fn execute(
                 ),
             );
             tokio::pin!(response);
+            // A provider that has not produced its first token sends nothing at all:
+            // no journal event and no delta, so a client cannot tell a slow model
+            // from an engine that died. Announce the wait on the ephemeral progress
+            // channel instead. It is not provider output, so it never counts as
+            // `produced` and never disarms the pre-output retry.
+            let mut waiting = tokio::time::interval(std::time::Duration::from_secs(5));
+            waiting.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             let outcome = loop {
                 tokio::select! {
                     _=cancel.cancelled()=>return Ok(()),
                     reply=&mut response=>break reply,
+                    _=waiting.tick(), if !produced => {
+                        let _=inner.progress.send(json!({
+                            "session_id":session,"run_id":run,"step":step,"kind":"provider.waiting",
+                            "attempt":attempts,"elapsed_ms":attempt_started.elapsed().as_millis() as u64,
+                        }));
+                    },
                     Some(delta)=receive.recv()=>{
                         if delta["kind"] == "provider.retry" {
                             // A retry is a durable product fact that survives replay,
@@ -5267,7 +5525,7 @@ async fn execute_read_batch(
 
 fn validate_agent(inner: &Inner, agent: &crate::session_agent::AgentManifest) -> Result<(), Error> {
     agent.validate()?;
-    inner.policy.for_agent(Some(agent))?;
+    inner.policy().for_agent(Some(agent))?;
     if let Some(model) = &agent.model {
         crate::session_model::select(&inner.provider, Some(model))?;
     }
