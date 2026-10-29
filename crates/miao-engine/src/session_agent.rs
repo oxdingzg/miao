@@ -262,7 +262,33 @@ pub(crate) fn selected_at(
         .transpose()
 }
 
+pub(crate) fn ensure_default_agent_tx(
+    tx: &Transaction<'_>,
+    session: &str,
+    agent: &AgentManifest,
+) -> Result<(), Error> {
+    if selected(tx, session)?.is_none() {
+        set_agent_tx(tx, session, agent)?;
+    }
+    Ok(())
+}
+
 impl Store {
+    pub(crate) async fn ensure_default_agent(
+        &self,
+        session: &str,
+        agent: AgentManifest,
+    ) -> Result<(), Error> {
+        let session = session.to_owned();
+        self.call(move |connection| {
+            let tx = write_tx(connection)?;
+            ensure_default_agent_tx(&tx, &session, &agent)?;
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
     /// Record a host-resolved agent for this Session's subsequent turns.
     ///
     /// An unchanged manifest is idempotent: the same instructions, tools,
