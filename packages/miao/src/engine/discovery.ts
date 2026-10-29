@@ -18,6 +18,7 @@ export const REQUIRED_PROTOCOL = 2
  * would reject the manifest with an opaque parse error.
  */
 export const REQUIRED_ROUTES_SCHEMA = 2
+export const REQUIRED_SAVED_RULES_SNAPSHOT = 1
 
 export type Capabilities = {
   name: string
@@ -28,6 +29,20 @@ export type Capabilities = {
   routesSchema?: number
   /** Version of the short-lived read-only catalog command, when supported. */
   catalog?: number
+  savedRulesSnapshot?: number
+  savedPermissionMigration?: number
+  permissionContextStore?: number
+  permissionProjectHandoff?: number
+  permissionContextHandoff?: number
+  permissionProjectStore?: number
+  permissionImportChanges?: number
+  productPermissionRequests?: number
+  productPermissionReplies?: number
+  productPermissionCancel?: number
+  productPermissionDiagnostics?: number
+  productPermissionAuto?: number
+  permissionPatternChanges?: number
+  permissionPatterns?: number
 }
 
 const EXE = process.platform === "win32" ? ".exe" : ""
@@ -68,6 +83,22 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (camel !== undefined && snake !== undefined && camel !== snake) return undefined
     const routesSchema = camel ?? snake
     if (wire.catalog !== undefined && !isRevision(wire.catalog)) return undefined
+    if (wire.permission_import_changes !== undefined && !isRevision(wire.permission_import_changes)) return undefined
+    if (wire.saved_permission_migration !== undefined && !isRevision(wire.saved_permission_migration)) return undefined
+    if (wire.saved_rules_snapshot !== undefined && !isRevision(wire.saved_rules_snapshot)) return undefined
+    if (wire.product_permission_requests !== undefined && !isRevision(wire.product_permission_requests))
+      return undefined
+    if (wire.product_permission_replies !== undefined && !isRevision(wire.product_permission_replies)) return undefined
+    if (wire.product_permission_cancel !== undefined && !isRevision(wire.product_permission_cancel)) return undefined
+    if (wire.product_permission_diagnostics !== undefined && !isRevision(wire.product_permission_diagnostics))
+      return undefined
+    if (wire.product_permission_auto !== undefined && !isRevision(wire.product_permission_auto)) return undefined
+    if (wire.permission_pattern_changes !== undefined && !isRevision(wire.permission_pattern_changes)) return undefined
+    if (wire.permission_patterns !== undefined && !isRevision(wire.permission_patterns)) return undefined
+    if (wire.permission_project_handoff !== undefined && !isRevision(wire.permission_project_handoff)) return undefined
+    if (wire.permission_context_handoff !== undefined && !isRevision(wire.permission_context_handoff)) return undefined
+    if (wire.permission_context_store !== undefined && !isRevision(wire.permission_context_store)) return undefined
+    if (wire.permission_project_store !== undefined && !isRevision(wire.permission_project_store)) return undefined
     return {
       name: "miao-engine",
       version: wire.version,
@@ -75,6 +106,44 @@ export function capabilities(binary: string): Capabilities | undefined {
       schema: wire.schema,
       ...(typeof routesSchema === "number" ? { routesSchema } : {}),
       ...(typeof wire.catalog === "number" ? { catalog: wire.catalog } : {}),
+      ...(typeof wire.permission_project_handoff === "number"
+        ? { permissionProjectHandoff: wire.permission_project_handoff }
+        : {}),
+      ...(typeof wire.permission_context_handoff === "number"
+        ? { permissionContextHandoff: wire.permission_context_handoff }
+        : {}),
+      ...(typeof wire.permission_context_store === "number"
+        ? { permissionContextStore: wire.permission_context_store }
+        : {}),
+      ...(typeof wire.permission_project_store === "number"
+        ? { permissionProjectStore: wire.permission_project_store }
+        : {}),
+      ...(typeof wire.permission_import_changes === "number"
+        ? { permissionImportChanges: wire.permission_import_changes }
+        : {}),
+      ...(typeof wire.saved_permission_migration === "number"
+        ? { savedPermissionMigration: wire.saved_permission_migration }
+        : {}),
+      ...(typeof wire.saved_rules_snapshot === "number" ? { savedRulesSnapshot: wire.saved_rules_snapshot } : {}),
+      ...(typeof wire.product_permission_requests === "number"
+        ? { productPermissionRequests: wire.product_permission_requests }
+        : {}),
+      ...(typeof wire.product_permission_replies === "number"
+        ? { productPermissionReplies: wire.product_permission_replies }
+        : {}),
+      ...(typeof wire.product_permission_cancel === "number"
+        ? { productPermissionCancel: wire.product_permission_cancel }
+        : {}),
+      ...(typeof wire.product_permission_diagnostics === "number"
+        ? { productPermissionDiagnostics: wire.product_permission_diagnostics }
+        : {}),
+      ...(typeof wire.product_permission_auto === "number"
+        ? { productPermissionAuto: wire.product_permission_auto }
+        : {}),
+      ...(typeof wire.permission_pattern_changes === "number"
+        ? { permissionPatternChanges: wire.permission_pattern_changes }
+        : {}),
+      ...(typeof wire.permission_patterns === "number" ? { permissionPatterns: wire.permission_patterns } : {}),
     }
   } catch {
     return undefined
@@ -95,6 +164,7 @@ export function resolveEngine(
     exists?: (binary: string) => boolean
     executable?: string
     launcher?: string
+    requireSavedRulesSnapshot?: boolean
   } = {},
 ): { binary: string; capabilities: Capabilities } | undefined {
   const environment = input.environment ?? process.env
@@ -102,14 +172,15 @@ export function resolveEngine(
   const exists = input.exists ?? existsSync
   const compatible = (found: Capabilities) =>
     found.protocol >= REQUIRED_PROTOCOL &&
-    (found.routesSchema === undefined || found.routesSchema >= REQUIRED_ROUTES_SCHEMA)
+    (found.routesSchema === undefined || found.routesSchema >= REQUIRED_ROUTES_SCHEMA) &&
+    (!input.requireSavedRulesSnapshot || (found.savedRulesSnapshot ?? 0) >= REQUIRED_SAVED_RULES_SNAPSHOT)
   const explicit = environment.MIAO_ENGINE_BIN
   if (explicit) {
     const found = exists(explicit) ? probe(explicit) : undefined
     if (!found || !compatible(found)) {
       throw new Error(
         found
-          ? `MIAO_ENGINE_BIN=${explicit} reports protocol ${found.protocol} and route schema ${found.routesSchema ?? "unknown"} but this build requires protocol ${REQUIRED_PROTOCOL} and route schema ${REQUIRED_ROUTES_SCHEMA}`
+          ? `MIAO_ENGINE_BIN=${explicit} reports protocol ${found.protocol} and route schema ${found.routesSchema ?? "unknown"} but this build requires protocol ${REQUIRED_PROTOCOL} and route schema ${REQUIRED_ROUTES_SCHEMA}${input.requireSavedRulesSnapshot ? ` and saved-rule snapshots ${REQUIRED_SAVED_RULES_SNAPSHOT}` : ""}`
           : `MIAO_ENGINE_BIN=${explicit} cannot report capabilities`,
       )
     }
@@ -129,7 +200,7 @@ let cached: { value: ReturnType<typeof resolveEngine> } | undefined
 
 /** Cached process-environment discovery; the binary does not change mid-run. */
 export function discoveredEngine(): string | undefined {
-  cached ??= { value: resolveEngine() }
+  cached ??= { value: resolveEngine({ requireSavedRulesSnapshot: true }) }
   return cached.value?.binary
 }
 

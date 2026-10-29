@@ -161,7 +161,7 @@ enum CredentialSource {
 /// credential paths. Reject workspace-owned configuration before reading it.
 /// Per-model capacity declared by the host manifest, consulted before a
 /// role-bound request is attempted.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct RouteLimits {
     limits: std::collections::BTreeMap<String, Limit>,
 }
@@ -172,11 +172,59 @@ impl RouteLimits {
     }
 }
 
+/// Where startup found the route manifest, plus the base provider it layered
+/// over, so a reload rebuilds the catalog from the same sources instead of
+/// re-deriving the operator's transport and credential flags.
+#[derive(Clone)]
+pub struct Origin {
+    pub base: Arc<dyn Provider>,
+    pub path: std::path::PathBuf,
+    pub workspace: std::path::PathBuf,
+}
+
+impl Origin {
+    /// Fingerprint of the manifest as it is on disk now, so the caller can
+    /// tell an edit from a replay of what is already running.
+    pub async fn digest(&self) -> Result<String, Box<dyn std::error::Error>> {
+        read(&self.path, &self.workspace)
+            .await
+            .map(|(_, fingerprint)| fingerprint)
+            .map_err(|error| format!("{}: {error}", self.path.display()).into())
+    }
+
+    /// Read the manifest again and rebuild the routed catalog over the base
+    /// provider. The caller compares the result with the running catalog and
+    /// swaps only when something actually changed.
+    pub async fn reload(
+        &self,
+    ) -> Result<(Arc<dyn Provider>, RouteLimits, String), Box<dyn std::error::Error>> {
+        let path = self.path.display();
+        let (bytes, fingerprint) = read(&self.path, &self.workspace)
+            .await
+            .map_err(|error| format!("{path}: {error}"))?;
+        let (provider, limits) = derive(&bytes, &self.workspace, self.base.clone())
+            .await
+            .map_err(|error| format!("{path}: {error}"))?;
+        Ok((provider, limits, fingerprint))
+    }
+}
+
 pub async fn load(
     path: &Path,
     workspace: &Path,
-    mut primary: Arc<dyn Provider>,
+    primary: Arc<dyn Provider>,
 ) -> Result<(Arc<dyn Provider>, RouteLimits), Box<dyn std::error::Error>> {
+    let (bytes, _) = read(path, workspace).await?;
+    derive(&bytes, workspace, primary).await
+}
+
+/// Read the manifest and fingerprint it. The fingerprint is taken over the
+/// parsed document, not the raw bytes, so a whitespace-only edit is not a
+/// change while a different credential key or endpoint is.
+async fn read(
+    path: &Path,
+    workspace: &Path,
+) -> Result<(Vec<u8>, String), Box<dyn std::error::Error>> {
     if path.starts_with(workspace) {
         return Err("Model routes host config must be outside model-writable workspace".into());
     }
@@ -189,7 +237,18 @@ pub async fn load(
     if bytes.len() > 1024 * 1024 {
         return Err("Model routes config exceeds 1 MiB".into());
     }
-    let entries = serde_json::from_slice::<Vec<Route>>(&bytes)
+    let document = serde_json::from_slice::<serde_json::Value>(&bytes)
+        .map_err(|error| format!("invalid Model routes host config: {error}"))?;
+    let fingerprint = crate::permission::digest(&serde_json::to_vec(&document)?);
+    Ok((bytes, fingerprint))
+}
+
+async fn derive(
+    bytes: &[u8],
+    workspace: &Path,
+    mut primary: Arc<dyn Provider>,
+) -> Result<(Arc<dyn Provider>, RouteLimits), Box<dyn std::error::Error>> {
+    let entries = serde_json::from_slice::<Vec<Route>>(bytes)
         .map_err(|error| format!("invalid Model routes host config: {error}"))?;
     if entries.len() > crate::model_catalog::MAX_ROUTES {
         return Err("model route catalog exceeds 1024 entries".into());

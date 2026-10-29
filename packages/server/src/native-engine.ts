@@ -5,6 +5,7 @@ import type { Agent } from "@miao/schema/agent"
 import { Context, Effect } from "effect"
 import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import type { Permission } from "@miao/schema/permission"
+import type { PermissionSaved } from "@miao/schema/permission-saved"
 import type { Question } from "@miao/schema/question"
 import type { ConflictError } from "@miao/protocol/errors"
 import type { Location } from "@miao/schema/location"
@@ -197,6 +198,17 @@ export interface Interface {
     archived: boolean
   }) => Effect.Effect<void, ConflictError>
   /**
+   * Set or clear the engine's pin timestamp. The engine owns it so every client
+   * orders the shared catalog the same way; a pin is a list preference and
+   * never counts as Session activity.
+   */
+  readonly pin: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    pinned: boolean
+  }) => Effect.Effect<void, ConflictError>
+  /**
    * Delete the engine's copy of a Session: its conversation, inbox, runs,
    * approvals, background work and schedules. Children keep their Sessions and
    * lose only their lineage edge, matching the product's rule that removing a
@@ -268,6 +280,14 @@ export interface Interface {
     location: Location.Ref
     title: string
   }) => Effect.Effect<void, ConflictError>
+  readonly savedPermissions?: (input: {
+    location: Location.Ref
+    projectID: PermissionSaved.Info["projectID"]
+  }) => Effect.Effect<readonly PermissionSaved.Info[], ConflictError>
+  readonly removeSavedPermission?: (input: {
+    location: Location.Ref
+    id: PermissionSaved.ID
+  }) => Effect.Effect<void, ConflictError>
   readonly permissions: (input: {
     sessionID: SessionID
     storage: AbsolutePath
@@ -279,6 +299,7 @@ export interface Interface {
     location: Location.Ref
     requestID: Permission.ID
     reply: Permission.Reply
+    message?: string
   }) => Effect.Effect<void, ConflictError>
   readonly questions: (input: {
     sessionID: SessionID

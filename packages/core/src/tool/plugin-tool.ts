@@ -68,12 +68,19 @@ export function make(name: string, definition: ToolDefinition, services: Service
               },
               ask: (request) =>
                 Effect.runPromise(
-                  assert({
-                    action: request.permission,
-                    resources: request.patterns,
-                    save: request.always,
-                    metadata: request.metadata,
-                  }),
+                  // Permission admission masks interruption; do not start it
+                  // when a plugin asks after its invocation already stopped.
+                  Effect.suspend(() =>
+                    signal.aborted
+                      ? Effect.interrupt
+                      : assert({
+                          action: request.permission,
+                          resources: request.patterns,
+                          save: request.always,
+                          metadata: request.metadata,
+                        }),
+                  ),
+                  { signal },
                 ),
             } satisfies ToolContext),
           catch: (error) =>

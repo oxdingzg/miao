@@ -32,6 +32,7 @@ fn main() {
     let streaming = std::env::var_os("MIAO_TUI_FAKE_STREAM").is_some();
     let stream_updates = Arc::new(AtomicU64::new(0));
     let mut stream_started = false;
+    let mut permission_saved = true;
 
     for line in stdin.lock().lines() {
         let Ok(line) = line else { return };
@@ -49,6 +50,25 @@ fn main() {
         };
         let method = frame.get("method").and_then(Value::as_str).unwrap_or("");
         match method {
+            "permission_pattern_list" => {
+                let rules = if permission_saved {
+                    json!([{
+                        "id": format!("prule_{}", "a".repeat(64)),
+                        "workspace": std::env::current_dir().unwrap().canonicalize().unwrap().to_string_lossy(),
+                        "source": "native", "created_at_ms": 0,
+                        "rule": { "action": "read", "resource": "public/**", "effect": "allow" }
+                    }])
+                } else {
+                    json!([])
+                };
+                unit_command(&mut out, id, &frame, rules);
+            }
+            "permission_pattern_remove" => {
+                log_action(&frame["params"], method);
+                permission_saved = false;
+                send(&mut out, json!({"id":id,"result":{"removed":true}}));
+            }
+
             "subscribe" => {
                 let after = frame["params"]["after"].as_u64().unwrap_or(0);
                 session_id = frame["params"]["session_id"]
@@ -97,6 +117,15 @@ fn main() {
                     next += 1;
                 }
             }
+            // A reload the host did not ask for is announced process-wide; the
+            // TUI shows it as a composer notice rather than a Session event.
+            "reload" => {
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+                send(
+                    &mut out,
+                    json!({"method":"config","params":{"generation":2,"changed":["policy","context"],"unchanged":[],"unsupported":["tools"]}}),
+                );
+            }
             "product_tool" => {
                 send(&mut out, json!({"id":id,"result":{"ok":true}}));
                 send(
@@ -119,6 +148,7 @@ fn main() {
                     "cursor": 2,
                     "updated_at_ms": updated,
                     "archived_at_ms": null,
+                    "pinned_at_ms": null,
                     "parent_session_id": null,
                     "location": "/tmp",
                     "model_selection": {"protocol": "chat", "model": "fake/glm"},
@@ -247,6 +277,10 @@ fn main() {
             }
             "archive" if sessions => {
                 log_action(&frame["params"], "archive");
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            "pin" if sessions => {
+                log_action(&frame["params"], "pin");
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
             }
             "remove" if sessions => {

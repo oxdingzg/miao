@@ -24,7 +24,6 @@ import { SessionSchema } from "./session/schema"
 import { AbsolutePath, PositiveInt, RelativePath } from "./schema"
 import { AgentV2 } from "./agent"
 import { fromRow } from "./session/info"
-import { SessionRunner } from "./session/runner/index"
 import { SessionTitleSettlement } from "./session/title-settlement"
 import { SessionStore } from "./session/store"
 import { SessionV1 } from "./v1/session"
@@ -41,7 +40,7 @@ import { SessionCacheProbe } from "./session/cache-probe"
 import { SessionExecution } from "./session/execution"
 import { makeGlobalNode } from "./effect/app-node"
 import { LocationServiceMap } from "./location-service-map"
-import { LegacyNotMigratedError, MessageDecodeError } from "./session/error"
+import { LegacyNotMigratedError, MessageDecodeError, type ExecutionError } from "./session/error"
 import { SessionEvent } from "./session/event"
 import { SessionInput } from "./session/input"
 import { SessionAdmission } from "./session/admission"
@@ -261,7 +260,7 @@ export interface Interface {
   ) => Effect.Effect<void, NotFoundError | OperationUnavailableError | LegacyNotMigratedError>
   readonly wait: (id: SessionSchema.ID) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
-  readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | SessionRunner.RunError>
+  readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | ExecutionError>
   readonly interrupt: (sessionID: SessionSchema.ID) => Effect.Effect<void>
   readonly executions: Effect.Effect<ReadonlyMap<SessionSchema.ID, string>>
   readonly interruptIf: (sessionID: SessionSchema.ID, execution: string) => Effect.Effect<boolean>

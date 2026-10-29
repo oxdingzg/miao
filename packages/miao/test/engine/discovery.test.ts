@@ -11,6 +11,16 @@ const engine = (protocol: number) => ({
   schema: 12,
 })
 
+test("saved-rule snapshot owners refuse additive-only engines before startup", () => {
+  const input = { environment: { MIAO_ENGINE_BIN: "/chosen" }, exists: () => true, requireSavedRulesSnapshot: true }
+  expect(() => resolveEngine({ ...input, probe: () => engine(2) })).toThrow("saved-rule snapshots 1")
+  expect(() => resolveEngine({ ...input, probe: () => ({ ...engine(2), savedRulesSnapshot: 0 }) })).toThrow(
+    "saved-rule snapshots 1",
+  )
+  expect(resolveEngine({ ...input, probe: () => ({ ...engine(2), savedRulesSnapshot: 1 }) })?.binary).toBe("/chosen")
+  expect(resolveEngine({ ...input, environment: {}, probe: () => engine(2) })).toBeUndefined()
+})
+
 test("a discovered engine is used only when its protocol is new enough", () => {
   const probe = () => engine(2)
   const exists = () => true
@@ -131,6 +141,22 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
     { wire: { routes_schema: 1 }, normalized: 1, accepted: false },
     { wire: { routes_schema: 2 }, normalized: 2, accepted: true },
     { wire: { routes_schema: 2, catalog: 1 }, normalized: 2, accepted: true },
+    {
+      wire: {
+        product_permission_requests: 1,
+        product_permission_replies: 1,
+        product_permission_cancel: 1,
+        product_permission_diagnostics: 1,
+        product_permission_auto: 1,
+      },
+      normalized: undefined,
+      accepted: true,
+    },
+    { wire: { permission_import_changes: 1 }, normalized: undefined, accepted: true },
+    { wire: { saved_permission_migration: 1 }, normalized: undefined, accepted: true },
+    { wire: { permission_context_handoff: 1 }, normalized: undefined, accepted: true },
+    { wire: { permission_patterns: 1 }, normalized: undefined, accepted: true },
+    { wire: { permission_pattern_changes: 1 }, normalized: undefined, accepted: true },
     { wire: { routesSchema: 2 }, normalized: 2, accepted: true },
     { wire: { routes_schema: 2, routesSchema: 2 }, normalized: 2, accepted: true },
   ]) {
@@ -138,11 +164,37 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
     await chmod(binary, 0o755)
     expect(capabilities(binary)?.routesSchema).toBe(input.normalized)
     if ("catalog" in input.wire) expect(capabilities(binary)).toHaveProperty("catalog", 1)
+    if ("permission_pattern_changes" in input.wire)
+      expect(capabilities(binary)).toHaveProperty("permissionPatternChanges", 1)
+    if ("permission_import_changes" in input.wire)
+      expect(capabilities(binary)).toHaveProperty("permissionImportChanges", 1)
+    if ("saved_permission_migration" in input.wire)
+      expect(capabilities(binary)).toHaveProperty("savedPermissionMigration", 1)
+    if ("permission_context_handoff" in input.wire)
+      expect(capabilities(binary)).toHaveProperty("permissionContextHandoff", 1)
+    if ("permission_patterns" in input.wire) expect(capabilities(binary)).toHaveProperty("permissionPatterns", 1)
+    if ("product_permission_requests" in input.wire) {
+      expect(capabilities(binary)).toHaveProperty("productPermissionRequests", 1)
+      expect(capabilities(binary)).toHaveProperty("productPermissionReplies", 1)
+      expect(capabilities(binary)).toHaveProperty("productPermissionCancel", 1)
+      expect(capabilities(binary)).toHaveProperty("productPermissionDiagnostics", 1)
+      expect(capabilities(binary)).toHaveProperty("productPermissionAuto", 1)
+    }
     if (input.accepted) expect(resolveEngine({ environment: { MIAO_ENGINE_BIN: binary } })?.binary).toBe(binary)
     if (!input.accepted)
       expect(() => resolveEngine({ environment: { MIAO_ENGINE_BIN: binary } })).toThrow("route schema")
   }
   for (const wire of [
+    { permission_import_changes: "1" },
+    { saved_permission_migration: "1" },
+    { permission_context_handoff: "1" },
+    { permission_patterns: "1" },
+    { permission_pattern_changes: "1" },
+    { product_permission_requests: "1" },
+    { product_permission_cancel: "1" },
+    { product_permission_diagnostics: false },
+    { product_permission_auto: "1" },
+    { product_permission_replies: false },
     { routes_schema: "2" },
     { routesSchema: "2" },
     { routes_schema: 1, routesSchema: 2 },

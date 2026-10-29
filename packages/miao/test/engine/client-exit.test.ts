@@ -1,3 +1,4 @@
+import { engineFake } from "../fixture/engine-binary"
 import { expect, test } from "bun:test"
 import path from "node:path"
 import { EngineClient, EngineError } from "@/engine/client"
@@ -17,7 +18,8 @@ test("a failed child rejects pending and later requests with its startup diagnos
     expect(failure).toBeInstanceOf(EngineError)
     expect(failure).toMatchObject({ code: "engine_closed" })
     if (!(failure instanceof EngineError)) throw failure
-    expect(failure.message).toContain("serve")
+    expect(client.stderrText.trim().length).toBeGreaterThan(0)
+    expect(failure.message).toContain(client.stderrText.trim())
     await expect(client.request("snapshot", { session_id: "s" })).rejects.toBe(failure)
     await expect(client.request("sessions")).rejects.toBe(failure)
   } finally {
@@ -122,34 +124,48 @@ test.skipIf(process.platform === "win32")(
   5_000,
 )
 
-test("a timed-out read leaves other requests and the executing engine available", async () => {
-  await using tmp = await tmpdir()
-  const ready = path.join(tmp.path, "ready")
-  const client = EngineClient.start({
-    binary: path.join(import.meta.dir, "../fixture/engine-fake.ts"),
-    db: path.join(tmp.path, "engine.db"),
-    workspace: tmp.path,
-    model: "fixture",
-    requestTimeoutMs: 500,
-    env: { ENGINE_FAKE_IGNORE_SNAPSHOT: "1", ENGINE_FAKE_READY_FILE: ready },
-  })
-  try {
-    // The RPC budget measures a ready fixture, independently of process startup.
-    const deadline = Date.now() + 5_000
-    // A BunFile may cache a negative stat; create a fresh handle for each poll.
-    while (!(await Bun.file(ready).exists()) || (await Bun.file(ready).text()) !== "ready") {
-      if (!client.available || Date.now() >= deadline)
-        throw new Error(`engine fixture did not become ready: ${client.stderrText}`)
-      await Bun.sleep(10)
+for (const method of [
+  "snapshot",
+  "context_snapshot",
+  "permission_import_snapshot",
+  "permission_import_changes",
+  "permission_saved_migration",
+  "permission_saved_imported",
+  "permission_pattern_list",
+  "permission_pattern_snapshot",
+  "permission_pattern_changes",
+]) {
+  test(`a timed-out ${method} read leaves the executing engine available`, async () => {
+    await using tmp = await tmpdir()
+    const ready = path.join(tmp.path, "ready")
+    const client = EngineClient.start({
+      binary: engineFake,
+      db: path.join(tmp.path, "engine.db"),
+      workspace: tmp.path,
+      model: "fixture",
+      requestTimeoutMs: 500,
+      env: { ENGINE_FAKE_IGNORE_SNAPSHOT: "1", ENGINE_FAKE_READY_FILE: ready },
+    })
+    try {
+      // The RPC budget measures a ready fixture, independently of process startup.
+      const deadline = Date.now() + 5_000
+      // A BunFile may cache a negative stat; create a fresh handle for each poll.
+      while (!(await Bun.file(ready).exists()) || (await Bun.file(ready).text()) !== "ready") {
+        if (!client.available || Date.now() >= deadline)
+          throw new Error(`engine fixture did not become ready: ${client.stderrText}`)
+        await Bun.sleep(10)
+      }
+      await client.request("sessions")
+      // The real fixture deliberately leaves a snapshot request unanswered.
+      const failure = client
+        .request(method, method === "snapshot" ? { session_id: "s" } : undefined)
+        .catch((error: unknown) => error)
+      expect(await client.request("sessions")).toEqual({ accepted: true })
+      expect(await failure).toMatchObject({ code: "engine_request_timeout" })
+      expect(client.available).toBe(true)
+      expect(await client.request("sessions")).toEqual({ accepted: true })
+    } finally {
+      await client.close()
     }
-    await client.request("sessions")
-    // The real fixture deliberately leaves a snapshot request unanswered.
-    const failure = client.request("snapshot", { session_id: "s" }).catch((error: unknown) => error)
-    expect(await client.request("sessions")).toEqual({ accepted: true })
-    expect(await failure).toMatchObject({ code: "engine_request_timeout" })
-    expect(client.available).toBe(true)
-    expect(await client.request("sessions")).toEqual({ accepted: true })
-  } finally {
-    await client.close()
-  }
-}, 10_000)
+  }, 10_000)
+}

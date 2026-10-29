@@ -39,6 +39,22 @@ https://github.com/anomalyco/models.dev
   bun dev
   ```
 
+### Integration tests
+
+Run process integration tests from `packages/miao` with a prebuilt engine:
+
+```bash
+MIAO_ENGINE_BIN=/absolute/path/to/miao-engine bun run test:integration
+```
+
+The runner rejects a missing or unusable engine before starting the suite. Build native binaries on a build host as required by the project instructions. For a selected protocol-only file that does not need the native binary, use an explicit non-native run:
+
+```bash
+INTEGRATION_REQUIRE_ENGINE=0 bun run test:integration test/engine/eval-budget.test.ts
+```
+
+This selection does not establish native engine acceptance. The full suite always requires an engine.
+
 ### Running against a different directory
 
 By default, `bun dev` runs miao in the `packages/miao` directory. To run it against a different directory or repository:

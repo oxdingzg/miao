@@ -6,7 +6,7 @@ import type { ResponsesCacheContract, ResponsesWebSocketContract } from "@miao/s
 import { prepareMcpConfig } from "./mcp-config"
 
 /**
- * Host-side client for the experimental Rust engine (`miao-engine serve`).
+ * Host-side client for native runtime and project-permission stdio control.
  *
  * The engine speaks newline-delimited JSON over stdio: requests carry an `id` and
  * a `method`/`params` pair, replies echo the `id` with either `result` or `error`,
@@ -125,6 +125,8 @@ export interface EngineOptions {
     bridgeID: number
     /** The calling assistant message's durable seq, when the engine reports it. */
     messageSeq?: number
+    /** The source callback must carry cancellation before native permission routing is enabled. */
+    signal?: AbortSignal
   }) => Promise<unknown>
   /**
    * A run settled while this bridge call was still pending (cancel, failure,
@@ -169,7 +171,7 @@ export interface EngineOptions {
  * tokens, CI secrets, other providers' keys) never reach it, and the caller's
  * `env` still overrides any of these.
  */
-const INHERITED_ENVIRONMENT = [
+const PROCESS_ENVIRONMENT = [
   "PATH",
   "HOME",
   "USER",
@@ -191,6 +193,10 @@ const INHERITED_ENVIRONMENT = [
   "LOCALAPPDATA",
   "ProgramData",
   "NUMBER_OF_PROCESSORS",
+] as const
+
+const INHERITED_ENVIRONMENT = [
+  ...PROCESS_ENVIRONMENT,
   // Provider credentials the engine reads.
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
@@ -259,6 +265,13 @@ export function engineEnvironment(
   }
   delete merged.MIAO_WEBSEARCH_PROVIDER
   return merged
+}
+
+/** Model-free permission control receives process basics, never provider keys. */
+export function permissionEnvironment(inherited: Record<string, string | undefined> = process.env) {
+  return Object.fromEntries(
+    PROCESS_ENVIRONMENT.flatMap((key) => (inherited[key] === undefined ? [] : [[key, inherited[key]]])),
+  )
 }
 
 /** The argv the child engine is spawned with; pure so tests can assert it. */
@@ -345,6 +358,12 @@ export class EngineClient {
   private next = 1
   private readonly pending = new Map<number, Pending>()
   private readonly hookCalls = new Map<number, { sessionID: string; controller: AbortController }>()
+  /**
+   * Cancellation for the product calls the engine is waiting on. A native
+   * permission ask parks inside such a call, so the settle or cancel notice has
+   * to interrupt it instead of leaving the host waiting.
+   */
+  private readonly productCalls = new Map<number, AbortController>()
   private readonly eventHandlers: Array<(event: EngineEvent) => void> = []
   private readonly progressHandlers: Array<(progress: EngineProgress) => void> = []
   private readonly failureHandlers: Array<(error: Error) => void> = []
@@ -414,6 +433,35 @@ export class EngineClient {
     }
   }
 
+  /** Project control starts without model configuration or provider credentials. */
+  static startPermissionStore(options: {
+    binary: string
+    db: string
+    project: string
+    context?: { directory: string; workspaceID?: string }
+    requestTimeoutMs?: number
+  }) {
+    const child = spawn(
+      [
+        options.binary,
+        "permissions",
+        "--db",
+        options.db,
+        "--project",
+        options.project,
+        ...(options.context ? ["--directory", options.context.directory] : []),
+        ...(options.context?.workspaceID !== undefined ? ["--workspace-id", options.context.workspaceID] : []),
+      ],
+      {
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: permissionEnvironment(),
+      },
+    )
+    return new EngineClient(child, undefined, undefined, undefined, undefined, false, options.requestTimeoutMs)
+  }
+
   onEvent(handler: (event: EngineEvent) => void) {
     this.eventHandlers.push(handler)
   }
@@ -449,7 +497,24 @@ export class EngineClient {
         // An expensive catalog read must not kill unrelated active Sessions.
         // A timed-out mutation still retires the transport: its durable outcome
         // must be inspected before another attempt.
-        if (["snapshot", "sessions", "history", "events", "usage", "timer_sessions"].includes(method)) {
+        if (
+          [
+            "snapshot",
+            "context_snapshot",
+            "sessions",
+            "history",
+            "events",
+            "usage",
+            "timer_sessions",
+            "permission_import_snapshot",
+            "permission_import_changes",
+            "permission_saved_migration",
+            "permission_saved_imported",
+            "permission_pattern_list",
+            "permission_pattern_snapshot",
+            "permission_pattern_changes",
+          ].includes(method)
+        ) {
           this.pending.delete(id)
           reject(error)
           return
@@ -470,8 +535,7 @@ export class EngineClient {
         },
       })
       try {
-        this.child.stdin.write(JSON.stringify({ id, method, params }) + EOL)
-        void Promise.resolve(this.child.stdin.flush()).catch(() => this.inputClosed())
+        void this.writeInput(JSON.stringify({ id, method, params }) + EOL).catch(() => this.inputClosed())
       } catch {
         this.inputClosed()
       }
@@ -480,6 +544,11 @@ export class EngineClient {
 
   get available() {
     return !this.closed && !this.failure
+  }
+
+  private async writeInput(frame: string) {
+    await this.child.stdin.write(frame)
+    await this.child.stdin.flush()
   }
 
   private inputClosed() {
@@ -532,10 +601,9 @@ export class EngineClient {
     if (this.ephemeral) this.child.kill()
     if (!this.ephemeral) {
       await Promise.resolve()
-        .then(() => {
-          this.child.stdin.write(JSON.stringify({ id: this.next++, method: "shutdown" }) + EOL)
-          void Promise.resolve(this.child.stdin.flush()).catch(() => {})
-          this.child.stdin.end()
+        .then(async () => {
+          await this.writeInput(JSON.stringify({ id: this.next++, method: "shutdown" }) + EOL)
+          await this.child.stdin.end()
         })
         .catch(() => {})
     }
@@ -558,6 +626,9 @@ export class EngineClient {
     if (terminal) this.failure ??= error
     for (const pending of this.pending.values()) pending.reject(this.failure ?? error)
     this.pending.clear()
+    // A failed engine can no longer settle these calls; the host must stop them.
+    for (const call of this.productCalls.values()) call.abort(this.failure ?? error)
+    this.productCalls.clear()
     if (notify) for (const handler of this.failureHandlers) handler(this.failure ?? error)
   }
 
@@ -596,12 +667,16 @@ export class EngineClient {
         | { session_id?: string; name?: string; input?: unknown; call_id?: unknown; message_seq?: unknown }
         | undefined
       const reply = (value: Record<string, unknown>) => {
-        if (this.available) this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+        if (this.available)
+          void this.writeInput(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL).catch(() => this.inputClosed())
       }
       if (typeof bridgeID !== "number" || !params?.name || !this.onProductTool) {
         reply({ error: "product tool is not available on this host" })
         return
       }
+      const controller = new AbortController()
+      const signal = controller.signal
+      this.productCalls.set(bridgeID, controller)
       void this.onProductTool({
         sessionID: params.session_id ?? "",
         name: params.name,
@@ -611,18 +686,23 @@ export class EngineClient {
         callID: typeof params.call_id === "string" && params.call_id.length > 0 ? params.call_id : String(bridgeID),
         bridgeID,
         ...(typeof params.message_seq === "number" ? { messageSeq: params.message_seq } : {}),
+        signal,
       })
         .then(
           (result) => reply({ result }),
           (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
         )
         .catch(() => this.inputClosed())
+        .finally(() => this.productCalls.delete(bridgeID))
       return
     }
     if (message.method === "product_tool.cancel") {
       const bridgeID = message.bridge_id
       const params = message.params as { session_id?: string } | undefined
-      if (typeof bridgeID === "number") this.onProductToolCancel?.({ sessionID: params?.session_id ?? "", bridgeID })
+      if (typeof bridgeID === "number") {
+        this.productCalls.get(bridgeID)?.abort()
+        this.onProductToolCancel?.({ sessionID: params?.session_id ?? "", bridgeID })
+      }
       return
     }
     if (message.method === "hook_tool") {
@@ -641,7 +721,7 @@ export class EngineClient {
       const controller = new AbortController()
       const reply = (value: Record<string, unknown>) => {
         if (this.available && !controller.signal.aborted)
-          this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+          void this.writeInput(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL).catch(() => this.inputClosed())
       }
       const execute = this.onHookTool
       if (typeof bridgeID !== "number" || !params?.kind || !execute) {

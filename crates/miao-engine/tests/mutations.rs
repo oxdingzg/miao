@@ -471,3 +471,65 @@ async fn edit_result(store: &Store) -> Value {
     )
     .unwrap()
 }
+
+#[tokio::test]
+async fn advertised_edit_operands_apply_without_conflicting_alias_placeholders() {
+    for replacement in ["return a + b", ""] {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("add.ts");
+        let original = "export function add(a: number, b: number) { return a - b }\n";
+        std::fs::write(&file, original).unwrap();
+        let tools = Tools::new(directory.path())
+            .await
+            .unwrap()
+            .with_writes(true);
+        let definition = tools
+            .definitions()
+            .into_iter()
+            .find(|tool| tool.name == "edit_file")
+            .unwrap();
+        let read = tools
+            .execute(
+                "read_file",
+                json!({"path":"add.ts"}),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        // The real provider filled every advertised string slot, including
+        // empty placeholders for unused spellings. A model following this
+        // schema must be able to express one unambiguous replacement.
+        let mut input = json!({
+            "path":"add.ts",
+            "expected_sha256":read["sha256"],
+            "old_string":"return a - b",
+            "new_string":replacement,
+            "anchor":"",
+            "new_text":"",
+            "replace_all":false,
+        });
+        input
+            .as_object_mut()
+            .unwrap()
+            .retain(|key, _| definition.input_schema["properties"].get(key).is_some());
+        assert!(jsonschema::is_valid(&definition.input_schema, &input));
+        let (runtime, store) = launch(
+            directory.path(),
+            "edit_file",
+            input,
+            config(Decision::Allow),
+        )
+        .await;
+        finished(&store).await;
+        let result = edit_result(&store).await;
+        runtime.shutdown().await;
+        assert_eq!(
+            result["applied"], true,
+            "schema-valid edit was rejected: {result}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(file).unwrap(),
+            original.replace("return a - b", replacement)
+        );
+    }
+}

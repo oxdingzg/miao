@@ -71,3 +71,11 @@ bun docs/experiments/2026-10-28-ts-runner-retirement/generate.cjs
 ## 7. 本次核验
 
 冻结版本的 routing、engine-placement、run-coordinator、permission-decide 四个既有实际实现测试文件共 52 测试、124 断言通过。此结果验证既有所有权、调度和权限边界；没有执行真实客户端迁移或声明删除后验收。生成器复跑与清单一致，格式和文档链接检查通过。
+
+## 8. 共享错误合同解耦
+
+SessionV2 与 SessionExecution 的公开 resume 类型改用已有 `session/error.ts` 中的
+`ExecutionError`，不再为了错误联合类型依赖 `session/runner/index.ts`。联合成员保持
+一致，runner 继续导出兼容的 `RunError` 名称。此项只移除两个公共接口到可退役入口的
+类型耦合，不改变运行时调度、错误标签或 legacy runner 的服务绑定，也不声明启动
+性能改善。后续删除 runner 入口时仍需处理实际 local 执行层及其测试。

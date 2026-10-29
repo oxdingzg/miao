@@ -17,7 +17,7 @@ use crate::dialogs::{AccountInfo, ModelInfo};
 use crate::event::{AppEvent, Bus};
 use crate::platform::attention;
 use crate::session::{
-    catalog_rows, home_rows, DisplayFile, SessionState, SessionSummary, Transcript,
+    catalog_rows, home_rows, DisplayFile, RevertPlan, SessionState, SessionSummary, Transcript,
 };
 use crate::status::UsageSummary;
 use crate::transport::{self, EngineClient, EngineSpawn, TransportEvent};
@@ -30,6 +30,17 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const EVENTS_PAGE: usize = 100;
 
 pub enum Request {
+    VcsChanges {
+        generation: u64,
+        session_id: String,
+    },
+    SavedPermissions {
+        generation: u64,
+    },
+    RevokePermission {
+        generation: u64,
+        id: String,
+    },
     RefreshSessions,
     Open(String),
     Refresh,
@@ -92,6 +103,26 @@ pub enum Request {
         session_id: String,
         archived: bool,
     },
+    Pin {
+        session_id: String,
+        pinned: bool,
+    },
+    /// Ask what a revert at this boundary would change, without changing it.
+    RevertPreview {
+        session_id: String,
+        boundary_seq: u64,
+    },
+    /// Stage and commit a revert: the file set (when the engine has one) and
+    /// the conversation rewind land together.
+    Revert {
+        session_id: String,
+        boundary_seq: u64,
+        files: bool,
+    },
+    /// Restore the messages the last revert hid.
+    Redo {
+        session_id: String,
+    },
     Remove {
         session_id: String,
     },
@@ -120,6 +151,19 @@ impl Handle {
 }
 
 impl Handle {
+    pub fn vcs_changes(&self, generation: u64, session_id: &str) {
+        let _ = self.tx.send(Request::VcsChanges {
+            generation,
+            session_id: session_id.into(),
+        });
+    }
+
+    pub fn saved_permissions(&self, generation: u64) {
+        let _ = self.tx.send(Request::SavedPermissions { generation });
+    }
+    pub fn revoke_permission(&self, generation: u64, id: String) {
+        let _ = self.tx.send(Request::RevokePermission { generation, id });
+    }
     pub fn refresh_sessions(&self) {
         let _ = self.tx.send(Request::RefreshSessions);
     }
@@ -226,8 +270,38 @@ impl Handle {
         });
     }
 
+    /// Pin or unpin a Session. The engine records the timestamp, so the list
+    /// order survives a restart and is shared with every other client.
+    pub fn pin(&self, session_id: &str, pinned: bool) {
+        let _ = self.tx.send(Request::Pin {
+            session_id: session_id.to_string(),
+            pinned,
+        });
+    }
+
     pub fn remove(&self, session_id: &str) {
         let _ = self.tx.send(Request::Remove {
+            session_id: session_id.to_string(),
+        });
+    }
+
+    pub fn revert_preview(&self, session_id: &str, boundary_seq: u64) {
+        let _ = self.tx.send(Request::RevertPreview {
+            session_id: session_id.to_string(),
+            boundary_seq,
+        });
+    }
+
+    pub fn revert(&self, session_id: &str, boundary_seq: u64, files: bool) {
+        let _ = self.tx.send(Request::Revert {
+            session_id: session_id.to_string(),
+            boundary_seq,
+            files,
+        });
+    }
+
+    pub fn redo(&self, session_id: &str) {
+        let _ = self.tx.send(Request::Redo {
             session_id: session_id.to_string(),
         });
     }
@@ -240,6 +314,29 @@ impl Handle {
 pub struct Settings {
     pub spawn: EngineSpawn,
     pub model: String,
+}
+
+/// The stand-in model a Session uses when nothing supplied a route. The engine
+/// resolves it to whatever provider its defaults name, so a turn through it
+/// fails on the upstream instead of on the missing route.
+pub const UNROUTED_MODEL: &str = "unavailable/model";
+
+/// A startup notice for a Session that has no model route. The product launcher
+/// runs the engine through a shim (`MIAO_ENGINE_REAL_BIN`) that builds the
+/// product's routes and credentials, so only a TUI started directly is
+/// unrouted — and it would otherwise fail its first prompt with an
+/// authentication error from a provider the operator never chose.
+pub fn unrouted_notice(args: &[String], model: &str, supplied_by_shim: bool) -> Option<String> {
+    if supplied_by_shim || model != UNROUTED_MODEL {
+        return None;
+    }
+    if args.iter().any(|arg| arg == "--model-routes-config") {
+        return Some("no model selected: choose one with /model".to_string());
+    }
+    Some(
+        "no model routes: start the product with `miao`, or set MIAO_ENGINE_MODEL_ROUTES_CONFIG"
+            .to_string(),
+    )
 }
 
 pub fn settings(
@@ -256,7 +353,7 @@ pub fn settings(
     // the first launch of the Rust TUI fail before the engine can initialize.
     let model = model
         .or_else(|| std::env::var("MIAO_TUI_MODEL").ok())
-        .unwrap_or_else(|| "unavailable/model".to_string());
+        .unwrap_or_else(|| UNROUTED_MODEL.to_string());
     let config_dir = config_dir.or_else(crate::config::global_dir);
     let spawn = EngineSpawn {
         program: engine_binary(),
@@ -527,6 +624,29 @@ async fn run(
                         }
                     }
                 }
+                Some(Request::VcsChanges { generation, session_id }) => {
+                    let result = client
+                        .request("vcs_status", json!({ "session_id": session_id }))
+                        .await
+                        .map_err(|error| error.to_string())
+                        .and_then(crate::workspace_changes::decode);
+                    bus.send(AppEvent::WorkspaceChanges { generation, result });
+                }
+                Some(Request::SavedPermissions { generation }) => {
+                    let result = client.command("permission_pattern_list").await
+                        .map_err(|error| error.to_string())
+                        .and_then(crate::saved_permissions::decode);
+                    bus.send(AppEvent::SavedPermissions { generation, result });
+                }
+                Some(Request::RevokePermission { generation, id }) => {
+                    let result = client.request("permission_pattern_remove", json!({ "rule_id": id })).await
+                        .map_err(|error| error.to_string())
+                        .and_then(|value| match value.get("removed").and_then(Value::as_bool) {
+                            Some(_) => Ok(()),
+                            None => Err("Invalid permission revocation response".into()),
+                        });
+                    bus.send(AppEvent::PermissionRevoked { generation, id, result });
+                }
                 Some(Request::Catalog) => {
                     match client.command("model_catalog").await {
                         Ok(value) => {
@@ -627,6 +747,23 @@ async fn run(
                         }
                     }
                 }
+                Some(Request::Pin {
+                    session_id,
+                    pinned,
+                }) => {
+                    let result = client
+                        .request(
+                            "pin",
+                            json!({ "session_id": session_id, "pinned": pinned }),
+                        )
+                        .await;
+                    match result {
+                        Ok(_) => refresh_sessions(&client, &bus).await,
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("pin failed: {error}")))
+                        }
+                    }
+                }
                 Some(Request::Remove { session_id }) => {
                     match client
                         .request("remove", json!({ "session_id": session_id }))
@@ -641,6 +778,78 @@ async fn run(
                         }
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("delete failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::RevertPreview {
+                    session_id,
+                    boundary_seq,
+                }) => {
+                    let result = client
+                        .request(
+                            "revert_preview",
+                            json!({ "session_id": session_id, "boundary_seq": boundary_seq }),
+                        )
+                        .await;
+                    match result {
+                        Ok(value) => bus.send(AppEvent::RevertPreview {
+                            session_id,
+                            boundary_seq,
+                            plan: RevertPlan::from_value(&value),
+                        }),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("preview failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::Revert {
+                    session_id,
+                    boundary_seq,
+                    files,
+                }) => {
+                    let staged = client
+                        .request(
+                            "revert_stage",
+                            json!({
+                                "session_id": session_id,
+                                "boundary_seq": boundary_seq,
+                                "files": files,
+                            }),
+                        )
+                        .await;
+                    // A stage that never commits would leave the workspace
+                    // restored with no visible rewind, so the two land
+                    // together or not at all.
+                    let result = match staged {
+                        Ok(_) => client
+                            .request("revert_commit", json!({ "session_id": session_id }))
+                            .await
+                            .map(|_| ()),
+                        Err(error) => Err(error),
+                    };
+                    match result {
+                        Ok(_) => {
+                            if open.as_ref().is_some_and(|state| state.id == session_id) {
+                                dirty.get_or_insert_with(Instant::now);
+                            }
+                        }
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("revert failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::Redo { session_id }) => {
+                    let result = client
+                        .request("unrevert", json!({ "session_id": session_id }))
+                        .await;
+                    match result {
+                        Ok(_) => {
+                            if open.as_ref().is_some_and(|state| state.id == session_id) {
+                                dirty.get_or_insert_with(Instant::now);
+                            }
+                        }
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("redo failed: {error}")))
                         }
                     }
                 }
@@ -670,6 +879,20 @@ async fn run(
                         if let Some((kind, id)) = attention_event(&event) {
                             bus.send(AppEvent::Attention { kind, id });
                         }
+                        // Retries and tool calls are durable, so the live status
+                        // reads them from the journal rather than the ephemeral
+                        // progress channel.
+                        match event.kind.as_str() {
+                            "provider.retry" | "tool.planned" | "tool.completed" => {
+                                bus.send(AppEvent::Provider(json!({
+                                    "kind": event.kind.as_str(),
+                                    "run_id": event.data.get("run_id").cloned().unwrap_or(Value::Null),
+                                    "attempt": event.data.get("attempt").cloned().unwrap_or(Value::Null),
+                                    "name": event.data.get("name").cloned().unwrap_or(Value::Null),
+                                })));
+                            }
+                            _ => {}
+                        }
                     }
                     // Anything that changes run status, the transcript, or a
                     // pending decision settles into the next snapshot.
@@ -698,7 +921,23 @@ async fn run(
                     )));
                     return;
                 }
-                Some(TransportEvent::Resync(_)) | Some(TransportEvent::Progress(_)) => {}
+                Some(TransportEvent::Progress(params)) => {
+                    // Ephemeral provider progress is what keeps a waiting status
+                    // honest; a frame for another Session has no status to update.
+                    if open.as_ref().is_some_and(|state| {
+                        state.id == params.get("session_id").and_then(Value::as_str).unwrap_or_default()
+                    }) {
+                        bus.send(AppEvent::Provider(params));
+                    }
+                }
+                Some(TransportEvent::Config(report)) => {
+                    // The engine reloads its own files in standalone mode, so
+                    // this arrives without any user action.
+                    if let Some(notice) = config_notice(&report) {
+                        bus.send(AppEvent::Notice(notice));
+                    }
+                }
+                Some(TransportEvent::Resync(_)) => {}
             },
             _ = tokio::time::sleep_until(deadline.unwrap_or_else(Instant::now)), if deadline.is_some() => {
                 dirty = None;
@@ -708,6 +947,20 @@ async fn run(
             }
         }
     }
+}
+
+/// What a `config` frame means for the user: the sections that moved, or why
+/// the engine refused the reload. A frame with nothing changed says nothing.
+fn config_notice(report: &Value) -> Option<String> {
+    if let Some(error) = report.get("error").and_then(Value::as_str) {
+        return Some(format!("configuration reload failed: {error}"));
+    }
+    let changed = report.get("changed")?.as_array()?;
+    let names = changed.iter().filter_map(Value::as_str).collect::<Vec<_>>();
+    if names.is_empty() {
+        return None;
+    }
+    Some(format!("configuration reloaded: {}", names.join(", ")))
 }
 
 async fn refresh_sessions(client: &EngineClient, bus: &Bus) {
@@ -870,6 +1123,36 @@ mod tests {
             .map(|(name, value)| (name.to_string(), value.to_string()))
             .collect();
         move |name| pairs.get(name).cloned()
+    }
+
+    #[test]
+    fn an_unrouted_model_is_announced_unless_the_product_supplied_routes() {
+        let bare = vec![
+            "serve".to_string(),
+            "--model".to_string(),
+            UNROUTED_MODEL.to_string(),
+        ];
+        assert_eq!(
+            unrouted_notice(&bare, UNROUTED_MODEL, false).as_deref(),
+            Some("no model routes: start the product with `miao`, or set MIAO_ENGINE_MODEL_ROUTES_CONFIG")
+        );
+        // The product's shim replaces the engine's model with the default route,
+        // so the placeholder in argv says nothing about this Session.
+        assert_eq!(unrouted_notice(&bare, UNROUTED_MODEL, true), None);
+        // A manifest makes the picker usable; the Session just has no model yet.
+        let mut routed = bare.clone();
+        routed.extend([
+            "--model-routes-config".to_string(),
+            "/routes.json".to_string(),
+        ]);
+        assert_eq!(
+            unrouted_notice(&routed, UNROUTED_MODEL, false).as_deref(),
+            Some("no model selected: choose one with /model")
+        );
+        assert_eq!(
+            unrouted_notice(&routed, "google/gemini-3.8-flash", false),
+            None
+        );
     }
 
     #[test]

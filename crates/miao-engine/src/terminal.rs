@@ -327,8 +327,11 @@ impl Registry {
                 commands,
             }),
         );
+        // Report the confinement this terminal really has: an operator opt-out
+        // runs the same pty unconfined, and claiming `workspace_write` there
+        // would hide a terminal that is not sandboxed at all.
         Ok(
-            json!({"id":id,"rows":input.rows,"cols":input.cols,"sandbox_profile":"workspace_write","network_allowed":network,"max_lifetime_ms":86400000}),
+            json!({"id":id,"rows":input.rows,"cols":input.cols,"sandbox_profile":if sandbox{"workspace_write"}else{"off"},"network_allowed":network,"max_lifetime_ms":86400000}),
         )
     }
 

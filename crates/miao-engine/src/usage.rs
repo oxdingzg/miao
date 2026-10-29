@@ -94,14 +94,19 @@ impl Totals {
 }
 
 /// Provider-reported token counts are integers; a JSON string is accepted
-/// because some gateways quote them.
+/// because some gateways quote them. Invalid counters stay unknown; coercing
+/// a negative or fractional count to zero would create false billing coverage.
 fn number(value: Option<&Value>) -> Option<u64> {
     let value = value?;
     if let Some(value) = value.as_u64() {
         return Some(value);
     }
     if let Some(value) = value.as_f64() {
-        return Some(value.max(0.0) as u64);
+        return (value.is_finite()
+            && value >= 0.0
+            && value.fract() == 0.0
+            && value < u64::MAX as f64)
+            .then_some(value as u64);
     }
     value.as_str()?.trim().parse().ok()
 }
@@ -160,7 +165,7 @@ pub fn bedrock(raw: &Value) -> Value {
         field(raw, &["totalTokens"]).or_else(|| {
             input
                 .zip(output)
-                .map(|(input, output)| input.saturating_add(output))
+                .and_then(|(input, output)| input.checked_add(output))
         }),
     )
 }
@@ -170,9 +175,11 @@ pub fn anthropic(raw: &Value) -> Value {
     let cache_read = field(raw, &["cache_read_input_tokens"]);
     let cache_write = field(raw, &["cache_creation_input_tokens"]);
     let output = field(raw, &["output_tokens"]);
-    let input = non_cached
-        .is_some()
-        .then(|| non_cached.unwrap_or(0) + cache_read.unwrap_or(0) + cache_write.unwrap_or(0));
+    let input = non_cached.and_then(|input| {
+        input
+            .checked_add(cache_read.unwrap_or(0))?
+            .checked_add(cache_write.unwrap_or(0))
+    });
     let mut usage = Map::new();
     insert(&mut usage, "inputTokens", input);
     insert(&mut usage, "outputTokens", output);
@@ -183,7 +190,9 @@ pub fn anthropic(raw: &Value) -> Value {
         usage,
         "anthropic-messages",
         raw,
-        input.zip(output).map(|(input, output)| input + output),
+        input
+            .zip(output)
+            .and_then(|(input, output)| input.checked_add(output)),
     )
 }
 
@@ -207,8 +216,11 @@ pub fn chat(raw: &Value) -> Value {
     insert(&mut usage, "nonCachedInputTokens", non_cached);
     insert(&mut usage, "cacheReadInputTokens", cache_read);
     insert(&mut usage, "reasoningTokens", reasoning);
-    let total = field(raw, &["total_tokens"])
-        .or_else(|| input.zip(output).map(|(input, output)| input + output));
+    let total = field(raw, &["total_tokens"]).or_else(|| {
+        input
+            .zip(output)
+            .and_then(|(input, output)| input.checked_add(output))
+    });
     finish(usage, "openai-chat", raw, total)
 }
 
@@ -232,8 +244,11 @@ pub fn responses(raw: &Value) -> Value {
     insert(&mut usage, "cacheReadInputTokens", cache_read);
     insert(&mut usage, "cacheWriteInputTokens", cache_write);
     insert(&mut usage, "reasoningTokens", reasoning);
-    let total = field(raw, &["total_tokens"])
-        .or_else(|| input.zip(output).map(|(input, output)| input + output));
+    let total = field(raw, &["total_tokens"]).or_else(|| {
+        input
+            .zip(output)
+            .and_then(|(input, output)| input.checked_add(output))
+    });
     finish(usage, "openai-responses", raw, total)
 }
 
@@ -244,7 +259,7 @@ pub fn gemini(raw: &Value) -> Value {
     // `candidatesTokenCount` is visible-only: sum thoughts to keep
     // `outputTokens` inclusive, and only when the visible part is reported.
     let output = field(raw, &["candidatesTokenCount"])
-        .map(|visible| visible + field(raw, &["thoughtsTokenCount"]).unwrap_or(0));
+        .and_then(|visible| visible.checked_add(field(raw, &["thoughtsTokenCount"]).unwrap_or(0)));
     let cache_read = field(raw, &["cachedContentTokenCount"]);
     let non_cached = input
         .zip(cache_read)
@@ -256,8 +271,11 @@ pub fn gemini(raw: &Value) -> Value {
     insert(&mut usage, "nonCachedInputTokens", non_cached);
     insert(&mut usage, "cacheReadInputTokens", cache_read);
     insert(&mut usage, "reasoningTokens", reasoning);
-    let total = field(raw, &["totalTokenCount"])
-        .or_else(|| input.zip(output).map(|(input, output)| input + output));
+    let total = field(raw, &["totalTokenCount"]).or_else(|| {
+        input
+            .zip(output)
+            .and_then(|(input, output)| input.checked_add(output))
+    });
     finish(usage, "gemini", raw, total)
 }
 
@@ -293,6 +311,59 @@ pub fn cache_lineage(usage: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_provider_counters_remain_unknown_instead_of_becoming_zero_or_truncated() {
+        for invalid in [
+            json!(-1),
+            json!(1.5),
+            json!(1e40),
+            json!("-1"),
+            json!("1.5"),
+        ] {
+            let usage = chat(&json!({"prompt_tokens": invalid, "completion_tokens": 2}));
+            assert!(usage.get("inputTokens").is_none(), "{usage}");
+            assert!(usage.get("totalTokens").is_none(), "{usage}");
+            assert_eq!(usage["outputTokens"], 2);
+            assert!(usage.get(PROVIDER_METADATA).is_some());
+        }
+        assert_eq!(chat(&json!({"prompt_tokens": 0}))["inputTokens"], 0);
+        assert_eq!(chat(&json!({"prompt_tokens": "42"}))["inputTokens"], 42);
+        assert_eq!(chat(&json!({"prompt_tokens": 42.0}))["inputTokens"], 42);
+        assert_eq!(
+            chat(&json!({"prompt_tokens": u64::MAX}))["inputTokens"],
+            u64::MAX
+        );
+    }
+
+    #[test]
+    fn overflowing_derived_totals_stay_unknown_without_panicking_or_wrapping() {
+        let raw = json!({"prompt_tokens": u64::MAX, "completion_tokens": 1});
+        assert!(chat(&raw).get("totalTokens").is_none());
+        assert!(
+            responses(&json!({"input_tokens": u64::MAX, "output_tokens": 1}))
+                .get("totalTokens")
+                .is_none()
+        );
+        assert!(
+            bedrock(&json!({"inputTokens": u64::MAX, "outputTokens": 1}))
+                .get("totalTokens")
+                .is_none()
+        );
+        let usage = anthropic(&json!({"input_tokens": u64::MAX, "cache_read_input_tokens": 1}));
+        assert!(usage.get("inputTokens").is_none());
+        assert_eq!(usage["nonCachedInputTokens"], u64::MAX);
+        assert!(
+            gemini(&json!({"candidatesTokenCount": u64::MAX, "thoughtsTokenCount": 1}))
+                .get("outputTokens")
+                .is_none()
+        );
+        assert!(
+            gemini(&json!({"promptTokenCount": u64::MAX, "candidatesTokenCount": 1}))
+                .get("totalTokens")
+                .is_none()
+        );
+    }
 
     #[test]
     fn cache_lineage_reports_present_axes_and_hit_ratio() {

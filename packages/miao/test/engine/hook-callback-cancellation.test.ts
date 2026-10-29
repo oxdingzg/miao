@@ -3,8 +3,9 @@ import { Effect } from "effect"
 import path from "node:path"
 import { EngineClient } from "@/engine/client"
 import { tmpdir } from "../fixture/fixture"
+import { engineFake } from "../fixture/engine-binary"
 
-const fake = path.join(import.meta.dir, "..", "fixture", "engine-fake.ts")
+const fake = engineFake
 const frame = (session = "s", bridge = 11) => ({
   method: "hook_tool",
   bridge_id: bridge,

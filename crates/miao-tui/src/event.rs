@@ -5,7 +5,7 @@ use serde_json::Value;
 use crate::dialogs::{AccountInfo, ModelInfo};
 use crate::platform::attention;
 use crate::platform::clipboard;
-use crate::session::{SessionState, SessionSummary, Transcript};
+use crate::session::{RevertPlan, SessionState, SessionSummary, Transcript};
 use crate::status::UsageSummary;
 
 #[derive(Debug)]
@@ -37,12 +37,35 @@ pub enum AppEvent {
     Catalog(Vec<SessionSummary>),
     /// The engine's model catalog, one entry per selectable binding.
     Models(Vec<ModelInfo>),
+    SavedPermissions {
+        generation: u64,
+        result: Result<Vec<crate::saved_permissions::Rule>, String>,
+    },
+    PermissionRevoked {
+        generation: u64,
+        id: String,
+        result: Result<(), String>,
+    },
+    WorkspaceChanges {
+        generation: u64,
+        result: Result<crate::workspace_changes::VcsState, String>,
+    },
     /// The selectable accounts named by the same catalog.
     Accounts(Vec<AccountInfo>),
     /// The open Session's billed usage, for the status dialog.
     Usage(UsageSummary),
+    /// What a revert at one boundary would change, for the confirm dialog.
+    RevertPreview {
+        session_id: String,
+        boundary_seq: u64,
+        plan: RevertPlan,
+    },
     /// The Session currently open was deleted.
     SessionRemoved(String),
+    /// One ephemeral provider fact for the open Session: a progress frame or a
+    /// journaled retry. It never belongs to the transcript, only to the live
+    /// status line.
+    Provider(Value),
     /// A fresh projection of the open Session.
     SessionOpened {
         summary: Option<SessionSummary>,
@@ -52,6 +75,9 @@ pub enum AppEvent {
     /// A control action (cancel, approve, answer) the engine refused. Shown as
     /// a composer notice; it never ends the transport.
     ActionFailed(String),
+    /// Something the user should know that is not a failure, such as the engine
+    /// reloading its configuration. Shown as a composer notice.
+    Notice(String),
     /// A prompt the engine refused. The UI puts `text` and its attachments
     /// back in the composer so the draft is never lost.
     PromptFailed {

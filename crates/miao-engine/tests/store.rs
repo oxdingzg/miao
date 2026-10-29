@@ -1,5 +1,5 @@
 use miao_engine::{
-    protocol::{Delivery, Error, Input},
+    protocol::{CompactScope, Delivery, Error, Input},
     store::Store,
 };
 use serde_json::json;
@@ -144,12 +144,15 @@ async fn an_operator_compaction_request_is_durable_idempotent_and_settled_once()
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     assert!(matches!(
-        store.request_compaction("s").await,
+        store.request_compaction("s", CompactScope::default()).await,
         Err(Error::Invalid(_))
     ));
     store.admit(input("one", Delivery::Steer)).await.unwrap();
     assert_eq!(
-        store.request_compaction("s").await.unwrap(),
+        store
+            .request_compaction("s", CompactScope::default())
+            .await
+            .unwrap(),
         json!({"accepted": true, "duplicate": false, "pending": true})
     );
     let request = store
@@ -159,28 +162,34 @@ async fn an_operator_compaction_request_is_durable_idempotent_and_settled_once()
         .unwrap();
     // A retried command neither queues a second request nor loses the intent.
     assert_eq!(
-        store.request_compaction("s").await.unwrap(),
+        store
+            .request_compaction("s", CompactScope::default())
+            .await
+            .unwrap(),
         json!({"accepted": true, "duplicate": true, "pending": true})
     );
     assert_eq!(
         store.pending_compaction_request("s").await.unwrap(),
-        Some(request)
+        Some(request.clone())
     );
     // One attempt answers it, either way, and a second settle is a no-op.
     assert!(store
-        .settle_compaction_request("s", request, false)
+        .settle_compaction_request("s", request.seq, false)
         .await
         .unwrap()
         .is_some());
     assert_eq!(store.pending_compaction_request("s").await.unwrap(), None);
     assert!(store
-        .settle_compaction_request("s", request, true)
+        .settle_compaction_request("s", request.seq, true)
         .await
         .unwrap()
         .is_none());
     // Asking again is what asks for another try.
     assert_eq!(
-        store.request_compaction("s").await.unwrap(),
+        store
+            .request_compaction("s", CompactScope::default())
+            .await
+            .unwrap(),
         json!({"accepted": true, "duplicate": false, "pending": true})
     );
     assert!(store
@@ -212,6 +221,45 @@ async fn archiving_is_reversible_and_never_invents_a_session() {
         json!({"accepted": true, "archived": false})
     );
     assert!(store.snapshot("s").await.unwrap()["archived_at_ms"].is_null());
+}
+
+#[tokio::test]
+async fn pinning_is_reversible_and_never_counts_as_activity() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    assert!(matches!(
+        store.set_pinned("s", true).await,
+        Err(Error::Invalid(_))
+    ));
+    store.admit(input("one", Delivery::Steer)).await.unwrap();
+    let before = store.snapshot("s").await.unwrap();
+    assert!(before["pinned_at_ms"].is_null());
+    assert_eq!(
+        store.set_pinned("s", true).await.unwrap(),
+        json!({"accepted": true, "pinned": true})
+    );
+    let pinned = store.snapshot("s").await.unwrap();
+    assert!(pinned["pinned_at_ms"].is_number());
+    // A pin is a list preference, not activity: the catalog's update time must
+    // not move, or pinning would look like the Session had just been used.
+    assert_eq!(pinned["updated_at_ms"], before["updated_at_ms"]);
+    // The pin is a durable event, so another client replaying the catalog sees
+    // the same order the writer just created.
+    let events = store.events("s", 0, 100).await.unwrap();
+    assert!(events
+        .iter()
+        .any(|event| event.kind == "session.pinned" && event.data["pinned"] == true));
+    assert_eq!(
+        store.set_pinned("s", false).await.unwrap(),
+        json!({"accepted": true, "pinned": false})
+    );
+    assert!(store.snapshot("s").await.unwrap()["pinned_at_ms"].is_null());
+    // Pinning the archive flag's sibling column never disturbs the archive one.
+    store.set_archived("s", true).await.unwrap();
+    store.set_pinned("s", true).await.unwrap();
+    let both = store.snapshot("s").await.unwrap();
+    assert!(both["archived_at_ms"].is_number());
+    assert!(both["pinned_at_ms"].is_number());
 }
 
 #[tokio::test]

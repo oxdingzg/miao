@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Source {
     pub label: String,
@@ -131,7 +131,7 @@ pub(crate) async fn read_sources(
 /// absolute paths require a read-only directory reference. `*.md` at its root
 /// and nested `SKILL.md` files are discovered under directory and file policy.
 /// The body is read on demand, so it never inflates the prompt.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SkillDirectory {
     pub path: String,
@@ -140,7 +140,7 @@ pub struct SkillDirectory {
 /// A host-authorized read-only reference: a directory or file outside the
 /// model-writable workspace whose location is listed in the system context and
 /// whose files may be read. It never becomes writable.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Reference {
     pub path: String,
@@ -303,7 +303,7 @@ fn collect_files(dir: &std::path::Path, depth: u8, out: &mut Vec<std::path::Path
 /// Resolve one skill by name from the host-selected directories. A skill whose
 /// body exceeds the discovery bound is skipped, matching the listing.
 pub(crate) fn find_skill(tools: &Tools, name: &str) -> Option<LoadedSkill> {
-    for directory in tools.skill_directories() {
+    for directory in tools.skill_directories().iter() {
         let path = std::path::Path::new(&directory.path);
         let root = if path.is_absolute() {
             path.to_path_buf()
@@ -384,7 +384,7 @@ async fn discover_skills(
 ) -> Result<Vec<Skill>, ToolError> {
     let root = std::path::Path::new(tools.location());
     let mut skills = Vec::new();
-    for directory in tools.skill_directories() {
+    for directory in tools.skill_directories().iter() {
         if cancel.is_cancelled() {
             return Err(ToolError::Interrupted);
         }
@@ -574,14 +574,16 @@ pub(crate) async fn assemble_for_agent(
         path: "AGENTS.md".into(),
     };
     // Host global/ancestor instructions precede this workspace's instructions;
-    // additional workspace-relative sources retain their configured order.
-    for source in tools
-        .context_sources()
+    // additional workspace-relative sources retain their configured order. One
+    // snapshot for the whole section keeps the two halves consistent.
+    let configured = tools.context_sources();
+    for source in configured
+        .iter()
         .filter(|source| std::path::Path::new(&source.path).is_absolute())
         .chain(tools.workspace_instructions().then_some(&root))
         .chain(
-            tools
-                .context_sources()
+            configured
+                .iter()
                 .filter(|source| !std::path::Path::new(&source.path).is_absolute()),
         )
     {
@@ -656,7 +658,7 @@ pub(crate) async fn assemble_for_agent(
         let mut section = String::from(
             "\n\n<available-references>\nHost-authorized read-only references outside the workspace. Read a listed file by its absolute path.\n",
         );
-        for reference in references {
+        for reference in references.iter() {
             section.push_str(&format!(
                 "- {}: {}\n",
                 reference.description, reference.path
@@ -666,7 +668,7 @@ pub(crate) async fn assemble_for_agent(
         if system.len() + section.len() <= 65536 {
             system.push_str(&section);
         }
-        for reference in references {
+        for reference in references.iter() {
             sources.push(json!({"type":"reference","path":reference.path,"status":"authorized"}));
         }
     }

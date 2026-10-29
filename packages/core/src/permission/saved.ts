@@ -6,7 +6,10 @@ import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { ProjectV2 } from "../project"
 import { PermissionTable } from "./sql"
+import { PermissionHandoff } from "./handoff"
 import { PermissionSaved } from "@miao/schema/permission-saved"
+
+export const NativePrefix = PermissionSaved.NativePrefix
 
 export const ID = PermissionSaved.ID
 export type ID = typeof ID.Type
@@ -41,10 +44,16 @@ const layer = Layer.effect(
 
     const list = Effect.fn("PermissionSaved.list")(function* (input?: ListInput) {
       const rows = yield* db
-        .select()
-        .from(PermissionTable)
-        .where(input?.projectID ? eq(PermissionTable.project_id, input.projectID) : undefined)
-        .all()
+        .transaction((tx) =>
+          Effect.gen(function* () {
+            yield* PermissionHandoff.requireLegacy(tx, input?.projectID)
+            return yield* tx
+              .select()
+              .from(PermissionTable)
+              .where(input?.projectID ? eq(PermissionTable.project_id, input.projectID) : undefined)
+              .all()
+          }),
+        )
         .pipe(Effect.orDie)
       return rows.map(
         (row): Info => ({ id: row.id, projectID: row.project_id, action: row.action, resource: row.resource }),
@@ -52,6 +61,7 @@ const layer = Layer.effect(
     })
 
     const add = Effect.fn("PermissionSaved.add")(function* (input: AddInput) {
+      yield* PermissionHandoff.requireLegacy(db, input.projectID)
       if (!input.resources.length) return
       yield* db
         .insert(PermissionTable)
@@ -69,7 +79,19 @@ const layer = Layer.effect(
     })
 
     const remove = Effect.fn("PermissionSaved.remove")(function* (id: ID) {
-      yield* db.delete(PermissionTable).where(eq(PermissionTable.id, id)).run().pipe(Effect.orDie)
+      yield* db
+        .transaction((tx) =>
+          Effect.gen(function* () {
+            const row = yield* tx
+              .select({ project_id: PermissionTable.project_id })
+              .from(PermissionTable)
+              .where(eq(PermissionTable.id, id))
+              .get()
+            yield* PermissionHandoff.requireLegacy(tx, row?.project_id)
+            yield* tx.delete(PermissionTable).where(eq(PermissionTable.id, id)).run()
+          }),
+        )
+        .pipe(Effect.orDie)
     })
 
     return Service.of({ list, add, remove })

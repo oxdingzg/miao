@@ -4,7 +4,7 @@ import { Context, Effect, Layer } from "effect"
 import { LayerNode } from "../effect/layer-node"
 import { Node } from "../effect/app-node"
 import type { SessionEvent } from "./event"
-import { SessionRunner } from "./runner/index"
+import type { ExecutionError } from "./error"
 import { SessionSchema } from "./schema"
 
 export interface Interface {
@@ -14,7 +14,7 @@ export interface Interface {
   /** Current process status for the Session, including the active drain phase. */
   readonly status: (sessionID: SessionSchema.ID) => Effect.Effect<SessionEvent.StatusInfo>
   /** Starts execution while idle or joins the active execution. */
-  readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, SessionRunner.RunError>
+  readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, ExecutionError>
   /** Registers newly recorded work. Repeated wakeups may coalesce. */
   readonly wake: (sessionID: SessionSchema.ID) => Effect.Effect<void>
   /** Interrupt active work owned by this process. Idle interruption is a no-op. */

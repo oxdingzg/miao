@@ -91,14 +91,30 @@ fn read_blob(database: &Path, session: &str, hash: &str) -> Result<Vec<u8>, Erro
         .map_err(|_| Error::Invalid("file snapshot data is no longer available".into()))
 }
 
+/// A staged snapshot identity as text. Native captures store a numeric row id
+/// and assembled imports store a transfer identity, so both representations
+/// are legal in one column; a history-only stage stores no identity at all.
+pub(crate) fn id_text(value: rusqlite::types::Value) -> Result<String, rusqlite::Error> {
+    match value {
+        rusqlite::types::Value::Text(id) => Ok(id),
+        rusqlite::types::Value::Integer(id) => Ok(id.to_string()),
+        other => Err(rusqlite::Error::InvalidColumnType(
+            0,
+            "snapshot_id".into(),
+            other.data_type(),
+        )),
+    }
+}
+
 fn retain(conn: &rusqlite::Connection, database: &Path, session: &str) -> Result<(), Error> {
-    let staged_id: Option<i64> = conn
+    let staged_id: Option<String> = conn
         .query_row(
             "SELECT snapshot_id FROM engine_staged_revert WHERE session_id=?1",
             [session],
-            |row| row.get(0),
+            |row| id_text(row.get(0)?),
         )
         .optional()?;
+    let staged_id = staged_id.and_then(|id| id.parse::<i64>().ok());
     let mut statement = conn.prepare(
         "SELECT id,manifest FROM engine_file_snapshot WHERE session_id=?1 ORDER BY boundary_seq DESC, id DESC",
     )?;
@@ -378,8 +394,45 @@ fn preimage(
     Ok(previous)
 }
 
+/// The file set a boundary restores, and the identity of the snapshot it came
+/// from. `None` means the Session has no recorded file state at or before the
+/// boundary, which is a history-only revert, not a failure.
+type Resolved = (BTreeMap<String, Option<String>>, i64, String);
+
+fn resolve(
+    conn: &rusqlite::Connection,
+    session: &str,
+    boundary_seq: u64,
+) -> Result<Option<Resolved>, Error> {
+    let found: Option<(i64, i64, String)> = conn
+        .query_row(
+            "SELECT id,boundary_seq,manifest FROM engine_file_snapshot WHERE session_id=?1 AND boundary_seq<=?2 ORDER BY boundary_seq DESC, id DESC LIMIT 1",
+            params![session, boundary_seq as i64],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((snapshot_id, boundary, manifest)) = found else {
+        let Some((id, manifest)) = Store::imported_manifest(conn, session, boundary_seq)? else {
+            return Ok(None);
+        };
+        // An assembled import has no native row id; its identity is the
+        // transfer snapshot it was projected from.
+        return Ok(Some((manifest, boundary_seq as i64, id)));
+    };
+    Ok(Some((
+        read_manifest(&manifest)?,
+        boundary,
+        snapshot_id.to_string(),
+    )))
+}
+
 impl Store {
-    pub async fn revert_stage(&self, session: &str, boundary_seq: u64) -> Result<Value, Error> {
+    pub async fn revert_stage(
+        &self,
+        session: &str,
+        boundary_seq: u64,
+        files: bool,
+    ) -> Result<Value, Error> {
         let (session, database) = (session.to_owned(), self.path().to_owned());
         self.call(move |conn| {
             if conn.query_row(
@@ -396,31 +449,15 @@ impl Store {
                     |row| row.get(0),
                 )
                 .map_err(|_| Error::Invalid("Session has no workspace location".into()))?;
-            let found: Option<(i64, i64, String)> = conn
-                .query_row(
-                    "SELECT id,boundary_seq,manifest FROM engine_file_snapshot WHERE session_id=?1 AND boundary_seq<=?2 ORDER BY boundary_seq DESC, id DESC LIMIT 1",
-                    params![session, boundary_seq as i64],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-                )
-                .optional()?;
-            let (snapshot_id, boundary, manifest) = match found {
-                Some(found) => found,
-                None => match Self::imported_manifest(conn, &session, boundary_seq)? {
-                    Some((id, manifest)) => (
-                        -1,
-                        boundary_seq as i64,
-                        serde_json::to_string(&(manifest, id))?,
-                    ),
-                    None => return Err(Error::Invalid("no file snapshot at this boundary".into())),
-                },
-            };
-            // An assembled import has no native row id; its identity rides in
-            // the manifest payload as (map, "transfer:<snapshot>").
-            let (manifest, snapshot_id) = if snapshot_id < 0 {
-                let (map, id): ImportedManifest = serde_json::from_str(&manifest)?;
-                (map, id)
-            } else {
-                (read_manifest(&manifest)?, snapshot_id.to_string())
+            // A history-only stage deliberately skips the file record: the
+            // caller asked to rewind the conversation and leave the workspace
+            // alone, so a Session that never touched a file can still undo.
+            let (manifest, boundary, snapshot_id) = match (files, resolve(conn, &session, boundary_seq)?) {
+                (false, _) => (BTreeMap::new(), boundary_seq as i64, String::new()),
+                (true, Some(resolved)) => resolved,
+                (true, None) => {
+                    return Err(Error::Invalid("no file snapshot at this boundary".into()))
+                }
             };
             // One intent at a time: undo the previous staged restore first.
             if let Some((previous, ..)) = staged(conn, &session)? {
@@ -529,10 +566,113 @@ impl Store {
         })
         .await
     }
+
+    /// What a revert to `boundary_seq` would do to the workspace, without doing
+    /// it. A path the Session never recorded has no entry, so the preview lists
+    /// only real writes and removals; a path whose current content matches
+    /// neither the restore target nor the newest content the Session recorded
+    /// changed outside the Session and is reported as a conflict so the caller
+    /// can confirm before it is overwritten.
+    pub async fn revert_preview(&self, session: &str, boundary_seq: u64) -> Result<Value, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            if conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')",
+                [&session],
+                |row| row.get::<_, bool>(0),
+            )? {
+                return Err(Error::Invalid("revert requires an idle Session".into()));
+            }
+            let Some(root) = conn
+                .query_row(
+                    "SELECT root FROM engine_location WHERE session_id=?1",
+                    [&session],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+            else {
+                return Ok(json!({"available":false,"reason":"no-location"}));
+            };
+            let Some((manifest, boundary, snapshot_id)) = resolve(conn, &session, boundary_seq)?
+            else {
+                return Ok(json!({"available":false,"reason":"no-file-snapshot"}));
+            };
+            let recorded = recorded_hashes(conn, &session)?;
+            let root = Path::new(&root);
+            let (mut restore, mut remove, mut conflicts) = (Vec::new(), Vec::new(), Vec::new());
+            for (path, target) in &manifest {
+                let Some(relative) = valid_path(path) else {
+                    continue;
+                };
+                let disk = disk_hash(&root.join(relative));
+                if disk.as_deref() == target.as_deref() {
+                    continue;
+                }
+                let action = if target.is_some() {
+                    "restore"
+                } else {
+                    "remove"
+                };
+                if action == "restore" {
+                    restore.push(path.clone());
+                } else {
+                    remove.push(path.clone());
+                }
+                // A path the engine still believes holds the content it last
+                // recorded changed by this Session's own work, which a revert
+                // is meant to undo. Anything else is an outside edit.
+                if recorded.get(path) != Some(&disk) {
+                    conflicts.push(json!({
+                        "path": path,
+                        "action": action,
+                        "disk": if disk.is_some() { "modified" } else { "missing" },
+                    }));
+                }
+            }
+            Ok(json!({
+                "available": true,
+                "boundary_seq": boundary,
+                "snapshot_id": snapshot_id,
+                "restore": restore,
+                "remove": remove,
+                "conflicts": conflicts,
+            }))
+        })
+        .await
+    }
+}
+
+/// The newest content each path is recorded to have, across the Session's
+/// retained snapshots. Manifests are cumulative, so the newest record is the
+/// state the engine believes the workspace is in.
+fn recorded_hashes(
+    conn: &rusqlite::Connection,
+    session: &str,
+) -> Result<BTreeMap<String, Option<String>>, Error> {
+    let mut statement = conn.prepare(
+        "SELECT manifest FROM engine_file_snapshot WHERE session_id=?1 ORDER BY boundary_seq DESC, id DESC",
+    )?;
+    let rows = statement
+        .query_map([session], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut newest: BTreeMap<String, Option<String>> = BTreeMap::new();
+    for row in rows {
+        for (path, hash) in read_manifest(&row)? {
+            newest.entry(path).or_insert(hash);
+        }
+    }
+    Ok(newest)
+}
+
+/// The content hash of a workspace path, mirroring how capture hashes a blob.
+/// An unreadable or oversized file has no comparable content, so it reports
+/// `None` and reads as missing, which can only make the preview more cautious.
+fn disk_hash(path: &Path) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    (bytes.len() as u64 <= MAX_BLOB_BYTES).then(|| crate::permission::digest(&bytes))
 }
 
 type AssembledImport = (String, BTreeMap<String, Option<String>>);
-type ImportedManifest = (BTreeMap<String, Option<String>>, String);
 
 /// `(previous manifest, boundary_seq, snapshot_id)`
 fn staged(
@@ -549,17 +689,7 @@ fn staged(
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, i64>(1)?,
-                    match row.get::<_, rusqlite::types::Value>(2)? {
-                        rusqlite::types::Value::Text(id) => id,
-                        rusqlite::types::Value::Integer(id) => id.to_string(),
-                        _ => {
-                            return Err(rusqlite::Error::InvalidColumnType(
-                                2,
-                                "snapshot_id".into(),
-                                rusqlite::types::Type::Null,
-                            ))
-                        }
-                    },
+                    id_text(row.get(2)?)?,
                 ))
             },
         )

@@ -652,3 +652,27 @@ async fn windows_terminal_preserves_nested_cwd_and_write_confinement() {
     assert_eq!(std::fs::read_to_string(&sentinel).unwrap(), "unchanged");
     registry.shutdown().await;
 }
+
+/// An operator sandbox opt-out runs the same pty unconfined, so the start
+/// result must say `off`. Claiming `workspace_write` there would present a
+/// terminal that has no confinement at all as a confined one.
+#[cfg(unix)]
+#[tokio::test]
+async fn an_unsandboxed_terminal_reports_the_sandbox_it_runs_with() {
+    let dir = tempfile::tempdir().unwrap();
+    let registry = Registry::default();
+    let started = registry
+        .start(
+            "a",
+            std::path::Path::new(env!("CARGO_BIN_EXE_miao-engine")),
+            dir.path(),
+            dir.path(),
+            Start::parse(json!({"argv":["bash","-c","echo READY"]})).unwrap(),
+            false,
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(started["sandbox_profile"], "off", "{started}");
+    registry.shutdown().await;
+}

@@ -1,7 +1,7 @@
 use miao_engine::{
     credential::{Credential, Source},
     host::Host,
-    permission::{Config, Mode, Policy},
+    permission::{Mode, Policy},
     protocol::{Command, Error, Request},
     provider::Provider,
     runtime::Runtime,
@@ -58,8 +58,95 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "schema": miao_engine::store::SCHEMA_VERSION,
                 "routes_schema": miao_engine::model_routes::SCHEMA,
                 "catalog": 1,
+                "product_permission_evaluation": 1,
+                "permission_patterns": 1,
+                "permission_pattern_changes": 1,
+                "saved_permission_migration": 1,
+                "permission_import_changes": 1,
+                "permission_project_store": 1,
+                "permission_context_store": 1,
+                "permission_project_handoff": 1,
+                "permission_context_handoff": 1,
+                "product_permission_requests": 1,
+                "product_permission_replies": 1,
+                "product_permission_cancel": 1,
+                "product_permission_diagnostics": 1,
+                "product_permission_auto": 1,
+                "saved_rules_snapshot": 1,
             })
         );
+        return Ok(());
+    }
+    if args.first().map(String::as_str) == Some("permissions") {
+        let (flags, remainder) = args[1..].as_chunks::<2>();
+        let mut options = HashMap::new();
+        for flag in flags {
+            if !["--db", "--project", "--directory", "--workspace-id"].contains(&flag[0].as_str())
+                || options.insert(flag[0].clone(), flag[1].clone()).is_some()
+            {
+                return Err("unknown or duplicate permissions option".into());
+            }
+        }
+        if !remainder.is_empty()
+            || !options.contains_key("--db")
+            || !options.contains_key("--project")
+            || (options.contains_key("--workspace-id") && !options.contains_key("--directory"))
+        {
+            return Err("Usage: miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]".into());
+        }
+        let project = options.remove("--project").unwrap();
+        let path = options.remove("--db").unwrap();
+        let result = serve_permissions(
+            &path,
+            project,
+            options.remove("--directory"),
+            options.remove("--workspace-id"),
+        )
+        .await;
+        if let Err(error) = &result {
+            eprintln!("miao-engine permissions: {error}");
+        }
+        // Idle/signal termination can leave Tokio's blocking stdin reader parked.
+        // All accepted database operations and stdout replies have settled here.
+        std::process::exit(if result.is_ok() { 0 } else { 1 });
+    }
+    if args.first().map(String::as_str) == Some("config") {
+        let sources =
+            match &args[1..] {
+                [command, flag, directory] if command == "explain" && flag == "--config-dir" => {
+                    vec![miao_engine::config_derive::Source::Dir(directory.into())]
+                }
+                [command, flag, plan] if command == "explain" && flag == "--config-sources" => {
+                    let plan = if plan == "-" {
+                        use std::io::Read;
+                        let mut input = Vec::new();
+                        std::io::stdin()
+                            .lock()
+                            .take(1024 * 1024 + 1)
+                            .read_to_end(&mut input)?;
+                        if input.len() > 1024 * 1024 {
+                            return Err("config source plan exceeds 1 MiB".into());
+                        }
+                        String::from_utf8(input).map_err(|_| "config source plan must be UTF-8")?
+                    } else {
+                        plan.clone()
+                    };
+                    miao_engine::config_derive::plan(&plan)?
+                }
+                _ => return Err(
+                    "Usage: miao-engine config explain --config-dir PATH | --config-sources JSON|-"
+                        .into(),
+                ),
+            };
+        let report =
+            tokio::task::spawn_blocking(move || miao_engine::config_explain::report(&sources))
+                .await??;
+        let output = serde_json::to_vec(&report)?;
+        if output.len() > 8 * 1024 * 1024 {
+            return Err("config explanation exceeds 8 MiB".into());
+        }
+        use std::io::Write;
+        std::io::stdout().lock().write_all(&output)?;
         return Ok(());
     }
     if args.first().map(String::as_str) == Some("doctor") {
@@ -177,7 +264,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\n       miao-engine permissions --db PATH --project ID\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
         std::process::exit(2);
     }
     let acp = mode == Some("acp");
@@ -442,46 +530,35 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         provider
     };
-    let mut config = if let Some(path) = options.get("--policy") {
-        let bytes = tokio::fs::read(path).await?;
-        if bytes.len() > 65536 {
-            return Err("permission config exceeds 64 KiB".into());
+    // An explicit flag wins over both the entry default and the policy file,
+    // so an operator can keep a shared policy and pick the mode per launch.
+    let mode = match options.get("--mode").map(String::as_str) {
+        None => None,
+        Some("read-only" | "read_only") => Some(Mode::ReadOnly),
+        Some("workspace") => Some(Mode::Workspace),
+        Some(other) => {
+            return Err(format!("unknown --mode `{other}`, expected read-only or workspace").into())
         }
-        serde_json::from_slice::<Config>(&bytes)?
+    };
+    // Where the base policy comes from. Kept for the process lifetime so
+    // `config_reload` derives it from exactly the sources startup used.
+    let policy_origin = if let Some(path) = options.get("--policy") {
+        miao_engine::config_derive::PolicyOrigin::File(path.into())
     } else if let Some(json) = options.get("--config-sources") {
         // The host forwards the ordered config source plan it resolved for
         // this Location, so the project chain overrides the global directory
         // exactly the way the product applies them. The plan supersedes the
         // single-directory fallback, which only sees the global files.
-        let sandbox = std::env::var("MIAO_SANDBOX").ok();
-        let sources = miao_engine::config_derive::plan(json)?;
-        miao_engine::config_derive::policy_from_sources(&sources, sandbox.as_deref())?
+        miao_engine::config_derive::PolicyOrigin::Sources(miao_engine::config_derive::plan(json)?)
     } else if let Some(directory) = options.get("--config-dir") {
         // No explicit operator policy: derive the product policy from the
         // config directory and the environment the host forwarded, the way
         // the product used to before materializing a temporary file.
-        let sandbox = std::env::var("MIAO_SANDBOX").ok();
-        miao_engine::config_derive::policy_from_directory(
-            std::path::Path::new(directory),
-            sandbox.as_deref(),
-        )?
+        miao_engine::config_derive::PolicyOrigin::Directory(directory.into())
     } else {
-        Config::for_entry(acp)
+        miao_engine::config_derive::PolicyOrigin::Entry { acp }
     };
-    // An explicit flag wins over both the entry default and the policy file,
-    // so an operator can keep a shared policy and pick the mode per launch.
-    if let Some(mode) = options.get("--mode") {
-        config.mode = match mode.as_str() {
-            "read-only" | "read_only" => Mode::ReadOnly,
-            "workspace" => Mode::Workspace,
-            other => {
-                return Err(
-                    format!("unknown --mode `{other}`, expected read-only or workspace").into(),
-                )
-            }
-        };
-    }
-    let policy = Policy::new(config)?;
+    let policy = Policy::new(policy_origin.derive(mode)?)?;
     let mut tools = Tools::new(workspace)
         .await?
         .with_workspace_instructions(
@@ -503,16 +580,22 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             Some(_) => return Err("--lsp-diagnostics must be on or off".into()),
         });
     let mut route_limits = miao_engine::model_routes::RouteLimits::default();
+    let mut model_origin = None;
     let provider = if let Some(path) = options.get("--model-routes-config") {
         let path = tokio::fs::canonicalize(path).await?;
-        let (provider, route_limits_new) = miao_engine::model_routes::load(
-            &path,
-            std::path::Path::new(tools.location()),
-            provider,
-        )
-        .await?;
+        let workspace = std::path::PathBuf::from(tools.location());
+        // Keep the unrouted provider: a reload layers the new manifest over
+        // exactly this base instead of re-deriving the operator's flags.
+        let base = provider;
+        let (provider, route_limits_new) =
+            miao_engine::model_routes::load(&path, &workspace, base.clone()).await?;
         tools = tools.with_protected_resource(&path);
         route_limits = route_limits_new;
+        model_origin = Some(miao_engine::model_routes::Origin {
+            base,
+            path,
+            workspace,
+        });
         provider
     } else {
         provider
@@ -530,52 +613,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         tools = tools.with_protected_resource(path);
     }
-    if let Some(path) = options.get("--context-config") {
-        let path = tokio::fs::canonicalize(path).await?;
-        if path.starts_with(std::path::Path::new(tools.location())) {
-            return Err("Context host config must be outside model-writable workspace".into());
-        }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("Context config exceeds 64 KiB".into());
-        }
-        let sources = serde_json::from_slice::<Vec<miao_engine::context::Source>>(&bytes)
-            .map_err(|_| "invalid Context host config")?;
-        tools = tools
-            .with_protected_resource(&path)
-            .with_context_sources(sources)?;
+    // The five host files that carry context sources, skills, references,
+    // hooks and formatters. One origin records their canonical paths, so a
+    // reload reads exactly what startup read; one derive validates all of them
+    // before any is applied.
+    let context_origin = miao_engine::config_derive::ContextOrigin {
+        sources: canonical_option(&options, "--context-config").await?,
+        skills: canonical_option(&options, "--skills-config").await?,
+        references: canonical_option(&options, "--references-config").await?,
+        hooks: canonical_option(&options, "--hooks-config").await?,
+        formatter: canonical_option(&options, "--formatter-config").await?,
+    };
+    for path in context_origin.files() {
+        tools = tools.with_protected_resource(&path);
     }
-    if let Some(path) = options.get("--skills-config") {
-        let path = tokio::fs::canonicalize(path).await?;
-        if path.starts_with(std::path::Path::new(tools.location())) {
-            return Err("Skills host config must be outside model-writable workspace".into());
-        }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("Skills config exceeds 64 KiB".into());
-        }
-        let directories =
-            serde_json::from_slice::<Vec<miao_engine::context::SkillDirectory>>(&bytes)
-                .map_err(|_| "invalid Skills host config")?;
-        tools = tools
-            .with_protected_resource(&path)
-            .with_skill_directories(directories)?;
-    }
-    if let Some(path) = options.get("--references-config") {
-        let path = tokio::fs::canonicalize(path).await?;
-        if path.starts_with(std::path::Path::new(tools.location())) {
-            return Err("References host config must be outside model-writable workspace".into());
-        }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("References config exceeds 64 KiB".into());
-        }
-        let references = serde_json::from_slice::<Vec<miao_engine::context::Reference>>(&bytes)
-            .map_err(|_| "invalid References host config")?;
-        tools = tools
-            .with_protected_resource(&path)
-            .with_references(references)?;
-    }
+    context_origin
+        .derive(std::path::Path::new(tools.location()))?
+        .apply(&tools);
     tools =
         tools.with_compact_disclosure(match options.get("--tool-disclosure").map(String::as_str) {
             None | Some("full") => false,
@@ -599,19 +653,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             Err(error) => eprintln!("miao-engine extension worker unavailable: {error}; built-in tools remain available"),
         }
     }
-    if let Some(path) = options.get("--hooks-config") {
-        let path = tokio::fs::canonicalize(path).await?;
-        if path.starts_with(std::path::Path::new(tools.location())) {
-            return Err("Hooks host config must be outside model-writable workspace".into());
-        }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("Hooks config exceeds 64 KiB".into());
-        }
-        let hooks = serde_json::from_slice::<Vec<miao_engine::hooks::Hook>>(&bytes)
-            .map_err(|_| "invalid hooks host config")?;
-        tools = tools.with_protected_resource(&path).with_hooks(hooks)?;
-    }
     let mut plugin_hooks = None;
     if let Some(path) = options.get("--plugin-hooks") {
         if !options.contains_key("--product-tools") {
@@ -630,6 +671,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|_| "invalid plugin hooks host config")?,
         );
     }
+    let mut mcp_origin = None;
     if let Some(path) = options.get("--mcp-config") {
         if !policy.mcp_enabled() {
             return Err("MCP config requires explicit workspace allow_mcp authority".into());
@@ -638,65 +680,41 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         if path.starts_with(std::path::Path::new(tools.location())) {
             return Err("MCP host config must be outside model-writable workspace".into());
         }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("MCP config exceeds 64 KiB".into());
-        }
-        let configs = serde_json::from_slice::<Vec<miao_engine::mcp::Config>>(&bytes)
-            .map_err(|_| "invalid MCP host config")?;
-        let registry =
-            miao_engine::mcp::Registry::connect(configs, std::path::Path::new(tools.location()))
-                .await?;
+        let origin = miao_engine::config_derive::McpOrigin::Manifest(path.clone());
+        let registry = miao_engine::mcp::Registry::connect(
+            origin.derive()?,
+            std::path::Path::new(tools.location()),
+        )
+        .await?;
         let registry = Arc::new(registry);
         registry.start_watchers();
         tools = tools.with_protected_resource(&path).with_mcp(registry);
+        mcp_origin = Some(origin);
     }
-    if let Some(path) = options.get("--formatter-config") {
-        let path = tokio::fs::canonicalize(path).await?;
-        if path.starts_with(std::path::Path::new(tools.location())) {
-            return Err("formatter host config must be outside model-writable workspace".into());
-        }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("formatter config exceeds 64 KiB".into());
-        }
-        let configs = serde_json::from_slice::<Vec<miao_engine::formatter::Config>>(&bytes)
-            .map_err(|_| "invalid formatter host config")?;
-        let registry =
-            miao_engine::formatter::Registry::new(configs, std::path::Path::new(tools.location()))?;
-        tools = tools
-            .with_protected_resource(&path)
-            .with_formatter(Arc::new(registry));
-    }
+    // The origin a reload re-derives from. Every branch below records one, so
+    // `config_reload` reads exactly the files startup read.
+    let mut lsp_origin = None;
     if let Some(path) = options.get("--lsp-config") {
         let path = tokio::fs::canonicalize(path).await?;
         if path.starts_with(std::path::Path::new(tools.location())) {
             return Err("LSP host config must be outside model-writable workspace".into());
         }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("LSP config exceeds 64 KiB".into());
-        }
-        let configs = serde_json::from_slice::<Vec<miao_engine::lsp::Config>>(&bytes)
-            .map_err(|_| "invalid LSP host config")?;
-        let registry =
-            miao_engine::lsp::Registry::connect(configs, std::path::Path::new(tools.location()))
-                .await?;
+        let origin = miao_engine::config_derive::LspOrigin::Manifest(path.clone());
+        let registry = miao_engine::lsp::Registry::connect(
+            origin.derive()?,
+            std::path::Path::new(tools.location()),
+        )
+        .await?;
         tools = tools
             .with_protected_resource(&path)
             .with_lsp(Arc::new(registry));
+        lsp_origin = Some(origin);
     } else if let Some(json) = options.get("--config-sources") {
         // Derive the servers from the same ordered plan the policy used, so
         // project-level `lsp` sections override the global directory.
-        let sources = miao_engine::config_derive::plan(json)?;
-        let documents = miao_engine::config_derive::load(&sources)?;
-        let configured = miao_engine::config_derive::lsp_configured(&documents);
-        let lookup = miao_engine::config_derive::system_lookup();
-        let configs = miao_engine::config_derive::lsp_entries(
-            configured.as_ref(),
-            &miao_engine::config_derive::BUILTIN_SERVERS,
-            &lookup,
-        )?;
+        let origin =
+            miao_engine::config_derive::LspOrigin::Sources(miao_engine::config_derive::plan(json)?);
+        let configs = origin.derive()?;
         if !configs.is_empty() {
             let registry = miao_engine::lsp::Registry::connect(
                 configs,
@@ -705,18 +723,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
             tools = tools.with_lsp(Arc::new(registry));
         }
+        lsp_origin = Some(origin);
     } else if let Some(directory) = options.get("--config-dir") {
         // No explicit LSP manifest: derive the servers from the config
         // directory the way the product used to before materializing one.
-        let source = miao_engine::config_derive::Source::Dir(directory.into());
-        let documents = miao_engine::config_derive::load(std::slice::from_ref(&source))?;
-        let configured = miao_engine::config_derive::lsp_configured(&documents);
-        let lookup = miao_engine::config_derive::system_lookup();
-        let configs = miao_engine::config_derive::lsp_entries(
-            configured.as_ref(),
-            &miao_engine::config_derive::BUILTIN_SERVERS,
-            &lookup,
-        )?;
+        let origin = miao_engine::config_derive::LspOrigin::Directory(directory.into());
+        let configs = origin.derive()?;
         if !configs.is_empty() {
             let registry = miao_engine::lsp::Registry::connect(
                 configs,
@@ -725,6 +737,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
             tools = tools.with_lsp(Arc::new(registry));
         }
+        lsp_origin = Some(origin);
     }
     let replay = options
         .get("--tool-replay")
@@ -751,6 +764,41 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     if let Some(limits) = context_limits {
         runtime.set_context_limits(Some(limits)).await;
+    }
+    if let Some(origin) = &lsp_origin {
+        runtime.set_lsp_origin(origin.clone()).await;
+    }
+    if let Some(origin) = &mcp_origin {
+        runtime.set_mcp_origin(origin.clone()).await;
+    }
+    // The origin is recorded even when it names no file: the context section
+    // is then supported and simply has nothing to derive.
+    runtime.set_context_origin(context_origin.clone()).await;
+    if let Some(origin) = &model_origin {
+        runtime.set_model_origin(origin.clone()).await?;
+    }
+    runtime.set_policy_origin(policy_origin.clone(), mode).await;
+    // No host watches these files in the standalone entry, so the engine polls
+    // them itself; a hosted engine gets an explicit `config_reload`. Both
+    // origins contribute: one reload re-derives every section from its source.
+    let watched = {
+        let mut files = policy_origin.files();
+        if let Some(origin) = &lsp_origin {
+            files.extend(origin.files());
+        }
+        if let Some(origin) = &mcp_origin {
+            files.extend(origin.files());
+        }
+        if let Some(origin) = &model_origin {
+            files.push(origin.path.clone());
+        }
+        files.extend(context_origin.files());
+        files.sort();
+        files.dedup();
+        files
+    };
+    if !watched.is_empty() {
+        watch_config(runtime.clone(), watched);
     }
     runtime.set_route_limits(route_limits).await;
     let roles = miao_engine::roles::Bindings {
@@ -837,6 +885,136 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     std::process::exit(if result.is_ok() { 0 } else { 1 });
 }
 
+/// Canonicalize one optional path flag. A context origin records canonical
+/// paths, so a reload re-reads exactly the file startup read.
+async fn canonical_option(
+    options: &HashMap<String, String>,
+    name: &str,
+) -> Result<Option<std::path::PathBuf>, Box<dyn std::error::Error>> {
+    match options.get(name) {
+        Some(path) => Ok(Some(tokio::fs::canonicalize(path).await?)),
+        None => Ok(None),
+    }
+}
+
+/// Standalone config reload. A hosted engine learns about a configuration
+/// change from `config_reload`; the standalone entry has no host to tell it,
+/// so it stats the same sources a reload reads.
+///
+/// Polling rather than an OS watcher is deliberate: network filesystems,
+/// container mounts and editors' atomic renames do not deliver consistent
+/// events across platforms, while mtime plus size does. A tick that lands
+/// while a Session is draining is skipped, so a turn never observes half a
+/// change. A failed derivation is reported once and retried only when a file
+/// changes again, not on every tick.
+fn watch_config(runtime: Runtime, files: Vec<std::path::PathBuf>) {
+    tokio::spawn(async move {
+        let mut stamp = config_stamp(&files);
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            let next = config_stamp(&files);
+            if next == stamp {
+                continue;
+            }
+            if runtime.is_draining() {
+                continue;
+            }
+            stamp = next;
+            match runtime.reload_config().await {
+                Ok(report)
+                    if report["changed"]
+                        .as_array()
+                        .is_some_and(|changed| !changed.is_empty()) =>
+                {
+                    eprintln!("miao-engine configuration reloaded: {}", report["changed"]);
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    eprintln!("miao-engine configuration reload failed: {error}");
+                    runtime.announce_config_failure(&error.to_string());
+                }
+            }
+        }
+    });
+}
+
+/// Per-source `(mtime, size)`, `None` for a missing file. Nanosecond mtimes
+/// keep two edits in the same second distinguishable.
+fn config_stamp(files: &[std::path::PathBuf]) -> Vec<Option<(u128, u64)>> {
+    files
+        .iter()
+        .map(|path| {
+            std::fs::metadata(path).ok().map(|meta| {
+                let mtime = meta
+                    .modified()
+                    .ok()
+                    .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|elapsed| elapsed.as_nanos())
+                    .unwrap_or(0);
+                (mtime, meta.len())
+            })
+        })
+        .collect()
+}
+
+async fn serve_permissions(
+    path: &str,
+    project: String,
+    directory: Option<String>,
+    workspace_id: Option<String>,
+) -> io::Result<()> {
+    let controller = match directory {
+        Some(directory) => {
+            miao_engine::permission_control::Controller::open_context(
+                path,
+                project,
+                directory,
+                workspace_id,
+            )
+            .await
+        }
+        None => miao_engine::permission_control::Controller::open(path, project).await,
+    }
+    .map_err(io::Error::other)?;
+    let mut input = BufReader::new(tokio::io::stdin());
+    let mut output = tokio::io::stdout();
+    let mut bytes = Vec::new();
+    loop {
+        let line = tokio::select! {
+            line=read_line(&mut input, &mut bytes)=>line,
+            _=signal_exit()=>break,
+            _=tokio::time::sleep(Duration::from_secs(300))=>break,
+        };
+        let (response, shutdown) = match line {
+            Ok(Some(line)) => match serde_json::from_slice::<Value>(&line) {
+                Ok(value) => controller.dispatch(value).await,
+                Err(_) => (
+                    json!({"id":null,"error":{"code":"invalid_request","message":"expected JSON"}}),
+                    false,
+                ),
+            },
+            Ok(None) => break,
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+                let id = leading_request_id(&bytes);
+                discard_line(&mut input, &mut bytes).await?;
+                (
+                    json!({"id":id,"error":{"code":"request_too_large","message":error.to_string()}}),
+                    false,
+                )
+            }
+            Err(error) => return Err(error),
+        };
+        let mut line = serde_json::to_vec(&response).map_err(io::Error::other)?;
+        line.push(b'\n');
+        output.write_all(&line).await?;
+        output.flush().await?;
+        if shutdown {
+            break;
+        }
+    }
+    Ok(())
+}
+
 async fn serve(
     runtime: Runtime,
     product_tools: Option<String>,
@@ -855,6 +1033,14 @@ async fn serve(
             miao_engine::product::Bridge::new(output.clone()),
             plugin_hooks,
         );
+        if let Some(context) = manifest.get("host_context") {
+            runtime
+                .set_product_context(
+                    serde_json::from_value(context.clone()).map_err(io::Error::other)?,
+                )
+                .await
+                .map_err(io::Error::other)?;
+        }
     }
     let writer_stop = tokio_util::sync::CancellationToken::new();
     let stop_output = writer_stop.clone();
@@ -905,6 +1091,7 @@ async fn serve(
     let mut input = BufReader::new(tokio::io::stdin());
     let mut bytes = Vec::new();
     let mut progress = runtime.progress();
+    let mut config_events = runtime.config_events();
     let mut poll = tokio::time::interval(Duration::from_millis(100));
     // Host-death watchdog: stdin EOF is unreliable because grandchild
     // processes (LSP servers, MCP workers) inherit the pipe write end, and
@@ -988,6 +1175,15 @@ async fn serve(
                 notice=progress.recv()=>match notice {
                     Ok(notice)=>{if notice["session_id"].as_str().is_some_and(|s|host.subscribed(s)) {send(&output,json!({"method":"progress","params":notice})).await?;}},
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>send(&output,json!({"method":"resync","params":{"reason":"ephemeral_progress_lagged"}})).await?,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed)=>break,
+                },
+                report=config_events.recv()=>match report {
+                    // A reloaded configuration is process-wide, not
+                    // Session-scoped, so every subscriber is told. A lagged
+                    // listener skipped a notice it cannot replay; the next
+                    // reload still reports its own generation.
+                    Ok(report)=>send(&output,json!({"method":"config","params":report})).await?,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>{},
                     Err(tokio::sync::broadcast::error::RecvError::Closed)=>break,
                 },
                 _=signal_exit()=>{ break; },
@@ -1137,6 +1333,20 @@ fn leading_request_id(prefix: &[u8]) -> Value {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn config_stamp_tracks_rewrites_and_absent_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("miao.json");
+        let origin = miao_engine::config_derive::LspOrigin::Manifest(path.clone());
+        let files = origin.files();
+        assert_eq!(super::config_stamp(&files), vec![None]);
+        std::fs::write(&path, "{}").unwrap();
+        let first = super::config_stamp(&files);
+        assert!(first[0].is_some());
+        std::fs::write(&path, "{ }").unwrap();
+        assert_ne!(super::config_stamp(&files), first);
+    }
+
     #[tokio::test]
     async fn replay_burst_waits_for_output_capacity_instead_of_closing_the_engine() {
         let (output, mut incoming) = tokio::sync::mpsc::channel(2);

@@ -6,6 +6,15 @@
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { BlackboxTape } from "@miao/core/blackbox/tape"
+import { applyEngineOptIn, engineStorageRoot } from "@/engine/native-engine"
+
+// Exercise the same placement switch as the real CLI, including a caller
+// whose environment would otherwise select native storage.
+const engine = Bun.argv.indexOf("--engine")
+const environment = { MIAO_ENGINE_STORAGE: path.join(process.cwd(), "native-store") }
+applyEngineOptIn(engine === -1 ? undefined : Bun.argv[engine + 1], process.cwd(), environment)
+if (engineStorageRoot(environment, undefined, path.join(process.cwd(), "default-native")))
+  throw new Error("The TypeScript baseline selected native placement")
 
 const session = "ses_baseline_fixture"
 const answer = "src/catalog.ts exports configureRelay with capacity 7"
@@ -13,20 +22,19 @@ const bundle = {
   format: "miao-blackbox" as const,
   version: 1 as const,
   metadata: {},
-  interactions: [
-    {
-      lane: "llm",
-      ordinal: 0,
-      request: {
-        model: { id: "fixture-model" },
-        execution: { agentManifestHash: "b".repeat(64), permissionHash: "c".repeat(64) },
-        tools: [],
-      },
-      frames: [{ elapsedMs: 1, value: { type: "finish", usage: { inputTokens: 120, outputTokens: 12 } } }],
-      outcome: "complete" as const,
-      endElapsedMs: 2,
+  interactions: [0, ...(Bun.argv.includes("fixture-profile-drift") ? [1] : [])].map((ordinal) => ({
+    lane: "llm",
+
+    ordinal,
+    request: {
+      model: { id: "fixture-model" },
+      execution: { agentManifestHash: "b".repeat(64), permissionHash: "c".repeat(64) },
+      tools: ordinal === 0 ? [] : [{ name: "additional-tool", inputSchema: { type: "object" } }],
     },
-  ],
+    frames: [{ elapsedMs: 1, value: { type: "finish", usage: { inputTokens: 120, outputTokens: 12 } } }],
+    outcome: "complete" as const,
+    endElapsedMs: 2,
+  })),
   trace: [],
 }
 

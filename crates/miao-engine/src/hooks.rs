@@ -7,7 +7,7 @@ pub use crate::events::Lifecycle as Event;
 
 /// Host-configured lifecycle hooks. They run under the same workspace sandbox
 /// as run_command; hooks are a guard/observation surface, not an escape hatch.
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Hook {
     pub event: Event,

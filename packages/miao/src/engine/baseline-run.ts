@@ -24,6 +24,17 @@ export interface BaselineAttempt {
   cacheWriteTokens: number | null
   reasoningTokens: number | null
   cost: number | null
+  /** Provenance for auxiliary work and unreported primary failures. */
+  source?: {
+    kind: "auxiliary" | "primary"
+    role: string | null
+    protocol: string | null
+    model: string | null
+    receiptSeq: number | null
+    recordedAtMs: number | null
+    accepted: boolean | null
+    providerSuccess: boolean | null
+  }
 }
 
 export interface BaselinePhase {
@@ -45,6 +56,13 @@ export interface BaselineEvidence {
   phases: BaselinePhase[]
   profile: BaselineSample["profile"] | null
   profileReceipts: number
+  /** Conflicting or incomplete observations remain evidence, never comparable samples. */
+  profileDiagnostics?: {
+    reason: "invalid" | "conflicting"
+    requests: number
+    invalidReceipts: number
+    variants: Array<{ profile: BaselineSample["profile"]; receipts: number }>
+  }
   /** Loop classification: continuation and stop reasons observed in the run. */
   loops: { continuations: string[]; stopped: string[] }
   toolCalls: number
@@ -289,7 +307,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     assessment,
     answer: committedText(events),
     terminal: terminalFromEvents(events),
-    attempts: events.flatMap(usageAttempt),
+    attempts: usageAttempts(events),
     receipts: engineReceipts(events),
     loops: engineLoops(events),
     profile: engineProfile(events),
@@ -337,7 +355,18 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
   // run accumulates history instead of starting over.
   for (const [round, prompt] of [task.prompt, ...(task.followups ?? [])].entries()) {
     const recording = path.join(blackbox, `${round}`)
-    const args = [input.bun ?? "bun", input.entry, "run", prompt, "--format", "json", "-m", input.model]
+    const args = [
+      input.bun ?? "bun",
+      input.entry,
+      "run",
+      prompt,
+      "--engine",
+      "ts",
+      "--format",
+      "json",
+      "-m",
+      input.model,
+    ]
     if (session) args.push("--session", session)
     const child = Bun.spawn(args, {
       cwd: workspace,
@@ -389,9 +418,7 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
     await stdout
     stderrText = await stderr
     bundles.push(
-      session
-        ? await BlackboxTape.load(path.join(recording, `${session}.json`)).catch(() => undefined)
-        : undefined,
+      session ? await BlackboxTape.load(path.join(recording, `${session}.json`)).catch(() => undefined) : undefined,
     )
     if (exit !== 0) break
   }
@@ -476,6 +503,7 @@ function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
     phases: input.phases,
     profile: profile?.profile ?? null,
     profileReceipts: profile?.receipts ?? 0,
+    ...(profile?.diagnostics ? { profileDiagnostics: profile.diagnostics } : {}),
     loops: input.loops,
     toolCalls: input.toolCalls,
     // An observation the engine does not produce stays absent rather than
@@ -522,6 +550,10 @@ function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
 
 function rejectionReason(input: FinishedBaselineRun, evidence: BaselineEvidence) {
   if (evidence.revision.length !== 40) return "missing 40-hex source revision"
+  if (evidence.profileDiagnostics?.reason === "conflicting")
+    return "conflicting effective profiles in provider receipts"
+  if (evidence.profileDiagnostics?.reason === "invalid")
+    return "invalid or missing effective profiles in provider receipts"
   if (!evidence.profile) return "missing effective profile fingerprint from provider receipts"
   if (evidence.terminal === null) return `no terminal outcome: ${input.error ?? "unknown"}`
   if (evidence.attempts.length === 0) return "no provider attempt usage was recorded"
@@ -591,11 +623,47 @@ function committedText(events: EngineEvent[]) {
     .join("\n")
 }
 
-function usageAttempt(event: EngineEvent): BaselineAttempt[] {
-  if (event.kind !== "usage") return []
+function usageAttempts(events: EngineEvent[]) {
+  const accounted = new Set(
+    events.flatMap((event) => {
+      if (event.kind !== "usage") return []
+      const data = BlackboxTape.json(event.data)
+      if (!BlackboxTape.isObject(data) || !BlackboxTape.isObject(data.usage)) return []
+      const key = providerTurnKey(event)
+      return key ? [key] : []
+    }),
+  )
+  return events.flatMap((event) => {
+    if (event.kind !== "provider.failed") return usageAttempt(event)
+    // A partial usage receipt can follow the failure; inspect the complete
+    // turn before adding unknowns or that interrupted call is counted twice.
+    const key = providerTurnKey(event)
+    if (key && accounted.has(key)) return []
+    if (key) accounted.add(key)
+    return usageAttempt(event)
+  })
+}
+
+function providerTurnKey(event: EngineEvent) {
   const data = BlackboxTape.json(event.data)
-  if (!BlackboxTape.isObject(data) || !BlackboxTape.isObject(data.usage)) return []
-  const usage = data.usage
+  if (
+    !BlackboxTape.isObject(data) ||
+    typeof data.run_id !== "string" ||
+    typeof data.step !== "number" ||
+    !Number.isSafeInteger(data.step) ||
+    data.step < 0
+  )
+    return
+  return JSON.stringify([event.session_id, data.run_id, data.step])
+}
+
+function usageAttempt(event: EngineEvent): BaselineAttempt[] {
+  if (event.kind !== "usage" && event.kind !== "role.provider.completed" && event.kind !== "provider.failed") return []
+  const data = BlackboxTape.json(event.data)
+  if (!BlackboxTape.isObject(data)) return []
+  if (event.kind === "usage" && !BlackboxTape.isObject(data.usage)) return []
+  const usage = BlackboxTape.isObject(data.usage) ? data.usage : {}
+  const identity = BlackboxTape.isObject(data.identity) ? data.identity : {}
   return [
     {
       inputTokens: numberOrNull(usage.inputTokens),
@@ -604,6 +672,26 @@ function usageAttempt(event: EngineEvent): BaselineAttempt[] {
       cacheWriteTokens: numberOrNull(usage.cacheWriteInputTokens),
       reasoningTokens: numberOrNull(usage.reasoningTokens),
       cost: null,
+      ...(event.kind !== "usage"
+        ? {
+            source: {
+              kind: event.kind === "role.provider.completed" ? ("auxiliary" as const) : ("primary" as const),
+              role: typeof data.role === "string" ? data.role : null,
+              protocol: typeof identity.protocol === "string" ? identity.protocol : null,
+              model: typeof identity.model === "string" ? identity.model : null,
+              receiptSeq: Number.isSafeInteger(event.seq) && event.seq >= 0 ? event.seq : null,
+              recordedAtMs: numberOrNull(event.recorded_at_ms),
+              accepted:
+                event.kind === "provider.failed" ? false : typeof data.accepted === "boolean" ? data.accepted : null,
+              providerSuccess:
+                event.kind === "provider.failed"
+                  ? false
+                  : typeof data.providerSuccess === "boolean"
+                    ? data.providerSuccess
+                    : null,
+            },
+          }
+        : {}),
     },
   ]
 }
@@ -710,17 +798,44 @@ function toolFailed(value: unknown) {
 }
 
 function engineProfile(events: EngineEvent[]) {
-  const profiles = events.flatMap((event) => {
-    if (event.kind !== "provider.request") return []
-    const data = BlackboxTape.json(event.data)
-    return BlackboxTape.isObject(data) && BlackboxTape.isObject(data.profile) ? [data.profile] : []
-  })
-  if (profiles.length === 0) return null
-  const normalized = profiles.map(normalizeProfile)
-  if (normalized.some((item) => item === null)) return null
-  const first = normalized[0]!
-  if (!normalized.every((item) => sameProfile(item!, first))) return null
-  return { profile: first, receipts: profiles.length }
+  return summarizeProfiles(
+    events
+      .filter((event) => event.kind === "provider.request")
+      .map((event) => {
+        const data = BlackboxTape.json(event.data)
+        return normalizeProfile(BlackboxTape.isObject(data) ? data.profile : undefined)
+      }),
+  )
+}
+
+function summarizeProfiles(normalized: ReadonlyArray<BaselineSample["profile"] | null>) {
+  if (normalized.length === 0) return null
+  const valid = normalized.filter((item) => item !== null)
+  const variants = Array.from(
+    valid
+      .reduce((variants, profile) => {
+        const key = fingerprint(profile)
+        variants.set(key, { profile, receipts: (variants.get(key)?.receipts ?? 0) + 1 })
+        return variants
+      }, new Map<string, { profile: BaselineSample["profile"]; receipts: number }>())
+      .values(),
+  )
+  const reason =
+    valid.length !== normalized.length ? ("invalid" as const) : variants.length > 1 ? ("conflicting" as const) : undefined
+  return {
+    profile: reason ? null : valid[0]!,
+    receipts: valid.length,
+    ...(reason
+      ? {
+          diagnostics: {
+            reason,
+            requests: normalized.length,
+            invalidReceipts: normalized.length - valid.length,
+            variants,
+          },
+        }
+      : {}),
+  }
 }
 
 function normalizeProfile(value: Schema.Json | undefined): BaselineSample["profile"] | null {
@@ -736,16 +851,6 @@ function normalizeProfile(value: Schema.Json | undefined): BaselineSample["profi
     permissionHash: permissionHash as string,
     toolSurfaceHash: toolSurfaceHash as string,
   }
-}
-
-function sameProfile(left: BaselineSample["profile"], right: BaselineSample["profile"]) {
-  return (
-    left.model === right.model &&
-    left.modelParametersHash === right.modelParametersHash &&
-    left.agentManifestHash === right.agentManifestHash &&
-    left.permissionHash === right.permissionHash &&
-    left.toolSurfaceHash === right.toolSurfaceHash
-  )
 }
 
 const PHASE_KINDS = new Set([
@@ -1114,38 +1219,39 @@ function interactionAttempt(interaction: BlackboxTape.Interaction): BaselineAtte
 }
 
 function tsProfile(interactions: ReadonlyArray<BlackboxTape.Interaction>) {
-  const requests = interactions
+  const normalized = interactions
     .filter((interaction) => interaction.lane === "llm")
-    .flatMap((interaction) => (BlackboxTape.isObject(interaction.request) ? [interaction.request] : []))
-  if (requests.length === 0) return null
-  const normalized = requests.map((request) => {
-    if (!BlackboxTape.isObject(request.model) || typeof request.model.id !== "string") return null
-    const execution = BlackboxTape.isObject(request.execution) ? request.execution : {}
-    return normalizeProfile({
-      model: request.model.id,
-      modelParametersHash: fingerprint({
-        protocol: "openai-responses",
-        parameters: {
-          generation: request.generation ?? null,
-          providerOptions: request.providerOptions ?? null,
-          responseFormat: request.responseFormat ?? null,
-          cache: request.cache ?? null,
-          toolChoice: request.toolChoice ?? null,
-        },
-      }),
-      agentManifestHash: execution.agentManifestHash ?? null,
-      permissionHash: execution.permissionHash ?? null,
-      toolSurfaceHash: fingerprint({
-        protocol: "openai-responses",
-        present: "tools" in request,
-        tools: request.tools ?? null,
-      }),
+    .map((interaction) => {
+      const request = interaction.request
+      if (
+        !BlackboxTape.isObject(request) ||
+        !BlackboxTape.isObject(request.model) ||
+        typeof request.model.id !== "string"
+      )
+        return null
+      const execution = BlackboxTape.isObject(request.execution) ? request.execution : {}
+      return normalizeProfile({
+        model: request.model.id,
+        modelParametersHash: fingerprint({
+          protocol: "openai-responses",
+          parameters: {
+            generation: request.generation ?? null,
+            providerOptions: request.providerOptions ?? null,
+            responseFormat: request.responseFormat ?? null,
+            cache: request.cache ?? null,
+            toolChoice: request.toolChoice ?? null,
+          },
+        }),
+        agentManifestHash: execution.agentManifestHash ?? null,
+        permissionHash: execution.permissionHash ?? null,
+        toolSurfaceHash: fingerprint({
+          protocol: "openai-responses",
+          present: "tools" in request,
+          tools: request.tools ?? null,
+        }),
+      })
     })
-  })
-  if (normalized.some((item) => item === null)) return null
-  const first = normalized[0]!
-  if (!normalized.every((item) => sameProfile(item!, first))) return null
-  return { profile: first, receipts: requests.length }
+  return summarizeProfiles(normalized)
 }
 
 function tsPhases(parts: Array<Record<string, Schema.Json>>, exitAtMs: number, verifiedAtMs: number): BaselinePhase[] {

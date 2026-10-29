@@ -11,6 +11,7 @@ pub mod keybinds;
 pub mod markdown;
 pub mod pane;
 pub mod platform;
+pub mod saved_permissions;
 pub mod session;
 pub mod state;
 pub mod status;
@@ -18,6 +19,7 @@ pub mod terminal;
 pub mod theme;
 pub mod tool;
 pub mod transport;
+pub mod workspace_changes;
 
 use std::error::Error;
 use std::path::PathBuf;
@@ -103,6 +105,13 @@ async fn drive(
     ) {
         Ok(settings) => {
             app.set_settings(settings.clone());
+            if let Some(notice) = engine::unrouted_notice(
+                &settings.spawn.args,
+                &settings.model,
+                std::env::var_os("MIAO_ENGINE_REAL_BIN").is_some(),
+            ) {
+                app.warn(&notice);
+            }
             match engine::attach(&settings, bus.clone()) {
                 Ok(handle) => app.attach_engine(handle),
                 Err(message) => app.handle(AppEvent::EngineFailure(message)),
@@ -112,10 +121,6 @@ async fn drive(
     }
     app.set_bus(bus.clone());
     app.start();
-    // Relative timestamps only change by the minute; input and engine events
-    // already repaint immediately. Do not replay clock ticks after an editor.
-    let mut ticker = tokio::time::interval(Duration::from_secs(60));
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         terminal.draw(|frame| app.render(frame))?;
         if std::env::var_os("MIAO_TUI_TEST_PANIC").is_some() {
@@ -124,6 +129,14 @@ async fn drive(
         if app.quit {
             return Ok(());
         }
+        // An active run's status counts elapsed time and reports an engine that
+        // stopped answering, so it repaints every second. An idle Session changes
+        // only by the minute in relative timestamps, and input and engine events
+        // repaint immediately. Do not replay clock ticks after an editor.
+        let repaint = match app.busy() {
+            true => Duration::from_secs(1),
+            false => Duration::from_secs(60),
+        };
         tokio::select! {
             event = events.recv() => match event {
                 Some(app_event) => {
@@ -137,7 +150,7 @@ async fn drive(
                 }
                 None => return Ok(()),
             },
-            _ = ticker.tick() => {}
+            _ = tokio::time::sleep(repaint) => {}
         }
     }
 }

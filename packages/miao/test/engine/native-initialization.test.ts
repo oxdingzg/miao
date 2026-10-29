@@ -41,7 +41,7 @@ if (binary)
       expect(first).toMatchObject({
         session_id: input.sessionID,
         title: input.title,
-        location: tmp.path,
+        location: path.toNamespacedPath(tmp.path),
         pending: [],
         messages: [],
         active_run: null,

@@ -16,6 +16,8 @@ const COMMAND_DIRS: [&str; 2] = ["commands", "command"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Builtin {
     Models,
+    Permissions,
+    WorkspaceChanges,
     Theme,
     Sessions,
     NewSession,
@@ -25,14 +27,19 @@ pub enum Builtin {
     Debug,
     Stash,
     StashDraft,
+    Timeline,
+    Undo,
+    Redo,
     Editor,
     Help,
     Quit,
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 13] = [
+    pub const ALL: [Builtin; 18] = [
         Builtin::Models,
+        Builtin::Permissions,
+        Builtin::WorkspaceChanges,
         Builtin::Theme,
         Builtin::Sessions,
         Builtin::NewSession,
@@ -42,6 +49,9 @@ impl Builtin {
         Builtin::Debug,
         Builtin::Stash,
         Builtin::StashDraft,
+        Builtin::Timeline,
+        Builtin::Undo,
+        Builtin::Redo,
         Builtin::Editor,
         Builtin::Help,
         Builtin::Quit,
@@ -51,6 +61,8 @@ impl Builtin {
     pub fn name(self) -> &'static str {
         match self {
             Builtin::Models => "model",
+            Builtin::Permissions => "permissions",
+            Builtin::WorkspaceChanges => "changes",
             Builtin::Theme => "theme",
             Builtin::Sessions => "sessions",
             Builtin::NewSession => "new",
@@ -60,6 +72,9 @@ impl Builtin {
             Builtin::Debug => "debug",
             Builtin::Stash => "stash",
             Builtin::StashDraft => "stash-draft",
+            Builtin::Timeline => "timeline",
+            Builtin::Undo => "undo",
+            Builtin::Redo => "redo",
             Builtin::Editor => "editor",
             Builtin::Help => "help",
             Builtin::Quit => "quit",
@@ -69,6 +84,8 @@ impl Builtin {
     pub fn label(self) -> &'static str {
         match self {
             Builtin::Models => "Select a model",
+            Builtin::Permissions => "Review saved permissions",
+            Builtin::WorkspaceChanges => "Show workspace file changes",
             Builtin::Theme => "Select a theme",
             Builtin::Sessions => "Browse sessions",
             Builtin::NewSession => "New session",
@@ -78,6 +95,9 @@ impl Builtin {
             Builtin::Debug => "Engine and workspace details",
             Builtin::Stash => "Restore a stashed prompt",
             Builtin::StashDraft => "Stash the current prompt",
+            Builtin::Timeline => "Rewind to an earlier message",
+            Builtin::Undo => "Undo the last turn",
+            Builtin::Redo => "Restore the last undone turn",
             Builtin::Editor => "Compose the prompt in $EDITOR",
             Builtin::Help => "Keys and commands",
             Builtin::Quit => "Quit miao",
@@ -88,6 +108,8 @@ impl Builtin {
     pub fn keys(self) -> &'static str {
         match self {
             Builtin::Models => "<leader>m",
+            Builtin::Permissions => "",
+            Builtin::WorkspaceChanges => "",
             Builtin::Theme => "<leader>t",
             Builtin::Sessions => "<leader>l",
             Builtin::NewSession => "<leader>n",
@@ -97,6 +119,9 @@ impl Builtin {
             Builtin::Debug => "<leader>d",
             Builtin::Stash => "<leader>p",
             Builtin::StashDraft => "<leader>P",
+            Builtin::Timeline => "",
+            Builtin::Undo => "",
+            Builtin::Redo => "",
             Builtin::Editor => "<leader>e",
             Builtin::Help => "",
             Builtin::Quit => "<leader>q",

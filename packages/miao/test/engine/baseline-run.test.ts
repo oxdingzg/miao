@@ -1,3 +1,4 @@
+import { engineFake } from "../fixture/engine-binary"
 import { describe, expect, test } from "bun:test"
 import { readdir } from "node:fs/promises"
 import path from "node:path"
@@ -5,7 +6,7 @@ import { runBaselineRust, runBaselineTs, startInterruptionProxy } from "@/engine
 import { baselineContract } from "@/engine/baseline"
 import { tmpdir } from "../fixture/fixture"
 
-const fake = path.join(import.meta.dir, "..", "fixture", "engine-fake.ts")
+const fake = engineFake
 const revision = "a".repeat(40)
 const hash = (char: string) => char.repeat(64)
 
@@ -27,6 +28,93 @@ const base = [
   event(2, "input.promoted", { input_id: "$INPUT_ID", prompt: "$PROMPT", checkpoint: "checkpoint" }),
   event(3, "run.started", { run_id: "run" }),
 ]
+
+test("failed primary calls without usage retain unknowns after an earlier measured turn", async () => {
+  await using tmp = await tmpdir()
+  const result = await run(tmp.path, "read-only", [
+    ...base,
+    event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
+    event(5, "usage", { run_id: "run", step: 0, usage: { inputTokens: 120, outputTokens: 30 } }),
+    event(6, "provider.request", { run_id: "run", step: 1, attempt: 1, profile: profile() }),
+    event(7, "provider.failed", { run_id: "run", step: 1, message: "offline failed call without usage" }),
+    event(8, "run.finished", { run_id: "run", reason: "failed" }),
+    event(9, "stop_failure", { run_id: "run", reason: "failed" }),
+  ])
+  expect(result.sample?.outcome).toBe("failed")
+  expect(result.evidence.attempts).toHaveLength(2)
+  expect(result.evidence.attempts[1]).toMatchObject({
+    inputTokens: null,
+    outputTokens: null,
+    cost: null,
+    source: { kind: "primary", receiptSeq: 7, providerSuccess: false },
+  })
+})
+
+test("auxiliary role calls retain usage and failed unknowns alongside primary attempts", async () => {
+  await using tmp = await tmpdir()
+  const result = await run(tmp.path, "read-only", [
+    ...base,
+    event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
+    event(5, "usage", { run_id: "run", step: 0, usage: { inputTokens: 120, outputTokens: 30 } }),
+    event(6, "role.provider.completed", {
+      run_id: "run",
+      role: "summarize",
+      accepted: true,
+      providerSuccess: true,
+      identity: { protocol: "openai-chat", model: "small-model" },
+      usage: { inputTokens: 12, outputTokens: 5, cacheReadInputTokens: 0 },
+    }),
+    event(7, "role.provider.completed", {
+      run_id: "run",
+      role: "verify",
+      accepted: false,
+      providerSuccess: false,
+      identity: { protocol: "openai-chat", model: "verify-model" },
+    }),
+    event(8, "message.committed", {
+      role: "assistant",
+      content: [{ type: "text", text: "src/catalog.ts exports configureRelay with capacity 7" }],
+    }),
+    event(9, "run.finished", { run_id: "run", reason: "completed" }),
+    event(10, "stop", { run_id: "run" }),
+  ])
+  expect(result.sample?.outcome).toBe("passed")
+  expect(result.evidence.attempts).toHaveLength(3)
+  expect(result.evidence.attempts[1]).toMatchObject({
+    inputTokens: 12,
+    outputTokens: 5,
+    cacheReadTokens: 0,
+    cacheWriteTokens: null,
+    cost: null,
+    source: {
+      kind: "auxiliary",
+      role: "summarize",
+      model: "small-model",
+      protocol: "openai-chat",
+      receiptSeq: 6,
+      accepted: true,
+      providerSuccess: true,
+    },
+  })
+  expect(result.evidence.attempts[2]).toMatchObject({
+    inputTokens: null,
+    outputTokens: null,
+    cost: null,
+    source: {
+      kind: "auxiliary",
+      role: "verify",
+      model: "verify-model",
+      receiptSeq: 7,
+      accepted: false,
+      providerSuccess: false,
+    },
+  })
+  expect(result.sample?.attempts).toEqual([
+    { inputTokens: 120, outputTokens: 30, cost: null },
+    { inputTokens: 12, outputTokens: 5, cost: null },
+    { inputTokens: null, outputTokens: null, cost: null },
+  ])
+})
 
 async function script(root: string, steps: unknown[], cancelSteps?: unknown[]) {
   const file = path.join(root, "script.json")
@@ -267,7 +355,10 @@ test("rejects samples whose provider receipts disagree on the effective profile"
     event(8, "stop", { run_id: "run" }),
   ])
   expect(result.sample).toBeNull()
-  expect(result.rejection).toBe("missing effective profile fingerprint from provider receipts")
+  expect(result.evidence.profileReceipts).toBe(2)
+  expect(result.rejection).toBe("conflicting effective profiles in provider receipts")
+  expect(result.evidence.profileDiagnostics).toMatchObject({ reason: "conflicting", requests: 2, invalidReceipts: 0 })
+  expect(result.evidence.profileDiagnostics?.variants.map((item) => item.receipts)).toEqual([1, 1])
 })
 
 test("rejects a run with no terminal outcome instead of inventing a verdict", async () => {
@@ -422,4 +513,43 @@ test("records every input's provider interactions on a multi-input task", async 
   expect(result.evidence.attempts).toHaveLength(5)
   expect(result.evidence.profileReceipts).toBe(5)
   expect(result.evidence.attempts.map((attempt) => attempt.inputTokens)).toEqual(Array(5).fill(120))
+})
+
+test("an unprofiled provider request cannot disappear between valid receipts", async () => {
+  await using tmp = await tmpdir()
+  const result = await run(tmp.path, "read-only", [
+    ...base,
+    event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
+    event(5, "provider.request", { run_id: "run", step: 1, attempt: 1 }),
+    event(6, "provider.request", { run_id: "run", step: 2, attempt: 1, profile: profile() }),
+    event(7, "usage", { run_id: "run", step: 2, usage: { inputTokens: 10, outputTokens: 1 } }),
+    event(8, "message.committed", {
+      role: "assistant",
+      content: [{ type: "text", text: "src/catalog.ts configureRelay capacity 7" }],
+    }),
+    event(9, "run.finished", { run_id: "run", reason: "completed" }),
+    event(10, "stop", { run_id: "run" }),
+  ])
+  expect(result.sample).toBeNull()
+  expect(result.rejection).toBe("invalid or missing effective profiles in provider receipts")
+  expect(result.evidence.profileReceipts).toBe(2)
+  expect(result.evidence.profileDiagnostics).toMatchObject({ reason: "invalid", requests: 3, invalidReceipts: 1 })
+  expect(result.evidence.profileDiagnostics?.variants.map((item) => item.receipts)).toEqual([2])
+})
+
+test("TypeScript profile drift retains every observation while rejecting the sample", async () => {
+  await using tmp = await tmpdir()
+  const result = await runBaselineTs({
+    revision,
+    root: path.join(tmp.path, "typescript-drift"),
+    task: "read-only",
+    repetition: 0,
+    model: "fixture-profile-drift",
+    entry: path.join(import.meta.dir, "..", "fixture", "ts-run-fake.ts"),
+  })
+  expect(result.sample).toBeNull()
+  expect(result.rejection).toBe("conflicting effective profiles in provider receipts")
+  expect(result.evidence.profileReceipts).toBe(2)
+  expect(result.evidence.profileDiagnostics).toMatchObject({ reason: "conflicting", requests: 2, invalidReceipts: 0 })
+  expect(result.evidence.profileDiagnostics?.variants.map((item) => item.receipts)).toEqual([1, 1])
 })

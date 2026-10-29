@@ -37,21 +37,37 @@ does not prevent the engine from settling its own cancelled drain.
 | `admit` | `input`, `resume`, `attachments?` | `Admission` |
 | `resume` | `session_id` | `{accepted:true}` |
 | `cancel_input` | `session_id`, `input_id` | `{accepted:bool, reason?}` |
+| `input_status` | `session_id`, `input_id` | admission receipt (see below) |
+| `edit_input` | `session_id`, `input_id`, `prompt` | `{session_id, input_id, delivery, duplicate}` |
 | `cancel` | `session_id` | `{accepted:bool}` |
 | `archive` | `session_id`, `archived` | `{accepted:true, archived}` |
+| `pin` | `session_id`, `pinned` | `{accepted:true, pinned}` |
 | `remove` | `session_id` | `{accepted:bool, reason?}` |
 | `request_compact` | `session_id` | `{accepted:true, duplicate, pending}` |
+| `recap` | `session_id` | `{seq, text, through_message_seq, messages_after_checkpoint, total_messages}` |
+| `request_compact` | `session_id`, `through?`, `focus?` | `{accepted:true, duplicate, pending}` |
 | `select_agent` | `session_id`, `agent` | `{agent_hash, changed}` |
 | `select_account` | `session_id`, `credential_id` (string or null) | `{binding, account, changed}` |
+| `product_permission_evaluate` | `source`, `request` (active reverse-call facts) | `{effect, rules, authority_revision}` |
+| `permission_pattern_list` | — | native-owned standing patterns for this Runtime's workspace |
+| `permission_pattern_snapshot` | — | atomic native standing-rule snapshot and change cursor |
+| `permission_pattern_changes` | `after`, `limit` (1–256) | ordered durable changes after a workspace cursor |
+| `permission_pattern_put` | `rule` (allow only) | persisted pattern with ID, workspace, source and timestamp |
+| `permission_pattern_remove` | `rule_id` | `{removed:bool}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id`, `metadata_only?` | committed Session snapshot; metadata-only replies omit `messages` |
 | `sessions` | — | `string[]` (Session ids) |
+| `config_reload` | — | `{generation, changed, unchanged, unsupported, lsp?, mcp?, context?}` |
+| `session_children` | `session_id` | `{session_id, children[], truncated}` (see below) |
+| `config_reload` | — | `{generation, changed, unchanged, unsupported, lsp?, mcp?}` |
 | `fork` | `session_id`, `target_session_id`, `message_seq?` | `{target_session_id}` |
 | `revert` | `session_id`, `checkpoint` | `{checkpoint, from_seq, reverted}` |
 | `unrevert` | `session_id` | `{restored}` |
 | `approve` | `session_id`, `response` | `{accepted:true}` |
 | `approve_persistent` | `session_id`, `response` (allow only) | `{accepted:true}` |
+| `permission_saved_snapshot` | `workspace`, `rules` (complete saved-allowance snapshot, including empty) | `{accepted:true}` |
 | `history` | `session_id`, `selected` | `Message[]` |
+| `history_page` | `session_id`, `before_seq?`, `limit?` | `{session_id, messages[], has_more, next_before}` |
 | `context` | `session_id`, `epoch?` | Context Epoch or null |
 | `compact` | `session_id`, `compaction_id`, `through_message_seq`, `summary` | checkpoint |
 | `recall` | `session_id`, `query`, `limit?`, `before_message_seq?` | bounded matches |
@@ -60,6 +76,7 @@ does not prevent the engine from settling its own cancelled drain.
 | `jobs` / `job` / `cancel_job` | `session_id`, … | background jobs |
 | `crons` / `cancel_cron` | `session_id`, … | schedule |
 | `wakeups` / `cancel_wakeup` | `session_id`, … | schedule |
+| `vcs_status` | `session_id` | workspace Git state, or `{repository:false}` |
 | `shutdown` | — | terminates the process |
 
 `snapshot` defaults to the full transcript. Catalog and peer readers can set
@@ -69,11 +86,38 @@ retaining the same cursor, identity, pending work and Session state. An omitted
 
 `event` notifications are committed canonical events; `progress` notifications
 are ephemeral provider frames that are not durable and may be followed by a
-`resync`. A slow stdout consumer applies backpressure through the pipe: the
+`resync`. A `config` notification carries the report of a reload that changed
+at least one section — the same object `config_reload` replies with — and is
+sent to every stdio subscriber because a reloaded configuration is
+process-wide rather than Session-scoped. It arrives whether the host, another
+client, or the standalone poller triggered the reload, so a host can show a
+change it did not request; an unchanged reload sends nothing. A reload the
+engine refuses on its own — a standalone poller reading a malformed file —
+is announced on the same channel as `{"changed": [], "error": "..."}`, because
+that failure otherwise exists only in the engine's stderr. A slow stdout
+consumer applies backpressure through the pipe: the
 writer waits for the reader instead of terminating the engine, and only a
 closed pipe (a dead host) or `shutdown` ends the stream. The durable cursor
 still makes replay→live independent of any transient frame, so a client that
 does disconnect can resume from committed events.
+
+### Waiting notices
+
+A turn can hold for minutes without writing anything durable: an approval the
+user has not answered, a slow shell command, a language server or an MCP server
+that has not replied. Both waits announce themselves on the `progress` channel
+so a client can distinguish them from an engine that died.
+
+| Kind | Emitted while | Payload |
+| --- | --- | --- |
+| `provider.waiting` | the provider has produced no first token | `session_id`, `run_id`, `step`, `attempt`, `elapsed_ms` |
+| `tool.waiting` | a serial call is dispatched and not settled | `session_id`, `run_id`, `step`, `call_id`, `tool`, `elapsed_ms` |
+
+`tool.waiting` repeats every five seconds for one outstanding call, covers the
+approval, hook and execution phases in between, and stops as soon as the call
+settles. Calls settled by the read batch never announce a wait, and neither
+notice is a substitute for a durable fact: both are absent from the journal,
+from `events`, and from `export`, and neither counts as turn progress.
 
 ## Lifecycle event vocabulary
 
@@ -150,6 +194,24 @@ is authoritative, so replay→live has no gap or duplicate and a lagged progress
 subscriber only receives a `resync` frame; a slow client can never block the
 provider or the run loop.
 
+### Session children
+
+`session_children` takes `session_id` and answers the Sessions forked from or
+delegated to by it: `{session_id, children[], truncated}`. Each child carries
+`session_id`, `title`, `parent_message_seq`, `message_count`, the catalog
+timestamps (`created_at_ms`, `updated_at_ms`, `archived_at_ms`, `pinned_at_ms`),
+`status` and `run`. Order is oldest first; at most 200 children are returned and
+`truncated` says whether any were left out.
+
+`status` is `busy` while the child has a running run and `idle` otherwise, so it
+reuses the execution vocabulary instead of inventing a second one. `run` is the
+child's most recently opened run — `{id, state, started_at_ms}` or null when it
+never ran — because `state` is how the child ended (`completed`, `failed`,
+`cancelled`, `interrupted`), which is the difference between "finished" and
+"never started". Archived children stay in the list: archiving is a catalog
+preference, not a retraction of the delegation. A Session without children
+answers an empty list; an unknown `session_id` is `invalid_request`.
+
 ### Question rejection
 
 `reject_question` takes `session_id` and `rejection` (`question_id`, `input_hash`).
@@ -165,6 +227,14 @@ changed-hash and already-answered requests fail.
 run and cancels that owner's token as one serialized command. It returns
 `accepted: false` for a missing, idle, already-cancelled or changed run. A stale
 run ID cannot cancel the next run; a failed match also preserves pending wakes.
+
+### Interactive request identities
+
+Question IDs are opaque, Session-scoped request identities. A worker may issue
+several interactive `ask` requests during one tool call; every ask gets its own
+durable identity even when its input is identical. An exact retry of a settled
+answer is idempotent only for that identity and cannot settle a later ask. The
+stored request still binds the source run/call, workspace and input hash.
 
 ### Pending-input cancellation
 
@@ -182,6 +252,67 @@ A cancelled identity is terminal: admitting the same `session_id`/`input_id`
 again fails with `input_conflict` instead of resurrecting the dropped prompt or
 returning a receipt whose prompt never runs. A client that wants to re-send a
 cancelled prompt admits it under a fresh `input_id`.
+
+### Input receipt
+
+`input_status` takes `session_id` and `input_id` and answers where one admitted
+input is now, so a reconnecting client can place a prompt it sent earlier
+without replaying every `input.*` event:
+
+```json
+{
+  "session_id": "s",
+  "input_id": "one",
+  "state": "promoted",
+  "delivery": "steer",
+  "admitted_seq": 4,
+  "admitted_at_ms": 1730000000000,
+  "promoted": {"seq": 5, "recorded_at_ms": 1730000000100, "checkpoint": "..."}
+}
+```
+
+- `state` is `pending`, `promoted`, `cancelled`, or `unknown`. An id this
+  Session never admitted answers `unknown` with no other fields, because
+  another Session's admission is not this caller's fact; an unknown
+  `session_id` is `invalid_request`.
+- A `pending` input carries `pending_ahead`: how many inputs of the **same
+  delivery class** were admitted before it. Promotions run steer-first and take
+  at most one queued item per idle boundary, so a single cross-class position
+  would claim an order the engine does not promise.
+- A `promoted` input carries `promoted`: the seq of the user message it became
+  (the projection lands on the promotion event's seq), that event's local time
+  and its checkpoint, which is the identity a transcript or revert names.
+- A `cancelled` input carries `cancelled`: the seq and local time of the
+  `input.cancelled` event that dropped it.
+- Execution and failure are deliberately absent. Promotion starts a run whose
+  outcome belongs to that run — `run.finished` and the Session's run state —
+  not to the admission receipt.
+### Pending-input editing
+
+`edit_input` takes `session_id`, `input_id` and the new `prompt`, and rewrites a
+still-pending input in place. The admission identity, delivery class and
+admission order are preserved, so an edited steer keeps its place among steers
+and an edited queued item keeps its place in the queue; only the text the
+eventual user message carries changes. Editing appends an `input.edited` event
+carrying digests of the previous and new text — an audit of the change, not a
+second copy of the prompt — and appends nothing when the text is unchanged,
+which instead reports `duplicate: true`.
+
+Only `pending` inputs are editable. A promoted input is already a transcript
+message that a revert, not an edit, would move; a cancelled identity is
+terminal. Both fail with `invalid_request` naming the input's state, as does an
+id this Session never admitted. `prompt` is bounded to 1 MiB, matching
+admission. Attachments, command references and agent references are not part of
+an edit: they were admitted with the prompt, and a client that needs different
+media or references cancels and admits again under a fresh id.
+
+A product "take back and rewrite" therefore needs no separate command: read the
+input with `pending_inputs`, `edit_input` it, or `cancel_input` it and restore
+the text in its composer.
+
+Because the edit changes what the admission identity now means, a later exact
+retry of the original `admit` — same id, pre-edit text — conflicts instead of
+silently reverting the rewrite.
 
 ### Session agent selection
 
@@ -247,9 +378,51 @@ gate still applies: only a completed answer is cut, never a tool continuation or
 a reverted transcript. Automatic compaction keeps its own trigger; this command
 does not change the budget.
 
+### Recap
+
+`recap` takes `session_id` and returns a human-facing summary of the Session as
+`{seq, text, through_message_seq, messages_after_checkpoint, total_messages}`,
+appending one `recap.created` event that carries the same text. It is a review
+artifact, not a context operation: it calls no provider, writes no checkpoint
+and appends no message, so `selected_history` is unchanged by it and the next
+request carries exactly what it would have carried otherwise. `through_message_seq`
+is the latest compaction checkpoint (null when the Session has none) and
+`messages_after_checkpoint` counts the window the provider still sees.
+
 An idle Session honours the request at its next provider turn rather than
 compacting in the middle of nothing, which is where a Session's settled boundary
 actually exists.
+
+### Workspace Git state
+
+`vcs_status` answers "what changed in this Session's workspace" from one
+`git status --porcelain=v2 --branch -z` call. It is read-only: no index write,
+no lock, no network, and `ahead`/`behind` come from the local branch header. The
+answer carries `branch`, `detached`, `upstream`, `ahead`/`behind` when an
+upstream exists, and `files[]` with `path`, `original_path`, the raw `index` and
+`worktree` columns, and a normalized `kind` (`untracked`, `conflicted`,
+`renamed`, `copied`, `added`, `deleted`, `modified`, `type-changed`, `changed`).
+Paths are relative to the Session's location root.
+
+A location that is not inside a repository answers `{"repository": false,
+"root": …}` instead of failing. At most 5000 entries are returned; a larger
+workspace sets `truncated: true` and still reports the true `file_count`. A git
+call that does not finish within ten seconds fails with a reason rather than
+holding the drain.
+A request may name a **scope**. `through` is the message sequence the checkpoint
+must cut at: that range is summarized and everything newer stays in the selected
+history verbatim, so the cut doubles as the retention target. `focus` is the
+operator's own words for what the summary must keep; it is carried into the
+summarizer prompt next to the excerpt, and the durable state block is retained
+regardless. Both fields are optional and absent means the previous behaviour.
+
+A scope is honoured exactly or refused, never clamped: a `through` that is not a
+closed assistant boundary fails the attempt with a reason (reported through the
+run's `compaction.failed` progress notice and recorded as
+`compaction.settled{compacted:false}`), and a `focus` that is empty or longer than
+2000 characters is refused when the request is recorded. A retry while a request
+is pending is idempotent only for the same scope; a different scope is a
+conflict rather than a silent replacement.
 
 ### Archiving
 
@@ -261,9 +434,17 @@ Session may be archived while a drain is active and restored with
 Session reports `null`. Archiving never initializes a Session: an unknown id
 fails with `invalid_request`.
 
-### Removal
+### Pinning
 
-`remove` takes `session_id` and deletes everything the Session owns — its
+`pin` takes `session_id` and `pinned`. A pin is a list preference the engine
+owns, so a second client orders the shared catalog the same way: it writes the
+Session's `pinned_at_ms` (null when cleared), appends `session.pinned`, and
+deliberately leaves `updated_at_ms` alone — a pin is not Session activity and
+must not read as the Session having been used. The snapshot and `catalog_info`
+report `pinned_at_ms`. Unlike `archive` an unknown id fails with
+`invalid_request`: pinning never initializes a Session.
+
+ — its
 conversation, inbox, runs, tools, approvals, jobs, schedules, placement, lease
 and event log — after interrupting any active drain and stopping the
 in-process tasks that belong to it. Stopping those tasks is required, not
@@ -434,6 +615,39 @@ become wildcard rules or TypeScript permission rules. Caller-owned extension
 transports use per-instance identity so grants cannot outlive that boundary.
 The Store also exposes exact revocation primitives.
 
+### Rule queries bound to a product-tool call
+
+`product_permission_evaluation: 1` in `--capabilities` advertises
+`product_permission_evaluate`. The controller copies `session_id`, `bridge_id`,
+`call_id` and `message_seq` from its current `product_tool` reverse frame into
+`source`. `request` contains nonempty `actions`, nonempty `resources`, and an
+optional `explicit` flag. Both objects reject unknown fields; clients cannot
+supply configured/saved rules or select another workspace.
+
+```json
+{"id":41,"method":"product_permission_evaluate","params":{"source":{"session_id":"s","bridge_id":1,"call_id":"host-call","message_seq":7},"request":{"actions":["read"],"resources":["public"]}}}
+```
+
+The Runtime captures the turn's resolved ordered agent rules and effective
+policy revision when dispatching the host call. A later agent selection does
+not rewrite that call's snapshot. Saved rules come from the attached canonical
+workspace. Configured deny precedes saved allow. The returned authority revision
+binds the workspace, captured policy/agent, native boundary descriptor and
+layered rules; it is not an action token.
+
+The source must still be pending on this controller's product connection, its
+run must be running and its tool dispatched in the same workspace. Other
+Sessions/calls/messages, replied or cancelled calls, replaced connections and
+already-settled tools are refused. Hook frames and calls lacking Runtime-captured
+authority cannot borrow this query.
+
+This is a pattern-rule query only: it executes no action and creates no approval,
+grant or remembered pattern. It does not replace capability/plan checks, host
+cancellation handling or durable approval lifetimes. Product adapters must also
+require saved-rule snapshot refresh before using the result for S6 migration;
+the older additive projection cannot communicate revocation. Unsupported engines
+must be rejected rather than falling back to caller-supplied rule evaluation.
+
 ### Captured commands and named agent references
 
 `admit.input.command` captures `name`, raw `arguments`, optional attribution `source`,
@@ -489,11 +703,123 @@ staged intent. All phases refuse symlinks or paths that escape the Session's
 workspace. A restore whose blob is missing fails before any staged intent is
 recorded. The `snapshot` reply reports the staged revert when one exists.
 
+### Incremental configuration reload
+
+`config_reload` re-derives the configuration sections the engine owns from the
+same origin startup used (`--policy`, `--config-sources` or `--config-dir` for
+the policy; `--lsp-config`, `--config-sources` or `--config-dir` for LSP;
+`--mcp-config` for MCP; `--model-routes-config` for the model catalog;
+`--context-config`, `--skills-config`, `--references-config`, `--hooks-config`
+and `--formatter-config` for the context carriers) and
+reconciles the ones this build can swap in place. The reply is
+`{generation, changed, unchanged, unsupported, …}`: `generation` advances only
+when a section changed, `changed`/`unchanged` name top-level sections, and
+`unsupported` names the sections this build does not reload yet rather than
+implying they were applied. Every section is derived and validated before any is
+applied, so a malformed edit or a boundary violation leaves all of them as they
+were.
+
+The policy section replaces the base policy a turn is derived from and, in the
+same swap, the capability gates and web client that policy implies — a
+tightened policy left running beside the old gates would check one thing and
+enforce another. Gates are applied first, then the policy: that order can only
+add a refusal ahead of the new rules, never permit a call the old ones denied.
+A turn that already took its policy snapshot keeps it and the next turn reads
+the new one; approvals carry the old revision and are therefore refused with
+`ApprovalMismatch`, so a tightened policy never inherits an approval granted
+under the looser one. The startup invariants are re-checked and a reload that
+would break one is refused: process authority requires the database outside the
+workspace and credentials outside it, and MCP requires external authority.
+A Session with no recorded policy origin (`unsupported` contains `policy`)
+cannot reload that section.
+
+The LSP server set is reconciled per server by name and configuration. An
+unchanged server keeps its connection and is never restarted; a changed or
+removed server is dropped, and a changed or newly configured server is started
+again on next use, so a reload never spawns a process by itself. A server the
+plan adds counts as a change: the reconcile swaps the plan, and only then can a
+later request reach the new server. The `lsp` object in the reply lists the
+exact `changed`, `unchanged` and `removed` server names. A derivation error (invalid
+JSON, unknown key, duplicate extension) changes nothing and fails the command;
+the running configuration stays as it was. A Session that never had an LSP
+registry at startup (`unsupported` contains `lsp`) cannot gain one without
+restarting the engine.
+
+The MCP server set is reconciled by server name and configuration fingerprint.
+An unchanged server keeps its connection, its catalog watcher and its child
+process. A changed or added server is connected before its predecessor is
+closed, so a rebuild that fails leaves the previous connection serving and is
+reported in `mcp.failed` as `{server, error}` instead of failing the reload; a
+failed server that had no predecessor simply stays absent. A removed server's
+tools disappear, its watcher exits and its child process is killed. The `mcp`
+object lists the exact `changed`, `unchanged`, `removed` and `failed` names.
+List-level violations (more than eight servers, duplicate names, an invalid
+authority revision) are refused before anything is touched, and a derivation
+error (invalid JSON, unknown key) fails the command with every section as it
+was. A Session started without `--mcp-config` (`unsupported` contains `mcp`)
+cannot gain MCP servers without restarting the engine.
+
+The model catalog is rebuilt from `--model-routes-config` layered over the base
+provider startup built from the operator's transport flags. The derived catalog
+and its per-model context limits are compared with what is running and swapped
+only when they differ; `models` appears in `changed`/`unchanged` with no
+per-route sub-object. Session model bindings are durable facts and are not
+rewritten: a binding whose route the new catalog no longer registers fails its
+next turn with an explicit error instead of silently falling back to another
+model. A malformed manifest names its file, changes nothing and fails the
+reload, so the previous catalog keeps serving. A Session started without
+`--model-routes-config` (`unsupported` contains `models`) cannot gain routes
+without restarting the engine, and the manifest path joins the standalone
+poller's watched set.
+
+The context section re-reads the five host files that carry instruction
+sources, skill directories, read-only references, lifecycle hooks and the
+formatter registry. Each part is compared with what is running and swapped
+through `Tools` only when it differs, so an edit to one file does not rebuild
+the others; a reference edit moves the read scope it grants in the same swap.
+The `context` object lists the exact `changed` and `unchanged` part names
+(`sources`, `skills`, `references`, `hooks`, `formatter`), and `context` also
+appears in the top-level lists. A part the operator never supplied cannot
+appear on reload. A file that fails to parse, violates its bounds, or names a
+reference that cannot be resolved fails the command with its own path in the
+error and leaves every section as it was. A turn that already assembled its
+context, read its hooks or formatted a file keeps the snapshot it took; the
+next one sees the edit. The five paths join the standalone poller's watched
+set.
+
+The standalone entry has no host to call the command, so it polls the same
+sources every two seconds (`mtime` plus size, not an OS watcher) and runs the
+same reconcile. A tick that lands while a Session is draining is skipped, so no
+turn observes half a change; a failed derivation is reported once and retried
+only when a file changes again.
+
 ### Injected context
 
 `{"type":"inject","session_id":"...","input_id":"optional-retry-key","text":"...","source":"skill:name"}` commits one `message.synthetic` history fact. The source is a bounded attribution label, not a command or credential. Injection creates no inbox row and does not start a provider turn. The host may request advisory `wake` afterwards; this drains eligible pending inbox work without forcing continuation. Unlike explicit `resume`, `wake` leaves an idle Session with no eligible input idle. An exact retry with the same Session and input identity reconciles; changed text/source conflicts. Forks preserve the synthetic record and original timestamp rather than promoting it as an operator prompt. Text is bounded to 1 MiB.
 
 If injected context arrives between a model tool call and its results, the immutable transcript keeps admission order; provider history defers that context until the tool block closes, preserving required tool-result adjacency.
+
+### Transcript page
+
+`history_page` reads one bounded window of the stored transcript, starting at
+its recent end, so a preview or a bottom-anchored view never serializes the
+whole Session. `limit` defaults to 50 and is clamped to 1–500. `before_seq`
+pages towards older messages; omitted, the window is the newest page.
+
+The reply is `{session_id, messages[], has_more, next_before}`. Messages are
+ordered oldest-to-newest *within* the page even though the read walks backwards,
+so a client can append them above the current view without reversing them.
+`has_more` says an older neighbour exists, and only then is `next_before` the
+seq to pass as the next `before_seq`; the last page answers `has_more: false`
+and a null cursor rather than inviting a round trip that returns nothing.
+
+Each message carries `seq`, `role`, `content`, `checkpoint`, `recorded_at_ms`
+and `synthetic`. The checkpoint is the stored-transcript identity that a revert
+names — unlike `history` with `selected: true`, which is the provider view and
+has no checkpoints. `synthetic: true` marks injected context, which is a
+message but not an operator prompt. Reverted and quarantined messages are
+absent, the same projection the rest of the Session reads. An empty Session is
+an empty page, not an error; an unknown `session_id` is `invalid_request`.
 
 ### Operator shell records
 
@@ -582,3 +908,297 @@ Generation overrides support bounded `inferenceConfig` and
 Host-declared prompt caching adds SDK cache points to the system prefix and
 latest user message. Native engine release archives include the AWS dependency
 notice and Apache 2.0 license alongside the project license.
+
+### Native-owned standing permission patterns
+
+`permission_patterns: 1` advertises the three pattern methods. They are
+controller operations bound to the Runtime's canonical workspace; callers cannot
+choose a workspace or provenance in their payload. IDs bind the workspace and
+rule content, repeated puts preserve identity/timestamp, and removing an absent
+ID is idempotent. Only allow rules are accepted; configured deny still wins.
+
+Native rows live separately from the host projection in the additive optional
+`engine_owned_permission_rule` table. They join saved rules during evaluation;
+removal does not delete projected rows or exact-call grants. A compatible older
+read-only database without this optional table has no native-owned patterns.
+SQLite insertion constraints enforce the combined saved-rule budget for both
+native and projected rows; full-budget content replays remain idempotent.
+Writes fail transactionally. Capability
+negotiation, not a guessed version string, identifies support.
+
+These methods provide standing-policy storage and explicit controller editing.
+They do not turn a rule query into an execution ticket, bind an `always` answer
+to a pending subrequest, project changes into the product database, or retire
+the existing TypeScript permission evaluator. Those S6 integration gates remain.
+
+### Durable host permission assertions
+
+`product_permission_requests: 1` advertises `product_permission_admit`,
+`product_permission_status`, `product_permission_reply`, and
+`product_permission_pending`. Admission takes the live `source` identity used by
+`product_permission_evaluate` plus `input`: a host-generated `request_id`,
+`facts` (ordered primary action followed by aliases, resources, explicit),
+optional `save` patterns, display `metadata`, and optional `timeout_ms`.
+Controller input cannot provide configured/saved rules or choose a workspace.
+Every distinct assertion needs a new ID, even for identical facts. An exact
+retry with the same ID returns its durable record; conflicting reuse fails.
+
+Records bind runtime owner, workspace, Session, bridge, source tool, assistant
+message, input hash, and captured authority revision. Replies provide source,
+request ID, input hash, authority revision, and `once`, `always`, or `reject`.
+The source must still be running and dispatched on the same connection. The
+source slot remains locked through SQL commit, serializing mutations with reply
+removal and bridge replacement. Current saved rules are re-read before replying;
+a new deny prevents approval. Identical settled replies are idempotent while the
+source is live; conflicting replies fail.
+
+`always` atomically stores the explicitly supplied `save` patterns for the
+primary action and resolves this request. Omitted/empty `save` remembers nothing,
+matching the host permission contract. These are standing allow rules, never
+exact-call grants. A pattern write failure rolls back every pattern and the
+reply. Approval of this assertion does not execute or schedule a host action.
+Host executors must still honor cancellation and their capability boundaries.
+
+Pending requests emit `product.permission.requested` and resolution emits
+`product.permission.resolved`. Source tool completion, run cancellation, and
+abandoned-run recovery cancel pending requests transactionally; recovery does
+not retry provider work. Requests default to no deadline; an optional deadline
+is 1–600000 ms. Each Session admits at most 64 pending requests and admission
+payloads are bounded to 16 KiB. The additive optional request table leaves the
+existing schema version unchanged.
+
+This is the durable backend for host subrequests. The product compatibility
+adapter, product event projection, and removal
+of the TypeScript evaluator remain separate S6 gates. Existing host tools do
+not switch permission ownership merely because the capability is present.
+
+#### Withdrawing one assertion
+
+`product_permission_cancel: 1` advertises `product_permission_cancel` with
+`source` and `request_id`. A live, bound caller can withdraw its own pending
+assertion when its wait is interrupted. This resolves only that record as
+`cancelled` with reason `caller_cancelled`; it does not reject siblings, save
+patterns, or grant permission. The update and resolution event are atomic.
+Exact retries do not emit duplicate events. Already terminal records are
+returned unchanged, and an expired request remains expired. Foreign or inactive
+sources fail the same binding checks as status and replies.
+
+#### Replies and already-pending peers
+
+A reject resolves this request and the already-pending requests in the same
+Session. It does not reject another Session or a request admitted afterwards.
+An allowed `always` with nonempty save patterns rechecks pending requests owned
+by this Runtime in the same canonical workspace, including other Sessions.
+Each live source uses its own captured agent/authority and the newly saved
+rules: only allow results resolve; unmatched asks and configured denies are
+preserved. Expired or inactive sources cannot inherit approval.
+
+The bridge's source slots remain locked through the shared SQL transaction.
+Patterns, the selected reply, peer resolutions, and their events commit or roll
+back together. An exact retry of an already-resolved reply performs no sweep and
+does not restore rules removed since that reply. These semantics match the host
+permission service without enabling the product compatibility adapter.
+
+#### Corrected rejection feedback
+
+`product_permission_replies: 1` identifies peer-reply semantics plus optional
+`message` on `product_permission_reply`. A nonempty reject message is preserved
+as `feedback` on the selected durable record and its resolution event, with
+reason `user_corrected`. Other requests swept by that rejection remain ordinary
+`user_rejected` declines and do not receive the correction. Empty reject messages
+mean ordinary decline; messages on once/always have no semantic effect, matching
+the host service. Messages are bounded to 4096 UTF-8 bytes and reject NUL.
+
+An exact response retry must match both the reply and normalized correction;
+it cannot replace an existing correction. Invalid feedback leaves the request
+pending without a resolution event. Legacy records without `feedback` decode
+with no correction, and records without a correction omit the field. Consumers
+must check this capability before sending message-bearing responses. The
+capability does not activate the product adapter or turn a reply into an action
+execution ticket.
+
+#### Host auto-mode classification
+
+`product_permission_auto: 1` advertises classification during host permission
+admission. The dispatched source captures its agent's auto flag; selecting a
+new agent or mode cannot change an already-running source. Configured denies
+remain denied. Only an ask proven safe by the deterministic edit/bash classifier
+becomes allowed, with reason `auto_allowed`; no standing pattern or exact grant
+is written. Any defined `metadata.stdin`, including null, keeps bash an ask.
+Other actions and unknown operations keep asking. Bash stays unknown on Windows.
+
+A product-tool manifest may include `host_context: { directory, cwd }`. Directory
+must canonicalize to the Runtime's Location; cwd, when present, must be absolute.
+The host supplies its Location spelling and process cwd at startup so relative
+edit resources resolve as they do in the host. Each source captures that context.
+An absent context uses the native Location and native process cwd. No permission
+request can override mode, cwd, workspace or this context. Rules continue matching
+the original resources; only classification resolves paths lexically. The root
+itself, escaping paths and sensitive paths remain unknown. Sensitive raw and
+resolved paths are both checked conservatively.
+
+Admission authority hashes bind captured mode and path context. Echo the record's
+hashes when replying; `product_permission_evaluate` remains the rule-only query
+and does not substitute for full admission. Classification does not execute an
+operation or replace the executor's filesystem/capability checks. The product
+permission adapter and complete S6 acceptance remain outstanding.
+
+#### Policy denial evidence
+
+`product_permission_diagnostics: 1` adds optional `denial` to records whose
+reason is `policy_denied`. It is the actual native outcome (`effect: deny`,
+effective `rules`, `authority_revision`) captured when admission or reply-time
+rechecking denies the assertion. Later saved-rule changes do not rewrite it.
+A reply-time denial can have a different diagnostic authority revision from the
+record's admission binding; the latter stays unchanged for exact reply retries.
+User rejection, cancellation and allowance do not manufacture policy evidence.
+Legacy records without `denial` decode as unknown evidence and omit the field.
+These are engine-produced diagnostics, not caller-provided policy or a new grant.
+
+### Durable standing-rule projection cursor
+
+`permission_pattern_changes: 1` advertises the snapshot and changes commands.
+Both are controller operations bound to the Runtime’s canonical workspace;
+callers cannot select a workspace. Bootstrap a product projection with
+`permission_pattern_snapshot` (`workspace`, `patterns`, `cursor`), then consume
+`permission_pattern_changes` with `after=cursor` and `limit` from 1 to 256.
+The snapshot reads patterns and its cursor in one SQLite transaction, including
+rules created before the journal existed. Do not bootstrap from the feed alone.
+
+A page returns `workspace`, ordered `changes`, `cursor` and `has_more`. Each
+change has `seq`, `recorded_at_ms` and either `{kind:"upsert",pattern}` or
+`{kind:"remove",id}`. Resume after the returned cursor; an empty page retains
+the supplied cursor. Sequence gaps can belong to other workspaces. A receipt is
+committed in the same transaction as the pattern mutation, including patterns
+saved by an always reply. Content retries and absent/foreign revocations add
+no receipt. Receipt failure rolls back the mutation; a corrupt receipt fails
+the page. This journal is projection evidence, never a second rule authority.
+
+Product-side durable projection, acknowledgements, import retirement and
+complete S6 migration remain separate work. This revision does not prune the
+journal; retention and consumer acknowledgements require a separate design.
+
+### One-time saved-rule handoff (backend prerequisite)
+
+`saved_permission_migration: 1` advertises four controller-scoped commands:
+
+- `permission_saved_migrate {project,rules:[{id,rule}]}` atomically replaces the old
+  projection and records an immutable input receipt. Rules must be bounded allow
+  rules; duplicate IDs and native projection IDs are rejected. Input ordering is
+  irrelevant. Same-input retries return the receipt, including after revocation;
+  changed input or project is rejected. Empty imports clear stale projected rows.
+- `permission_saved_migration` returns the receipt, or null before handoff.
+- `permission_saved_imported` returns currently active imported IDs and rules.
+- `permission_saved_remove {id}` revokes one imported identity and retains its
+  tombstone. Duplicate content stays allowed until all its imported identities
+  are revoked. Independent native patterns remain independent.
+
+Workspace is the Runtime controller's canonical workspace and cannot be supplied
+in these commands. Legacy projection writes are rejected after handoff; rule
+budget, receipt, provenance and revocation updates share SQLite transactions.
+This does not create exact-call grants or widen workspace scope. Product
+activation, imported-rule change projection and project/global/worktree scope
+migration remain separate work; existing product owners do not invoke handoff.
+
+### Imported-rule change projection
+
+`permission_import_changes: 1` adds `permission_import_snapshot` and
+`permission_import_changes {after,limit}` (1–256). Both bind to the controller's
+canonical workspace. The snapshot pins the immutable migration receipt, active
+imported IDs/rules and cursor in one read transaction, including pre-journal
+imports and empty rule sets. Its cursor is independent of the native-pattern
+journal; older pattern consumers receive no new variant.
+
+One `migrated` change carries the receipt and full imported identity set, so a
+handoff cannot be projected as a partial list across page boundaries. Actual
+revocations append `removed {id,fingerprint}` in the same transaction; the
+fingerprint binds each removal to its immutable workspace migration receipt. Exact import retries,
+duplicate/foreign revokes and restarts do not append changes. Journal failure
+rolls back the grant or revoke. Receipt/scope/identity corruption refuses the
+whole page; a fresh atomic snapshot can rebuild from authoritative rows.
+
+These commands supply projection evidence, never another authorization path.
+Product imported-rule replicas, automatic handoff and broader scope migration
+remain separate activation work.
+
+### Model-free project permission control
+
+`permission_project_store: 1` advertises the separate local stdio entry point
+`miao-engine permissions --db PATH --project ID`. It opens only the dedicated
+project permission database and binds one project for the process lifetime; no
+workspace, model, provider, Session store or reverse tool bridge is initialized.
+The inherited environment in the product client contains process basics without
+provider credentials. The ordinary runtime protocol remains unchanged.
+
+Requests retain the usual scalar `id`, `method` and optional `params` framing:
+
+- `snapshot`: authority identity, bound project, revision, migration receipt and
+  active rules in one read transaction.
+- `migrate {rules:[{id,rule}]}`: one-time immutable legacy handoff, returning the
+  current snapshot. An exact retry never restores revoked identities.
+- `put {rule}`: idempotent native standing allow rule, returning the snapshot.
+- `remove {id}`: scoped revoke, returning `{removed}`; duplicate removal is false.
+- `shutdown`: acknowledge and exit after the response flushes.
+
+Requests cannot choose another project, workspace or database. Unknown fields,
+invalid input, deny patterns and unsupported databases are refused. The shared
+16 MiB framing bound and discard/resynchronization behavior apply. The process
+exits after five minutes without input, on EOF, shutdown or termination signal.
+Read timeouts do not imply a rule mutation; write timeouts retire the transport
+and require inspection of the durable snapshot before deciding on another write.
+
+This is trusted local rule-management control, not a model authorization tool or
+a Session execution owner. Runtime source/pending/always integration, product
+activation and legacy write retirement remain open.
+
+`permission_context_store: 1` additionally advertises startup binding with
+`--directory PATH [--workspace-id ID]`. The directory is canonicalized and must
+exist; explicit workspace identity is isolated from omitted implicit-local
+placement. Invalid bindings fail before opening the database. The project-only
+entry point remains compatible and refuses context requests without a binding.
+Additional methods use the same frame validation and timeout behavior:
+
+- `context_snapshot`: project snapshot plus canonical `directory`, nullable
+  `workspace_id`, directory `revision`, nullable directory migration receipt,
+  and active native `patterns`, all in one read transaction.
+- `context_put {rule}`: directory-only standing allow, returning that snapshot.
+- `context_remove {id}`: revoke only in the bound directory and workspace identity.
+- `context_migrate {patterns}`: explicit one-time handoff of native directory
+  patterns, retaining their IDs and timestamps. Changed inputs fail; exact retry
+  does not resurrect revoked patterns.
+
+Per-frame requests cannot change any binding. The combined project/directory
+budget counts unique rule content; directory rules never become project grants.
+This API does not freeze the old source or activate automatic product migration.
+
+`permission_project_handoff: 1` advertises `handoff {authority,rules}` on the
+project control endpoint. The expected durable authority identity is checked
+inside the same write transaction before importing rules **or accepting an
+existing receipt retry**. A mismatching destination fails without modifying
+rules, receipt or revision. Hosts freezing a source must use this method instead
+of unbound `migrate`, and probe support before preparing the source. A database
+pathname alone is not a durable destination identity.
+
+`permission_context_handoff: 1` similarly advertises
+`context_handoff {authority,patterns}` on a directory-bound controller. It checks
+the expected project database identity inside the directory write transaction,
+before the first import and before accepting a receipt retry. IDs, timestamps,
+revocations and the combined rule budget follow `context_migrate`. A mismatched
+identity changes neither directory nor project state. The request cannot change
+the startup project, canonical directory or workspace identity. Frozen directory
+sources must use this method and probe its capability before preparing a handoff;
+this destination operation does not itself freeze or retire their old writer.
+## Saved-allowance snapshot capability
+
+`saved_rules_snapshot: 1` in `--capabilities` advertises
+`permission_saved_snapshot`. The command atomically replaces the workspace's
+complete projected saved-allowance set; `rules: []` revokes the last saved rule.
+Rules must be bounded allow rules. Invalid input or a failed insert leaves the
+previous snapshot intact. The workspace must resolve to the attached Runtime's
+own directory. Exact persistent approval grants remain separate.
+
+`permission_saved_project` retains legacy additive-import behavior and cannot
+represent revocation. Managed product owners use the snapshot command before
+admission, including for an empty set, and fail startup/admission if the engine
+cannot synchronize it. This command does not transfer native rule-writing
+ownership or remove the compatibility TypeScript permission evaluator.

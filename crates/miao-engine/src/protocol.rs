@@ -129,6 +129,20 @@ pub struct Message {
     pub recorded_at_ms: Option<u64>,
 }
 
+/// One operator compaction request's scope. The default scope is the behaviour
+/// a bare `request_compact` has always had: cut at the boundary that honours
+/// the request and summarize the whole selected history.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CompactScope {
+    /// Message sequence the checkpoint must cut at. Messages after it stay
+    /// verbatim, so this is also the retention target: everything newer is kept.
+    pub through: Option<u64>,
+    /// What the summary must keep, in the operator's own words. Carried into
+    /// the summarizer prompt and recorded with the durable request.
+    pub focus: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Admission {
     pub input_id: String,
@@ -281,6 +295,22 @@ pub enum Command {
         session_id: String,
         input_id: String,
     },
+    /// Where one admitted input is now: waiting for promotion (with its place
+    /// in that delivery's queue), promoted into a message, or cancelled. An id
+    /// this Session never admitted answers `state: "unknown"` rather than
+    /// failing, because another Session's admission is not this caller's fact.
+    InputStatus {
+        session_id: String,
+        input_id: String,
+    },
+    /// Rewrite a still-pending input in place. The id, delivery class and
+    /// admission order stay; only the text the eventual user message carries
+    /// changes (RUN-02).
+    EditInput {
+        session_id: String,
+        input_id: String,
+        prompt: String,
+    },
     ModelCatalog,
     SelectModel {
         session_id: String,
@@ -325,6 +355,14 @@ pub enum Command {
         session_id: String,
         archived: bool,
     },
+    /// Set or clear a Session's pin. A pin is a catalog preference, owned here
+    /// so every client orders the shared catalog the same way; it changes no
+    /// message, run or inbox row and leaves `updated_at_ms` untouched, so
+    /// pinning does not make a Session look recently used.
+    Pin {
+        session_id: String,
+        pinned: bool,
+    },
     /// Delete everything a Session owns. Not a tombstone: the conversation,
     /// inbox, runs, approvals, jobs and schedules are gone and the identity can
     /// be re-created. Children keep their Sessions; only their lineage rows are
@@ -335,8 +373,19 @@ pub enum Command {
     },
     /// Ask for one compaction at the next settled assistant boundary, even when
     /// the automatic trigger's budget gate is under its threshold. The request is
-    /// durable and idempotent; one attempt answers it, either way.
+    /// durable and idempotent; one attempt answers it, either way. `through` and
+    /// `focus` are refusals-or-honoured, never silently adjusted.
     RequestCompact {
+        session_id: String,
+        #[serde(default)]
+        through: Option<u64>,
+        #[serde(default)]
+        focus: Option<String>,
+    },
+    /// Build a human-facing recap of the Session. A review artifact only: it
+    /// appends no message and writes no checkpoint, so unlike `request_compact`
+    /// it never changes what the next provider request carries.
+    Recap {
         session_id: String,
     },
     /// Apply a host-resolved agent manifest to this Session's subsequent
@@ -403,6 +452,18 @@ pub enum Command {
     Usage {
         session_id: String,
     },
+    /// Read-only Git state of the Session's workspace (WSP-02). A location that
+    /// is not inside a repository answers `{"repository": false}` rather than
+    /// failing, because "there is no repository here" is a normal answer.
+    VcsStatus {
+        session_id: String,
+    },
+    /// Sessions forked from or delegated to by this one, with the latest run
+    /// that decides whether a child is still working (AGT-01). A Session with
+    /// no children answers an empty list; an unknown Session is an error.
+    SessionChildren {
+        session_id: String,
+    },
     UpdateState {
         session_id: String,
         operation_id: String,
@@ -413,6 +474,16 @@ pub enum Command {
         session_id: String,
         #[serde(default)]
         selected: bool,
+    },
+    /// One bounded page of the stored transcript, newest page first (AGT-01
+    /// C2, TUI paging). `history` answers with the whole Session because the
+    /// model needs it; a preview only needs the recent tail.
+    HistoryPage {
+        session_id: String,
+        #[serde(default)]
+        before_seq: Option<u64>,
+        #[serde(default = "history_page_limit")]
+        limit: usize,
     },
     Job {
         session_id: String,
@@ -501,6 +572,10 @@ pub enum Command {
         import_id: String,
     },
     Sessions,
+    /// Re-derive the configuration sections the engine owns and reconcile them
+    /// in place. The reply names what changed, what kept its connection, and
+    /// what this build cannot reload yet.
+    ConfigReload,
     Fork {
         session_id: String,
         target_session_id: String,
@@ -515,6 +590,17 @@ pub enum Command {
         session_id: String,
     },
     RevertStage {
+        session_id: String,
+        boundary_seq: u64,
+        /// Restore the recorded file set with the conversation rewind. `false`
+        /// stages a history-only revert, for a caller that wants the transcript
+        /// rewound and the workspace left as it is.
+        #[serde(default = "yes")]
+        files: bool,
+    },
+    /// What a revert at `boundary_seq` would change, including paths that
+    /// changed outside the Session since it last recorded them.
+    RevertPreview {
         session_id: String,
         boundary_seq: u64,
     },
@@ -544,9 +630,52 @@ pub enum Command {
     PermissionEvaluate {
         request: crate::permission_rules::Request,
     },
+    /// Query only the Runtime-owned authority of a live reverse product call.
+    ProductPermissionEvaluate {
+        source: crate::product_permission::Source,
+        request: crate::product_permission::Request,
+    },
+    ProductPermissionAdmit {
+        source: crate::product_permission::Source,
+        input: crate::product_permission_request::Input,
+    },
+    ProductPermissionStatus {
+        source: crate::product_permission::Source,
+        request_id: String,
+    },
+    /// Withdraw only this source's assertion without rejecting sibling requests.
+    ProductPermissionCancel {
+        source: crate::product_permission::Source,
+        request_id: String,
+    },
+    ProductPermissionReply {
+        source: crate::product_permission::Source,
+        response: crate::product_permission_request::Response,
+    },
+    ProductPermissionPending {
+        session_id: String,
+    },
+    /// Standing allow patterns owned by this Runtime's canonical workspace.
+    PermissionImportSnapshot,
+    PermissionImportChanges(crate::permission_import_changes::Input),
+    PermissionSavedMigrate(crate::permission_migration::Input),
+    PermissionSavedMigration,
+    PermissionSavedImported,
+    PermissionSavedRemove(crate::permission_migration::Remove),
+    PermissionPatternList,
+    PermissionPatternSnapshot,
+    PermissionPatternChanges(crate::permission_pattern_changes::Input),
+    PermissionPatternPut(crate::permission_patterns::Put),
+    PermissionPatternRemove(crate::permission_patterns::Remove),
     /// Project the product's saved "always allow" rules into the engine store
     /// (S6 step 2). Idempotent by rule digest; scoped to one workspace.
     PermissionSavedProject {
+        workspace: String,
+        rules: Vec<crate::permission_rules::Rule>,
+    },
+    /// Replace the complete managed saved-allowance snapshot, including empty.
+    /// A distinct command prevents an old additive-only engine ignoring revocation.
+    PermissionSavedSnapshot {
         workspace: String,
         rules: Vec<crate::permission_rules::Rule>,
     },
@@ -566,6 +695,10 @@ fn recall_limit() -> usize {
 }
 
 fn pending_input_limit() -> usize {
+    50
+}
+
+fn history_page_limit() -> usize {
     50
 }
 

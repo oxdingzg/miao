@@ -54,6 +54,27 @@ impl Provider for Recording {
     }
 }
 
+/// Answers, but only after long enough for the runtime to announce that it is
+/// still waiting. Nothing is streamed before the first token.
+struct Stalled;
+
+#[async_trait]
+impl Provider for Stalled {
+    async fn stream(
+        &self,
+        _: ModelRequest,
+        _: tokio::sync::mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        tokio::time::sleep(std::time::Duration::from_millis(5_500)).await;
+        Ok(Reply {
+            content: json!([{"type":"text","text":"answered after a wait"}]),
+            usage: json!({}),
+            needs_tools: false,
+        })
+    }
+}
+
 async fn finished(store: &Store, count: usize) {
     tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
@@ -162,4 +183,68 @@ async fn silent_tool_batches_trigger_request_only_guidance_and_visible_text_rese
             .iter()
             .any(|message| message.content.to_string().contains("tool_result")));
     }
+}
+
+/// A turn that has not produced its first token emits no journal event and no
+/// delta, so a client cannot tell a slow provider from a dead engine. The
+/// runtime announces the wait on the ephemeral progress channel instead, and
+/// keeps announcing it until output arrives.
+#[tokio::test]
+async fn a_provider_that_has_not_answered_yet_announces_the_wait() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Stalled),
+        Tools::new(dir.path()).await.unwrap(),
+        Policy::new(Config {
+            mode: Mode::Workspace,
+            rules: vec![Rule {
+                tool: "*".into(),
+                path: "**".into(),
+                decision: Decision::Allow,
+            }],
+            ..Config::default()
+        })
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    let mut progress = runtime.progress();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "wait for it".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let first = next_waiting(&mut progress).await;
+    assert_eq!(first["session_id"], "s");
+    let repeated = next_waiting(&mut progress).await;
+    assert!(
+        repeated["elapsed_ms"].as_u64().unwrap() >= 4_000,
+        "the heartbeat repeats while the wait continues: {repeated}"
+    );
+    finished(&store, 1).await;
+    runtime.shutdown().await;
+}
+
+async fn next_waiting(progress: &mut tokio::sync::broadcast::Receiver<Value>) -> Value {
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let frame = progress.recv().await.unwrap();
+            if frame["kind"] == "provider.waiting" {
+                return frame;
+            }
+        }
+    })
+    .await
+    .expect("a waiting frame arrives")
 }

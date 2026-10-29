@@ -188,6 +188,74 @@ fn pending_inputs_is_a_wire_command_with_cursor_pagination() {
 }
 
 #[test]
+fn history_page_is_a_wire_command_with_a_durable_cursor() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        // Admit-only: the prompt is durable input, not a transcript message yet.
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"hello"},"resume":false}}),
+        json!({"id":2,"method":"history_page","params":{"session_id":"s"}}),
+        json!({"id":3,"method":"inject","params":{"session_id":"s","input_id":"ctx","text":"observed state","source":"skill:test"}}),
+        json!({"id":4,"method":"history_page","params":{"session_id":"s","limit":10}}),
+        json!({"id":5,"method":"history_page","params":{"session_id":"s","before_seq":0}}),
+        json!({"id":6,"method":"history_page","params":{"session_id":"missing"}}),
+        json!({"id":7,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let reply = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap().clone();
+    let page = reply(2)["result"].clone();
+    assert_eq!(page["messages"], json!([]), "{page}");
+    assert_eq!(page["has_more"], json!(false));
+    assert_eq!(page["next_before"], Value::Null);
+
+    let page = reply(4)["result"].clone();
+    let messages = page["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 1, "{page}");
+    assert_eq!(messages[0]["role"], json!("user"));
+    assert_eq!(messages[0]["synthetic"], json!(true));
+    assert_eq!(messages[0]["checkpoint"], Value::Null);
+    assert_eq!(page["has_more"], json!(false));
+    assert_eq!(page["next_before"], Value::Null);
+
+    // A cursor before the first message is a bounded empty page, not an error.
+    let page = reply(5)["result"].clone();
+    assert_eq!(page["messages"], json!([]));
+    assert_eq!(page["has_more"], json!(false));
+    // An identity that does not exist is refused.
+    assert!(reply(6)["error"].is_object(), "{:?}", reply(6));
+}
+
+#[test]
 fn archive_and_remove_are_wire_commands_with_a_durable_effect() {
     let dir = tempfile::tempdir().unwrap();
     let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
@@ -213,6 +281,18 @@ fn archive_and_remove_are_wire_commands_with_a_durable_effect() {
         json!({"id":4,"method":"archive","params":{"session_id":"s","archived":false}}),
         json!({"id":5,"method":"snapshot","params":{"session_id":"s"}}),
         json!({"id":6,"method":"archive","params":{"session_id":"missing","archived":true}}),
+        json!({"id":11,"method":"pin","params":{"session_id":"s","pinned":true}}),
+        json!({"id":12,"method":"snapshot","params":{"session_id":"s"}}),
+        json!({"id":13,"method":"pin","params":{"session_id":"s","pinned":false}}),
+        json!({"id":14,"method":"snapshot","params":{"session_id":"s"}}),
+        json!({"id":15,"method":"pin","params":{"session_id":"missing","pinned":true}}),
+        json!({"id":16,"method":"revert_preview","params":{"session_id":"s","boundary_seq":1}}),
+        json!({"id":17,"method":"revert_stage","params":{"session_id":"s","boundary_seq":1}}),
+        json!({"id":18,"method":"revert_stage","params":{"session_id":"s","boundary_seq":1,"files":false}}),
+        json!({"id":19,"method":"revert_commit","params":{"session_id":"s"}}),
+        json!({"id":20,"method":"snapshot","params":{"session_id":"s"}}),
+        json!({"id":21,"method":"unrevert","params":{"session_id":"s"}}),
+        json!({"id":22,"method":"snapshot","params":{"session_id":"s"}}),
         json!({"id":7,"method":"remove","params":{"session_id":"s"}}),
         json!({"id":8,"method":"sessions"}),
         json!({"id":9,"method":"remove","params":{"session_id":"s"}}),
@@ -242,6 +322,29 @@ fn archive_and_remove_are_wire_commands_with_a_durable_effect() {
     assert!(result(5)["archived_at_ms"].is_null());
     // Archiving never invents a Session, so the wire reports a refusal instead.
     assert!(reply(6)["error"].is_object(), "{replies:?}");
+    assert_eq!(result(11), json!({"accepted": true, "pinned": true}));
+    assert!(result(12)["pinned_at_ms"].is_number(), "{replies:?}");
+    // A pin is a list preference, not activity: the update time stays put.
+    // Compared with the snapshot taken just before the pin, since archiving
+    // above legitimately moved that timestamp.
+    assert_eq!(result(12)["updated_at_ms"], result(5)["updated_at_ms"]);
+    assert_eq!(result(13), json!({"accepted": true, "pinned": false}));
+    assert!(result(14)["pinned_at_ms"].is_null());
+    assert!(reply(15)["error"].is_object(), "{replies:?}");
+    // Revert vocabulary: the preview is a read, a file stage refuses when no
+    // snapshot exists, and the explicit history-only stage still records the
+    // intent so the conversation can be rewound without touching files.
+    assert_eq!(
+        result(16),
+        json!({"available": false, "reason": "no-file-snapshot"})
+    );
+    assert!(reply(17)["error"].is_object(), "{replies:?}");
+    assert_eq!(result(18)["restored"], json!([]));
+    assert_eq!(result(18)["removed"], json!([]));
+    assert!(result(19)["seq"].is_number(), "{replies:?}");
+    assert_eq!(result(20)["reverted_count"], result(19)["reverted"]);
+    assert_eq!(result(21)["restored"], result(19)["reverted"]);
+    assert_eq!(result(22)["reverted_count"], json!(0));
     assert_eq!(result(7), json!({"accepted": true}));
     assert_eq!(result(8), json!([]));
     assert_eq!(result(9), json!({"accepted": false, "reason": "unknown"}));
@@ -271,8 +374,9 @@ fn compaction_requests_are_a_wire_command_with_a_durable_audit_trail() {
         json!({"id":2,"method":"request_compact","params":{"session_id":"missing"}}),
         json!({"id":3,"method":"request_compact","params":{"session_id":"s"}}),
         json!({"id":4,"method":"request_compact","params":{"session_id":"s"}}),
-        json!({"id":5,"method":"events","params":{"session_id":"s","after":0}}),
-        json!({"id":6,"method":"shutdown"}),
+        json!({"id":5,"method":"request_compact","params":{"session_id":"s","through":null,"focus":"keep the file list"}}),
+        json!({"id":6,"method":"events","params":{"session_id":"s","after":0}}),
+        json!({"id":7,"method":"shutdown"}),
     ];
     let mut stdin = process.stdin.take().unwrap();
     for request in requests {
@@ -303,7 +407,10 @@ fn compaction_requests_are_a_wire_command_with_a_durable_audit_trail() {
         result(4),
         json!({"accepted": true, "duplicate": true, "pending": true})
     );
-    let events = result(5);
+    // A retry that names a different scope is a conflict, not a silent
+    // replacement: the wire form carries the scope through camelCase fields.
+    assert!(reply(5)["error"].is_object(), "{replies:?}");
+    let events = result(6);
     assert_eq!(
         events
             .as_array()
@@ -375,6 +482,130 @@ fn agent_selection_is_a_wire_command_that_reports_its_derived_hash() {
     assert_eq!(snapshot["agent"]["name"], "reviewer");
     assert_eq!(snapshot["agent"]["agent_hash"], hash.as_str());
     assert_eq!(snapshot["agent"]["semantics"], "product-agent-v1");
+}
+
+#[test]
+fn input_status_is_a_wire_command_that_survives_cancellation() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"hello"},"resume":false}}),
+        json!({"id":2,"method":"input_status","params":{"session_id":"s","input_id":"one"}}),
+        json!({"id":3,"method":"input_status","params":{"session_id":"s","input_id":"missing"}}),
+        json!({"id":4,"method":"cancel_input","params":{"session_id":"s","input_id":"one"}}),
+        json!({"id":5,"method":"input_status","params":{"session_id":"s","input_id":"one"}}),
+        json!({"id":6,"method":"input_status","params":{"session_id":"missing","input_id":"one"}}),
+        json!({"id":7,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let reply = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap().clone();
+    let result = |id: u64| reply(id)["result"].clone();
+    let pending = result(2);
+    assert_eq!(pending["state"], "pending");
+    assert_eq!(pending["delivery"], "steer");
+    assert_eq!(pending["pending_ahead"], 0);
+    assert!(pending["admitted_at_ms"].is_number(), "{replies:?}");
+    // An id this Session never admitted is answered, not refused.
+    assert_eq!(result(3)["state"], "unknown");
+    assert_eq!(result(4)["accepted"], true);
+    let cancelled = result(5);
+    assert_eq!(cancelled["state"], "cancelled");
+    assert!(cancelled["cancelled"]["seq"].is_number(), "{replies:?}");
+    // An unknown Session has no inbox to ask about.
+    assert!(reply(6)["error"].is_object(), "{replies:?}");
+}
+
+#[test]
+fn session_children_is_a_wire_command_over_the_lineage_edge() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"hello"},"resume":false}}),
+        json!({"id":2,"method":"session_children","params":{"session_id":"s"}}),
+        json!({"id":3,"method":"fork","params":{"session_id":"s","target_session_id":"child"}}),
+        json!({"id":4,"method":"session_children","params":{"session_id":"s"}}),
+        json!({"id":5,"method":"session_children","params":{"session_id":"child"}}),
+        json!({"id":6,"method":"session_children","params":{"session_id":"missing"}}),
+        json!({"id":7,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let reply = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap().clone();
+    let result = |id: u64| reply(id)["result"].clone();
+    // Before the fork the parent has no children, which is an answer.
+    assert_eq!(result(2)["children"], json!([]));
+    assert_eq!(result(2)["truncated"], json!(false));
+    let children = result(4);
+    assert_eq!(children["children"][0]["session_id"], "child");
+    // An admit-only prompt was never promoted, so the fork boundary is the
+    // parent's empty history rather than the pending input.
+    assert_eq!(children["children"][0]["parent_message_seq"], 0);
+    // A child that was created but never ran has no run to report.
+    assert_eq!(children["children"][0]["status"], "idle");
+    assert_eq!(children["children"][0]["run"], Value::Null);
+    // The edge is one-directional: the child has no children of its own.
+    assert_eq!(result(5)["children"], json!([]));
+    // An unknown identity is refused rather than reported as childless.
+    assert!(reply(6)["error"].is_object(), "{replies:?}");
 }
 
 #[test]
@@ -514,4 +745,189 @@ async fn a_slow_reader_does_not_kill_the_engine() {
     // `events` returns one bounded page; the reply is still far larger than
     // the pipe buffer and the output queue that the old deadline choked on.
     assert_eq!(events["result"].as_array().unwrap().len(), 100);
+}
+
+#[test]
+fn workspace_git_state_is_a_wire_command_that_answers_absent_repositories() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"hello"},"resume":false}}),
+        json!({"id":2,"method":"vcs_status","params":{"session_id":"s"}}),
+        json!({"id":3,"method":"vcs_status","params":{"session_id":"missing"}}),
+        json!({"id":4,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let result =
+        |id: u64| replies.iter().find(|reply| reply["id"] == id).unwrap()["result"].clone();
+    // The workspace is a plain temp directory, so the answer is "no repository"
+    // with the root it looked at, not an error. The engine stores the location
+    // canonicalized, which matters on hosts where the temp dir is a symlink.
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    assert_eq!(
+        result(2),
+        json!({"repository": false, "root": root.to_str().unwrap()})
+    );
+    // A Session nobody initialized has no location to inspect.
+    assert!(
+        replies.iter().find(|reply| reply["id"] == 3).unwrap()["error"].is_object(),
+        "{replies:?}"
+    );
+}
+
+#[test]
+fn stdio_recap_is_a_wire_command_that_commits_no_checkpoint() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"hello"},"resume":false}}),
+        json!({"id":2,"method":"recap","params":{"session_id":"s"}}),
+        json!({"id":3,"method":"recap","params":{"session_id":"missing"}}),
+        json!({"id":4,"method":"events","params":{"session_id":"s","after":0}}),
+        json!({"id":5,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let result = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap()["result"].clone();
+    let recap = result(2);
+    assert!(
+        recap["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("## Session recap"),
+        "{recap}"
+    );
+    // The command answers on the wire and records a review artifact, while a
+    // Session that does not exist is refused rather than invented.
+    assert!(
+        replies
+            .iter()
+            .any(|r| r["id"] == 3 && r.get("error").is_some()),
+        "{replies:?}"
+    );
+    let kinds = result(4)
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|event| event["kind"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert!(
+        kinds.iter().any(|kind| kind == "recap.created"),
+        "{kinds:?}"
+    );
+    assert!(
+        kinds.iter().all(|kind| kind != "history.compacted"),
+        "{kinds:?}"
+    );
+}
+
+#[test]
+fn input_edit_is_a_wire_command_that_rewrites_a_queued_prompt() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"first draft","delivery":"queue"},"resume":false}}),
+        json!({"id":2,"method":"edit_input","params":{"session_id":"s","input_id":"one","prompt":"second draft"}}),
+        json!({"id":3,"method":"pending_inputs","params":{"session_id":"s"}}),
+        json!({"id":4,"method":"edit_input","params":{"session_id":"s","input_id":"missing","prompt":"text"}}),
+        json!({"id":5,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let reply = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap().clone();
+    let edited = reply(2)["result"].clone();
+    assert_eq!(edited["duplicate"], json!(false), "{edited}");
+    assert_eq!(edited["delivery"], json!("queue"));
+    let pending = reply(3)["result"].clone();
+    assert_eq!(pending["inputs"][0]["prompt"], json!("second draft"));
+    // The identity, not the text, is what an unknown edit is refused on.
+    assert!(reply(4)["error"].is_object(), "{:?}", reply(4));
 }

@@ -3,7 +3,7 @@ mod shell;
 use crate::{
     approval::{now_ms, Approval, Response},
     context_trigger::{self, ContextLimits},
-    permission::{input_digest, Config, Decision, Policy},
+    permission::{input_digest, Config, Decision, Mode, Policy},
     protocol::{Admission, Attachment, Delivery, Error, Input, ModelRequest},
     provider::{Provider, ProviderError},
     store::{RuntimeLease, SessionLease, Store},
@@ -15,7 +15,7 @@ use futures_util::StreamExt;
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{Arc, RwLock as StdRwLock},
 };
 use tokio::io::AsyncBufReadExt;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex, Semaphore};
@@ -26,6 +26,19 @@ use tokio_util::sync::CancellationToken;
 /// identical tool input may execute between promoted user inputs before
 /// further identical calls are refused with a corrective error result.
 const MAX_IDENTICAL_TOOL_CALLS: u32 = 5;
+
+/// How many refused identical calls one run tolerates before it stops. The cap
+/// above only settles a corrective error result, which assumes the model reads
+/// it and changes approach; a degenerate model re-issues the same call instead
+/// and would otherwise be re-asked forever (a Flash-tier model kept doing it
+/// for three hours and 275 provider turns on a ~750K-token context).
+const MAX_IDENTICAL_REFUSALS: u32 = 3;
+
+/// How often a dispatched-but-unsettled tool call re-announces itself on the
+/// ephemeral progress channel. Long reads, language servers, MCP servers and
+/// approval prompts can hold a turn for minutes without writing anything
+/// durable, and a client cannot tell that from a dead engine.
+const TOOL_WAIT_NOTICE: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[derive(Clone)]
 pub struct Runtime {
@@ -41,9 +54,15 @@ pub struct Controller {
 struct Inner {
     id: String,
     _lease: RuntimeLease,
-    policy: Policy,
+    /// The base policy every turn derives from. A reload swaps the whole
+    /// `Arc`, so a turn that already took its snapshot keeps running under the
+    /// rules it started with.
+    policy: StdRwLock<Arc<Policy>>,
     store: Store,
-    provider: Arc<dyn Provider>,
+    /// The provider every turn resolves its binding against. A reload swaps
+    /// the whole `Arc`, so a drain that already resolved a route keeps it and
+    /// the next turn sees the new catalog.
+    provider: StdRwLock<Arc<dyn Provider>>,
     tools: Tools,
     tool_replay: Option<ToolReplay>,
     actors: Mutex<HashMap<String, Actor>>,
@@ -61,10 +80,33 @@ struct Inner {
     stop: CancellationToken,
     heartbeat: Mutex<Option<JoinHandle<()>>>,
     progress: broadcast::Sender<Value>,
+    /// Reports of reloads that actually changed something, so a host can show
+    /// them without having issued the reload itself.
+    config_changes: broadcast::Sender<Value>,
     product: Arc<std::sync::RwLock<crate::product::State>>,
     context: Mutex<Option<ContextLimits>>,
     roles: Mutex<crate::roles::Bindings>,
     route_limits: Mutex<crate::model_routes::RouteLimits>,
+    /// Where LSP servers were derived from at startup, so a reload re-reads the
+    /// same sources instead of guessing at them.
+    lsp_origin: Mutex<Option<crate::config_derive::LspOrigin>>,
+    /// Where the MCP server list was derived from at startup.
+    mcp_origin: Mutex<Option<crate::config_derive::McpOrigin>>,
+    /// Where the context-carrying host files were read from at startup.
+    context_origin: Mutex<Option<crate::config_derive::ContextOrigin>>,
+    /// Where the model route manifest lives and the base provider it layers
+    /// over, so a reload rebuilds the same catalog from the same sources.
+    model_origin: Mutex<Option<crate::model_routes::Origin>>,
+    /// Fingerprint of the manifest the running catalog was derived from, so
+    /// an edit that changes credentials but not the visible catalog still
+    /// counts as a change.
+    model_digest: Mutex<Option<String>>,
+    /// Where the base policy was derived from at startup, so a reload derives
+    /// it the same way, including the operator's `--mode` override.
+    policy_origin: Mutex<Option<(crate::config_derive::PolicyOrigin, Option<Mode>)>>,
+    /// Number of reloads that changed at least one section. Replaying the same
+    /// configuration does not advance it.
+    config_generation: Mutex<u64>,
     /// Task-specific verification command run before a run may finish.
     verification: Mutex<Option<String>>,
     breaker: Mutex<context_trigger::Breaker>,
@@ -91,6 +133,69 @@ enum Command {
     Cancel(oneshot::Sender<bool>),
     CancelIf(String, oneshot::Sender<Result<bool, Error>>),
     Approve(Response, bool, oneshot::Sender<Result<(), Error>>),
+}
+
+impl Inner {
+    /// The base policy a turn starts from. Callers hold the returned `Arc` for
+    /// the whole turn; a reload replaces the cell, never the policy in place.
+    fn policy(&self) -> Arc<Policy> {
+        self.policy
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone()
+    }
+    fn set_policy(&self, policy: Policy) {
+        *self.policy.write().unwrap_or_else(|held| held.into_inner()) = Arc::new(policy);
+    }
+    /// The provider a turn resolves its binding against. Callers hold the
+    /// returned `Arc` for the turn; a reload replaces the cell.
+    fn provider(&self) -> Arc<dyn Provider> {
+        self.provider
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone()
+    }
+    fn set_provider(&self, provider: Arc<dyn Provider>) {
+        *self
+            .provider
+            .write()
+            .unwrap_or_else(|held| held.into_inner()) = provider;
+    }
+}
+
+/// The invariants that keep a policy honest about what the process can do.
+/// Startup and every reload run the same checks, so a reload that would enable
+/// process authority inside the workspace or MCP without external authority is
+/// refused and the running configuration stays in place.
+async fn validate_policy_boundary(
+    policy: &Policy,
+    store: &Store,
+    tools: &Tools,
+    provider: &dyn Provider,
+) -> Result<(), Error> {
+    if policy.process_enabled()
+        && store
+            .path()
+            .starts_with(std::path::Path::new(tools.location()))
+    {
+        return Err(Error::Invalid(
+            "process-enabled runtime requires its database outside the workspace".into(),
+        ));
+    }
+    if tools.has_mcp() && !policy.mcp_enabled() {
+        return Err(Error::Invalid(
+            "MCP services require explicit workspace external authority".into(),
+        ));
+    }
+    for path in provider.protected_resources() {
+        let path = tokio::fs::canonicalize(path).await?;
+        if policy.process_enabled() && path.starts_with(std::path::Path::new(tools.location())) {
+            return Err(Error::Invalid(
+                "process credential resources must be outside workspace".into(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl Runtime {
@@ -123,42 +228,17 @@ impl Runtime {
                 "native tool replay does not execute configured hooks".into(),
             ));
         }
-        if policy.process_enabled()
-            && store
-                .path()
-                .starts_with(std::path::Path::new(tools.location()))
-        {
-            return Err(Error::Invalid(
-                "process-enabled runtime requires its database outside the workspace".into(),
-            ));
-        }
-        if tools.has_mcp() && !policy.mcp_enabled() {
-            return Err(Error::Invalid(
-                "MCP services require explicit workspace external authority".into(),
-            ));
-        }
-        let mut tools = tools
-            .enable_web(policy.web_enabled())
-            .map_err(|error| Error::Invalid(error.to_string()))?
-            .with_cron(policy.cron_enabled())
-            .with_wakeup(policy.wakeup_enabled())
-            .with_writes(policy.writes_enabled())
-            .with_process(
-                policy.process_enabled(),
-                policy.process_network(),
-                policy.process_sandbox(),
-            )
-            .with_background(policy.background_enabled())
-            .with_delegation(policy.subagents_enabled())
-            .protect_store(store.path());
+        validate_policy_boundary(&policy, &store, &tools, provider.as_ref()).await?;
+        let mut tools = tools.protect_store(store.path());
+        tools
+            .set_web(policy.web_enabled())
+            .map_err(|error| Error::Invalid(error.to_string()))?;
+        tools.set_gates(crate::tools::Gates::derive(
+            &policy,
+            tools.process_runner().is_some(),
+        ));
         for path in provider.protected_resources() {
             let path = tokio::fs::canonicalize(path).await?;
-            if policy.process_enabled() && path.starts_with(std::path::Path::new(tools.location()))
-            {
-                return Err(Error::Invalid(
-                    "process credential resources must be outside workspace".into(),
-                ));
-            }
             tools = tools.with_protected_resource(&path);
         }
         let lease = store.claim_runtime()?;
@@ -168,13 +248,14 @@ impl Runtime {
         store.adopt_wakeups().await?;
         store.adopt_crons().await?;
         let (progress, _) = broadcast::channel(256);
+        let (config_changes, _) = broadcast::channel(16);
         let runtime = Self {
             inner: Arc::new(Inner {
                 id: uuid::Uuid::new_v4().to_string(),
                 _lease: lease,
-                policy,
+                policy: StdRwLock::new(Arc::new(policy)),
                 store,
-                provider,
+                provider: StdRwLock::new(provider),
                 tools,
                 tool_replay,
                 actors: Mutex::new(HashMap::new()),
@@ -190,10 +271,18 @@ impl Runtime {
                 stop: CancellationToken::new(),
                 heartbeat: Mutex::new(None),
                 progress,
+                config_changes,
                 product: Arc::new(std::sync::RwLock::new(crate::product::State::default())),
                 context: Mutex::new(None),
                 roles: Mutex::new(crate::roles::Bindings::default()),
                 route_limits: Mutex::new(crate::model_routes::RouteLimits::default()),
+                lsp_origin: Mutex::new(None),
+                mcp_origin: Mutex::new(None),
+                context_origin: Mutex::new(None),
+                model_origin: Mutex::new(None),
+                model_digest: Mutex::new(None),
+                policy_origin: Mutex::new(None),
+                config_generation: Mutex::new(1),
                 verification: Mutex::new(None),
                 breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
                 restore_pending: Mutex::new(std::collections::HashSet::new()),
@@ -299,6 +388,33 @@ impl Runtime {
         state.marker = plugin_hooks;
     }
 
+    /// Bind the host's path spelling to this Runtime's actual Location. This
+    /// startup context is captured by each source, never supplied by an ask.
+    pub async fn set_product_context(
+        &self,
+        context: crate::product::HostContext,
+    ) -> Result<(), Error> {
+        let bounded = |path: &str| {
+            !path.is_empty()
+                && path.len() <= 4096
+                && !path.contains('\0')
+                && std::path::Path::new(path).is_absolute()
+        };
+        if !bounded(&context.directory) || context.cwd.as_ref().is_some_and(|cwd| !bounded(cwd)) {
+            return Err(Error::Invalid("invalid product host path context".into()));
+        }
+        let directory = tokio::fs::canonicalize(&context.directory)
+            .await
+            .map_err(|_| Error::Invalid("invalid product host directory".into()))?;
+        if directory != std::path::Path::new(self.inner.tools.location()) {
+            return Err(Error::Invalid(
+                "product host directory does not match Location".into(),
+            ));
+        }
+        self.inner.product.write().unwrap().host_context = Some(context);
+        Ok(())
+    }
+
     /// Route a host reply for a product-tool bridge call.
     pub fn deliver_product_reply(&self, bridge_id: u64, value: Value) -> bool {
         match self
@@ -321,6 +437,290 @@ impl Runtime {
         }
     }
 
+    pub async fn permission_import_snapshot(
+        &self,
+        controller: &Controller,
+    ) -> Result<crate::permission_import_changes::Snapshot, Error> {
+        self.inner
+            .store
+            .permission_import_snapshot(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn permission_import_changes(
+        &self,
+        controller: &Controller,
+        input: crate::permission_import_changes::Input,
+    ) -> Result<crate::permission_import_changes::Page, Error> {
+        self.inner
+            .store
+            .permission_import_changes(self.permission_pattern_workspace(controller)?, input)
+            .await
+    }
+
+    pub async fn migrate_saved_permissions(
+        &self,
+        controller: &Controller,
+        input: crate::permission_migration::Input,
+    ) -> Result<crate::permission_migration::Receipt, Error> {
+        self.inner
+            .store
+            .migrate_legacy_permissions(
+                self.permission_pattern_workspace(controller)?,
+                input.project,
+                input.rules,
+            )
+            .await
+    }
+
+    pub async fn saved_permission_migration(
+        &self,
+        controller: &Controller,
+    ) -> Result<Option<crate::permission_migration::Receipt>, Error> {
+        self.inner
+            .store
+            .legacy_permission_migration(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn imported_permissions(
+        &self,
+        controller: &Controller,
+    ) -> Result<Vec<crate::permission_migration::LegacyRule>, Error> {
+        self.inner
+            .store
+            .imported_permissions(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn remove_imported_permission(
+        &self,
+        controller: &Controller,
+        id: String,
+    ) -> Result<bool, Error> {
+        self.inner
+            .store
+            .remove_imported_permission(self.permission_pattern_workspace(controller)?, id)
+            .await
+    }
+
+    pub async fn permission_patterns(
+        &self,
+        controller: &Controller,
+    ) -> Result<Vec<crate::permission_patterns::Pattern>, Error> {
+        self.inner
+            .store
+            .permission_patterns(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn permission_pattern_snapshot(
+        &self,
+        controller: &Controller,
+    ) -> Result<crate::permission_pattern_changes::Snapshot, Error> {
+        self.inner
+            .store
+            .permission_pattern_snapshot(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn permission_pattern_changes(
+        &self,
+        controller: &Controller,
+        input: crate::permission_pattern_changes::Input,
+    ) -> Result<crate::permission_pattern_changes::Page, Error> {
+        self.inner
+            .store
+            .permission_pattern_changes(self.permission_pattern_workspace(controller)?, input)
+            .await
+    }
+
+    pub async fn put_permission_pattern(
+        &self,
+        controller: &Controller,
+        rule: crate::permission_rules::Rule,
+    ) -> Result<crate::permission_patterns::Pattern, Error> {
+        self.inner
+            .store
+            .put_permission_pattern(self.permission_pattern_workspace(controller)?, rule)
+            .await
+    }
+
+    pub async fn remove_permission_pattern(
+        &self,
+        controller: &Controller,
+        id: String,
+    ) -> Result<bool, Error> {
+        self.inner
+            .store
+            .remove_permission_pattern(self.permission_pattern_workspace(controller)?, id)
+            .await
+    }
+
+    fn permission_pattern_workspace(&self, controller: &Controller) -> Result<String, Error> {
+        if controller.runtime_id != self.inner.id {
+            return Err(Error::Invalid(
+                "permission pattern controller mismatch".into(),
+            ));
+        }
+        Ok(self.inner.tools.location().into())
+    }
+
+    pub async fn admit_product_permission(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        input: crate::product_permission_request::Input,
+    ) -> Result<crate::product_permission_request::Record, Error> {
+        self.inner
+            .store
+            .admit_product_permission(self.product_permission_context(controller, source)?, input)
+            .await
+    }
+
+    pub async fn product_permission_status(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        id: String,
+    ) -> Result<crate::product_permission_request::Record, Error> {
+        self.inner
+            .store
+            .product_permission_status(self.product_permission_context(controller, source)?, id)
+            .await
+    }
+
+    pub async fn cancel_product_permission(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        id: String,
+    ) -> Result<crate::product_permission_request::Record, Error> {
+        self.inner
+            .store
+            .cancel_product_permission(self.product_permission_context(controller, source)?, id)
+            .await
+    }
+
+    pub async fn reply_product_permission(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        response: crate::product_permission_request::Response,
+    ) -> Result<crate::product_permission_request::Record, Error> {
+        self.inner
+            .store
+            .reply_product_permission(
+                self.product_permission_context(controller, source)?,
+                response,
+            )
+            .await
+    }
+
+    pub async fn pending_product_permissions(
+        &self,
+        controller: &Controller,
+        session: String,
+    ) -> Result<Vec<crate::product_permission_request::Record>, Error> {
+        let workspace = self.permission_pattern_workspace(controller)?;
+        self.inner
+            .store
+            .pending_product_permissions(self.inner.id.clone(), workspace, session)
+            .await
+    }
+
+    fn product_permission_context(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+    ) -> Result<crate::product_permission_request::Context, Error> {
+        let workspace = self.permission_pattern_workspace(controller)?;
+        let product = self.inner.product.read().unwrap();
+        let bridge = product
+            .bridge
+            .clone()
+            .ok_or_else(|| Error::Invalid("inactive product permission source".into()))?;
+        let authority = bridge
+            .permission_authority(source)
+            .ok_or_else(|| Error::Invalid("inactive product permission source".into()))?;
+        Ok(crate::product_permission_request::Context {
+            owner: self.inner.id.clone(),
+            source: source.clone(),
+            authority,
+            workspace,
+            boundary: self.inner.tools.grant_authority_descriptor(),
+            bridge,
+            product: self.inner.product.clone(),
+        })
+    }
+
+    /// Evaluate against the authority captured by the active reverse call.
+    /// This is a bounded query, not an execution or persistent-approval ticket.
+    pub async fn evaluate_product_permission(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+        request: crate::product_permission::Request,
+    ) -> Result<crate::permission_rules::Outcome, Error> {
+        if controller.runtime_id != self.inner.id {
+            return Err(Error::Invalid(
+                "product permission controller mismatch".into(),
+            ));
+        }
+        if request.actions.is_empty() || request.resources.is_empty() {
+            return Err(Error::Invalid(
+                "product permission requires actions and resources".into(),
+            ));
+        }
+        let bridge = self
+            .inner
+            .product
+            .read()
+            .unwrap()
+            .bridge
+            .clone()
+            .ok_or_else(|| Error::Invalid("inactive product permission source".into()))?;
+        let authority = bridge
+            .permission_authority(source)
+            .ok_or_else(|| Error::Invalid("inactive product permission source".into()))?;
+        let saved = self
+            .inner
+            .store
+            .product_permission_rules(
+                source.session_id.clone(),
+                authority.run_id.clone(),
+                source.call_id.clone(),
+                self.inner.tools.location().into(),
+            )
+            .await?;
+        let mut outcome = crate::permission_rules::evaluate(&crate::permission_rules::Request {
+            actions: request.actions,
+            resources: request.resources,
+            explicit: request.explicit,
+            configured: authority.configured.clone(),
+            saved: Some(saved),
+        })?;
+        outcome.authority_revision = crate::permission::digest(&serde_json::to_vec(&json!({
+            "semantics":"product-permission-authority-v1",
+            "workspace":self.inner.tools.location(),
+            "policy":authority.policy_revision,
+            "boundary":self.inner.tools.grant_authority_descriptor(),
+            "rules":outcome.authority_revision,
+        }))?);
+        let connected = self
+            .inner
+            .product
+            .read()
+            .unwrap()
+            .bridge
+            .as_ref()
+            .is_some_and(|current| current.same_connection(&bridge));
+        if !connected || bridge.permission_authority(source).is_none() {
+            return Err(Error::Invalid("inactive product permission source".into()));
+        }
+        Ok(outcome)
+    }
+
     /// Configure automatic context management (roadmap §2.13). `None` keeps it
     /// off; without limits the run loop never attempts a checkpoint.
     /// Require this command to pass before a run may finish; see the
@@ -331,6 +731,273 @@ impl Runtime {
 
     pub async fn set_context_limits(&self, limits: Option<ContextLimits>) {
         *self.inner.context.lock().await = limits;
+    }
+
+    /// Record where startup derived the LSP servers from, so `config_reload`
+    /// re-reads those sources rather than a caller-supplied snapshot.
+    pub async fn set_lsp_origin(&self, origin: crate::config_derive::LspOrigin) {
+        *self.inner.lsp_origin.lock().await = Some(origin);
+    }
+
+    /// Record where startup read the MCP server list, so `config_reload`
+    /// re-reads that file instead of a caller-supplied snapshot.
+    pub async fn set_mcp_origin(&self, origin: crate::config_derive::McpOrigin) {
+        *self.inner.mcp_origin.lock().await = Some(origin);
+    }
+
+    /// Record where startup read the context-carrying host files. The origin
+    /// is recorded even when the operator supplied none: the section is then
+    /// supported and simply has nothing to derive.
+    pub async fn set_context_origin(&self, origin: crate::config_derive::ContextOrigin) {
+        *self.inner.context_origin.lock().await = Some(origin);
+    }
+
+    /// Record the route manifest and the base provider startup layered it
+    /// over, so `config_reload` rebuilds the catalog those produced. The
+    /// manifest is fingerprinted now, so a later reload can tell an edit from
+    /// a replay of this exact content.
+    pub async fn set_model_origin(&self, origin: crate::model_routes::Origin) -> Result<(), Error> {
+        let digest = origin
+            .digest()
+            .await
+            .map_err(|error| Error::Invalid(error.to_string()))?;
+        *self.inner.model_digest.lock().await = Some(digest);
+        *self.inner.model_origin.lock().await = Some(origin);
+        Ok(())
+    }
+
+    /// Record where the base policy came from, including the operator's
+    /// `--mode` override, so `config_reload` derives it the way startup did.
+    pub async fn set_policy_origin(
+        &self,
+        origin: crate::config_derive::PolicyOrigin,
+        mode: Option<Mode>,
+    ) {
+        *self.inner.policy_origin.lock().await = Some((origin, mode));
+    }
+
+    /// Whether any Session in this process is inside a drain. A standalone
+    /// reload waits for this to clear, so no turn observes half a change.
+    pub fn is_draining(&self) -> bool {
+        self.inner
+            .draining
+            .lock()
+            .map(|draining| !draining.is_empty())
+            .unwrap_or(false)
+    }
+
+    /// Re-derive the sections this build can reload and apply them in place.
+    /// Everything is derived before anything is touched: a malformed edit
+    /// leaves the running configuration intact and fails the command. The
+    /// report names every section the engine did not reload instead of
+    /// implying it did.
+    ///
+    /// The policy swaps together with the capability gates and web client it
+    /// implies. Gates go first because they can only add a refusal ahead of the
+    /// new policy, never permit a call the old one denied; a turn that already
+    /// took its policy snapshot keeps it, and the next turn reads the new one.
+    ///
+    /// The context section swaps each host file's content through `Tools`, so
+    /// a turn already reading its instructions or hooks finishes on the
+    /// snapshot it took and the next one sees the edit.
+    pub async fn reload_config(&self) -> Result<Value, Error> {
+        let mut unsupported = vec!["tools"];
+        // The LSP registry only exists when startup found at least one server;
+        // a plan that starts empty cannot grow without rebuilding Tools, so
+        // that case is reported rather than silently accepted. The MCP
+        // registry exists whenever the host supplied `--mcp-config`, even with
+        // an empty list, so it can grow from nothing.
+        let policy_origin = self.inner.policy_origin.lock().await.clone();
+        let lsp_origin = self
+            .inner
+            .lsp_origin
+            .lock()
+            .await
+            .clone()
+            .zip(self.inner.tools.lsp_registry());
+        let mcp_origin = self
+            .inner
+            .mcp_origin
+            .lock()
+            .await
+            .clone()
+            .zip(self.inner.tools.mcp_registry().cloned());
+        let model_origin = self.inner.model_origin.lock().await.clone();
+        let model_digest = self.inner.model_digest.lock().await.clone();
+        let context_origin = self.inner.context_origin.lock().await.clone();
+        if policy_origin.is_none() {
+            unsupported.insert(0, "policy");
+        }
+        if lsp_origin.is_none() {
+            unsupported.insert(0, "lsp");
+        }
+        if mcp_origin.is_none() {
+            unsupported.insert(0, "mcp");
+        }
+        if model_origin.is_none() {
+            unsupported.insert(0, "models");
+        }
+        if context_origin.is_none() {
+            unsupported.insert(0, "context");
+        }
+        // Derive every section before touching any of them, then validate, then
+        // apply: a derivation or boundary error leaves every section as it was.
+        let policy = match &policy_origin {
+            Some((origin, mode)) => {
+                let derived = Policy::new(origin.derive(*mode).map_err(Error::Invalid)?)?;
+                (self.inner.policy().revision() != derived.revision()).then_some(derived)
+            }
+            None => None,
+        };
+        let policy_changed = policy.is_some();
+        if let Some(policy) = &policy {
+            validate_policy_boundary(
+                policy,
+                &self.inner.store,
+                &self.inner.tools,
+                self.inner.provider().as_ref(),
+            )
+            .await?;
+        }
+        let configs = match &lsp_origin {
+            Some((origin, _)) => Some(origin.derive().map_err(Error::Invalid)?),
+            None => None,
+        };
+        let servers = match &mcp_origin {
+            Some((origin, _)) => Some(origin.derive().map_err(Error::Invalid)?),
+            None => None,
+        };
+        // The catalog is rebuilt from the same manifest and base provider
+        // startup used. Deriving it before any section is applied means a
+        // malformed manifest fails the reload and the old catalog keeps
+        // serving, alongside every other section.
+        let rebuilt = match &model_origin {
+            Some(origin) => Some(
+                origin
+                    .reload()
+                    .await
+                    .map_err(|error| Error::Invalid(error.to_string()))?,
+            ),
+            None => None,
+        };
+        let models_changed = match &rebuilt {
+            Some((provider, limits, fingerprint)) => {
+                let current = self.inner.route_limits.lock().await;
+                model_digest.as_ref() != Some(fingerprint)
+                    || provider.model_catalog() != self.inner.provider().model_catalog()
+                    || *limits != *current
+            }
+            None => false,
+        };
+        // Every context part is read and validated here, so a malformed host
+        // file fails the reload before any carrier — including the LSP and MCP
+        // reconciles below — is touched.
+        let context = match &context_origin {
+            Some(origin) => Some(
+                origin
+                    .derive(std::path::Path::new(self.inner.tools.location()))
+                    .map_err(Error::Invalid)?,
+            ),
+            None => None,
+        };
+        let reconciled = match (configs, &lsp_origin) {
+            (Some(configs), Some((_, registry))) => Some(registry.reconcile(configs).await?),
+            _ => None,
+        };
+        // A failed MCP rebuild keeps its previous connection and is reported
+        // inside the section, so it does not fail the rest of the reload.
+        let repaired = match (servers, &mcp_origin) {
+            (Some(servers), Some((_, registry))) => Some(registry.reconcile(servers).await?),
+            _ => None,
+        };
+        if let Some((provider, limits, fingerprint)) = rebuilt.filter(|_| models_changed) {
+            // Limits go first: a turn that already holds the old provider never
+            // sees new capacity paired with an old limit, only the reverse.
+            *self.inner.route_limits.lock().await = limits;
+            self.inner.set_provider(provider);
+            *self.inner.model_digest.lock().await = Some(fingerprint);
+        }
+        let context = context.map(|parts| parts.apply(&self.inner.tools));
+        let context_changed = context
+            .as_ref()
+            .is_some_and(|outcome| outcome.iter().any(|(_, changed)| *changed));
+        if let Some(policy) = policy {
+            self.inner
+                .tools
+                .set_web(policy.web_enabled())
+                .map_err(|error| Error::Invalid(error.to_string()))?;
+            self.inner.tools.set_gates(crate::tools::Gates::derive(
+                &policy,
+                self.inner.tools.process_runner().is_some(),
+            ));
+            self.inner.set_policy(policy);
+        }
+        let lsp_changed = reconciled.as_ref().is_some_and(|reconciled| {
+            !reconciled.changed.is_empty() || !reconciled.removed.is_empty()
+        });
+        let mcp_changed = repaired
+            .as_ref()
+            .is_some_and(|repaired| !repaired.changed.is_empty() || !repaired.removed.is_empty());
+        let mut changed = Vec::new();
+        let mut unchanged = Vec::new();
+        for (section, changed_here, supported) in [
+            ("policy", policy_changed, policy_origin.is_some()),
+            ("models", models_changed, model_origin.is_some()),
+            ("lsp", lsp_changed, lsp_origin.is_some()),
+            ("mcp", mcp_changed, mcp_origin.is_some()),
+            ("context", context_changed, context_origin.is_some()),
+        ] {
+            if !supported {
+                continue;
+            }
+            if changed_here {
+                changed.push(section);
+            } else {
+                unchanged.push(section);
+            }
+        }
+        let any_changed = !changed.is_empty();
+        let mut generation = self.inner.config_generation.lock().await;
+        if any_changed {
+            *generation += 1;
+        }
+        let mut report = json!({
+            "generation": *generation,
+            "changed": changed,
+            "unchanged": unchanged,
+            "unsupported": unsupported,
+        });
+        if let Some(reconciled) = reconciled {
+            report["lsp"] = json!({
+                "changed": reconciled.changed,
+                "unchanged": reconciled.unchanged,
+                "removed": reconciled.removed,
+            });
+        }
+        if let Some(repaired) = repaired {
+            report["mcp"] = json!({
+                "changed": repaired.changed,
+                "unchanged": repaired.unchanged,
+                "removed": repaired.removed,
+                "failed": repaired.failed.iter().map(|failure| json!({
+                    "server": failure.server,
+                    "error": failure.error,
+                })).collect::<Vec<_>>(),
+            });
+        }
+        if let Some(outcome) = &context {
+            report["context"] = json!({
+                "changed": outcome.iter().filter(|(_, changed)| *changed).map(|(part, _)| *part).collect::<Vec<_>>(),
+                "unchanged": outcome.iter().filter(|(_, changed)| !*changed).map(|(part, _)| *part).collect::<Vec<_>>(),
+            });
+        }
+        // Announced only when a section moved: a replayed configuration has
+        // nothing to tell the user, and a host that issued the reload already
+        // has the report as the reply.
+        if any_changed {
+            let _ = self.inner.config_changes.send(report.clone());
+        }
+        Ok(report)
     }
 
     /// Purpose-role model bindings (ADR-14): a binding is a model id on the
@@ -372,13 +1039,13 @@ impl Runtime {
             .or_else(|| agent.model.clone());
         let binding = match self.inner.store.account_selection(session).await? {
             Some(account) => crate::session_account::resolve(
-                &self.inner.provider,
+                &self.inner.provider(),
                 binding.as_ref(),
                 account.credential_id.as_deref(),
             )?,
             None => binding,
         };
-        let provider = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        let provider = crate::session_model::select(&self.inner.provider(), binding.as_ref())?;
         if let Some(request) = &agent.request {
             provider
                 .with_request_options(request.clone())
@@ -398,9 +1065,52 @@ impl Runtime {
     /// Session with no inbox row has nothing to drain, so the request stays
     /// durable until its next provider turn.
     pub async fn request_compact(&self, session: &str) -> Result<Value, Error> {
-        let result = self.inner.store.request_compaction(session).await?;
+        self.request_compact_with(session, crate::protocol::CompactScope::default())
+            .await
+    }
+
+    /// The same durable request with a scope: an explicit cut and a retention
+    /// target. Both are honoured exactly or refused with a reason — the request
+    /// is never clamped to a nearby boundary behind the operator's back.
+    pub async fn request_compact_with(
+        &self,
+        session: &str,
+        scope: crate::protocol::CompactScope,
+    ) -> Result<Value, Error> {
+        let result = self.inner.store.request_compaction(session, scope).await?;
         let _ = self.wake(session, false).await;
         Ok(result)
+    }
+
+    pub async fn replace_saved_rules(
+        &self,
+        controller: &Controller,
+        workspace: String,
+        rules: Vec<crate::permission_rules::Rule>,
+    ) -> Result<(), Error> {
+        if controller.runtime_id != self.inner.id {
+            return Err(Error::Invalid("permission controller mismatch".into()));
+        }
+        let workspace = tokio::fs::canonicalize(workspace)
+            .await
+            .map_err(|_| Error::Invalid("saved permission workspace is unavailable".into()))?;
+        if workspace != std::path::Path::new(self.inner.tools.location()) {
+            return Err(Error::Invalid("saved permission Location mismatch".into()));
+        }
+        self.inner
+            .store
+            .replace_saved_rules(self.inner.tools.location().to_owned(), rules)
+            .await
+    }
+
+    /// Build a recap for a person coming back to this Session.
+    ///
+    /// A recap is a review artifact, not a context operation: it calls no
+    /// provider, writes no checkpoint and appends no message, so it cannot free
+    /// context and it cannot change the next request. Compaction does all three,
+    /// which is why the two verbs stay separate in the command vocabulary.
+    pub async fn recap(&self, session: &str) -> Result<Value, Error> {
+        self.inner.store.recap(session).await
     }
 
     pub async fn approve(
@@ -433,7 +1143,7 @@ impl Runtime {
         let agent = self.inner.store.agent(session).await?;
         let policy = self
             .inner
-            .policy
+            .policy()
             .for_agent(agent.as_ref().map(|(manifest, _)| manifest))?;
         if controller.runtime_id != self.inner.id || response.policy_revision != policy.revision() {
             return Err(Error::ApprovalMismatch);
@@ -513,13 +1223,13 @@ impl Runtime {
             return Err(Error::Conflict);
         }
         let provider =
-            crate::session_model::select(&self.inner.provider, Some(&preparation.binding))?;
+            crate::session_model::select(&self.inner.provider(), Some(&preparation.binding))?;
         if provider.identity() != Some(preparation.identity.clone()) {
             return Err(Error::Conflict);
         }
         if let Some(account) = &preparation.account {
             let binding = crate::session_account::resolve(
-                &self.inner.provider,
+                &self.inner.provider(),
                 Some(&preparation.binding),
                 account.credential_id.as_deref(),
             )?;
@@ -596,6 +1306,23 @@ impl Runtime {
         self.inner.progress.subscribe()
     }
 
+    /// Reports of reloads that changed at least one section. A host that issues
+    /// `config_reload` already gets the report as the reply; this channel lets a
+    /// host show a reload it did not cause, such as the standalone poller's.
+    pub fn config_events(&self) -> broadcast::Receiver<Value> {
+        self.inner.config_changes.subscribe()
+    }
+
+    /// Tell every listening host that a reload was refused. A host that issued
+    /// the reload gets the error as its reply, but a poller-driven failure would
+    /// otherwise exist only in the engine's stderr, which no host reads live.
+    pub fn announce_config_failure(&self, message: &str) {
+        let _ = self
+            .inner
+            .config_changes
+            .send(json!({ "changed": [], "error": message }));
+    }
+
     pub async fn admit(&self, input: Input, resume: bool) -> Result<Admission, Error> {
         self.admit_with(input, Vec::new(), resume).await
     }
@@ -639,7 +1366,7 @@ impl Runtime {
                     validate_agent(&self.inner, agent)?;
                 }
                 if let Some(model) = &authority.model {
-                    crate::session_model::select(&self.inner.provider, Some(model))?;
+                    crate::session_model::select(&self.inner.provider(), Some(model))?;
                 }
             }
         }
@@ -743,7 +1470,7 @@ impl Runtime {
     }
 
     pub fn model_catalog(&self) -> Vec<crate::model_catalog::Info> {
-        self.inner.provider.model_catalog()
+        self.inner.provider().model_catalog()
     }
 
     pub async fn inject(
@@ -799,11 +1526,11 @@ impl Runtime {
                 .and_then(|(agent, _)| agent.model),
         };
         let binding = crate::session_account::resolve(
-            &self.inner.provider,
+            &self.inner.provider(),
             current.as_ref(),
             credential_id.as_deref(),
         )?;
-        let provider = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        let provider = crate::session_model::select(&self.inner.provider(), binding.as_ref())?;
         let (history, _) = self.inner.store.selected_input(session).await?;
         crate::session_model::validate_history(&history, binding.as_ref(), provider.identity())?;
         self.inner
@@ -827,7 +1554,7 @@ impl Runtime {
         let explicit = binding
             .as_ref()
             .and_then(|binding| binding.route_id.as_ref())
-            .and_then(|route| self.inner.provider.route_account(route))
+            .and_then(|route| self.inner.provider().route_account(route))
             .filter(|account| !account.is_default);
         let account = match &explicit {
             Some(account) => account
@@ -843,14 +1570,14 @@ impl Runtime {
         } else {
             match &account {
                 Some(account) => crate::session_account::resolve(
-                    &self.inner.provider,
+                    &self.inner.provider(),
                     binding.as_ref(),
                     account.credential_id.as_deref(),
                 )?,
                 None => binding.clone(),
             }
         };
-        let selected = crate::session_model::select(&self.inner.provider, effective.as_ref())?;
+        let selected = crate::session_model::select(&self.inner.provider(), effective.as_ref())?;
         let (history, _) = self.inner.store.selected_input(session).await?;
         crate::session_model::validate_history(&history, effective.as_ref(), selected.identity())?;
         if explicit.is_some() {
@@ -1406,7 +2133,7 @@ async fn execute(
     history_base: u64,
 ) -> Result<(), Error> {
     let mut step = 0;
-    let mut allowance = inner.policy.max_provider_turns();
+    let mut allowance = inner.policy().max_provider_turns();
     // Billed tokens this prompt has spent. The soft budget is per prompt, so
     // the same external admission that refills the allowance resets it.
     let mut budget_spent = 0u64;
@@ -1418,6 +2145,9 @@ async fn execute(
     // Consecutive failed completion checks for the configured verification.
     let mut verification_failures = 0;
     let mut repeats = HashMap::<String, u32>::new();
+    // Per-run count of calls refused because their input already spent
+    // MAX_IDENTICAL_TOOL_CALLS. Scoped to the run so a new prompt starts clean.
+    let mut refusals = HashMap::<String, u32>::new();
     // Signatures whose bound exhaustion already fired loop.detected, so a
     // signature is reported once instead of on every refused call.
     let mut loop_reported = HashSet::<String>::new();
@@ -1472,7 +2202,7 @@ async fn execute(
         // model only while the Session has no explicit selection of its own.
         let agent = inner.store.agent(session).await?;
         let manifest = agent.as_ref().map(|(manifest, _)| manifest);
-        let policy = inner.policy.for_agent(manifest)?;
+        let policy = inner.policy().for_agent(manifest)?;
         // A newly promoted external input gets the selected agent's whole
         // allowance, even if that input also switched agents. Internal loop
         // continuations never reset it.
@@ -1540,13 +2270,13 @@ async fn execute(
         let account = inner.store.account_selection(session).await?;
         let binding = match account.as_ref() {
             Some(account) => crate::session_account::resolve(
-                &inner.provider,
+                &inner.provider(),
                 binding.as_ref(),
                 account.credential_id.as_deref(),
             )?,
             None => binding,
         };
-        let selected_provider = crate::session_model::select(&inner.provider, binding.as_ref())?;
+        let selected_provider = crate::session_model::select(&inner.provider(), binding.as_ref())?;
         let provider = match manifest.and_then(|agent| agent.request.as_ref()) {
             Some(request) => selected_provider
                 .with_request_options(request.clone())
@@ -1842,6 +2572,7 @@ async fn execute(
         // output has been emitted it is not. Retry the bounded pre-output case so
         // a transient reset (for example a proxy dropping the stream) does not
         // fail the turn.
+        let permissions = permission_profile(inner, &policy).await?;
         let mut produced = false;
         let mut ttft_ms: Option<u64> = None;
         let mut attempts = 0;
@@ -1867,7 +2598,7 @@ async fn execute(
                             json!({"name":"native-runtime","semantics":"native-runtime-v1","collaborationMode":if plan {"plan"} else {"build"}})
                         }
                     },
-                    permissions: json!({"policy":policy.descriptor(),"boundary":inner.tools.authority_descriptor()}),
+                    permissions: permissions.clone(),
                 },
                 crate::provider::scoped(
                     transport_budget.clone(),
@@ -1876,10 +2607,23 @@ async fn execute(
                 ),
             );
             tokio::pin!(response);
+            // A provider that has not produced its first token sends nothing at all:
+            // no journal event and no delta, so a client cannot tell a slow model
+            // from an engine that died. Announce the wait on the ephemeral progress
+            // channel instead. It is not provider output, so it never counts as
+            // `produced` and never disarms the pre-output retry.
+            let mut waiting = tokio::time::interval(std::time::Duration::from_secs(5));
+            waiting.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             let outcome = loop {
                 tokio::select! {
                     _=cancel.cancelled()=>return Ok(()),
                     reply=&mut response=>break reply,
+                    _=waiting.tick(), if !produced => {
+                        let _=inner.progress.send(json!({
+                            "session_id":session,"run_id":run,"step":step,"kind":"provider.waiting",
+                            "attempt":attempts,"elapsed_ms":attempt_started.elapsed().as_millis() as u64,
+                        }));
+                    },
                     Some(delta)=receive.recv()=>{
                         if delta["kind"] == "provider.retry" {
                             // A retry is a durable product fact that survives replay,
@@ -2267,6 +3011,22 @@ command: None,
                         )}),
                         true,
                     ).await?;
+                    let refused = refusals.entry(repeat_key).or_default();
+                    *refused += 1;
+                    if *refused > MAX_IDENTICAL_REFUSALS {
+                        // The model ignored every corrective result. Asking it
+                        // again only buys the same answer, and each turn is a
+                        // full prompt on the whole context, so end the run with
+                        // something the user can act on.
+                        inner.store.record(
+                            session,
+                            "loop.stopped",
+                            json!({"run_id":run,"name":name,"reason":"refused-tool-call","refusals":*refused}),
+                        ).await?;
+                        return Err(Error::Invalid(format!(
+                            "the model kept re-issuing the same {name} call after {MAX_IDENTICAL_REFUSALS} refusals, so the run stopped instead of asking again. Change the approach in a new prompt, or switch models."
+                        )));
+                    }
                     continue;
                 }
                 let (output, is_error) = if let Some((output, is_error)) = reads.remove(id) {
@@ -2280,6 +3040,10 @@ command: None,
                             json!({"run_id":run,"call_id":id,"tool":name}),
                         )
                         .await?;
+                    // Approval waits, hook runs and execution all sit between
+                    // here and settlement, so the notice covers whichever of
+                    // them the turn is actually blocked on.
+                    let _waiting = WaitNotice::start(&inner.progress, session, run, step, id, name);
                     let mut block_input = block["input"].clone();
                     let plugin_before = tokio::select! {
                         biased;
@@ -2546,12 +3310,13 @@ command: None,
                                 }
                                 name if inner.product.read().unwrap().has(name) => {
                                     let input = prepared.input().clone();
-                                    let bridge = inner
-                                        .product
-                                        .read()
-                                        .unwrap()
-                                        .bridge
-                                        .clone();
+                                    let (bridge, host) = {
+                                        let product = inner.product.read().unwrap();
+                                        (product.bridge.clone(), product.host_context.clone().unwrap_or_else(|| crate::product::HostContext {
+                                            directory: inner.tools.location().into(),
+                                            cwd: std::env::current_dir().ok().and_then(|cwd| cwd.to_str().map(str::to_owned)),
+                                        }))
+                                    };
                                     match bridge {
                                         Some(bridge) => {
                                             // The host names a real permission source from
@@ -2568,7 +3333,17 @@ command: None,
                                                     bridge.cancel_session(session).await;
                                                     Err(ToolError::Interrupted)
                                                 }
-                                                outcome = bridge.call(session, name, input, context) => match outcome {
+                                                outcome = bridge.call_authorized(session, name, input, crate::product_permission::Authority {
+                                                    run_id: run.into(),
+                                                    context,
+                                                    policy_revision: policy.revision().into(),
+                                                    configured: manifest.and_then(|agent| agent.ordered_permissions.as_ref()).map(|ordered| ordered.rules.iter().map(|rule| crate::permission_rules::Rule {
+                                                        action: rule.action.clone(), resource: rule.resource.clone(), effect: rule.effect,
+                                                    }).collect()),
+                                                    auto: manifest.is_some_and(|agent| agent.permission_mode == Some(crate::session_agent::PermissionMode::Auto)),
+                                                    host,
+                                                    cancel: cancel.clone(),
+                                                }) => match outcome {
                                                     Ok(output) => {
                                                         if output.get("moved").is_some_and(|value| value.as_bool() == Some(true)) {
                                                             moved = true;
@@ -2865,12 +3640,13 @@ command: None,
                 })
             };
             let mut breaker = inner.breaker.lock().await;
+            let permissions = permission_profile(inner, &policy).await?;
             let mut prefix = || {
                 let provider = Arc::clone(&prefix_provider);
                 let store = inner.store.clone();
                 let stop = inner.stop.clone();
                 let mut snapshot = request.clone();
-                let permissions = json!({"policy":policy.descriptor(),"boundary":inner.tools.authority_descriptor()});
+                let permissions = permissions.clone();
                 async move {
                     if !prefix_allowed {
                         return None;
@@ -2906,6 +3682,8 @@ command: None,
                     run,
                     boundary: assistant_boundary,
                     forced: requested.is_some(),
+                    through: requested.as_ref().and_then(|request| request.through),
+                    focus: requested.as_ref().and_then(|request| request.focus.clone()),
                     budget: &limits.budget(),
                     per_pass: limits.per_pass,
                     breaker: &mut breaker,
@@ -2925,13 +3703,13 @@ command: None,
                     .await
                     .insert(session.to_owned());
             }
-            if let Some(seq) = requested {
+            if let Some(request) = requested {
                 // One attempt answers the request either way, so a summarizer the
                 // provider keeps refusing cannot pin the Session: asking again is
                 // what asks for another try.
                 let _ = inner
                     .store
-                    .settle_compaction_request(session, seq, compacted)
+                    .settle_compaction_request(session, request.seq, compacted)
                     .await;
             }
         }
@@ -3228,6 +4006,21 @@ command: None,
         }
         step += 1;
     }
+}
+
+// Saved rules can change during a running turn. This is the provider boundary's
+// diagnostic snapshot; each actual assertion still obtains its own native decision.
+async fn permission_profile(inner: &Inner, policy: &Policy) -> Result<Value, Error> {
+    let workspace = inner.tools.location();
+    let saved = inner.store.saved_rules(workspace.to_string()).await?;
+    Ok(json!({
+        "semantics": "native-permission-snapshot-v1",
+        "snapshot": "provider-boundary",
+        "workspace": workspace,
+        "policy": policy.descriptor(),
+        "boundary": inner.tools.authority_descriptor(),
+        "saved": saved,
+    }))
 }
 
 async fn notify_admission(
@@ -4014,14 +4807,14 @@ async fn delegate(
         .or_else(|| selected.as_ref().and_then(|agent| agent.model.as_ref()));
     let receipt = match context.account {
         Some(account) => crate::session_account::resolve(
-            &inner.provider,
+            &inner.provider(),
             effective,
             account.credential_id.as_deref(),
         ),
         None => Ok(effective.cloned()),
     }
     .map_err(|error| ToolError::External(error.to_string()))?;
-    let provider = crate::session_model::select(&inner.provider, receipt.as_ref())
+    let provider = crate::session_model::select(&inner.provider(), receipt.as_ref())
         .map_err(|error| ToolError::External(error.to_string()))?;
     if let Some(agent) = &selected {
         validate_agent(inner, agent).map_err(|error| ToolError::External(error.to_string()))?;
@@ -4550,7 +5343,13 @@ async fn authorize(
             .await?
             .as_str()
         {
-            "allow" => return Ok(true),
+            "allow" => {
+                // The durable counterpart of the request record: a client
+                // projecting the session status needs to know the wait ended,
+                // or the phase reads as waiting for approval while a tool runs.
+                inner.store.record(session,"permission.approved",json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource()})).await?;
+                return Ok(true);
+            }
             "pending" => {}
             _ => {
                 inner.store.record(session,crate::events::Lifecycle::PermissionDenied.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"approval_denied"})).await?;
@@ -5274,11 +6073,55 @@ async fn execute_read_batch(
     Ok(results)
 }
 
+/// Repeats `tool.waiting` on the progress channel while a serial call has not
+/// settled, so a client can tell a slow tool or a pending approval from a wedged
+/// engine. The guard owns one task: dropping it — the normal path, an early
+/// return on cancellation, or a panic — stops the notices at once.
+struct WaitNotice(JoinHandle<()>);
+
+impl WaitNotice {
+    fn start(
+        progress: &broadcast::Sender<Value>,
+        session: &str,
+        run: &str,
+        step: usize,
+        call: &str,
+        tool: &str,
+    ) -> Self {
+        // The notice is progress, never provider output: it is not durable, it
+        // does not count toward the turn's completion, and a replay never sees
+        // it.
+        let progress = progress.clone();
+        let payload = json!({
+            "session_id": session, "run_id": run, "step": step,
+            "kind": "tool.waiting", "call_id": call, "tool": tool,
+        });
+        Self(tokio::spawn(async move {
+            let started = std::time::Instant::now();
+            loop {
+                tokio::time::sleep(TOOL_WAIT_NOTICE).await;
+                if progress.receiver_count() == 0 {
+                    continue;
+                }
+                let mut frame = payload.clone();
+                frame["elapsed_ms"] = json!(started.elapsed().as_millis() as u64);
+                let _ = progress.send(frame);
+            }
+        }))
+    }
+}
+
+impl Drop for WaitNotice {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 fn validate_agent(inner: &Inner, agent: &crate::session_agent::AgentManifest) -> Result<(), Error> {
     agent.validate()?;
-    inner.policy.for_agent(Some(agent))?;
+    inner.policy().for_agent(Some(agent))?;
     if let Some(model) = &agent.model {
-        crate::session_model::select(&inner.provider, Some(model))?;
+        crate::session_model::select(&inner.provider(), Some(model))?;
     }
     if let Some(surface) = &agent.tools {
         let known = inner

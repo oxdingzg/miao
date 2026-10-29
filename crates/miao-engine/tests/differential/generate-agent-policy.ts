@@ -13,8 +13,12 @@ const rules = [
   { action: "bash", resource: "git status *", effect: "allow" as const },
   { action: "read", resource: "literal[1].txt", effect: "allow" as const },
   { action: "read", resource: "file?.txt", effect: "ask" as const },
+  { action: "read", resource: "??.txt", effect: "deny" as const },
 ]
 const cases = [
+  ["read", "😀.txt"],
+  ["read", "中.txt"],
+  ["read", "file😀.txt"],
   ["read", "src/file.ts"],
   ["read", "secret.env"],
   ["read", "nested/secret.env"],

@@ -173,7 +173,13 @@ async function startPlan(
   }
 }
 
-/** Relays frames between this process's stdio and the engine child. */
+/**
+ * Relays frames between this process's stdio and the engine child. Output goes
+ * through a {@link Bun.FileSink}: a reply can be megabytes (a Session snapshot
+ * inlines its image attachments), and a single `Bun.write` to a pipe stops at
+ * the reader's buffer, which would leave the TUI waiting on a frame that never
+ * ends.
+ */
 async function runEngine(argv: string[], env: Record<string, string | undefined>): Promise<number> {
   const child = Bun.spawn(argv, { stdin: "pipe", stdout: "pipe", stderr: "inherit", env })
   void (async () => {
@@ -194,11 +200,13 @@ async function runEngine(argv: string[], env: Record<string, string | undefined>
   // deadlock once a reply fills the pipe buffer.
   const output = (async () => {
     const replies = child.stdout.getReader()
+    const sink = Bun.stdout.writer()
     try {
       for (;;) {
         const { done, value } = await replies.read()
         if (done) break
-        await Bun.write(Bun.stdout, value)
+        sink.write(value)
+        await sink.flush()
       }
     } catch {}
   })()

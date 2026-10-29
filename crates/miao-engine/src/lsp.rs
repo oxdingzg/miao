@@ -6,7 +6,7 @@ use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
     process::Stdio,
-    sync::Arc,
+    sync::{Arc, RwLock as StdRwLock},
     time::Duration,
 };
 use tokio::{
@@ -18,7 +18,7 @@ use tokio::{
 /// A language server the engine may query for diagnostics, definitions and
 /// references. Servers are explicitly configured host services, started lazily
 /// on first use and confined to the workspace.
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub name: String,
@@ -359,23 +359,26 @@ impl Client {
 }
 
 struct Server {
+    /// The configuration this connection was started from. A reload compares it
+    /// with the current plan, so a stale connection is never reused.
+    config: Config,
     client: Mutex<Client>,
+    /// The spawned process when this server is a child process. Dropping it
+    /// kills the process (`kill_on_drop`), which is how a reconcile stops a
+    /// server the new plan no longer contains.
+    child: Mutex<Option<Child>>,
 }
 
-pub struct Registry {
+/// The validated server set. It is swapped as one unit under the plan lock, so
+/// a lookup never observes half of a reloaded configuration.
+struct Plan {
     authority: String,
     configs: Vec<Config>,
     by_extension: BTreeMap<String, usize>,
-    workspace: PathBuf,
-    clients: Mutex<BTreeMap<String, Arc<Server>>>,
-    children: Mutex<Vec<Child>>,
 }
 
-impl Registry {
-    pub(crate) fn authority(&self) -> &str {
-        &self.authority
-    }
-    pub async fn connect(configs: Vec<Config>, workspace: &Path) -> Result<Self, Error> {
+impl Plan {
+    fn new(configs: Vec<Config>) -> Result<Self, Error> {
         if configs.len() > 8 {
             return Err(Error::Invalid("LSP server limit".into()));
         }
@@ -412,9 +415,114 @@ impl Registry {
             authority: crate::permission::digest(&serde_json::to_vec(&configs)?),
             configs,
             by_extension,
+        })
+    }
+}
+
+/// Server names the new plan has to (re)start, split into the ones whose
+/// configuration changed or that are new, and the ones the plan no longer
+/// contains.
+///
+/// `next` is the authority on what counts as matched, not `previous`: a server
+/// the plan adds has no connection to keep, and the plan swap that follows is
+/// what makes it reachable. Walking `previous` alone would call an addition
+/// unchanged and leave the old plan in place, so a reload could never grow the
+/// server set.
+fn diff(previous: &[Config], next: &[Config]) -> (Vec<String>, Vec<String>) {
+    let name = |config: &Config| config.name.clone();
+    let changed = next
+        .iter()
+        .filter(|config| !previous.iter().any(|other| other == *config))
+        .map(name)
+        .collect();
+    let removed = previous
+        .iter()
+        .filter(|config| !next.iter().any(|other| other.name == config.name))
+        .map(name)
+        .collect();
+    (changed, removed)
+}
+
+/// What a reload did to the server set. A server is listed in `unchanged` only
+/// when its connection was kept, so a reload that changes nothing is
+/// distinguishable from one that restarted everything.
+#[derive(Debug, Default, PartialEq)]
+pub struct Reconcile {
+    pub changed: Vec<String>,
+    pub unchanged: Vec<String>,
+    pub removed: Vec<String>,
+}
+
+pub struct Registry {
+    plan: StdRwLock<Plan>,
+    workspace: PathBuf,
+    clients: Mutex<BTreeMap<String, Arc<Server>>>,
+}
+
+impl Registry {
+    pub(crate) fn authority(&self) -> String {
+        self.plan
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .authority
+            .clone()
+    }
+    pub async fn connect(configs: Vec<Config>, workspace: &Path) -> Result<Self, Error> {
+        Ok(Self {
+            plan: StdRwLock::new(Plan::new(configs)?),
             workspace: workspace.to_owned(),
             clients: Mutex::new(BTreeMap::new()),
-            children: Mutex::new(Vec::new()),
+        })
+    }
+
+    /// Replace the server set in place. A server whose name and configuration
+    /// are unchanged keeps its connection; one that changed or disappeared is
+    /// removed and started again on next use. Spawning stays lazy, so a reload
+    /// never starts a process and an unused server costs nothing.
+    pub async fn reconcile(&self, configs: Vec<Config>) -> Result<Reconcile, Error> {
+        let plan = Plan::new(configs)?;
+        let (changed, removed) = {
+            let previous = self.plan.read().unwrap_or_else(|held| held.into_inner());
+            diff(&previous.configs, &plan.configs)
+        };
+        if changed.is_empty() && removed.is_empty() {
+            return Ok(Reconcile {
+                unchanged: plan
+                    .configs
+                    .iter()
+                    .map(|config| config.name.clone())
+                    .collect(),
+                ..Reconcile::default()
+            });
+        }
+        let stale = changed
+            .iter()
+            .chain(removed.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        let unchanged = plan
+            .configs
+            .iter()
+            .map(|config| config.name.clone())
+            .filter(|name| !stale.contains(name))
+            .collect();
+        let dropped = {
+            let mut clients = self.clients.lock().await;
+            stale
+                .iter()
+                .filter_map(|name| clients.remove(name))
+                .collect::<Vec<_>>()
+        };
+        // The swap happens after the removals: a lookup between the two sees
+        // the old plan and its old connection, which is still consistent.
+        *self.plan.write().unwrap_or_else(|held| held.into_inner()) = plan;
+        // A request already holding one of these connections fails when the
+        // process exits; the next call starts the new configuration.
+        drop(dropped);
+        Ok(Reconcile {
+            changed,
+            unchanged,
+            removed,
         })
     }
 
@@ -447,36 +555,48 @@ impl Registry {
         clients.insert(
             name,
             Arc::new(Server {
+                config: config.clone(),
                 client: Mutex::new(client),
+                child: Mutex::new(None),
             }),
         );
         Ok(Self {
-            authority: uuid::Uuid::new_v4().to_string(),
-            configs: vec![config],
-            by_extension,
+            plan: StdRwLock::new(Plan {
+                authority: uuid::Uuid::new_v4().to_string(),
+                configs: vec![config],
+                by_extension,
+            }),
             workspace: PathBuf::from("."),
             clients: Mutex::new(clients),
-            children: Mutex::new(Vec::new()),
         })
     }
 
-    fn config_for(&self, path: &Path) -> Option<&Config> {
+    fn config_for(&self, path: &Path) -> Option<Config> {
         let extension = path
             .extension()
             .and_then(|extension| extension.to_str())
             .map(|extension| extension.to_ascii_lowercase())?;
-        self.by_extension
+        let plan = self.plan.read().unwrap_or_else(|held| held.into_inner());
+        plan.by_extension
             .get(&extension)
-            .and_then(|index| self.configs.get(*index))
+            .and_then(|index| plan.configs.get(*index))
+            .cloned()
     }
 
     async fn server_for(&self, path: &Path) -> Result<Arc<Server>, Error> {
+        let mut clients = self.clients.lock().await;
+        // Resolve the configuration under the clients lock: a reload that swaps
+        // the plan after this point cannot leave a connection whose config no
+        // longer matches the name it is stored under.
         let config = self
             .config_for(path)
             .ok_or_else(|| Error::Invalid("no LSP server for this file".into()))?;
-        let mut clients = self.clients.lock().await;
         if let Some(server) = clients.get(&config.name) {
-            return Ok(server.clone());
+            if server.config == config {
+                return Ok(server.clone());
+            }
+            // A reload landed between this spawn and the previous one.
+            clients.remove(&config.name);
         }
         let mut command = Command::new(&config.argv[0]);
         command
@@ -512,9 +632,10 @@ impl Registry {
         )
         .await
         .map_err(|_| Error::Invalid("LSP initialization timed out".into()))??;
-        self.children.lock().await.push(child);
         let server = Arc::new(Server {
+            config: config.clone(),
             client: Mutex::new(client),
+            child: Mutex::new(Some(child)),
         });
         clients.insert(config.name.clone(), server.clone());
         Ok(server)
@@ -714,9 +835,12 @@ impl Registry {
                 .await;
             let _ = client.send(&json!({"jsonrpc":"2.0","method":"exit"})).await;
         }
-        for child in self.children.lock().await.iter_mut() {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
+        for server in self.clients.lock().await.values() {
+            let mut child = server.child.lock().await;
+            if let Some(child) = child.as_mut() {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+            }
         }
     }
 }
@@ -918,5 +1042,41 @@ mod tests {
             .unwrap_err();
         assert!(error.to_string().contains("no publishDiagnostics push"));
         fixture.abort();
+    }
+
+    fn server(name: &str, extension: &str) -> Config {
+        Config {
+            name: name.to_string(),
+            argv: vec![name.to_string()],
+            extensions: vec![extension.to_string()],
+            env: BTreeMap::new(),
+            initialization: None,
+        }
+    }
+
+    #[test]
+    fn an_added_server_is_a_change_so_the_plan_grows() {
+        let rust = server("rust", "rs");
+        let toml = server("toml", "toml");
+        // Nothing changed: every name is matched by an equal configuration.
+        assert_eq!(
+            diff(std::slice::from_ref(&rust), std::slice::from_ref(&rust)),
+            (Vec::<String>::new(), Vec::<String>::new())
+        );
+        // An addition has no connection to keep and must reach the new plan.
+        assert_eq!(
+            diff(std::slice::from_ref(&rust), &[rust.clone(), toml.clone()]),
+            (vec!["toml".to_string()], Vec::<String>::new())
+        );
+        // A rewrite of a kept name restarts it; a name that disappears is
+        // removed rather than changed, because nothing replaces it.
+        let rewritten = server("rust", "rs\ntoml");
+        assert_eq!(
+            diff(
+                &[rust.clone(), toml.clone()],
+                std::slice::from_ref(&rewritten)
+            ),
+            (vec!["rust".to_string()], vec!["toml".to_string()])
+        );
     }
 }

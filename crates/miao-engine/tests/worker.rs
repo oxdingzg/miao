@@ -62,6 +62,27 @@ async fn fake_worker(stream: DuplexStream) {
                     send(&mut write, &json!({"id":id,"error":{"code":"fixture_error"}})).await;
                     continue;
                 }
+                if text == "ask-twice-same" || text == "ask-twice-different" {
+                    let mut answers = Vec::new();
+                    for index in 0..2 {
+                        let ask_id = 9100 + index;
+                        let target = if index == 1 && text == "ask-twice-different" {
+                            "other.example.com"
+                        } else {
+                            "api.example.com"
+                        };
+                        send(&mut write, &json!({"id":ask_id,"method":"ask","params":{"permission":"network","patterns":[target]}})).await;
+                        loop {
+                            let frame = recv(&mut read).await.unwrap();
+                            if frame["id"] == ask_id {
+                                answers.push(frame["result"]["approved"].clone());
+                                break;
+                            }
+                        }
+                    }
+                    send(&mut write, &json!({"id":id,"result":{"result":{"answers":answers}}})).await;
+                    continue;
+                }
                 if text == "ask" {
                     // Protocol 2: request an interactive permission decision
                     // mid-call, then surface the operator's answer.
@@ -495,7 +516,9 @@ async fn missing_optional_worker_does_not_prevent_engine_admission() {
     .unwrap();
 }
 
-struct Asker;
+struct Asker {
+    text: &'static str,
+}
 #[async_trait]
 impl Provider for Asker {
     async fn stream(
@@ -506,7 +529,7 @@ impl Provider for Asker {
     ) -> Result<Reply, ProviderError> {
         if request.messages.len() == 1 {
             return Ok(Reply {
-                content: json!([{"type":"tool_use","id":"a","name":"worker__echo","input":{"text":"ask"}}]),
+                content: json!([{"type":"tool_use","id":"a","name":"worker__echo","input":{"text":self.text}}]),
                 usage: json!({}),
                 needs_tools: true,
             });
@@ -544,12 +567,16 @@ async fn answer_pending_question(store: &Store, session: &str, label: &str) {
     }
 }
 
-async fn run_ask_session(store: &Store, workspace: &std::path::Path) -> Runtime {
+async fn run_ask_session(
+    store: &Store,
+    workspace: &std::path::Path,
+    text: &'static str,
+) -> Runtime {
     let tools = Tools::new(workspace)
         .await
         .unwrap()
         .with_worker(registry(workspace).await);
-    let runtime = Runtime::with_policy(store.clone(), Arc::new(Asker), tools, policy())
+    let runtime = Runtime::with_policy(store.clone(), Arc::new(Asker { text }), tools, policy())
         .await
         .unwrap();
     runtime
@@ -575,7 +602,7 @@ async fn worker_ask_relays_to_the_durable_question_flow() {
     let workspace = dir.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-    let runtime = run_ask_session(&store, &workspace).await;
+    let runtime = run_ask_session(&store, &workspace, "ask").await;
     let session = "s".to_string();
     answer_pending_question(&store, &session, "Allow").await;
     let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
@@ -615,7 +642,7 @@ async fn worker_ask_denial_surfaces_as_a_denied_answer() {
     let workspace = dir.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-    let runtime = run_ask_session(&store, &workspace).await;
+    let runtime = run_ask_session(&store, &workspace, "ask").await;
     let session = "s".to_string();
     answer_pending_question(&store, &session, "Deny").await;
     let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
@@ -641,4 +668,109 @@ async fn worker_ask_denial_surfaces_as_a_denied_answer() {
     assert_eq!(result["asked"], true, "{result}");
     assert_eq!(result["approved"], false, "{result}");
     runtime.shutdown().await;
+}
+
+async fn sequential_worker_asks(text: &'static str) {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = run_ask_session(&store, &workspace, text).await;
+    tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        answer_pending_question(&store, "s", "Allow"),
+    )
+    .await
+    .unwrap();
+    let requests = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            let requests: Vec<Value> = store
+                .events("s", 0, 500)
+                .await
+                .unwrap()
+                .into_iter()
+                .filter(|event| event.kind == "question.requested")
+                .map(|event| event.data)
+                .collect();
+            if requests.len() == 2 {
+                return requests;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    // Close old implementations before failing: their reused answer has
+    // already let the worker continue, so no fixture can wait forever.
+    if requests[0]["question_id"] == requests[1]["question_id"] {
+        runtime.shutdown().await;
+        assert_ne!(
+            requests[0]["question_id"], requests[1]["question_id"],
+            "{text} reused the earlier permission identity"
+        );
+    }
+    assert_eq!(
+        requests[0]["input_hash"] == requests[1]["input_hash"],
+        text == "ask-twice-same"
+    );
+    let answer = |request: &Value, choice: &str| Answer {
+        question_id: request["question_id"].as_str().unwrap().into(),
+        input_hash: request["input_hash"].as_str().unwrap().into(),
+        answers: vec![vec![choice.into()]],
+    };
+    // An exact retry of the old answer remains idempotent, without
+    // answering the second request even when its input hash is identical.
+    store
+        .answer_question("s", answer(&requests[0], "Allow"))
+        .await
+        .unwrap();
+    let pending = store.questions("s").await.unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0]["question_id"], requests[1]["question_id"]);
+    store
+        .answer_question("s", answer(&requests[1], "Deny"))
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if store
+                .events("s", 0, 500)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "run.finished")
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    runtime.shutdown().await;
+    let history = store.history("s").await.unwrap();
+    let result: Value =
+        serde_json::from_str(history[2].content[0]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(result["answers"], json!([true, false]), "{text}");
+    assert!(store.questions("s").await.unwrap().is_empty());
+    assert_eq!(
+        store
+            .events("s", 0, 500)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind == "question.resolved")
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn repeated_worker_asks_require_a_new_answer() {
+    sequential_worker_asks("ask-twice-same").await;
+}
+
+#[tokio::test]
+async fn changed_worker_asks_require_a_new_answer() {
+    sequential_worker_asks("ask-twice-different").await;
 }

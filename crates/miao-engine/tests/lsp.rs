@@ -9,7 +9,13 @@ use miao_engine::{
     tools::Tools,
 };
 use serde_json::{json, Value};
-use std::{path::Path, sync::Arc};
+use std::{
+    path::Path,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, DuplexStream},
     sync::mpsc,
@@ -84,14 +90,23 @@ async fn read_frame(read: &mut (impl AsyncBufReadExt + Unpin)) -> Option<Value> 
     serde_json::from_slice(&body).ok()
 }
 
+/// Counts handshakes, so a test can prove a reload kept the connection.
+type Initializations = Arc<AtomicUsize>;
+
 /// A deterministic language server over the injected transport.
 async fn fake_server(stream: DuplexStream) {
+    fake_server_counted(stream, Arc::new(AtomicUsize::new(0))).await
+}
+async fn fake_server_counted(stream: DuplexStream, initializations: Initializations) {
     let (read, mut write) = tokio::io::split(stream);
     let mut read = BufReader::new(read);
     while let Some(message) = read_frame(&mut read).await {
         if let (Some(id), Some(method)) = (message.get("id"), message.get("method")) {
             let result = match method.as_str().unwrap_or_default() {
-                "initialize" => json!({"capabilities":{}}),
+                "initialize" => {
+                    initializations.fetch_add(1, Ordering::SeqCst);
+                    json!({"capabilities":{}})
+                }
                 "textDocument/definition" => json!([{
                     "uri":"file:///file.rs",
                     "range":{"start":{"line":3,"character":4},"end":{"line":3,"character":8}}
@@ -626,4 +641,152 @@ async fn read_file_warms_the_language_server_for_the_next_edit() {
     while let Ok(event) = events.try_recv() {
         assert_ne!(event, "textDocument/didOpen", "the ablation must not warm");
     }
+}
+
+#[tokio::test]
+async fn a_reload_reconciles_the_lsp_section_and_keeps_unchanged_connections() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("file.rs");
+    std::fs::write(&file, "fn main() {}\n").unwrap();
+    let manifest = dir.path().join("lsp.json");
+    let write_manifest = |extensions: &str| {
+        std::fs::write(
+            &manifest,
+            format!(r#"[{{"name":"rust","argv":["fixture"],"extensions":{extensions}}}]"#),
+        )
+        .unwrap()
+    };
+    write_manifest(r#"["rs"]"#);
+
+    let initializations = Arc::new(AtomicUsize::new(0));
+    let (client, server) = tokio::io::duplex(1 << 20);
+    let (client_read, client_write) = tokio::io::split(client);
+    tokio::spawn(fake_server_counted(server, initializations.clone()));
+    let registry = Arc::new(
+        Registry::connect_io("rust".into(), vec!["rs".into()], client_read, client_write)
+            .await
+            .unwrap(),
+    );
+    let tools = Tools::new(dir.path())
+        .await
+        .unwrap()
+        .with_writes(true)
+        .with_lsp(registry.clone());
+    let runtime = Runtime::with_policy(
+        Store::open(dir.path().join("engine.db")).await.unwrap(),
+        Arc::new(Executor {
+            name: "unused",
+            input: Value::Null,
+        }),
+        tools,
+        policy(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .set_lsp_origin(miao_engine::config_derive::LspOrigin::Manifest(
+            manifest.clone(),
+        ))
+        .await;
+
+    let first = registry.diagnostics(&file).await.unwrap();
+    assert_eq!(first["diagnostics"][0]["message"], "fixture diagnostic");
+    assert_eq!(initializations.load(Ordering::SeqCst), 1);
+
+    // Every applied reload is announced to hosts that did not issue it; a
+    // reload that changed nothing stays silent.
+    let mut announced = runtime.config_events();
+    // The manifest still names the same server: nothing is rebuilt, and the
+    // second query reuses the connection instead of handshaking again.
+    let report = runtime.reload_config().await.unwrap();
+    assert_eq!(report["generation"], json!(1));
+    assert_eq!(report["changed"], json!([]));
+    assert_eq!(report["unchanged"], json!(["lsp"]));
+    assert_eq!(report["lsp"]["unchanged"], json!(["rust"]));
+    assert!(report["unsupported"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("policy")));
+    let second = registry.diagnostics(&file).await.unwrap();
+    assert_eq!(second["diagnostics"][0]["message"], "fixture diagnostic");
+    assert_eq!(
+        initializations.load(Ordering::SeqCst),
+        1,
+        "an unchanged server keeps its connection"
+    );
+    assert!(
+        matches!(
+            announced.try_recv(),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+        ),
+        "an unchanged reload announces nothing"
+    );
+
+    // A changed configuration drops the connection and starts a new one on
+    // next use; the reload itself does not spawn anything.
+    write_manifest(r#"["rs","toml"]"#);
+    let report = runtime.reload_config().await.unwrap();
+    assert_eq!(report["generation"], json!(2));
+    assert_eq!(report["changed"], json!(["lsp"]));
+    assert_eq!(report["unchanged"], json!([]));
+    assert_eq!(report["lsp"]["changed"], json!(["rust"]));
+    assert_eq!(initializations.load(Ordering::SeqCst), 1);
+    assert_eq!(announced.try_recv().unwrap(), report);
+
+    // A server the plan did not have before counts as a change too: it has no
+    // connection to keep, and the plan swap is what lets a later request reach
+    // it. The kept server stays untouched.
+    std::fs::write(
+        &manifest,
+        r#"[{"name":"rust","argv":["fixture"],"extensions":["rs","toml"]},{"name":"extra","argv":["fixture-extra"],"extensions":["xt"]}]"#,
+    )
+    .unwrap();
+    let report = runtime.reload_config().await.unwrap();
+    assert_eq!(report["generation"], json!(3));
+    assert_eq!(report["changed"], json!(["lsp"]));
+    assert_eq!(report["lsp"]["changed"], json!(["extra"]));
+    assert_eq!(report["lsp"]["removed"], json!([]));
+    assert_eq!(report["lsp"]["unchanged"], json!(["rust"]));
+    assert_eq!(initializations.load(Ordering::SeqCst), 1);
+    assert_eq!(announced.try_recv().unwrap(), report);
+
+    // A malformed manifest changes nothing and is reported as an error.
+    std::fs::write(&manifest, "{").unwrap();
+    let error = runtime.reload_config().await.unwrap_err();
+    assert!(error.to_string().contains("invalid LSP host config"));
+    assert_eq!(
+        runtime.reload_config().await.unwrap_err().to_string(),
+        error.to_string()
+    );
+    // A failed reload changes nothing, so it announced nothing on its own; the
+    // poller reports its own failures, and a host must be able to show them.
+    assert!(announced.try_recv().is_err());
+    runtime.announce_config_failure("invalid LSP host config");
+    assert_eq!(
+        announced.try_recv().unwrap()["error"],
+        json!("invalid LSP host config")
+    );
+}
+
+#[tokio::test]
+async fn a_reload_without_an_lsp_registry_reports_that_section_as_unsupported() {
+    let dir = tempfile::tempdir().unwrap();
+    let runtime = Runtime::with_policy(
+        Store::open(dir.path().join("engine.db")).await.unwrap(),
+        Arc::new(Executor {
+            name: "unused",
+            input: Value::Null,
+        }),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(),
+    )
+    .await
+    .unwrap();
+    let report = runtime.reload_config().await.unwrap();
+    assert_eq!(report["generation"], json!(1));
+    assert_eq!(report["changed"], json!([]));
+    assert!(report["unsupported"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("lsp")));
 }

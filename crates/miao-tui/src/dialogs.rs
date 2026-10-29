@@ -161,6 +161,8 @@ pub enum ListKind {
     Sessions,
     /// `Enter` restores the prompt; `d` removes it.
     Stash,
+    /// `Enter` returns the revert boundary sequence the row names.
+    Timeline,
     /// No selection: `Enter` and `Esc` both close.
     ReadOnly,
 }
@@ -189,8 +191,15 @@ impl ListDialog {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfirmKind {
     RemoveSession(String),
+    /// Rewind the transcript to a user message, with or without restoring the
+    /// file set the Session recorded at that boundary.
+    Revert {
+        boundary_seq: u64,
+        files: bool,
+    },
 }
 
 pub struct ConfirmDialog {
@@ -202,12 +211,26 @@ pub struct ConfirmDialog {
     pub kind: ConfirmKind,
 }
 
+impl ConfirmDialog {
+    /// The word on the confirming button. A revert is not a delete, and the
+    /// button should not say so.
+    pub fn action_label(&self) -> &'static str {
+        match self.kind {
+            ConfirmKind::RemoveSession(_) => "delete",
+            ConfirmKind::Revert { .. } => "revert",
+        }
+    }
+}
+
 pub enum Dialog {
+    SavedPermissions(crate::saved_permissions::Dialog),
+    WorkspaceChanges(crate::workspace_changes::Dialog),
     Models(ListDialog),
     Theme(ListDialog),
     Sessions(ListDialog),
     Accounts(ListDialog),
     Stash(ListDialog),
+    Timeline(ListDialog),
     Status(ListDialog),
     Debug(ListDialog),
     Help(ListDialog),
@@ -316,18 +339,26 @@ impl Dialog {
         Dialog::Sessions(ListDialog::new(
             "sessions",
             rows.iter()
-                .map(|row| Row {
-                    id: row.id.clone(),
-                    label: if row.archived_at_ms.is_some() {
-                        format!("{} (archived)", row.label())
-                    } else {
-                        row.label().to_string()
-                    },
-                    detail: row.directory.clone().unwrap_or_default(),
+                .map(|row| {
+                    // Both marks are suffixes so a row can honestly show that it
+                    // is pinned and archived at once; neither affects the order,
+                    // which the caller already handed over pinned-first.
+                    let mut label = row.label().to_string();
+                    if row.pinned_at_ms.is_some() {
+                        label.push_str(" (pinned)");
+                    }
+                    if row.archived_at_ms.is_some() {
+                        label.push_str(" (archived)");
+                    }
+                    Row {
+                        id: row.id.clone(),
+                        label,
+                        detail: row.directory.clone().unwrap_or_default(),
+                    }
                 })
                 .collect(),
             ListKind::Sessions,
-            "enter open · r rename · a archive · d delete · esc close",
+            "enter open · r rename · p pin · a archive · d delete · esc close",
         ))
     }
 
@@ -353,6 +384,15 @@ impl Dialog {
             rows,
             ListKind::Stash,
             "enter restore · d delete · esc close",
+        ))
+    }
+
+    pub fn timeline(rows: Vec<Row>) -> Self {
+        Dialog::Timeline(ListDialog::new(
+            "timeline",
+            rows,
+            ListKind::Timeline,
+            "enter revert to here · esc close",
         ))
     }
 
@@ -405,16 +445,34 @@ impl Dialog {
         })
     }
 
+    /// Ask before a revert lands. The plan comes from the engine, so the
+    /// dialog states what will actually change, including paths this Session
+    /// did not edit itself.
+    pub fn confirm_revert(boundary_seq: u64, plan: &crate::session::RevertPlan) -> Self {
+        Dialog::Confirm(ConfirmDialog {
+            title: "revert",
+            message: plan.summary(),
+            confirmed: false,
+            kind: ConfirmKind::Revert {
+                boundary_seq,
+                files: plan.files(),
+            },
+        })
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> Action {
         if key.kind != KeyEventKind::Press {
             return Action::None;
         }
         match self {
+            Dialog::SavedPermissions(dialog) => dialog.handle_key(key),
+            Dialog::WorkspaceChanges(dialog) => dialog.handle_key(key),
             Dialog::Models(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
+            | Dialog::Timeline(list)
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => handle_list_key(list, key),
@@ -426,11 +484,14 @@ impl Dialog {
 
     pub fn title(&self) -> &'static str {
         match self {
+            Dialog::SavedPermissions(_) => "saved permissions",
+            Dialog::WorkspaceChanges(_) => "workspace changes",
             Dialog::Models(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
+            | Dialog::Timeline(list)
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => list.title,
@@ -447,6 +508,7 @@ impl Dialog {
             | Dialog::Sessions(list)
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
+            | Dialog::Timeline(list)
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => Some(list),
@@ -461,6 +523,7 @@ impl Dialog {
             | Dialog::Sessions(list)
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
+            | Dialog::Timeline(list)
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => Some(list),
@@ -497,6 +560,9 @@ impl Dialog {
     }
 
     pub fn height(&self) -> u16 {
+        if matches!(self, Dialog::SavedPermissions(_)) {
+            return 18;
+        }
         if let Some(palette) = self.palette() {
             // Filter line, one row even when nothing matches, and the border.
             return (palette.visible.len().clamp(1, 12) + 3) as u16;
@@ -512,18 +578,24 @@ impl Dialog {
 }
 
 pub enum Action {
+    RefreshPermissions,
+    RevokePermission(String),
+    RefreshWorkspaceChanges(String),
     None,
     Close,
     Chosen(usize),
     OpenSession(String),
     Rename(String),
     ToggleArchive(String),
+    TogglePin(String),
     Remove(String),
     Submit(String),
     Confirmed(ConfirmKind),
     /// Take one stashed prompt back into the composer.
     StashRestore(usize),
     StashRemove(usize),
+    /// Rewind this Session to the user message with this sequence.
+    Revert(u64),
     /// Run the command the palette selected, by its id.
     Command(String),
 }
@@ -543,12 +615,21 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
             return match list.kind {
                 ListKind::Sessions => Action::OpenSession(id),
                 ListKind::Stash => Action::StashRestore(list.selected),
+                ListKind::Timeline => match id.parse::<u64>() {
+                    Ok(seq) => Action::Revert(seq),
+                    Err(_) => Action::None,
+                },
                 _ => Action::Chosen(list.selected),
             };
         }
         KeyCode::Char('r') if list.kind == ListKind::Sessions => {
             if let Some(id) = list.current_id() {
                 return Action::Rename(id);
+            }
+        }
+        KeyCode::Char('p') if list.kind == ListKind::Sessions => {
+            if let Some(id) = list.current_id() {
+                return Action::TogglePin(id);
             }
         }
         KeyCode::Char('a') if list.kind == ListKind::Sessions => {
@@ -719,6 +800,13 @@ fn handle_confirm_key(confirm: &mut ConfirmDialog, key: KeyEvent) -> Action {
             }
             let kind = match &confirm.kind {
                 ConfirmKind::RemoveSession(id) => ConfirmKind::RemoveSession(id.clone()),
+                ConfirmKind::Revert {
+                    boundary_seq,
+                    files,
+                } => ConfirmKind::Revert {
+                    boundary_seq: *boundary_seq,
+                    files: *files,
+                },
             };
             return Action::Confirmed(kind);
         }
@@ -770,21 +858,27 @@ mod tests {
     }
 
     #[test]
-    fn session_rows_answer_rename_archive_and_delete() {
+    fn session_rows_answer_rename_pin_archive_and_delete() {
         let row = SessionSummary {
             id: "ses_a".into(),
             title: Some("A".into()),
             parent_id: None,
             updated_at_ms: None,
             archived_at_ms: None,
+            pinned_at_ms: None,
             directory: None,
             model: None,
             credential_id: None,
         };
         let mut dialog = Dialog::sessions(&[row]);
+        assert_eq!(dialog.list().expect("list").rows[0].label, "A");
         assert!(matches!(
             dialog.handle_key(key(KeyCode::Char('r'))),
             Action::Rename(id) if id == "ses_a"
+        ));
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('p'))),
+            Action::TogglePin(id) if id == "ses_a"
         ));
         assert!(matches!(
             dialog.handle_key(key(KeyCode::Char('a'))),

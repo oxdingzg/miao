@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::Frame;
@@ -13,7 +14,7 @@ use crate::keybinds::{self, Keymap};
 use crate::pane::{render_dialog, Home, Pane, Panel, PanelKind, Shell};
 use crate::platform::attention::{self, Attention};
 use crate::platform::{clipboard, editor, zed};
-use crate::session::{SessionState, SessionSummary};
+use crate::session::{Entry, SessionState, SessionSummary};
 use crate::state::{self, StashEntry};
 use crate::status::UsageSummary;
 use crate::theme::{self, Theme};
@@ -24,6 +25,106 @@ pub enum Screen {
     Home,
     /// One Session's transcript plus composer.
     Session,
+}
+
+/// How long the engine may stay quiet before the status says so. The engine
+/// heartbeats every five seconds while it waits on a provider, so three missed
+/// frames is a real gap rather than scheduler jitter.
+const LIVE_SILENCE: Duration = Duration::from_secs(15);
+
+/// Where the engine last said an active run was. Ephemeral: a client that
+/// attaches mid-turn learns the run from the snapshot and the rest from the next
+/// frame, so nothing here is persisted.
+#[derive(Debug, Clone)]
+pub struct Live {
+    pub run_id: String,
+    pub phase: LivePhase,
+    /// When the current phase began, for the elapsed part of the status.
+    pub since: Instant,
+    /// The newest frame from the engine, which is the only proof it is working.
+    pub signal: Instant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LivePhase {
+    /// The request is out and no token has come back yet.
+    Waiting,
+    /// A pause before another attempt, announced by the engine.
+    Retrying { attempt: u64 },
+    /// A tool call is executing. The engine is quiet here too, but naming the
+    /// work is what makes a long command differ from a stuck turn.
+    Tool { name: String },
+}
+
+impl Live {
+    /// The engine has not reported anything for long enough that the wait is
+    /// worth calling out. It says the client stopped hearing from the engine; it
+    /// never claims the turn failed. Only a provider wait has a heartbeat to
+    /// miss: a running tool can be silent for minutes by design.
+    fn silent(&self, now: Instant) -> bool {
+        matches!(self.phase, LivePhase::Waiting) && now.duration_since(self.signal) >= LIVE_SILENCE
+    }
+
+    fn describe(&self, now: Instant) -> String {
+        let elapsed = waited(now.duration_since(self.since));
+        match &self.phase {
+            LivePhase::Waiting if self.silent(now) => format!(
+                "waiting for model · {elapsed} · no engine signal {}",
+                waited(now.duration_since(self.signal))
+            ),
+            LivePhase::Waiting => format!("waiting for model · {elapsed}"),
+            LivePhase::Retrying { attempt } => format!("retrying attempt {attempt} · {elapsed}"),
+            LivePhase::Tool { name } => format!("running {name} · {elapsed}"),
+        }
+    }
+}
+
+/// The answer being streamed. V2 commits one assistant message per provider
+/// turn, so without this the transcript would stay silent for the whole stream.
+/// The next projection replaces it with the committed message; it is never
+/// persisted and never copied.
+#[derive(Debug, Default)]
+pub struct Draft {
+    run_id: String,
+    /// Assistant entries committed when the stream started. A projection that
+    /// commits one more is the message this draft was standing in for.
+    committed: usize,
+    text: String,
+    reasoning: String,
+}
+
+impl Draft {
+    fn append(&mut self, delta: &Value) {
+        let text = delta
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        match delta.get("kind").and_then(Value::as_str) {
+            Some("text.delta") => self.text.push_str(text),
+            Some("reasoning.delta") => self.reasoning.push_str(text),
+            // Tool arguments stream too, but they belong to a call the
+            // transcript renders once it is committed.
+            _ => {}
+        }
+    }
+}
+
+/// A tool name is engine-supplied and the status is one line, so keep the first
+/// word of the first line and cap it.
+fn tool_label(name: &str) -> String {
+    let line = name.lines().next().unwrap_or_default().trim();
+    let label = line.split_whitespace().next().unwrap_or("tool");
+    label.chars().take(24).collect()
+}
+
+/// Whole seconds under a minute, then minutes and seconds. A count reads as
+/// movement; a rounded-down minute reads as a stuck status.
+fn waited(duration: Duration) -> String {
+    let seconds = duration.as_secs();
+    if seconds < 60 {
+        return format!("{seconds}s");
+    }
+    format!("{}m {:02}s", seconds / 60, seconds % 60)
 }
 
 /// What the process should open once the engine is attached. The launch flags
@@ -45,6 +146,8 @@ pub struct App {
     pub state: SessionState,
     pub quit: bool,
     dialog: Option<Dialog>,
+    permission_generation: u64,
+    workspace_changes_generation: u64,
     /// `Ctrl+X` was pressed; the next key completes the chord.
     leader: bool,
     keys: Keymap,
@@ -76,6 +179,13 @@ pub struct App {
     startup: Startup,
     /// Built-in plus custom themes, in menu order.
     themes: theme::Catalog,
+    /// Live provider activity for the open Session.
+    live: Option<Live>,
+    /// The answer streaming in ahead of its committed message.
+    draft: Option<Draft>,
+    /// Assistant entries in the last projection, so a draft can name the
+    /// projection that supersedes it.
+    committed: usize,
 }
 
 impl App {
@@ -102,6 +212,8 @@ impl App {
             state: SessionState::default(),
             quit: false,
             dialog: None,
+            permission_generation: 0,
+            workspace_changes_generation: 0,
             leader: false,
             keys,
             workspace,
@@ -122,6 +234,9 @@ impl App {
             clipboard_busy: false,
             startup,
             themes,
+            live: None,
+            draft: None,
+            committed: 0,
         }
     }
 
@@ -163,6 +278,9 @@ impl App {
     }
 
     pub fn render(&mut self, frame: &mut Frame) {
+        // The status counts elapsed time, so it is recomputed per frame rather
+        // than only when the projection changes.
+        self.update_status();
         match self.screen {
             Screen::Home => {
                 // The home list keeps the title bar so the workspace under
@@ -186,6 +304,10 @@ impl App {
         match event {
             AppEvent::Key(key) => self.handle_key(key),
             AppEvent::Paste(text) => {
+                if let Some(Dialog::SavedPermissions(dialog)) = self.dialog.as_mut() {
+                    dialog.paste(&text);
+                    return;
+                }
                 if self.screen == Screen::Session {
                     // Windows Terminal can surface an image-only clipboard as an
                     // empty bracketed paste; reading the clipboard is the only
@@ -200,6 +322,7 @@ impl App {
             AppEvent::Focus(focused) => self.attention.set_focus(focused),
             AppEvent::Mouse(mouse) => self.handle_mouse(mouse),
             AppEvent::Attention { kind, id } => self.announce(kind, id),
+            AppEvent::Provider(frame) => self.provider(frame),
             AppEvent::Clipboard(content) => {
                 self.clipboard_busy = false;
                 match content {
@@ -278,6 +401,28 @@ impl App {
                     }
                 }
                 self.state = state;
+                // A live phase only ever describes the run it was announced for.
+                if self.live.as_ref().is_some_and(|live| {
+                    self.state.active_run.as_deref() != Some(live.run_id.as_str())
+                }) {
+                    self.live = None;
+                }
+                let committed = transcript
+                    .entries
+                    .iter()
+                    .filter(|entry| matches!(entry, Entry::Assistant { .. }))
+                    .count();
+                // The draft is provisional. Only the projection that commits the
+                // next assistant message replaces it — an unrelated projection
+                // in the middle of the stream must not blank the text the user
+                // is reading. A run that is no longer active never commits one.
+                if self.draft.as_ref().is_some_and(|draft| {
+                    committed > draft.committed || self.state.active_run.is_none()
+                }) {
+                    self.draft = None;
+                    self.shell.set_draft("", "");
+                }
+                self.committed = committed;
                 self.shell.set_session(self.session.as_ref());
                 self.shell.set_transcript(&transcript);
                 self.screen = Screen::Session;
@@ -285,9 +430,48 @@ impl App {
                 self.update_status();
                 self.continue_prompt();
             }
+            AppEvent::RevertPreview {
+                session_id,
+                boundary_seq,
+                plan,
+            } => {
+                // The engine answered a question asked about a Session that
+                // may already have been left; a stale dialog is worse than
+                // none.
+                if self.session_id().as_deref() != Some(session_id.as_str()) {
+                    return;
+                }
+                self.open_dialog(Dialog::confirm_revert(boundary_seq, &plan));
+            }
+            AppEvent::SavedPermissions { generation, result } => {
+                if let Some(Dialog::SavedPermissions(dialog)) = self.dialog.as_mut() {
+                    if dialog.generation == generation {
+                        dialog.loaded(result);
+                    }
+                }
+            }
+            AppEvent::PermissionRevoked {
+                generation,
+                id,
+                result,
+            } => {
+                if let Some(Dialog::SavedPermissions(dialog)) = self.dialog.as_mut() {
+                    if dialog.generation == generation {
+                        dialog.revoked(&id, result);
+                    }
+                }
+            }
+            AppEvent::WorkspaceChanges { generation, result } => {
+                if let Some(Dialog::WorkspaceChanges(dialog)) = self.dialog.as_mut() {
+                    if dialog.generation == generation {
+                        dialog.loaded(result);
+                    }
+                }
+            }
             AppEvent::ActionFailed(message) => {
                 self.shell.composer.notice = Some(message);
             }
+            AppEvent::Notice(message) => self.notice(&message),
             AppEvent::PromptFailed {
                 text,
                 attachments,
@@ -388,6 +572,30 @@ impl App {
     fn run_builtin(&mut self, builtin: Builtin) {
         match builtin {
             Builtin::Models => self.open_models(),
+            Builtin::Permissions => {
+                self.permission_generation += 1;
+                let generation = self.permission_generation;
+                let mut dialog = crate::saved_permissions::Dialog::new(generation, &self.workspace);
+                match self.engine.as_ref() {
+                    Some(engine) => engine.saved_permissions(generation),
+                    None => dialog.loaded(Err("Engine is not connected".into())),
+                }
+                self.open_dialog(Dialog::SavedPermissions(dialog));
+            }
+            Builtin::WorkspaceChanges => {
+                let Some(session_id) = self.session_id() else {
+                    self.update_status();
+                    return;
+                };
+                self.workspace_changes_generation += 1;
+                let generation = self.workspace_changes_generation;
+                let mut dialog = crate::workspace_changes::Dialog::new(generation, &session_id);
+                match self.engine.as_ref() {
+                    Some(engine) => engine.vcs_changes(generation, &session_id),
+                    None => dialog.loaded(Err("Engine is not connected".into())),
+                }
+                self.open_dialog(Dialog::WorkspaceChanges(dialog));
+            }
             Builtin::Theme => self.open_theme(),
             Builtin::Sessions => self.open_sessions(),
             Builtin::NewSession => {
@@ -407,6 +615,9 @@ impl App {
             Builtin::Debug => self.open_debug(),
             Builtin::Stash => self.open_stash(),
             Builtin::StashDraft => self.stash_current(),
+            Builtin::Timeline => self.open_timeline(),
+            Builtin::Undo => self.undo(),
+            Builtin::Redo => self.redo(),
             Builtin::Editor => self.open_editor(),
             Builtin::Help => self.open_help(),
             Builtin::Quit => self.quit = true,
@@ -497,6 +708,33 @@ impl App {
 
     fn dialog_action(&mut self, action: DialogAction) {
         match action {
+            DialogAction::RefreshPermissions => {
+                if let Some(Dialog::SavedPermissions(dialog)) = self.dialog.as_mut() {
+                    if let Some(engine) = self.engine.as_ref() {
+                        engine.saved_permissions(dialog.generation);
+                    } else {
+                        dialog.loaded(Err("Engine is not connected".into()));
+                    }
+                }
+            }
+            DialogAction::RefreshWorkspaceChanges(session_id) => {
+                if let Some(Dialog::WorkspaceChanges(dialog)) = self.dialog.as_mut() {
+                    if let Some(engine) = self.engine.as_ref() {
+                        engine.vcs_changes(dialog.generation, &session_id);
+                    } else {
+                        dialog.loaded(Err("Engine is not connected".into()));
+                    }
+                }
+            }
+            DialogAction::RevokePermission(id) => {
+                if let Some(Dialog::SavedPermissions(dialog)) = self.dialog.as_mut() {
+                    if let Some(engine) = self.engine.as_ref() {
+                        engine.revoke_permission(dialog.generation, id);
+                    } else {
+                        dialog.revoked(&id, Err("Engine is not connected".into()));
+                    }
+                }
+            }
             DialogAction::None => {}
             DialogAction::Close => self.dialog = None,
             DialogAction::Chosen(index) => self.choose(index),
@@ -521,6 +759,17 @@ impl App {
                     engine.archive(&id, !archived);
                 }
             }
+            DialogAction::TogglePin(id) => {
+                let pinned = self
+                    .catalog
+                    .iter()
+                    .find(|row| row.id == id)
+                    .is_some_and(|row| row.pinned_at_ms.is_some());
+                self.dialog = None;
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.pin(&id, !pinned);
+                }
+            }
             DialogAction::Remove(id) => {
                 let title = self.title_of(&id);
                 self.open_dialog(Dialog::confirm_remove(&id, &title));
@@ -542,11 +791,27 @@ impl App {
                 }
             }
             DialogAction::Confirmed(kind) => {
-                let ConfirmKind::RemoveSession(id) = kind;
                 self.dialog = None;
-                if let Some(engine) = self.engine.as_ref() {
-                    engine.remove(&id);
+                let Some(engine) = self.engine.clone() else {
+                    return;
+                };
+                match kind {
+                    ConfirmKind::RemoveSession(id) => engine.remove(&id),
+                    ConfirmKind::Revert {
+                        boundary_seq,
+                        files,
+                    } => {
+                        let Some(session_id) = self.session_id() else {
+                            return;
+                        };
+                        engine.revert(&session_id, boundary_seq, files);
+                        self.notice(&format!("reverted to #{boundary_seq}"));
+                    }
                 }
+            }
+            DialogAction::Revert(boundary_seq) => {
+                self.dialog = None;
+                self.preview_revert(boundary_seq);
             }
             DialogAction::StashRestore(index) => {
                 self.dialog = None;
@@ -757,9 +1022,86 @@ impl App {
         }
     }
 
+    /// List the Session's user turns, newest first, so the nearest undo is the
+    /// first row. The engine owns what each boundary restores; choosing a row
+    /// only asks it to preview the change.
+    fn open_timeline(&mut self) {
+        let Some(transcript) = self.shell.transcript() else {
+            self.notice("open a Session to see its timeline");
+            return;
+        };
+        let mut rows = transcript
+            .boundaries()
+            .into_iter()
+            .rev()
+            .map(|(seq, text)| Row {
+                id: seq.to_string(),
+                label: first_line(&text),
+                detail: format!("#{seq}"),
+            })
+            .collect::<Vec<_>>();
+        if rows.is_empty() {
+            self.notice("this Session has no message to rewind to");
+            return;
+        }
+        rows.truncate(50);
+        self.open_dialog(Dialog::timeline(rows));
+    }
+
+    /// Undo the last turn by rewinding to its user message, which removes that
+    /// message and the work it started.
+    fn undo(&mut self) {
+        let Some(transcript) = self.shell.transcript() else {
+            self.notice("open a Session to undo a turn");
+            return;
+        };
+        let Some((boundary_seq, _)) = transcript.boundaries().last().cloned() else {
+            self.notice("this Session has no turn to undo");
+            return;
+        };
+        self.preview_revert(boundary_seq);
+    }
+
+    fn redo(&mut self) {
+        let Some(session_id) = self.session_id() else {
+            self.notice("open a Session to redo");
+            return;
+        };
+        if self.state.reverted == 0 {
+            self.notice("nothing to redo");
+            return;
+        }
+        if let Some(engine) = self.engine.as_ref() {
+            engine.redo(&session_id);
+        }
+    }
+
+    fn preview_revert(&mut self, boundary_seq: u64) {
+        let Some(session_id) = self.session_id() else {
+            self.notice("open a Session to revert it");
+            return;
+        };
+        if self.state.active_run.is_some() {
+            self.notice("stop the running turn before reverting");
+            return;
+        }
+        if let Some(engine) = self.engine.as_ref() {
+            engine.revert_preview(&session_id, boundary_seq);
+        }
+    }
+
     fn notice(&mut self, message: &str) {
         match self.screen {
             Screen::Home => self.home.set_notice(Some(message.to_string())),
+            Screen::Session => self.shell.composer.notice = Some(message.to_string()),
+        }
+    }
+
+    /// Warn about a configuration problem that the next catalog load does not
+    /// answer, so it has to survive that load.
+    pub fn warn(&mut self, message: &str) {
+        match self.screen {
+            Screen::Home => self.home.set_warning(Some(message.to_string())),
             Screen::Session => self.shell.composer.notice = Some(message.to_string()),
         }
     }
@@ -1067,17 +1409,129 @@ impl App {
             });
     }
 
+    /// Fold one ephemeral provider frame into the live status. The transcript
+    /// does not read this: it is replaced by every projection.
+    fn provider(&mut self, frame: Value) {
+        let Some(run_id) = self.state.active_run.clone() else {
+            return;
+        };
+        // A late frame from an earlier run must not refresh the current status.
+        if frame
+            .get("run_id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id != run_id)
+        {
+            return;
+        }
+        let now = Instant::now();
+        let phase = match frame
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+        {
+            // A token reached the stream, so the wait is over and the answer
+            // starts to show before it commits.
+            "provider.delta" => {
+                self.live = None;
+                self.stream(&run_id, frame.get("data").unwrap_or(&Value::Null));
+                return;
+            }
+            // The engine repeats this while it has no first token.
+            "provider.waiting" => LivePhase::Waiting,
+            "provider.retry" => LivePhase::Retrying {
+                attempt: frame.get("attempt").and_then(Value::as_u64).unwrap_or(0) + 1,
+            },
+            // An attempt announcement proves the request is in flight, even
+            // before the first heartbeat or right after a previous step.
+            "provider.attempt" => match self.live.as_ref().map(|live| live.phase.clone()) {
+                Some(phase) => phase,
+                None => LivePhase::Waiting,
+            },
+            // A committed tool call names the work the run is doing.
+            "tool.planned" => LivePhase::Tool {
+                name: tool_label(
+                    frame
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                ),
+            },
+            // The call finished; the run's next phase is not known yet.
+            "tool.completed" => {
+                self.live = None;
+                return;
+            }
+            _ => return,
+        };
+        // Only a phase change restarts the clock; a heartbeat must not restart
+        // the elapsed time the user is already reading.
+        let since = match self.live.as_ref() {
+            Some(live) if live.run_id == run_id && live.phase == phase => live.since,
+            _ => now,
+        };
+        self.live = Some(Live {
+            run_id,
+            phase,
+            since,
+            signal: now,
+        });
+    }
+
+    /// Append one normalized provider delta to the draft the next projection
+    /// will replace.
+    fn stream(&mut self, run_id: &str, frame: &Value) {
+        let delta = frame.get("delta").unwrap_or(&Value::Null);
+        // A delta for a run other than the draft's starts a new draft; frames
+        // for a finished run are filtered above, so this is a newer turn.
+        if self
+            .draft
+            .as_ref()
+            .is_none_or(|draft| draft.run_id != run_id)
+        {
+            self.draft = Some(Draft {
+                run_id: run_id.to_string(),
+                committed: self.committed,
+                ..Draft::default()
+            });
+        }
+        let draft = self.draft.as_mut().expect("draft just ensured");
+        draft.append(delta);
+        self.shell.set_draft(&draft.text, &draft.reasoning);
+    }
+
+    /// Whether the status line has something to count, which is also when the
+    /// drive loop must repaint faster than the minute.
+    pub fn busy(&self) -> bool {
+        self.screen == Screen::Session && self.state.active_run.is_some()
+    }
+
     fn update_status(&mut self) {
         if self.screen != Screen::Session {
             self.shell.title.set_status(None);
+            self.shell.title.set_status_alert(false);
             return;
         }
-        let status = match (&self.state.active_run, self.state.pending) {
-            (Some(_), 0) => "working · Esc interrupt".to_string(),
-            (Some(_), queued) => format!("working · {queued} queued · Esc interrupt"),
-            (None, 0) => "idle".to_string(),
-            (None, queued) => format!("idle · {queued} queued"),
+        let now = Instant::now();
+        let live = self
+            .live
+            .as_ref()
+            .filter(|live| self.state.active_run.as_deref() == Some(live.run_id.as_str()));
+        // Without a frame the run is still starting; saying so with the plain
+        // "working" avoids claiming a phase the engine never announced.
+        let phase = match (self.state.active_run.is_some(), live) {
+            (true, Some(live)) => live.describe(now),
+            (true, None) => "working".to_string(),
+            (false, _) => "idle".to_string(),
         };
+        let status = match (&self.state.active_run, self.state.pending) {
+            (Some(_), 0) => format!("{phase} · Esc interrupt"),
+            (Some(_), queued) => format!("{phase} · {queued} queued · Esc interrupt"),
+            (None, 0) => phase,
+            (None, queued) => format!("{phase} · {queued} queued"),
+        };
+        self.shell
+            .title
+            .set_status_alert(live.is_some_and(|live| live.silent(now)));
         self.shell.title.set_status(Some(status));
     }
 
@@ -1156,6 +1610,10 @@ impl App {
         self.screen = Screen::Home;
         self.session = None;
         self.state = SessionState::default();
+        self.live = None;
+        self.draft = None;
+        self.committed = 0;
+        self.shell.set_draft("", "");
         self.usage = None;
         self.pending_accounts = false;
         self.shell.panel = None;
@@ -1200,7 +1658,7 @@ fn first_line(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::Transcript;
+    use crate::session::{Entry, RevertPlan, Transcript};
     use crate::theme::{self, DEFAULT_THEME};
 
     fn app() -> App {
@@ -1244,6 +1702,7 @@ mod tests {
             parent_id: None,
             updated_at_ms: Some(updated_at_ms),
             archived_at_ms: None,
+            pinned_at_ms: None,
             directory: None,
             model: None,
             credential_id: None,
@@ -1300,6 +1759,17 @@ mod tests {
     }
 
     #[test]
+    fn a_startup_warning_survives_the_session_catalog() {
+        let mut app = app_with(Startup::default());
+        app.warn("no model routes");
+        assert_eq!(app.home.warning(), Some("no model routes"));
+        // The catalog answers "which Sessions exist", not "is this Session
+        // routed", so it must not make the warning disappear.
+        app.handle(AppEvent::Sessions(vec![summary("ses_known", 1)]));
+        assert_eq!(app.home.warning(), Some("no model routes"));
+    }
+
+    #[test]
     fn continue_opens_the_newest_session_that_is_not_archived() {
         let mut app = app_with(Startup {
             continue_last: true,
@@ -1338,6 +1808,32 @@ mod tests {
             app.home.notice().map(str::to_string),
             Some("no Sessions to continue".into())
         );
+    }
+
+    #[test]
+    fn pin_toggles_the_engine_owned_pin() {
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.catalog = vec![summary("ses_a", 10)];
+        app.dialog = Some(Dialog::sessions(&app.catalog));
+        app.dialog_action(DialogAction::TogglePin("ses_a".into()));
+        assert!(app.dialog.is_none(), "the list closes on the action");
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Pin { session_id, pinned })
+                if session_id == "ses_a" && pinned
+        ));
+        // The same key unpins a Session the engine already reports as pinned.
+        let mut pinned = summary("ses_a", 10);
+        pinned.pinned_at_ms = Some(5);
+        app.catalog = vec![pinned];
+        app.dialog = Some(Dialog::sessions(&app.catalog));
+        app.dialog_action(DialogAction::TogglePin("ses_a".into()));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Pin { pinned: false, .. })
+        ));
     }
 
     #[test]
@@ -1486,6 +1982,7 @@ mod tests {
                 expires_at_ms: None,
             }],
             questions: Vec::new(),
+            reverted: 0,
         }
     }
 
@@ -1518,6 +2015,257 @@ mod tests {
         assert_eq!(app.screen, Screen::Session);
     }
 
+    fn running_app(run_id: &str) -> App {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: SessionState {
+                active_run: Some(run_id.into()),
+                ..SessionState::default()
+            },
+        });
+        app
+    }
+
+    fn provider_frame(kind: &str) -> AppEvent {
+        AppEvent::Provider(serde_json::json!({
+            "kind": kind,
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "attempt": 1,
+            "elapsed_ms": 0,
+        }))
+    }
+
+    #[test]
+    fn a_waiting_run_counts_the_wait_instead_of_showing_a_static_working() {
+        let mut app = running_app("run-1");
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+        app.handle(provider_frame("provider.waiting"));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("waiting for model · 0s · Esc interrupt")
+        );
+        // A token ends the wait; committed content carries the turn from here.
+        app.handle(provider_frame("provider.delta"));
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+    }
+
+    #[test]
+    fn a_heartbeat_does_not_restart_the_elapsed_time() {
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.waiting"));
+        let since = app.live.as_ref().expect("live wait").since;
+        app.handle(provider_frame("provider.waiting"));
+        assert_eq!(app.live.as_ref().expect("live wait").since, since);
+    }
+
+    #[test]
+    fn an_announced_retry_is_visible_while_it_waits() {
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.retry"));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("retrying attempt 2 · 0s · Esc interrupt")
+        );
+    }
+
+    #[test]
+    fn a_silent_engine_is_called_out_without_claiming_failure() {
+        let mut app = running_app("run-1");
+        let now = Instant::now();
+        app.live = Some(Live {
+            run_id: "run-1".into(),
+            phase: LivePhase::Waiting,
+            since: now - Duration::from_secs(40),
+            signal: now - Duration::from_secs(20),
+        });
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("waiting for model · 40s · no engine signal 20s · Esc interrupt")
+        );
+        assert!(app.shell.title.status_alert());
+    }
+
+    #[test]
+    fn a_frame_from_another_run_does_not_refresh_the_status() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.waiting",
+            "run_id": "run-0",
+        })));
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+    }
+
+    #[test]
+    fn a_projection_for_another_run_drops_the_live_phase() {
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.waiting"));
+        assert!(app.live.is_some());
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: SessionState {
+                active_run: Some("run-2".into()),
+                ..SessionState::default()
+            },
+        });
+        assert!(app.live.is_none());
+    }
+
+    #[test]
+    fn a_running_tool_is_named_in_the_status() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.planned",
+            "run_id": "run-1",
+            "name": "bash",
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("running bash · 0s · Esc interrupt")
+        );
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.completed",
+            "run_id": "run-1",
+        })));
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+    }
+
+    #[test]
+    fn a_running_tool_is_not_reported_as_a_silent_engine() {
+        let mut app = running_app("run-1");
+        let now = Instant::now();
+        app.live = Some(Live {
+            run_id: "run-1".into(),
+            phase: LivePhase::Tool {
+                name: "bash".into(),
+            },
+            since: now - Duration::from_secs(300),
+            signal: now - Duration::from_secs(300),
+        });
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("running bash · 5m 00s · Esc interrupt")
+        );
+        assert!(!app.shell.title.status_alert());
+    }
+
+    #[test]
+    fn a_tool_name_is_one_short_line() {
+        assert_eq!(tool_label("bash"), "bash");
+        assert_eq!(tool_label("read_file\nsecond"), "read_file");
+        assert_eq!(tool_label(&"x".repeat(40)).chars().count(), 24);
+        assert_eq!(tool_label(""), "tool");
+    }
+
+    #[test]
+    fn a_wait_reads_in_seconds_then_minutes() {
+        assert_eq!(waited(Duration::from_secs(9)), "9s");
+        assert_eq!(waited(Duration::from_secs(65)), "1m 05s");
+    }
+
+    fn delta_frame(run_id: &str, kind: &str, text: &str) -> AppEvent {
+        AppEvent::Provider(serde_json::json!({
+            "kind": "provider.delta",
+            "session_id": "ses_1",
+            "run_id": run_id,
+            "data": {"kind": "delta", "delta": {"kind": kind, "text": text}},
+        }))
+    }
+
+    fn drafted(app: &App) -> String {
+        app.shell
+            .draft()
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn opened(transcript: Transcript, active_run: Option<&str>) -> AppEvent {
+        AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(transcript),
+            state: SessionState {
+                active_run: active_run.map(str::to_string),
+                ..SessionState::default()
+            },
+        }
+    }
+
+    #[test]
+    fn a_streamed_answer_appears_before_the_turn_commits() {
+        let mut app = running_app("run-1");
+        app.handle(delta_frame("run-1", "text.delta", "Hel"));
+        app.handle(delta_frame("run-1", "text.delta", "lo"));
+        let draft = app.draft.as_ref().expect("a streaming draft");
+        assert_eq!(draft.text, "Hello");
+        assert!(
+            drafted(&app).contains("Hello"),
+            "the transcript shows the streamed answer: {:?}",
+            drafted(&app)
+        );
+    }
+
+    #[test]
+    fn reasoning_and_text_stream_into_separate_channels() {
+        let mut app = running_app("run-1");
+        app.handle(delta_frame("run-1", "reasoning.delta", "weighing"));
+        let draft = app.draft.as_ref().expect("a streaming draft");
+        assert_eq!(draft.reasoning, "weighing");
+        assert!(draft.text.is_empty(), "reasoning is not the answer");
+        assert_eq!(drafted(&app), "▸ thinking · 8 chars");
+        app.handle(delta_frame("run-1", "text.delta", "the answer"));
+        let shown = drafted(&app);
+        assert!(shown.starts_with("▸ thinking · 8 chars"));
+        assert!(shown.contains("the answer"));
+    }
+
+    #[test]
+    fn only_the_projection_that_commits_the_answer_replaces_the_draft() {
+        let mut app = running_app("run-1");
+        app.handle(delta_frame("run-1", "text.delta", "Hello"));
+        // A snapshot taken for an unrelated event carries no new message, so
+        // the stream keeps showing rather than blinking away mid-answer.
+        app.handle(opened(Transcript::default(), Some("run-1")));
+        assert!(app
+            .draft
+            .as_ref()
+            .is_some_and(|draft| draft.text == "Hello"));
+        assert!(drafted(&app).contains("Hello"));
+        let committed = Transcript::from_snapshot(&serde_json::json!({
+            "messages": [{"role": "assistant", "content": [{"type": "text", "text": "Hello"}]}],
+        }));
+        app.handle(opened(committed, Some("run-1")));
+        assert!(app.draft.is_none());
+        assert!(app.shell.draft().is_empty());
+    }
+
+    #[test]
+    fn a_finished_run_drops_an_uncommitted_draft() {
+        let mut app = running_app("run-1");
+        app.handle(delta_frame("run-1", "text.delta", "partial"));
+        app.handle(opened(Transcript::default(), None));
+        assert!(app.draft.is_none());
+        assert!(app.shell.draft().is_empty());
+    }
+
     #[test]
     fn esc_returns_from_a_session_to_the_home_list() {
         let mut app = session_app();
@@ -1529,6 +2277,94 @@ mod tests {
     fn leader(app: &mut App, letter: char) {
         app.handle(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
         app.handle(key(KeyCode::Char(letter), KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn saved_permissions_ignore_closed_dialog_results_and_keep_paste_out_of_the_prompt() {
+        let mut app = session_app();
+        let (engine, mut requests) = engine::Handle::recording();
+        app.attach_engine(engine);
+        app.run_builtin(Builtin::Permissions);
+        let engine::Request::SavedPermissions { generation: first } = requests.try_recv().unwrap()
+        else {
+            panic!("list");
+        };
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        app.run_builtin(Builtin::Permissions);
+        let engine::Request::SavedPermissions { generation: second } = requests.try_recv().unwrap()
+        else {
+            panic!("second list");
+        };
+        assert_ne!(first, second);
+        app.handle(AppEvent::SavedPermissions {
+            generation: first,
+            result: Err("stale".into()),
+        });
+        let Some(Dialog::SavedPermissions(dialog)) = app.dialog.as_mut() else {
+            panic!("dialog");
+        };
+        assert!(matches!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+            DialogAction::None
+        ));
+        app.handle(AppEvent::SavedPermissions {
+            generation: second,
+            result: Ok(Vec::new()),
+        });
+        app.handle(AppEvent::Paste("private-target".into()));
+        assert!(app.shell.composer.editor.is_empty());
+        let Some(Dialog::SavedPermissions(dialog)) = app.dialog.as_mut() else {
+            panic!("dialog");
+        };
+        assert!(matches!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+            DialogAction::RefreshPermissions
+        ));
+    }
+
+    #[test]
+    fn workspace_changes_opens_with_generation_and_tracks_the_session() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_vcs", 1)),
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        let (engine, mut requests) = engine::Handle::recording();
+        app.attach_engine(engine);
+        app.run_builtin(Builtin::WorkspaceChanges);
+        let engine::Request::VcsChanges {
+            generation,
+            session_id,
+        } = requests.try_recv().unwrap()
+        else {
+            panic!("vcs_status request");
+        };
+        assert_eq!(session_id, "ses_vcs");
+        app.handle(AppEvent::WorkspaceChanges {
+            generation,
+            result: Ok(crate::workspace_changes::VcsState {
+                branch: Some("main".into()),
+                detached: false,
+                ahead: Some(1),
+                behind: None,
+                files: vec![crate::workspace_changes::Change {
+                    path: "src/lib.rs".into(),
+                    original_path: None,
+                    kind: "modified".into(),
+                }],
+                truncated: false,
+                file_count: Some(1),
+                repository: true,
+            }),
+        });
+        let Some(Dialog::WorkspaceChanges(dialog)) = app.dialog.as_mut() else {
+            panic!("workspace changes dialog");
+        };
+        assert!(matches!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+            DialogAction::RefreshWorkspaceChanges(_)
+        ));
     }
 
     #[test]
@@ -1752,5 +2588,161 @@ mod tests {
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         assert!(app.dialog.is_none());
         assert!(app.shell.composer.editor.is_empty());
+    }
+
+    /// An open Session whose transcript holds two user turns, with a handle
+    /// that records what the UI asks the engine to do.
+    fn revert_session_app() -> (App, tokio::sync::mpsc::UnboundedReceiver<engine::Request>) {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_a", 10)),
+            transcript: Box::new(Transcript {
+                entries: vec![
+                    Entry::User {
+                        text: "first".into(),
+                        seq: 3,
+                    },
+                    Entry::User {
+                        text: "second".into(),
+                        seq: 9,
+                    },
+                ],
+                ..Transcript::default()
+            }),
+            state: SessionState::default(),
+        });
+        let (handle, requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        (app, requests)
+    }
+
+    #[test]
+    fn undo_previews_the_newest_user_turn() {
+        let (mut app, mut requests) = revert_session_app();
+        app.run_builtin(Builtin::Undo);
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::RevertPreview {
+                boundary_seq: 9,
+                ..
+            })
+        ));
+        assert!(app.dialog.is_none(), "the preview opens the dialog");
+    }
+
+    #[test]
+    fn undo_waits_for_the_running_turn_to_stop() {
+        let (mut app, mut requests) = revert_session_app();
+        app.state.active_run = Some("run-1".into());
+        app.run_builtin(Builtin::Undo);
+        assert!(requests.try_recv().is_err());
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("stop the running turn before reverting")
+        );
+    }
+
+    #[test]
+    fn the_timeline_lists_turns_newest_first_and_previews_the_chosen_one() {
+        let (mut app, mut requests) = revert_session_app();
+        app.run_builtin(Builtin::Timeline);
+        let Some(Dialog::Timeline(list)) = &app.dialog else {
+            panic!("expected a timeline dialog");
+        };
+        assert_eq!(list.rows[0].detail, "#9");
+        assert_eq!(list.rows[1].detail, "#3");
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.dialog.is_none());
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::RevertPreview {
+                boundary_seq: 3,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_revert_confirm_names_the_outside_edits_it_overwrites() {
+        let (mut app, mut requests) = revert_session_app();
+        app.handle(AppEvent::RevertPreview {
+            session_id: "ses_a".into(),
+            boundary_seq: 9,
+            plan: RevertPlan::from_value(&serde_json::json!({
+                "available": true,
+                "restore": ["a.txt"],
+                "remove": [],
+                "conflicts": [{ "path": "a.txt", "action": "restore", "disk": "modified" }]
+            })),
+        });
+        let Some(Dialog::Confirm(confirm)) = &app.dialog else {
+            panic!("expected a confirm dialog");
+        };
+        assert_eq!(confirm.action_label(), "revert");
+        assert!(
+            confirm.message.contains("a.txt (modified)"),
+            "{}",
+            confirm.message
+        );
+        app.handle(key(KeyCode::Char('y'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.dialog.is_none());
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Revert {
+                boundary_seq: 9,
+                files: true,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_revert_without_a_file_record_leaves_the_workspace_alone() {
+        let (mut app, mut requests) = revert_session_app();
+        app.handle(AppEvent::RevertPreview {
+            session_id: "ses_a".into(),
+            boundary_seq: 9,
+            plan: RevertPlan::from_value(&serde_json::json!({
+                "available": false,
+                "reason": "no-file-snapshot"
+            })),
+        });
+        app.handle(key(KeyCode::Char('y'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Revert { files: false, .. })
+        ));
+    }
+
+    #[test]
+    fn a_preview_for_a_session_that_is_no_longer_open_is_dropped() {
+        let (mut app, _requests) = revert_session_app();
+        app.handle(AppEvent::RevertPreview {
+            session_id: "ses_other".into(),
+            boundary_seq: 9,
+            plan: RevertPlan::default(),
+        });
+        assert!(app.dialog.is_none());
+    }
+
+    #[test]
+    fn redo_only_asks_the_engine_when_something_is_hidden() {
+        let (mut app, mut requests) = revert_session_app();
+        app.run_builtin(Builtin::Redo);
+        assert!(requests.try_recv().is_err());
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("nothing to redo")
+        );
+
+        app.state.reverted = 2;
+        app.run_builtin(Builtin::Redo);
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Redo { session_id }) if session_id == "ses_a"
+        ));
     }
 }

@@ -91,8 +91,23 @@ impl Host {
                 session_id,
                 archived,
             } => runtime.store().set_archived(&session_id, archived).await,
+            Command::Pin { session_id, pinned } => {
+                runtime.store().set_pinned(&session_id, pinned).await
+            }
             Command::Remove { session_id } => runtime.remove(&session_id).await,
-            Command::RequestCompact { session_id } => runtime.request_compact(&session_id).await,
+            Command::Recap { session_id } => runtime.recap(&session_id).await,
+            Command::RequestCompact {
+                session_id,
+                through,
+                focus,
+            } => {
+                runtime
+                    .request_compact_with(
+                        &session_id,
+                        crate::protocol::CompactScope { through, focus },
+                    )
+                    .await
+            }
             Command::SelectAgent { session_id, agent } => {
                 runtime.set_agent(&session_id, *agent).await
             }
@@ -110,6 +125,20 @@ impl Host {
                 session_id,
                 input_id,
             } => runtime.store().cancel_input(&session_id, &input_id).await,
+            Command::InputStatus {
+                session_id,
+                input_id,
+            } => runtime.store().input_status(&session_id, &input_id).await,
+            Command::EditInput {
+                session_id,
+                input_id,
+                prompt,
+            } => {
+                runtime
+                    .store()
+                    .edit_input(&session_id, &input_id, &prompt)
+                    .await
+            }
             Command::ModelCatalog => {
                 serde_json::to_value(runtime.model_catalog()).map_err(Error::from)
             }
@@ -240,8 +269,16 @@ impl Host {
                 .reject_question(&self.controller, &session_id, rejection)
                 .await
                 .map(|_| json!({ "accepted": true })),
+            Command::ConfigReload => runtime.reload_config().await,
             Command::State { session_id } => runtime.store().state(&session_id).await,
             Command::Usage { session_id } => runtime.store().usage_report(&session_id).await,
+            Command::VcsStatus { session_id } => runtime.store().vcs_status(&session_id).await,
+            Command::SessionChildren { session_id } => {
+                runtime
+                    .store()
+                    .children(&session_id, crate::children::MAX_CHILDREN)
+                    .await
+            }
             Command::UpdateState {
                 session_id,
                 operation_id,
@@ -266,6 +303,16 @@ impl Host {
                     runtime.store().history(&session_id).await
                 };
                 history.and_then(|value| serde_json::to_value(value).map_err(Error::from))
+            }
+            Command::HistoryPage {
+                session_id,
+                before_seq,
+                limit,
+            } => {
+                runtime
+                    .store()
+                    .history_page(&session_id, before_seq, limit)
+                    .await
             }
             Command::Job { session_id, job_id } => runtime
                 .store()
@@ -446,10 +493,20 @@ impl Host {
             Command::RevertStage {
                 session_id,
                 boundary_seq,
+                files,
             } => {
                 runtime
                     .store()
-                    .revert_stage(&session_id, boundary_seq)
+                    .revert_stage(&session_id, boundary_seq, files)
+                    .await
+            }
+            Command::RevertPreview {
+                session_id,
+                boundary_seq,
+            } => {
+                runtime
+                    .store()
+                    .revert_preview(&session_id, boundary_seq)
                     .await
             }
             Command::RevertClear { session_id } => runtime.store().revert_clear(&session_id).await,
@@ -473,6 +530,10 @@ impl Host {
                 self.subscriptions.remove(&session_id);
                 Ok(json!({ "accepted": true }))
             }
+            Command::ProductPermissionEvaluate { source, request } => runtime
+                .evaluate_product_permission(&self.controller, &source, request)
+                .await
+                .and_then(|outcome| serde_json::to_value(outcome).map_err(Error::from)),
             Command::PermissionEvaluate { request } => {
                 if request.actions.is_empty() || request.resources.is_empty() {
                     return Err(Error::Invalid(
@@ -482,10 +543,80 @@ impl Host {
                 serde_json::to_value(crate::permission_rules::evaluate(&request)?)
                     .map_err(Error::from)
             }
+            Command::ProductPermissionAdmit { source, input } => runtime
+                .admit_product_permission(&self.controller, &source, input)
+                .await
+                .and_then(|record| serde_json::to_value(record).map_err(Error::from)),
+            Command::ProductPermissionStatus { source, request_id } => runtime
+                .product_permission_status(&self.controller, &source, request_id)
+                .await
+                .and_then(|record| serde_json::to_value(record).map_err(Error::from)),
+            Command::ProductPermissionCancel { source, request_id } => runtime
+                .cancel_product_permission(&self.controller, &source, request_id)
+                .await
+                .and_then(|record| serde_json::to_value(record).map_err(Error::from)),
+            Command::ProductPermissionReply { source, response } => runtime
+                .reply_product_permission(&self.controller, &source, response)
+                .await
+                .and_then(|record| serde_json::to_value(record).map_err(Error::from)),
+            Command::ProductPermissionPending { session_id } => runtime
+                .pending_product_permissions(&self.controller, session_id)
+                .await
+                .and_then(|records| serde_json::to_value(records).map_err(Error::from)),
+            Command::PermissionImportSnapshot => runtime
+                .permission_import_snapshot(&self.controller)
+                .await
+                .and_then(|snapshot| serde_json::to_value(snapshot).map_err(Error::from)),
+            Command::PermissionImportChanges(input) => runtime
+                .permission_import_changes(&self.controller, input)
+                .await
+                .and_then(|page| serde_json::to_value(page).map_err(Error::from)),
+            Command::PermissionSavedMigrate(input) => runtime
+                .migrate_saved_permissions(&self.controller, input)
+                .await
+                .and_then(|receipt| serde_json::to_value(receipt).map_err(Error::from)),
+            Command::PermissionSavedMigration => runtime
+                .saved_permission_migration(&self.controller)
+                .await
+                .and_then(|receipt| serde_json::to_value(receipt).map_err(Error::from)),
+            Command::PermissionSavedImported => runtime
+                .imported_permissions(&self.controller)
+                .await
+                .and_then(|rules| serde_json::to_value(rules).map_err(Error::from)),
+            Command::PermissionSavedRemove(input) => runtime
+                .remove_imported_permission(&self.controller, input.id)
+                .await
+                .map(|removed| json!({"removed":removed})),
+            Command::PermissionPatternList => runtime
+                .permission_patterns(&self.controller)
+                .await
+                .and_then(|patterns| serde_json::to_value(patterns).map_err(Error::from)),
+            Command::PermissionPatternSnapshot => runtime
+                .permission_pattern_snapshot(&self.controller)
+                .await
+                .and_then(|snapshot| serde_json::to_value(snapshot).map_err(Error::from)),
+            Command::PermissionPatternChanges(input) => runtime
+                .permission_pattern_changes(&self.controller, input)
+                .await
+                .and_then(|page| serde_json::to_value(page).map_err(Error::from)),
+            Command::PermissionPatternPut(input) => runtime
+                .put_permission_pattern(&self.controller, input.rule)
+                .await
+                .and_then(|pattern| serde_json::to_value(pattern).map_err(Error::from)),
+            Command::PermissionPatternRemove(input) => runtime
+                .remove_permission_pattern(&self.controller, input.rule_id)
+                .await
+                .map(|removed| json!({"removed":removed})),
             Command::PermissionSavedProject { workspace, rules } => {
                 runtime
                     .store()
                     .project_saved_rules(workspace, rules)
+                    .await?;
+                Ok(json!({ "accepted": true }))
+            }
+            Command::PermissionSavedSnapshot { workspace, rules } => {
+                runtime
+                    .replace_saved_rules(&self.controller, workspace, rules)
                     .await?;
                 Ok(json!({ "accepted": true }))
             }

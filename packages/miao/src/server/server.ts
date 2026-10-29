@@ -161,12 +161,10 @@ function listenerLayer(opts: ListenOptions, port: number) {
           // work, so it must describe the same location graph as the routes —
           // otherwise it builds a second one and its permissions are answered
           // in a graph no reply route can reach.
-          Layer.fresh(
-            AppNodeBuilder.build(NativeEngineNode.node, [
-              ...admissionReplacements,
-              [SessionExecution.node, SessionExecutionLocal.node],
-            ]),
-          ),
+          AppNodeBuilder.build(NativeEngineNode.listenerNode, [
+            ...admissionReplacements,
+            [SessionExecution.node, SessionExecutionLocal.node],
+          ]),
         ),
       )
     : base

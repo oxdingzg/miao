@@ -5,7 +5,7 @@ import { ProjectTable } from "../project/sql"
 import type { PermissionSaved } from "./saved"
 
 export const PermissionTable = sqliteTable(
-  "permission",
+  "permission_legacy",
   {
     id: text().$type<PermissionSaved.ID>().primaryKey(),
     project_id: text()

@@ -23,13 +23,13 @@ use tokio::sync::{mpsc, oneshot, watch};
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 // Older readers do not understand inactive semantic imports and could execute
 // a destination before its host has switched the authoritative placement.
-pub const SCHEMA_VERSION: u32 = 21;
+pub const SCHEMA_VERSION: u32 = 22;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
 /// The catalog columns a listing needs, in query order; a store written before
 /// one of them existed reads that column as NULL.
-type CatalogFields = (String, Option<i64>, Option<i64>, Option<i64>);
+type CatalogFields = (String, Option<i64>, Option<i64>, Option<i64>, Option<i64>);
 
 /// A durable, fenced claim on one Session's execution. Every claim advances
 /// `epoch`, so a writer whose ownership was superseded is rejected even while
@@ -148,20 +148,20 @@ impl Store {
                 let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
                 rows.collect::<Result<HashSet<_>, _>>()?
             };
-            let fields = ["title", "created_at_ms", "updated_at_ms", "archived_at_ms"].map(|name| {
+            let fields = ["title", "created_at_ms", "updated_at_ms", "archived_at_ms", "pinned_at_ms"].map(|name| {
                 if columns.contains(name) { name } else if name == "title" { "''" } else { "NULL" }
             });
             let row: Option<CatalogFields> = tx.query_row(
                 &format!("SELECT {} FROM engine_session WHERE id=?1", fields.join(",")), [&session],
-                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)),
             ).optional()?;
-            let Some((title, created, updated, archived)) = row else { return Ok(None) };
+            let Some((title, created, updated, archived, pinned)) = row else { return Ok(None) };
             let parent: Option<String> = tx.query_row("SELECT parent_session_id FROM engine_lineage WHERE session_id=?1", [&session], |row| row.get(0)).optional()?;
             let model = crate::session_model::selected(&tx, &session)?;
             let account = crate::session_account::selected_at(&tx, &session, i64::MAX as u64)?;
             let agent = crate::session_agent::selected(&tx, &session)?.map(|(agent, _)| json!({"name":agent.name}));
             tx.commit()?;
-            Ok(Some(json!({"session_id":session,"title":title,"created_at_ms":created,"updated_at_ms":updated,"archived_at_ms":archived,"parent_session_id":parent,"model_selection":model,"account_selection":account,"agent":agent})))
+            Ok(Some(json!({"session_id":session,"title":title,"created_at_ms":created,"updated_at_ms":updated,"archived_at_ms":archived,"pinned_at_ms":pinned,"parent_session_id":parent,"model_selection":model,"account_selection":account,"agent":agent})))
         }).await
     }
 
@@ -263,6 +263,9 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS engine_lease(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),interval_ms INTEGER NOT NULL,last_ms INTEGER NOT NULL,epoch INTEGER NOT NULL,owner_pid INTEGER);"))?;
                 crate::permission_grant::initialize(&conn)?;
                 crate::permission_saved::initialize(&conn)?;
+                crate::permission_patterns::initialize(&conn)?;
+                crate::permission_migration::initialize(&conn)?;
+                crate::product_permission_request::initialize(&conn)?;
                 // ADR-0019: content-addressed Session file snapshots and the one
                 // staged revert intent. Blobs live beside the database.
                 conn.execute_batch(
@@ -288,8 +291,13 @@ impl Store {
                     )?;
                 }
                 // Nullable on purpose: sessions that predate the columns keep an
-                // unknown creation/update time instead of a fabricated one.
-                for column in ["created_at_ms", "updated_at_ms", "archived_at_ms"] {
+                // unknown creation/update/pin time instead of a fabricated one.
+                for column in [
+                    "created_at_ms",
+                    "updated_at_ms",
+                    "archived_at_ms",
+                    "pinned_at_ms",
+                ] {
                     let has_time:bool=conn.query_row(
                         "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name=?1)",
                         [column],|r|r.get(0))?;
@@ -594,6 +602,192 @@ impl Store {
         .await
     }
 
+    /// One admitted input's durable receipt.
+    ///
+    /// A reconnecting client can page `pending_inputs`, but it cannot learn
+    /// what happened to a prompt it sent earlier without replaying every
+    /// `input.*` event: this answers "where is my prompt now" from the inbox
+    /// row and the one event that settled it. Execution and failure are not
+    /// part of the receipt — promotion starts a run whose outcome belongs to
+    /// that run, not to the admission.
+    pub async fn input_status(&self, session: &str, input_id: &str) -> Result<Value, Error> {
+        if session.is_empty() || input_id.is_empty() || session.len() > 256 || input_id.len() > 256
+        {
+            return Err(Error::Invalid(
+                "session_id and input_id must be nonempty".into(),
+            ));
+        }
+        let (session, input_id) = (session.to_owned(), input_id.to_owned());
+        self.call(move |conn| {
+            let exists: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(Error::Invalid("Session does not exist".into()));
+            }
+            let row: Option<(String, String, u64, Option<u64>)> = conn
+                .query_row(
+                    "SELECT i.delivery,i.state,i.admitted_seq,e.recorded_at_ms
+                     FROM engine_input i
+                     LEFT JOIN engine_event e ON e.session_id=i.session_id AND e.seq=i.admitted_seq
+                     WHERE i.session_id=?1 AND i.id=?2",
+                    params![session, input_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .optional()?;
+            let Some((delivery, state, admitted_seq, admitted_at_ms)) = row else {
+                // Another Session's admission is not this caller's receipt.
+                return Ok(json!({
+                    "session_id": session,
+                    "input_id": input_id,
+                    "state": "unknown",
+                }));
+            };
+            let mut receipt = json!({
+                "session_id": &session,
+                "input_id": &input_id,
+                "state": &state,
+                "delivery": &delivery,
+                "admitted_seq": admitted_seq,
+                "admitted_at_ms": admitted_at_ms,
+            });
+            match state.as_str() {
+                "pending" => {
+                    // Promotions run steer-first, then at most one queued item
+                    // per idle boundary, so position only means something
+                    // inside one delivery class.
+                    receipt["pending_ahead"] = json!(conn.query_row(
+                        "SELECT COUNT(*) FROM engine_input
+                         WHERE session_id=?1 AND delivery=?2 AND state='pending' AND admitted_seq<?3",
+                        params![&session, &delivery, admitted_seq],
+                        |row| row.get::<_, u64>(0),
+                    )?);
+                }
+                "promoted" => {
+                    let promoted: Option<(u64, Option<u64>, Option<String>)> = conn
+                        .query_row(
+                            "SELECT e.seq,e.recorded_at_ms,json_extract(e.data,'$.checkpoint')
+                             FROM engine_event e
+                             WHERE e.session_id=?1 AND e.kind='input.promoted'
+                               AND json_extract(e.data,'$.input_id')=?2
+                             ORDER BY e.seq LIMIT 1",
+                            params![&session, &input_id],
+                            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                        )
+                        .optional()?;
+                    // The projected user message occupies the promotion's seq,
+                    // so this is the message a transcript can scroll to.
+                    receipt["promoted"] = match promoted {
+                        Some((seq, recorded_at_ms, checkpoint)) => json!({
+                            "seq": seq,
+                            "recorded_at_ms": recorded_at_ms,
+                            "checkpoint": checkpoint,
+                        }),
+                        None => Value::Null,
+                    };
+                }
+                "cancelled" => {
+                    let cancelled: Option<(u64, Option<u64>)> = conn
+                        .query_row(
+                            "SELECT e.seq,e.recorded_at_ms FROM engine_event e
+                             WHERE e.session_id=?1 AND e.kind='input.cancelled'
+                               AND json_extract(e.data,'$.input_id')=?2
+                             ORDER BY e.seq LIMIT 1",
+                            params![&session, &input_id],
+                            |row| Ok((row.get(0)?, row.get(1)?)),
+                        )
+                        .optional()?;
+                    receipt["cancelled"] = match cancelled {
+                        Some((seq, recorded_at_ms)) => json!({
+                            "seq": seq,
+                            "recorded_at_ms": recorded_at_ms,
+                        }),
+                        None => Value::Null,
+                    };
+                }
+                _ => {}
+            }
+            Ok(receipt)
+        })
+        .await
+    }
+
+    /// Rewrite the text of an input that has not been promoted yet, keeping its
+    /// identity, delivery class and queue position.
+    ///
+    /// Admission identity is the retry key, so a second `admit` with the same
+    /// id and different text conflicts; this is the operator's explicit way to
+    /// change a committed prompt without silently reordering the inbox. Only
+    /// pending work is editable: a promoted input is already a transcript
+    /// message, and a cancelled one is a settled decision.
+    pub async fn edit_input(
+        &self,
+        session: &str,
+        input_id: &str,
+        prompt: &str,
+    ) -> Result<Value, Error> {
+        if session.is_empty()
+            || input_id.is_empty()
+            || prompt.is_empty()
+            || session.len() > 256
+            || input_id.len() > 256
+            || prompt.len() > 1024 * 1024
+        {
+            return Err(Error::Invalid(
+                "session_id, input_id and prompt must be nonempty".into(),
+            ));
+        }
+        let (session, input_id, prompt) =
+            (session.to_owned(), input_id.to_owned(), prompt.to_owned());
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let row: Option<(String, String, String)> = tx
+                .query_row(
+                    "SELECT state,prompt,delivery FROM engine_input WHERE id=?1 AND session_id=?2",
+                    params![input_id, session],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .optional()?;
+            let Some((state, previous, delivery)) = row else {
+                return Err(Error::Invalid("input does not exist".into()));
+            };
+            if state != "pending" {
+                return Err(Error::Invalid(format!("input is {state}")));
+            }
+            // An edit that changes nothing is a retry, not a new history fact.
+            let duplicate = previous == prompt;
+            if !duplicate {
+                tx.execute(
+                    "UPDATE engine_input SET prompt=?1 WHERE id=?2",
+                    params![prompt, input_id],
+                )?;
+                // The transcript never shows this event; it is an audit of how
+                // the queued text changed, so it carries digests rather than a
+                // second copy of the prompt.
+                append(
+                    &tx,
+                    &session,
+                    "input.edited",
+                    json!({
+                        "input_id": input_id,
+                        "previous_digest": crate::permission::digest(previous.as_bytes()),
+                        "prompt_digest": crate::permission::digest(prompt.as_bytes()),
+                    }),
+                )?;
+            }
+            tx.commit()?;
+            Ok(json!({
+                "session_id": session,
+                "input_id": input_id,
+                "delivery": delivery,
+                "duplicate": duplicate,
+            }))
+        })
+        .await
+    }
+
     pub async fn active_run(&self, session: &str) -> Result<Option<String>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
@@ -793,6 +987,38 @@ impl Store {
         .await
     }
 
+    /// Set or clear a Session's pin timestamp.
+    ///
+    /// Like archiving, a pin is a catalog fact: it changes no message, run or
+    /// inbox row, so it is legal while a drain is active and reversible with
+    /// `pinned: false`. Unlike `rename` it never initializes a Session, because
+    /// pinning an identity that was never created would invent product state.
+    /// It deliberately leaves `updated_at_ms` alone: a pin is a list preference,
+    /// not activity, and a pin must not read as the Session having been used.
+    pub async fn set_pinned(&self, session: &str, pinned: bool) -> Result<Value, Error> {
+        let (session, pinned) = (session.to_owned(), pinned);
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(Error::Invalid("Session does not exist".into()));
+            }
+            let now = now_ms() as i64;
+            tx.execute(
+                "UPDATE engine_session SET pinned_at_ms=?2 WHERE id=?1",
+                params![session, pinned.then_some(now)],
+            )?;
+            append(&tx, &session, "session.pinned", json!({"pinned": pinned}))?;
+            tx.commit()?;
+            Ok(json!({"accepted": true, "pinned": pinned}))
+        })
+        .await
+    }
+
     /// Delete every row a Session owns, in foreign-key order.
     ///
     /// There is no tombstone: the conversation, inbox, runs, tools, approvals,
@@ -851,9 +1077,15 @@ impl Store {
     ///
     /// The request is durable rather than in-memory because the serialized drain
     /// reads it where the automatic trigger's machinery already lives: a settled
-    /// assistant boundary. An unanswered request is idempotent, so a retried
-    /// command neither queues a second compaction nor loses the intent.
-    pub async fn request_compaction(&self, session: &str) -> Result<Value, Error> {
+    /// assistant boundary. A retried identical request is idempotent, so it
+    /// neither queues a second compaction nor loses the intent; a retry that asks
+    /// for a different scope is a conflict rather than a silent replacement.
+    pub async fn request_compaction(
+        &self,
+        session: &str,
+        scope: crate::protocol::CompactScope,
+    ) -> Result<Value, Error> {
+        let scope = normalize_scope(scope)?;
         let session = session.to_owned();
         self.call(move |conn| {
             let tx = write_tx(conn)?;
@@ -865,14 +1097,21 @@ impl Store {
             if !exists {
                 return Err(Error::Invalid("Session does not exist".into()));
             }
-            if pending_compaction_request_seq(&tx, &session)?.is_some() {
-                return Ok(json!({"accepted": true, "duplicate": true, "pending": true}));
+            if let Some(pending) = pending_compaction(&tx, &session)? {
+                if pending.through == scope.through && pending.focus == scope.focus {
+                    return Ok(json!({"accepted": true, "duplicate": true, "pending": true}));
+                }
+                return Err(Error::Conflict);
             }
             append(
                 &tx,
                 &session,
                 "compaction.requested",
-                json!({"requested_at_ms": now_ms()}),
+                json!({
+                    "requested_at_ms": now_ms(),
+                    "through": scope.through,
+                    "focus": scope.focus,
+                }),
             )?;
             tx.commit()?;
             Ok(json!({"accepted": true, "duplicate": false, "pending": true}))
@@ -880,10 +1119,13 @@ impl Store {
         .await
     }
 
-    /// The seq of the operator request no attempt has answered yet.
-    pub async fn pending_compaction_request(&self, session: &str) -> Result<Option<u64>, Error> {
+    /// The operator request no attempt has answered yet.
+    pub async fn pending_compaction_request(
+        &self,
+        session: &str,
+    ) -> Result<Option<PendingCompaction>, Error> {
         let session = session.to_owned();
-        self.call(move |conn| pending_compaction_request_seq(conn, &session))
+        self.call(move |conn| pending_compaction(conn, &session))
             .await
     }
 
@@ -899,7 +1141,7 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx = write_tx(conn)?;
-            if pending_compaction_request_seq(&tx, &session)? != Some(request_seq) {
+            if pending_compaction(&tx, &session)?.map(|pending| pending.seq) != Some(request_seq) {
                 return Ok(None);
             }
             let event = append(
@@ -1221,7 +1463,16 @@ impl Store {
             let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
             let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
             let messages=if metadata_only { Vec::new() } else { projected(&tx,&session,cursor,true)? };
-            let has_messages:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_message m WHERE m.session_id=?1 AND m.reverted=0 AND NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq))",[&session],|row|row.get(0))?;
+            // The projection's own size. A client compares it with the messages
+            // it received to tell a complete snapshot from one an older engine
+            // cut at its SQL limit; without it a long Session has to be guessed
+            // at from the journal.
+            let message_count:u64=tx.query_row("SELECT count(*) FROM engine_message m WHERE m.session_id=?1 AND m.reverted=0 AND NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq)",[&session],|row|row.get(0))?;
+            // Soft-reverted rows stay in the ledger; the count is the only
+            // durable signal a client has that `unrevert` would restore
+            // something, so a redo affordance never has to guess.
+            let reverted_count:u64=tx.query_row("SELECT count(*) FROM engine_message WHERE session_id=?1 AND reverted=1",[&session],|row|row.get(0))?;
+            let has_messages=message_count>0;
             // Context readers need the cut and summary from the same transaction
             // as the visible messages. A second selected-history read could race
             // a compaction/revert and produce a mixed-generation transcript.
@@ -1253,15 +1504,15 @@ impl Store {
             let account_selection=crate::session_account::selected_at(&tx,&session,i64::MAX as u64)?;
             let agent=crate::session_agent::selected(&tx,&session)?.map(|(agent,hash)|json!({"name":agent.name,"semantics":agent.semantics,"agent_hash":hash}));
             let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.unwrap_or_else(||"build".into());
-            let (title,created_at_ms,updated_at_ms,archived_at_ms):(String,Option<i64>,Option<i64>,Option<i64>)=tx.query_row(
-                "SELECT title,created_at_ms,updated_at_ms,archived_at_ms FROM engine_session WHERE id=?1",
-                [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
+            let (title,created_at_ms,updated_at_ms,archived_at_ms,pinned_at_ms):(String,Option<i64>,Option<i64>,Option<i64>,Option<i64>)=tx.query_row(
+                "SELECT title,created_at_ms,updated_at_ms,archived_at_ms,pinned_at_ms FROM engine_session WHERE id=?1",
+                [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)),
             )?;
-            let staged_revert:Option<(i64,i64)>=tx.query_row("SELECT boundary_seq,snapshot_id FROM engine_staged_revert WHERE session_id=?1",[&session],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+            let staged_revert:Option<(i64,String)>=tx.query_row("SELECT boundary_seq,snapshot_id FROM engine_staged_revert WHERE session_id=?1",[&session],|r|Ok((r.get(0)?,crate::snapshot::id_text(r.get(1)?)?))).optional()?;
             let staged_revert=staged_revert.map(|(boundary_seq,snapshot_id)|json!({"boundary_seq":boundary_seq,"snapshot_id":snapshot_id}));
             let event_base:u64=tx.query_row("SELECT CASE WHEN json_extract(bundle,'$.source.engine')='rust' THEN COALESCE(json_extract(bundle,'$.source.sequence'),0) ELSE 0 END FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?.unwrap_or(0);
             let transfer_import:Option<String>=tx.query_row("SELECT id FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?;
-            let mut snapshot=json!({"event_base":event_base,"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
+            let mut snapshot=json!({"event_base":event_base,"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"message_count":message_count,"reverted_count":reverted_count,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"pinned_at_ms":pinned_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
             if metadata_only {
                 snapshot.as_object_mut().unwrap().remove("messages");
             }
@@ -1556,6 +1807,92 @@ impl Store {
                 })
             })
             .collect()
+        })
+        .await
+    }
+
+    /// One bounded page of the stored transcript, newest page first.
+    ///
+    /// `history` and `selected_history` answer with the whole Session because
+    /// the model needs all of it; a view that only shows recent activity — a
+    /// parent previewing a child, a transcript scrolled to the bottom — must
+    /// not serialize twenty thousand messages to show forty. Messages come
+    /// back oldest-to-newest inside the page, and `next_before` is the cursor
+    /// for the page before it.
+    pub async fn history_page(
+        &self,
+        session: &str,
+        before_seq: Option<u64>,
+        limit: usize,
+    ) -> Result<Value, Error> {
+        let limit = limit.clamp(1, 500);
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let exists: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(Error::Invalid("Session does not exist".into()));
+            }
+            let mut stmt = conn.prepare(
+                // A message is projected from an event, so the join always
+                // matches today; a left join keeps a future writer that
+                // inserts the row alone from silently losing it from every
+                // page, and that row simply is not synthetic.
+                "SELECT m.seq,m.role,m.content,m.checkpoint,m.recorded_at_ms,e.kind
+                 FROM engine_message m
+                 LEFT JOIN engine_event e ON e.session_id=m.session_id AND e.seq=m.seq
+                 WHERE m.session_id=?1 AND m.reverted=0 AND m.quarantined=0
+                   AND (?2 IS NULL OR m.seq<?2)
+                 ORDER BY m.seq DESC LIMIT ?3",
+            )?;
+            let rows = stmt.query_map(
+                params![session, before_seq.map(|seq| seq as i64), limit as i64 + 1],
+                |row| {
+                    Ok((
+                        row.get::<_, u64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<u64>>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                    ))
+                },
+            )?;
+            let mut page = rows.collect::<Result<Vec<_>, _>>()?;
+            let has_more = page.len() > limit;
+            page.truncate(limit);
+            page.reverse();
+            let messages = page
+                .into_iter()
+                .map(|(seq, role, content, checkpoint, recorded_at_ms, kind)| {
+                    Ok(json!({
+                        "seq": seq,
+                        "role": role,
+                        "content": serde_json::from_str::<Value>(&content)?,
+                        "checkpoint": checkpoint,
+                        "recorded_at_ms": recorded_at_ms,
+                        // Injected context is a message too, but a view may want
+                        // to render it apart from what the model said.
+                        "synthetic": kind.as_deref() == Some("message.synthetic"),
+                    }))
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+            // Only a page with an older neighbour is a cursor; the last page
+            // must not invite another round trip.
+            let next_before = if has_more {
+                messages.first().and_then(|message| message["seq"].as_u64())
+            } else {
+                None
+            };
+            Ok(json!({
+                "session_id": session,
+                "messages": messages,
+                "has_more": has_more,
+                "next_before": next_before,
+            }))
         })
         .await
     }
@@ -2175,6 +2512,9 @@ impl Store {
             if let Some(display) = display {
                 completed["display"] = display;
             }
+            crate::product_permission_request::cancel_pending(&tx, &session, &run, Some(&key))?;
+            cancel_approvals(&tx, &session, &run, Some(&key))?;
+            crate::question::cancel_pending(&tx, &session, &run, Some(&id))?;
             append(&tx,&session,"tool.completed",completed)?;
             let mut content = vec![json!({"type":"tool_result","tool_use_id":id,"content":serde_json::to_string(&result)?,"is_error":is_error})];
             content.extend(attachments);
@@ -2265,6 +2605,15 @@ impl Store {
             .await
     }
 
+    pub async fn replace_saved_rules(
+        &self,
+        workspace: String,
+        rules: Vec<crate::permission_rules::Rule>,
+    ) -> Result<(), Error> {
+        self.call(move |conn| crate::permission_saved::snapshot(conn, &workspace, &rules))
+            .await
+    }
+
     pub async fn revoke_permission_grant(
         &self,
         scope: crate::permission_grant::Scope,
@@ -2343,7 +2692,7 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx=write_tx(conn)?;
-            let row:Option<(String,String,bool)>=tx.query_row("SELECT a.binding,a.state,r.state='running' FROM engine_approval a JOIN engine_run r ON r.id=a.run_id WHERE a.id=?1 AND a.session_id=?2",params![response.request_id,session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+            let row:Option<(String,String,bool)>=tx.query_row("SELECT a.binding,a.state,r.state='running' AND t.state='planned' FROM engine_approval a JOIN engine_run r ON r.id=a.run_id JOIN engine_tool t ON t.id=a.call_id AND t.run_id=r.id WHERE a.id=?1 AND a.session_id=?2",params![response.request_id,session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
             let (binding,state,active)=row.ok_or(Error::ApprovalResolved)?;
             if state!="pending"||!active {return Err(Error::ApprovalResolved);}
             let approval:Approval=serde_json::from_str(&binding)?;
@@ -2558,21 +2907,69 @@ fn pid_alive(_pid: u32) -> bool {
 /// run regardless of provider field names (`input_tokens` vs `prompt_tokens`, or
 /// nested `*_details`). Non-numeric leaves take the latest value.
 /// The newest operator compaction request that no settled attempt has answered.
-fn pending_compaction_request_seq(conn: &Connection, session: &str) -> Result<Option<u64>, Error> {
-    let requested: Option<u64> = conn.query_row(
-        "SELECT MAX(seq) FROM engine_event WHERE session_id=?1 AND kind='compaction.requested'",
-        [session],
-        |row| row.get(0),
-    )?;
-    let Some(requested) = requested else {
+fn pending_compaction(
+    conn: &Connection,
+    session: &str,
+) -> Result<Option<PendingCompaction>, Error> {
+    let requested: Option<(u64, String)> = conn
+        .query_row(
+            "SELECT seq,data FROM engine_event WHERE session_id=?1 AND kind='compaction.requested' ORDER BY seq DESC LIMIT 1",
+            [session],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((seq, data)) = requested else {
         return Ok(None);
     };
     let settled: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND kind='compaction.settled' AND json_extract(data,'$.request_seq')=?2)",
-        params![session, requested],
+        params![session, seq],
         |row| row.get(0),
     )?;
-    Ok((!settled).then_some(requested))
+    if settled {
+        return Ok(None);
+    }
+    let data: Value = serde_json::from_str(&data)?;
+    Ok(Some(PendingCompaction {
+        seq,
+        through: data["through"].as_u64(),
+        focus: data["focus"].as_str().map(str::to_owned),
+    }))
+}
+
+/// The durable operator request the drain reads at a settled boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingCompaction {
+    /// The `compaction.requested` event that no attempt has answered yet.
+    pub seq: u64,
+    pub through: Option<u64>,
+    pub focus: Option<String>,
+}
+
+/// What a retention target may be: enough text to name what matters, not a
+/// second transcript. Refused rather than truncated, so an operator sees a
+/// request that was not honoured exactly as asked.
+pub const MAX_COMPACTION_FOCUS_CHARS: usize = 2_000;
+
+fn normalize_scope(
+    mut scope: crate::protocol::CompactScope,
+) -> Result<crate::protocol::CompactScope, Error> {
+    scope.focus = match scope.focus {
+        Some(focus) => {
+            let focus = focus.trim();
+            if focus.is_empty() {
+                return Err(Error::Invalid("compaction focus is empty".into()));
+            }
+            if focus.chars().count() > MAX_COMPACTION_FOCUS_CHARS {
+                return Err(Error::Invalid(format!(
+                    "compaction focus exceeds {MAX_COMPACTION_FOCUS_CHARS} characters"
+                )));
+            }
+            Some(focus.to_owned())
+        }
+        None => None,
+    };
+    Ok(scope)
 }
 
 fn merge_usage(acc: &mut Value, next: &Value) {
@@ -2980,6 +3377,7 @@ fn project_message_at(
 
 fn reconcile_tools(tx: &Transaction<'_>, session: &str, run: &str) -> Result<(), Error> {
     crate::question::reconcile(tx, session, run)?;
+    crate::product_permission_request::cancel_pending(tx, session, run, None)?;
     let inputs: Vec<(String, String)> = {
         let mut stmt=tx.prepare("SELECT input,state FROM engine_tool WHERE run_id=?1 AND state IN ('planned','dispatched')")?;
         let rows = stmt.query_map([run], |r| Ok((r.get(0)?, r.get(1)?)))?;
@@ -3006,15 +3404,31 @@ fn reconcile_tools(tx: &Transaction<'_>, session: &str, run: &str) -> Result<(),
         "UPDATE engine_tool SET state='not_executed' WHERE run_id=?1 AND state='planned'",
         [run],
     )?;
+    cancel_approvals(tx, session, run, None)
+}
+
+// Tool and run settlement share the same approval boundary. A late reply must
+// not create authority for a call that already has a durable result.
+fn cancel_approvals(
+    tx: &Transaction<'_>,
+    session: &str,
+    run: &str,
+    call: Option<&str>,
+) -> Result<(), Error> {
     let approvals: Vec<String> = {
-        let mut stmt =
-            tx.prepare("SELECT id FROM engine_approval WHERE run_id=?1 AND state='pending'")?;
-        let rows = stmt.query_map([run], |r| r.get(0))?;
+        let mut statement = tx.prepare(
+            "SELECT id FROM engine_approval WHERE run_id=?1 AND state='pending' AND (?2 IS NULL OR call_id=?2)",
+        )?;
+        let rows = statement.query_map(params![run, call], |row| row.get(0))?;
         rows.collect::<Result<_, _>>()?
     };
     for id in approvals {
         tx.execute(
             "UPDATE engine_approval SET state='cancelled' WHERE id=?1",
+            [&id],
+        )?;
+        tx.execute(
+            "DELETE FROM engine_permission_request_scope WHERE request_id=?1",
             [&id],
         )?;
         append(
@@ -3145,6 +3559,10 @@ impl Store {
     /// the event ledger — the blackbox replay pins journal payloads exactly
     /// and cannot reproduce them — so latencies live in this side table and
     /// surface only through `usage_report`.
+    ///
+    /// The billed turn settles into the same row first, so this has to write
+    /// TTFT into an existing row: an `INSERT OR IGNORE` here was silently
+    /// dropped and every turn reported a zero TTFT.
     pub async fn record_timing(
         &self,
         session: &str,
@@ -3155,7 +3573,8 @@ impl Store {
         let (session, run) = (session.to_owned(), run.to_owned());
         self.call(move |conn| {
             conn.execute(
-                "INSERT OR IGNORE INTO engine_timing(session_id,run_id,step,ttft_ms) VALUES(?1,?2,?3,?4)",
+                "INSERT INTO engine_timing(session_id,run_id,step,ttft_ms) VALUES(?1,?2,?3,?4)
+                 ON CONFLICT(session_id,run_id,step) DO UPDATE SET ttft_ms=excluded.ttft_ms",
                 params![session, run, step, ttft_ms],
             )?;
             Ok(())

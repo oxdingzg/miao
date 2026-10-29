@@ -17,6 +17,7 @@ export interface EngineRunOptions extends EngineOptions {
   session?: string
   inputId?: string
   approve?: "allow" | "deny"
+  /** Shared deadline for route setup, admission, execution, and evidence recording. */
   timeoutMs?: number
   /**
    * Host route binding to select before the prompt. A provider reachable only
@@ -93,8 +94,7 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
     const data = BlackboxTape.json(terminal.data)
     const reason = BlackboxTape.isObject(data) ? data.reason : undefined
     const runId = BlackboxTape.isObject(data) && typeof data.run_id === "string" ? data.run_id : null
-    if (reason === "completed" || reason === "failed" || reason === "interrupted")
-      terminalOutcome = { reason, runId }
+    if (reason === "completed" || reason === "failed" || reason === "interrupted") terminalOutcome = { reason, runId }
     if (reason === "failed")
       failure =
         outcome.findLast((event) => event.kind === "provider.started" || event.kind === "provider.failed")?.kind ===
@@ -150,46 +150,54 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
 
   if (options.onProgress) client.onProgress(options.onProgress)
 
+  // Admission and route setup consume the same wall-clock budget as execution.
+  const timeout = new Promise<never>(
+    (_, reject) =>
+      (timeoutTimer = setTimeout(
+        () => reject(new EngineError("engine_timeout", "engine run timed out")),
+        options.timeoutMs ?? 120_000,
+      )),
+  )
   try {
-    if (options.modelRoute) {
-      // initialize is idempotent, so a follow-up input on an existing Session
-      // re-selects the same route instead of failing.
-      await client.request("initialize", { session_id: session, title: "baseline" })
-      await client.request("select_model", { session_id: session, binding: options.modelRoute })
-    }
-    await client.subscribe(session, 0)
-    const admission = BlackboxTape.json(
-      await client.admit({ session_id: session, input_id: inputId, prompt: options.prompt }),
-    )
-    if (
-      !BlackboxTape.isObject(admission) ||
-      typeof admission.admitted_seq !== "number" ||
-      !Number.isSafeInteger(admission.admitted_seq) ||
-      admission.admitted_seq < 0
-    )
-      throw new EngineError("engine_admission_invalid", "the engine admission has no valid sequence")
-    admittedSeq = admission.admitted_seq
-    settle()
-    const timeout = new Promise<never>(
-      (_, reject) =>
-        (timeoutTimer = setTimeout(
-          () => reject(new EngineError("engine_timeout", "engine run timed out")),
-          options.timeoutMs ?? 120_000,
-        )),
-    )
-    await Promise.race([done, timeout])
-    await Promise.all(recordings)
-    if (recordingFailure) throw recordingFailure
-    if (failure) throw failure
-    if (!completed) throw new EngineError("engine_outcome_missing", "the admitted input has no completed output range")
-    if (!terminalOutcome) throw new EngineError("engine_outcome_missing", "the engine run has no authoritative terminal outcome")
-    return {
-      session,
-      text: assistantText(events, completed),
-      events,
-      admittedSeq: admittedSeq ?? 0,
-      terminal: terminalOutcome,
-    }
+    return await Promise.race([
+      (async () => {
+        if (options.modelRoute) {
+          // initialize is idempotent, so a follow-up input on an existing Session
+          // re-selects the same route instead of failing.
+          await client.request("initialize", { session_id: session, title: "baseline" })
+          await client.request("select_model", { session_id: session, binding: options.modelRoute })
+        }
+        await client.subscribe(session, 0)
+        const admission = BlackboxTape.json(
+          await client.admit({ session_id: session, input_id: inputId, prompt: options.prompt }),
+        )
+        if (
+          !BlackboxTape.isObject(admission) ||
+          typeof admission.admitted_seq !== "number" ||
+          !Number.isSafeInteger(admission.admitted_seq) ||
+          admission.admitted_seq < 0
+        )
+          throw new EngineError("engine_admission_invalid", "the engine admission has no valid sequence")
+        admittedSeq = admission.admitted_seq
+        settle()
+        await done
+        await Promise.all(recordings)
+        if (recordingFailure) throw recordingFailure
+        if (failure) throw failure
+        if (!completed)
+          throw new EngineError("engine_outcome_missing", "the admitted input has no completed output range")
+        if (!terminalOutcome)
+          throw new EngineError("engine_outcome_missing", "the engine run has no authoritative terminal outcome")
+        return {
+          session,
+          text: assistantText(events, completed),
+          events,
+          admittedSeq: admittedSeq ?? 0,
+          terminal: terminalOutcome,
+        }
+      })(),
+      timeout,
+    ])
   } finally {
     if (timeoutTimer !== undefined) clearTimeout(timeoutTimer)
     await client.close()

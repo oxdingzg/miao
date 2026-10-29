@@ -1564,7 +1564,7 @@ export type SessionsActivityOutput = {
       | { readonly type: "idle" }
       | {
           readonly type: "busy"
-          readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying" | "compacting"
+          readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying" | "compacting" | "approval"
           readonly since?: number
           readonly progress?: { readonly stage: number; readonly stages: number }
         }
@@ -1608,7 +1608,7 @@ export type SessionsStatusOutput = {
     | { readonly type: "idle" }
     | {
         readonly type: "busy"
-        readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying" | "compacting"
+        readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying" | "compacting" | "approval"
         readonly since?: number
         readonly progress?: { readonly stage: number; readonly stages: number }
       }
@@ -4112,6 +4112,8 @@ export type PermissionsListSavedOutput = {
     readonly projectID: string
     readonly action: string
     readonly resource: string
+    readonly origin?: "native" | undefined
+    readonly scope?: { readonly type: "directory"; readonly directory: string } | undefined
   }>
 }["data"]
 
@@ -6833,7 +6835,14 @@ export type EventsDurableOutput =
           | { readonly type: "idle" }
           | {
               readonly type: "busy"
-              readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying" | "compacting"
+              readonly phase?:
+                | "queued"
+                | "preparing"
+                | "requesting"
+                | "streaming"
+                | "retrying"
+                | "compacting"
+                | "approval"
               readonly since?: number
               readonly progress?: { readonly stage: number; readonly stages: number }
             }
@@ -6866,7 +6875,14 @@ export type EventsDurableOutput =
           | { readonly type: "idle" }
           | {
               readonly type: "busy"
-              readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying" | "compacting"
+              readonly phase?:
+                | "queued"
+                | "preparing"
+                | "requesting"
+                | "streaming"
+                | "retrying"
+                | "compacting"
+                | "approval"
               readonly since?: number
               readonly progress?: { readonly stage: number; readonly stages: number }
             }

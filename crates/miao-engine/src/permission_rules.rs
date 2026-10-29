@@ -7,15 +7,14 @@
 //! `tests/differential/permission_decide.json`, generated from the TypeScript
 //! reference; diverging from it is a security bug, not a refactor.
 use crate::{
-    agent_policy::wildcard,
     permission::{digest, Decision},
     protocol::Error,
+    wildcard::Wildcard,
 };
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 /// One ordered rule. Rules carry the host's Wildcard grammar (separators
-/// normalize, `*` crosses directories, `?` consumes one character, trailing
+/// normalize, `*` crosses directories, `?` consumes one UTF-16 unit, trailing
 /// `" *"` allows no args).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -26,8 +25,9 @@ pub struct Rule {
 }
 
 /// The evaluation request. `configured` absent means the agent declares no
-/// ruleset at all, which denies everything (`missingAgentPermissions` on the
-/// host); present-but-empty falls through to ask. Scope priority
+/// ruleset at all, which supplies a catch-all deny (`missingAgentPermissions` on the
+/// host), filtered for explicit actions like any other catch-all. A present but
+/// empty ruleset falls through to ask. Scope priority
 /// (session > project > global) is the caller's rule order: later rules win.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -56,7 +56,7 @@ pub struct Outcome {
 
 /// Host bounds, mirrored from the ordered policy compiler: oversized input is
 /// refused instead of half-evaluated, so callers fail closed.
-const MAX_RULES: usize = 256;
+pub(crate) const MAX_RULES: usize = 256;
 const MAX_ACTION_BYTES: usize = 256;
 const MAX_RESOURCE_BYTES: usize = 4096;
 const MAX_ACTIONS: usize = 64;
@@ -100,7 +100,10 @@ pub fn evaluate(request: &Request) -> Result<Outcome, Error> {
             .filter(|rule| !request.explicit || rule.action != "*")
             .cloned()
             .collect::<Vec<_>>(),
-        None => missing_agent_permissions(),
+        None => missing_agent_permissions()
+            .into_iter()
+            .filter(|rule| !request.explicit || rule.action != "*")
+            .collect(),
     };
     let configured = compile(&configured_rules)?;
     if denied(&request.actions, &request.resources, &configured) {
@@ -143,7 +146,7 @@ fn bounded(items: &[String], count: usize, bytes: usize) -> bool {
             .all(|item| !item.contains('\0') && item.len() <= bytes)
 }
 
-fn bounded_rule(rule: &Rule) -> bool {
+pub(crate) fn bounded_rule(rule: &Rule) -> bool {
     !rule.action.contains('\0')
         && !rule.resource.contains('\0')
         && rule.action.len() <= MAX_ACTION_BYTES
@@ -151,7 +154,11 @@ fn bounded_rule(rule: &Rule) -> bool {
 }
 
 /// The last matching rule decides; anything unresolved asks.
-fn last_match(rules: &[(Regex, Regex, Decision)], actions: &[String], resource: &str) -> Decision {
+fn last_match(
+    rules: &[(Wildcard, Wildcard, Decision)],
+    actions: &[String],
+    resource: &str,
+) -> Decision {
     let resource = resource.replace('\\', "/");
     for (action, path, effect) in rules.iter().rev() {
         if actions
@@ -165,13 +172,17 @@ fn last_match(rules: &[(Regex, Regex, Decision)], actions: &[String], resource: 
     Decision::Ask
 }
 
-fn denied(actions: &[String], resources: &[String], rules: &[(Regex, Regex, Decision)]) -> bool {
+fn denied(
+    actions: &[String],
+    resources: &[String],
+    rules: &[(Wildcard, Wildcard, Decision)],
+) -> bool {
     resources
         .iter()
         .any(|resource| last_match(rules, actions, resource) == Decision::Deny)
 }
 
-fn compile(rules: &[Rule]) -> Result<Vec<(Regex, Regex, Decision)>, Error> {
+fn compile(rules: &[Rule]) -> Result<Vec<(Wildcard, Wildcard, Decision)>, Error> {
     if rules.len() > MAX_RULES {
         return Err(Error::Invalid(
             "permission rule evaluation exceeds wire bounds".into(),
@@ -181,8 +192,8 @@ fn compile(rules: &[Rule]) -> Result<Vec<(Regex, Regex, Decision)>, Error> {
         .iter()
         .map(|rule| {
             Ok((
-                wildcard(&rule.action)?,
-                wildcard(&rule.resource)?,
+                Wildcard::compile(&rule.action)?,
+                Wildcard::compile(&rule.resource)?,
                 rule.effect,
             ))
         })

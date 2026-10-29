@@ -19,7 +19,7 @@ jobs:
     name: typecheck tasks
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Bound the job so a stalled typecheck fails fast instead of running until
     # the runner is reclaimed (and reports as a shutdown signal). The graph
     # completes in ~2 minutes with a warm cache.
@@ -69,7 +69,7 @@ jobs:
     name: typecheck
     needs: [changes, typecheck-tasks]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Enforce required result

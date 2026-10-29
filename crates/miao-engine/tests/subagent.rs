@@ -3,6 +3,7 @@ use miao_engine::{
     permission::{Config, Decision, Mode, Policy, Rule},
     protocol::{Delivery, Input, ModelRequest},
     provider::{Provider, ProviderError, Reply},
+    recall::Query,
     runtime::Runtime,
     store::Store,
     tools::Tools,
@@ -581,6 +582,183 @@ async fn task_reference_injects_the_archived_window_into_the_child() {
     // The handle that does not exist is reported to the child, not fatal.
     assert!(
         child_input.contains("not found in the delegating Session"),
+        "{child_input}"
+    );
+}
+
+/// A delegation whose referenced handle sits below one bounded scan page of
+/// the parent archive: the reference block must walk pages until it resolves,
+/// the way a model handle restore does.
+struct DeepReference;
+#[async_trait]
+impl Provider for DeepReference {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let parts: Vec<Value> = request
+            .messages
+            .iter()
+            .flat_map(|message| message.content.as_array().cloned().unwrap_or_default())
+            .collect();
+        let last = request
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == "user")
+            .and_then(|message| {
+                message
+                    .content
+                    .as_array()
+                    .and_then(|parts| parts.iter().find_map(|part| part["text"].as_str()))
+            })
+            .unwrap_or("");
+        let settled = |call: &str| {
+            parts.iter().any(|part| {
+                part["type"] == "tool_result" && part["tool_use_id"].as_str() == Some(call)
+            })
+        };
+        if last.contains("Referenced material from the delegating Session") {
+            let text = if last.contains("ARCHIVED-MARKER") {
+                "child saw the deep reference"
+            } else {
+                "child missed the deep reference"
+            };
+            return Ok(Reply {
+                content: json!([{"type":"text","text":text}]),
+                usage: json!({}),
+                needs_tools: false,
+            });
+        }
+        if last.contains("delegate deep") && !settled("d1") {
+            return Ok(Reply {
+                content: json!([{"type":"tool_use","id":"d1","name":"task","input":{"prompt":"answer from the injected block","references":[{"tool_use_id":"deep-call"}]}}]),
+                usage: json!({}),
+                needs_tools: true,
+            });
+        }
+        Ok(Reply {
+            content: json!([{"type":"text","text":"parent done"}]),
+            usage: json!({}),
+            needs_tools: false,
+        })
+    }
+}
+
+#[tokio::test]
+async fn task_reference_reaches_an_archive_beyond_one_bounded_scan() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store
+        .admit(Input {
+            agent_references: Default::default(),
+            command: None,
+            session_id: "parent".into(),
+            input_id: "one".into(),
+            prompt: "seed".into(),
+            delivery: Delivery::Steer,
+        })
+        .await
+        .unwrap();
+    store.promote("parent", true).await.unwrap();
+    // The referenced output sits at the bottom of the archive; the fillers
+    // above push it past one bounded scan page.
+    store
+        .message(
+            "parent",
+            "assistant",
+            json!([{"type":"tool_result","tool_use_id":"deep-call","content":"ARCHIVED-MARKER: buried"}]),
+        )
+        .await
+        .unwrap();
+    for i in 0..1001 {
+        store
+            .message(
+                "parent",
+                "assistant",
+                json!([{"type":"text","text":format!("filler {i}")}]),
+            )
+            .await
+            .unwrap();
+    }
+    // One page cannot reach the handle, so the fixture stays honest.
+    let one_page = store
+        .recall(
+            "parent",
+            Query {
+                query: String::new(),
+                limit: 10,
+                before_message_seq: None,
+                tool_use_id: Some("deep-call".into()),
+                offset: 0,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(one_page["text"], json!(null), "{one_page}");
+    assert_eq!(one_page["exhausted"], false, "{one_page}");
+
+    // The seeded messages each commit an event; poll from the cursor the run
+    // starts at instead of paging through the seed.
+    let start = store.latest_seq("parent").await.unwrap();
+    let tools = Tools::new(dir.path()).await.unwrap();
+    let runtime = Runtime::with_policy(store.clone(), Arc::new(DeepReference), tools, policy(true))
+        .await
+        .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "two".into(),
+                prompt: "delegate deep".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        loop {
+            if store
+                .events("parent", start, 500)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "run.finished")
+            {
+                let history = store.history("parent").await.unwrap();
+                break history
+                    .iter()
+                    .rev()
+                    .find_map(|message| {
+                        message.content.as_array().and_then(|parts| {
+                            parts.iter().rev().find_map(|part| {
+                                part["content"]
+                                    .as_str()
+                                    .filter(|_| part["type"] == "tool_result")
+                                    .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                                    .filter(|value| !value["session_id"].is_null())
+                            })
+                        })
+                    })
+                    .unwrap_or(json!({}));
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    runtime.shutdown().await;
+    assert_eq!(result["text"], "child saw the deep reference", "{result}");
+    let child = result["session_id"].as_str().unwrap();
+    let child_input = serde_json::to_string(&store.history(child).await.unwrap()).unwrap();
+    assert!(child_input.contains("ARCHIVED-MARKER"), "{child_input}");
+    assert!(
+        !child_input.contains("not found in the delegating Session"),
         "{child_input}"
     );
 }
