@@ -65,3 +65,61 @@ Not snapshotted here: it needs billed provider usage. Procedure: use the
 provider's billed usage including cache reads and retries; fixtures cannot
 produce it. Live model-quality evaluation is tracked separately (see
 `accuracy.md`).
+
+## Read batch (ADR-13)
+
+Context: [`0013-bounded-parallel-tools.md`](adr/0013-bounded-parallel-tools.md).
+Harness: `crates/miao-engine/tests/read_batch_measurement.rs` (ignored by
+default; it prints these numbers rather than gating on them). The behavioural
+guarantees — membership by declaration, write barriers, ordered settlement —
+are pinned by `crates/miao-engine/tests/read_batch.rs`.
+
+Two cells issue the same eight `read_file` calls in one provider turn against
+the same fixture files, plus one identical `write_file`. Only the write's
+position differs: in the control it sits after the first read and ends the
+declared-read prefix, so all eight reads settle serially in request order; in
+the batch cell all eight are admitted together through `buffer_unordered(4)`.
+Same reads, same write, same turn count. A single-read cell measures the fixed
+per-run floor at 6 ms.
+
+- Date: 2026-10-29.
+- Host: macOS arm64 (build host), `cargo test --release`, rustc 1.99.0.
+- Fixture: eight files of 32,000 bytes each — the largest an unranged
+  `read_file` accepts; a bigger file is refused before any read happens.
+- 21 paired rounds per run: both cells run back to back and only their order
+  swaps, so drift between rounds cancels instead of inflating one cell.
+
+| Run | Paired delta (serial − batch), median | Spread |
+| --- | ---: | --- |
+| 1 | 1 ms | −14 … +7 ms |
+| 2 | −1 ms | −3 … +9 ms |
+| 3 | 4 ms | −3 … +11 ms |
+| 4 | 5 ms | −32 … +23 ms |
+
+- **No reproducible wall-clock gain.** Four runs put the paired median between
+  −1 and +5 ms on a ~30 ms cell, with spreads wider than the effect. An earlier
+  unpaired version of this harness reported a steady 15–18% “win” that
+  disappeared once the cells were paired: the apparent gain was the order the
+  cells ran in, not the batch.
+- The overlap path does run: only the batch cell records
+  `tool.parallel.started` with eight call ids and `concurrency: 4`.
+- Why the admission limit does not become a speedup: `read_file` is bounded to
+  32 KiB unranged and 1 MiB ranged, so each read's I/O is trivial, and the
+  remaining per-call cost is in-process work (hash, snapshot registration,
+  event and settlement writes on one runtime and one SQLite connection) which
+  `buffer_unordered` interleaves but cannot parallelize. Batching is a
+  scheduling guarantee, not a measured speed feature.
+- **Cost is unchanged.** Both cells issue the same nine calls in one provider
+  turn and settle in provider call order, so the model sees identical results
+  and batching spends no extra tokens.
+
+Treat this as one host, one fixture, one profile — a reference point, not a
+gate. Any future claim that the batch is faster has to beat the paired spread
+above.
+
+Reproduce on a build host:
+
+```text
+cd crates/miao-engine
+cargo test --release --test read_batch_measurement -- --ignored --nocapture --test-threads=1
+```
