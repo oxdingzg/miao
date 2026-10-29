@@ -1013,6 +1013,15 @@ impl App {
         }
     }
 
+    /// Warn about a configuration problem that the next catalog load does not
+    /// answer, so it has to survive that load.
+    pub fn warn(&mut self, message: &str) {
+        match self.screen {
+            Screen::Home => self.home.set_warning(Some(message.to_string())),
+            Screen::Session => self.shell.composer.notice = Some(message.to_string()),
+        }
+    }
+
     /// Tell the user about a Session event, at most once per pending request.
     fn announce(&mut self, kind: attention::Kind, id: Option<String>) {
         if let Some(id) = id {
@@ -1663,6 +1672,17 @@ mod tests {
             Ok(engine::Request::Open(id)) if id == "ses_known"
         ));
         assert!(requests.try_recv().is_err(), "nothing else is requested");
+    }
+
+    #[test]
+    fn a_startup_warning_survives_the_session_catalog() {
+        let mut app = app_with(Startup::default());
+        app.warn("no model routes");
+        assert_eq!(app.home.warning(), Some("no model routes"));
+        // The catalog answers "which Sessions exist", not "is this Session
+        // routed", so it must not make the warning disappear.
+        app.handle(AppEvent::Sessions(vec![summary("ses_known", 1)]));
+        assert_eq!(app.home.warning(), Some("no model routes"));
     }
 
     #[test]

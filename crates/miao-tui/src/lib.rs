@@ -108,7 +108,7 @@ async fn drive(
                 &settings.model,
                 std::env::var_os("MIAO_ENGINE_REAL_BIN").is_some(),
             ) {
-                app.handle(AppEvent::Notice(notice));
+                app.warn(&notice);
             }
             match engine::attach(&settings, bus.clone()) {
                 Ok(handle) => app.attach_engine(handle),

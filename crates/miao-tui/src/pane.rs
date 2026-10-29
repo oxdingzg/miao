@@ -296,6 +296,9 @@ pub struct Home {
     pub rows: Vec<SessionSummary>,
     pub selected: usize,
     notice: Option<String>,
+    /// A configuration problem that outlives one load: the catalog arriving is
+    /// not an answer to it, so it is kept apart from the transient notice.
+    warning: Option<String>,
     /// Set once the engine has answered the first `sessions` request. Until
     /// then an empty list is a load in flight, not an empty catalog.
     loaded: bool,
@@ -308,6 +311,7 @@ impl Home {
             rows: Vec::new(),
             selected: 0,
             notice: None,
+            warning: None,
             loaded: false,
             theme,
         }
@@ -319,6 +323,14 @@ impl Home {
 
     pub fn notice(&self) -> Option<&str> {
         self.notice.as_deref()
+    }
+
+    pub fn set_warning(&mut self, warning: Option<String>) {
+        self.warning = warning;
+    }
+
+    pub fn warning(&self) -> Option<&str> {
+        self.warning.as_deref()
     }
 
     /// What an empty list shows: a load still in flight reads differently from
@@ -358,6 +370,22 @@ impl Home {
         self.rows.get(self.selected)
     }
 
+    fn warning_lines(&self) -> Vec<Line<'static>> {
+        let palette = self.theme.palette;
+        self.warning
+            .iter()
+            .flat_map(|warning| {
+                [
+                    Line::from(Span::styled(
+                        warning.clone(),
+                        Style::new().fg(palette.error),
+                    )),
+                    Line::default(),
+                ]
+            })
+            .collect()
+    }
+
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
         let block = Block::bordered()
@@ -368,24 +396,32 @@ impl Home {
             .border_style(Style::new().fg(palette.border))
             .style(Style::new().bg(palette.background));
         if self.rows.is_empty() {
+            let mut lines = self.warning_lines();
             let message = self
                 .notice
                 .clone()
                 .unwrap_or_else(|| self.placeholder().to_string());
+            lines.push(Line::from(Span::styled(
+                message,
+                Style::new().fg(palette.text_muted),
+            )));
             frame.render_widget(
-                Paragraph::new(message)
+                Paragraph::new(lines)
                     .style(Style::new().fg(palette.text_muted))
                     .block(block),
                 area,
             );
             return;
         }
-        let notice = self.notice.iter().flat_map(|notice| {
-            [
-                Line::from(Span::styled(notice.clone(), Style::new().fg(palette.error))),
-                Line::default(),
-            ]
-        });
+        let notice = self
+            .warning_lines()
+            .into_iter()
+            .chain(self.notice.iter().flat_map(|notice| {
+                [
+                    Line::from(Span::styled(notice.clone(), Style::new().fg(palette.error))),
+                    Line::default(),
+                ]
+            }));
         let rows = self.rows.iter().enumerate().map(|(index, row)| {
             let marker = if index == self.selected { "▸ " } else { "  " };
             let style = if index == self.selected {
