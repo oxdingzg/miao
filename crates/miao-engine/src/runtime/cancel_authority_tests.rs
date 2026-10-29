@@ -164,6 +164,76 @@ async fn cancellation_ack_waits_for_the_authorization_commit_boundary() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn waiting_for_the_store_writer_does_not_capture_cancellation_authority() {
+    use fs2::FileExt;
+    let fixture = running().await;
+    let context = fixture
+        .runtime
+        .product_permission_context(&fixture.runtime.controller(), &fixture.source)
+        .unwrap();
+    let lock = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(format!(
+            "{}.engine-write-lock",
+            fixture.store.path().display()
+        ))
+        .unwrap();
+    FileExt::lock_exclusive(&lock).unwrap();
+    let store = fixture.store.clone();
+    let (entered, started) = oneshot::channel();
+    let writer = tokio::spawn(async move {
+        store
+            .call(move |connection| {
+                let _ = entered.send(());
+                crate::product_permission_request::with_sources(
+                    connection,
+                    &context,
+                    |transaction, _| {
+                        crate::permission_patterns::put_in(
+                            transaction,
+                            &context.workspace,
+                            &crate::permission_rules::Rule {
+                                action: "read".into(),
+                                resource: "after-cancel/**".into(),
+                                effect: Decision::Allow,
+                            },
+                        )?;
+                        Ok(())
+                    },
+                )
+            })
+            .await
+    });
+    started.await.unwrap();
+    // The actual store worker has entered authorization and is queued on
+    // the externally held writer lock, before it can mutate the database.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let runtime = fixture.runtime.clone();
+    let mut acknowledgement = tokio::spawn(async move { runtime.cancel("s").await });
+    let early = tokio::time::timeout(Duration::from_millis(500), &mut acknowledgement).await;
+    let unblocked = early.is_ok();
+    FileExt::unlock(&lock).unwrap();
+    assert!(writer.await.unwrap().is_err());
+    let accepted = match early {
+        Ok(result) => result.unwrap().unwrap(),
+        Err(_) => acknowledgement.await.unwrap().unwrap(),
+    };
+    assert!(accepted);
+    assert!(fixture
+        .runtime
+        .permission_patterns(&fixture.runtime.controller())
+        .await
+        .unwrap()
+        .is_empty());
+    fixture.runtime.shutdown().await;
+    assert!(
+        unblocked,
+        "cancel waited on unrelated database writer contention"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cancellation_withdraws_before_ack_without_waiting_for_host_output_capacity() {
     let mut fixture = running().await;
     fixture
