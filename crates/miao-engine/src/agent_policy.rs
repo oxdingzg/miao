@@ -3,8 +3,8 @@
 use crate::{
     permission::{Decision, MatchSource, RuleMatch},
     protocol::Error,
+    wildcard::Wildcard,
 };
-use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -56,7 +56,7 @@ pub enum Resource {
 #[derive(Clone)]
 pub(crate) struct Compiled {
     wire: OrderedPolicy,
-    rules: Vec<(Regex, Regex)>,
+    rules: Vec<(Wildcard, Wildcard)>,
 }
 
 impl OrderedPolicy {
@@ -87,7 +87,12 @@ impl OrderedPolicy {
         let rules = self
             .rules
             .iter()
-            .map(|rule| Ok((wildcard(&rule.action)?, wildcard(&rule.resource)?)))
+            .map(|rule| {
+                Ok((
+                    Wildcard::compile(&rule.action)?,
+                    Wildcard::compile(&rule.resource)?,
+                ))
+            })
             .collect::<Result<Vec<_>, Error>>()?;
         Ok(Compiled {
             wire: self.clone(),
@@ -289,35 +294,6 @@ fn fallback(tool: &str, resource: &str) -> (Decision, RuleMatch) {
             source: MatchSource::Default,
         },
     )
-}
-
-/// Same bounded wildcard grammar as the host: separators normalize, * crosses
-/// directories, ? consumes one character, and a trailing " *" allows no args.
-pub(crate) fn wildcard(pattern: &str) -> Result<Regex, Error> {
-    let normalized = pattern.replace('\\', "/");
-    let optional_args = normalized.ends_with(" *");
-    let prefix = if optional_args {
-        &normalized[..normalized.len() - 2]
-    } else {
-        &normalized
-    };
-    let mut expression = String::from("^");
-    for character in prefix.chars() {
-        match character {
-            '*' => expression.push_str(".*"),
-            '?' => expression.push('.'),
-            other => expression.push_str(&regex::escape(&other.to_string())),
-        }
-    }
-    if optional_args {
-        expression.push_str("( .*)?");
-    }
-    expression.push('$');
-    RegexBuilder::new(&expression)
-        .dot_matches_new_line(true)
-        .case_insensitive(cfg!(windows))
-        .build()
-        .map_err(|_| Error::Invalid("invalid agent wildcard".into()))
 }
 
 #[cfg(test)]
