@@ -16,6 +16,7 @@ const COMMAND_DIRS: [&str; 2] = ["commands", "command"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Builtin {
     Models,
+    Permissions,
     Theme,
     Sessions,
     NewSession,
@@ -31,8 +32,9 @@ pub enum Builtin {
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 13] = [
+    pub const ALL: [Builtin; 14] = [
         Builtin::Models,
+        Builtin::Permissions,
         Builtin::Theme,
         Builtin::Sessions,
         Builtin::NewSession,
@@ -51,6 +53,7 @@ impl Builtin {
     pub fn name(self) -> &'static str {
         match self {
             Builtin::Models => "model",
+            Builtin::Permissions => "permissions",
             Builtin::Theme => "theme",
             Builtin::Sessions => "sessions",
             Builtin::NewSession => "new",
@@ -69,6 +72,7 @@ impl Builtin {
     pub fn label(self) -> &'static str {
         match self {
             Builtin::Models => "Select a model",
+            Builtin::Permissions => "Review saved permissions",
             Builtin::Theme => "Select a theme",
             Builtin::Sessions => "Browse sessions",
             Builtin::NewSession => "New session",
@@ -88,6 +92,7 @@ impl Builtin {
     pub fn keys(self) -> &'static str {
         match self {
             Builtin::Models => "<leader>m",
+            Builtin::Permissions => "",
             Builtin::Theme => "<leader>t",
             Builtin::Sessions => "<leader>l",
             Builtin::NewSession => "<leader>n",

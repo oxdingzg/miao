@@ -203,6 +203,7 @@ pub struct ConfirmDialog {
 }
 
 pub enum Dialog {
+    SavedPermissions(crate::saved_permissions::Dialog),
     Models(ListDialog),
     Theme(ListDialog),
     Sessions(ListDialog),
@@ -410,6 +411,7 @@ impl Dialog {
             return Action::None;
         }
         match self {
+            Dialog::SavedPermissions(dialog) => dialog.handle_key(key),
             Dialog::Models(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
@@ -426,6 +428,7 @@ impl Dialog {
 
     pub fn title(&self) -> &'static str {
         match self {
+            Dialog::SavedPermissions(_) => "saved permissions",
             Dialog::Models(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
@@ -497,6 +500,9 @@ impl Dialog {
     }
 
     pub fn height(&self) -> u16 {
+        if matches!(self, Dialog::SavedPermissions(_)) {
+            return 18;
+        }
         if let Some(palette) = self.palette() {
             // Filter line, one row even when nothing matches, and the border.
             return (palette.visible.len().clamp(1, 12) + 3) as u16;
@@ -512,6 +518,8 @@ impl Dialog {
 }
 
 pub enum Action {
+    RefreshPermissions,
+    RevokePermission(String),
     None,
     Close,
     Chosen(usize),

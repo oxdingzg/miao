@@ -669,6 +669,10 @@ pub fn render_dialog(frame: &mut Frame, area: Rect, dialog: &Dialog, theme: &The
     if inner.width == 0 || inner.height == 0 {
         return;
     }
+    if let Dialog::SavedPermissions(saved) = dialog {
+        saved.render(frame, inner, theme);
+        return;
+    }
     if let Some(list) = dialog.list() {
         render_list(frame, inner, list, theme);
         return;

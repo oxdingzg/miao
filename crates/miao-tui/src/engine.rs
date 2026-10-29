@@ -30,6 +30,13 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const EVENTS_PAGE: usize = 100;
 
 pub enum Request {
+    SavedPermissions {
+        generation: u64,
+    },
+    RevokePermission {
+        generation: u64,
+        id: String,
+    },
     RefreshSessions,
     Open(String),
     Refresh,
@@ -120,6 +127,12 @@ impl Handle {
 }
 
 impl Handle {
+    pub fn saved_permissions(&self, generation: u64) {
+        let _ = self.tx.send(Request::SavedPermissions { generation });
+    }
+    pub fn revoke_permission(&self, generation: u64, id: String) {
+        let _ = self.tx.send(Request::RevokePermission { generation, id });
+    }
     pub fn refresh_sessions(&self) {
         let _ = self.tx.send(Request::RefreshSessions);
     }
@@ -526,6 +539,21 @@ async fn run(
                             bus.send(AppEvent::ActionFailed(format!("reject failed: {error}")))
                         }
                     }
+                }
+                Some(Request::SavedPermissions { generation }) => {
+                    let result = client.command("permission_pattern_list").await
+                        .map_err(|error| error.to_string())
+                        .and_then(crate::saved_permissions::decode);
+                    bus.send(AppEvent::SavedPermissions { generation, result });
+                }
+                Some(Request::RevokePermission { generation, id }) => {
+                    let result = client.request("permission_pattern_remove", json!({ "rule_id": id })).await
+                        .map_err(|error| error.to_string())
+                        .and_then(|value| match value.get("removed").and_then(Value::as_bool) {
+                            Some(_) => Ok(()),
+                            None => Err("Invalid permission revocation response".into()),
+                        });
+                    bus.send(AppEvent::PermissionRevoked { generation, id, result });
                 }
                 Some(Request::Catalog) => {
                     match client.command("model_catalog").await {

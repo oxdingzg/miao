@@ -37,6 +37,15 @@ pub enum AppEvent {
     Catalog(Vec<SessionSummary>),
     /// The engine's model catalog, one entry per selectable binding.
     Models(Vec<ModelInfo>),
+    SavedPermissions {
+        generation: u64,
+        result: Result<Vec<crate::saved_permissions::Rule>, String>,
+    },
+    PermissionRevoked {
+        generation: u64,
+        id: String,
+        result: Result<(), String>,
+    },
     /// The selectable accounts named by the same catalog.
     Accounts(Vec<AccountInfo>),
     /// The open Session's billed usage, for the status dialog.
