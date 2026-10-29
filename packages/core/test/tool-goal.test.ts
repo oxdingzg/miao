@@ -86,6 +86,48 @@ describe("GoalTool", () => {
     }),
   )
 
+  it.effect("orphanedTodos only flags open todos across a changed objective", () =>
+    Effect.sync(() => {
+      const prev = { objective: "Ship A", status: "active" as const }
+      const next = { objective: "Ship B", status: "active" as const }
+      const todos = [
+        { id: "t1", content: "write", status: "pending", priority: "high" },
+        { id: "t2", content: "test", status: "in_progress", priority: "medium" },
+        { id: "t3", content: "done", status: "completed", priority: "low" },
+        { id: "t4", content: "dropped", status: "cancelled", priority: "low" },
+      ]
+      const orphans = GoalTool.orphanedTodos(prev, next, todos)
+      expect(orphans.map((todo) => todo.id)).toEqual(["t1", "t2"])
+      // Same objective or no prior goal never orphans anything.
+      expect(GoalTool.orphanedTodos(prev, { ...prev, status: "paused" }, todos)).toEqual([])
+      expect(GoalTool.orphanedTodos(undefined, next, todos)).toEqual([])
+    }),
+  )
+
+  it.effect("orphanCheck names the orphaned todos and is undefined otherwise", () =>
+    Effect.sync(() => {
+      const prev = { objective: "Ship A", status: "active" as const }
+      const next = { objective: "Ship B", status: "active" as const }
+      const message = GoalTool.orphanCheck(prev, next, [
+        { id: "t1", content: "write the parser", status: "pending", priority: "high" },
+      ])
+      expect(message).toBeDefined()
+      expect(message).toContain("Ship A")
+      expect(message).toContain("t1: write the parser")
+      expect(message).toContain("todowrite")
+      // An unchanged objective, an all-settled list, or a first goal raises nothing.
+      expect(
+        GoalTool.orphanCheck(prev, { ...prev }, [{ id: "t1", content: "x", status: "pending", priority: "high" }]),
+      ).toBeUndefined()
+      expect(
+        GoalTool.orphanCheck(prev, next, [{ id: "t1", content: "x", status: "completed", priority: "high" }]),
+      ).toBeUndefined()
+      expect(
+        GoalTool.orphanCheck(undefined, next, [{ id: "t1", content: "x", status: "pending", priority: "high" }]),
+      ).toBeUndefined()
+    }),
+  )
+
   it.effect("requires evidence for done and blocked", () =>
     Effect.sync(() => {
       expect(GoalTool.validate({ objective: "x", status: "done" })).toBeDefined()
