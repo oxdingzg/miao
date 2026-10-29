@@ -10,6 +10,7 @@ use std::path::Path;
 
 pub struct Controller {
     project: Project,
+    context: Option<crate::permission_context::Context>,
 }
 
 #[derive(Deserialize)]
@@ -25,12 +26,21 @@ enum Command {
     Migrate(Migrate),
     Put(crate::permission_patterns::Put),
     Remove(Remove),
+    ContextSnapshot,
+    ContextPut(crate::permission_patterns::Put),
+    ContextRemove(Remove),
+    ContextMigrate(ContextMigrate),
     Shutdown,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Migrate {
     rules: Vec<LegacyRule>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContextMigrate {
+    patterns: Vec<crate::permission_patterns::Pattern>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -49,7 +59,38 @@ impl Controller {
         crate::permission_migration::require_rules(&project, &[])?;
         Ok(Self {
             project: Authority::open(path).await?.project(project)?,
+            context: None,
         })
+    }
+
+    pub async fn open_context(
+        path: impl AsRef<Path>,
+        project: String,
+        directory: impl AsRef<Path>,
+        workspace_id: Option<String>,
+    ) -> Result<Self, Error> {
+        // Refuse invalid placement before creating the authority database.
+        if directory.as_ref().as_os_str().is_empty() {
+            return Err(Error::Invalid("permission directory missing".into()));
+        }
+        if let Some(id) = &workspace_id {
+            crate::permission_migration::require_rules(id, &[])?;
+        }
+        let directory = tokio::fs::canonicalize(directory).await?;
+        if !tokio::fs::metadata(&directory).await?.is_dir() {
+            return Err(Error::Invalid(
+                "permission context requires a directory".into(),
+            ));
+        }
+        let mut controller = Self::open(path, project).await?;
+        controller.context = Some(controller.project.context(directory, workspace_id).await?);
+        Ok(controller)
+    }
+
+    fn context(&self) -> Result<&crate::permission_context::Context, Error> {
+        self.context
+            .as_ref()
+            .ok_or_else(|| Error::Invalid("permission control has no directory binding".into()))
     }
 
     pub async fn dispatch(&self, value: Value) -> (Value, bool) {
@@ -75,29 +116,30 @@ impl Controller {
             );
         };
         let shutdown = matches!(request.command, Command::Shutdown);
-        let result = match request.command {
-            Command::Snapshot => self
-                .project
-                .snapshot()
-                .await
-                .and_then(|value| serde_json::to_value(value).map_err(Error::from)),
-            Command::Migrate(input) => self
-                .project
-                .migrate(input.rules)
-                .await
-                .and_then(|value| serde_json::to_value(value).map_err(Error::from)),
-            Command::Put(input) => self
-                .project
-                .put(input.rule)
-                .await
-                .and_then(|value| serde_json::to_value(value).map_err(Error::from)),
-            Command::Remove(input) => self
-                .project
-                .remove(input.id)
-                .await
-                .map(|removed| json!({"removed":removed})),
-            Command::Shutdown => Ok(json!({"accepted":true})),
-        };
+        let result: Result<Value, Error> = async {
+            Ok(match request.command {
+                Command::Snapshot => serde_json::to_value(self.project.snapshot().await?)?,
+                Command::Migrate(input) => {
+                    serde_json::to_value(self.project.migrate(input.rules).await?)?
+                }
+                Command::Put(input) => serde_json::to_value(self.project.put(input.rule).await?)?,
+                Command::Remove(input) => json!({"removed": self.project.remove(input.id).await?}),
+                Command::ContextSnapshot => {
+                    serde_json::to_value(self.context()?.snapshot().await?)?
+                }
+                Command::ContextPut(input) => {
+                    serde_json::to_value(self.context()?.put(input.rule).await?)?
+                }
+                Command::ContextRemove(input) => {
+                    json!({"removed": self.context()?.remove(input.id).await?})
+                }
+                Command::ContextMigrate(input) => {
+                    serde_json::to_value(self.context()?.migrate(input.patterns).await?)?
+                }
+                Command::Shutdown => json!({"accepted":true}),
+            })
+        }
+        .await;
         let response = match result {
             Ok(value) => json!({"id":request.id,"result":value}),
             Err(error) => {
