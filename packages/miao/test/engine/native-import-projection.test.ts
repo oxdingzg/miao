@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import path from "node:path"
 import { Effect } from "effect"
 import { sql } from "drizzle-orm"
 import { Database } from "@miao/core/database/database"
@@ -20,6 +21,7 @@ test.skipIf(!process.env.MIAO_ENGINE_BIN)(
         const owner = { storage: fixture.storage, location: { directory: AbsolutePath.make(fixture.directory) } }
         const first = yield* Effect.promise(() => sync(fixture.client, owner))
         expect(first.migration).toBeNull()
+        expect(first.directory).toBe(path.toNamespacedPath(fixture.directory))
         const rules = Array.from({ length: 256 }, (_, index) => ({
           id: `legacy/${index}`,
           rule: { action: "read", resource: `public/${index}`, effect: "allow" },
@@ -90,7 +92,7 @@ test.skipIf(!process.env.MIAO_ENGINE_BIN)(
           rules: [],
         })
         expect(yield* Effect.promise(() => sync(fixture.client, owner))).toEqual({
-          directory: fixture.directory,
+          directory: path.toNamespacedPath(fixture.directory),
           cursor: 0,
           migration: null,
           rules: [],
@@ -104,7 +106,7 @@ test.skipIf(!process.env.MIAO_ENGINE_BIN)(
         ])
         // A receipt/cursor conflict must recover from native authority rather than retain stale rows.
         yield* PermissionImportProjection.replace(database.db, owner, {
-          directory: fixture.directory,
+          directory: path.toNamespacedPath(fixture.directory),
           cursor: 0,
           migration: { project: "old", fingerprint: "a".repeat(64), imported: 0 },
           rules: [],
