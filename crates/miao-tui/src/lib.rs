@@ -70,23 +70,27 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         mouse: config.mouse,
         cursor: config.cursor,
     };
-    let mut terminal = terminal::init(preferences).inspect_err(|_| terminal::restore())?;
-    terminal::install_panic_hook();
-    let (bus, mut events) = event::bus();
-    input::spawn(bus.clone());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    let result = runtime.block_on(drive(
+    let termination = {
+        let _entered = runtime.enter();
+        platform::signals::termination()?
+    };
+    let _restore = terminal::RestoreGuard;
+    let mut terminal = terminal::init(preferences)?;
+    terminal::install_panic_hook();
+    let (bus, mut events) = event::bus();
+    input::spawn(bus.clone());
+    runtime.block_on(drive(
         &mut terminal,
         &mut app,
         &mut events,
         bus,
         launch,
         preferences,
-    ));
-    terminal::restore();
-    result
+        termination,
+    ))
 }
 
 async fn drive(
@@ -96,7 +100,9 @@ async fn drive(
     bus: event::Bus,
     launch: Launch,
     preferences: terminal::Preferences,
+    termination: impl std::future::Future<Output = ()>,
 ) -> Result<(), Box<dyn Error>> {
+    tokio::pin!(termination);
     match engine::settings(
         &launch.workspace,
         launch.db,
@@ -138,6 +144,7 @@ async fn drive(
             false => Duration::from_secs(60),
         };
         tokio::select! {
+            _ = &mut termination => return Ok(()),
             event = events.recv() => match event {
                 Some(app_event) => {
                     app.handle(app_event);
