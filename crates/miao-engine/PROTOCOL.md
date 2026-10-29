@@ -880,3 +880,24 @@ existing receipt retry**. A mismatching destination fails without modifying
 rules, receipt or revision. Hosts freezing a source must use this method instead
 of unbound `migrate`, and probe support before preparing the source. A database
 pathname alone is not a durable destination identity.
+
+### Permission source execution claim
+
+Session-store schema 22 persists `engine_run.lease_epoch` when a fenced run
+starts, in the same transaction as the run and any first input promotions.
+Permission evaluation, admission and replies require the dispatched tool and
+running run to retain that exact Session epoch and the current process owner.
+Renewing the same epoch preserves authority; a superseding claim invalidates the
+old source even before its asynchronous drain notices the loss. The saved-rule
+write and reply remain in the guarded transaction.
+
+Historical and deliberately unfenced storage rows keep a NULL epoch during
+upgrade; current lease data is never used to fabricate old execution provenance.
+Such rows cannot act as live permission sources. This does not resume provider
+work or create another Session/drain identity. Older Session-store writers refuse
+schema 22; the separate project permission database retains its own schema v2.
+
+Format publication and schema changes share an immediate SQLite transaction.
+Upgrading an older store is refused while a recorded running-run owner process
+is alive; its schema, format and rows remain available to that older owner.
+Finished runs and dead owners do not require provider recovery to upgrade.

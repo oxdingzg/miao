@@ -1,7 +1,7 @@
 //! Runtime-owned rule evaluation for one active product-tool reverse call.
 //! This query neither executes a host action nor creates an approval or grant.
 use crate::{permission_rules::Rule, product::CallContext, protocol::Error, store::Store};
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
@@ -46,17 +46,30 @@ impl Store {
     ) -> Result<Vec<Rule>, Error> {
         self.call(move |connection| {
             let transaction = connection.transaction()?;
-            let active: bool = transaction.query_row(
-                "SELECT EXISTS(SELECT 1 FROM engine_tool t JOIN engine_run r ON r.id=t.run_id JOIN engine_location l ON l.session_id=r.session_id WHERE t.id=?1 AND t.state='dispatched' AND r.id=?2 AND r.session_id=?3 AND r.state='running' AND l.root=?4)",
-                params![format!("{run}/{call}"), run, session, workspace],
-                |row| row.get(0),
-            )?;
+            let active = source_active(&transaction, &session, &run, &call, &workspace)?;
             if !active {
                 return Err(Error::Invalid("inactive product permission source".into()));
             }
             let rules = crate::permission_saved::rules(&transaction, &workspace)?;
             transaction.commit()?;
             Ok(rules)
-        }).await
+        })
+        .await
     }
+}
+
+/// A real dispatched source must still own the claim that started its run.
+/// Historical/unfenced runs have no authority to create live tool grants.
+pub(crate) fn source_active(
+    connection: &Connection,
+    session: &str,
+    run: &str,
+    call: &str,
+    workspace: &str,
+) -> Result<bool, Error> {
+    Ok(connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM engine_tool t JOIN engine_run r ON r.id=t.run_id JOIN engine_location l ON l.session_id=r.session_id JOIN engine_lease e ON e.session_id=r.session_id WHERE t.id=?1 AND t.state='dispatched' AND r.id=?2 AND r.session_id=?3 AND r.state='running' AND l.root=?4 AND r.lease_epoch=e.epoch AND e.owner_pid=?5)",
+        params![format!("{run}/{call}"), run, session, workspace, std::process::id()],
+        |row| row.get(0),
+    )?)
 }

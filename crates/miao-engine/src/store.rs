@@ -23,7 +23,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 // Older readers do not understand inactive semantic imports and could execute
 // a destination before its host has switched the authoritative placement.
-pub const SCHEMA_VERSION: u32 = 21;
+pub const SCHEMA_VERSION: u32 = 22;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -243,7 +243,27 @@ impl Store {
                     )));
                 }
 
-                conn.execute_batch(&format!("PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={SCHEMA_VERSION}; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
+                conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; BEGIN IMMEDIATE;")?;
+                // Keep old-format run creation outside this schema transaction.
+                // A live old owner keeps its unchanged database until it exits.
+                if version < SCHEMA_VERSION && engine {
+                    let has_owner_pid: bool = conn.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_lease') WHERE name='owner_pid')", [], |row| row.get(0),
+                    )?;
+                    if has_owner_pid {
+                        let owners = {
+                            let mut statement = conn.prepare("SELECT DISTINCT l.owner_pid FROM engine_run r JOIN engine_lease l ON l.session_id=r.session_id WHERE r.state='running' AND l.owner_pid IS NOT NULL")?;
+                            let owners = statement
+                                .query_map([], |row| row.get::<_, u32>(0))?
+                                .collect::<Result<Vec<_>, _>>()?;
+                            owners
+                        };
+                        if owners.into_iter().any(pid_alive) {
+                            return Err(Error::Invalid("cannot upgrade Session storage while an older engine run owner is alive; stop the older engine first".into()));
+                        }
+                    }
+                }
+                conn.execute_batch(&format!("PRAGMA application_id={APPLICATION_ID};
                     CREATE TABLE IF NOT EXISTS engine_session(id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL DEFAULT 0, mode TEXT NOT NULL DEFAULT 'build');
                     CREATE TABLE IF NOT EXISTS engine_event(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,seq));
                     CREATE TABLE IF NOT EXISTS engine_input(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), prompt TEXT NOT NULL, delivery TEXT NOT NULL, state TEXT NOT NULL, admitted_seq INTEGER NOT NULL);
@@ -384,6 +404,15 @@ impl Store {
                     BEFORE INSERT ON engine_event
                     WHEN EXISTS(SELECT 1 FROM engine_transfer_import WHERE session_id=NEW.session_id AND state!='active')
                     BEGIN SELECT RAISE(ABORT,'Imported Session has no execution authority'); END;")?;
+                let has_run_epoch: bool = conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_run') WHERE name='lease_epoch')",
+                    [], |row| row.get(0),
+                )?;
+                if !has_run_epoch {
+                    conn.execute("ALTER TABLE engine_run ADD COLUMN lease_epoch INTEGER", [])?;
+                }
+                conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+                conn.execute_batch("COMMIT")?;
                 // The schema is current; serving is shared from here on.
                 fs2::FileExt::unlock(&migration)?;
                 drop(migration);
@@ -1692,8 +1721,8 @@ impl Store {
                 return Err(Error::Invalid("Session has no admitted history".into()));
             }
             tx.execute(
-                "INSERT INTO engine_run VALUES(?1,?2,'running')",
-                params![run, session],
+                "INSERT INTO engine_run(id,session_id,state,lease_epoch) VALUES(?1,?2,'running',?3)",
+                params![run, session, lease.epoch],
             )?;
             append(&tx, &session, "run.started", json!({"run_id":run}))?;
             tx.commit()?;
@@ -1715,8 +1744,8 @@ impl Store {
                 require_lease(&tx, &session, lease)?;
             }
             tx.execute(
-                "INSERT INTO engine_run VALUES(?1,?2,'running')",
-                params![run, session],
+                "INSERT INTO engine_run(id,session_id,state,lease_epoch) VALUES(?1,?2,'running',?3)",
+                params![run, session, lease.as_ref().map(|lease| lease.epoch)],
             )?;
             let e = append(&tx, &session, "run.started", json!({"run_id":run}))?;
             tx.commit()?;
@@ -2553,7 +2582,34 @@ fn pid_alive(pid: u32) -> bool {
     result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn pid_alive(pid: u32) -> bool {
+    use std::ffi::c_void;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut c_void;
+        fn GetExitCodeProcess(process: *mut c_void, code: *mut u32) -> i32;
+        fn CloseHandle(handle: *mut c_void) -> i32;
+        fn GetLastError() -> u32;
+    }
+    const QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const INVALID_PARAMETER: u32 = 87;
+    const STILL_ACTIVE: u32 = 259;
+    // Query-only access; access denial/unknown failures conservatively mean live.
+    // The returned handle and stack output pointer remain owned by this scope.
+    unsafe {
+        let process = OpenProcess(QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() {
+            return GetLastError() != INVALID_PARAMETER;
+        }
+        let mut code = 0;
+        let queried = GetExitCodeProcess(process, &mut code);
+        CloseHandle(process);
+        queried == 0 || code == STILL_ACTIVE
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 fn pid_alive(_pid: u32) -> bool {
     true
 }

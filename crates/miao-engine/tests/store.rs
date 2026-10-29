@@ -611,3 +611,190 @@ async fn explicit_close_releases_the_lease_before_immediate_reopen() {
         reopened.close().await.unwrap();
     }
 }
+
+#[tokio::test]
+async fn schema21_upgrade_retains_historical_runs_without_inventing_claim_provenance() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("engine.db");
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch(include_str!("fixtures/native_run_v21.sql"))
+        .unwrap();
+    let before: Vec<(u64,String,String)> = connection.prepare("SELECT seq,kind,data FROM engine_event WHERE session_id='schema21-session' ORDER BY seq").unwrap().query_map([], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).unwrap().collect::<Result<_,_>>().unwrap();
+    let store = Store::open(&path).await.unwrap();
+    let row: (String,Option<u64>,u64) = connection.query_row("SELECT r.state,r.lease_epoch,l.epoch FROM engine_run r JOIN engine_lease l ON l.session_id=r.session_id WHERE r.id='historical-run'", [], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).unwrap();
+    assert_eq!(row, ("running".into(), None, 7));
+    let after: Vec<(u64,String,String)> = connection.prepare("SELECT seq,kind,data FROM engine_event WHERE session_id='schema21-session' ORDER BY seq").unwrap().query_map([], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).unwrap().collect::<Result<_,_>>().unwrap();
+    assert_eq!(after, before);
+    assert_eq!(
+        store
+            .pending_inputs("schema21-session", None, 50)
+            .await
+            .unwrap()["inputs"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        connection
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+            .unwrap(),
+        miao_engine::store::SCHEMA_VERSION
+    );
+    store.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn fenced_run_start_persists_the_exact_claim_and_unfenced_storage_does_not_guess_one() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("engine.db");
+    let store = Store::open(&path).await.unwrap();
+    store.admit(input("one", Delivery::Steer)).await.unwrap();
+    let lease = store.claim_session("s", 30_000).await.unwrap();
+    store
+        .start_run_fenced("s", "fenced-run", &lease)
+        .await
+        .unwrap();
+    store
+        .finish_run_fenced("s", "fenced-run", "completed", &lease)
+        .await
+        .unwrap();
+    store.start_run("s", "unfenced-run").await.unwrap();
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    let epochs: Vec<(String, Option<u64>)> = connection
+        .prepare("SELECT id,lease_epoch FROM engine_run ORDER BY id")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        epochs,
+        vec![
+            ("fenced-run".into(), Some(lease.epoch)),
+            ("unfenced-run".into(), None)
+        ]
+    );
+    let next = store.claim_session("s", 30_000).await.unwrap();
+    assert!(next.epoch > lease.epoch);
+    assert!(matches!(
+        store.start_run_fenced("s", "stale-run", &lease).await,
+        Err(Error::Fenced)
+    ));
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM engine_run", [], |row| row
+                .get::<_, usize>(0))
+            .unwrap(),
+        2
+    );
+    store.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn format_upgrade_waits_for_old_run_owners_without_changing_their_format_or_data() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("engine.db");
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch(include_str!("fixtures/native_run_v21.sql"))
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE engine_lease SET owner_pid=?1 WHERE session_id='schema21-session'",
+            [std::process::id()],
+        )
+        .unwrap();
+    let schema: Vec<(String, String)> = connection
+        .prepare("SELECT name,sql FROM sqlite_schema WHERE sql IS NOT NULL ORDER BY name")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(Store::open(&path).await.is_err());
+    let after: Vec<(String, String)> = connection
+        .prepare("SELECT name,sql FROM sqlite_schema WHERE sql IS NOT NULL ORDER BY name")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(after, schema);
+    assert_eq!(
+        connection
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+            .unwrap(),
+        21
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('engine_run') WHERE name='lease_epoch'",
+                [],
+                |row| row.get::<_, usize>(0)
+            )
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT state FROM engine_run WHERE id='historical-run'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+        "running"
+    );
+    // The old owner can still settle its own old-format run.
+    connection
+        .execute(
+            "UPDATE engine_run SET state='completed' WHERE id='historical-run'",
+            [],
+        )
+        .unwrap();
+    Store::open(&path).await.unwrap().close().await.unwrap();
+    assert_eq!(
+        connection
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+            .unwrap(),
+        miao_engine::store::SCHEMA_VERSION
+    );
+}
+
+#[tokio::test]
+async fn a_dead_old_owner_does_not_block_format_upgrade_or_restart_provider_work() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("engine.db");
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch(include_str!("fixtures/native_run_v21.sql"))
+        .unwrap();
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .arg("--list")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    assert!(child.wait().unwrap().success());
+    connection
+        .execute(
+            "UPDATE engine_lease SET owner_pid=?1 WHERE session_id='schema21-session'",
+            [pid],
+        )
+        .unwrap();
+    Store::open(&path).await.unwrap().close().await.unwrap();
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT state,lease_epoch FROM engine_run WHERE id='historical-run'",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<u64>>(1)?))
+            )
+            .unwrap(),
+        ("running".into(), None)
+    );
+}

@@ -2355,3 +2355,144 @@ async fn one_time_saved_rule_handoff_is_controller_bound_live_and_cannot_resurre
     runtime.shutdown().await;
     other.shutdown().await;
 }
+
+#[tokio::test]
+async fn superseding_the_run_claim_fences_live_permission_reads_and_always_replies() {
+    use miao_engine::product_permission_request::Reply;
+    let (directory, store, runtime, source) = running().await;
+    let mut input = assertion("lease-bound", "public");
+    input.save = Some(vec!["public".into()]);
+    let pending = runtime
+        .admit_product_permission(&runtime.controller(), &source, input)
+        .await
+        .unwrap();
+    let connection = rusqlite::Connection::open(directory.path().join("engine.db")).unwrap();
+    let epoch: u64 = connection
+        .query_row(
+            "SELECT lease_epoch FROM engine_run WHERE session_id='s' AND state='running'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(epoch > 0);
+    let next = store.claim_session("s", 30_000).await.unwrap();
+    assert!(next.epoch > epoch);
+    assert!(runtime
+        .evaluate_product_permission(&runtime.controller(), &source, request("public"))
+        .await
+        .is_err());
+    assert!(runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("new-after-claim", "public")
+        )
+        .await
+        .is_err());
+    assert!(runtime
+        .reply_product_permission(
+            &runtime.controller(),
+            &source,
+            response(&pending, Reply::Always)
+        )
+        .await
+        .is_err());
+    assert!(runtime
+        .permission_patterns(&runtime.controller())
+        .await
+        .unwrap()
+        .is_empty());
+    let state: String = connection
+        .query_row(
+            "SELECT state FROM engine_product_permission_request WHERE id='lease-bound'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(state, "pending");
+    runtime.cancel("s").await.unwrap();
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn renewing_the_same_claim_preserves_permission_authority() {
+    use miao_engine::{
+        product_permission_request::{Reply, State},
+        store::SessionLease,
+    };
+    let (directory, store, runtime, source) = running().await;
+    let pending = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("renewed", "public"),
+        )
+        .await
+        .unwrap();
+    let connection = rusqlite::Connection::open(directory.path().join("engine.db")).unwrap();
+    let epoch = connection
+        .query_row(
+            "SELECT lease_epoch FROM engine_run WHERE session_id='s' AND state='running'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    store
+        .renew_session(
+            &SessionLease {
+                session: "s".into(),
+                epoch,
+            },
+            30_000,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        runtime
+            .evaluate_product_permission(&runtime.controller(), &source, request("public"))
+            .await
+            .unwrap()
+            .effect,
+        Decision::Ask
+    );
+    assert_eq!(
+        runtime
+            .reply_product_permission(
+                &runtime.controller(),
+                &source,
+                response(&pending, Reply::Once)
+            )
+            .await
+            .unwrap()
+            .state,
+        State::Allowed
+    );
+    runtime.cancel("s").await.unwrap();
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn missing_run_claim_provenance_is_never_inferred_from_the_current_lease() {
+    let (directory, _store, runtime, source) = running().await;
+    let connection = rusqlite::Connection::open(directory.path().join("engine.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE engine_run SET lease_epoch=NULL WHERE session_id='s'",
+            [],
+        )
+        .unwrap();
+    assert!(runtime
+        .evaluate_product_permission(&runtime.controller(), &source, request("public"))
+        .await
+        .is_err());
+    assert!(runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("missing-provenance", "public")
+        )
+        .await
+        .is_err());
+    runtime.cancel("s").await.unwrap();
+    runtime.shutdown().await;
+}
