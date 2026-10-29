@@ -230,6 +230,11 @@ async fn outside_write_is_denied_and_network_cannot_be_elevated_by_tool_argument
     let result = finish(&store).await;
     assert_ne!(result["exit_code"], 0, "{result}");
     assert!(!outside.exists());
+    // The policy allows every tool on every path, so the denial has to come
+    // from the sandbox itself. Assert it was enforced, not merely attempted:
+    // an approval must never stand in for confinement.
+    assert_eq!(result["enforcement_required"], true, "{result}");
+    assert_eq!(result["sandbox_profile"], "workspace_write", "{result}");
     runtime.shutdown().await;
     let dir = tempfile::tempdir().unwrap();
     let (runtime, store, _) = start(
