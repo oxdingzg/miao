@@ -11,7 +11,7 @@ struct Harness {
     pty: Box<dyn MasterPty + Send>,
     child: Box<dyn Child + Send + Sync>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    output: Arc<Mutex<String>>,
+    output: Arc<Mutex<Vec<u8>>>,
     reader: JoinHandle<()>,
     dir: PathBuf,
 }
@@ -95,7 +95,7 @@ impl Harness {
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().expect("clone reader");
         let writer = Arc::new(Mutex::new(pair.master.take_writer().expect("take writer")));
-        let output = Arc::new(Mutex::new(String::new()));
+        let output = Arc::new(Mutex::new(Vec::new()));
         let seen = output.clone();
         let responder = writer.clone();
         let reader_thread = std::thread::spawn(move || {
@@ -107,11 +107,17 @@ impl Harness {
                     Ok(n) => {
                         seen.lock()
                             .expect("output lock")
-                            .push_str(&String::from_utf8_lossy(&buf[..n]));
+                            .extend_from_slice(&buf[..n]);
                         // windows-2025 ConPTY probes the attached terminal with a
                         // cursor-position report and stalls rendering until the
                         // terminal answers; act like one.
-                        if !replied_cpr && seen.lock().expect("output lock").contains("\x1b[6n") {
+                        if !replied_cpr
+                            && seen
+                                .lock()
+                                .expect("output lock")
+                                .windows(4)
+                                .any(|bytes| bytes == b"\x1b[6n")
+                        {
                             replied_cpr = true;
                             let _ = responder
                                 .lock()
@@ -134,7 +140,14 @@ impl Harness {
     }
 
     fn text(&self) -> String {
-        self.output.lock().expect("output lock").clone()
+        String::from_utf8_lossy(&self.output.lock().expect("output lock")).into_owned()
+    }
+
+    fn screen(&self) -> String {
+        let size = self.pty.get_size().expect("pty size");
+        let mut parser = vt100::Parser::new(size.rows, size.cols, 0);
+        parser.process(&self.output.lock().expect("output lock"));
+        parser.screen().contents()
     }
 
     fn write(&mut self, keys: &[u8]) {
@@ -193,6 +206,17 @@ fn wait_for_plain(harness: &Harness, needle: &str, timeout: Duration) -> bool {
         std::thread::sleep(Duration::from_millis(25));
     }
     plain(&harness.text()).contains(needle)
+}
+
+fn wait_for_screen(harness: &Harness, needle: &str, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if harness.screen().contains(needle) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    false
 }
 
 fn wait_for(harness: &Harness, needle: &str, timeout: Duration) -> bool {
@@ -297,6 +321,83 @@ fn the_transcript_renders_markdown_and_tool_rows() {
     let status = wait_exit(&mut harness.child, Duration::from_secs(5))
         .expect("process did not exit after Ctrl+C");
     assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
+fn redraw_preserves_the_open_transcript_and_unsent_draft() {
+    let mut harness = Harness::spawn_engine("redraw");
+    assert!(wait_for_screen(
+        &harness,
+        "Project A",
+        Duration::from_secs(3)
+    ));
+    harness.write(b"\r");
+    assert!(wait_for_screen(
+        &harness,
+        "hello from the fixture",
+        Duration::from_secs(3)
+    ));
+    harness.write(b"keep this draft");
+    assert!(wait_for_screen(
+        &harness,
+        "keep this draft",
+        Duration::from_secs(2)
+    ));
+    #[cfg(unix)]
+    let start = harness.output.lock().expect("output lock").len();
+    harness.write(b"\x0c");
+    #[cfg(unix)]
+    {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let fresh = harness.output.lock().expect("output lock")[start..].to_vec();
+            let screen = harness.screen();
+            if fresh.windows(4).any(|bytes| bytes == b"\x1b[2J")
+                && screen.contains("keep this draft")
+                && screen.contains("hello from the fixture")
+            {
+                assert!(
+                    !fresh.windows(4).any(|bytes| bytes == b"\x1b[6n"),
+                    "redraw queried the input cursor"
+                );
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "redraw did not repaint the preserved state: {}",
+                screen
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    // ConPTY may optimize an unchanged frame instead of forwarding its clear
+    // sequence. Editing after redraw must still use the original unsent draft.
+    harness.write(b" survives");
+    assert!(wait_for_screen(
+        &harness,
+        "keep this draft survives",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"\x10");
+    harness.write(b"redraw");
+    assert!(wait_for_screen(
+        &harness,
+        "Redraw terminal",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"\r");
+    assert!(wait_for_screen(
+        &harness,
+        "keep this draft survives",
+        Duration::from_secs(2)
+    ));
+    assert!(!harness.dir.join("admit.log").exists());
+    harness.write(b"\x03");
+    harness.write(b"\x03");
+    let status =
+        wait_exit(&mut harness.child, Duration::from_secs(5)).expect("redrawn UI did not exit");
+    assert!(status.success());
     harness.shutdown();
 }
 
