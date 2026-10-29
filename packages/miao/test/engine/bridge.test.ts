@@ -82,6 +82,20 @@ test("a parked permission ask is its own phase, and settling it returns to local
   })
 })
 
+test("a retry fact carries its next attempt instead of an unbounded phase", () => {
+  const retry = event("provider.retry", 1_700_000_000_300)
+  retry.data = { attempt: 2, reason: "rate limited", status: 429, delay_ms: 2_500 }
+  expect(statusOf(retry)).toEqual({
+    type: "retry",
+    attempt: 2,
+    message: "rate limited",
+    next: 1_700_000_002_800,
+  })
+  // A fact missing its recorded pieces cannot name a deadline, so it degrades
+  // to the anonymous phase instead of inventing one.
+  expect(statusOf(event("provider.retry"))).toEqual({ type: "busy", phase: "retrying" })
+})
+
 test("a dispatched request is a phase a replay can reproduce", () => {
   // Status comes from durable events only. A phase derived from the live
   // progress pipe would be missing after a reconnect, and the replayed event
