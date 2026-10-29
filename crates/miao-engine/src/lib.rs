@@ -75,6 +75,7 @@ pub mod usage;
 mod verification;
 pub mod wakeup;
 pub mod web;
+mod wildcard;
 pub mod worker;
 
 pub mod tool_catalog;
