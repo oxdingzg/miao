@@ -497,6 +497,10 @@ impl Host {
                 self.subscriptions.remove(&session_id);
                 Ok(json!({ "accepted": true }))
             }
+            Command::ProductPermissionEvaluate { source, request } => runtime
+                .evaluate_product_permission(&self.controller, &source, request)
+                .await
+                .and_then(|outcome| serde_json::to_value(outcome).map_err(Error::from)),
             Command::PermissionEvaluate { request } => {
                 if request.actions.is_empty() || request.resources.is_empty() {
                     return Err(Error::Invalid(
@@ -506,6 +510,38 @@ impl Host {
                 serde_json::to_value(crate::permission_rules::evaluate(&request)?)
                     .map_err(Error::from)
             }
+            Command::ProductPermissionAdmit { source, input } => runtime
+                .admit_product_permission(&self.controller, &source, input)
+                .await
+                .and_then(|record| serde_json::to_value(record).map_err(Error::from)),
+            Command::ProductPermissionStatus { source, request_id } => runtime
+                .product_permission_status(&self.controller, &source, request_id)
+                .await
+                .and_then(|record| serde_json::to_value(record).map_err(Error::from)),
+            Command::ProductPermissionCancel { source, request_id } => runtime
+                .cancel_product_permission(&self.controller, &source, request_id)
+                .await
+                .and_then(|record| serde_json::to_value(record).map_err(Error::from)),
+            Command::ProductPermissionReply { source, response } => runtime
+                .reply_product_permission(&self.controller, &source, response)
+                .await
+                .and_then(|record| serde_json::to_value(record).map_err(Error::from)),
+            Command::ProductPermissionPending { session_id } => runtime
+                .pending_product_permissions(&self.controller, session_id)
+                .await
+                .and_then(|records| serde_json::to_value(records).map_err(Error::from)),
+            Command::PermissionPatternList => runtime
+                .permission_patterns(&self.controller)
+                .await
+                .and_then(|patterns| serde_json::to_value(patterns).map_err(Error::from)),
+            Command::PermissionPatternPut(input) => runtime
+                .put_permission_pattern(&self.controller, input.rule)
+                .await
+                .and_then(|pattern| serde_json::to_value(pattern).map_err(Error::from)),
+            Command::PermissionPatternRemove(input) => runtime
+                .remove_permission_pattern(&self.controller, input.rule_id)
+                .await
+                .map(|removed| json!({"removed":removed})),
             Command::PermissionSavedProject { workspace, rules } => {
                 runtime
                     .store()
