@@ -13,10 +13,10 @@ use std::path::Path;
 
 #[derive(Clone)]
 pub struct Context {
-    project: Project,
-    directory: String,
-    workspace_id: Option<String>,
-    location: String,
+    pub(crate) project: Project,
+    pub(crate) directory: String,
+    pub(crate) workspace_id: Option<String>,
+    pub(crate) location: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -206,7 +206,7 @@ impl Context {
         }).await
     }
 
-    fn ensure(&self, connection: &Connection) -> Result<(), Error> {
+    pub(crate) fn ensure(&self, connection: &Connection) -> Result<(), Error> {
         permission_project::ensure_project(connection, &self.project.project)?;
         connection.execute(
             "INSERT OR IGNORE INTO permission_directory(project,location) VALUES(?1,?2)",
@@ -214,14 +214,14 @@ impl Context {
         )?;
         Ok(())
     }
-    fn bump(&self, connection: &Connection) -> Result<(), Error> {
+    pub(crate) fn bump(&self, connection: &Connection) -> Result<(), Error> {
         connection.execute(
             "UPDATE permission_directory SET revision=revision+1 WHERE project=?1 AND location=?2",
             params![self.project.project, self.location],
         )?;
         Ok(())
     }
-    fn insert(&self, connection: &Connection, pattern: &Pattern) -> Result<(), Error> {
+    pub(crate) fn insert(&self, connection: &Connection, pattern: &Pattern) -> Result<(), Error> {
         connection.execute("INSERT OR IGNORE INTO permission_directory_rule(project,location,id,rule,digest,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6)",params![self.project.project,self.location,pattern.id,serde_json::to_string(&pattern.rule)?,permission_project::rule_hash(&pattern.rule)?,pattern.created_at_ms])?;
         Ok(())
     }
@@ -248,7 +248,7 @@ impl Context {
     fn fingerprint(&self, patterns: &[Pattern]) -> Result<String, Error> {
         migration_fingerprint(&self.project.project, &self.location, patterns)
     }
-    fn view(&self, connection: &Connection) -> Result<Snapshot, Error> {
+    pub(crate) fn view(&self, connection: &Connection) -> Result<Snapshot, Error> {
         let project = permission_project::view(connection, &self.project.project)?;
         let revision: Option<u64> = connection
             .query_row(
@@ -335,7 +335,7 @@ pub(crate) fn migration_fingerprint(
     ))?))
 }
 
-fn pattern_id(directory: &str, rule: &Rule) -> Result<String, Error> {
+pub(crate) fn pattern_id(directory: &str, rule: &Rule) -> Result<String, Error> {
     Ok(format!(
         "prule_{}",
         crate::permission_patterns::rule_digest(directory, rule)?
@@ -479,7 +479,7 @@ mod tests {
                 .unwrap()
                 .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
                 .unwrap(),
-            3
+            4
         );
     }
 

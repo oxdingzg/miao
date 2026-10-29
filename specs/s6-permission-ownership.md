@@ -333,3 +333,21 @@ Session 库，以 BEGIN IMMEDIATE 同时锁定两库，再持有实际 product/b
 该 Rust 接口仅提供执行来源的事务栅栏，不作权限决策，也不确认目录所有权交接；调用层
 仍须绑定目标项目/目录、核对交接完成状态，并接好共享 pending/always 和独立变更流。
 没有新增通用 SQL 控制 RPC，没有启用自动迁移，也没有据此放开已冻结来源的 legacy run。
+
+### 共享审批事务基础（尚未自动接线）
+
+MIAP schema v4 将宿主断言与不可改写的请求结算事件保存在共享 Root。可信宿主显式绑定
+项目和隐式本地目录，再由实际 Runtime 捕获不可构造的来源 handle；admit/status/reply/cancel
+均在附加真实 Session 来源的 Root 写事务内检查 workspace、bridge、run/epoch 与取消状态。
+请求摘要绑定 Root UUID、项目、目录、来源数据库、Runtime owner、run 及完整工具来源；
+相同 ID 的不同内容或来源冲突拒绝，精确重试不追加相同结果。显式 workspace 身份暂不启用。
+
+Always 仅保存请求明确提供的 save 模式，目录规则、revision 变更流、请求结果及结算事件
+同一事务提交。第二条规则写入失败会回滚前一条、reply 与所有事件。once 不留下 standing
+规则；过期、撤销后的请求不能追加 always。当前 agent deny 优先于 Root 中新保存的 allow。
+独立连接修改规则后，只能由真正持有活跃来源的归属者在 status 中重新求值自己的 pending；
+不为其他进程伪造 bridge，也不把 Root 控制读取当作执行许可。
+
+此库级 API 尚未挂入 Runtime/宿主 RPC，没有新增激活能力声明。来源终结时的共享记录清理、
+reject 的既有同 Session 等待者结算、同 Runtime 的多来源重新求值、变更订阅唤醒、完整迁移
+回执校验及冻结后执行路径仍需完成；在这些边界落实前不得启用共享后端或宣布 S6 验收。
