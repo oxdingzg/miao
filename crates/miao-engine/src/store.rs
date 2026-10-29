@@ -3468,6 +3468,10 @@ impl Store {
     /// the event ledger — the blackbox replay pins journal payloads exactly
     /// and cannot reproduce them — so latencies live in this side table and
     /// surface only through `usage_report`.
+    ///
+    /// The billed turn settles into the same row first, so this has to write
+    /// TTFT into an existing row: an `INSERT OR IGNORE` here was silently
+    /// dropped and every turn reported a zero TTFT.
     pub async fn record_timing(
         &self,
         session: &str,
@@ -3478,7 +3482,8 @@ impl Store {
         let (session, run) = (session.to_owned(), run.to_owned());
         self.call(move |conn| {
             conn.execute(
-                "INSERT OR IGNORE INTO engine_timing(session_id,run_id,step,ttft_ms) VALUES(?1,?2,?3,?4)",
+                "INSERT INTO engine_timing(session_id,run_id,step,ttft_ms) VALUES(?1,?2,?3,?4)
+                 ON CONFLICT(session_id,run_id,step) DO UPDATE SET ttft_ms=excluded.ttft_ms",
                 params![session, run, step, ttft_ms],
             )?;
             Ok(())

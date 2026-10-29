@@ -106,3 +106,48 @@ async fn usage_report_aggregates_turns_tokens_ttft_and_lineage() {
     assert_eq!(empty["tools"]["calls"], 0);
     assert_eq!(empty["turnsDetail"].as_array().unwrap().len(), 0);
 }
+
+/// The runtime settles the billed turn before it records TTFT, so the timing
+/// row already exists when the latency lands. Both orders must keep both
+/// values: an `INSERT OR IGNORE` here dropped every TTFT ever recorded.
+#[tokio::test]
+async fn a_settled_turn_keeps_its_ttft_recorded_afterwards() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store
+        .admit(miao_engine::protocol::Input {
+            agent_references: Default::default(),
+            command: None,
+            session_id: "s".into(),
+            input_id: "seed".into(),
+            prompt: "task".into(),
+            delivery: miao_engine::protocol::Delivery::Steer,
+        })
+        .await
+        .unwrap();
+    store
+        .record(
+            "s",
+            "provider.started",
+            json!({"run_id":"r1","step":0,"identity":{"protocol":"openai-chat","model":"glm-5.3-flash"}}),
+        )
+        .await
+        .unwrap();
+    store
+        .record(
+            "s",
+            "usage",
+            json!({"run_id":"r1","step":0,"usage":{"inputTokens":200,"outputTokens":10}}),
+        )
+        .await
+        .unwrap();
+    store
+        .record_turn_time("s", "r1", 0, 1_700_000_000_000)
+        .await
+        .unwrap();
+    store.record_timing("s", "r1", 0, 4200).await.unwrap();
+    let report = store.usage_report("s").await.unwrap();
+    assert_eq!(report["ttftMs"]["count"], 1);
+    assert_eq!(report["ttftMs"]["max"], 4200);
+    assert_eq!(report["turnsDetail"][0]["turnMs"], 1_700_000_000_000u64);
+}
