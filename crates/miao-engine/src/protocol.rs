@@ -575,6 +575,35 @@ pub enum Command {
     PermissionEvaluate {
         request: crate::permission_rules::Request,
     },
+    /// Query only the Runtime-owned authority of a live reverse product call.
+    ProductPermissionEvaluate {
+        source: crate::product_permission::Source,
+        request: crate::product_permission::Request,
+    },
+    ProductPermissionAdmit {
+        source: crate::product_permission::Source,
+        input: crate::product_permission_request::Input,
+    },
+    ProductPermissionStatus {
+        source: crate::product_permission::Source,
+        request_id: String,
+    },
+    /// Withdraw only this source's assertion without rejecting sibling requests.
+    ProductPermissionCancel {
+        source: crate::product_permission::Source,
+        request_id: String,
+    },
+    ProductPermissionReply {
+        source: crate::product_permission::Source,
+        response: crate::product_permission_request::Response,
+    },
+    ProductPermissionPending {
+        session_id: String,
+    },
+    /// Standing allow patterns owned by this Runtime's canonical workspace.
+    PermissionPatternList,
+    PermissionPatternPut(crate::permission_patterns::Put),
+    PermissionPatternRemove(crate::permission_patterns::Remove),
     /// Project the product's saved "always allow" rules into the engine store
     /// (S6 step 2). Idempotent by rule digest; scoped to one workspace.
     PermissionSavedProject {
