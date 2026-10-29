@@ -558,7 +558,8 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
     string,
     { owner: Owner; children: Set<string>; hooks: Set<() => void> }
   >()
-  const bridgeCalls = new Map<number, string>()
+  const bridgeCalls = new Map<number, { sessionID: string; callID: string }>()
+  const workflowKey = (sessionID: string, callID: string) => JSON.stringify([sessionID, callID])
 
   const makeWorkflow = (sessionID: SessionSchema.ID): Tool.AnyTool => {
     if (!agents || !creation)
@@ -614,12 +615,12 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
             ),
             Effect.mapError(() => new ToolFailure({ message: "Could not record the subagent Session." })),
           )
-        const run = workflowRuns.get(context.toolCallID) ?? {
+        const run = workflowRuns.get(workflowKey(sessionID, context.toolCallID)) ?? {
           owner,
           children: new Set<string>(),
           hooks: new Set<() => void>(),
         }
-        workflowRuns.set(context.toolCallID, run)
+        workflowRuns.set(workflowKey(sessionID, context.toolCallID), run)
         run.children.add(child)
         yield* Effect.tryPromise(async () => {
           await owner.session.watch(child)
@@ -871,7 +872,7 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
   options.productToolsFile = file
   options.onProductTool = async (call) => {
     const sessionID = SessionSchema.ID.make(call.sessionID)
-    bridgeCalls.set(call.bridgeID, call.callID)
+    bridgeCalls.set(call.bridgeID, { sessionID: call.sessionID, callID: call.callID })
     try {
       const output = await Effect.runPromise(
         Effect.gen(function* () {
@@ -934,37 +935,31 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
       return output
     } finally {
       bridgeCalls.delete(call.bridgeID)
-      workflowRuns.delete(call.callID)
+      workflowRuns.delete(workflowKey(call.sessionID, call.callID))
     }
   }
   options.onProductToolCancel = (notice) => {
-    // The engine dropped the pending reply slot, so only the spawned children
-    // and the script's waiters need releasing here.
+    // Capture before any async work: aborting the parent can run its finally
+    // block and remove both indexes while child cancellation is still pending.
+    const call = bridgeCalls.get(notice.bridgeID)
+    if (!call || call.sessionID !== notice.sessionID) return
+    const run = workflowRuns.get(workflowKey(call.sessionID, call.callID))
+    if (!run) return
+    for (const hook of run.hooks) hook()
     void Effect.runPromise(
       Effect.gen(function* () {
-        const found = yield* SessionEnginePlacement.find(db, SessionSchema.ID.make(notice.sessionID))
-        if (!found || found.engine !== "rust") return
-        const owner = yield* router.get({
-          storage: found.storage,
-          engineID: found.storage,
-          location: found.location,
-        })
-        const callID = bridgeCalls.get(notice.bridgeID)
-        const run = callID ? workflowRuns.get(callID) : undefined
-        if (!run) return
-        for (const hook of run.hooks) hook()
         for (const child of run.children) {
-          const cancelled = yield* Effect.exit(
+          yield* Effect.exit(
             Effect.tryPromise({
-              try: () => owner.client.cancel(child),
+              try: () => run.owner.client.cancel(child),
               catch: () => new Error("cancel failed"),
             }),
           )
-          void cancelled
         }
       }),
     ).catch(() => {})
   }
+
   return options
 })
 
