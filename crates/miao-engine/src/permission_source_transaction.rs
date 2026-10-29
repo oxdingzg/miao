@@ -79,6 +79,36 @@ fn with_sources<T>(
         )],
     ) -> Result<T, Error>,
 ) -> Result<T, Error> {
+    with_locked_source_database(connection, path, |transaction, callback| {
+        let product = context.product.read().unwrap();
+        if !product
+            .bridge
+            .as_ref()
+            .is_some_and(|bridge| bridge.same_connection(&context.bridge))
+        {
+            return Err(Error::Invalid("inactive shared permission source".into()));
+        }
+        context
+            .bridge
+            .with_permission_sources(&context.source, |sources| {
+                require_active(&transaction, context)?;
+                callback.store(true, Ordering::SeqCst);
+                let guard = CallbackPhase(callback.clone());
+                let result = execute(&transaction, sources);
+                drop(guard);
+                let result = result?;
+                require_active(&transaction, context)?;
+                transaction.commit()?;
+                Ok(result)
+            })
+    })
+}
+
+pub(crate) fn with_locked_source_database<T>(
+    connection: &mut Connection,
+    path: &Path,
+    execute: impl FnOnce(Transaction<'_>, Arc<AtomicBool>) -> Result<T, Error>,
+) -> Result<T, Error> {
     if !connection.is_autocommit() || !path.is_file() {
         return Err(Error::Invalid(
             "permission source transaction requires an existing store".into(),
@@ -130,27 +160,7 @@ fn with_sources<T>(
         // SQLite acquires both databases before any process-local source lock.
         // Only main is writable, so no multi-database WAL atomicity is assumed.
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let product = context.product.read().unwrap();
-        if !product
-            .bridge
-            .as_ref()
-            .is_some_and(|bridge| bridge.same_connection(&context.bridge))
-        {
-            return Err(Error::Invalid("inactive shared permission source".into()));
-        }
-        context
-            .bridge
-            .with_permission_sources(&context.source, |sources| {
-                require_active(&transaction, context)?;
-                callback.store(true, Ordering::SeqCst);
-                let guard = CallbackPhase(callback.clone());
-                let result = execute(&transaction, sources);
-                drop(guard);
-                let result = result?;
-                require_active(&transaction, context)?;
-                transaction.commit()?;
-                Ok(result)
-            })
+        execute(transaction, callback)
     })();
     connection.authorizer(None::<fn(AuthContext<'_>) -> Authorization>);
     let detached = connection.execute_batch("DETACH DATABASE permission_source");

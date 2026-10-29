@@ -1360,3 +1360,12 @@ requests lack a provable durable source: upgrade retains history and cancels the
 with `source_metadata_unavailable`, never retries a provider or changes saved
 rules. Old request INSERTs without metadata are refused. A corrupt old request
 rolls back the entire upgrade, preserving Root identity, rules and rule cursors.
+
+`Context.recover_source_requests(Store, after, limit)` conservatively sweeps a
+bounded page (1..256) for that exact database and context. The cursor advances
+past live rows. A Root write transaction locks the attached real source read-only
+and checks the recorded run/tool/location/epoch/PID and process existence. Live
+or uncertain foreign owners stay pending; inactive sources are only cancelled or
+expired. Receipts/events commit together or the page rolls back. No Session
+history/run, standing rule, provider or execution is changed. Runtime startup and
+finalization still need to call this library boundary explicitly.

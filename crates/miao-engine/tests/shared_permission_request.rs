@@ -924,3 +924,292 @@ async fn a_corrupt_legacy_request_rolls_back_the_entire_source_metadata_upgrade(
     assert_eq!(context.snapshot().await.unwrap(), before.snapshot);
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn recovery_pages_pass_live_sources_and_cancel_only_the_actual_finished_database() {
+    use miao_engine::product_permission_request::State;
+    let (directory, store, runtime, wire) = running().await;
+    let workspace = directory.path().join("workspace");
+    let (_peer_directory, peer_store, peer, peer_wire, mut receive) =
+        running_in_workspace(None, Some(&workspace)).await;
+    tokio::spawn(async move { while receive.recv().await.is_some() {} });
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let peer_source = peer
+        .capture_permission_source(&peer.controller(), &peer_wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .admit_request(&source, assertion("a-live", "public", &[]))
+        .await
+        .unwrap();
+    context
+        .admit_request(&source, assertion("b-live", "public", &[]))
+        .await
+        .unwrap();
+    let foreign = context
+        .admit_request(&peer_source, assertion("foreign-db", "public", &[]))
+        .await
+        .unwrap();
+    assert!(context
+        .recover_source_requests(&store, None, 0)
+        .await
+        .is_err());
+    let first = context
+        .recover_source_requests(&store, None, 1)
+        .await
+        .unwrap();
+    assert_eq!(first.settled, 0);
+    assert!(first.has_more);
+    assert_eq!(first.after.as_deref(), Some("a-live"));
+    let last = context
+        .recover_source_requests(&store, first.after, 1)
+        .await
+        .unwrap();
+    assert_eq!(last.settled, 0);
+    assert!(!last.has_more);
+    assert!(runtime.cancel("s").await.unwrap());
+    runtime.shutdown().await;
+    let events = store.events("s", 0, 1000).await.unwrap().len();
+    let recovered = context
+        .recover_source_requests(&store, None, 256)
+        .await
+        .unwrap();
+    assert_eq!(recovered.settled, 2);
+    assert_eq!(
+        context
+            .recover_source_requests(&store, None, 256)
+            .await
+            .unwrap()
+            .settled,
+        0
+    );
+    assert_eq!(
+        store.events("s", 0, 1000).await.unwrap().len(),
+        events,
+        "recovery wrote the Session source"
+    );
+    assert_eq!(
+        context
+            .request_status(&peer_source, foreign.id)
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    assert_eq!(
+        context
+            .recover_source_requests(&peer_store, None, 256)
+            .await
+            .unwrap()
+            .settled,
+        0
+    );
+    assert!(context.snapshot().await.unwrap().patterns.is_empty());
+    peer.shutdown().await;
+}
+
+#[tokio::test]
+async fn recovery_failure_rolls_back_all_root_receipts_and_never_writes_the_source() {
+    let (directory, store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .admit_request(&source, assertion("a-retire", "public", &[]))
+        .await
+        .unwrap();
+    context
+        .admit_request(&source, assertion("b-retire", "public", &[]))
+        .await
+        .unwrap();
+    runtime.cancel("s").await.unwrap();
+    runtime.shutdown().await;
+    let events = store.events("s", 0, 1000).await.unwrap().len();
+    let sql = rusqlite::Connection::open(directory.path().join("permissions.db")).unwrap();
+    sql.execute_batch("CREATE TRIGGER fixture_failed_recovery BEFORE INSERT ON permission_request_event WHEN NEW.request_id='b-retire' AND NEW.state='cancelled' BEGIN SELECT RAISE(ABORT,'injected recovery event failure'); END;").unwrap();
+    assert!(context
+        .recover_source_requests(&store, None, 256)
+        .await
+        .is_err());
+    assert_eq!(
+        sql.query_row(
+            "SELECT count(*) FROM permission_request WHERE state='pending'",
+            [],
+            |row| row.get::<_, u32>(0)
+        )
+        .unwrap(),
+        2
+    );
+    assert_eq!(
+        sql.query_row("SELECT count(*) FROM permission_request_event", [], |row| {
+            row.get::<_, u32>(0)
+        })
+        .unwrap(),
+        2
+    );
+    assert_eq!(store.events("s", 0, 1000).await.unwrap().len(), events);
+    sql.execute_batch("DROP TRIGGER fixture_failed_recovery")
+        .unwrap();
+    assert_eq!(
+        context
+            .recover_source_requests(&store, None, 256)
+            .await
+            .unwrap()
+            .settled,
+        2
+    );
+    assert_eq!(
+        context
+            .recover_source_requests(&store, None, 256)
+            .await
+            .unwrap()
+            .settled,
+        0
+    );
+    assert!(context.snapshot().await.unwrap().patterns.is_empty());
+}
+
+struct OwnerProcess {
+    child: std::process::Child,
+    directory: Option<std::path::PathBuf>,
+}
+
+impl Drop for OwnerProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        if let Some(directory) = &self.directory {
+            let _ = std::fs::remove_dir_all(directory);
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "subprocess fixture selected explicitly by the owner-exit test"]
+async fn shared_owner_subprocess_helper() {
+    let root = std::path::PathBuf::from(
+        std::env::var_os("MIAO_SHARED_OWNER_FIXTURE").expect("owner fixture root"),
+    );
+    let (directory, store, runtime, wire, _receive) =
+        running_in_workspace(None, Some(&root.join("workspace"))).await;
+    let context = miao_engine::permission_project::Authority::open(root.join("permissions.db"))
+        .await
+        .unwrap()
+        .project("fixture".into())
+        .unwrap()
+        .context(root.join("workspace"), None)
+        .await
+        .unwrap();
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    context
+        .admit_request(&source, assertion("child-pending", "public/file", &[]))
+        .await
+        .unwrap();
+    std::fs::write(
+        root.join("ready.part"),
+        serde_json::to_vec(&json!({"source":store.path(),"directory":directory.path()})).unwrap(),
+    )
+    .unwrap();
+    std::fs::rename(root.join("ready.part"), root.join("ready.json")).unwrap();
+    std::future::pending::<()>().await;
+    runtime.shutdown().await;
+    drop(directory);
+}
+
+#[tokio::test]
+async fn an_actual_foreign_process_is_preserved_while_live_and_cancelled_after_it_exits() {
+    let root = tempfile::tempdir().unwrap();
+    let mut owner = OwnerProcess {
+        child: std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored", "--exact", "shared_owner_subprocess_helper"])
+            .env("MIAO_SHARED_OWNER_FIXTURE", root.path())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+        directory: None,
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !root.path().join("ready.json").exists() {
+        assert!(
+            owner.child.try_wait().unwrap().is_none(),
+            "owner fixture exited before readiness"
+        );
+        assert!(
+            std::time::Instant::now() < deadline,
+            "owner fixture readiness timed out"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let ready: Value =
+        serde_json::from_slice(&std::fs::read(root.path().join("ready.json")).unwrap()).unwrap();
+    owner.directory = Some(std::path::PathBuf::from(
+        ready["directory"].as_str().unwrap(),
+    ));
+    let source = Store::open(ready["source"].as_str().unwrap())
+        .await
+        .unwrap();
+    let context =
+        miao_engine::permission_project::Authority::open(root.path().join("permissions.db"))
+            .await
+            .unwrap()
+            .project("fixture".into())
+            .unwrap()
+            .context(root.path().join("workspace"), None)
+            .await
+            .unwrap();
+    let events = source.events("s", 0, 1000).await.unwrap().len();
+    assert_eq!(
+        context
+            .recover_source_requests(&source, None, 16)
+            .await
+            .unwrap()
+            .settled,
+        0,
+        "a foreign live source was treated as abandoned"
+    );
+    owner.child.kill().unwrap();
+    owner.child.wait().unwrap();
+    assert_eq!(
+        context
+            .recover_source_requests(&source, None, 16)
+            .await
+            .unwrap()
+            .settled,
+        1
+    );
+    assert_eq!(
+        context
+            .recover_source_requests(&source, None, 16)
+            .await
+            .unwrap()
+            .settled,
+        0
+    );
+    let sql = rusqlite::Connection::open(root.path().join("permissions.db")).unwrap();
+    let record: String = sql
+        .query_row(
+            "SELECT data FROM permission_request WHERE id='child-pending'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let record: Value = serde_json::from_str(&record).unwrap();
+    assert_eq!(record["state"], "cancelled");
+    assert_eq!(record["reason"], "source_owner_exited");
+    assert_eq!(
+        source.events("s", 0, 1000).await.unwrap().len(),
+        events,
+        "cleanup wrote Session history or replayed work"
+    );
+    assert!(
+        source.active_run("s").await.unwrap().is_some(),
+        "cleanup altered the source run"
+    );
+    assert!(context.snapshot().await.unwrap().patterns.is_empty());
+    source.close().await.unwrap();
+}
