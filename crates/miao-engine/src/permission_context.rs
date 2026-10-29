@@ -1,5 +1,5 @@
 //! Directory standing rules share the project database without becoming project
-//! grants. This storage boundary is not connected to Runtime authorization yet.
+//! grants. Runtime selection requires an explicit completed handoff binding.
 use crate::{
     permission::digest,
     permission_patterns::{Origin, Pattern},
@@ -58,6 +58,22 @@ impl HandoffBinding {
             runtime,
             owner_pid: std::process::id(),
         }
+    }
+
+    pub(crate) async fn root_path(&self) -> Result<std::path::PathBuf, Error> {
+        let path: String = self
+            .context
+            .project
+            .authority
+            .call(|connection| {
+                Ok(connection.query_row(
+                    "SELECT file FROM pragma_database_list WHERE name='main'",
+                    [],
+                    |row| row.get(0),
+                )?)
+            })
+            .await?;
+        Ok(tokio::fs::canonicalize(path).await?)
     }
 
     pub(crate) fn source(&self) -> crate::store::Store {
@@ -119,7 +135,7 @@ impl HandoffBinding {
         Ok(())
     }
 
-    /// Admit a run explicitly marked for the future shared Runtime backend.
+    /// Admit a run explicitly marked for the shared Runtime backend.
     /// Existing legacy run entry points remain fenced after handoff.
     pub async fn start_run_with_inputs_fenced(
         &self,
@@ -200,7 +216,7 @@ impl Project {
 
 impl Context {
     /// Bind a real completed source to this exact Root/project/directory before
-    /// a future shared Runtime is constructed. No cached caller snapshot is accepted.
+    /// a shared Runtime is constructed. No cached caller snapshot is accepted.
     pub async fn bind_handoff(
         &self,
         source: &crate::store::Store,

@@ -247,6 +247,13 @@ impl Runtime {
                 "shared Runtime requires paired project and directory handoffs".into(),
             ));
         }
+        let root = binding.root_path().await?;
+        if root.starts_with(std::path::Path::new(tools.location())) {
+            return Err(Error::Invalid(
+                "shared permission database must be outside the workspace".into(),
+            ));
+        }
+        let tools = tools.with_protected_resource(&root);
         Self::construct(
             binding.source(),
             provider,
