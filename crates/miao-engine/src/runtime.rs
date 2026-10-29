@@ -1089,6 +1089,14 @@ impl Runtime {
             .store
             .replace_saved_rules(self.inner.tools.location().to_owned(), rules)
             .await
+    /// Build a recap for a person coming back to this Session.
+    ///
+    /// A recap is a review artifact, not a context operation: it calls no
+    /// provider, writes no checkpoint and appends no message, so it cannot free
+    /// context and it cannot change the next request. Compaction does all three,
+    /// which is why the two verbs stay separate in the command vocabulary.
+    pub async fn recap(&self, session: &str) -> Result<Value, Error> {
+        self.inner.store.recap(session).await
     }
 
     pub async fn approve(

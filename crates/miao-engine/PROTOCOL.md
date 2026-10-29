@@ -33,6 +33,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `pin` | `session_id`, `pinned` | `{accepted:true, pinned}` |
 | `remove` | `session_id` | `{accepted:bool, reason?}` |
 | `request_compact` | `session_id` | `{accepted:true, duplicate, pending}` |
+| `recap` | `session_id` | `{seq, text, through_message_seq, messages_after_checkpoint, total_messages}` |
 | `select_agent` | `session_id`, `agent` | `{agent_hash, changed}` |
 | `select_account` | `session_id`, `credential_id` (string or null) | `{binding, account, changed}` |
 | `product_permission_evaluate` | `source`, `request` (active reverse-call facts) | `{effect, rules, authority_revision}` |
@@ -344,6 +345,17 @@ retaining the exact last provider request, and elision stays off). Every other
 gate still applies: only a completed answer is cut, never a tool continuation or
 a reverted transcript. Automatic compaction keeps its own trigger; this command
 does not change the budget.
+
+### Recap
+
+`recap` takes `session_id` and returns a human-facing summary of the Session as
+`{seq, text, through_message_seq, messages_after_checkpoint, total_messages}`,
+appending one `recap.created` event that carries the same text. It is a review
+artifact, not a context operation: it calls no provider, writes no checkpoint
+and appends no message, so `selected_history` is unchanged by it and the next
+request carries exactly what it would have carried otherwise. `through_message_seq`
+is the latest compaction checkpoint (null when the Session has none) and
+`messages_after_checkpoint` counts the window the provider still sees.
 
 An idle Session honours the request at its next provider turn rather than
 compacting in the middle of nothing, which is where a Session's settled boundary

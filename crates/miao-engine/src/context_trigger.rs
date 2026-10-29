@@ -377,7 +377,7 @@ fn message_excerpt(message: &Message, budget: usize) -> String {
 
 /// The largest char boundary at or below `budget`, with an explicit marker
 /// when anything was cut.
-fn bounded(text: &str, budget: usize) -> String {
+pub(crate) fn bounded(text: &str, budget: usize) -> String {
     if text.len() <= budget {
         return text.to_owned();
     }

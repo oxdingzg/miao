@@ -363,6 +363,12 @@ pub enum Command {
     RequestCompact {
         session_id: String,
     },
+    /// Build a human-facing recap of the Session. A review artifact only: it
+    /// appends no message and writes no checkpoint, so unlike `request_compact`
+    /// it never changes what the next provider request carries.
+    Recap {
+        session_id: String,
+    },
     /// Apply a host-resolved agent manifest to this Session's subsequent
     /// provider turns (ADR-0017). Resolution stays with the host; the engine
     /// records the manifest and applies it at the turn boundary.

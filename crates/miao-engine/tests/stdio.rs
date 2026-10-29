@@ -682,6 +682,7 @@ async fn a_slow_reader_does_not_kill_the_engine() {
 
 #[test]
 fn workspace_git_state_is_a_wire_command_that_answers_absent_repositories() {
+fn stdio_recap_is_a_wire_command_that_commits_no_checkpoint() {
     let dir = tempfile::tempdir().unwrap();
     let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
         .args([
@@ -704,6 +705,10 @@ fn workspace_git_state_is_a_wire_command_that_answers_absent_repositories() {
         json!({"id":2,"method":"vcs_status","params":{"session_id":"s"}}),
         json!({"id":3,"method":"vcs_status","params":{"session_id":"missing"}}),
         json!({"id":4,"method":"shutdown"}),
+        json!({"id":2,"method":"recap","params":{"session_id":"s"}}),
+        json!({"id":3,"method":"recap","params":{"session_id":"missing"}}),
+        json!({"id":4,"method":"events","params":{"session_id":"s","after":0}}),
+        json!({"id":5,"method":"shutdown"}),
     ];
     let mut stdin = process.stdin.take().unwrap();
     for request in requests {
@@ -735,6 +740,37 @@ fn workspace_git_state_is_a_wire_command_that_answers_absent_repositories() {
     assert!(
         replies.iter().find(|reply| reply["id"] == 3).unwrap()["error"].is_object(),
         "{replies:?}"
+    );
+    let result = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap()["result"].clone();
+    let recap = result(2);
+    assert!(
+        recap["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("## Session recap"),
+        "{recap}"
+    );
+    // The command answers on the wire and records a review artifact, while a
+    // Session that does not exist is refused rather than invented.
+    assert!(
+        replies
+            .iter()
+            .any(|r| r["id"] == 3 && r.get("error").is_some()),
+        "{replies:?}"
+    );
+    let kinds = result(4)
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|event| event["kind"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert!(
+        kinds.iter().any(|kind| kind == "recap.created"),
+        "{kinds:?}"
+    );
+    assert!(
+        kinds.iter().all(|kind| kind != "history.compacted"),
+        "{kinds:?}"
     );
 }
 
