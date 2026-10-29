@@ -10,6 +10,7 @@ import { PermissionV2 } from "@miao/core/permission"
 import { PermissionSource } from "@miao/core/permission/source"
 import { PermissionTable } from "@miao/core/permission/sql"
 import { PermissionSaved } from "@miao/core/permission/saved"
+import { PermissionHandoff } from "@miao/core/permission/handoff"
 import { Project } from "@miao/core/project"
 import { ProjectTable } from "@miao/core/project/sql"
 import { AbsolutePath } from "@miao/core/schema"
@@ -316,6 +317,29 @@ describe("PermissionV2", () => {
       expect(yield* service.list()).toEqual([])
       expect(yield* Deferred.await(replied)).toMatchObject({ requestID: request.id, reply: "reject" })
       yield* unsubscribe
+    }),
+  )
+
+  it.effect("frozen saved-rule sources refuse legacy list add and removal", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const saved = yield* PermissionSaved.Service
+      const database = yield* Database.Service
+      yield* saved.add({ projectID: Project.ID.global, action: "read", resources: ["frozen/**"] })
+      const id = (yield* saved.list({ projectID: Project.ID.global }))[0]!.id
+      yield* PermissionHandoff.prepare(database.db, {
+        projectID: Project.ID.global,
+        authority: "f9c5bc45-2f85-4511-9e39-e59a1cc33085",
+      })
+      expect((yield* saved.list({ projectID: Project.ID.global }).pipe(Effect.exit))._tag).toBe("Failure")
+      expect((yield* saved.list().pipe(Effect.exit))._tag).toBe("Failure")
+      expect(
+        (yield* saved.add({ projectID: Project.ID.global, action: "read", resources: ["new/**"] }).pipe(Effect.exit))
+          ._tag,
+      ).toBe("Failure")
+      expect((yield* saved.remove(id).pipe(Effect.exit))._tag).toBe("Failure")
+      expect((yield* saved.remove(PermissionSaved.ID.make("missing")).pipe(Effect.exit))._tag).toBe("Failure")
+      expect((yield* PermissionHandoff.read(database.db, Project.ID.global))?.rules).toHaveLength(1)
     }),
   )
 

@@ -40,7 +40,7 @@ test.skipIf(!process.env.MIAO_ENGINE_BIN)(
           expect(receipt).toEqual(value.migration)
           expect(value.cursor).toBeGreaterThan(256)
         }
-        expect(yield* database.db.get(sql`SELECT count(*) AS count FROM permission`)).toEqual({ count: 0 })
+        expect(yield* database.db.get(sql`SELECT count(*) AS count FROM permission_legacy`)).toEqual({ count: 0 })
         const persisted = yield* PermissionImportProjection.read(database.db, owner)
         expect(persisted).toEqual(values[0])
         yield* Effect.promise(() => fixture.client.close())
