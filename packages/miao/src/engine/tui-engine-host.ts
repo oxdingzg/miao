@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
 import { Credential } from "@miao/core/credential"
+import { Database } from "@miao/core/database/database"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { Global } from "@miao/core/global"
 import { Location } from "@miao/core/location"
@@ -20,6 +21,7 @@ import { compactionSettings, engineSettings, nativeEngineOptions } from "./nativ
 import { ProductFormatter } from "./product-formatter"
 import { ProductHooks } from "./product-hooks"
 import { ProductMcp } from "./product-mcp"
+import { ProductPermission } from "./product-permission"
 import { ProductRoutes } from "./product-routes"
 import { ProductTuiAgent } from "./product-tui-agent"
 
@@ -102,12 +104,22 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   const context = yield* AmbientContext.prepare(ref, effective)
   const hooks = yield* ProductHooks.prepare(ref, { ...effective, ...context.options })
   const formatter = yield* ProductFormatter.prepare(ref, effective)
+  // Resolve the Agent before a permission handoff can freeze legacy ownership.
   const agent = yield* ProductTuiAgent.prepare(effective)
+  const database = yield* Database.Service
+  const permission = yield* ProductPermission.prepare(ref, {
+    binary,
+    source: input.database,
+    database,
+    enabled: process.env.MIAO_SHARED_PERMISSIONS === "1",
+    savedRules: configuration.savedRules,
+  })
   const options: EngineOptions = {
     ...effective,
     ...context.options,
     ...hooks,
     ...formatter,
+    ...permission.options,
     ...agent,
     db: input.database,
     workspace: input.workspace,
@@ -151,7 +163,7 @@ async function startPlan(
       ),
       Effect.flatMap(() => Effect.promise(() => stop.promise)),
       Effect.scoped,
-      Effect.provide(LayerNode.compile(LayerNode.group([Global.node, Credential.node, McpAuth.node]))),
+      Effect.provide(LayerNode.compile(LayerNode.group([Global.node, Credential.node, McpAuth.node, Database.node]))),
       Effect.provide(LocationServiceMap.Service.get(ref)),
       Effect.provide(locationServiceMapLayer),
       Effect.onExit(() =>
@@ -225,8 +237,8 @@ async function runEngine(argv: string[], env: Record<string, string | undefined>
 
 /**
  * Runs the engine the Rust TUI asked for, through the product's engine plan.
- * A plan that cannot be prepared falls back to the TUI's own argv so the engine
- * still reports its own reason instead of the TUI showing a shim failure.
+ * Preparation failures terminate startup, including partially completed permission
+ * handoffs; raw engine arguments cannot recover that ownership safely.
  */
 export async function runEngineShim(args: string[]): Promise<number> {
   const parsed = parseTuiEngineArgs(args)
@@ -255,7 +267,7 @@ export async function runEngineShim(args: string[]): Promise<number> {
     )
     return undefined
   })
-  if (!started) return runEngine([binary, ...args], { ...process.env })
+  if (!started) return 1
   try {
     return await runEngine(started.plan.argv, started.plan.env)
   } finally {
