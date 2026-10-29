@@ -50,7 +50,7 @@ const MAX_REFERENCE_ID: usize = 128;
 /// foreground wait holds its parent's subagent permit until the whole subtree
 /// finishes, which serializes the shared budget into what looks like a hang.
 pub(crate) fn is_delegation_tool(name: &str) -> bool {
-    matches!(name, "task" | "task_list" | "task_result" | "task_cancel")
+    matches!(name, "task" | "task_list" | "task_result" | "task_cancel" | "workflow")
 }
 
 /// One archived tool output of the delegating Session, named by its handle.
