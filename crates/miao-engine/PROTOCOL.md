@@ -75,6 +75,24 @@ closed pipe (a dead host) or `shutdown` ends the stream. The durable cursor
 still makes replay→live independent of any transient frame, so a client that
 does disconnect can resume from committed events.
 
+### Waiting notices
+
+A turn can hold for minutes without writing anything durable: an approval the
+user has not answered, a slow shell command, a language server or an MCP server
+that has not replied. Both waits announce themselves on the `progress` channel
+so a client can distinguish them from an engine that died.
+
+| Kind | Emitted while | Payload |
+| --- | --- | --- |
+| `provider.waiting` | the provider has produced no first token | `session_id`, `run_id`, `step`, `attempt`, `elapsed_ms` |
+| `tool.waiting` | a serial call is dispatched and not settled | `session_id`, `run_id`, `step`, `call_id`, `tool`, `elapsed_ms` |
+
+`tool.waiting` repeats every five seconds for one outstanding call, covers the
+approval, hook and execution phases in between, and stops as soon as the call
+settles. Calls settled by the read batch never announce a wait, and neither
+notice is a substitute for a durable fact: both are absent from the journal,
+from `events`, and from `export`, and neither counts as turn progress.
+
 ## Lifecycle event vocabulary
 
 The ~13 core events below are the frozen M0 surface. They are recorded as
