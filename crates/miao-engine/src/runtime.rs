@@ -5139,7 +5139,7 @@ async fn authorize(
                 // projecting the session status needs to know the wait ended,
                 // or the phase reads as waiting for approval while a tool runs.
                 inner.store.record(session,"permission.approved",json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource()})).await?;
-                return Ok(true)
+                return Ok(true);
             }
             "pending" => {}
             _ => {
