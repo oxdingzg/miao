@@ -39,9 +39,10 @@ export const Output = Schema.Struct({
   background: Schema.Boolean.pipe(Schema.optional),
 })
 
-const DESCRIPTION = [
+export const DESCRIPTION = [
   "Launch a specialized subagent to perform one scoped task and return its final report.",
-  "Use it for independent research or work that would otherwise flood the main context.",
+  "Delegate only when it pays off across four axes: parallelism (the slice has no strict dependency on the parent and can overlap its work), context volume (it would flood the main context with intermediate output and you only need the conclusion), specialization (it needs a different agent or toolset than this one), and redo cost (redoing a failed slice costs less than doing it inline).",
+  "Do not delegate a strictly sequential slice that needs this Session's live context, a one-line answer, or any task you cannot describe in a self-sufficient prompt — the child cannot see this conversation.",
   "Pass task_id to continue a previous subagent session instead of starting a fresh one.",
   "Set background to true for independent work so the parent can continue. Use task_list/task_result/task_cancel to observe or control it.",
 ].join(" ")
