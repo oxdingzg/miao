@@ -292,3 +292,57 @@ test.skipIf(!binary)(
   },
   30_000,
 )
+
+test.skipIf(!binary)(
+  "handoff checks its durable destination before writes and before receipt retries",
+  async () => {
+    await using tmp = await tmpdir()
+    const first = EngineClient.startPermissionStore({
+      binary: binary!,
+      db: path.join(tmp.path, "first.db"),
+      project: "project",
+    })
+    const other = EngineClient.startPermissionStore({
+      binary: binary!,
+      db: path.join(tmp.path, "other.db"),
+      project: "project",
+    })
+    const rules = ["legacy-a", "legacy-b"].map((id) => ({
+      id,
+      rule: { action: "read", resource: `${id}/**`, effect: "allow" },
+    }))
+    try {
+      expect(capabilities(binary!)?.permissionProjectHandoff).toBe(1)
+      const initial = await snapshot(first)
+      const foreign = await snapshot(other)
+      expect(initial.authority).not.toBe(foreign.authority)
+      expect(await failure(other.request("handoff", { authority: initial.authority, rules }))).toMatchObject({
+        code: "invalid_request",
+        message: expect.stringContaining("destination mismatch"),
+      })
+      expect(await snapshot(other)).toEqual(foreign)
+      const imported = Schema.decodeUnknownSync(Snapshot)(
+        await first.request("handoff", { authority: initial.authority, rules }),
+      )
+      expect(imported.rules).toHaveLength(2)
+      expect(await first.request("remove", { id: "legacy-a" })).toEqual({ removed: true })
+      const revoked = await snapshot(first)
+      expect(
+        Schema.decodeUnknownSync(Snapshot)(
+          await first.request("handoff", { authority: initial.authority, rules: [...rules].reverse() }),
+        ),
+      ).toEqual(revoked)
+      expect(await failure(first.request("handoff", { authority: foreign.authority, rules }))).toMatchObject({
+        code: "invalid_request",
+      })
+      expect(await snapshot(first)).toEqual(revoked)
+      expect(
+        await failure(first.request("handoff", { authority: initial.authority, project: "other", rules })),
+      ).toMatchObject({ code: "invalid_request" })
+      expect(await snapshot(first)).toEqual(revoked)
+    } finally {
+      await Promise.all([first.close(), other.close()])
+    }
+  },
+  30_000,
+)
