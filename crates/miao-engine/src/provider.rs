@@ -162,8 +162,10 @@ pub(crate) fn decode_tool_call(
         Ok(input) if input.is_object() => {
             Ok(json!({"type":"tool_use","id":id,"name":name,"input":input}))
         }
-        Ok(_) => Err(ProviderError::Stream("tool input must be an object".into())),
-        Err(_) => Ok(
+        // A body that parses but is not an object is the same correctable
+        // mistake as garbled JSON, so it settles the same way instead of
+        // tearing down the stream and ending the whole run.
+        _ => Ok(
             json!({"type":"tool_use","id":id,"name":name,"input":null,"input_error":"invalid_json"}),
         ),
     }
@@ -1278,6 +1280,42 @@ fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
     let at = chrono::DateTime::parse_from_rfc2822(value).ok()?;
     let wait = at.timestamp_millis() - chrono::Utc::now().timestamp_millis();
     (wait > 0).then(|| Duration::from_millis(wait as u64))
+}
+
+#[cfg(test)]
+mod tool_call_decode_tests {
+    use super::*;
+
+    /// Every provider adapter funnels arguments through this decode, so the
+    /// matrix pins what each malformed shape settles as: an object keeps its
+    /// input, and anything else — garbled JSON included — becomes a correctable
+    /// input error instead of an error that ends the stream.
+    #[test]
+    fn malformed_tool_arguments_settle_as_input_errors() {
+        let decode = |arguments: &str| decode_tool_call("call_1", "read_file", arguments).unwrap();
+        assert_eq!(
+            decode(r#"{"path":"src/main.rs"}"#),
+            json!({"type":"tool_use","id":"call_1","name":"read_file","input":{"path":"src/main.rs"}}),
+        );
+        for arguments in [
+            r#"{"path":"src/ma"#,
+            "",
+            "null",
+            "42",
+            "[1,2]",
+            r#""a string""#,
+            "true",
+        ] {
+            let decoded = decode(arguments);
+            assert_eq!(
+                decoded["input_error"], "invalid_json",
+                "arguments {arguments:?} must settle as a correctable input error"
+            );
+            assert_eq!(decoded["input"], json!(null));
+            assert_eq!(decoded["id"], "call_1");
+            assert_eq!(decoded["name"], "read_file");
+        }
+    }
 }
 
 #[cfg(test)]
