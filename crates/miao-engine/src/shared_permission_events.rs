@@ -38,6 +38,10 @@ pub struct Event {
     pub seq: u64,
     pub phase: Phase,
     pub record: Record,
+    // Execution identity is used locally to avoid resurrecting deleted Session
+    // history. Keep the public notification and its durable digest unchanged.
+    #[serde(skip_serializing, default)]
+    pub(crate) origin: Option<Origin>,
 }
 
 #[derive(Debug, Serialize)]
@@ -102,7 +106,7 @@ impl Context {
                     if record.id!=id || record.request.request_id!=id || record.workspace!=context.directory || record.input_hash!=hash || binding!=expected {
                         return Err(Error::Invalid("invalid shared request event binding".into()));
                     }
-                    Ok(Event{seq,phase:if resolved {Phase::Resolved} else {Phase::Admitted},record})
+                    Ok(Event{seq,phase:if resolved {Phase::Resolved} else {Phase::Admitted},record,origin:Some(origin)})
                 }).collect::<Result<Vec<_>,Error>>()?
             };
             let has_more=events.len()>limit;
@@ -159,8 +163,15 @@ impl Context {
                     (Phase::Resolved,_)=>Some("product.permission.resolved"),
                 };
                 if let Some(kind)=kind {
-                    append(&transaction,&event.record.source.session_id,kind,serde_json::to_value(&event.record)?)?;
-                    emitted+=1;
+                    let origin=event.origin.as_ref().ok_or_else(||Error::Invalid("request notification has no local execution origin".into()))?;
+                    let exists:bool=transaction.query_row("SELECT EXISTS(SELECT 1 FROM engine_run WHERE id=?1 AND session_id=?2)",params![origin.run_id,event.record.source.session_id],|row|row.get(0))?;
+                    // Session deletion intentionally removes this execution.
+                    // Consume its Root notification without recreating history,
+                    // even if the old Session ID has since been reused.
+                    if exists {
+                        append(&transaction,&event.record.source.session_id,kind,serde_json::to_value(&event.record)?)?;
+                        emitted+=1;
+                    }
                 }
                 transaction.execute("INSERT INTO engine_root_permission_event(authority,seq,digest) VALUES(?1,?2,?3)",params![authority,event.seq,hash])?;
             }

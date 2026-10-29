@@ -262,3 +262,14 @@ test.skipIf(process.platform === "win32")(
     }
   },
 )
+
+test("shared permission selection refuses engines without the exact runtime contract", () => {
+  const input = { environment: { MIAO_ENGINE_BIN: "/chosen" }, exists: () => true, requireSharedPermissions: true }
+  for (const revision of [undefined, 0, 2])
+    expect(() =>
+      resolveEngine({ ...input, probe: () => ({ ...engine(2), sharedPermissionRuntime: revision }) }),
+    ).toThrow("shared permission Runtime 1")
+  expect(resolveEngine({ ...input, probe: () => ({ ...engine(2), sharedPermissionRuntime: 1 }) })?.binary).toBe(
+    "/chosen",
+  )
+})
