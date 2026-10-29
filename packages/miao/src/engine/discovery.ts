@@ -36,6 +36,7 @@ export type Capabilities = {
   permissionProjectHandoff?: number
   permissionContextHandoff?: number
   permissionSourceHandoff?: number
+  permissionChangefeed?: number
   permissionProjectStore?: number
   permissionImportChanges?: number
   productPermissionRequests?: number
@@ -101,6 +102,7 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (wire.permission_project_handoff !== undefined && !isRevision(wire.permission_project_handoff)) return undefined
     if (wire.permission_context_handoff !== undefined && !isRevision(wire.permission_context_handoff)) return undefined
     if (wire.permission_source_handoff !== undefined && !isRevision(wire.permission_source_handoff)) return undefined
+    if (wire.permission_changefeed !== undefined && !isRevision(wire.permission_changefeed)) return undefined
     if (wire.permission_context_store !== undefined && !isRevision(wire.permission_context_store)) return undefined
     if (wire.permission_project_store !== undefined && !isRevision(wire.permission_project_store)) return undefined
     return {
@@ -116,6 +118,7 @@ export function capabilities(binary: string): Capabilities | undefined {
       ...(typeof wire.permission_context_handoff === "number"
         ? { permissionContextHandoff: wire.permission_context_handoff }
         : {}),
+      ...(typeof wire.permission_changefeed === "number" ? { permissionChangefeed: wire.permission_changefeed } : {}),
       ...(typeof wire.permission_source_handoff === "number"
         ? { permissionSourceHandoff: wire.permission_source_handoff }
         : {}),

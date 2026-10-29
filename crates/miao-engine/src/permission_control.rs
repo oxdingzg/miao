@@ -23,11 +23,15 @@ struct Request {
 #[serde(tag = "method", content = "params", rename_all = "snake_case")]
 enum Command {
     Snapshot,
+    Observe,
+    Changes(crate::permission_changefeed::Input),
     Migrate(Migrate),
     Handoff(Handoff),
     Put(crate::permission_patterns::Put),
     Remove(Remove),
     ContextSnapshot,
+    ContextObserve,
+    ContextChanges(crate::permission_changefeed::Input),
     ContextPut(crate::permission_patterns::Put),
     ContextRemove(Remove),
     ContextMigrate(ContextMigrate),
@@ -132,6 +136,14 @@ impl Controller {
         let shutdown = matches!(request.command, Command::Shutdown);
         let result: Result<Value, Error> = async {
             Ok(match request.command {
+                Command::Observe => serde_json::to_value(self.project.observe().await?)?,
+                Command::Changes(input) => {
+                    serde_json::to_value(self.project.changes(input).await?)?
+                }
+                Command::ContextObserve => serde_json::to_value(self.context()?.observe().await?)?,
+                Command::ContextChanges(input) => {
+                    serde_json::to_value(self.context()?.changes(input).await?)?
+                }
                 Command::Snapshot => serde_json::to_value(self.project.snapshot().await?)?,
                 Command::Migrate(input) => {
                     serde_json::to_value(self.project.migrate(input.rules).await?)?

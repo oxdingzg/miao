@@ -36,6 +36,7 @@ pub mod openai_responses;
 pub mod patch;
 pub mod pdf;
 pub mod permission;
+pub mod permission_changefeed;
 pub mod permission_context;
 pub mod permission_control;
 pub mod permission_grant;
