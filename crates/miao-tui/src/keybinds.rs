@@ -14,6 +14,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 pub enum Action {
     Leader,
     AppExit,
+    TerminalRedraw,
     CommandList,
     CopyMessage,
     SessionList,
@@ -59,6 +60,7 @@ impl Action {
         match self {
             Action::Leader => "leader",
             Action::AppExit => "app_exit",
+            Action::TerminalRedraw => "terminal_redraw",
             Action::CommandList => "command_list",
             Action::CopyMessage => "messages_copy",
             Action::SessionList => "session_list",
@@ -107,6 +109,7 @@ impl Action {
 const ACTIONS: &[Action] = &[
     Action::Leader,
     Action::AppExit,
+    Action::TerminalRedraw,
     Action::CommandList,
     Action::CopyMessage,
     Action::SessionList,
@@ -151,6 +154,7 @@ const ACTIONS: &[Action] = &[
 const DEFAULTS: &[(Action, &str)] = &[
     (Action::Leader, "ctrl+x"),
     (Action::AppExit, "ctrl+c,ctrl+d,<leader>q"),
+    (Action::TerminalRedraw, "ctrl+l"),
     (Action::CommandList, "ctrl+p"),
     (Action::CopyMessage, "ctrl+y,<leader>y"),
     (Action::SessionList, "<leader>l"),

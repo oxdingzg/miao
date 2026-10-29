@@ -16,6 +16,15 @@ use crate::config::{Cursor, CursorShape};
 
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 
+/// Covers normal exit and every error after raw-mode initialization begins.
+pub struct RestoreGuard;
+
+impl Drop for RestoreGuard {
+    fn drop(&mut self) {
+        restore();
+    }
+}
+
 /// Terminal settings that must be re-applied after the external editor gives
 /// the screen back.
 #[derive(Debug, Clone, Copy, Default)]
@@ -66,7 +75,15 @@ pub fn resume(terminal: &mut Tui, preferences: Preferences) -> io::Result<()> {
         EnableFocusChange
     )?;
     apply(preferences);
-    terminal.clear()
+    redraw(terminal)
+}
+
+/// Fullscreen repaint without a cursor-position query. `Terminal::clear`
+/// snapshots the cursor through stdin, which races the dedicated input reader.
+/// Resizing the fullscreen viewport also resets its backing buffers.
+pub fn redraw(terminal: &mut Tui) -> io::Result<()> {
+    let size = terminal.size()?;
+    terminal.resize(ratatui::layout::Rect::new(0, 0, size.width, size.height))
 }
 
 fn apply(preferences: Preferences) {

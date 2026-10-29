@@ -31,12 +31,13 @@ pub enum Builtin {
     Undo,
     Redo,
     Editor,
+    Redraw,
     Help,
     Quit,
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 18] = [
+    pub const ALL: [Builtin; 19] = [
         Builtin::Models,
         Builtin::Permissions,
         Builtin::WorkspaceChanges,
@@ -53,6 +54,7 @@ impl Builtin {
         Builtin::Undo,
         Builtin::Redo,
         Builtin::Editor,
+        Builtin::Redraw,
         Builtin::Help,
         Builtin::Quit,
     ];
@@ -76,6 +78,7 @@ impl Builtin {
             Builtin::Undo => "undo",
             Builtin::Redo => "redo",
             Builtin::Editor => "editor",
+            Builtin::Redraw => "redraw",
             Builtin::Help => "help",
             Builtin::Quit => "quit",
         }
@@ -99,6 +102,7 @@ impl Builtin {
             Builtin::Undo => "Undo the last turn",
             Builtin::Redo => "Restore the last undone turn",
             Builtin::Editor => "Compose the prompt in $EDITOR",
+            Builtin::Redraw => "Redraw terminal",
             Builtin::Help => "Keys and commands",
             Builtin::Quit => "Quit miao",
         }
@@ -123,6 +127,7 @@ impl Builtin {
             Builtin::Undo => "",
             Builtin::Redo => "",
             Builtin::Editor => "<leader>e",
+            Builtin::Redraw => "",
             Builtin::Help => "",
             Builtin::Quit => "<leader>q",
         }
