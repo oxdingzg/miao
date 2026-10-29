@@ -1202,3 +1202,13 @@ represent revocation. Managed product owners use the snapshot command before
 admission, including for an empty set, and fail startup/admission if the engine
 cannot synchronize it. This command does not transfer native rule-writing
 ownership or remove the compatibility TypeScript permission evaluator.
+
+Local `cancel` and matching `cancel_if` withdraw the Session's product bridge
+sources before acknowledging acceptance. Withdrawal serializes with the same
+bridge lock held through a permission commit: an already-entered commit may
+finish before the acknowledgement, but cannot finish after it. Stale conditional
+interrupts leave the current run's sources intact. Cancellation notices to the
+host are delivered separately so output backpressure does not delay this fence;
+their tasks remain owned by the Session actor. Detach waits for pending notices,
+while global shutdown can abort their delivery. A foreign owner's durable
+`run.cancel_requested` remains an advisory request for that owner to consume.
