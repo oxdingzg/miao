@@ -148,6 +148,9 @@ async fn drive(
             event = events.recv() => match event {
                 Some(app_event) => {
                     app.handle(app_event);
+                    if app.take_redraw_request() {
+                        terminal::redraw(terminal)?;
+                    }
                     if let Some(request) = app.take_editor_request() {
                         terminal::suspend();
                         let result = platform::editor::run(&request);

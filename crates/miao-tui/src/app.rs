@@ -171,6 +171,7 @@ pub struct App {
     /// Set once the engine is attached; clipboard reads report back through it.
     bus: Option<Bus>,
     pending_editor: Option<editor::Request>,
+    redraw_requested: bool,
     /// Approval and question ids already announced.
     notified: Vec<String>,
     /// The Zed selection already sent with an earlier prompt.
@@ -229,6 +230,7 @@ impl App {
             attention: Attention::new(attention_config),
             bus: None,
             pending_editor: None,
+            redraw_requested: false,
             notified: Vec::new(),
             zed_selection_key: None,
             clipboard_busy: false,
@@ -267,6 +269,10 @@ impl App {
     /// The editor the drive loop should run after suspending the terminal.
     pub fn take_editor_request(&mut self) -> Option<editor::Request> {
         self.pending_editor.take()
+    }
+
+    pub fn take_redraw_request(&mut self) -> bool {
+        std::mem::take(&mut self.redraw_requested)
     }
 
     pub fn attach_engine(&mut self, engine: engine::Handle) {
@@ -493,6 +499,11 @@ impl App {
             // double every keystroke.
             return;
         }
+        if self.keys.matches(keybinds::Action::TerminalRedraw, &key) {
+            self.redraw_requested = true;
+            self.leader = false;
+            return;
+        }
         if self.dialog.is_some() {
             // Dialogs are modal: nothing reaches the page below, and Esc
             // closes the top layer. Ctrl+C still quits.
@@ -565,6 +576,7 @@ impl App {
             Some(keybinds::Action::EditorOpen) => self.run_builtin(Builtin::Editor),
             Some(keybinds::Action::CopyMessage) => self.copy_last_response(),
             Some(keybinds::Action::AppExit) => self.run_builtin(Builtin::Quit),
+            Some(keybinds::Action::TerminalRedraw) => self.redraw_requested = true,
             _ => {}
         }
     }
@@ -1866,6 +1878,29 @@ mod tests {
             state: SessionState::default(),
         });
         assert!(requests.try_recv().is_err());
+    }
+
+    #[test]
+    fn redraw_preserves_the_draft_and_dialog_and_honors_key_overrides() {
+        let mut app = session_app();
+        app.handle(AppEvent::Paste("keep this draft".into()));
+        app.open_palette();
+        app.handle(key(KeyCode::Char('l'), KeyModifiers::CONTROL));
+        assert!(app.take_redraw_request());
+        assert!(!app.take_redraw_request());
+        assert!(app.dialog.is_some());
+        assert_eq!(app.shell.composer.editor.text(), "keep this draft");
+        assert!(!app.quit);
+        app.dialog = None;
+        app.keys = Keymap::from_overrides(
+            &[("terminal_redraw".into(), Some(vec!["<leader>r".into()]))].into(),
+        );
+        app.handle(key(KeyCode::Char('l'), KeyModifiers::CONTROL));
+        assert!(!app.take_redraw_request());
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
+        app.handle(key(KeyCode::Char('r'), KeyModifiers::NONE));
+        assert!(app.take_redraw_request());
+        assert_eq!(app.shell.composer.editor.text(), "keep this draft");
     }
 
     #[test]
