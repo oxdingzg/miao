@@ -34,6 +34,12 @@ const MAX_IDENTICAL_TOOL_CALLS: u32 = 5;
 /// for three hours and 275 provider turns on a ~750K-token context).
 const MAX_IDENTICAL_REFUSALS: u32 = 3;
 
+/// How often a dispatched-but-unsettled tool call re-announces itself on the
+/// ephemeral progress channel. Long reads, language servers, MCP servers and
+/// approval prompts can hold a turn for minutes without writing anything
+/// durable, and a client cannot tell that from a dead engine.
+const TOOL_WAIT_NOTICE: std::time::Duration = std::time::Duration::from_secs(5);
+
 #[derive(Clone)]
 pub struct Runtime {
     inner: Arc<Inner>,
@@ -2947,6 +2953,10 @@ command: None,
                             json!({"run_id":run,"call_id":id,"tool":name}),
                         )
                         .await?;
+                    // Approval waits, hook runs and execution all sit between
+                    // here and settlement, so the notice covers whichever of
+                    // them the turn is actually blocked on.
+                    let _waiting = WaitNotice::start(&inner.progress, session, run, step, id, name);
                     let mut block_input = block["input"].clone();
                     let plugin_before = dispatch_plugin_before(
                         inner,
@@ -5967,6 +5977,50 @@ async fn execute_read_batch(
             .await?;
     }
     Ok(results)
+}
+
+/// Repeats `tool.waiting` on the progress channel while a serial call has not
+/// settled, so a client can tell a slow tool or a pending approval from a wedged
+/// engine. The guard owns one task: dropping it — the normal path, an early
+/// return on cancellation, or a panic — stops the notices at once.
+struct WaitNotice(JoinHandle<()>);
+
+impl WaitNotice {
+    fn start(
+        progress: &broadcast::Sender<Value>,
+        session: &str,
+        run: &str,
+        step: usize,
+        call: &str,
+        tool: &str,
+    ) -> Self {
+        // The notice is progress, never provider output: it is not durable, it
+        // does not count toward the turn's completion, and a replay never sees
+        // it.
+        let progress = progress.clone();
+        let payload = json!({
+            "session_id": session, "run_id": run, "step": step,
+            "kind": "tool.waiting", "call_id": call, "tool": tool,
+        });
+        Self(tokio::spawn(async move {
+            let started = std::time::Instant::now();
+            loop {
+                tokio::time::sleep(TOOL_WAIT_NOTICE).await;
+                if progress.receiver_count() == 0 {
+                    continue;
+                }
+                let mut frame = payload.clone();
+                frame["elapsed_ms"] = json!(started.elapsed().as_millis() as u64);
+                let _ = progress.send(frame);
+            }
+        }))
+    }
+}
+
+impl Drop for WaitNotice {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 fn validate_agent(inner: &Inner, agent: &crate::session_agent::AgentManifest) -> Result<(), Error> {
