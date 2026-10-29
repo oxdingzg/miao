@@ -24,6 +24,16 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`permission_handoff\` (
+          \`project_id\` text PRIMARY KEY,
+          \`authority\` text NOT NULL,
+          \`fingerprint\` text NOT NULL,
+          \`rules\` text NOT NULL,
+          \`receipt\` text,
+          CONSTRAINT \`fk_permission_handoff_project_id_project_id_fk\` FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`)
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`permission_import_replica\` (
           \`owner_key\` text PRIMARY KEY,
           \`location\` text NOT NULL,
@@ -140,14 +150,14 @@ export default {
         );
       `)
       yield* tx.run(`
-        CREATE TABLE \`permission\` (
+        CREATE TABLE \`permission_legacy\` (
           \`id\` text PRIMARY KEY,
           \`project_id\` text NOT NULL,
           \`action\` text NOT NULL,
           \`resource\` text NOT NULL,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,
-          CONSTRAINT \`fk_permission_project_id_project_id_fk\` FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON DELETE CASCADE
+          CONSTRAINT \`fk_permission_legacy_project_id_project_id_fk\` FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON DELETE CASCADE
         );
       `)
       yield* tx.run(`
@@ -377,7 +387,7 @@ export default {
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`event_aggregate_type_seq_idx\` ON \`event\` (\`aggregate_id\`,\`type\`,\`seq\`);`)
       yield* tx.run(
-        `CREATE UNIQUE INDEX \`permission_project_action_resource_idx\` ON \`permission\` (\`project_id\`,\`action\`,\`resource\`);`,
+        `CREATE UNIQUE INDEX \`permission_project_action_resource_idx\` ON \`permission_legacy\` (\`project_id\`,\`action\`,\`resource\`);`,
       )
       yield* tx.run(
         `CREATE INDEX \`message_session_time_created_id_idx\` ON \`message\` (\`session_id\`,\`time_created\`,\`id\`);`,
