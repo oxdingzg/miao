@@ -145,6 +145,15 @@ async fn explicit_cli_selection_opens_the_completed_pair_and_rejects_legacy_proj
         .complete_directory_permission_source(imported.directory.clone(), imported)
         .await
         .unwrap();
+    let agent = directory.path().join("agent.json");
+    std::fs::write(
+        &agent,
+        serde_json::to_vec(
+            &json!({"name":"shared-startup-reviewer","semantics":"product-agent-v1"}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
     let output = engine(
         &[
             "serve",
@@ -158,6 +167,8 @@ async fn explicit_cli_selection_opens_the_completed_pair_and_rejects_legacy_proj
             "openai-chat",
             "--endpoint",
             "http://127.0.0.1:9",
+            "--agent-config",
+            agent.to_str().unwrap(),
             "--permission-root-db",
             root.to_str().unwrap(),
             "--permission-project",
@@ -166,7 +177,8 @@ async fn explicit_cli_selection_opens_the_completed_pair_and_rejects_legacy_proj
         &[
             json!({"id":1,"method":"shared_permission_snapshot"}),
             json!({"id":2,"method":"permission_saved_snapshot","params":{"workspace":workspace,"rules":[]}}),
-            json!({"id":3,"method":"shutdown"}),
+            json!({"id":3,"method":"admit","params":{"input":{"session_id":"startup","input_id":"startup-input","prompt":"admit only","delivery":"steer"},"resume":false}}),
+            json!({"id":4,"method":"shutdown"}),
         ],
     );
     assert!(
@@ -194,7 +206,26 @@ async fn explicit_cli_selection_opens_the_completed_pair_and_rejects_legacy_proj
             .is_some(),
         "{frames:?}"
     );
-    assert!(store.sessions().await.unwrap().is_empty());
+    assert!(
+        frames
+            .iter()
+            .find(|frame| frame["id"] == 3)
+            .unwrap()
+            .get("error")
+            .is_none(),
+        "{frames:?}"
+    );
+    assert_eq!(
+        store.agent("startup").await.unwrap().unwrap().0.name,
+        "shared-startup-reviewer"
+    );
+    assert!(store.active_run("startup").await.unwrap().is_none());
+    assert!(!store
+        .events("startup", 0, 100)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| event.kind == "provider.request"));
     store.close().await.unwrap();
 }
 
