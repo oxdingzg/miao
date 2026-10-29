@@ -1,0 +1,88 @@
+{
+  "source_commit": "b6c11ea4fc4101fbaafd84ca2da2bdf0c5ab8bea",
+  "binary_sha256": "104989e86164a3e3f96dd681c3b49949f1941efe3669cdca1b08dd751a505e75",
+  "schema": 1,
+  "expected": {
+    "authority": "f9c5bc45-2f85-4511-9e39-e59a1cc33085",
+    "migration": {
+      "fingerprint": "e6e68464957c166b06953e55216bb952fd665733d305142693dad4ca4ecd285a",
+      "imported": 2,
+      "project": "fixture-project"
+    },
+    "project": "fixture-project",
+    "revision": 3,
+    "rules": [
+      {
+        "id": "legacy-b",
+        "origin": "legacy",
+        "rule": {
+          "action": "read",
+          "effect": "allow",
+          "resource": "public/**"
+        }
+      },
+      {
+        "id": "psv_native_project_16c86c9e996581da2a6081eb0d7781ba949a9d552cca425d3833e653b1ce779b",
+        "origin": "native",
+        "rule": {
+          "action": "read",
+          "effect": "allow",
+          "resource": "native/**"
+        }
+      }
+    ]
+  },
+  "fixture_sha256": "866e348a414af440c7c0c22183b479cb31e30cf15b4705876d6dfc16181dab9c",
+  "operations": [
+    {
+      "id": 1,
+      "method": "put",
+      "params": {
+        "rule": {
+          "action": "read",
+          "resource": "native/**",
+          "effect": "allow"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "method": "migrate",
+      "params": {
+        "rules": [
+          {
+            "id": "legacy-a",
+            "rule": {
+              "action": "read",
+              "resource": "public/**",
+              "effect": "allow"
+            }
+          },
+          {
+            "id": "legacy-b",
+            "rule": {
+              "action": "read",
+              "resource": "public/**",
+              "effect": "allow"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "method": "remove",
+      "params": {
+        "id": "legacy-a"
+      }
+    },
+    {
+      "id": 4,
+      "method": "snapshot"
+    },
+    {
+      "id": 5,
+      "method": "shutdown"
+    }
+  ]
+}
