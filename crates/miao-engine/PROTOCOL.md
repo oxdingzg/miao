@@ -1212,3 +1212,24 @@ host are delivered separately so output backpressure does not delay this fence;
 their tasks remain owned by the Session actor. Detach waits for pending notices,
 while global shutdown can abort their delivery. A foreign owner's durable
 `run.cancel_requested` remains an advisory request for that owner to consume.
+
+### Permission source execution claim
+
+Session-store schema 22 persists `engine_run.lease_epoch` when a fenced run
+starts, in the same transaction as the run and any first input promotions.
+Permission evaluation, admission and replies require the dispatched tool and
+running run to retain that exact Session epoch and the current process owner.
+Renewing the same epoch preserves authority; a superseding claim invalidates the
+old source even before its asynchronous drain notices the loss. The saved-rule
+write and reply remain in the guarded transaction.
+
+Historical and deliberately unfenced storage rows keep a NULL epoch during
+upgrade; current lease data is never used to fabricate old execution provenance.
+Such rows cannot act as live permission sources. This does not resume provider
+work or create another Session/drain identity. Older Session-store writers refuse
+schema 22; the separate project permission database retains its own schema v2.
+
+Format publication and schema changes share an immediate SQLite transaction.
+Upgrading an older store is refused while a recorded running-run owner process
+is alive; its schema, format and rows remain available to that older owner.
+Finished runs and dead owners do not require provider recovery to upgrade.

@@ -256,3 +256,16 @@ Native 权限 profile 诊断及 §4 的完整脚本验收仍须分别完成。�
 继续落盘。宿主取消通知由 Session actor 持有的任务发送，输出背压不推迟来源撤回；detach
 等待通知，全局 shutdown 可中止其发送。过期 run 的条件取消保持当前来源不变。跨进程的
 `run.cancel_requested` 仍是提交给归属进程消费的意图，不据此宣称远端已经停机。
+
+### 真实执行归属的权限来源栅栏
+
+Session 库 schema 22 在创建原生 run 时持久记录启动它的 Session lease epoch；首次
+输入提升与 run 创建仍同事务。权限读取、准入及答复同时检查真实 dispatched 工具、
+running run、Location，以及该 epoch 和当前进程的租约归属。新 epoch 接管后，旧来源
+不能继续批准 always；同 epoch 续租仍有效。历史和未加栅栏的存储行保留 NULL，不从当前
+租约猜测旧执行来源，也不触发 provider 恢复。旧内核拒绝打开 schema 22。
+格式升级与 schema 变更同一 SQLite 写事务；已记录的旧 run 所属进程仍活着时拒绝升级，
+保留旧 schema/数据供旧会话完成。Windows 使用只读进程句柄区分活跃与已退出进程。
+
+这先修复现有本地权限来源的归属校验；共享项目库内的 pending/always 原子结算与事件
+投影尚未接线，不能把这个局部修复当成共享权限权威已启用。

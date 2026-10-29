@@ -389,7 +389,13 @@ fn require_active(connection: &Connection, context: &Context) -> Result<(), Erro
 }
 
 fn source_active(connection: &Connection, context: &Context) -> Result<bool, Error> {
-    let active: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM engine_tool t JOIN engine_run r ON r.id=t.run_id JOIN engine_location l ON l.session_id=r.session_id WHERE t.id=?1 AND t.state='dispatched' AND r.id=?2 AND r.session_id=?3 AND r.state='running' AND l.root=?4)",params![format!("{}/{}",context.authority.run_id,context.source.call_id),context.authority.run_id,context.source.session_id,context.workspace],|row|row.get(0))?;
+    let active = crate::product_permission::source_active(
+        connection,
+        &context.source.session_id,
+        &context.authority.run_id,
+        &context.source.call_id,
+        &context.workspace,
+    )?;
     Ok(active && !context.authority.cancel.is_cancelled())
 }
 
