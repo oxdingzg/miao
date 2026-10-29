@@ -127,7 +127,24 @@ impl Context {
         }).await
     }
 
-    pub async fn migrate(&self, mut patterns: Vec<Pattern>) -> Result<Snapshot, Error> {
+    pub async fn migrate(&self, patterns: Vec<Pattern>) -> Result<Snapshot, Error> {
+        self.migrate_bound(None, patterns).await
+    }
+
+    /// Frozen sources name a durable destination, not merely a database path.
+    pub async fn handoff(
+        &self,
+        authority: String,
+        patterns: Vec<Pattern>,
+    ) -> Result<Snapshot, Error> {
+        self.migrate_bound(Some(authority), patterns).await
+    }
+
+    async fn migrate_bound(
+        &self,
+        authority: Option<String>,
+        mut patterns: Vec<Pattern>,
+    ) -> Result<Snapshot, Error> {
         patterns.sort_by(|left, right| left.id.cmp(&right.id));
         self.require_patterns(&patterns)?;
         let fingerprint = self.fingerprint(&patterns)?;
@@ -135,6 +152,9 @@ impl Context {
         self.project.authority.call(move |connection| {
             let transaction=connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let before=context.view(&transaction)?;
+            if authority.as_ref().is_some_and(|expected| expected != &before.project.authority) {
+                return Err(Error::Invalid("directory permission handoff destination mismatch".into()));
+            }
             if let Some(receipt)=&before.migration {
                 if receipt.fingerprint!=fingerprint { return Err(Error::Invalid("directory permission migration input changed".into())); }
                 return Ok(before);
@@ -316,6 +336,73 @@ mod tests {
             resource: resource.into(),
             effect: Decision::Allow,
         }
+    }
+
+    #[tokio::test]
+    async fn handoff_checks_the_destination_before_import_and_before_receipt_retry() {
+        let directory = tempfile::tempdir().unwrap();
+        let canonical = directory
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let source = Store::open(directory.path().join("source.db"))
+            .await
+            .unwrap();
+        let pattern = source
+            .put_permission_pattern(canonical, rule("public/**"))
+            .await
+            .unwrap();
+        let first = Authority::open(directory.path().join("first.db"))
+            .await
+            .unwrap()
+            .project("project".into())
+            .unwrap()
+            .context(directory.path(), None)
+            .await
+            .unwrap();
+        let other = Authority::open(directory.path().join("other.db"))
+            .await
+            .unwrap()
+            .project("project".into())
+            .unwrap()
+            .context(directory.path(), None)
+            .await
+            .unwrap();
+        let initial = first.snapshot().await.unwrap();
+        let foreign = other.snapshot().await.unwrap();
+        assert_ne!(initial.project.authority, foreign.project.authority);
+        assert!(other
+            .handoff(initial.project.authority.clone(), vec![pattern.clone()])
+            .await
+            .is_err());
+        assert_eq!(other.snapshot().await.unwrap(), foreign);
+        assert!(first
+            .handoff(foreign.project.authority.clone(), vec![pattern.clone()])
+            .await
+            .is_err());
+        assert_eq!(first.snapshot().await.unwrap(), initial);
+        let imported = first
+            .handoff(initial.project.authority.clone(), vec![pattern.clone()])
+            .await
+            .unwrap();
+        assert_eq!(imported.patterns, vec![pattern.clone()]);
+        assert!(first.remove(pattern.id.clone()).await.unwrap());
+        let revoked = first.snapshot().await.unwrap();
+        assert_eq!(
+            first
+                .handoff(initial.project.authority, vec![pattern.clone()])
+                .await
+                .unwrap(),
+            revoked
+        );
+        assert!(first
+            .handoff(foreign.project.authority, vec![pattern])
+            .await
+            .is_err());
+        assert_eq!(first.snapshot().await.unwrap(), revoked);
     }
 
     #[tokio::test]

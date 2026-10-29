@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import path from "node:path"
+import { rename } from "node:fs/promises"
 import { Schema } from "effect"
 import { EngineClient, permissionEnvironment } from "@/engine/client"
 import { capabilities } from "@/engine/discovery"
@@ -179,6 +180,82 @@ const ContextSnapshot = Schema.Struct({
 })
 const contextSnapshot = async (client: EngineClient) =>
   Schema.decodeUnknownSync(ContextSnapshot)(await client.request("context_snapshot"))
+
+test.skipIf(!binary)(
+  "directory handoff binds its destination through receipt retries and same-path replacement",
+  async () => {
+    await using tmp = await tmpdir()
+    const db = path.join(tmp.path, "permissions.db")
+    const open = (db: string) =>
+      EngineClient.startPermissionStore({
+        binary: binary!,
+        db,
+        project: "project",
+        context: { directory: tmp.path },
+      })
+    const first = open(db)
+    const peer = open(db)
+    const source = open(path.join(tmp.path, "source.db"))
+    const clients = [first, peer, source]
+    try {
+      expect(capabilities(binary!)?.permissionContextHandoff).toBe(1)
+      const initial = await contextSnapshot(first)
+      await source.request("context_put", { rule: { action: "read", resource: "a/**", effect: "allow" } })
+      const foreign = Schema.decodeUnknownSync(ContextSnapshot)(
+        await source.request("context_put", { rule: { action: "read", resource: "b/**", effect: "allow" } }),
+      )
+      const patterns = foreign.patterns
+      expect(
+        await failure(first.request("context_handoff", { authority: foreign.project.authority, patterns })),
+      ).toMatchObject({ code: "invalid_request", message: expect.stringContaining("destination mismatch") })
+      expect(await contextSnapshot(first)).toEqual(initial)
+      const imported = Schema.decodeUnknownSync(ContextSnapshot)(
+        await first.request("context_handoff", { authority: initial.project.authority, patterns }),
+      )
+      expect(imported.patterns).toEqual(patterns)
+      expect(await peer.request("context_remove", { id: patterns[0].id })).toEqual({ removed: true })
+      const revoked = await contextSnapshot(first)
+      expect(
+        Schema.decodeUnknownSync(ContextSnapshot)(
+          await peer.request("context_handoff", {
+            authority: initial.project.authority,
+            patterns: [...patterns].reverse(),
+          }),
+        ),
+      ).toEqual(revoked)
+      expect(
+        await failure(first.request("context_handoff", { authority: foreign.project.authority, patterns })),
+      ).toMatchObject({ code: "invalid_request" })
+      expect(await contextSnapshot(first)).toEqual(revoked)
+      for (const override of [{ project: "foreign" }, { directory: "/foreign" }, { workspace_id: "explicit" }])
+        expect(
+          await failure(
+            first.request("context_handoff", { authority: initial.project.authority, patterns, ...override }),
+          ),
+        ).toMatchObject({ code: "invalid_request" })
+      expect(await contextSnapshot(first)).toEqual(revoked)
+      await first.close()
+      await peer.close()
+      await rename(db, path.join(tmp.path, "previous.db"))
+      const replacement = open(db)
+      clients.push(replacement)
+      const replaced = await contextSnapshot(replacement)
+      expect(replaced.project.authority).not.toBe(initial.project.authority)
+      expect(
+        await failure(replacement.request("context_handoff", { authority: initial.project.authority, patterns })),
+      ).toMatchObject({ code: "invalid_request", message: expect.stringContaining("destination mismatch") })
+      expect(await contextSnapshot(replacement)).toEqual(replaced)
+      expect(
+        Schema.decodeUnknownSync(ContextSnapshot)(
+          await replacement.request("context_handoff", { authority: replaced.project.authority, patterns }),
+        ).patterns,
+      ).toEqual(patterns)
+    } finally {
+      await Promise.all(clients.map((client) => client.close()))
+    }
+  },
+  30_000,
+)
 
 test.skipIf(!binary)(
   "bound directory controllers share project rules without leaking directory grants or reviving revocations",
