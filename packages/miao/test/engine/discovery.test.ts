@@ -142,6 +142,7 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
       normalized: undefined,
       accepted: true,
     },
+    { wire: { saved_permission_migration: 1 }, normalized: undefined, accepted: true },
     { wire: { permission_patterns: 1 }, normalized: undefined, accepted: true },
     { wire: { permission_pattern_changes: 1 }, normalized: undefined, accepted: true },
     { wire: { routesSchema: 2 }, normalized: 2, accepted: true },
@@ -153,6 +154,8 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
     if ("catalog" in input.wire) expect(capabilities(binary)).toHaveProperty("catalog", 1)
     if ("permission_pattern_changes" in input.wire)
       expect(capabilities(binary)).toHaveProperty("permissionPatternChanges", 1)
+    if ("saved_permission_migration" in input.wire)
+      expect(capabilities(binary)).toHaveProperty("savedPermissionMigration", 1)
     if ("permission_patterns" in input.wire) expect(capabilities(binary)).toHaveProperty("permissionPatterns", 1)
     if ("product_permission_requests" in input.wire) {
       expect(capabilities(binary)).toHaveProperty("productPermissionRequests", 1)
@@ -166,6 +169,7 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
       expect(() => resolveEngine({ environment: { MIAO_ENGINE_BIN: binary } })).toThrow("route schema")
   }
   for (const wire of [
+    { saved_permission_migration: "1" },
     { permission_patterns: "1" },
     { permission_pattern_changes: "1" },
     { product_permission_requests: "1" },

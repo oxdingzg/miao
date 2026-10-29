@@ -78,7 +78,13 @@ function handle(request: { id: number; method: string; params: Record<string, un
   }
   if (
     process.env.ENGINE_FAKE_IGNORE_SNAPSHOT === "1" &&
-    ["permission_pattern_list", "permission_pattern_snapshot", "permission_pattern_changes"].includes(method)
+    [
+      "permission_saved_migration",
+      "permission_saved_imported",
+      "permission_pattern_list",
+      "permission_pattern_snapshot",
+      "permission_pattern_changes",
+    ].includes(method)
   )
     return
   if (method === "snapshot") {

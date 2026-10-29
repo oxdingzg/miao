@@ -456,6 +456,8 @@ export class EngineClient {
             "events",
             "usage",
             "timer_sessions",
+            "permission_saved_migration",
+            "permission_saved_imported",
             "permission_pattern_list",
             "permission_pattern_snapshot",
             "permission_pattern_changes",

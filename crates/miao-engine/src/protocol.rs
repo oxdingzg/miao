@@ -570,6 +570,10 @@ pub enum Command {
         session_id: String,
     },
     /// Standing allow patterns owned by this Runtime's canonical workspace.
+    PermissionSavedMigrate(crate::permission_migration::Input),
+    PermissionSavedMigration,
+    PermissionSavedImported,
+    PermissionSavedRemove(crate::permission_migration::Remove),
     PermissionPatternList,
     PermissionPatternSnapshot,
     PermissionPatternChanges(crate::permission_pattern_changes::Input),

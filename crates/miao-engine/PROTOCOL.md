@@ -779,3 +779,25 @@ the page. This journal is projection evidence, never a second rule authority.
 Product-side durable projection, acknowledgements, import retirement and
 complete S6 migration remain separate work. This revision does not prune the
 journal; retention and consumer acknowledgements require a separate design.
+
+### One-time saved-rule handoff (backend prerequisite)
+
+`saved_permission_migration: 1` advertises four controller-scoped commands:
+
+- `permission_saved_migrate {project,rules:[{id,rule}]}` atomically replaces the old
+  projection and records an immutable input receipt. Rules must be bounded allow
+  rules; duplicate IDs and native projection IDs are rejected. Input ordering is
+  irrelevant. Same-input retries return the receipt, including after revocation;
+  changed input or project is rejected. Empty imports clear stale projected rows.
+- `permission_saved_migration` returns the receipt, or null before handoff.
+- `permission_saved_imported` returns currently active imported IDs and rules.
+- `permission_saved_remove {id}` revokes one imported identity and retains its
+  tombstone. Duplicate content stays allowed until all its imported identities
+  are revoked. Independent native patterns remain independent.
+
+Workspace is the Runtime controller's canonical workspace and cannot be supplied
+in these commands. Legacy projection writes are rejected after handoff; rule
+budget, receipt, provenance and revocation updates share SQLite transactions.
+This does not create exact-call grants or widen workspace scope. Product
+activation, imported-rule change projection and project/global/worktree scope
+migration remain separate work; existing product owners do not invoke handoff.

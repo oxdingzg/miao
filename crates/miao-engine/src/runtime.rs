@@ -348,6 +348,52 @@ impl Runtime {
         }
     }
 
+    pub async fn migrate_saved_permissions(
+        &self,
+        controller: &Controller,
+        input: crate::permission_migration::Input,
+    ) -> Result<crate::permission_migration::Receipt, Error> {
+        self.inner
+            .store
+            .migrate_legacy_permissions(
+                self.permission_pattern_workspace(controller)?,
+                input.project,
+                input.rules,
+            )
+            .await
+    }
+
+    pub async fn saved_permission_migration(
+        &self,
+        controller: &Controller,
+    ) -> Result<Option<crate::permission_migration::Receipt>, Error> {
+        self.inner
+            .store
+            .legacy_permission_migration(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn imported_permissions(
+        &self,
+        controller: &Controller,
+    ) -> Result<Vec<crate::permission_migration::LegacyRule>, Error> {
+        self.inner
+            .store
+            .imported_permissions(self.permission_pattern_workspace(controller)?)
+            .await
+    }
+
+    pub async fn remove_imported_permission(
+        &self,
+        controller: &Controller,
+        id: String,
+    ) -> Result<bool, Error> {
+        self.inner
+            .store
+            .remove_imported_permission(self.permission_pattern_workspace(controller)?, id)
+            .await
+    }
+
     pub async fn permission_patterns(
         &self,
         controller: &Controller,
