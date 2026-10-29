@@ -8,6 +8,7 @@ const ENTRY = path.join(import.meta.dir, "../../src/index.ts")
 const REPLY_BYTES = 2 * 1024 * 1024
 const CAPABILITIES = JSON.stringify({
   catalog: 1,
+  saved_rules_snapshot: 1,
   name: "miao-engine",
   protocol: REQUIRED_PROTOCOL,
   routes_schema: REQUIRED_ROUTES_SCHEMA,

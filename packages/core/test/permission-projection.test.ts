@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm"
 import { Database } from "../src/database/database"
 import { PermissionProjection } from "../src/permission/projection"
 import { PermissionSaved } from "../src/permission/saved"
+import { PermissionTable } from "../src/permission/sql"
 import { AbsolutePath } from "../src/schema"
 import { tmpdir } from "./fixture/tmpdir"
 
@@ -39,7 +40,7 @@ test("ordered replay survives reopen and empty snapshots clear only the replica"
           { seq: 9, type: "upsert", rule: { ...rule("b"), resource: "updated/**" } },
         ],
       })
-      expect(yield* database.db.get<{ count: number }>(sql`SELECT count(*) AS count FROM permission`)).toEqual({
+      expect(yield* database.db.get<{ count: number }>(sql`SELECT count(*) AS count FROM ${PermissionTable}`)).toEqual({
         count: 0,
       })
     }),
