@@ -13,6 +13,7 @@ use std::path::Path;
 use tokio::sync::{mpsc, oneshot};
 
 const APPLICATION_ID: u32 = 0x4d494150;
+const SCHEMA_VERSION: u32 = 2;
 const NATIVE_PREFIX: &str = "psv_native_project_";
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -24,8 +25,8 @@ pub struct Authority {
 /// Bound by the trusted host once; individual operations cannot select a scope.
 #[derive(Clone)]
 pub struct Project {
-    authority: Authority,
-    project: String,
+    pub(crate) authority: Authority,
+    pub(crate) project: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,7 +94,7 @@ impl Authority {
         })
     }
 
-    async fn call<T: Send + 'static>(
+    pub(crate) async fn call<T: Send + 'static>(
         &self,
         f: impl FnOnce(&mut Connection) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
@@ -121,7 +122,24 @@ impl Project {
             .await
     }
 
-    pub async fn migrate(&self, mut rules: Vec<LegacyRule>) -> Result<Snapshot, Error> {
+    pub async fn migrate(&self, rules: Vec<LegacyRule>) -> Result<Snapshot, Error> {
+        self.migrate_bound(None, rules).await
+    }
+
+    /// The source is frozen for one durable destination, never just a path.
+    pub async fn handoff(
+        &self,
+        authority: String,
+        rules: Vec<LegacyRule>,
+    ) -> Result<Snapshot, Error> {
+        self.migrate_bound(Some(authority), rules).await
+    }
+
+    async fn migrate_bound(
+        &self,
+        authority: Option<String>,
+        mut rules: Vec<LegacyRule>,
+    ) -> Result<Snapshot, Error> {
         let project = self.project.clone();
         rules.sort_by(|left, right| left.id.cmp(&right.id));
         crate::permission_migration::require_rules(&project, &rules)?;
@@ -129,6 +147,9 @@ impl Project {
         self.authority.call(move |connection| {
             let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let before = view(&transaction, &project)?;
+            if authority.as_ref().is_some_and(|expected| expected != &before.authority) {
+                return Err(Error::Invalid("project permission handoff destination mismatch".into()));
+            }
             if let Some(receipt) = &before.migration {
                 if receipt.fingerprint != fingerprint {
                     return Err(Error::Invalid("project permission migration input changed".into()));
@@ -210,7 +231,7 @@ fn initialize(connection: &mut Connection) -> Result<(), Error> {
         [], |row| row.get(0),
     )?;
     if !((application == 0 && version == 0 && empty)
-        || (application == APPLICATION_ID && version == 1))
+        || (application == APPLICATION_ID && (1..=SCHEMA_VERSION).contains(&version)))
     {
         return Err(Error::Invalid(
             "unsupported project permission database".into(),
@@ -228,14 +249,17 @@ fn initialize(connection: &mut Connection) -> Result<(), Error> {
             [uuid::Uuid::new_v4().to_string()],
         )?;
         transaction.pragma_update(None, "application_id", APPLICATION_ID)?;
-        transaction.pragma_update(None, "user_version", 1)?;
     }
+    if version < 2 {
+        crate::permission_context::initialize(&transaction)?;
+    }
+    transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
     connection.pragma_update(None, "journal_mode", "WAL")?;
     Ok(())
 }
 
-fn view(connection: &Connection, project: &str) -> Result<Snapshot, Error> {
+pub(crate) fn view(connection: &Connection, project: &str) -> Result<Snapshot, Error> {
     let authority: String = connection.query_row(
         "SELECT id FROM permission_authority WHERE (SELECT count(*) FROM permission_authority)=1",
         [],
@@ -331,7 +355,7 @@ fn view(connection: &Connection, project: &str) -> Result<Snapshot, Error> {
     })
 }
 
-fn ensure_project(connection: &Connection, project: &str) -> Result<(), Error> {
+pub(crate) fn ensure_project(connection: &Connection, project: &str) -> Result<(), Error> {
     connection.execute(
         "INSERT OR IGNORE INTO permission_project(project) VALUES(?1)",
         [project],
@@ -354,7 +378,7 @@ fn budget(connection: &Connection, project: &str) -> Result<(), Error> {
     }
     Ok(())
 }
-fn rule_hash(rule: &Rule) -> Result<String, Error> {
+pub(crate) fn rule_hash(rule: &Rule) -> Result<String, Error> {
     Ok(digest(&serde_json::to_vec(rule)?))
 }
 fn native_id(project: &str, rule: &Rule) -> Result<String, Error> {
@@ -399,6 +423,56 @@ mod tests {
             id: id.into(),
             rule: rule(resource),
         }
+    }
+
+    #[tokio::test]
+    async fn handoff_checks_the_durable_destination_before_import_or_retry() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("permissions.db");
+        let project = Authority::open(&path)
+            .await
+            .unwrap()
+            .project("project".into())
+            .unwrap();
+        let before = project.put(rule("native/**")).await.unwrap();
+        let input = vec![LegacyRule {
+            id: "legacy".into(),
+            rule: rule("legacy/**"),
+        }];
+        assert!(project
+            .handoff(uuid::Uuid::new_v4().to_string(), input.clone())
+            .await
+            .is_err());
+        assert_eq!(project.snapshot().await.unwrap(), before);
+        let imported = project
+            .handoff(before.authority.clone(), input.clone())
+            .await
+            .unwrap();
+        assert_eq!(imported.migration.as_ref().unwrap().imported, 1);
+        project.remove("legacy".into()).await.unwrap();
+        let revoked = project.snapshot().await.unwrap();
+        let peer = Authority::open(&path)
+            .await
+            .unwrap()
+            .project("project".into())
+            .unwrap();
+        assert_eq!(
+            peer.handoff(before.authority.clone(), input.clone())
+                .await
+                .unwrap(),
+            revoked
+        );
+        let replacement = uuid::Uuid::new_v4().to_string();
+        Connection::open(&path)
+            .unwrap()
+            .execute("UPDATE permission_authority SET id=?1", [&replacement])
+            .unwrap();
+        assert!(peer.handoff(before.authority, input).await.is_err());
+        let after = peer.snapshot().await.unwrap();
+        assert_eq!(after.authority, replacement);
+        assert_eq!(after.rules, revoked.rules);
+        assert_eq!(after.revision, revoked.revision);
+        assert_eq!(after.migration, revoked.migration);
     }
 
     #[tokio::test]
@@ -601,13 +675,15 @@ mod tests {
         connection
             .pragma_update(None, "application_id", APPLICATION_ID)
             .unwrap();
-        connection.pragma_update(None, "user_version", 2).unwrap();
+        connection
+            .pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+            .unwrap();
         assert!(Authority::open(&path).await.is_err());
         assert_eq!(
             connection
                 .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
                 .unwrap(),
-            2
+            SCHEMA_VERSION + 1
         );
     }
 
