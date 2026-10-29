@@ -106,7 +106,7 @@ pub(super) async fn execute_in_run(
         return inner.store.shell_status(session, &invocation.call_id).await;
     }
     let manifest = options.agent.as_ref();
-    let policy = inner.policy.for_agent(manifest)?;
+    let policy = inner.policy().for_agent(manifest)?;
     let prepared = match inner
         .tools
         .prepare(

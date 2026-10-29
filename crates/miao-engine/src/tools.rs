@@ -141,25 +141,53 @@ impl Prepared {
     }
 }
 
+/// Capability gates the runtime derives from the permission policy. Kept in a
+/// shared cell so a configuration reload swaps the whole set at once: a
+/// tightened policy left running beside the gates it was meant to replace
+/// would describe permissions it does not enforce.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Gates {
+    pub writes: bool,
+    pub process: bool,
+    pub process_network: bool,
+    pub process_sandbox: bool,
+    pub background: bool,
+    pub delegation: bool,
+    pub wakeup: bool,
+    pub cron: bool,
+}
+
+impl Gates {
+    /// The gates a policy implies. `runner` says whether a sandbox runner is
+    /// configured: process tools fail closed without one, and background tools
+    /// fail closed without process, so both depend on it.
+    pub(crate) fn derive(policy: &Policy, runner: bool) -> Self {
+        let process = policy.process_enabled() && runner && process::enforced();
+        Self {
+            writes: policy.writes_enabled(),
+            process,
+            process_network: policy.process_network(),
+            process_sandbox: policy.process_sandbox(),
+            background: policy.background_enabled() && process,
+            delegation: policy.subagents_enabled(),
+            wakeup: policy.wakeup_enabled(),
+            cron: policy.cron_enabled(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Tools {
     root: PathBuf,
     directory: Arc<Dir>,
     gate: Arc<RwLock<()>>,
-    writes: bool,
-    process_enabled: bool,
-    background_enabled: bool,
-    delegation_enabled: bool,
+    gates: Arc<StdRwLock<Gates>>,
     product_tools: Arc<StdRwLock<Vec<ToolDefinition>>>,
-    wakeup_enabled: bool,
-    cron_enabled: bool,
-    process_network: bool,
-    process_sandbox: bool,
     runner: Option<Arc<PathBuf>>,
     protected: Vec<PathBuf>,
     private_store: Option<PathBuf>,
     mcp: Option<Arc<mcp::Registry>>,
-    web: Option<Arc<crate::web::Client>>,
+    web: Arc<StdRwLock<Option<Arc<crate::web::Client>>>>,
     worker: Option<Arc<crate::worker::Registry>>,
     lsp: Option<Arc<crate::lsp::Registry>>,
     formatter: Option<Arc<crate::formatter::Registry>>,
@@ -193,19 +221,21 @@ impl Tools {
             root,
             directory: Arc::new(directory),
             gate: Arc::new(RwLock::new(())),
-            writes: false,
-            process_enabled: false,
-            background_enabled: false,
-            delegation_enabled: false,
-            wakeup_enabled: false,
-            cron_enabled: false,
-            process_network: false,
-            process_sandbox: true,
+            gates: Arc::new(StdRwLock::new(Gates {
+                writes: false,
+                process: false,
+                process_network: false,
+                process_sandbox: true,
+                background: false,
+                delegation: false,
+                wakeup: false,
+                cron: false,
+            })),
             runner: None,
             protected: vec![],
             private_store: None,
             mcp: None,
-            web: None,
+            web: Arc::new(StdRwLock::new(None)),
             worker: None,
             lsp: None,
             formatter: None,
@@ -221,6 +251,42 @@ impl Tools {
             compact_disclosure: false,
             product_tools: Arc::new(StdRwLock::new(Vec::new())),
         })
+    }
+
+    /// The capability gates as one snapshot, so a reader never mixes two
+    /// configurations. A reload replaces the whole set, never a single flag.
+    pub fn gates(&self) -> Gates {
+        *self.gates.read().unwrap_or_else(|held| held.into_inner())
+    }
+    /// Replace every gate at once. Only `Runtime::reload_config` calls this,
+    /// and only with a complete set derived from the reloaded policy.
+    pub(crate) fn set_gates(&self, gates: Gates) {
+        *self.gates_mut() = gates;
+    }
+    fn gates_mut(&self) -> std::sync::RwLockWriteGuard<'_, Gates> {
+        self.gates.write().unwrap_or_else(|held| held.into_inner())
+    }
+    /// Convenience reads for the gate fields.
+    fn writes(&self) -> bool {
+        self.gates().writes
+    }
+    fn process_enabled(&self) -> bool {
+        self.gates().process
+    }
+    fn process_network(&self) -> bool {
+        self.gates().process_network
+    }
+    fn background_enabled(&self) -> bool {
+        self.gates().background
+    }
+    fn delegation_enabled(&self) -> bool {
+        self.gates().delegation
+    }
+    fn wakeup_enabled(&self) -> bool {
+        self.gates().wakeup
+    }
+    fn cron_enabled(&self) -> bool {
+        self.gates().cron
     }
 
     pub fn with_process_runner(mut self, path: PathBuf) -> Self {
@@ -244,6 +310,7 @@ impl Tools {
         if cancel.is_cancelled() {
             return Err(ToolError::Interrupted);
         }
+        let gates = self.gates();
         registry
             .start(
                 session,
@@ -251,26 +318,20 @@ impl Tools {
                 &self.root,
                 &prepared.path,
                 crate::terminal::Start::parse(prepared.input)?,
-                self.process_network,
-                self.process_sandbox,
+                gates.process_network,
+                gates.process_sandbox,
             )
             .await
-    }
-    pub(crate) fn with_process(mut self, enabled: bool, network: bool, sandbox: bool) -> Self {
-        self.process_enabled = enabled && self.runner.is_some() && process::enforced();
-        self.process_network = network;
-        self.process_sandbox = sandbox;
-        self
     }
     /// The sandbox runner executable; background tools fail closed without it.
     pub(crate) fn process_runner(&self) -> Option<&std::path::Path> {
         self.runner.as_ref().map(|path| path.as_path())
     }
     pub(crate) fn process_network_allowed(&self) -> bool {
-        self.process_network
+        self.gates().process_network
     }
     pub(crate) fn process_sandbox(&self) -> bool {
-        self.process_sandbox
+        self.gates().process_sandbox
     }
     /// A product host can supply its resolved aggregate without standalone
     /// discovery reintroducing disabled sources or duplicating instructions.
@@ -290,20 +351,33 @@ impl Tools {
         Ok(self)
     }
 
-    pub fn with_web(mut self, client: crate::web::Client) -> Self {
-        self.web = Some(Arc::new(client));
+    pub fn with_web(self, client: crate::web::Client) -> Self {
+        *self.web_mut() = Some(Arc::new(client));
         self
     }
-    pub(crate) fn enable_web(self, enabled: bool) -> Result<Self, ToolError> {
-        if !enabled && self.web.is_some() {
-            return Err(ToolError::InvalidInput);
+    fn web(&self) -> Option<Arc<crate::web::Client>> {
+        self.web
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone()
+    }
+    fn web_mut(&self) -> std::sync::RwLockWriteGuard<'_, Option<Arc<crate::web::Client>>> {
+        self.web.write().unwrap_or_else(|held| held.into_inner())
+    }
+    /// Attach or detach the web client for a reloaded policy. Enabling needs
+    /// the environment's search configuration, so a failed construction leaves
+    /// the running client in place and the reload reports the error.
+    pub(crate) fn set_web(&self, enabled: bool) -> Result<(), ToolError> {
+        if !enabled {
+            *self.web_mut() = None;
+            return Ok(());
         }
-        if enabled && self.web.is_none() {
-            return Ok(self.with_web(crate::web::Client::new(
-                crate::web::SearchConfig::from_env()?,
-            )?));
+        if self.web().is_some() {
+            return Ok(());
         }
-        Ok(self)
+        let client = crate::web::Client::new(crate::web::SearchConfig::from_env()?)?;
+        *self.web_mut() = Some(Arc::new(client));
+        Ok(())
     }
     fn patch_input(name: &str, input: Value) -> Result<crate::patch::Input, ToolError> {
         if name != "apply_patch" {
@@ -333,7 +407,7 @@ impl Tools {
             &self.root,
             input,
             false,
-            self.process_sandbox,
+            self.process_sandbox(),
             cancel,
         )
         .await
@@ -370,7 +444,9 @@ impl Tools {
 
     /// Snapshot the immutable capability/boundary closure used by prepare and
     /// dispatch, not a caller-supplied declaration of intended permissions.
+    /// The gates are read once so one descriptor never mixes two configurations.
     pub(crate) fn authority_descriptor(&self) -> Value {
+        let gates = self.gates();
         json!({"semantics":"native-tool-boundary-v1","workspace":self.root,"protected":self.protected.iter().map(|path| {
                 // The native database and its companions have explicit private
                 // storage identities. Replay changes their filenames, not the
@@ -385,11 +461,11 @@ impl Tools {
                 }
                 json!({"path":path})
             }).collect::<Vec<_>>(),
-            "readRoots":self.read_roots.as_ref(),"writes":self.writes,"process":self.process_enabled,
-            "background":self.background_enabled,"delegation":self.delegation_enabled,
-            "wakeup":self.wakeup_enabled,"cron":self.cron_enabled,"processNetwork":self.process_network,
+            "readRoots":self.read_roots.as_ref(),"writes":gates.writes,"process":gates.process,
+            "background":gates.background,"delegation":gates.delegation,
+            "wakeup":gates.wakeup,"cron":gates.cron,"processNetwork":gates.process_network,
             "processRunnerConfigured":self.runner.is_some(),"mcpAttached":self.mcp.is_some(),
-            "workerAttached":self.worker.is_some(),"lspAttached":self.lsp.is_some(),"formatter":self.formatter.as_ref().map(|registry| registry.descriptor()),"web":self.web.as_ref().map(|client|client.descriptor())})
+            "workerAttached":self.worker.is_some(),"lspAttached":self.lsp.is_some(),"formatter":self.formatter.as_ref().map(|registry| registry.descriptor()),"web":self.web().map(|client|client.descriptor())})
     }
     /// Grants bind host registration identity without changing replay's tool
     /// boundary vocabulary. Caller-owned IO transports have a per-instance id.
@@ -440,7 +516,7 @@ impl Tools {
             return;
         }
         let reports = registry
-            .file(path, runner, self.process_sandbox, cancel)
+            .file(path, runner, self.process_sandbox(), cancel)
             .await;
         if reports.is_empty() {
             return;
@@ -844,6 +920,9 @@ impl Tools {
     pub(crate) fn has_mcp(&self) -> bool {
         self.mcp.is_some()
     }
+    pub(crate) fn mcp_registry(&self) -> Option<&Arc<mcp::Registry>> {
+        self.mcp.as_ref()
+    }
     pub fn with_worker(mut self, registry: Arc<crate::worker::Registry>) -> Self {
         self.worker = Some(registry);
         self
@@ -860,31 +939,11 @@ impl Tools {
         }
     }
 
-    pub(crate) fn with_cron(mut self, enabled: bool) -> Self {
-        self.cron_enabled = enabled;
-        self
-    }
-
-    pub(crate) fn with_wakeup(mut self, enabled: bool) -> Self {
-        self.wakeup_enabled = enabled;
-        self
-    }
-
     /// Register host-provided tool definitions. The list is shared with the
     /// runtime so a manifest loaded after `Tools` construction is advertised
     /// and authorized by the same instance that dispatches it.
     pub fn with_product_tools(&self, tools: Vec<ToolDefinition>) {
         *self.product_tools.write().unwrap() = tools;
-    }
-
-    pub(crate) fn with_background(mut self, enabled: bool) -> Self {
-        self.background_enabled = enabled && self.process_enabled;
-        self
-    }
-
-    pub(crate) fn with_delegation(mut self, enabled: bool) -> Self {
-        self.delegation_enabled = enabled;
-        self
     }
 
     pub fn with_protected_resource(self, path: &Path) -> Self {
@@ -905,8 +964,8 @@ impl Tools {
         self
     }
 
-    pub fn with_writes(mut self, enabled: bool) -> Self {
-        self.writes = enabled;
+    pub fn with_writes(self, enabled: bool) -> Self {
+        self.gates_mut().writes = enabled;
         self
     }
 
@@ -939,8 +998,7 @@ impl Tools {
     pub async fn prepare(&self, name: &str, input: Value) -> Result<Prepared, ToolError> {
         if matches!(name, "webfetch" | "websearch") {
             let resource = self
-                .web
-                .as_ref()
+                .web()
                 .ok_or(ToolError::Unsupported)?
                 .prepare(name, input.clone())?;
             return Ok(Prepared {
@@ -1000,7 +1058,7 @@ impl Tools {
         let path = match name {
             "knowledge" => {
                 let query = crate::knowledge::Query::parse(input.clone())?;
-                if query.writes() && !self.writes {
+                if query.writes() && !self.writes() {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::PermissionDenied,
                         "knowledge access denied",
@@ -1022,13 +1080,13 @@ impl Tools {
                 SkillInput::parse(input.clone())?;
                 ".".into()
             }
-            "task_list" if self.delegation_enabled => {
+            "task_list" if self.delegation_enabled() => {
                 if input != json!({}) {
                     return Err(ToolError::InvalidInput);
                 }
                 ".".into()
             }
-            "task_result" | "task_cancel" if self.delegation_enabled => {
+            "task_result" | "task_cancel" if self.delegation_enabled() => {
                 crate::subagent::Selector::parse(input.clone())?;
                 ".".into()
             }
@@ -1040,25 +1098,25 @@ impl Tools {
                 }
                 parsed.path
             }
-            "cron_create" if self.cron_enabled => {
+            "cron_create" if self.cron_enabled() => {
                 crate::cron::Input::parse(input.clone())?;
                 ".".into()
             }
-            "cron_delete" if self.cron_enabled => {
+            "cron_delete" if self.cron_enabled() => {
                 crate::cron::Selector::parse(input.clone())?;
                 ".".into()
             }
-            "cron_list" if self.cron_enabled => {
+            "cron_list" if self.cron_enabled() => {
                 if input != json!({}) {
                     return Err(ToolError::InvalidInput);
                 }
                 ".".into()
             }
-            "schedule_wakeup" if self.wakeup_enabled => {
+            "schedule_wakeup" if self.wakeup_enabled() => {
                 crate::wakeup::Input::parse(input.clone())?;
                 ".".into()
             }
-            "cancel_wakeup" if self.wakeup_enabled => {
+            "cancel_wakeup" if self.wakeup_enabled() => {
                 crate::wakeup::Selector::parse(input.clone())?;
                 ".".into()
             }
@@ -1096,49 +1154,49 @@ impl Tools {
             {
                 crate::lsp::Query::parse(name, input.clone())?.path
             }
-            "task" if self.delegation_enabled => {
+            "task" if self.delegation_enabled() => {
                 crate::subagent::Input::parse(input.clone())?;
                 ".".into()
             }
             "glob" | "grep" => search::Query::parse(name, input.clone())?.path,
-            "terminal_start" if self.background_enabled && crate::terminal::supported() => {
+            "terminal_start" if self.background_enabled() && crate::terminal::supported() => {
                 crate::terminal::Start::parse(input.clone())?.cwd
             }
             "terminal_read" | "terminal_write" | "terminal_resize" | "terminal_stop"
-                if self.background_enabled && crate::terminal::supported() =>
+                if self.background_enabled() && crate::terminal::supported() =>
             {
                 crate::terminal::Control::parse(name, input.clone())?;
                 ".".into()
             }
-            "terminal_list" if self.background_enabled && crate::terminal::supported() => {
+            "terminal_list" if self.background_enabled() && crate::terminal::supported() => {
                 if input != json!({}) {
                     return Err(ToolError::InvalidInput);
                 }
                 ".".into()
             }
-            "monitor" if self.background_enabled => ".".into(),
+            "monitor" if self.background_enabled() => ".".into(),
             _ if self.is_product(name) => ".".into(),
-            "start_job" if self.background_enabled => process::Input::parse(input.clone())?.cwd,
-            "job_status" | "cancel_job" if self.background_enabled => {
+            "start_job" if self.background_enabled() => process::Input::parse(input.clone())?.cwd,
+            "job_status" | "cancel_job" if self.background_enabled() => {
                 crate::jobs::Selector::parse(input.clone())?;
                 ".".into()
             }
-            "job_list" if self.background_enabled => {
+            "job_list" if self.background_enabled() => {
                 if input != json!({}) {
                     return Err(ToolError::InvalidInput);
                 }
                 ".".into()
             }
-            "job_wait" if self.background_enabled => {
+            "job_wait" if self.background_enabled() => {
                 crate::jobs::Wait::parse(input.clone())?;
                 ".".into()
             }
-            "run_command" if self.process_enabled => process::Input::parse(input.clone())?.cwd,
-            "bash" if self.process_enabled => process::BashInput::parse(input.clone())?.cwd,
-            "write_file" | "edit_file" if self.writes => {
+            "run_command" if self.process_enabled() => process::Input::parse(input.clone())?.cwd,
+            "bash" if self.process_enabled() => process::BashInput::parse(input.clone())?.cwd,
+            "write_file" | "edit_file" if self.writes() => {
                 Mutation::parse(name, input.clone())?.path().to_owned()
             }
-            "apply_patch" if self.writes => {
+            "apply_patch" if self.writes() => {
                 crate::patch::parse(&Self::patch_input(name, input.clone())?)?;
                 ".".into()
             }
@@ -1392,7 +1450,7 @@ impl Tools {
         prepared: Prepared,
         cancel: CancellationToken,
     ) -> Result<Value, ToolError> {
-        if !self.background_enabled || prepared.name != "start_job" {
+        if !self.background_enabled() || prepared.name != "start_job" {
             return Err(ToolError::Unsupported);
         }
         let current = self
@@ -1407,8 +1465,8 @@ impl Tools {
             &self.root,
             &prepared.path,
             process::Input::parse(prepared.input)?,
-            self.process_network,
-            self.process_sandbox,
+            self.process_network(),
+            self.process_sandbox(),
             cancel,
         )
         .await
@@ -1454,8 +1512,7 @@ impl Tools {
         }
         if prepared.access() == Access::Web {
             return self
-                .web
-                .as_ref()
+                .web()
                 .ok_or(ToolError::Unsupported)?
                 .execute(&prepared.name, prepared.input, policy, cancel)
                 .await;
@@ -1523,8 +1580,8 @@ impl Tools {
                 &self.root,
                 &prepared.path,
                 input,
-                self.process_network,
-                self.process_sandbox,
+                self.process_network(),
+                self.process_sandbox(),
                 cancel,
                 progress,
             )
@@ -1719,7 +1776,7 @@ impl Tools {
     }
 
     fn delegation_definitions(&self) -> Vec<ToolDefinition> {
-        if !self.delegation_enabled {
+        if !self.delegation_enabled() {
             return Vec::new();
         }
         vec![
@@ -1780,7 +1837,7 @@ impl Tools {
         ]);
         definitions.extend(self.delegation_definitions());
         definitions.extend(self.lsp_definitions());
-        if self.background_enabled && crate::terminal::supported() {
+        if self.background_enabled() && crate::terminal::supported() {
             definitions.push(ToolDefinition {
                 name: "terminal_start".into(),
                 description: "Start a Session-owned interactive PTY for a program or REPL. Supply argv, such as [\"bash\"]. Requires process/background authority, confined to the workspace. Survives turn cancellation, killed on engine shutdown/owner loss; maximum lifetime one day. Up to eight retained terminals per Session; stop to release.".into(),
@@ -1828,31 +1885,31 @@ impl Tools {
             ToolDefinition{name:"goal".into(),description:"Record this Session's durable objective/status/evidence/budget. done and blocked require evidence. Optional expected_revision protects against stale writes; evidence is recorded, not independently verified. autonomous records explicit user authorization and grants no additional permissions.".into(),input_schema:json!({"type":"object","properties":{"autonomous":{"type":"boolean"},"objective":{"type":"string"},"status":{"type":"string","enum":["active","paused","blocked","done"]},"evidence":{"type":"string"},"budget":{"type":"string"},"expected_revision":{"type":"integer","minimum":0}},"required":["objective","status"],"additionalProperties":false})},
         ]);
         definitions.push(ToolDefinition{name:"question".into(),description:"Ask 1..4 bounded choice questions. Answers arrive through the authenticated local controller. Waiting is interruptible; no automatic replay after crash. multiSelect permits multiple labels; custom permits a typed answer.".into(),input_schema:json!({"type":"object","properties":{"questions":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"object","properties":{"question":{"type":"string"},"header":{"type":"string","maxLength":12},"options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{"label":{"type":"string"},"description":{"type":"string"}},"required":["label"],"additionalProperties":false}},"multiSelect":{"type":"boolean","default":false},"custom":{"type":"boolean","default":true}},"required":["question","options"],"additionalProperties":false}},"timeout_ms":{"type":"integer","minimum":1,"maximum":600000,"default":60000}},"required":["questions"],"additionalProperties":false})});
-        if self.wakeup_enabled {
+        if self.wakeup_enabled() {
             definitions.extend([
                 ToolDefinition{name:"schedule_wakeup".into(),description:"Schedule one prompt for this Session in 60..3600 seconds. Default delivery=queue. Survives turn cancel, but timers stop on process shutdown/restart. Durable admission is atomic at fire; no automatic timer replay.".into(),input_schema:json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":8192},"delaySeconds":{"type":"integer","minimum":60,"maximum":3600},"delivery":{"type":"string","enum":["queue","steer"],"default":"queue"}},"required":["prompt","delaySeconds"],"additionalProperties":false})},
                 ToolDefinition{name:"cancel_wakeup".into(),description:"Cancel this Session's pending wakeup. A fired timer has already admitted its prompt and cannot be cancelled by this operation.".into(),input_schema:json!({"type":"object","properties":{"timer_id":{"type":"string"}},"required":["timer_id"],"additionalProperties":false})},
             ]);
         }
-        if self.cron_enabled {
+        if self.cron_enabled() {
             definitions.extend([
                 ToolDefinition{name:"cron_create".into(),description:"Schedule prompts for this Session using a numeric standard 5-field local-time cron expression. Process lifetime only, max seven days. Default recurring=true and delivery=queue. Missed ticks are not replayed; pending inputs coalesce.".into(),input_schema:json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":8192},"cron":{"type":"string","maxLength":256},"recurring":{"type":"boolean","default":true},"delivery":{"type":"string","enum":["queue","steer"],"default":"queue"}},"required":["prompt","cron"],"additionalProperties":false})},
                 ToolDefinition{name:"cron_list".into(),description:"List this Session's recent cron schedules, next occurrence, fired/skipped counts and terminal state.".into(),input_schema:json!({"type":"object","properties":{},"additionalProperties":false})},
                 ToolDefinition{name:"cron_delete".into(),description:"Cancel future occurrences of this Session's cron schedule. Already admitted prompts remain durable.".into(),input_schema:json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false})},
             ]);
         }
-        if self.writes {
+        if self.writes() {
             definitions.extend([
                 ToolDefinition{name:"write_file".into(),description:"Write UTF-8 text (max 32768 bytes) under workspace. expected_sha256=null creates only; existing files require the current SHA-256 from read_file. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"text":{"type":"string"},"expected_sha256":{"type":["string","null"]}},"required":["path","text","expected_sha256"],"additionalProperties":false})},
                 ToolDefinition{name:"apply_patch".into(),description:"Apply a strict V4A multi-file patch (Add/Update/Delete File sections with @@ hunks) as one transaction: all-or-nothing, context must match exactly, BOM/CRLF preserved, max 32 files/256 KiB patch/1 MiB per file. Requires permission approval for the whole patch.".into(),input_schema:json!({"type":"object","properties":{"patch":{"type":"string"}},"required":["patch"],"additionalProperties":false})},
                         ToolDefinition{name:"edit_file".into(),description:"Conditionally replace old_string with new_string using the SHA-256 from read_file. new_string may be empty to delete the match. Ambiguous matches fail unless replace_all=true. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string","minLength":1},"new_string":{"type":"string"},"expected_sha256":{"type":"string"},"replace_all":{"type":"boolean"}},"required":["path","old_string","new_string","expected_sha256"],"additionalProperties":false})},
             ]);
         }
-        if self.process_enabled {
+        if self.process_enabled() {
             definitions.push(ToolDefinition{name:"run_command".into(),description:format!("Run an explicit argv in a workspace-write sandbox. Timeout 1..{} ms; stdout/stderr bounded to 32768 bytes each. No implicit shell and no background lifetime. pty merges stdout/stderr behind a terminal. Requires process permission.",crate::process::MAX_TIMEOUT_MS),input_schema:json!({"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":128},"cwd":{"type":"string","default":"."},"timeout_ms":{"type":"integer","minimum":1,"maximum":crate::process::MAX_TIMEOUT_MS,"default":crate::process::DEFAULT_TIMEOUT_MS},"pty":{"type":"boolean","default":false}},"required":["argv"],"additionalProperties":false})});
             definitions.push(ToolDefinition{name:"bash".into(),description:format!("Run a shell command line (bash -c) in a workspace-write sandbox. Timeout 1..{} ms; output bounded to 32768 bytes. pty merges stdout/stderr behind a terminal. Requires process permission.",crate::process::MAX_TIMEOUT_MS),input_schema:json!({"type":"object","properties":{"command":{"type":"string","minLength":1},"cwd":{"type":"string","default":"."},"timeout_ms":{"type":"integer","minimum":1,"maximum":crate::process::MAX_TIMEOUT_MS,"default":crate::process::DEFAULT_TIMEOUT_MS},"pty":{"type":"boolean","default":false}},"required":["command"],"additionalProperties":false})});
         }
-        if self.background_enabled {
+        if self.background_enabled() {
             let mut start = definitions
                 .iter()
                 .find(|tool| tool.name == "run_command")
@@ -1876,7 +1933,7 @@ impl Tools {
         // authority; keep their definitions available whenever the bridge is
         // attached.
         definitions.extend(self.product_tools.read().unwrap().iter().cloned());
-        if let Some(web) = &self.web {
+        if let Some(web) = self.web() {
             definitions.extend(web.definitions());
         }
         definitions.extend(if self.compact_disclosure {
