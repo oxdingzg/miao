@@ -60,6 +60,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `jobs` / `job` / `cancel_job` | `session_id`, … | background jobs |
 | `crons` / `cancel_cron` | `session_id`, … | schedule |
 | `wakeups` / `cancel_wakeup` | `session_id`, … | schedule |
+| `vcs_status` | `session_id` | workspace Git state, or `{repository:false}` |
 | `shutdown` | — | terminates the process |
 
 `snapshot` defaults to the full transcript. Catalog and peer readers can set
@@ -338,6 +339,23 @@ does not change the budget.
 An idle Session honours the request at its next provider turn rather than
 compacting in the middle of nothing, which is where a Session's settled boundary
 actually exists.
+
+### Workspace Git state
+
+`vcs_status` answers "what changed in this Session's workspace" from one
+`git status --porcelain=v2 --branch -z` call. It is read-only: no index write,
+no lock, no network, and `ahead`/`behind` come from the local branch header. The
+answer carries `branch`, `detached`, `upstream`, `ahead`/`behind` when an
+upstream exists, and `files[]` with `path`, `original_path`, the raw `index` and
+`worktree` columns, and a normalized `kind` (`untracked`, `conflicted`,
+`renamed`, `copied`, `added`, `deleted`, `modified`, `type-changed`, `changed`).
+Paths are relative to the Session's location root.
+
+A location that is not inside a repository answers `{"repository": false,
+"root": …}` instead of failing. At most 5000 entries are returned; a larger
+workspace sets `truncated: true` and still reports the true `file_count`. A git
+call that does not finish within ten seconds fails with a reason rather than
+holding the drain.
 
 ### Archiving
 

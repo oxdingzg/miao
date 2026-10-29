@@ -681,6 +681,64 @@ async fn a_slow_reader_does_not_kill_the_engine() {
 }
 
 #[test]
+fn workspace_git_state_is_a_wire_command_that_answers_absent_repositories() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"hello"},"resume":false}}),
+        json!({"id":2,"method":"vcs_status","params":{"session_id":"s"}}),
+        json!({"id":3,"method":"vcs_status","params":{"session_id":"missing"}}),
+        json!({"id":4,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let result =
+        |id: u64| replies.iter().find(|reply| reply["id"] == id).unwrap()["result"].clone();
+    // The workspace is a plain temp directory, so the answer is "no repository"
+    // with the root it looked at, not an error. The engine stores the location
+    // canonicalized, which matters on hosts where the temp dir is a symlink.
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    assert_eq!(
+        result(2),
+        json!({"repository": false, "root": root.to_str().unwrap()})
+    );
+    // A Session nobody initialized has no location to inspect.
+    assert!(
+        replies.iter().find(|reply| reply["id"] == 3).unwrap()["error"].is_object(),
+        "{replies:?}"
+    );
+}
+
+#[test]
 fn input_edit_is_a_wire_command_that_rewrites_a_queued_prompt() {
     let dir = tempfile::tempdir().unwrap();
     let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))

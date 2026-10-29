@@ -80,6 +80,7 @@ pub mod terminal;
 pub mod tool_replay;
 pub mod tools;
 pub mod usage;
+pub mod vcs;
 mod verification;
 pub mod wakeup;
 pub mod web;
