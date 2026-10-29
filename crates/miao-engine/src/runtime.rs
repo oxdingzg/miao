@@ -60,6 +60,7 @@ struct Inner {
     /// `Arc`, so a turn that already took its snapshot keeps running under the
     /// rules it started with.
     policy: StdRwLock<Arc<Policy>>,
+    default_agent: Option<crate::session_agent::AgentManifest>,
     store: Store,
     shared_permissions: Option<crate::permission_context::HandoffBinding>,
     permission_sources: std::sync::Mutex<Vec<crate::permission_source_transaction::Source>>,
@@ -228,7 +229,28 @@ impl Runtime {
         policy: Policy,
         tool_replay: Option<ToolReplay>,
     ) -> Result<Self, Error> {
-        Self::construct(store, provider, tools, policy, tool_replay, None).await
+        Self::with_policy_agent_and_tool_replay(store, provider, tools, policy, tool_replay, None)
+            .await
+    }
+
+    pub async fn with_policy_agent_and_tool_replay(
+        store: Store,
+        provider: Arc<dyn Provider>,
+        tools: Tools,
+        policy: Policy,
+        tool_replay: Option<ToolReplay>,
+        default_agent: Option<crate::session_agent::AgentManifest>,
+    ) -> Result<Self, Error> {
+        Self::construct(
+            store,
+            provider,
+            tools,
+            policy,
+            tool_replay,
+            None,
+            default_agent,
+        )
+        .await
     }
 
     /// Explicit trusted-host selection after both migration drivers complete.
@@ -238,6 +260,16 @@ impl Runtime {
         provider: Arc<dyn Provider>,
         tools: Tools,
         policy: Policy,
+    ) -> Result<Self, Error> {
+        Self::with_shared_permissions_and_agent(binding, provider, tools, policy, None).await
+    }
+
+    pub async fn with_shared_permissions_and_agent(
+        binding: crate::permission_context::HandoffBinding,
+        provider: Arc<dyn Provider>,
+        tools: Tools,
+        policy: Policy,
+        default_agent: Option<crate::session_agent::AgentManifest>,
     ) -> Result<Self, Error> {
         let snapshot = binding.snapshot().await?;
         if snapshot.workspace_id.is_some()
@@ -262,6 +294,7 @@ impl Runtime {
             policy,
             None,
             Some(binding),
+            default_agent,
         )
         .await
     }
@@ -273,7 +306,11 @@ impl Runtime {
         policy: Policy,
         tool_replay: Option<ToolReplay>,
         shared_permissions: Option<crate::permission_context::HandoffBinding>,
+        default_agent: Option<crate::session_agent::AgentManifest>,
     ) -> Result<Self, Error> {
+        if let Some(agent) = &default_agent {
+            agent.validate()?;
+        }
         if tool_replay.is_some() && !tools.hooks().is_empty() {
             return Err(Error::Invalid(
                 "native tool replay does not execute configured hooks".into(),
@@ -324,6 +361,7 @@ impl Runtime {
                 id: uuid::Uuid::new_v4().to_string(),
                 _lease: lease,
                 policy: StdRwLock::new(Arc::new(policy)),
+                default_agent,
                 store,
                 shared_permissions,
                 permission_sources: std::sync::Mutex::new(Vec::new()),
@@ -361,6 +399,9 @@ impl Runtime {
                 restore_pending: Mutex::new(std::collections::HashSet::new()),
             }),
         };
+        if let Some(agent) = &runtime.inner.default_agent {
+            validate_agent(&runtime.inner, agent)?;
+        }
         let inner = runtime.inner.clone();
         for (session, timer_id, due_at_ms) in inner.store.adopt_wakeups().await? {
             let background = arm_wakeup(&inner, session.clone(), timer_id.clone(), due_at_ms);
@@ -1649,10 +1690,11 @@ impl Runtime {
         let admission = self
             .inner
             .store
-            .admit_attachments_at(
+            .admit_attachments_with_agent_at(
                 input,
                 attachments,
                 Some(self.inner.tools.location().to_owned()),
+                self.inner.default_agent.clone(),
             )
             .await?;
         // An exact retry may repair a lost advisory wake for pending input,
@@ -2534,7 +2576,17 @@ async fn execute(
         }
         // A host-resolved agent (ADR-0017) applies at this boundary: its pinned
         // model only while the Session has no explicit selection of its own.
-        let agent = inner.store.agent(session).await?;
+        // Timers and explicit wakeups may drain older admitted inputs too.
+        let agent = match (inner.store.agent(session).await?, &inner.default_agent) {
+            (None, Some(default)) => {
+                inner
+                    .store
+                    .ensure_default_agent(session, default.clone())
+                    .await?;
+                inner.store.agent(session).await?
+            }
+            (agent, _) => agent,
+        };
         let manifest = agent.as_ref().map(|(manifest, _)| manifest);
         let policy = inner.policy().for_agent(manifest)?;
         // A newly promoted external input gets the selected agent's whole

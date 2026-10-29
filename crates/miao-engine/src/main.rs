@@ -77,6 +77,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "product_permission_diagnostics": 1,
                 "product_permission_auto": 1,
                 "saved_rules_snapshot": 1,
+                "session_agent_defaults": 1,
             })
         );
         return Ok(());
@@ -315,6 +316,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--fallback-endpoint",
             "--provider",
             "--policy",
+            "--agent-config",
             "--config-dir",
             "--config-sources",
             "--mode",
@@ -796,6 +798,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .get("--context-limits")
         .map(|json| miao_engine::context_trigger::ContextLimits::from_wire(json))
         .transpose()?;
+    let default_agent = options
+        .get("--agent-config")
+        .map(|file| {
+            if std::fs::metadata(file)?.len() > 4 * 1024 * 1024 {
+                return Err(miao_engine::protocol::Error::Invalid(
+                    "agent manifest exceeds 4 MiB".into(),
+                ));
+            }
+            let agent: miao_engine::session_agent::AgentManifest =
+                serde_json::from_slice(&std::fs::read(file)?)?;
+            agent.validate()?;
+            Ok::<_, miao_engine::protocol::Error>(agent)
+        })
+        .transpose()?;
     let runtime = match (
         options.get("--permission-root-db"),
         options.get("--permission-project"),
@@ -818,15 +834,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .await?;
             let source = Store::open(db).await?;
             let binding = context.bind_handoff(&source).await?;
-            Runtime::with_shared_permissions(binding, provider, tools, policy).await?
+            Runtime::with_shared_permissions_and_agent(
+                binding,
+                provider,
+                tools,
+                policy,
+                default_agent,
+            )
+            .await?
         }
         (None, None) => {
-            Runtime::with_policy_and_tool_replay(
+            Runtime::with_policy_agent_and_tool_replay(
                 Store::open(db).await?,
                 provider,
                 tools,
                 policy,
                 replay,
+                default_agent,
             )
             .await?
         }

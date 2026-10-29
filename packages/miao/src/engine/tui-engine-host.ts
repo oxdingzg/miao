@@ -19,6 +19,7 @@ import { discoveredEngine, resolveEngine } from "./discovery"
 import { prepareMcpConfig } from "./mcp-config"
 import { compactionSettings, engineSettings, nativeEngineOptions } from "./native-engine"
 import { ProductFormatter } from "./product-formatter"
+import { ProductTuiAgent } from "./product-tui-agent"
 import { ProductHooks } from "./product-hooks"
 import { ProductMcp } from "./product-mcp"
 import { ProductPermission } from "./product-permission"
@@ -103,6 +104,7 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   const context = yield* AmbientContext.prepare(ref, effective)
   const hooks = yield* ProductHooks.prepare(ref, { ...effective, ...context.options })
   const formatter = yield* ProductFormatter.prepare(ref, effective)
+  const agent = yield* ProductTuiAgent.prepare(effective)
   const database = yield* Database.Service
   const permission = yield* ProductPermission.prepare(ref, {
     binary,
@@ -116,6 +118,7 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
     ...context.options,
     ...hooks,
     ...formatter,
+    ...agent,
     ...permission.options,
     db: input.database,
     workspace: input.workspace,

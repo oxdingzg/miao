@@ -522,6 +522,20 @@ impl Store {
         attachments: Vec<Attachment>,
         root: Option<String>,
     ) -> Result<Admission, Error> {
+        self.admit_attachments_with_agent_at(input, attachments, root, None)
+            .await
+    }
+
+    pub(crate) async fn admit_attachments_with_agent_at(
+        &self,
+        input: Input,
+        attachments: Vec<Attachment>,
+        root: Option<String>,
+        agent: Option<crate::session_agent::AgentManifest>,
+    ) -> Result<Admission, Error> {
+        if let Some(agent) = &agent {
+            agent.validate()?;
+        }
         if attachments.len() > 8 {
             return Err(Error::Invalid("attachment count limit".into()));
         }
@@ -531,6 +545,9 @@ impl Store {
         self.call(move |conn| {
             let tx = write_tx(conn)?;
             let admission = admit_input(&tx, &input, root.as_deref(), &attachments)?;
+            if let Some(agent) = &agent {
+                crate::session_agent::ensure_default_agent_tx(&tx, &input.session_id, agent)?;
+            }
             tx.commit()?;
             Ok(admission)
         })

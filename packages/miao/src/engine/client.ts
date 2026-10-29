@@ -42,6 +42,7 @@ export interface EngineOptions {
   awsProfile?: string
   authFile?: string
   policyFile?: string
+  agentConfigFile?: string
   /** The global config directory; the engine derives the product policy from it. */
   configDir?: string
   /**
@@ -296,6 +297,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.awsProfile) args.push("--aws-profile", options.awsProfile)
   if (options.authFile) args.push("--auth-file", options.authFile)
   if (options.policyFile) args.push("--policy", options.policyFile)
+  if (options.agentConfigFile) args.push("--agent-config", options.agentConfigFile)
   if (options.configDir) args.push("--config-dir", options.configDir)
   if (options.configSources) args.push("--config-sources", options.configSources)
   if (options.toolReplayFile) args.push("--tool-replay", options.toolReplayFile)
