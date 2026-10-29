@@ -529,6 +529,7 @@ fn response(
         input_hash: record.input_hash.clone(),
         authority_revision: record.authority_revision.clone(),
         reply,
+        message: None,
     }
 }
 
@@ -1532,5 +1533,160 @@ async fn failed_always_does_not_partially_release_sibling_assertions() {
     connection
         .execute_batch("DROP TRIGGER fail_sibling_resolution")
         .unwrap();
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn corrected_rejection_feedback_belongs_only_to_the_selected_request() {
+    let (_directory, store, runtime, source) = running().await;
+    let first = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("corrected", "public"),
+        )
+        .await
+        .unwrap();
+    let sibling = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("declined-peer", "different"),
+        )
+        .await
+        .unwrap();
+    let mut host = Host::new(runtime.clone());
+    let mut wire = json!({"method":"product_permission_reply","params":{"source":source,"response":{
+        "request_id":first.id,"input_hash":first.input_hash,"authority_revision":first.authority_revision,
+        "reply":"reject","message":"先检查配置，再修改。\nKeep the existing data."
+    }}});
+    let rejected = host
+        .dispatch(serde_json::from_value(wire.clone()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(rejected["state"], "denied");
+    assert_eq!(rejected["reason"], "user_corrected");
+    assert_eq!(
+        rejected["feedback"],
+        "先检查配置，再修改。\nKeep the existing data."
+    );
+    assert_eq!(
+        host.dispatch(serde_json::from_value(wire.clone()).unwrap())
+            .await
+            .unwrap(),
+        rejected
+    );
+    wire["params"]["response"]["message"] = json!("different correction");
+    assert!(host
+        .dispatch(serde_json::from_value(wire).unwrap())
+        .await
+        .is_err());
+    let persisted = serde_json::to_value(
+        runtime
+            .product_permission_status(&runtime.controller(), &source, first.id)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(persisted, rejected);
+    let peer = serde_json::to_value(
+        runtime
+            .product_permission_status(&runtime.controller(), &source, sibling.id)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(peer["state"], "denied");
+    assert_eq!(peer["reason"], "user_rejected");
+    assert!(peer.get("feedback").is_none());
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let replies = events
+        .iter()
+        .filter(|event| event.kind == "product.permission.resolved")
+        .collect::<Vec<_>>();
+    assert_eq!(replies.len(), 2);
+    assert_eq!(replies[0].data["feedback"], rejected["feedback"]);
+    assert!(replies[1].data.get("feedback").is_none());
+    assert!(runtime
+        .permission_patterns(&runtime.controller())
+        .await
+        .unwrap()
+        .is_empty());
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn reply_feedback_bounds_and_empty_message_match_the_host_contract() {
+    use miao_engine::product_permission_request::State;
+    let (_directory, store, runtime, source) = running().await;
+    let pending = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("feedback-bounds", "public"),
+        )
+        .await
+        .unwrap();
+    let mut host = Host::new(runtime.clone());
+    let mut wire = json!({"method":"product_permission_reply","params":{"source":source,"response":{
+        "request_id":pending.id,"input_hash":pending.input_hash,"authority_revision":pending.authority_revision,
+        "reply":"reject","message":""
+    }}});
+    for message in ["x".repeat(4097), "invalid\0feedback".into()] {
+        wire["params"]["response"]["message"] = json!(message);
+        assert!(host
+            .dispatch(serde_json::from_value(wire.clone()).unwrap())
+            .await
+            .is_err());
+        assert_eq!(
+            runtime
+                .product_permission_status(&runtime.controller(), &source, pending.id.clone())
+                .await
+                .unwrap()
+                .state,
+            State::Pending
+        );
+    }
+    assert!(!store
+        .events("s", 0, 1000)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| event.kind == "product.permission.resolved"));
+    wire["params"]["response"]["message"] = json!("");
+    let rejected = host
+        .dispatch(serde_json::from_value(wire.clone()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(rejected["reason"], "user_rejected");
+    assert!(rejected.get("feedback").is_none());
+    wire["params"]["response"]
+        .as_object_mut()
+        .unwrap()
+        .remove("message");
+    assert_eq!(
+        host.dispatch(serde_json::from_value(wire).unwrap())
+            .await
+            .unwrap(),
+        rejected
+    );
+    let once = runtime
+        .admit_product_permission(
+            &runtime.controller(),
+            &source,
+            assertion("ignored-message", "public"),
+        )
+        .await
+        .unwrap();
+    let ignored = json!({"method":"product_permission_reply","params":{"source":source,"response":{
+        "request_id":once.id,"input_hash":once.input_hash,"authority_revision":once.authority_revision,
+        "reply":"once","message":"ignored for non-reject replies"
+    }}});
+    let allowed = host
+        .dispatch(serde_json::from_value(ignored).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(allowed["state"], "allowed");
+    assert!(allowed.get("feedback").is_none());
     runtime.shutdown().await;
 }

@@ -668,7 +668,7 @@ payloads are bounded to 16 KiB. The additive optional request table leaves the
 existing schema version unchanged.
 
 This is the durable backend for host subrequests. The product compatibility
-adapter, corrected-rejection feedback, product event projection, and removal
+adapter, product event projection, and removal
 of the TypeScript evaluator remain separate S6 gates. Existing host tools do
 not switch permission ownership merely because the capability is present.
 
@@ -687,3 +687,21 @@ Patterns, the selected reply, peer resolutions, and their events commit or roll
 back together. An exact retry of an already-resolved reply performs no sweep and
 does not restore rules removed since that reply. These semantics match the host
 permission service without enabling the product compatibility adapter.
+
+#### Corrected rejection feedback
+
+`product_permission_replies: 1` identifies peer-reply semantics plus optional
+`message` on `product_permission_reply`. A nonempty reject message is preserved
+as `feedback` on the selected durable record and its resolution event, with
+reason `user_corrected`. Other requests swept by that rejection remain ordinary
+`user_rejected` declines and do not receive the correction. Empty reject messages
+mean ordinary decline; messages on once/always have no semantic effect, matching
+the host service. Messages are bounded to 4096 UTF-8 bytes and reject NUL.
+
+An exact response retry must match both the reply and normalized correction;
+it cannot replace an existing correction. Invalid feedback leaves the request
+pending without a resolution event. Legacy records without `feedback` decode
+with no correction, and records without a correction omit the field. Consumers
+must check this capability before sending message-bearing responses. The
+capability does not activate the product adapter or turn a reply into an action
+execution ticket.
