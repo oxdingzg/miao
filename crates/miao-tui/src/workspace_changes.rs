@@ -124,7 +124,7 @@ impl Dialog {
                     (Some(name), false) => name.clone(),
                     (None, false) => "no branch".to_string(),
                 };
-                let mut header = format!("{branch}");
+                let mut header = branch.to_string();
                 if let Some(ahead) = state.ahead {
                     header.push_str(&format!("  ↑{ahead}"));
                 }
