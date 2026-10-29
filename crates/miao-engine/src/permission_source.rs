@@ -30,6 +30,15 @@ pub struct Record {
     pub state: State,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RunAuthority {
+    pub target: Target,
+    pub fingerprint: String,
+    pub runtime: String,
+    pub owner_pid: u32,
+}
+
 pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS engine_permission_handoff(workspace TEXT PRIMARY KEY,state TEXT NOT NULL CHECK(state IN ('prepared','completed')),data TEXT NOT NULL);")?;
     for (table, name) in [
@@ -51,21 +60,51 @@ pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
     let frozen_run = "EXISTS(SELECT 1 FROM engine_permission_handoff h WHERE
              NOT EXISTS(SELECT 1 FROM engine_location l WHERE l.session_id=NEW.session_id)
              OR EXISTS(SELECT 1 FROM engine_location l WHERE l.session_id=NEW.session_id AND l.root=h.workspace))";
+    let shared_run = "EXISTS(SELECT 1 FROM engine_permission_handoff h
+         JOIN engine_location l ON l.root=h.workspace AND l.session_id=NEW.session_id
+         JOIN engine_lease e ON e.session_id=NEW.session_id AND e.epoch=NEW.lease_epoch
+         WHERE h.state='completed' AND json_valid(NEW.shared_permission)=1
+         AND json_extract(NEW.shared_permission,'$.target.authority')=json_extract(h.data,'$.target.authority')
+         AND json_extract(NEW.shared_permission,'$.target.project')=json_extract(h.data,'$.target.project')
+         AND json_extract(NEW.shared_permission,'$.target.directory')=h.workspace
+         AND json_extract(NEW.shared_permission,'$.target.workspace_id') IS NULL
+         AND json_extract(NEW.shared_permission,'$.fingerprint')=json_extract(h.data,'$.fingerprint')
+         AND length(json_extract(NEW.shared_permission,'$.runtime'))=36
+         AND json_extract(NEW.shared_permission,'$.owner_pid')=e.owner_pid)";
+    // Old prepared writers omit the new nullable column and stay fenced. Never
+    // relax the legacy rule-table triggers or remove the completed handoff.
+    connection.execute_batch(
+        "DROP TRIGGER IF EXISTS engine_permission_handoff_run;
+        DROP TRIGGER IF EXISTS engine_permission_handoff_run_update;
+        DROP TRIGGER IF EXISTS engine_permission_handoff_location_insert;
+        DROP TRIGGER IF EXISTS engine_permission_handoff_location_update;",
+    )?;
     connection.execute_batch(&format!(
-        "CREATE TRIGGER IF NOT EXISTS engine_permission_handoff_run BEFORE INSERT ON engine_run
-         WHEN {frozen_run}
+        "CREATE TRIGGER engine_permission_handoff_run BEFORE INSERT ON engine_run
+         WHEN ({frozen_run}) AND NOT ({shared_run})
          BEGIN SELECT RAISE(ABORT,'permission source is frozen; shared execution backend required'); END;
-         CREATE TRIGGER IF NOT EXISTS engine_permission_handoff_run_update BEFORE UPDATE OF session_id,state ON engine_run
-         WHEN NEW.state='running' AND {frozen_run}
+         CREATE TRIGGER engine_permission_handoff_run_update BEFORE UPDATE OF session_id,state,lease_epoch ON engine_run
+         WHEN NEW.state='running' AND ({frozen_run}) AND NOT ({shared_run})
          BEGIN SELECT RAISE(ABORT,'permission source is frozen; shared execution backend required'); END;
+         CREATE TRIGGER IF NOT EXISTS engine_shared_permission_run_immutable BEFORE UPDATE OF shared_permission ON engine_run
+         WHEN NEW.shared_permission IS NOT OLD.shared_permission
+         BEGIN SELECT RAISE(ABORT,'shared permission run authority is immutable'); END;
          CREATE TRIGGER IF NOT EXISTS engine_permission_handoff_location_insert BEFORE INSERT ON engine_location
          WHEN EXISTS(SELECT 1 FROM engine_permission_handoff WHERE workspace=NEW.root)
               AND EXISTS(SELECT 1 FROM engine_run WHERE session_id=NEW.session_id AND state='running')
+              AND NOT EXISTS(SELECT 1 FROM engine_location WHERE session_id=NEW.session_id AND root=NEW.root)
          BEGIN SELECT RAISE(ABORT,'permission source is frozen; shared execution backend required'); END;
          CREATE TRIGGER IF NOT EXISTS engine_permission_handoff_location_update BEFORE UPDATE ON engine_location
          WHEN EXISTS(SELECT 1 FROM engine_permission_handoff WHERE workspace=NEW.root)
               AND EXISTS(SELECT 1 FROM engine_run WHERE session_id=NEW.session_id AND state='running')
          BEGIN SELECT RAISE(ABORT,'permission source is frozen; shared execution backend required'); END;
+         CREATE TRIGGER IF NOT EXISTS engine_shared_permission_location_update BEFORE UPDATE ON engine_location
+         WHEN (NEW.root!=OLD.root OR NEW.session_id!=OLD.session_id)
+              AND EXISTS(SELECT 1 FROM engine_run WHERE session_id=OLD.session_id AND state='running' AND shared_permission IS NOT NULL)
+         BEGIN SELECT RAISE(ABORT,'shared permission run placement is immutable'); END;
+         CREATE TRIGGER IF NOT EXISTS engine_shared_permission_location_delete BEFORE DELETE ON engine_location
+         WHEN EXISTS(SELECT 1 FROM engine_run WHERE session_id=OLD.session_id AND state='running' AND shared_permission IS NOT NULL)
+         BEGIN SELECT RAISE(ABORT,'shared permission run placement is immutable'); END;
          CREATE TRIGGER IF NOT EXISTS engine_permission_handoff_no_delete BEFORE DELETE ON engine_permission_handoff
          BEGIN SELECT RAISE(ABORT,'permission source handoff cannot be aborted'); END;
          CREATE TRIGGER IF NOT EXISTS engine_permission_handoff_immutable BEFORE UPDATE ON engine_permission_handoff
@@ -701,5 +740,164 @@ mod tests {
         runtime.shutdown().await;
         drop(runtime);
         source.close().await.unwrap();
+    }
+    #[tokio::test]
+    async fn shared_run_binding_preserves_legacy_fences_and_rolls_back_unmarked_promotion() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let source = Store::open(directory.path().join("source.db"))
+            .await
+            .unwrap();
+        let context = crate::permission_project::Authority::open(directory.path().join("root.db"))
+            .await
+            .unwrap()
+            .project("fixture".into())
+            .unwrap()
+            .context(directory.path(), None)
+            .await
+            .unwrap();
+        let initial = context.snapshot().await.unwrap();
+        let prepared = source
+            .prepare_directory_permission_source(
+                workspace.clone(),
+                Target {
+                    authority: initial.project.authority.clone(),
+                    project: "fixture".into(),
+                    directory: workspace.clone(),
+                    workspace_id: None,
+                },
+            )
+            .await
+            .unwrap();
+        let imported = context
+            .handoff(initial.project.authority, prepared.patterns)
+            .await
+            .unwrap();
+        source
+            .complete_directory_permission_source(workspace.clone(), imported.clone())
+            .await
+            .unwrap();
+        let binding = context.bind_handoff(&source).await.unwrap();
+        for session in ["shared", "legacy"] {
+            source
+                .admit_at(
+                    crate::protocol::Input {
+                        session_id: session.into(),
+                        input_id: format!("{session}-input"),
+                        prompt: "pending".into(),
+                        delivery: crate::protocol::Delivery::Steer,
+                        command: None,
+                        agent_references: Default::default(),
+                    },
+                    Some(workspace.clone()),
+                )
+                .await
+                .unwrap();
+        }
+        let lease = source.claim_session("shared", 60_000).await.unwrap();
+        let error = source
+            .start_run_with_inputs_fenced("shared", "legacy-start", false, &lease)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("permission source is frozen"));
+        assert!(source.history("shared").await.unwrap().is_empty());
+        assert!(binding
+            .start_run_with_inputs_fenced(
+                "shared",
+                "invalid-runtime",
+                false,
+                &lease,
+                "invalid".into()
+            )
+            .await
+            .is_err());
+        let runtime = uuid::Uuid::new_v4().to_string();
+        let promoted = binding
+            .start_run_with_inputs_fenced("shared", "shared-start", false, &lease, runtime.clone())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(promoted.len(), 1);
+        assert_eq!(source.history("shared").await.unwrap().len(), 1);
+        source
+            .admit_at(
+                crate::protocol::Input {
+                    session_id: "shared".into(),
+                    input_id: "during-run".into(),
+                    prompt: "steer".into(),
+                    delivery: crate::protocol::Delivery::Steer,
+                    command: None,
+                    agent_references: Default::default(),
+                },
+                Some(workspace.clone()),
+            )
+            .await
+            .unwrap();
+        let sql = Connection::open(source.path()).unwrap();
+        assert!(sql
+            .execute("DELETE FROM engine_location WHERE session_id='shared'", [])
+            .is_err());
+        assert!(sql
+            .execute(
+                "UPDATE engine_location SET root='/different' WHERE session_id='shared'",
+                []
+            )
+            .is_err());
+        let encoded: String = sql
+            .query_row(
+                "SELECT shared_permission FROM engine_run WHERE id='shared-start'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let marker: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(marker["runtime"], runtime);
+        assert_eq!(marker["target"]["authority"], imported.project.authority);
+        assert!(sql
+            .execute(
+                "UPDATE engine_run SET shared_permission=NULL WHERE id='shared-start'",
+                []
+            )
+            .is_err());
+        let legacy_lease = source.claim_session("legacy", 60_000).await.unwrap();
+        let mut legacy=sql.prepare("INSERT INTO engine_run(id,session_id,state,lease_epoch) VALUES(?1,'legacy','running',?2)").unwrap();
+        let error = legacy
+            .execute(params!["unmarked", legacy_lease.epoch])
+            .unwrap_err();
+        assert!(error.to_string().contains("permission source is frozen"));
+        for (field, value) in [
+            (
+                "authority",
+                serde_json::json!(uuid::Uuid::new_v4().to_string()),
+            ),
+            ("project", serde_json::json!("other-project")),
+            ("directory", serde_json::json!("/other-directory")),
+            ("workspace_id", serde_json::json!("explicit")),
+        ] {
+            let mut wrong = marker.clone();
+            wrong["target"][field] = value;
+            assert!(sql.execute("INSERT INTO engine_run(id,session_id,state,lease_epoch,shared_permission) VALUES('wrong','legacy','running',?1,?2)",params![legacy_lease.epoch,serde_json::to_string(&wrong).unwrap()]).is_err(),"accepted wrong {field}");
+        }
+        for (field, value) in [
+            ("fingerprint", serde_json::json!("wrong")),
+            ("owner_pid", serde_json::json!(0)),
+            ("runtime", serde_json::json!("missing")),
+        ] {
+            let mut wrong = marker.clone();
+            wrong[field] = value;
+            assert!(sql.execute("INSERT INTO engine_run(id,session_id,state,lease_epoch,shared_permission) VALUES('wrong','legacy','running',?1,?2)",params![legacy_lease.epoch,serde_json::to_string(&wrong).unwrap()]).is_err(),"accepted wrong {field}");
+        }
+        assert!(sql.execute("INSERT INTO engine_run(id,session_id,state,lease_epoch,shared_permission) VALUES('wrong-epoch','legacy','running',?1,?2)",params![legacy_lease.epoch+1,encoded]).is_err());
+        assert!(source.saved_rules(workspace.clone()).await.is_err());
+        assert!(source
+            .put_permission_pattern(workspace, rule("still-frozen/**"))
+            .await
+            .is_err());
     }
 }

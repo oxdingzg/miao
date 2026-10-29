@@ -373,3 +373,10 @@ always 保存规则后，仅重新求值同 Runtime owner、项目和目录的�
 调用者提供的快照作为绑定凭据。返回不可直接构造的 `HandoffBinding`；每次 snapshot 重新
 核对来源回执和目的端身份，读取当前规则并保留撤销结果。prepared、错误目的端或回执丢失
 均拒绝。它只证明原生目录来源交接，不代替产品项目级交接证明、不解冻来源、不允许执行。
+
+Session schema v24 为 engine_run 增加可空且不可改写的 shared_permission 标记。旧 INSERT
+省略该字段仍为 NULL，冻结目录继续拒绝旧运行，旧规则读写也仍冻结。只有显式调用已验证
+HandoffBinding 的运行准入入口，才携带 Root/项目/目录/原始指纹、Runtime UUID 和当前 PID；
+SQL 还核对 completed 回执及当前执行租约。失败时连同 inbox 提升一起回滚。活跃共享运行
+的目录不能删除或移走，同目录的重复输入准入仍可继续。此处只提供存储运行准入栅栏，
+默认 Runtime 仍走旧入口；共享规则判定、审批及来源清理实际接线完成前不启用共享执行。
