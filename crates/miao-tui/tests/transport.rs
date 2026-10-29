@@ -302,3 +302,25 @@ async fn a_long_unicode_startup_error_keeps_its_leading_reason_and_a_bound() {
     );
     assert!(failure.message.chars().count() <= 360);
 }
+
+#[tokio::test]
+async fn an_oversized_unicode_diagnostic_keeps_the_reason_without_poisoning_the_reader() {
+    let spawn = EngineSpawn {
+        env: vec![(
+            "MIAO_TUI_FAKE_STARTUP_ERROR".into(),
+            format!("Error: storage is protected: {}", "路".repeat(3000)),
+        )],
+        ..fake()
+    };
+    let (_connection, mut events) = Connection::start(spawn, TIMEOUT).unwrap();
+    let failure = match next(&mut events).await {
+        TransportEvent::Failure(failure) => failure,
+        other => panic!("expected startup failure, got {other:?}"),
+    };
+    assert!(
+        failure.message.contains("Error: storage is protected:"),
+        "{}",
+        failure.message
+    );
+    assert!(failure.message.chars().count() <= 360);
+}

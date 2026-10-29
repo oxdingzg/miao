@@ -367,7 +367,7 @@ fn spawn_engine(
     let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
     let failure: Shared = Arc::new(Mutex::new(None));
     let closed = Arc::new(AtomicBool::new(false));
-    let stderr_tail: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let stderr_tail: Arc<Mutex<Stderr>> = Arc::new(Mutex::new(Stderr::default()));
 
     let mut writer = stdin;
     tokio::spawn(async move {
@@ -412,12 +412,7 @@ fn spawn_engine(
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
             let mut buffer = tail.lock().expect("stderr tail");
-            buffer.push_str(&line);
-            buffer.push('\n');
-            if buffer.len() > 8192 {
-                let excess = buffer.len() - 8192;
-                buffer.drain(..excess);
-            }
+            buffer.push(&line);
         }
     });
 
@@ -459,41 +454,66 @@ const EXIT_STATUS_GRACE: Duration = Duration::from_millis(500);
 /// The most stderr to quote back in one status line.
 const STDERR_DETAIL_CHARS: usize = 300;
 
-/// Prefer the startup diagnostic over the stack frames that follow it.
-fn stderr_detail(tail: &Mutex<String>) -> String {
+#[derive(Default)]
+struct Stderr {
+    tail: String,
+    diagnostic: Option<String>,
+}
+
+impl Stderr {
+    fn push(&mut self, line: &str) {
+        let summary = line.trim();
+        if summary.starts_with("miao engine-shim: ")
+            || summary.starts_with("Error: ")
+            || summary.starts_with("error: ")
+        {
+            self.diagnostic = Some(summary.chars().take(STDERR_DETAIL_CHARS).collect());
+        }
+        self.tail.push_str(line);
+        self.tail.push('\n');
+        if self.tail.len() > 8192 {
+            let excess = self.tail.len() - 8192;
+            // A byte budget may fall inside a Unicode path or diagnostic.
+            let boundary = self
+                .tail
+                .char_indices()
+                .map(|(offset, _)| offset)
+                .find(|offset| *offset >= excess)
+                .unwrap_or(self.tail.len());
+            self.tail.drain(..boundary);
+        }
+    }
+}
+
+/// Keep the actionable refusal even if its stack fills the bounded tail.
+fn stderr_detail(tail: &Mutex<Stderr>) -> String {
     let buffer = tail.lock().expect("stderr tail");
+    if let Some(diagnostic) = &buffer.diagnostic {
+        return diagnostic.clone();
+    }
     let lines: Vec<&str> = buffer
+        .tail
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .collect();
-    let detail = lines
-        .iter()
-        .rev()
-        .find(|line| {
-            line.starts_with("miao engine-shim: ")
-                || line.starts_with("Error: ")
-                || line.starts_with("error: ")
-        })
-        .map(|line| (*line).to_owned())
-        .unwrap_or_else(|| lines[lines.len().saturating_sub(3)..].join(" | "));
-    let length = detail.chars().count();
-    if length <= STDERR_DETAIL_CHARS {
-        return detail;
-    }
-    detail.chars().take(STDERR_DETAIL_CHARS).collect()
+    lines[lines.len().saturating_sub(3)..]
+        .join(" | ")
+        .chars()
+        .take(STDERR_DETAIL_CHARS)
+        .collect()
 }
 
 /// Why the engine stopped, in the words the user needs. The exit code alone
 /// cannot tell a storage fence from a refusal to start, and off the engine's
 /// own stderr every startup failure reads as a bare stream closure.
-fn engine_failure(status: Option<ExitStatus>, stderr_tail: &Mutex<String>) -> EngineFailure {
+fn engine_failure(status: Option<ExitStatus>, stderr_tail: &Mutex<Stderr>) -> EngineFailure {
     // `Error: Busy` on stderr means another engine owns this storage.
-    let busy = stderr_tail
-        .lock()
-        .expect("stderr tail")
-        .lines()
-        .any(|line| line.trim() == "Error: Busy");
+    let busy = {
+        let buffer = stderr_tail.lock().expect("stderr tail");
+        buffer.diagnostic.as_deref() == Some("Error: Busy")
+            || buffer.tail.lines().any(|line| line.trim() == "Error: Busy")
+    };
     if busy {
         return EngineFailure {
             code: "engine_busy".into(),
