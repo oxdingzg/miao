@@ -18,7 +18,7 @@ const MAX_WORKSPACE_BYTES: usize = 8192;
 
 pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
     connection.execute_batch(
-        "CREATE TABLE IF NOT EXISTS engine_permission_rule(
+        "CREATE TABLE IF NOT EXISTS engine_permission_rule_legacy(
            workspace TEXT NOT NULL,
            digest TEXT NOT NULL,
            rule TEXT NOT NULL,
@@ -44,14 +44,16 @@ pub(crate) fn project(
     workspace: &str,
     rules: &[Rule],
 ) -> Result<(), Error> {
+    crate::permission_source::require_legacy(connection, workspace)?;
     if !bounded(workspace) || rules.len() > MAX_RULES {
         return Err(Error::Invalid("invalid saved permission projection".into()));
     }
     let tx = crate::store::write_tx(connection)?;
+    crate::permission_source::require_legacy(&tx, workspace)?;
     let now = crate::approval::now_ms();
     for rule in rules {
         tx.execute(
-            "INSERT OR IGNORE INTO engine_permission_rule(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
+            "INSERT OR IGNORE INTO engine_permission_rule_legacy(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
             params![workspace, rule_digest(rule)?, serde_json::to_string(rule)?, now],
         )?;
     }
@@ -66,6 +68,7 @@ pub(crate) fn snapshot(
     workspace: &str,
     rules: &[Rule],
 ) -> Result<(), Error> {
+    crate::permission_source::require_legacy(connection, workspace)?;
     if !bounded(workspace)
         || workspace.contains('\0')
         || rules.len() > MAX_RULES
@@ -77,13 +80,14 @@ pub(crate) fn snapshot(
         return Err(Error::Invalid("invalid saved permission snapshot".into()));
     }
     let tx = crate::store::write_tx(connection)?;
+    crate::permission_source::require_legacy(&tx, workspace)?;
     tx.execute(
-        "DELETE FROM engine_permission_rule WHERE workspace=?1",
+        "DELETE FROM engine_permission_rule_legacy WHERE workspace=?1",
         [workspace],
     )?;
     let now = crate::approval::now_ms();
     for rule in rules {
-        tx.execute("INSERT OR IGNORE INTO engine_permission_rule(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
+        tx.execute("INSERT OR IGNORE INTO engine_permission_rule_legacy(workspace,digest,rule,created_at_ms) VALUES(?1,?2,?3,?4)",
             params![workspace,rule_digest(rule)?,serde_json::to_string(rule)?,now])?;
     }
     tx.commit()?;
@@ -92,11 +96,18 @@ pub(crate) fn snapshot(
 
 /// The workspace's projected rules, in projection order.
 pub(crate) fn rules(connection: &Connection, workspace: &str) -> Result<Vec<Rule>, Error> {
+    crate::permission_source::require_legacy(connection, workspace)?;
     if !bounded(workspace) {
         return Err(Error::Invalid("invalid saved permission workspace".into()));
     }
-    let mut statement = connection
-        .prepare("SELECT rule FROM engine_permission_rule WHERE workspace = ?1 ORDER BY created_at_ms, digest")?;
+    let table = crate::permission_legacy::read_table(
+        connection,
+        crate::permission_legacy::Table::Projected,
+    )?
+    .ok_or_else(|| Error::Invalid("missing legacy permission projection".into()))?;
+    let mut statement = connection.prepare(&format!(
+        "SELECT rule FROM {table} WHERE workspace = ?1 ORDER BY created_at_ms, digest"
+    ))?;
     let rows = statement.query_map(params![workspace], |row| row.get::<_, String>(0))?;
     let mut rules = Vec::new();
     for row in rows {
@@ -172,7 +183,7 @@ mod tests {
     fn failed_snapshot_insert_rolls_back_the_prior_allowances() {
         let mut connection = connection();
         snapshot(&mut connection, "/a", &[rule("edit", "old")]).unwrap();
-        connection.execute_batch("CREATE TRIGGER reject_snapshot BEFORE INSERT ON engine_permission_rule WHEN json_extract(NEW.rule,'$.resource')='blocked' BEGIN SELECT RAISE(FAIL,'fixture failure'); END;").unwrap();
+        connection.execute_batch("CREATE TRIGGER reject_snapshot BEFORE INSERT ON engine_permission_rule_legacy WHEN json_extract(NEW.rule,'$.resource')='blocked' BEGIN SELECT RAISE(FAIL,'fixture failure'); END;").unwrap();
         assert!(snapshot(
             &mut connection,
             "/a",
@@ -236,7 +247,7 @@ mod tests {
         let connection = connection();
         connection
             .execute(
-                "INSERT INTO engine_permission_rule(workspace,digest,rule,created_at_ms) VALUES('/repo','x','{bogus',1)",
+                "INSERT INTO engine_permission_rule_legacy(workspace,digest,rule,created_at_ms) VALUES('/repo','x','{bogus',1)",
                 [],
             )
             .unwrap();

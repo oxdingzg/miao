@@ -918,7 +918,7 @@ rule content, repeated puts preserve identity/timestamp, and removing an absent
 ID is idempotent. Only allow rules are accepted; configured deny still wins.
 
 Native rows live separately from the host projection in the additive optional
-`engine_owned_permission_rule` table. They join saved rules during evaluation;
+`engine_owned_permission_rule_legacy` table (schema 23; earlier formats use the unsuffixed name). They join saved rules during evaluation;
 removal does not delete projected rows or exact-call grants. A compatible older
 read-only database without this optional table has no native-owned patterns.
 SQLite insertion constraints enforce the combined saved-rule budget for both
@@ -1250,3 +1250,48 @@ or explicit resume capture a still-missing default before constructing provider
 policy. The native Session ledger and policy remain authoritative; the host
 resolves manifest data and does not decide tool permissions. Standalone callers
 that omit the option retain their existing entry policy.
+
+### Legacy Session permission storage names
+
+Session schema 23 renames the projected and native-owned standing-rule tables
+to `engine_permission_rule_legacy` and `engine_owned_permission_rule_legacy`.
+The rename shares the schema publication transaction and preserves rules,
+original identities/timestamps, receipts, revocation state, journals and cursors.
+Already-open old SQL readers lose their old table names; older kernels refuse
+the new format on reopen. Live older run owners still block a format upgrade.
+
+Current read-only catalogs can inspect older schemas without upgrading them.
+A schema-23 reader never falls back to old, missing or ambiguous table names.
+This format boundary does not itself freeze a directory or activate shared
+Runtime authorization; the separate ownership handshake is described below.
+
+### Explicit directory source retirement
+
+`permission_source_handoff: 1` advertises a separate model-free entry point:
+`miao-engine permission-source --db PATH --project ID --directory PATH`. It
+requires an existing native Session database and canonicalizes the directory
+before opening it. The implicit-local placement and project stay bound for the
+process lifetime. Provider flags, credentials and model execution are absent.
+
+- `binding`: startup-bound project, canonical directory and implicit-local workspace identity.
+  Hosts compare both controls before freezing a source; this read does not prepare it.
+- `snapshot`: nullable immutable source record, including target identity,
+  original native patterns, destination fingerprint and `prepared/completed` state.
+- `prepare {authority}`: require a quiescent directory with no live or unknown
+  run owner, retain its exact pattern IDs/timestamps and freeze its old authority
+  in one source transaction. An exact retry adopts that record; changing its
+  destination fails. There is no abort/unfreeze operation.
+- `complete {snapshot}`: verify the actual destination Context snapshot's
+  authority, project, directory, workspace identity, migration fingerprint and
+  original imported count. The active destination pattern list may already have
+  revocations. A lost destination response or source acknowledgement leaves a
+  durable prepared record; retries cannot resurrect revoked rules.
+- `shutdown`: flush the acknowledgement and close the source store.
+
+Preparation refuses old rule reads, projection/import APIs, mutation and change
+feeds. SQL triggers protect both rule tables and immutable handoff facts against
+old writers, including moves between scopes. New legacy model runs in that
+directory are refused; durable prompt admission remains separate, and failed run
+start rolls promotion back without a provider request. Other directory scopes
+remain available. Successful completion retains the freeze until shared Runtime
+ownership is configured; this control does not enable that backend automatically.
