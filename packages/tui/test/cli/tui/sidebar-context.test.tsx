@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
-import { testRender } from "@opentui/solid"
+import { testRender, useRenderer } from "@opentui/solid"
+import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import type { TuiPluginApi, TuiSlotPlugin, TuiTranscriptAssistant } from "@miao/plugin/tui"
 import type { Session } from "@miao/schema/view-models"
 import contextPlugin from "../../../src/feature-plugins/sidebar/context"
@@ -34,6 +35,10 @@ async function render(providerView: TuiPluginApi["state"]["provider"], extra?: P
       },
     },
   })
+  return renderContext(api)
+}
+
+async function renderContext(api: TuiPluginApi) {
   let slot: TuiSlotPlugin | undefined
   api.slots = {
     register(plugin: TuiSlotPlugin) {
@@ -41,7 +46,7 @@ async function render(providerView: TuiPluginApi["state"]["provider"], extra?: P
       return "context"
     },
   }
-  await contextPlugin.tui(api, undefined, {
+  const start = () => contextPlugin.tui(api, undefined, {
     id: "context",
     source: "internal",
     spec: "context",
@@ -53,10 +58,14 @@ async function render(providerView: TuiPluginApi["state"]["provider"], extra?: P
     fingerprint: "test",
     state: "same",
   })
-  const app = await testRender(() => slot!.slots.sidebar_content!({ theme: api.theme }, { session_id: "s1" }), {
-    width: 42,
-    height: 24,
-  })
+  let startup: Promise<void> | undefined
+  function Harness() {
+    api.keymap = createDefaultOpenTuiKeymap(useRenderer())
+    startup = start()
+    return slot!.slots.sidebar_content!({ theme: api.theme }, { session_id: "s1" })
+  }
+  const app = await testRender(() => <Harness />, { width: 42, height: 24 })
+  await startup
   await app.renderOnce()
   return app
 }
@@ -131,30 +140,7 @@ test("a recorded total stays visible when the selected model is unpriced", async
       },
     },
   })
-  let slot: TuiSlotPlugin | undefined
-  api.slots = {
-    register(plugin: TuiSlotPlugin) {
-      slot = plugin
-      return "context"
-    },
-  }
-  await contextPlugin.tui(api, undefined, {
-    id: "context",
-    source: "internal",
-    spec: "context",
-    target: "context",
-    first_time: 0,
-    last_time: 0,
-    time_changed: 0,
-    load_count: 1,
-    fingerprint: "test",
-    state: "same",
-  })
-  const app = await testRender(() => slot!.slots.sidebar_content!({ theme: api.theme }, { session_id: "s1" }), {
-    width: 42,
-    height: 24,
-  })
-  await app.renderOnce()
+  const app = await renderContext(api)
   try {
     const frame = app.captureCharFrame()
     expect(frame).toContain("$25.19 spent")

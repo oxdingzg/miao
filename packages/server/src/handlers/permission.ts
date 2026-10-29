@@ -8,7 +8,7 @@ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { NativeEngine } from "../native-engine"
 import { ConflictError, PermissionNotFoundError, SessionNotFoundError } from "@miao/protocol/errors"
-import { response } from "../location"
+import { booted, response } from "../location"
 
 function missingRequest(id: PermissionV2.ID) {
   return new PermissionNotFoundError({ requestID: id, message: `Permission request not found: ${id}` })
@@ -46,6 +46,7 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
               resource: ctx.params.sessionID,
               message: "Native permission requests require an active engine-owned tool invocation",
             })
+          yield* booted
           const permission = yield* PermissionV2.Service
           return {
             data: yield* permission
