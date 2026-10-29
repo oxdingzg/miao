@@ -344,7 +344,19 @@ impl Store {
             let Some((product_state,planned,placed,planned_location,placed_location))=placement else {return Err(Error::Conflict)};
             if !matches!(product_state.as_str(),"switched"|"completed") || Path::new(&planned).canonicalize()?!=target || Path::new(&placed).canonicalize()?!=target
                 || serde_json::from_str::<Value>(&planned_location)?!=source["session"]["location"] || serde_json::from_str::<Value>(&placed_location)?!=source["session"]["location"] {return Err(Error::Conflict);}
-            if state=="active" {return Ok(json!({"id":id,"session_id":session,"bundle_sha256":digest,"state":"active"}));}
+            // Runtime admission uses the canonical tool Location. On Windows
+            // this includes the extended-length prefix absent from product paths.
+            // Keep the digest-bound bundle/placement intact while adopting that same
+            // internal identity atomically with activation (also on exact retry).
+            let directory=Path::new(source["session"]["location"]["directory"].as_str().ok_or_else(||invalid("source directory"))?).canonicalize()?;
+            let stored:String=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|row|row.get(0))?;
+            if Path::new(&stored).canonicalize()?!=directory {return Err(Error::Conflict);}
+            let directory=directory.to_str().ok_or_else(||invalid("non-UTF-8 transfer directory"))?;
+            tx.execute("UPDATE engine_location SET root=?1 WHERE session_id=?2",params![directory,session])?;
+            if state=="active" {
+                tx.commit()?;
+                return Ok(json!({"id":id,"session_id":session,"bundle_sha256":digest,"state":"active"}));
+            }
             let prepared:String=tx.query_row("SELECT data FROM engine_transfer_preparation WHERE import_id=?1",[&id],|row|row.get(0)).optional()?.ok_or(Error::Conflict)?;
             let prepared:Preparation=serde_json::from_str(&prepared)?;
             // Validate every stored field again before changing the durable
