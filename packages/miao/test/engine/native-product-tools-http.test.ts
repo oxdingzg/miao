@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
+import { realpath } from "node:fs/promises"
 import path from "node:path"
 import { tmpdir } from "../fixture/fixture"
 
@@ -10,6 +11,7 @@ if (binary)
   for (const [toolName, outcome] of [
     ["list_sessions", "success"],
     ["workflow", "success"],
+    ["workflow", "denied"],
     ["switch_workspace", "success"],
     ["switch_workspace", "missing"],
     ["switch_workspace", "denied"],
@@ -126,7 +128,12 @@ if (binary)
           XDG_CACHE_HOME: path.join(tmp.path, "cache"),
           MIAO_CONFIG_CONTENT: JSON.stringify({
             model: "fixture/fixture",
-            permission: outcome === "denied" ? { "*": "allow", external_directory: "deny" } : "allow",
+            permission:
+              outcome === "denied"
+                ? toolName === "workflow"
+                  ? { "*": "allow", task: { "*": "allow", explore: "deny" } }
+                  : { "*": "allow", external_directory: "deny" }
+                : "allow",
             providers: {
               fixture: {
                 name: "Fixture",
@@ -196,7 +203,7 @@ if (binary)
         expect(context.status).toBe(200)
         const transcript = await context.json()
         const rendered = JSON.stringify(transcript.data)
-        if (toolName !== "switch_workspace" || outcome === "success")
+        if (outcome === "success")
           expect(rendered).toContain(
             toolName === "switch_workspace"
               ? "destination-workspace-marker"
@@ -210,13 +217,11 @@ if (binary)
             .query<{ location: string }, [string]>("select location from session_engine_placement where session_id = ?")
             .get(target.id)
           const expected = outcome === "success" ? destination : directory
-          expect(JSON.parse(placement?.location ?? "{}").directory).toBe(
-            await Bun.$`realpath ${expected}`.text().then((value) => value.trim()),
-          )
+          expect(JSON.parse(placement?.location ?? "{}").directory).toBe(await realpath(expected))
           const catalog = db
             .query<{ directory: string }, [string]>("select directory from session where id = ?")
             .get(target.id)
-          expect(catalog?.directory).toBe(expected)
+          expect(await realpath(catalog?.directory ?? "")).toBe(await realpath(expected))
           expect(rendered).toContain("switch_workspace")
           expect(rendered).not.toContain("path is outside the configured workspace")
           if (outcome === "denied" || outcome === "missing") {
@@ -228,12 +233,14 @@ if (binary)
           const children = db
             .query<{ id: string }, [string]>("select id from session where parent_id = ?")
             .all(target.id)
-          expect(children).toHaveLength(1)
+          expect(children).toHaveLength(outcome === "denied" ? 0 : 1)
           const spawned = children.at(0)
-          if (!spawned) throw new Error("workflow child was not projected")
-          const result = await fetch(url + "/api/session/" + spawned.id + "/context", { headers })
-          expect(result.status).toBe(200)
-          expect(await result.text()).toContain("workflow-child-acceptance")
+          if (outcome === "success") {
+            if (!spawned) throw new Error("workflow child was not projected")
+            const result = await fetch(url + "/api/session/" + spawned.id + "/context", { headers })
+            expect(result.status).toBe(200)
+            expect(await result.text()).toContain("workflow-child-acceptance")
+          }
         }
         const states = transcript.data.flatMap(
           (message: { content?: { type: string; state?: { status: string } }[] }) =>
@@ -241,7 +248,7 @@ if (binary)
         )
         expect(states).toContain(outcome === "denied" || outcome === "missing" ? "error" : "completed")
         expect(calls).toBe(
-          toolName === "workflow" || (toolName === "switch_workspace" && outcome === "success") ? 3 : 2,
+          (toolName === "workflow" || toolName === "switch_workspace") && outcome === "success" ? 3 : 2,
         )
         expect(tools).toContain("workflow")
       } finally {

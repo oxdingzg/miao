@@ -582,6 +582,20 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
           engineID: found.storage,
           location: found.location,
         }).pipe(Effect.mapError(() => new ToolFailure({ message: "The engine owner is not available." })))
+        yield* permission
+          .assert({
+            action: "task",
+            resources: [selection.id],
+            save: [selection.id],
+            sessionID,
+            agent: context.agent,
+            source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+          })
+          .pipe(
+            Effect.mapError(
+              () => new ToolFailure({ message: `Spawning the ${selection.id} subagent was not permitted.` }),
+            ),
+          )
         const child = SessionSchema.ID.create()
         yield* Effect
           .tryPromise({
@@ -599,20 +613,6 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
               }),
             ),
             Effect.mapError(() => new ToolFailure({ message: "Could not record the subagent Session." })),
-          )
-        yield* permission
-          .assert({
-            action: "task",
-            resources: [selection.id],
-            save: [selection.id],
-            sessionID,
-            agent: context.agent,
-            source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
-          })
-          .pipe(
-            Effect.mapError(
-              () => new ToolFailure({ message: `Spawning the ${selection.id} subagent was not permitted.` }),
-            ),
           )
         const run = workflowRuns.get(context.toolCallID) ?? {
           owner,
