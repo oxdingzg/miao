@@ -1071,6 +1071,7 @@ async fn a_child_the_host_left_unbounded_closes_itself_and_still_reports() {
 /// no orphaned running child, and a durable terminal state on both sides.
 struct Cancelling {
     parent_parked: std::sync::atomic::AtomicBool,
+    child_started: tokio::sync::Notify,
 }
 #[async_trait]
 impl Provider for Cancelling {
@@ -1089,8 +1090,8 @@ impl Provider for Cancelling {
             .messages
             .iter()
             .rev()
-            .find(|message| message.role == "user")
-            .and_then(|message| {
+            .filter(|message| message.role == "user")
+            .find_map(|message| {
                 message
                     .content
                     .as_array()
@@ -1104,6 +1105,7 @@ impl Provider for Cancelling {
             })
         };
         if last.contains("hang quietly") {
+            self.child_started.notify_one();
             // Park until the engine cancels this child's turn.
             token.cancelled().await;
             return Err(ProviderError::Interrupted);
@@ -1115,11 +1117,19 @@ impl Provider for Cancelling {
                 needs_tools: true,
             });
         }
-        if self.parent_parked.load(Ordering::SeqCst) {
+        if last.contains("park follow-up") || self.parent_parked.load(Ordering::SeqCst) {
             // The parent turn parks too, so the test cancels the parent run
             // while the background child is still running.
             token.cancelled().await;
             return Err(ProviderError::Interrupted);
+        }
+        if last.contains("survive a later run") && settled("start") {
+            self.child_started.notified().await;
+            return Ok(Reply {
+                content: json!([{"type":"text","text":"parent done"}]),
+                usage: json!({}),
+                needs_tools: false,
+            });
         }
         if settled("start") && !settled("stop") {
             let started: Value = serde_json::from_str(
@@ -1168,6 +1178,7 @@ async fn task_cancel_settles_a_background_child_into_a_cancelled_terminal_state(
         store.clone(),
         Arc::new(Cancelling {
             parent_parked: std::sync::atomic::AtomicBool::new(false),
+            child_started: tokio::sync::Notify::new(),
         }),
         Tools::new(dir.path()).await.unwrap(),
         policy(true),
@@ -1245,6 +1256,7 @@ async fn cancelling_the_parent_run_settles_its_background_child() {
         store.clone(),
         Arc::new(Cancelling {
             parent_parked: std::sync::atomic::AtomicBool::new(true),
+            child_started: tokio::sync::Notify::new(),
         }),
         Tools::new(dir.path()).await.unwrap(),
         policy(true),
@@ -1315,5 +1327,124 @@ async fn cancelling_the_parent_run_settles_its_background_child() {
     .await
     .expect("the child reports a terminal state to the parent");
     assert_eq!(stop.data["reason"], json!("cancelled"));
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn cancelling_a_later_parent_run_preserves_an_older_background_child() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Cancelling {
+            parent_parked: std::sync::atomic::AtomicBool::new(false),
+            child_started: tokio::sync::Notify::new(),
+        }),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(true),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "one".into(),
+                prompt: "delegate in background; survive a later run".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if store
+                .events("parent", 0, 500)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "run.finished" && event.data["reason"] == "completed")
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the spawning parent turn completes normally");
+    let child = cancelled_child_id(&store, "parent").await;
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if store.active_run(&child).await.unwrap().is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the background child starts");
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "two".into(),
+                prompt: "park follow-up".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let run = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if let Some(run) = store.active_run("parent").await.unwrap() {
+                break run;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    runtime.cancel_if("parent", &run).await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if store
+                .events("parent", 0, 500)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| {
+                    event.kind == "run.finished"
+                        && event.data["run_id"] == run
+                        && event.data["reason"] == "interrupted"
+                })
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    // Observe cancellation over several watcher polls; a later run is not the
+    // owner of work deliberately left running by the completed spawning run.
+    let stopped = tokio::time::timeout(std::time::Duration::from_millis(500), async {
+        loop {
+            if store.active_run(&child).await.unwrap().is_none() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    assert!(
+        stopped.is_err(),
+        "cancelling the later run killed the older background child"
+    );
     runtime.shutdown().await;
 }
