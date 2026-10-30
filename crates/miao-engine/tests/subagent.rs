@@ -1065,3 +1065,254 @@ async fn a_child_the_host_left_unbounded_closes_itself_and_still_reports() {
         .unwrap();
     assert_eq!(report["text"], "child summary", "{report}");
 }
+
+/// AGT-02 terminal states. The child parks on its cancellation token, so both
+/// an explicit `task_cancel` and the parent's own cancellation must settle it:
+/// no orphaned running child, and a durable terminal state on both sides.
+struct Cancelling {
+    parent_parked: std::sync::atomic::AtomicBool,
+}
+#[async_trait]
+impl Provider for Cancelling {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        token: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let parts: Vec<Value> = request
+            .messages
+            .iter()
+            .flat_map(|message| message.content.as_array().cloned().unwrap_or_default())
+            .collect();
+        let last = request
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == "user")
+            .and_then(|message| {
+                message
+                    .content
+                    .as_array()
+                    .and_then(|parts| parts.iter().find_map(|part| part["text"].as_str()))
+            })
+            .unwrap_or("")
+            .to_string();
+        let settled = |call: &str| {
+            parts.iter().any(|part| {
+                part["type"] == "tool_result" && part["tool_use_id"].as_str() == Some(call)
+            })
+        };
+        if last.contains("hang quietly") {
+            // Park until the engine cancels this child's turn.
+            token.cancelled().await;
+            return Err(ProviderError::Interrupted);
+        }
+        if last.contains("delegate in background") && !settled("start") {
+            return Ok(Reply {
+                content: json!([{"type":"tool_use","id":"start","name":"task","input":{"prompt":"hang quietly","background":true}}]),
+                usage: json!({}),
+                needs_tools: true,
+            });
+        }
+        if self.parent_parked.load(Ordering::SeqCst) {
+            // The parent turn parks too, so the test cancels the parent run
+            // while the background child is still running.
+            token.cancelled().await;
+            return Err(ProviderError::Interrupted);
+        }
+        if settled("start") && !settled("stop") {
+            let started: Value = serde_json::from_str(
+                parts
+                    .iter()
+                    .rev()
+                    .find(|part| {
+                        part["type"] == "tool_result"
+                            && part["tool_use_id"].as_str() == Some("start")
+                    })
+                    .and_then(|part| part["content"].as_str())
+                    .unwrap_or("{}"),
+            )
+            .unwrap_or(json!({}));
+            let child = started["session_id"].as_str().unwrap_or("").to_string();
+            return Ok(Reply {
+                content: json!([{"type":"tool_use","id":"stop","name":"task_cancel","input":{"id":child}}]),
+                usage: json!({}),
+                needs_tools: true,
+            });
+        }
+        Ok(Reply {
+            content: json!([{"type":"text","text":"parent done"}]),
+            usage: json!({}),
+            needs_tools: false,
+        })
+    }
+}
+
+async fn cancelled_child_id(store: &Store, parent: &str) -> String {
+    let start = store
+        .events(parent, 0, 500)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "subagent_start")
+        .unwrap();
+    start.data["subagent_id"].as_str().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn task_cancel_settles_a_background_child_into_a_cancelled_terminal_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Cancelling {
+            parent_parked: std::sync::atomic::AtomicBool::new(false),
+        }),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(true),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "one".into(),
+                prompt: "delegate in background".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if store
+                .events("parent", 0, 500)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "run.finished")
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let child = cancelled_child_id(&store, "parent").await;
+    // The explicit cancel settles the child: no run still active, and the
+    // durable subagent row leaves "running".
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let active = store.active_run(&child).await.unwrap();
+            let status = store
+                .subagents("parent")
+                .await
+                .unwrap()
+                .into_iter()
+                .next()
+                .map(|row| row["status"].clone())
+                .unwrap_or(json!("missing"));
+            if active.is_none() && status != json!("running") {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let stop = store
+        .events("parent", 0, 500)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "subagent_stop")
+        .expect("the parent records a terminal subagent_stop");
+    assert_ne!(stop.data["reason"], json!("completed"), "{:?}", stop.data);
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn cancelling_the_parent_run_settles_its_background_child() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Cancelling {
+            parent_parked: std::sync::atomic::AtomicBool::new(true),
+        }),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(true),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "one".into(),
+                prompt: "delegate in background".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let child = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let events = store.events("parent", 0, 500).await.unwrap();
+            if let Some(start) = events
+                .into_iter()
+                .find(|event| event.kind == "subagent_start")
+            {
+                break start.data["subagent_id"].as_str().unwrap().to_string();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if store.active_run(&child).await.unwrap().is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let parent_run = store.active_run("parent").await.unwrap().unwrap();
+    // Cancelling the parent run must carry the child to a terminal state.
+    runtime.cancel_if("parent", &parent_run).await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let child_active = store.active_run(&child).await.unwrap();
+            let parent_active = store.active_run("parent").await.unwrap();
+            if child_active.is_none() && parent_active.is_none() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let stop = store
+        .events("parent", 0, 500)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "subagent_stop");
+    assert!(
+        stop.is_some(),
+        "the child reports a terminal state to the parent"
+    );
+    runtime.shutdown().await;
+}
