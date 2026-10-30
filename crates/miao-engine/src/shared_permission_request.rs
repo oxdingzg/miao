@@ -129,6 +129,61 @@ impl Context {
         }).await
     }
 
+    pub(crate) async fn evaluate_source(
+        &self,
+        source: &Source,
+        facts: crate::product_permission::Request,
+    ) -> Result<Outcome, Error> {
+        if facts.actions.is_empty() || facts.resources.is_empty() {
+            return Err(Error::Invalid(
+                "product permission requires actions and resources".into(),
+            ));
+        }
+        let context = self.clone();
+        let source = source.clone();
+        self.project
+            .authority
+            .with_permission_source(&source.clone(), move |transaction| {
+                context.require_request_source(&source)?;
+                context.evaluate_request(
+                    transaction,
+                    &source,
+                    &Input {
+                        request_id: "evaluation".into(),
+                        facts,
+                        save: None,
+                        metadata: None,
+                        timeout_ms: None,
+                    },
+                )
+            })
+            .await
+    }
+
+    pub(crate) async fn pending_source_requests(
+        &self,
+        source: &Source,
+    ) -> Result<Vec<Record>, Error> {
+        let context = self.clone();
+        let source = source.clone();
+        self.project.authority.with_permission_source(&source.clone(), move |transaction| {
+            context.require_request_source(&source)?;
+            let binding = context.request_binding(transaction, &source)?;
+            let ids = {
+                let mut statement = transaction.prepare("SELECT id FROM permission_request WHERE binding=?1 AND state='pending' ORDER BY id")?;
+                let rows = statement.query_map([binding], |row|row.get::<_,String>(0))?;
+                rows.collect::<Result<Vec<_>,_>>()?
+            };
+            let mut records = Vec::new();
+            for id in ids {
+                let mut record = context.load_request(transaction,&source,&id)?.ok_or_else(||Error::Invalid("shared permission request disappeared".into()))?;
+                context.refresh_request(transaction,&source,&mut record)?;
+                if record.state==State::Pending { records.push(record); }
+            }
+            Ok(records)
+        }).await
+    }
+
     /// The trusted host binds the context; every admission rechecks the actual
     /// Runtime source and its execution lease inside the Root write transaction.
     pub async fn admit_request(&self, source: &Source, input: Input) -> Result<Record, Error> {
@@ -393,6 +448,7 @@ impl Context {
             };
             let peer = Source {
                 path: source.path.clone(),
+                shared: source.shared.clone(),
                 context: crate::product_permission_request::Context {
                     source: record.source.clone(),
                     authority: authority.clone(),
@@ -432,6 +488,23 @@ impl Context {
     }
 
     fn request_binding(&self, connection: &Connection, source: &Source) -> Result<String, Error> {
+        if let Some(marker) = &source.shared {
+            let snapshot = self.view(connection)?;
+            if marker.target.authority != snapshot.project.authority
+                || marker.target.project != snapshot.project.project
+                || marker.target.directory != self.directory
+                || marker.target.workspace_id != self.workspace_id
+                || snapshot
+                    .migration
+                    .as_ref()
+                    .is_none_or(|receipt| receipt.fingerprint != marker.fingerprint)
+                || snapshot.project.migration.is_none()
+            {
+                return Err(Error::Invalid(
+                    "shared permission handoff binding mismatch".into(),
+                ));
+            }
+        }
         self.request_binding_for_origin(
             connection,
             &source.origin(),
@@ -440,7 +513,7 @@ impl Context {
         )
     }
 
-    fn request_binding_for_origin(
+    pub(crate) fn request_binding_for_origin(
         &self,
         connection: &Connection,
         origin: &crate::permission_source_transaction::Origin,
@@ -542,6 +615,7 @@ impl Context {
         } else {
             State::Denied
         };
+        record.reply = (outcome.effect == Decision::Allow).then_some(Reply::Always);
         record.reason = Some(
             if outcome.effect == Decision::Allow {
                 "saved_rules_allowed"

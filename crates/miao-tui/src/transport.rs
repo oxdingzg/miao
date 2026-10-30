@@ -263,6 +263,22 @@ impl EngineClient {
         .await
     }
 
+    /// Run one operator `!` command. Admission is durable and keyed by a stable
+    /// call identity, so replaying the same id re-reads the receipt instead of
+    /// repeating the external side effect.
+    pub async fn shell(
+        &self,
+        session_id: &str,
+        call_id: &str,
+        command: &str,
+    ) -> Result<Value, TransportError> {
+        self.request(
+            "shell",
+            json!({ "session_id": session_id, "call_id": call_id, "command": command }),
+        )
+        .await
+    }
+
     pub async fn cancel(&self, session_id: &str) -> Result<Value, TransportError> {
         self.request("cancel", json!({ "session_id": session_id }))
             .await

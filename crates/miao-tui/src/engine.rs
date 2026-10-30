@@ -61,6 +61,12 @@ pub enum Request {
         command: Value,
     },
     NewSession,
+    /// One `!` command for the host shell. It records in the Session without
+    /// starting a provider turn, so nothing here touches the model.
+    Shell {
+        session_id: String,
+        command: String,
+    },
     /// Interrupt the active run; idle Sessions answer `accepted: false`.
     Cancel {
         session_id: String,
@@ -202,6 +208,13 @@ impl Handle {
 
     pub fn new_session(&self) {
         let _ = self.tx.send(Request::NewSession);
+    }
+
+    pub fn shell(&self, session_id: &str, command: &str) {
+        let _ = self.tx.send(Request::Shell {
+            session_id: session_id.to_string(),
+            command: command.to_string(),
+        });
     }
 
     pub fn cancel(&self, session_id: &str) {
@@ -357,12 +370,30 @@ pub fn settings(
     let config_dir = config_dir.or_else(crate::config::global_dir);
     let spawn = EngineSpawn {
         program: engine_binary(),
-        args: args(&db, workspace, &model, config_dir.as_deref(), |name| {
-            std::env::var(name).ok()
-        }),
+        args: launch_args(
+            args(&db, workspace, &model, config_dir.as_deref(), |name| {
+                std::env::var(name).ok()
+            }),
+            std::env::var("MIAO_ENGINE_LAUNCH_PREFIX").ok().as_deref(),
+        )?,
         env: Vec::new(),
     };
     Ok(Settings { spawn, model })
+}
+
+// The product passes a literal executable prefix on Windows, where a POSIX
+// wrapper cannot stand in for the engine. Never interpret it through a shell.
+fn launch_args(args: Vec<String>, prefix: Option<&str>) -> Result<Vec<String>, String> {
+    let mut prefix: Vec<String> = match prefix {
+        Some(value) => serde_json::from_str(value)
+            .map_err(|_| "MIAO_ENGINE_LAUNCH_PREFIX must be a JSON array of strings")?,
+        None => return Ok(args),
+    };
+    if prefix.iter().any(|argument| argument.contains('\0')) {
+        return Err("MIAO_ENGINE_LAUNCH_PREFIX arguments cannot contain NUL".into());
+    }
+    prefix.extend(args);
+    Ok(prefix)
 }
 
 /// The argv the engine is started with. Mirrors the product host's
@@ -567,6 +598,20 @@ async fn run(
                         }),
                     }
                 }
+                Some(Request::Shell {
+                    session_id,
+                    command,
+                }) => match client.shell(&session_id, &new_id("sh"), &command).await {
+                    Ok(_) => {
+                        if open.as_ref().is_some_and(|state| state.id == session_id) {
+                            dirty.get_or_insert_with(Instant::now);
+                        }
+                    }
+                    Err(error) => bus.send(AppEvent::ShellFailed {
+                        command,
+                        message: format!("shell failed: {error}"),
+                    }),
+                },
                 Some(Request::Cancel { session_id }) => {
                     match client.cancel(&session_id).await {
                         Ok(_) => {
@@ -1178,6 +1223,30 @@ mod tests {
                 "/config",
             ]
         );
+    }
+
+    #[test]
+    fn launcher_prefix_preserves_literal_arguments_and_engine_flags() {
+        let args = vec![
+            "serve".into(),
+            "--db".into(),
+            "C:\\profile dir\\engine.db".into(),
+        ];
+        assert_eq!(launch_args(args.clone(), None).unwrap(), args);
+        assert_eq!(launch_args(args.clone(), Some("[]")).unwrap(), args);
+        let mut expected = vec!["C:\\source dir\\index.ts".into(), "__engine-shim".into()];
+        expected.extend(args.clone());
+        assert_eq!(
+            launch_args(
+                args.clone(),
+                Some(r#"["C:\\source dir\\index.ts","__engine-shim"]"#)
+            )
+            .unwrap(),
+            expected
+        );
+        for invalid in ["{}", "[1]", "not-json", r#"["bad\u0000argument"]"#] {
+            assert!(launch_args(args.clone(), Some(invalid)).is_err());
+        }
     }
 
     #[test]

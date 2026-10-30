@@ -8,7 +8,7 @@ use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 
 use crate::dialogs::{Dialog, ListDialog, ListKind, PaletteDialog};
-use crate::editor::Composer;
+use crate::editor::{Composer, Mode};
 use crate::session::{ApprovalView, Entry, Part, QuestionView, SessionSummary, Transcript};
 use crate::theme::Theme;
 use crate::{markdown, tool};
@@ -310,6 +310,14 @@ impl Pane for TranscriptPane {
 pub struct Home {
     pub rows: Vec<SessionSummary>,
     pub selected: usize,
+    /// Case-insensitive substring the list is narrowed to. Empty shows
+    /// everything, so filtering is a mode of the same list rather than a
+    /// second screen whose selection has to be kept in step.
+    query: String,
+    /// Whether printable keys belong to the filter. An explicit mode keeps
+    /// single-letter commands (`n`, `r`, `p`, `j`, `k`) usable and still lets a
+    /// filter contain those letters.
+    filtering: bool,
     notice: Option<String>,
     /// A configuration problem that outlives one load: the catalog arriving is
     /// not an answer to it, so it is kept apart from the transient notice.
@@ -325,6 +333,8 @@ impl Home {
         Self {
             rows: Vec::new(),
             selected: 0,
+            query: String::new(),
+            filtering: false,
             notice: None,
             warning: None,
             loaded: false,
@@ -364,31 +374,104 @@ impl Home {
 
     pub fn set_rows(&mut self, rows: Vec<SessionSummary>) {
         self.loaded = true;
-        let selected_id = self.rows.get(self.selected).map(|row| row.id.clone());
+        let selected_id = self.current().map(|row| row.id.clone());
         self.rows = rows;
+        let visible = self.visible_len();
         self.selected = selected_id
-            .and_then(|id| self.rows.iter().position(|row| row.id == id))
+            .and_then(|id| self.visible().iter().position(|row| row.id == id))
             .unwrap_or(0)
-            .min(self.rows.len().saturating_sub(1));
+            .min(visible.saturating_sub(1));
+    }
+
+    /// The rows the list shows right now, in list order. Pinning and filtering
+    /// both change this view, so every caller reads it instead of `rows`.
+    fn visible(&self) -> Vec<&SessionSummary> {
+        if self.query.is_empty() {
+            return self.rows.iter().collect();
+        }
+        let needle = self.query.to_lowercase();
+        self.rows
+            .iter()
+            .filter(|row| {
+                row.label().to_lowercase().contains(&needle)
+                    || row
+                        .directory
+                        .as_deref()
+                        .is_some_and(|directory| directory.to_lowercase().contains(&needle))
+            })
+            .collect()
+    }
+
+    fn visible_len(&self) -> usize {
+        self.visible().len()
+    }
+
+    pub fn query(&self) -> &str {
+        &self.query
+    }
+
+    pub fn filtering(&self) -> bool {
+        self.filtering
+    }
+
+    /// Enter filter mode with an empty query, so the next printable key starts
+    /// a search instead of running a command.
+    pub fn start_filter(&mut self) {
+        self.filtering = true;
+        self.query.clear();
+        self.selected = 0;
+    }
+
+    /// Leave filter mode and show the whole list again.
+    pub fn stop_filter(&mut self) {
+        self.filtering = false;
+        self.query.clear();
+        self.selected = 0;
+    }
+
+    /// Narrow the list one character at a time; the selection goes back to the
+    /// first match so the operator sees the result immediately.
+    pub fn filter(&mut self, c: char) {
+        self.query.push(c);
+        self.selected = 0;
+    }
+
+    pub fn filter_backspace(&mut self) -> bool {
+        if self.query.pop().is_none() {
+            return false;
+        }
+        self.selected = 0;
+        true
+    }
+
+    /// Clearing the filter keeps filter mode but shows the whole list again.
+    pub fn clear_filter(&mut self) -> bool {
+        if self.query.is_empty() {
+            return false;
+        }
+        self.query.clear();
+        self.selected = 0;
+        true
     }
 
     pub fn move_cursor(&mut self, delta: i32) {
-        if self.rows.is_empty() {
+        let visible = self.visible_len();
+        if visible == 0 {
             self.selected = 0;
             return;
         }
         let next = self.selected as i32 + delta;
-        self.selected = next.clamp(0, self.rows.len() as i32 - 1) as usize;
+        self.selected = next.clamp(0, visible as i32 - 1) as usize;
     }
 
     /// The row a numbered slot opens. Slots follow the list as shown, and the
     /// first nine are the ones a terminal keyboard can reach without a chord.
     pub fn slot(&self, index: usize) -> Option<&SessionSummary> {
-        self.rows.get(index)
+        self.visible().into_iter().nth(index)
     }
 
     pub fn current(&self) -> Option<&SessionSummary> {
-        self.rows.get(self.selected)
+        self.visible().into_iter().nth(self.selected)
     }
 
     fn warning_lines(&self) -> Vec<Line<'static>> {
@@ -411,17 +494,25 @@ impl Home {
         let palette = self.theme.palette;
         let block = Block::bordered()
             .title(Span::styled(
-                " sessions · 1-9 open · p pin · n new ",
+                if self.query.is_empty() {
+                    " sessions · 1-9 open · p pin · / filter ".to_string()
+                } else {
+                    format!(" sessions · filter \"{}\" · esc clear ", self.query)
+                },
                 Style::new().fg(palette.primary),
             ))
             .border_style(Style::new().fg(palette.border))
             .style(Style::new().bg(palette.background));
-        if self.rows.is_empty() {
+        let visible = self.visible();
+        if visible.is_empty() {
             let mut lines = self.warning_lines();
-            let message = self
-                .notice
-                .clone()
-                .unwrap_or_else(|| self.placeholder().to_string());
+            let message = self.notice.clone().unwrap_or_else(|| {
+                if self.rows.is_empty() {
+                    self.placeholder().to_string()
+                } else {
+                    format!("nothing matches \"{}\"", self.query)
+                }
+            });
             lines.push(Line::from(Span::styled(
                 message,
                 Style::new().fg(palette.text_muted),
@@ -444,7 +535,7 @@ impl Home {
                     Line::default(),
                 ]
             }));
-        let rows = self.rows.iter().enumerate().map(|(index, row)| {
+        let rows = visible.iter().enumerate().map(|(index, row)| {
             let marker = if index == self.selected { "▸ " } else { "  " };
             let style = if index == self.selected {
                 Style::new()
@@ -623,6 +714,8 @@ fn compact(text: &str) -> String {
 /// completion list live outside this budget.
 const COMPOSER_INPUT_ROWS: usize = 8;
 const COMPOSER_COMPLETION_ROWS: usize = 6;
+/// Display cells the `!` shell marker occupies left of the input.
+const SHELL_GUTTER: u16 = 2;
 
 fn composer_height(composer: &Composer) -> u16 {
     let input = composer.editor.line_count().clamp(1, COMPOSER_INPUT_ROWS);
@@ -645,14 +738,27 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
             format!("{} queued", composer.queued)
         }
     });
+    // Shell mode says so in the title and on the input: a `!` line goes to the
+    // host shell, not the model, and Esc leaves it.
+    let shell = composer.mode() == Mode::Shell;
+    let name = if shell {
+        "shell · esc exit"
+    } else {
+        "composer"
+    };
     let title = match (&composer.notice, queued) {
-        (Some(notice), Some(queued)) => format!(" composer · {queued} · {notice} "),
-        (Some(notice), None) => format!(" composer · {notice} "),
-        (None, Some(queued)) => format!(" composer · {queued} "),
-        (None, None) => " composer ".to_string(),
+        (Some(notice), Some(queued)) => format!(" {name} · {queued} · {notice} "),
+        (Some(notice), None) => format!(" {name} · {notice} "),
+        (None, Some(queued)) => format!(" {name} · {queued} "),
+        (None, None) => format!(" {name} "),
+    };
+    let accent = if shell {
+        palette.warning
+    } else {
+        palette.primary
     };
     let block = Block::bordered()
-        .title(Span::styled(title, Style::new().fg(palette.primary)))
+        .title(Span::styled(title, Style::new().fg(accent)))
         .border_style(Style::new().fg(palette.border))
         .style(Style::new().bg(palette.background));
     let inner = block.inner(area);
@@ -666,13 +772,35 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
         .items
         .len()
         .min(COMPOSER_COMPLETION_ROWS) as u16;
-    let input_area = Rect {
+    let input_rows = Rect {
         height: inner.height.saturating_sub(completion_rows),
         ..inner
     };
+    // Shell mode prints a gutter marker and shifts the input right by it, so
+    // the operator sees `! ` before the command while the buffer still holds
+    // only the command and the cursor keeps its cell offset.
+    let gutter = if shell { SHELL_GUTTER } else { 0 };
+    let input_area = Rect {
+        x: input_rows.x.saturating_add(gutter),
+        width: input_rows.width.saturating_sub(gutter),
+        ..input_rows
+    };
+    if shell && input_rows.width >= SHELL_GUTTER {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "! ",
+                Style::new().fg(accent).add_modifier(Modifier::BOLD),
+            ))),
+            Rect {
+                width: SHELL_GUTTER,
+                ..input_rows
+            },
+        );
+    }
     let (cursor_line, cursor_cell) = composer.editor.cursor_position();
     let row_offset = cursor_line.saturating_sub(input_area.height.saturating_sub(1) as usize);
     let cell_offset = cursor_cell.saturating_sub(input_area.width.saturating_sub(1) as usize);
+    let text_color = if shell { accent } else { palette.text };
     let lines = composer
         .editor
         .lines()
@@ -681,7 +809,7 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
         .map(|line| {
             Line::from(Span::styled(
                 clip_cells(&line, cell_offset, input_area.width),
-                Style::new().fg(palette.text),
+                Style::new().fg(text_color),
             ))
         })
         .collect::<Vec<_>>();

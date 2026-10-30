@@ -41,7 +41,16 @@ pub(super) async fn execute(
         return Ok(());
     }
     let run = uuid::Uuid::new_v4().to_string();
-    inner.store.start_run_fenced(&session, &run, &lease).await?;
+    match &inner.shared_permissions {
+        Some(binding) => {
+            binding
+                .start_run_fenced(&session, &run, &lease, inner.id.clone())
+                .await?
+        }
+        None => {
+            inner.store.start_run_fenced(&session, &run, &lease).await?;
+        }
+    }
     let _keepalive = LeaseKeepalive(tokio::spawn(keep_lease(
         inner.store.clone(),
         lease.clone(),
@@ -128,6 +137,7 @@ pub(super) async fn execute_in_run(
         &prepared,
         cancel.clone(),
         TurnAuthority {
+            lease,
             plan: inner.store.mode(session).await? == CollaborationMode::Plan
                 || manifest.is_some_and(|agent| agent.mode == Some(CollaborationMode::Plan)),
             policy: &policy,
