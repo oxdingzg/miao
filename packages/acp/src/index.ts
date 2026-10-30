@@ -12,7 +12,7 @@ export function serve(
   input: Options & { readonly output: WritableStream<Uint8Array>; readonly input: ReadableStream<Uint8Array> },
 ) {
   const connection = new AgentSideConnection(
-    (conn) => new MiaoAgent(conn, input),
+    (conn) => new MiaoAgent(conn, { defaultModel: input.defaultModel, ...input }),
     ndJsonStream(input.output, input.input),
   )
   return { connection, closed: connection.closed }

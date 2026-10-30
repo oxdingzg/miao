@@ -1,11 +1,11 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "miao",
-  "version": "0.3.16",
+  "version": "0.3.17",
   "description": "An open-source AI coding agent for the terminal, with flexible model choice, durable sessions, and context and cost controls.",
   "private": true,
   "type": "module",
-  "packageManager": "bun@1.3.14",
+  "packageManager": "bun@1.4.2",
   "scripts": {
     "dev": "bun run --cwd packages/miao src/index.ts",
     "dev:desktop": "bun --cwd packages/desktop dev",
