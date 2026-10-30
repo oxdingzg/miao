@@ -145,7 +145,7 @@ test("keeps the provider dialog alive when its actions read the selected option"
   try {
     // The model dialog's own action bar is bound before the switch happens.
     await view.until((frame) => frame.includes("Switch provider"))
-    view.app.mockInput.pressKey("a", { ctrl: true })
+    view.app.mockInput.pressKey("o", { ctrl: true })
     const frame = await view.until((next) => next.includes("OpenAI"))
     expect(frame).toContain("OpenAI")
     expect(frame).not.toContain("crash")

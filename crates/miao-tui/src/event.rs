@@ -107,13 +107,14 @@ pub fn bus() -> (Bus, Rx) {
     (Bus { tx }, rx)
 }
 
-pub fn from_terminal(event: TerminalEvent) -> AppEvent {
-    match event {
+pub fn from_terminal(event: TerminalEvent) -> Option<AppEvent> {
+    Some(match event {
         TerminalEvent::Key(key) => AppEvent::Key(key),
         TerminalEvent::Paste(text) => AppEvent::Paste(text),
         TerminalEvent::FocusGained => AppEvent::Focus(true),
         TerminalEvent::FocusLost => AppEvent::Focus(false),
         TerminalEvent::Resize(width, height) => AppEvent::Resize { width, height },
         TerminalEvent::Mouse(mouse) => AppEvent::Mouse(mouse),
-    }
+        _ => return None,
+    })
 }

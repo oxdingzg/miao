@@ -1,3 +1,4 @@
+import path from "node:path"
 import { cmd } from "./cmd"
 import { withNetworkOptions, hasArg, resolveNetworkOptionsNoConfig } from "../network"
 
@@ -48,8 +49,26 @@ export const AcpCommand = cmd({
         process.stdin.on("error", callbacks.error)
       },
     })
+    // The operator's configured default model beats the catalog's
+    // newest-release fallback, whose entry can carry lapsed credentials.
+    let defaultModel: { providerID: string; id: string } | undefined
     try {
-      await serve({ client, version: InstallationVersion, output, input }).closed
+      const { ConfigParse } = await import("@/config/parse")
+      const { Global } = await import("@miao/core/global")
+      const configPath = path.join(Global.Path.config, "miao.jsonc")
+      const parsed = ConfigParse.jsonc(await Bun.file(configPath).text(), configPath) as
+        | { model?: string }
+        | undefined
+      const model = parsed?.model
+      if (typeof model === "string" && model.includes("/")) {
+        const [providerID, ...rest] = model.split("/")
+        defaultModel = { providerID, id: rest.join("/") }
+      }
+    } catch {
+      defaultModel = undefined
+    }
+    try {
+      await serve({ client, version: InstallationVersion, defaultModel, output, input }).closed
     } finally {
       if (callbacks.data) process.stdin.off("data", callbacks.data)
       if (callbacks.end) process.stdin.off("end", callbacks.end)
