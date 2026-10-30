@@ -22,7 +22,11 @@ ratatui = "0.30"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "signal", "sync", "time"] }
+unicode-segmentation = "1"
 unicode-width = "0.2"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.28", features = ["process", "signal", "term"] }
 
 [dev-dependencies]
 portable-pty = "0.9"
@@ -30,3 +34,8 @@ vt100 = "0.16"
 
 [build-dependencies]
 serde_json = "1"
+
+# Pending crossterm-rs/crossterm#1030: preserve Windows bracketed paste boundaries.
+# Pin exact source; do not resolve an unversioned branch at build time.
+[patch.crates-io]
+crossterm = { git = "https://github.com/eitsupi/crossterm.git", rev = "e2bc49e52a0f5813f5c15ceaa37b673b6b8414a7" }

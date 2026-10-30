@@ -18,23 +18,23 @@ struct Harness {
 
 impl Harness {
     fn spawn(label: &str, inject_panic: bool) -> Self {
-        Self::spawn_with(label, inject_panic, false, false, false, false)
+        Self::spawn_with(label, inject_panic, false, false, false, false, &[])
     }
 
     /// Boot the TUI against the scripted engine so the smoke test can enter a
     /// Session without a database, a provider, or a model.
     fn spawn_engine(label: &str) -> Self {
-        Self::spawn_with(label, false, true, false, false, false)
+        Self::spawn_with(label, false, true, false, false, false, &[])
     }
 
     fn spawn_engine_approval(label: &str) -> Self {
-        Self::spawn_with(label, false, true, true, false, false)
+        Self::spawn_with(label, false, true, true, false, false, &[])
     }
 
     /// A workspace with one markdown template command, so the slash path can
     /// be exercised against the engine wire.
     fn spawn_engine_with_commands(label: &str) -> Self {
-        Self::spawn_with(label, false, true, false, true, false)
+        Self::spawn_with(label, false, true, false, true, false, &[])
     }
 
     fn spawn_with(
@@ -44,9 +44,31 @@ impl Harness {
         approval: bool,
         commands: bool,
         launch_prefix: bool,
+        environment: &[(&str, &str)],
     ) -> Self {
-        let dir =
-            std::env::temp_dir().join(format!("miao-tui-smoke-{}-{label}", std::process::id()));
+        Self::spawn_configured(
+            label,
+            inject_panic,
+            engine,
+            approval,
+            commands,
+            launch_prefix,
+            environment,
+            false,
+        )
+    }
+
+    fn spawn_configured(
+        label: &str,
+        inject_panic: bool,
+        engine: bool,
+        approval: bool,
+        commands: bool,
+        launch_prefix: bool,
+        environment: &[(&str, &str)],
+        shell: bool,
+    ) -> Self {
+        let dir = workspace(label);
         std::fs::create_dir_all(&dir).expect("workspace dir");
         if commands {
             // Project commands live under `.miao/command(s)/`, the same
@@ -66,11 +88,22 @@ impl Harness {
                 ..Default::default()
             })
             .expect("open pty");
-        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_miao-tui"));
-        cmd.arg("--workspace");
-        cmd.arg(&dir);
+        let mut cmd = if shell {
+            let mut shell = CommandBuilder::new("bash");
+            shell.args(["--noprofile", "--norc", "-i"]);
+            shell.env("PS1", "MIAO_SHELL_READY> ");
+            shell.env("MIAO_TUI_TEST_PROGRAM", env!("CARGO_BIN_EXE_miao-tui"));
+            shell
+        } else {
+            let mut ui = CommandBuilder::new(env!("CARGO_BIN_EXE_miao-tui"));
+            ui.arg("--workspace");
+            ui.arg(&dir);
+            ui
+        };
         cmd.cwd(&dir);
         cmd.env("TERM", "xterm-256color");
+        cmd.env("MIAO_TUI_STATE_DIR", dir.join("state"));
+        cmd.env("MIAO_DISABLE_TERMINAL_TITLE", "0");
         if inject_panic {
             cmd.env("MIAO_TUI_TEST_PANIC", "1");
         }
@@ -102,8 +135,15 @@ impl Harness {
             // History lives under the state dir; keep the developer's real
             // composer history out of a test run.
             cmd.env("MIAO_TUI_STATE_DIR", dir.join("state"));
-            cmd.arg("--db");
-            cmd.arg(&db);
+            if shell {
+                cmd.env("MIAO_TUI_TEST_DB", &db);
+            } else {
+                cmd.arg("--db");
+                cmd.arg(&db);
+            }
+        }
+        for (key, value) in environment {
+            cmd.env(key, value);
         }
         let child = pair.slave.spawn_command(cmd).expect("spawn miao-tui");
         drop(pair.slave);
@@ -151,6 +191,37 @@ impl Harness {
             reader: reader_thread,
             dir,
         };
+        if shell {
+            assert!(wait_for(
+                &harness,
+                "MIAO_SHELL_READY>",
+                Duration::from_secs(2)
+            ));
+            let background = environment
+                .iter()
+                .any(|(key, value)| *key == "MIAO_TUI_TEST_BACKGROUND" && *value == "1");
+            if background {
+                harness.write(b"set -b\r\"$MIAO_TUI_TEST_PROGRAM\" --workspace \"$PWD\" --db \"$MIAO_TUI_TEST_DB\" &\r");
+                assert!(
+                    wait_for(&harness, "Stopped", Duration::from_secs(2)),
+                    "background startup did not wait for fg: {}",
+                    harness.text()
+                );
+                assert!(
+                    !harness.text().contains("\x1b[?1049h"),
+                    "background UI changed terminal modes"
+                );
+                assert!(
+                    !ready.exists(),
+                    "background UI started an engine before foreground admission"
+                );
+                harness.write(b"fg\r");
+            } else {
+                harness.write(
+                    b"\"$MIAO_TUI_TEST_PROGRAM\" --workspace \"$PWD\" --db \"$MIAO_TUI_TEST_DB\"\r",
+                );
+            }
+        }
         if engine {
             // Cold fixture executable startup is separate from the UI response
             // deadlines below. The real child publishes this only after setup.
@@ -210,6 +281,10 @@ impl Harness {
     }
 }
 
+fn workspace(label: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("miao-tui-smoke-{}-{label}", std::process::id()))
+}
+
 /// Strip terminal control sequences so assertions read the cells a person
 /// sees; ratatui emits a cursor motion between separately styled cells (every
 /// freshly typed character), which would otherwise split typed text.
@@ -221,13 +296,25 @@ fn plain(text: &str) -> String {
             out.push(c);
             continue;
         }
-        // CSI runs to a final byte in @..=~; other escapes are two bytes.
-        if chars.next() == Some('[') {
-            for c in chars.by_ref() {
-                if ('@'..='~').contains(&c) {
-                    break;
+        match chars.next() {
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
                 }
             }
+            Some(']') => {
+                // Window-title payloads are not visible terminal cells.
+                let mut escaped = false;
+                for c in chars.by_ref() {
+                    if c == '\x07' || (escaped && c == '\\') {
+                        break;
+                    }
+                    escaped = c == '\x1b';
+                }
+            }
+            _ => {}
         }
     }
     out
@@ -321,7 +408,7 @@ fn boots_renders_panes_and_quits_on_ctrl_c() {
 
 #[test]
 fn a_literal_launcher_prefix_reaches_the_child_without_shell_parsing() {
-    let mut harness = Harness::spawn_with("launch-prefix", false, true, false, false, true);
+    let mut harness = Harness::spawn_with("launch-prefix", false, true, false, false, true, &[]);
     assert!(
         wait_for_plain(&harness, "Project A", Duration::from_secs(3)),
         "{}",
@@ -483,51 +570,59 @@ fn resize_keeps_process_alive() {
 
 #[test]
 fn multiline_paste_reaches_the_engine_verbatim() {
-    let mut harness = Harness::spawn_engine("paste");
-    assert!(
-        wait_for(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        harness.text()
-    );
-    harness.write(b"\r");
-    assert!(
-        wait_for(&harness, "hello from the fixture", Duration::from_secs(2)),
-        "the Session did not open:\n{}",
-        harness.text()
-    );
-    // A bracketed paste arrives as one event; the editor keeps the line
-    // break instead of treating it as a submit.
-    harness.write("\x1b[200~第一行\n第二行\x1b[201~".as_bytes());
-    assert!(
-        wait_for_plain(&harness, "第一行", Duration::from_secs(2))
-            && plain(&harness.text()).contains("第二行"),
-        "CJK paste did not render:\n{}",
-        plain(&harness.text())
-    );
-    harness.write(b"\r");
-    let log = harness.dir.join("admit.log");
-    let start = Instant::now();
-    let mut recorded = String::new();
-    while start.elapsed() < Duration::from_secs(5) {
-        recorded = std::fs::read_to_string(&log).unwrap_or_default();
-        if recorded.contains("第一行\\n第二行") {
-            break;
+    for (label, separator) in [("lf", "\n"), ("crlf", "\r\n"), ("cr", "\r")] {
+        let mut harness = Harness::spawn_engine(&format!("paste-{label}"));
+        assert!(
+            wait_for(&harness, "Project A", Duration::from_secs(2)),
+            "the home list did not render:\n{}",
+            harness.text()
+        );
+        harness.write(b"\r");
+        assert!(
+            wait_for(&harness, "hello from the fixture", Duration::from_secs(2)),
+            "the Session did not open:\n{}",
+            harness.text()
+        );
+        // A bracketed paste arrives as one event; the editor keeps the line
+        // break instead of treating it as a submit.
+        harness.write(format!("\x1b[200~第一行{separator}第二行\x1b[201~").as_bytes());
+        let rendered = wait_for_screen(&harness, "第一行", Duration::from_secs(2))
+            && wait_for_screen(&harness, "第二行", Duration::from_secs(2));
+        assert!(
+            !harness.dir.join("admit.log").exists(),
+            "{label} paste submitted a prompt before Enter"
+        );
+        harness.write(b"\r");
+        let log = harness.dir.join("admit.log");
+        let start = Instant::now();
+        let mut recorded = String::new();
+        while start.elapsed() < Duration::from_secs(5) {
+            recorded = std::fs::read_to_string(&log).unwrap_or_default();
+            if recorded.contains("第一行\\n第二行") {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
         }
-        std::thread::sleep(Duration::from_millis(50));
+        assert!(
+            recorded.contains("第一行\\n第二行"),
+            "admit did not carry the pasted prompt verbatim: {recorded}"
+        );
+        assert!(
+            rendered,
+            "{label} CJK paste did not render; receipt={recorded}; screen={}; raw={:?}",
+            harness.screen(),
+            harness.text()
+        );
+        assert!(
+            recorded.contains("\"delivery\":\"steer\""),
+            "the TUI must send steer prompts: {recorded}"
+        );
+        harness.write(b"\x03");
+        let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+            .expect("process did not exit after Ctrl+C");
+        assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+        harness.shutdown();
     }
-    assert!(
-        recorded.contains("第一行\\n第二行"),
-        "admit did not carry the pasted prompt verbatim: {recorded}"
-    );
-    assert!(
-        recorded.contains("\"delivery\":\"steer\""),
-        "the TUI must send steer prompts: {recorded}"
-    );
-    harness.write(b"\x03");
-    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
-        .expect("process did not exit after Ctrl+C");
-    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
-    harness.shutdown();
 }
 
 #[test]
@@ -1038,6 +1133,391 @@ fn saved_permissions_review_and_revoke_through_the_engine_wire() {
     harness.write(b"\x03");
     assert!(wait_exit(&mut harness.child, Duration::from_secs(5))
         .unwrap()
+        .success());
+    harness.shutdown();
+}
+
+#[test]
+fn terminal_title_toggle_persists_across_restart_and_an_environment_disable_wins() {
+    let dir = workspace("title-toggle");
+    std::fs::create_dir_all(dir.join(".miao")).unwrap();
+    std::fs::write(
+        dir.join(".miao/tui.json"),
+        r#"{"keybinds":{"terminal_title_toggle":"ctrl+t"}}"#,
+    )
+    .unwrap();
+    let mut first = Harness::spawn_engine("title-toggle");
+    assert!(wait_for_screen(&first, "Project A", Duration::from_secs(3)));
+    assert!(wait_for(&first, "\x1b]0;miao\x07", Duration::from_secs(2)));
+    first.write(b"\x14");
+    assert!(wait_for_screen(
+        &first,
+        "Terminal title disabled",
+        Duration::from_secs(2)
+    ));
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("state/preferences.json")).unwrap())
+            .unwrap();
+    assert_eq!(saved["terminal_title_enabled"], false);
+    first.write(b"\x03");
+    assert!(wait_exit(&mut first.child, Duration::from_secs(5))
+        .unwrap()
+        .success());
+    let mut second = Harness::spawn_engine("title-toggle");
+    assert!(wait_for_screen(
+        &second,
+        "Project A",
+        Duration::from_secs(3)
+    ));
+    assert!(!second.text().contains("\x1b]0;miao\x07"));
+    second.write(b"\x14");
+    assert!(wait_for_screen(
+        &second,
+        "Terminal title enabled",
+        Duration::from_secs(2)
+    ));
+    assert!(wait_for(&second, "\x1b]0;miao\x07", Duration::from_secs(2)));
+    second.write(b"\x03");
+    assert!(wait_exit(&mut second.child, Duration::from_secs(5))
+        .unwrap()
+        .success());
+    second.shutdown();
+    first.shutdown();
+
+    let dir = workspace("title-disabled");
+    std::fs::create_dir_all(dir.join(".miao")).unwrap();
+    std::fs::write(
+        dir.join(".miao/tui.json"),
+        r#"{"keybinds":{"terminal_title_toggle":"ctrl+t"}}"#,
+    )
+    .unwrap();
+    let mut disabled = Harness::spawn_with(
+        "title-disabled",
+        false,
+        true,
+        false,
+        false,
+        false,
+        &[("MIAO_DISABLE_TERMINAL_TITLE", "TrUe")],
+    );
+    assert!(wait_for_screen(
+        &disabled,
+        "Project A",
+        Duration::from_secs(3)
+    ));
+    assert!(!disabled.text().contains("\x1b]0;miao\x07"));
+    disabled.write(b"\x14");
+    assert!(wait_for_screen(
+        &disabled,
+        "disabled by MIAO_DISABLE_TERMINAL_TITLE",
+        Duration::from_secs(2)
+    ));
+    assert!(!dir.join("state/preferences.json").exists());
+    disabled.write(b"\x03");
+    assert!(wait_exit(&mut disabled.child, Duration::from_secs(5))
+        .unwrap()
+        .success());
+    disabled.shutdown();
+}
+
+#[test]
+fn title_payloads_cannot_satisfy_visible_text_assertions() {
+    assert_eq!(
+        plain("\x1b]0;hidden\x07visible\x1b]2;also hidden\x1b\\"),
+        "visible"
+    );
+}
+
+#[test]
+fn external_editor_exclusively_reads_stdin_then_returns_the_saved_draft() {
+    let editor = format!("{} --editor", env!("CARGO_BIN_EXE_miao-tui-fake-engine"));
+    let mut harness = Harness::spawn_with(
+        "editor-input",
+        false,
+        true,
+        false,
+        false,
+        false,
+        &[("VISUAL", &editor)],
+    );
+    assert!(wait_for_screen(
+        &harness,
+        "Project A",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"\r");
+    assert!(wait_for_screen(
+        &harness,
+        "hello from the fixture",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"old draft");
+    harness.write(b"\x18e");
+    for (index, text) in [(1, "first"), (2, "second"), (3, "third")] {
+        assert!(
+            wait_for(
+                &harness,
+                &format!("EDITOR_INPUT_{index}"),
+                Duration::from_secs(2)
+            ),
+            "editor did not receive exclusive input: {}",
+            harness.text()
+        );
+        harness.write(format!("{text}\r").as_bytes());
+    }
+    assert!(
+        wait_for_screen(&harness, "first second third", Duration::from_secs(2)),
+        "saved editor draft did not render: {}",
+        harness.screen()
+    );
+    harness.write(b"!");
+    assert!(wait_for_screen(
+        &harness,
+        "first second third!",
+        Duration::from_secs(2)
+    ));
+    assert!(!harness.dir.join("admit.log").exists());
+    harness.write(b"\x03");
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5)).expect("editor UI exit");
+    assert!(status.success());
+    harness.shutdown();
+}
+
+#[cfg(unix)]
+#[test]
+fn editor_interrupt_returns_to_the_ui_and_exit_signals_cancel_the_editor() {
+    for signal in ["INT", "TERM", "HUP"] {
+        let editor = format!("{} --editor", env!("CARGO_BIN_EXE_miao-tui-fake-engine"));
+        let mut harness = Harness::spawn_with(
+            &format!("editor-signal-{signal}"),
+            false,
+            true,
+            false,
+            false,
+            false,
+            &[("VISUAL", &editor)],
+        );
+        assert!(wait_for_screen(
+            &harness,
+            "Project A",
+            Duration::from_secs(2)
+        ));
+        harness.write(b"\r");
+        assert!(wait_for_screen(
+            &harness,
+            "hello from the fixture",
+            Duration::from_secs(2)
+        ));
+        harness.write(b"keep original draft");
+        harness.write(b"\x18e");
+        assert!(wait_for(&harness, "EDITOR_INPUT_1", Duration::from_secs(2)));
+        let buffer =
+            PathBuf::from(std::fs::read_to_string(harness.dir.join("editor-buffer-path")).unwrap());
+        let editor_pid = std::fs::read_to_string(harness.dir.join("editor-pid")).unwrap();
+        assert!(buffer.exists());
+        if signal == "INT" {
+            // The cooked terminal delivers Ctrl+C to both UI and editor.
+            harness.write(b"\x03");
+            assert!(
+                wait_for_screen(&harness, "keep original draft", Duration::from_secs(2)),
+                "interrupted editor did not restore the draft: {}",
+                harness.screen()
+            );
+            harness.write(b"!");
+            assert!(wait_for_screen(
+                &harness,
+                "keep original draft!",
+                Duration::from_secs(2)
+            ));
+            assert!(harness.child.try_wait().unwrap().is_none());
+            harness.write(b"\x03");
+            harness.write(b"\x03");
+        } else {
+            let pid = harness.child.process_id().unwrap().to_string();
+            assert!(std::process::Command::new("kill")
+                .args([&format!("-{signal}"), &pid])
+                .status()
+                .unwrap()
+                .success());
+        }
+        assert!(wait_exit(&mut harness.child, Duration::from_secs(5))
+            .expect("editor signal exit")
+            .success());
+        assert!(!buffer.exists(), "cancelled editor left its draft behind");
+        assert!(
+            !std::process::Command::new("kill")
+                .args(["-0", &editor_pid])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success(),
+            "editor child survived UI shutdown"
+        );
+        assert!(!harness.dir.join("admit.log").exists());
+        harness.shutdown();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_job_control_restores_the_terminal_and_preserves_the_draft() {
+    let mut harness =
+        Harness::spawn_configured("job-control", false, true, false, false, false, &[], true);
+    assert!(wait_for_screen(
+        &harness,
+        "Project A",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"\r");
+    assert!(wait_for_screen(
+        &harness,
+        "hello from the fixture",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"draft before suspend");
+    assert!(wait_for_screen(
+        &harness,
+        "draft before suspend",
+        Duration::from_secs(2)
+    ));
+    for index in 0..2 {
+        let offset = harness.text().len();
+        harness.write(b"\x1a");
+        let start = Instant::now();
+        while !harness.text()[offset..].contains("MIAO_SHELL_READY>")
+            && start.elapsed() < Duration::from_secs(2)
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let output = harness.text();
+        assert!(
+            output[offset..].contains("Stopped"),
+            "job did not stop: {output}"
+        );
+        assert!(
+            output[offset..].contains("\x1b[?1049l"),
+            "terminal was not restored before shell handoff"
+        );
+        harness.write(b"printf 'SHELL_HAS_INPUT\\n'\r");
+        assert!(wait_for(
+            &harness,
+            "SHELL_HAS_INPUT\r\n",
+            Duration::from_secs(2)
+        ));
+        if index == 0 {
+            let offset = harness.text().len();
+            harness.write(b"bg\rsleep 0.1; jobs\r");
+            let start = Instant::now();
+            while !harness.text()[offset..].contains("Stopped")
+                && start.elapsed() < Duration::from_secs(2)
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert!(
+                harness.text()[offset..].contains("Stopped"),
+                "bg resumed terminal readers: {}",
+                harness.text()
+            );
+        }
+        harness.write(b"fg\r");
+        assert!(
+            wait_for_screen(&harness, "draft before suspend", Duration::from_secs(2)),
+            "fg did not repaint: {}",
+            harness.screen()
+        );
+    }
+    harness.write(b"!");
+    assert!(wait_for_screen(
+        &harness,
+        "draft before suspend!",
+        Duration::from_secs(2)
+    ));
+    assert!(!harness.dir.join("admit.log").exists());
+    let offset = harness.text().len();
+    harness.write(b"\x03");
+    harness.write(b"\x03");
+    let start = Instant::now();
+    while !harness.text()[offset..].contains("MIAO_SHELL_READY>")
+        && start.elapsed() < Duration::from_secs(5)
+    {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(harness.text()[offset..].contains("MIAO_SHELL_READY>"));
+    harness.write(b"exit\r");
+    assert!(wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("shell exit")
+        .success());
+    harness.shutdown();
+}
+
+#[cfg(unix)]
+#[test]
+fn background_startup_waits_for_foreground_before_taking_the_terminal() {
+    let mut harness = Harness::spawn_configured(
+        "background-job",
+        false,
+        true,
+        false,
+        false,
+        false,
+        &[("MIAO_TUI_TEST_BACKGROUND", "1")],
+        true,
+    );
+    assert!(
+        wait_for_screen(&harness, "Project A", Duration::from_secs(2)),
+        "foreground UI did not render: {}",
+        harness.screen()
+    );
+    let offset = harness.text().len();
+    harness.write(b"\x03");
+    let start = Instant::now();
+    while !harness.text()[offset..].contains("MIAO_SHELL_READY>")
+        && start.elapsed() < Duration::from_secs(5)
+    {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(harness.text()[offset..].contains("MIAO_SHELL_READY>"));
+    harness.write(b"exit\r");
+    assert!(wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("background shell exit")
+        .success());
+    harness.shutdown();
+}
+
+#[cfg(unix)]
+#[test]
+fn suspend_without_a_controlling_shell_does_not_leave_an_orphaned_job_stopped() {
+    let mut harness = Harness::spawn_engine("orphaned-job");
+    assert!(wait_for_screen(
+        &harness,
+        "Project A",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"\r");
+    assert!(wait_for_screen(
+        &harness,
+        "hello from the fixture",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"orphan draft");
+    assert!(wait_for_screen(
+        &harness,
+        "orphan draft",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"\x1a");
+    harness.write(b"!");
+    assert!(
+        wait_for_screen(&harness, "orphan draft!", Duration::from_secs(2)),
+        "orphaned job became unresumable: {}",
+        harness.screen()
+    );
+    assert!(!harness.dir.join("admit.log").exists());
+    harness.write(b"\x03");
+    harness.write(b"\x03");
+    assert!(wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("orphaned UI exit")
         .success());
     harness.shutdown();
 }

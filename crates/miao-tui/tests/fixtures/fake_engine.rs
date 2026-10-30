@@ -21,6 +21,32 @@ fn main() {
         assert_eq!(args.next().as_deref(), Some(expected.as_str()));
         assert_eq!(args.next().as_deref(), Some("serve"));
     }
+    if let Ok(error) = std::env::var("MIAO_TUI_FAKE_STARTUP_ERROR") {
+        eprintln!("{error}");
+        std::process::exit(7);
+    }
+    if std::env::args().nth(1).as_deref() == Some("--editor") {
+        std::fs::write(
+            "editor-buffer-path",
+            std::env::args_os()
+                .nth(2)
+                .unwrap()
+                .to_string_lossy()
+                .as_bytes(),
+        )
+        .unwrap();
+        std::fs::write("editor-pid", std::process::id().to_string()).unwrap();
+        let mut saved = Vec::new();
+        for index in 1..=3 {
+            println!("EDITOR_INPUT_{index}");
+            std::io::stdout().flush().unwrap();
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line).unwrap();
+            saved.push(line.trim().to_owned());
+        }
+        std::fs::write(std::env::args_os().nth(2).unwrap(), saved.join(" ")).unwrap();
+        return;
+    }
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
     let durable = durable_events();

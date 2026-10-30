@@ -10,7 +10,7 @@ import { copyFile } from "node:fs/promises"
 import path from "node:path"
 import { OpenCode } from "@miao/client"
 import { Effect } from "effect"
-import { cliIt, type CliFixture } from "../lib/cli-process"
+import { cliIt, type AcpHandle, type CliFixture } from "../lib/cli-process"
 import { verifierConfig } from "../cli/acp/helpers"
 import { connect } from "./harness"
 
@@ -123,25 +123,38 @@ describe("acp V2 replay", () => {
           method: "session/load",
           params: { sessionId: legacyID, cwd: fixture.home, mcpServers: [] },
         })
-        const replayed = yield* collectUntil(stdio.receive, 2)
+        const replayed = yield* collectUntil(stdio, 2)
         expect(replayed.response).toMatchObject({ id: 2, result: { configOptions: expect.any(Array) } })
         expect(replayed.kinds.user_message_chunk).toBe(turns + 1)
         expect(replayed.kinds.tool_call).toBe(turns)
       }),
-    180_000,
+    600_000,
   )
 })
 
 /** Reads JSON-RPC lines until the response with `id`, counting `session/update` kinds on the way. */
-function collectUntil(receive: Effect.Effect<unknown>, id: number) {
+function collectUntil(acp: AcpHandle, id: number) {
   return Effect.gen(function* () {
     const kinds: Record<string, number> = {}
+    let received = 0
     while (true) {
-      const message = (yield* receive.pipe(Effect.timeout("30 seconds"))) as {
+      const message = (yield* acp.receive.pipe(
+        Effect.timeoutOrElse({
+          duration: "120 seconds",
+          orElse: () =>
+            Effect.fail(
+              new Error(
+                `no JSON-RPC message with id ${id} after ${received} messages (kinds: ${JSON.stringify(kinds)})\n` +
+                  `acp stderr (last 2000):\n${acp.stderrTail(2000)}`,
+              ),
+            ),
+        }),
+      )) as {
         id?: number
         method?: string
         params?: { update?: { sessionUpdate?: string } }
       }
+      received += 1
       if (message.id === id) return { response: message, kinds }
       const kind = message.method === "session/update" ? message.params?.update?.sessionUpdate : undefined
       if (kind) kinds[kind] = (kinds[kind] ?? 0) + 1

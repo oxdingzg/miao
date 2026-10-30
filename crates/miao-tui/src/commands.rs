@@ -32,12 +32,14 @@ pub enum Builtin {
     Redo,
     Editor,
     Redraw,
+    Suspend,
+    TerminalTitle,
     Help,
     Quit,
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 19] = [
+    pub const ALL: [Builtin; 21] = [
         Builtin::Models,
         Builtin::Permissions,
         Builtin::WorkspaceChanges,
@@ -55,6 +57,8 @@ impl Builtin {
         Builtin::Redo,
         Builtin::Editor,
         Builtin::Redraw,
+        Builtin::Suspend,
+        Builtin::TerminalTitle,
         Builtin::Help,
         Builtin::Quit,
     ];
@@ -79,6 +83,8 @@ impl Builtin {
             Builtin::Redo => "redo",
             Builtin::Editor => "editor",
             Builtin::Redraw => "redraw",
+            Builtin::Suspend => "suspend",
+            Builtin::TerminalTitle => "terminal-title",
             Builtin::Help => "help",
             Builtin::Quit => "quit",
         }
@@ -103,6 +109,8 @@ impl Builtin {
             Builtin::Redo => "Restore the last undone turn",
             Builtin::Editor => "Compose the prompt in $EDITOR",
             Builtin::Redraw => "Redraw terminal",
+            Builtin::Suspend => "Suspend to shell",
+            Builtin::TerminalTitle => "Toggle terminal title",
             Builtin::Help => "Keys and commands",
             Builtin::Quit => "Quit miao",
         }
@@ -128,6 +136,14 @@ impl Builtin {
             Builtin::Redo => "",
             Builtin::Editor => "<leader>e",
             Builtin::Redraw => "",
+            Builtin::Suspend => {
+                if cfg!(unix) {
+                    "ctrl+z"
+                } else {
+                    ""
+                }
+            }
+            Builtin::TerminalTitle => "",
             Builtin::Help => "",
             Builtin::Quit => "<leader>q",
         }
