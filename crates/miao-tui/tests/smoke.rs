@@ -1122,3 +1122,132 @@ fn title_payloads_cannot_satisfy_visible_text_assertions() {
         "visible"
     );
 }
+
+#[test]
+fn external_editor_exclusively_reads_stdin_then_returns_the_saved_draft() {
+    let editor = format!("{} --editor", env!("CARGO_BIN_EXE_miao-tui-fake-engine"));
+    let mut harness = Harness::spawn_with(
+        "editor-input",
+        false,
+        true,
+        false,
+        false,
+        &[("VISUAL", &editor)],
+    );
+    assert!(wait_for_screen(
+        &harness,
+        "Project A",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"\r");
+    assert!(wait_for_screen(
+        &harness,
+        "hello from the fixture",
+        Duration::from_secs(2)
+    ));
+    harness.write(b"old draft");
+    harness.write(b"\x18e");
+    for (index, text) in [(1, "first"), (2, "second"), (3, "third")] {
+        assert!(
+            wait_for(
+                &harness,
+                &format!("EDITOR_INPUT_{index}"),
+                Duration::from_secs(2)
+            ),
+            "editor did not receive exclusive input: {}",
+            harness.text()
+        );
+        harness.write(format!("{text}\r").as_bytes());
+    }
+    assert!(
+        wait_for_screen(&harness, "first second third", Duration::from_secs(2)),
+        "saved editor draft did not render: {}",
+        harness.screen()
+    );
+    harness.write(b"!");
+    assert!(wait_for_screen(
+        &harness,
+        "first second third!",
+        Duration::from_secs(2)
+    ));
+    assert!(!harness.dir.join("admit.log").exists());
+    harness.write(b"\x03");
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5)).expect("editor UI exit");
+    assert!(status.success());
+    harness.shutdown();
+}
+
+#[cfg(unix)]
+#[test]
+fn editor_interrupt_returns_to_the_ui_and_exit_signals_cancel_the_editor() {
+    for signal in ["INT", "TERM", "HUP"] {
+        let editor = format!("{} --editor", env!("CARGO_BIN_EXE_miao-tui-fake-engine"));
+        let mut harness = Harness::spawn_with(
+            &format!("editor-signal-{signal}"),
+            false,
+            true,
+            false,
+            false,
+            &[("VISUAL", &editor)],
+        );
+        assert!(wait_for_screen(
+            &harness,
+            "Project A",
+            Duration::from_secs(2)
+        ));
+        harness.write(b"\r");
+        assert!(wait_for_screen(
+            &harness,
+            "hello from the fixture",
+            Duration::from_secs(2)
+        ));
+        harness.write(b"keep original draft");
+        harness.write(b"\x18e");
+        assert!(wait_for(&harness, "EDITOR_INPUT_1", Duration::from_secs(2)));
+        let buffer =
+            PathBuf::from(std::fs::read_to_string(harness.dir.join("editor-buffer-path")).unwrap());
+        let editor_pid = std::fs::read_to_string(harness.dir.join("editor-pid")).unwrap();
+        assert!(buffer.exists());
+        if signal == "INT" {
+            // The cooked terminal delivers Ctrl+C to both UI and editor.
+            harness.write(b"\x03");
+            assert!(
+                wait_for_screen(&harness, "keep original draft", Duration::from_secs(2)),
+                "interrupted editor did not restore the draft: {}",
+                harness.screen()
+            );
+            harness.write(b"!");
+            assert!(wait_for_screen(
+                &harness,
+                "keep original draft!",
+                Duration::from_secs(2)
+            ));
+            assert!(harness.child.try_wait().unwrap().is_none());
+            harness.write(b"\x03");
+            harness.write(b"\x03");
+        } else {
+            let pid = harness.child.process_id().unwrap().to_string();
+            assert!(std::process::Command::new("kill")
+                .args([&format!("-{signal}"), &pid])
+                .status()
+                .unwrap()
+                .success());
+        }
+        assert!(wait_exit(&mut harness.child, Duration::from_secs(5))
+            .expect("editor signal exit")
+            .success());
+        assert!(!buffer.exists(), "cancelled editor left its draft behind");
+        assert!(
+            !std::process::Command::new("kill")
+                .args(["-0", &editor_pid])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success(),
+            "editor child survived UI shutdown"
+        );
+        assert!(!harness.dir.join("admit.log").exists());
+        harness.shutdown();
+    }
+}
