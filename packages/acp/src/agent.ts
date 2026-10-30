@@ -63,6 +63,8 @@ export type Options = {
   readonly client: Client
   readonly version: string
   readonly log?: (message: string) => void
+  /** Operator-configured default model (from miao config), preferred over the catalog's newest. */
+  readonly defaultModel?: { providerID: string; id: string }
 }
 
 type Turn = {
@@ -111,6 +113,7 @@ export class MiaoAgent implements Agent {
   private readonly client: Client
   private readonly log: (message: string) => void
   private capabilities: ClientCapabilities | undefined
+  private readonly defaultModel: { providerID: string; id: string } | undefined
 
   constructor(
     private readonly connection: AgentSideConnection,
@@ -169,7 +172,7 @@ export class MiaoAgent implements Agent {
     return guard(async () => {
       this.ignoreMcp(params.mcpServers)
       const catalog = await this.catalog(params.cwd)
-      const model = defaultModel(catalog)
+      const model = this.defaultModel ?? defaultModel(catalog)
       const variant = model ? initialVariant(catalog, model) : undefined
       const session = await this.client.sessions.create({
         location: { directory: params.cwd },

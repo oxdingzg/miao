@@ -115,7 +115,9 @@ export const Definitions = {
   session_quick_switch_9: keybind("<leader>9", "Switch to session in quick slot 9"),
 
   stash_delete: keybind("ctrl+d", "Delete stash entry"),
-  model_provider_list: keybind("ctrl+a", "Open provider list from model dialog"),
+  // ctrl+a collides with input_line_home while the composer is focused in a
+  // session, so the provider switch lives on ctrl+o inside the model dialog.
+  model_provider_list: keybind("ctrl+o", "Open provider list from model dialog"),
   model_favorite_toggle: keybind("ctrl+f", "Toggle model favorite status"),
   model_list: keybind("<leader>m", "List available models"),
   model_cycle_recent: keybind("f2", "Next recently used model"),
@@ -204,6 +206,7 @@ export const Definitions = {
   input_select_all: keybind("super+a", "Select all in input"),
   history_previous: keybind("up", "Previous history item"),
   history_next: keybind("down", "Next history item"),
+  history_reverse_search: keybind("ctrl+r", "Search prompt history backward from the current input"),
 
   "dialog.select.prev": keybind("up,ctrl+p", "Move to previous dialog item"),
   "dialog.select.next": keybind("down,ctrl+n", "Move to next dialog item"),
@@ -410,6 +413,7 @@ export const CommandMap = {
   input_select_all: "input.select.all",
   history_previous: "prompt.history.previous",
   history_next: "prompt.history.next",
+  history_reverse_search: "prompt.history.reverse_search",
   terminal_suspend: "terminal.suspend",
   terminal_title_toggle: "terminal.title.toggle",
   tips_toggle: "tips.toggle",

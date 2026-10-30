@@ -45,6 +45,8 @@ pub fn write_json<T: Serialize>(name: &str, value: &T) {
 pub struct Preferences {
     #[serde(default)]
     pub theme: Option<String>,
+    #[serde(default)]
+    pub terminal_title_enabled: Option<bool>,
 }
 
 pub fn preferences() -> Preferences {
@@ -54,6 +56,12 @@ pub fn preferences() -> Preferences {
 pub fn save_theme(name: &str) {
     let mut prefs = preferences();
     prefs.theme = Some(name.to_string());
+    write_json("preferences.json", &prefs);
+}
+
+pub fn save_terminal_title(enabled: bool) {
+    let mut prefs = preferences();
+    prefs.terminal_title_enabled = Some(enabled);
     write_json("preferences.json", &prefs);
 }
 
