@@ -554,8 +554,11 @@ impl Parser for ChatState {
                 if id.is_none() && name.is_none() && arguments.is_none() {
                     continue;
                 }
+                // Some gateways (opencode-go) nest the call index inside
+                // `function` instead of the call level; accept both shapes.
                 let index = tool["index"]
                     .as_u64()
+                    .or_else(|| tool["function"]["index"].as_u64())
                     .filter(|i| *i < 64)
                     .ok_or_else(invalid)?;
                 // A first frame starts a call; so does a frame that names a
