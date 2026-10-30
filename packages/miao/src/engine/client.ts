@@ -1,3 +1,4 @@
+import { resolveEngine } from "./discovery"
 import type { NativeInput } from "./command-manifest"
 import { spawn } from "bun"
 import { EOL } from "os"
@@ -56,6 +57,8 @@ export interface EngineOptions {
    * prompt can ask; an import failure fails the owner.
    */
   savedRules?: string
+  /** Explicit shared authority selected after paired model-free handoffs. */
+  sharedPermission?: { db: string; project: string }
   toolReplayFile?: string
   /** Automatic compaction limits (roadmap §2.13); absent keeps it off. */
   contextLimits?: {
@@ -277,7 +280,16 @@ export function permissionEnvironment(inherited: Record<string, string | undefin
 
 /** The argv the child engine is spawned with; pure so tests can assert it. */
 export function engineArgs(options: EngineOptions): string[] {
+  if (options.sharedPermission && options.savedRules !== undefined)
+    throw new Error("shared permissions cannot accept legacy saved-rule snapshots")
   const args = ["serve", "--db", options.db, "--workspace", options.workspace, "--model", options.model]
+  if (options.sharedPermission)
+    args.push(
+      "--permission-root-db",
+      options.sharedPermission.db,
+      "--permission-project",
+      options.sharedPermission.project,
+    )
   if (options.workerConfigFile) args.push("--worker-config", options.workerConfigFile)
   if (options.provider) args.push("--provider", options.provider)
   if (options.endpoint) args.push("--endpoint", options.endpoint)
@@ -410,6 +422,8 @@ export class EngineClient {
   }
 
   static start(options: EngineOptions): EngineClient {
+    if (options.sharedPermission)
+      resolveEngine({ environment: { MIAO_ENGINE_BIN: options.binary }, requireSharedPermissions: true })
     const manifest = prepareMcpConfig(options)
     try {
       const args = engineArgs({ ...options, mcpConfigFile: manifest?.file ?? options.mcpConfigFile })
@@ -469,12 +483,13 @@ export class EngineClient {
     db: string
     project: string
     directory: string
+    initialize?: boolean
     requestTimeoutMs?: number
   }) {
     const child = spawn(
       [
         options.binary,
-        "permission-source",
+        options.initialize ? "permission-source-init" : "permission-source",
         "--db",
         options.db,
         "--project",
@@ -543,6 +558,8 @@ export class EngineClient {
             "permission_pattern_list",
             "permission_pattern_snapshot",
             "permission_pattern_changes",
+            "shared_permission_snapshot",
+            "shared_permission_changes",
           ].includes(method)
         ) {
           this.pending.delete(id)

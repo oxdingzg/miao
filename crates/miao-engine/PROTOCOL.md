@@ -50,6 +50,8 @@ does not prevent the engine from settling its own cancelled drain.
 | `select_account` | `session_id`, `credential_id` (string or null) | `{binding, account, changed}` |
 | `product_permission_evaluate` | `source`, `request` (active reverse-call facts) | `{effect, rules, authority_revision}` |
 | `permission_pattern_list` | — | native-owned standing patterns for this Runtime's workspace |
+| `shared_permission_snapshot` | — | bound shared Root/context snapshot and Root change cursor; shared Runtime only |
+| `shared_permission_changes` | `after: {authority,seq}`, `limit` | bound Root changefeed page; shared Runtime only |
 | `permission_pattern_snapshot` | — | atomic native standing-rule snapshot and change cursor |
 | `permission_pattern_changes` | `after`, `limit` (1–256) | ordered durable changes after a workspace cursor |
 | `permission_pattern_put` | `rule` (allow only) | persisted pattern with ID, workspace, source and timestamp |
@@ -1379,3 +1381,35 @@ Initial policy-final admission emits no fake UI reply. Pending requests released
 by saved rules retain `saved_rules_allowed` and the existing always settlement
 vocabulary. Notifications never authorize execution: host assertions still poll
 live fenced status. Explicit Runtime integration remains unfinished.
+
+### Explicit shared Runtime selection
+
+`shared_permission_runtime: 1` supports `serve`/`acp` selection with both
+`--permission-root-db PATH --permission-project ID`. The Root database must
+already exist outside the model workspace. The Source directory handoff must be
+completed and match the actual Root/project/directory receipt, and the project
+handoff receipt must exist. Missing, prepared or mismatched receipts fail startup;
+there is no legacy fallback. Shared selection cannot use a fresh diagnostic tool
+replay database. Legacy constructors and invocations remain unchanged.
+
+The actual Runtime UUID, PID and captured Session lease bind shared runs. Even a
+configured native allow checks this identity; current Root standing rules and
+identity namespace the Source-owned exact invocation cache. Host assertions use
+the Root transactions and Source fences described above. Local cancellation
+withdraws bridge authority and retires pending Root requests before acknowledging;
+tool/run completion retires unanswered assertions. UI projection consumes events
+for removed executions without recreating deleted history, including reused
+Session IDs. Notifications never grant authority.
+
+`permission_source_initialize: 1` adds the explicit model-free command
+`permission-source-init --db PATH --project ID --directory PATH`. It validates the
+directory before opening or creating the Source database and creates no Session,
+provider or background execution. The existing `permission-source` command still
+requires an existing file. Both commands expose the same source control methods.
+A trusted host completes the project and directory handoffs before selecting the
+shared Runtime; these capabilities do not enable automatic product migration.
+
+The shared snapshot/change commands use Root-bound cursors, not legacy Source
+journal sequence numbers. Legacy saved-rule projection remains refused after
+handoff. A timed-out read does not terminate an unrelated active Session, while
+mutations retain the existing fail-closed timeout behavior.

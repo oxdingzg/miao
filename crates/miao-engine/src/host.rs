@@ -563,6 +563,14 @@ impl Host {
                 .pending_product_permissions(&self.controller, session_id)
                 .await
                 .and_then(|records| serde_json::to_value(records).map_err(Error::from)),
+            Command::SharedPermissionSnapshot => runtime
+                .shared_permission_snapshot(&self.controller)
+                .await
+                .and_then(|snapshot| serde_json::to_value(snapshot).map_err(Error::from)),
+            Command::SharedPermissionChanges(input) => runtime
+                .shared_permission_changes(&self.controller, input)
+                .await
+                .and_then(|page| serde_json::to_value(page).map_err(Error::from)),
             Command::PermissionImportSnapshot => runtime
                 .permission_import_snapshot(&self.controller)
                 .await
