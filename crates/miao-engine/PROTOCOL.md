@@ -17,6 +17,17 @@ One JSON object per line on stdin/stdout. A request carries a string or number
 Notifications carry no request id. Only local stdio is defined here; the engine
 does not claim ACP or the existing miao HttpApi is compatible.
 
+### Reverse-call cancellation
+
+Host reverse calls use `product_tool` or `hook_tool` with a `bridge_id` and
+`params.session_id`. Cancelling the Session removes its pending reply slots and
+emits the corresponding `product_tool.cancel` or `hook_tool.cancel` notification
+with the same `bridge_id` and `params: {session_id, bridge_id}`. The host should
+interrupt only the matching Session's active callback, release scoped resources,
+and suppress late replies. Unknown notices are safe to ignore. Connection loss
+or client close must also release host callbacks. A host that ignores a notice
+does not prevent the engine from settling its own cancelled drain.
+
 ## Methods
 
 | Method | Params | Result |
@@ -907,7 +918,7 @@ rule content, repeated puts preserve identity/timestamp, and removing an absent
 ID is idempotent. Only allow rules are accepted; configured deny still wins.
 
 Native rows live separately from the host projection in the additive optional
-`engine_owned_permission_rule` table. They join saved rules during evaluation;
+`engine_owned_permission_rule_legacy` table (schema 23; earlier formats use the unsuffixed name). They join saved rules during evaluation;
 removal does not delete projected rows or exact-call grants. A compatible older
 read-only database without this optional table has no native-owned patterns.
 SQLite insertion constraints enforce the combined saved-rule budget for both
@@ -1191,3 +1202,96 @@ represent revocation. Managed product owners use the snapshot command before
 admission, including for an empty set, and fail startup/admission if the engine
 cannot synchronize it. This command does not transfer native rule-writing
 ownership or remove the compatibility TypeScript permission evaluator.
+
+Local `cancel` and matching `cancel_if` withdraw the Session's product bridge
+sources before acknowledging acceptance. Withdrawal serializes with the same
+bridge lock held through a permission commit: an already-entered commit may
+finish before the acknowledgement, but cannot finish after it. Stale conditional
+interrupts leave the current run's sources intact. Cancellation notices to the
+host are delivered separately so output backpressure does not delay this fence;
+their tasks remain owned by the Session actor. Detach waits for pending notices,
+while global shutdown can abort their delivery. A foreign owner's durable
+`run.cancel_requested` remains an advisory request for that owner to consume.
+
+### Permission source execution claim
+
+Session-store schema 22 persists `engine_run.lease_epoch` when a fenced run
+starts, in the same transaction as the run and any first input promotions.
+Permission evaluation, admission and replies require the dispatched tool and
+running run to retain that exact Session epoch and the current process owner.
+Renewing the same epoch preserves authority; a superseding claim invalidates the
+old source even before its asynchronous drain notices the loss. The saved-rule
+write and reply remain in the guarded transaction.
+
+Historical and deliberately unfenced storage rows keep a NULL epoch during
+upgrade; current lease data is never used to fabricate old execution provenance.
+Such rows cannot act as live permission sources. This does not resume provider
+work or create another Session/drain identity. Older Session-store writers refuse
+schema 22; the separate project permission database retains its own schema v2.
+
+Format publication and schema changes share an immediate SQLite transaction.
+Upgrading an older store is refused while a recorded running-run owner process
+is alive; its schema, format and rows remain available to that older owner.
+Finished runs and dead owners do not require provider recovery to upgrade.
+
+### Host default-agent capture
+
+The `session_agent_defaults: 1` capability advertises `serve`/`acp` startup
+`--agent-config PATH`, a trusted-host `AgentManifest` JSON file bounded to 4 MiB.
+The manifest is validated before background execution is armed. It supplies
+default data for Sessions without a recorded agent; it never overrides an
+existing explicit selection. A product TUI must refuse a kernel without this
+capability rather than silently lose its configured ordered permission rules.
+
+Input admission and the first default-agent selection commit in one transaction,
+including admit-only calls. Selection failure rolls back the input. Exact input
+retries do not append another selection. Older admitted inputs drained by a wake
+or explicit resume capture a still-missing default before constructing provider
+policy. The native Session ledger and policy remain authoritative; the host
+resolves manifest data and does not decide tool permissions. Standalone callers
+that omit the option retain their existing entry policy.
+
+### Legacy Session permission storage names
+
+Session schema 23 renames the projected and native-owned standing-rule tables
+to `engine_permission_rule_legacy` and `engine_owned_permission_rule_legacy`.
+The rename shares the schema publication transaction and preserves rules,
+original identities/timestamps, receipts, revocation state, journals and cursors.
+Already-open old SQL readers lose their old table names; older kernels refuse
+the new format on reopen. Live older run owners still block a format upgrade.
+
+Current read-only catalogs can inspect older schemas without upgrading them.
+A schema-23 reader never falls back to old, missing or ambiguous table names.
+This format boundary does not itself freeze a directory or activate shared
+Runtime authorization; the separate ownership handshake is described below.
+
+### Explicit directory source retirement
+
+`permission_source_handoff: 1` advertises a separate model-free entry point:
+`miao-engine permission-source --db PATH --project ID --directory PATH`. It
+requires an existing native Session database and canonicalizes the directory
+before opening it. The implicit-local placement and project stay bound for the
+process lifetime. Provider flags, credentials and model execution are absent.
+
+- `binding`: startup-bound project, canonical directory and implicit-local workspace identity.
+  Hosts compare both controls before freezing a source; this read does not prepare it.
+- `snapshot`: nullable immutable source record, including target identity,
+  original native patterns, destination fingerprint and `prepared/completed` state.
+- `prepare {authority}`: require a quiescent directory with no live or unknown
+  run owner, retain its exact pattern IDs/timestamps and freeze its old authority
+  in one source transaction. An exact retry adopts that record; changing its
+  destination fails. There is no abort/unfreeze operation.
+- `complete {snapshot}`: verify the actual destination Context snapshot's
+  authority, project, directory, workspace identity, migration fingerprint and
+  original imported count. The active destination pattern list may already have
+  revocations. A lost destination response or source acknowledgement leaves a
+  durable prepared record; retries cannot resurrect revoked rules.
+- `shutdown`: flush the acknowledgement and close the source store.
+
+Preparation refuses old rule reads, projection/import APIs, mutation and change
+feeds. SQL triggers protect both rule tables and immutable handoff facts against
+old writers, including moves between scopes. New legacy model runs in that
+directory are refused; durable prompt admission remains separate, and failed run
+start rolls promotion back without a provider request. Other directory scopes
+remain available. Successful completion retains the freeze until shared Runtime
+ownership is configured; this control does not enable that backend automatically.

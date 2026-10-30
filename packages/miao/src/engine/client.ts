@@ -41,6 +41,7 @@ export interface EngineOptions {
   awsProfile?: string
   authFile?: string
   policyFile?: string
+  agentConfigFile?: string
   /** The global config directory; the engine derives the product policy from it. */
   configDir?: string
   /**
@@ -142,6 +143,8 @@ export interface EngineOptions {
   onHookTool?: (call: {
     sessionID: string
     kind: "before" | "after" | "definition"
+    /** Aborted when this hook is cancelled, the connection fails or the client closes. */
+    signal?: AbortSignal
     tool: string
     callID: string
     args?: unknown
@@ -282,6 +285,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.awsProfile) args.push("--aws-profile", options.awsProfile)
   if (options.authFile) args.push("--auth-file", options.authFile)
   if (options.policyFile) args.push("--policy", options.policyFile)
+  if (options.agentConfigFile) args.push("--agent-config", options.agentConfigFile)
   if (options.configDir) args.push("--config-dir", options.configDir)
   if (options.configSources) args.push("--config-sources", options.configSources)
   if (options.toolReplayFile) args.push("--tool-replay", options.toolReplayFile)
@@ -355,6 +359,7 @@ interface Pending {
 export class EngineClient {
   private next = 1
   private readonly pending = new Map<number, Pending>()
+  private readonly hookCalls = new Map<number, { sessionID: string; controller: AbortController }>()
   /**
    * Cancellation for the product calls the engine is waiting on. A native
    * permission ask parks inside such a call, so the settle or cancel notice has
@@ -459,6 +464,29 @@ export class EngineClient {
     return new EngineClient(child, undefined, undefined, undefined, undefined, false, options.requestTimeoutMs)
   }
 
+  static startPermissionSource(options: {
+    binary: string
+    db: string
+    project: string
+    directory: string
+    requestTimeoutMs?: number
+  }) {
+    const child = spawn(
+      [
+        options.binary,
+        "permission-source",
+        "--db",
+        options.db,
+        "--project",
+        options.project,
+        "--directory",
+        options.directory,
+      ],
+      { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: permissionEnvironment() },
+    )
+    return new EngineClient(child, undefined, undefined, undefined, undefined, false, options.requestTimeoutMs)
+  }
+
   onEvent(handler: (event: EngineEvent) => void) {
     this.eventHandlers.push(handler)
   }
@@ -496,6 +524,7 @@ export class EngineClient {
         // must be inspected before another attempt.
         if (
           [
+            "binding",
             "snapshot",
             "context_snapshot",
             "sessions",
@@ -615,6 +644,10 @@ export class EngineClient {
   }
 
   private fail(error: Error, terminal = false) {
+    if (terminal) {
+      for (const call of this.hookCalls.values()) call.controller.abort(error)
+      this.hookCalls.clear()
+    }
     const notify = terminal && !this.failure && !this.closed
     if (terminal) this.failure ??= error
     for (const pending of this.pending.values()) pending.reject(this.failure ?? error)
@@ -711,28 +744,54 @@ export class EngineClient {
             definition?: unknown
           }
         | undefined
+      const controller = new AbortController()
       const reply = (value: Record<string, unknown>) => {
-        if (this.available)
+        if (this.available && !controller.signal.aborted)
           void this.writeInput(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL).catch(() => this.inputClosed())
       }
-      if (typeof bridgeID !== "number" || !params?.kind || !this.onHookTool) {
+      const execute = this.onHookTool
+      if (typeof bridgeID !== "number" || !params?.kind || !execute) {
         reply({ error: "tool hooks are not available on this host" })
         return
       }
-      void this.onHookTool({
-        sessionID: params.session_id ?? "",
-        kind: params.kind === "after" ? "after" : params.kind === "definition" ? "definition" : "before",
+      if (!this.available || this.hookCalls.has(bridgeID)) return
+      const active = { sessionID: params.session_id ?? "", controller }
+      this.hookCalls.set(bridgeID, active)
+      const call = {
+        sessionID: active.sessionID,
+        signal: controller.signal,
+        kind:
+          params.kind === "after"
+            ? ("after" as const)
+            : params.kind === "definition"
+              ? ("definition" as const)
+              : ("before" as const),
         tool: params.tool ?? "",
         callID: params.call_id ?? "",
         args: params.args,
         output: params.output,
         definition: params.definition,
-      })
+      }
+      void Promise.resolve()
+        .then(() => execute(call))
         .then(
           (result) => reply({ result }),
           (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
         )
         .catch(() => this.inputClosed())
+        .finally(() => {
+          if (this.hookCalls.get(bridgeID) === active) this.hookCalls.delete(bridgeID)
+        })
+      return
+    }
+    if (message.method === "hook_tool.cancel") {
+      const bridgeID = message.bridge_id
+      const params = message.params as { session_id?: string } | undefined
+      if (typeof bridgeID !== "number") return
+      const active = this.hookCalls.get(bridgeID)
+      if (!active || active.sessionID !== params?.session_id) return
+      this.hookCalls.delete(bridgeID)
+      active.controller.abort()
       return
     }
     if (message.method === "event") for (const handler of this.eventHandlers) handler(message.params as EngineEvent)

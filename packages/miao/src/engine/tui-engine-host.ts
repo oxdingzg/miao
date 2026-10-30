@@ -21,6 +21,7 @@ import { ProductFormatter } from "./product-formatter"
 import { ProductHooks } from "./product-hooks"
 import { ProductMcp } from "./product-mcp"
 import { ProductRoutes } from "./product-routes"
+import { ProductTuiAgent } from "./product-tui-agent"
 
 /**
  * The Rust TUI starts `miao-engine` itself, but it can only forward the
@@ -101,11 +102,13 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   const context = yield* AmbientContext.prepare(ref, effective)
   const hooks = yield* ProductHooks.prepare(ref, { ...effective, ...context.options })
   const formatter = yield* ProductFormatter.prepare(ref, effective)
+  const agent = yield* ProductTuiAgent.prepare(effective)
   const options: EngineOptions = {
     ...effective,
     ...context.options,
     ...hooks,
     ...formatter,
+    ...agent,
     db: input.database,
     workspace: input.workspace,
     // The route manifest names the model it was built for; serve that model so

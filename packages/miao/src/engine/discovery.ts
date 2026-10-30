@@ -30,10 +30,12 @@ export type Capabilities = {
   /** Version of the short-lived read-only catalog command, when supported. */
   catalog?: number
   savedRulesSnapshot?: number
+  sessionAgentDefaults?: number
   savedPermissionMigration?: number
   permissionContextStore?: number
   permissionProjectHandoff?: number
   permissionContextHandoff?: number
+  permissionSourceHandoff?: number
   permissionProjectStore?: number
   permissionImportChanges?: number
   productPermissionRequests?: number
@@ -86,6 +88,7 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (wire.permission_import_changes !== undefined && !isRevision(wire.permission_import_changes)) return undefined
     if (wire.saved_permission_migration !== undefined && !isRevision(wire.saved_permission_migration)) return undefined
     if (wire.saved_rules_snapshot !== undefined && !isRevision(wire.saved_rules_snapshot)) return undefined
+    if (wire.session_agent_defaults !== undefined && !isRevision(wire.session_agent_defaults)) return undefined
     if (wire.product_permission_requests !== undefined && !isRevision(wire.product_permission_requests))
       return undefined
     if (wire.product_permission_replies !== undefined && !isRevision(wire.product_permission_replies)) return undefined
@@ -97,6 +100,7 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (wire.permission_patterns !== undefined && !isRevision(wire.permission_patterns)) return undefined
     if (wire.permission_project_handoff !== undefined && !isRevision(wire.permission_project_handoff)) return undefined
     if (wire.permission_context_handoff !== undefined && !isRevision(wire.permission_context_handoff)) return undefined
+    if (wire.permission_source_handoff !== undefined && !isRevision(wire.permission_source_handoff)) return undefined
     if (wire.permission_context_store !== undefined && !isRevision(wire.permission_context_store)) return undefined
     if (wire.permission_project_store !== undefined && !isRevision(wire.permission_project_store)) return undefined
     return {
@@ -112,6 +116,9 @@ export function capabilities(binary: string): Capabilities | undefined {
       ...(typeof wire.permission_context_handoff === "number"
         ? { permissionContextHandoff: wire.permission_context_handoff }
         : {}),
+      ...(typeof wire.permission_source_handoff === "number"
+        ? { permissionSourceHandoff: wire.permission_source_handoff }
+        : {}),
       ...(typeof wire.permission_context_store === "number"
         ? { permissionContextStore: wire.permission_context_store }
         : {}),
@@ -125,6 +132,7 @@ export function capabilities(binary: string): Capabilities | undefined {
         ? { savedPermissionMigration: wire.saved_permission_migration }
         : {}),
       ...(typeof wire.saved_rules_snapshot === "number" ? { savedRulesSnapshot: wire.saved_rules_snapshot } : {}),
+      ...(typeof wire.session_agent_defaults === "number" ? { sessionAgentDefaults: wire.session_agent_defaults } : {}),
       ...(typeof wire.product_permission_requests === "number"
         ? { productPermissionRequests: wire.product_permission_requests }
         : {}),

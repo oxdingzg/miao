@@ -1,3 +1,4 @@
+import { projectedPermissionTable } from "../fixture/native-permission-storage"
 import { expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
@@ -118,7 +119,7 @@ async function legacyCount(filename: string) {
   const { Database } = await import("bun:sqlite")
   const database = new Database(filename, { readonly: true })
   try {
-    return database.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM engine_permission_rule").get()?.count
+    return database.query<{ count: number }, []>(`SELECT COUNT(*) AS count FROM ${projectedPermissionTable(database)}`).get()?.count
   } finally {
     database.close()
   }

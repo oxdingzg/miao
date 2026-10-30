@@ -90,6 +90,7 @@ pub(crate) fn changes(
     workspace: &str,
     input: Input,
 ) -> Result<Page, Error> {
+    crate::permission_source::require_legacy(connection, workspace)?;
     crate::permission_journal::page(
         connection,
         "engine_permission_pattern_change",

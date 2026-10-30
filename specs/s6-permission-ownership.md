@@ -251,9 +251,60 @@ Native 权限 profile 诊断及 §4 的完整脚本验收仍须分别完成。�
 记录 default/auto 模式。诊断快照不参与授权，活跃 turn 内的每个断言仍取得当时的原生判定；
 它不宣称整个 turn 的可变规则被冻结，也不替代断言自己的 authority_revision 证据。
 
+本地取消和匹配当前 run 的条件取消，先同步撤回 product bridge 来源，再回复接受。
+撤回与授权提交使用同一来源锁：已经进入的提交可以在取消回复前完成，但不能在回复后
+继续落盘。宿主取消通知由 Session actor 持有的任务发送，输出背压不推迟来源撤回；detach
+等待通知，全局 shutdown 可中止其发送。过期 run 的条件取消保持当前来源不变。跨进程的
+`run.cancel_requested` 仍是提交给归属进程消费的意图，不据此宣称远端已经停机。
+
+### 真实执行归属的权限来源栅栏
+
+Session 库 schema 22 在创建原生 run 时持久记录启动它的 Session lease epoch；首次
+输入提升与 run 创建仍同事务。权限读取、准入及答复同时检查真实 dispatched 工具、
+running run、Location，以及该 epoch 和当前进程的租约归属。新 epoch 接管后，旧来源
+不能继续批准 always；同 epoch 续租仍有效。历史和未加栅栏的存储行保留 NULL，不从当前
+租约猜测旧执行来源，也不触发 provider 恢复。旧内核拒绝打开 schema 22。
+格式升级与 schema 变更同一 SQLite 写事务；已记录的旧 run 所属进程仍活着时拒绝升级，
+保留旧 schema/数据供旧会话完成。Windows 使用只读进程句柄区分活跃与已退出进程。
+
+这先修复现有本地权限来源的归属校验；共享项目库内的 pending/always 原子结算与事件
+投影尚未接线，不能把这个局部修复当成共享权限权威已启用。
+
 显式宿主驱动 `handoffNativeProjectPermissions` 会先检查项目管理/目标绑定交接能力，
 解析真实原生快照并核对项目，然后依次 prepare、带目标身份的 handoff 和 complete。
 原生已有其他输入的回执时，在冻结旧库前拒绝；Core 已确认完成但原生回执丢失时，也不能
 重新导入旧规则。原生提交后响应丢失或 Core 保存回执失败，只保留 prepared 边界；使用
 新连接重试仍交给原生原始输入凭据核对，不复活已撤销行。不同目标库和并发宿主均通过
 实际控制进程测试。这个驱动没有注册到模型工具、启动迁移或 Runtime 授权路径。
+
+目录目的端增加 `context_handoff {authority,patterns}`：在目录写事务内核对项目库持久
+身份，第一次导入与原回执重试都必须匹配。原 `prule_` ID、时间及撤销语义不变；不匹配时
+目录和项目状态均不修改。交接方须在冻结来源前检查对应能力，并绑定启动时确定的项目、
+目录及显式 workspace 身份；同一路径换成另一座库不能继续旧交接。本 API 尚不冻结旧
+目录来源，也不启用 Runtime 授权或自动迁移。
+
+
+Session schema 23 在格式事务内将旧项目投影和目录原生规则表改为 `_legacy` 名称，保留
+规则身份、时间、迁移原始凭据、撤销和变更游标。旧 SQL 名称失效，旧内核重新打开时拒绝
+新版格式；活跃旧 run 的归属进程仍阻止升级。新只读 catalog 可查看旧格式，当前格式缺表
+或新旧名称并存时不回退。这个格式边界本身还不是目录来源冻结或 Shared Runtime 激活。
+
+显式来源控制 `permission-source --db PATH --project ID --directory PATH` 只打开已有的
+Native Session 库，不初始化 provider、Session 执行或后台迁移。隐式本地目录先规范化，
+项目及目录在进程启动时绑定。`prepare {authority}` 要求目录内没有活跃或归属不明的 run，
+在来源事务内保存原始原生规则、目标持久身份及目的端指纹，并冻结旧读写、投影与变更流。
+SQL 保护同时约束旧直接写入、规则跨范围移动及新 legacy model run；持久输入准入与执行
+仍分开，冻结期间输入可保留 pending，不提升消息或调用 provider。其他目录不受该范围冻结。
+
+目的端使用 `context_handoff` 接收同一原始输入；来源 `complete {snapshot}` 核对真实目的端
+身份、项目、目录、workspace、迁移指纹及原始数量，不能以当前剩余规则数代替原始回执。
+目的端提交后响应丢失、来源保存失败或重启，均保留 prepared 与旧来源冻结；精确重试接纳
+目的端已存在的原始回执，不恢复已撤销规则。完成也不解冻旧来源。Shared Runtime 的权限
+pending/always 原子结算与产品自动交接仍是后续接线，不把本控制入口当成 Runtime 激活。
+
+宿主显式驱动 `handoffNativeDirectoryPermissions` 在冻结前检查配对能力，并读取两个真实
+控制进程的项目/目录绑定。来源 `binding` 可在尚无迁移记录时提供身份，避免选错目的端就
+冻结错误目录。随后核对原始目标身份、执行 prepare、带目标身份的 context_handoff，再将
+实际目的端快照交给来源 complete；所有返回值都解析并核对。已有目的端回执却没有来源
+记录、已完成来源对应的目的端回执丢失、目标库替换或范围不匹配时拒绝重新导入。两端响应
+丢失后的重试保留撤销结果。驱动仅供可信宿主显式调用，尚未挂入 Runtime 自动启动路径。

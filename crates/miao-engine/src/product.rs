@@ -285,36 +285,40 @@ impl Bridge {
         Arc::ptr_eq(&self.pending, &other.pending)
     }
 
-    /// Cancel every pending product-tool bridge call for one Session. Each
-    /// removed call gets a `product_tool.cancel` notice so a host executor can
-    /// stop its children instead of waiting on a parent that is gone; the
-    /// dropped senders fail every awaiting call, hook dispatches included.
+    /// Cancel every pending reverse call for one Session. Notify the host with
+    /// the matching method so its callback can release its own scoped work.
     pub async fn cancel_session(&self, session: &str) -> Vec<u64> {
-        let product_ids: Vec<u64> = {
-            let mut pending = self.pending.lock().unwrap();
-            let mut product_ids = Vec::new();
-            pending.retain(|id, call| {
-                if call.session != session {
-                    return true;
-                }
-                if call.method == "product_tool" {
-                    product_ids.push(*id);
-                }
-                false
-            });
-            product_ids
-        };
-        for id in &product_ids {
+        let calls = self.withdraw_session(session);
+        self.notify_cancellation(session, &calls).await;
+        calls.into_iter().map(|(id, _)| id).collect()
+    }
+
+    /// Withdraw authority synchronously with the authorization commit lock.
+    /// Host notification may be backpressured and is not the cancellation fence.
+    pub(crate) fn withdraw_session(&self, session: &str) -> Vec<(u64, String)> {
+        let mut pending = self.pending.lock().unwrap();
+        let mut calls = Vec::new();
+        pending.retain(|id, call| {
+            if call.session != session {
+                return true;
+            }
+            calls.push((*id, call.method.clone()));
+            false
+        });
+        calls
+    }
+
+    pub(crate) async fn notify_cancellation(&self, session: &str, calls: &[(u64, String)]) {
+        for (id, method) in calls {
             let notice = serde_json::json!({
                 "bridge_id": id,
-                "method": "product_tool.cancel",
+                "method": format!("{method}.cancel"),
                 "params": {"session_id": session, "bridge_id": id},
             });
             if self.tx.send(notice).await.is_err() {
                 break;
             }
         }
-        product_ids
     }
 }
 
