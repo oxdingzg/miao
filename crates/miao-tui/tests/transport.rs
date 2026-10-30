@@ -324,3 +324,23 @@ async fn an_oversized_unicode_diagnostic_keeps_the_reason_without_poisoning_the_
     );
     assert!(failure.message.chars().count() <= 360);
 }
+
+/// A fast child can exit before either pipe reader is scheduled. Every
+/// connection must drain its own diagnostic before publishing the failure.
+#[tokio::test]
+async fn fast_startup_refusals_keep_their_diagnostics() {
+    for index in 0..32 {
+        let reason = format!("Error: startup refusal {index}");
+        let spawn = EngineSpawn {
+            env: vec![("MIAO_TUI_FAKE_STARTUP_ERROR".into(), reason.clone())],
+            ..fake()
+        };
+        let (_connection, mut events) = Connection::start(spawn, TIMEOUT).unwrap();
+        let failure = match next(&mut events).await {
+            TransportEvent::Failure(failure) => failure,
+            other => panic!("expected startup failure, got {other:?}"),
+        };
+        assert_eq!(failure.code, "engine_closed");
+        assert!(failure.message.contains(&reason), "{}", failure.message);
+    }
+}
