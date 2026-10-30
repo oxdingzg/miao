@@ -26,6 +26,10 @@ import { AgentV2 } from "./agent"
 import { fromRow } from "./session/info"
 import { SessionTitleSettlement } from "./session/title-settlement"
 import { SessionStore } from "./session/store"
+import { SessionSideQuestion } from "./session/side-question"
+import { SessionModel } from "./session/model"
+import { LLMClient } from "@miao/llm"
+import { llmClient } from "./effect/app-node-platform"
 import { SessionV1 } from "./v1/session"
 import { AppProcess } from "./process"
 import { ChildProcess } from "effect/unstable/process"
@@ -262,6 +266,10 @@ export interface Interface {
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
   readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | ExecutionError>
   readonly interrupt: (sessionID: SessionSchema.ID) => Effect.Effect<void>
+  readonly sideQuestion: (input: {
+    sessionID: SessionSchema.ID
+    question: string
+  }) => Effect.Effect<string | undefined, NotFoundError | LegacyNotMigratedError>
   readonly executions: Effect.Effect<ReadonlyMap<SessionSchema.ID, string>>
   readonly interruptIf: (sessionID: SessionSchema.ID, execution: string) => Effect.Effect<boolean>
   readonly revert: {
@@ -292,6 +300,7 @@ const layer = Layer.effect(
     const appProcess = yield* AppProcess.Service
     const locations = yield* LocationServiceMap.Service
     const blob = yield* Blob.Service
+    const llm = yield* LLMClient.Service
     const decodeMessage = Schema.decodeUnknownEffect(SessionMessage.Message)
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = (row: typeof SessionMessageTable.$inferSelect) =>
@@ -859,6 +868,32 @@ const layer = Layer.effect(
       interrupt: Effect.fn("V2Session.interrupt")((sessionID) =>
         Effect.uninterruptible(execution.interrupt(sessionID)),
       ),
+      // A side question answers from the transcript already in context without
+      // tools and without entering history. The Location owns llm and the model
+      // catalog, so the call is provided that context the same way command and
+      // compact are — it never touches the runner or the durable queue.
+      sideQuestion: Effect.fn("V2Session.sideQuestion")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        yield* requireMigrated(session.id)
+        return yield* Effect.gen(function* () {
+          const history = yield* materializeBlobRefs(blob, yield* store.context(session.id))
+          const models = yield* SessionModel.Service
+          const resolved = yield* models.resolve(session)
+          return yield* SessionSideQuestion.ask({
+            llm,
+            model: resolved.model,
+            messages: history,
+            question: input.question,
+            capabilities: resolved.info.capabilities?.input,
+          })
+        }).pipe(
+          Effect.provide(locations.get(session.location)),
+          // A side question is best-effort: a model, history, or decode failure
+          // answers nothing rather than failing the caller, so a question during
+          // a busy turn never surfaces an error the user must dismiss.
+          Effect.orElseSucceed(() => undefined),
+        )
+      }),
       revert: {
         stage: Effect.fn("V2Session.revert.stage")(function* (input) {
           yield* ownership.claim(input.sessionID)
@@ -925,5 +960,6 @@ export const node = makeGlobalNode({
     SessionProjector.node,
     SessionAdmission.node,
     Blob.node,
+    llmClient,
   ],
 })
