@@ -37,6 +37,68 @@ pub struct Snapshot {
     pub patterns: Vec<Pattern>,
 }
 
+/// A verified completed source/Root pairing. It carries no execution or grant
+/// authority and never unfreezes the legacy source.
+#[derive(Clone)]
+pub struct HandoffBinding {
+    context: Context,
+    source: crate::store::Store,
+    receipt: crate::permission_source::Record,
+}
+
+impl HandoffBinding {
+    pub fn source_path(&self) -> &Path {
+        self.source.path()
+    }
+
+    /// Admit a run explicitly marked for the future shared Runtime backend.
+    /// Existing legacy run entry points remain fenced after handoff.
+    pub async fn start_run_with_inputs_fenced(
+        &self,
+        session: &str,
+        run: &str,
+        force: bool,
+        lease: &crate::store::SessionLease,
+        runtime: String,
+    ) -> Result<Option<Vec<crate::protocol::Event>>, Error> {
+        uuid::Uuid::parse_str(&runtime)
+            .map_err(|_| Error::Invalid("invalid shared Runtime identity".into()))?;
+        self.snapshot().await?;
+        self.source
+            .start_run_with_shared_authority(
+                session,
+                run,
+                force,
+                lease,
+                Some(crate::permission_source::RunAuthority {
+                    target: self.receipt.target.clone(),
+                    fingerprint: self.receipt.fingerprint.clone(),
+                    runtime,
+                    owner_pid: std::process::id(),
+                }),
+            )
+            .await
+    }
+
+    /// Read current rules while rechecking both original migration receipts.
+    /// Revoked imported patterns need not remain in the current rule set.
+    pub async fn snapshot(&self) -> Result<Snapshot, Error> {
+        let source = self
+            .source
+            .directory_permission_source(self.context.directory.clone())
+            .await?
+            .ok_or_else(|| {
+                Error::Invalid("completed permission source receipt is missing".into())
+            })?;
+        if source != self.receipt {
+            return Err(Error::Invalid("permission source binding changed".into()));
+        }
+        let snapshot = self.context.snapshot().await?;
+        source.require_destination(&snapshot)?;
+        Ok(snapshot)
+    }
+}
+
 impl Project {
     /// Explicit workspace identity is isolated; omission remains implicit-local.
     pub async fn context(
@@ -69,6 +131,29 @@ impl Project {
 }
 
 impl Context {
+    /// Bind a real completed source to this exact Root/project/directory before
+    /// a future shared Runtime is constructed. No cached caller snapshot is accepted.
+    pub async fn bind_handoff(
+        &self,
+        source: &crate::store::Store,
+    ) -> Result<HandoffBinding, Error> {
+        let receipt = source
+            .directory_permission_source(self.directory.clone())
+            .await?
+            .ok_or_else(|| Error::Invalid("permission source handoff is missing".into()))?;
+        if receipt.state != crate::permission_source::State::Completed {
+            return Err(Error::Invalid(
+                "permission source handoff is not completed".into(),
+            ));
+        }
+        receipt.require_destination(&self.snapshot().await?)?;
+        Ok(HandoffBinding {
+            context: self.clone(),
+            source: source.clone(),
+            receipt,
+        })
+    }
+
     pub async fn observe(
         &self,
     ) -> Result<crate::permission_changefeed::Observation<Snapshot>, Error> {
@@ -727,5 +812,168 @@ mod tests {
         assert!(context.snapshot().await.is_err());
         assert!(context.put(rule("new")).await.is_err());
         assert!(project.snapshot().await.unwrap().rules.is_empty());
+    }
+    #[tokio::test]
+    async fn completed_source_binding_reads_real_receipts_and_preserves_revocation() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let source = Store::open(directory.path().join("source.db"))
+            .await
+            .unwrap();
+        source
+            .put_permission_pattern(workspace.clone(), rule("public/**"))
+            .await
+            .unwrap();
+        let context = Authority::open(directory.path().join("root.db"))
+            .await
+            .unwrap()
+            .project("fixture".into())
+            .unwrap()
+            .context(directory.path(), None)
+            .await
+            .unwrap();
+        assert!(context.bind_handoff(&source).await.is_err());
+        let initial = context.snapshot().await.unwrap();
+        let prepared = source
+            .prepare_directory_permission_source(
+                workspace.clone(),
+                crate::permission_source::Target {
+                    authority: initial.project.authority.clone(),
+                    project: initial.project.project.clone(),
+                    directory: workspace.clone(),
+                    workspace_id: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(context.bind_handoff(&source).await.is_err());
+        let imported = context
+            .handoff(initial.project.authority, prepared.patterns.clone())
+            .await
+            .unwrap();
+        assert!(context.bind_handoff(&source).await.is_err());
+        source
+            .complete_directory_permission_source(workspace.clone(), imported.clone())
+            .await
+            .unwrap();
+        let binding = context.bind_handoff(&source).await.unwrap();
+        assert_eq!(binding.source_path(), source.path());
+        assert_eq!(binding.snapshot().await.unwrap(), imported);
+        context
+            .remove(imported.patterns[0].id.clone())
+            .await
+            .unwrap();
+        let revoked = binding.snapshot().await.unwrap();
+        assert!(revoked.patterns.is_empty());
+        assert_eq!(revoked.migration.unwrap().imported, 1);
+        assert!(
+            source.saved_rules(workspace).await.is_err(),
+            "binding unfreezes the legacy permission source"
+        );
+        let reopened = Authority::open(directory.path().join("root.db"))
+            .await
+            .unwrap()
+            .project("fixture".into())
+            .unwrap()
+            .context(directory.path(), None)
+            .await
+            .unwrap();
+        assert!(reopened
+            .bind_handoff(&source)
+            .await
+            .unwrap()
+            .snapshot()
+            .await
+            .unwrap()
+            .patterns
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn source_binding_refuses_another_root_scope_and_a_lost_destination_receipt() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let source = Store::open(directory.path().join("source.db"))
+            .await
+            .unwrap();
+        let authority = Authority::open(directory.path().join("root.db"))
+            .await
+            .unwrap();
+        let project = authority.project("fixture".into()).unwrap();
+        let context = project.context(directory.path(), None).await.unwrap();
+        let initial = context.snapshot().await.unwrap();
+        let prepared = source
+            .prepare_directory_permission_source(
+                workspace.clone(),
+                crate::permission_source::Target {
+                    authority: initial.project.authority.clone(),
+                    project: "fixture".into(),
+                    directory: workspace.clone(),
+                    workspace_id: None,
+                },
+            )
+            .await
+            .unwrap();
+        let imported = context
+            .handoff(initial.project.authority, prepared.patterns.clone())
+            .await
+            .unwrap();
+        source
+            .complete_directory_permission_source(workspace, imported)
+            .await
+            .unwrap();
+        let binding = context.bind_handoff(&source).await.unwrap();
+        let replacement = Authority::open(directory.path().join("replacement.db"))
+            .await
+            .unwrap()
+            .project("fixture".into())
+            .unwrap()
+            .context(directory.path(), None)
+            .await
+            .unwrap();
+        replacement.migrate(prepared.patterns).await.unwrap();
+        assert!(replacement.bind_handoff(&source).await.is_err());
+        let other_project = authority
+            .project("other-project".into())
+            .unwrap()
+            .context(directory.path(), None)
+            .await
+            .unwrap();
+        assert!(other_project.bind_handoff(&source).await.is_err());
+        let explicit = project
+            .context(directory.path(), Some("reserved".into()))
+            .await
+            .unwrap();
+        assert!(explicit.bind_handoff(&source).await.is_err());
+        let other = directory.path().join("other");
+        std::fs::create_dir(&other).unwrap();
+        assert!(project
+            .context(other, None)
+            .await
+            .unwrap()
+            .bind_handoff(&source)
+            .await
+            .is_err());
+        authority
+            .call(|connection| {
+                connection.execute("DELETE FROM permission_directory_migration", [])?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        assert!(binding.snapshot().await.is_err());
+        assert!(context.bind_handoff(&source).await.is_err());
     }
 }
