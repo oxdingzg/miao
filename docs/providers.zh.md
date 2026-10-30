@@ -62,7 +62,7 @@ miao models --all               # 全部目录，并标注当前 channel 跑不�
 miao auth login mtty
 ```
 
-或设置 `MTTY_API_KEY`。凭证是 hub API key（`mhub_key_` 前缀，在 my.mtty.dev 的控制台创建），以 `Authorization: Bearer` 发送。目前目录中声明了 `mtty/deepseek-v4-1-flash-261017`，用 `miao models mtty` 查看该网关上可用的模型。
+或设置 `MTTY_API_KEY`。凭证是网关 API key（`sk-` 前缀，在 my.mtty.dev 的 `/console/` 里创建），以 `Authorization: Bearer` 发送。目前目录中声明了 `mtty/deepseek-v4-1-flash-261017`，用 `miao models mtty` 查看该网关上可用的模型。
 
 ## 自定义供应商
 
