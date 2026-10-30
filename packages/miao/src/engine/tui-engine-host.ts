@@ -225,8 +225,8 @@ async function runEngine(argv: string[], env: Record<string, string | undefined>
 
 /**
  * Runs the engine the Rust TUI asked for, through the product's engine plan.
- * A plan that cannot be prepared falls back to the TUI's own argv so the engine
- * still reports its own reason instead of the TUI showing a shim failure.
+ * A preparation failure stops startup: raw engine arguments do not carry the
+ * resolved Agent, permission profile or scoped product manifests.
  */
 export async function runEngineShim(args: string[]): Promise<number> {
   const parsed = parseTuiEngineArgs(args)
@@ -255,7 +255,7 @@ export async function runEngineShim(args: string[]): Promise<number> {
     )
     return undefined
   })
-  if (!started) return runEngine([binary, ...args], { ...process.env })
+  if (!started) return 1
   try {
     return await runEngine(started.plan.argv, started.plan.env)
   } finally {

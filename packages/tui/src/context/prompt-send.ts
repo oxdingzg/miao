@@ -23,7 +23,14 @@ export async function retryPromptSend<T>(input: {
       return await input.send(input.signal, attempt)
     } catch (error) {
       if (stopped()) return
-      if (!isRecord(error) || error.reason !== "Transport" || attempt >= delays.length) throw error
+      // Retry transport failures and 5xx responses; 4xx and unexpected 2xx/3xx
+      // are not recoverable by resending the same durable write.
+      const reason = isRecord(error) ? error.reason : undefined
+      const cause = isRecord(error) && isRecord(error.cause) ? error.cause : undefined
+      const status = cause && typeof cause.status === "number" ? cause.status : undefined
+      const retryable =
+        reason === "Transport" || (reason === "UnexpectedStatus" && status !== undefined && status >= 500)
+      if (!retryable || attempt >= delays.length) throw error
       input.retry(error, attempt + 1)
       await Bun.sleep(delays[attempt])
     }

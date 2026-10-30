@@ -408,7 +408,8 @@ impl Home {
             frame.render_widget(
                 Paragraph::new(lines)
                     .style(Style::new().fg(palette.text_muted))
-                    .block(block),
+                    .block(block)
+                    .wrap(Wrap { trim: false }),
                 area,
             );
             return;
@@ -1445,6 +1446,32 @@ mod tests {
         assert_eq!(home.placeholder(), "loading sessions…");
         home.set_rows(Vec::new());
         assert_eq!(home.placeholder(), "no sessions yet · press n to start one");
+    }
+
+    #[test]
+    fn an_empty_home_wraps_the_actionable_startup_refusal() {
+        let mut home = Home::new(Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        });
+        home.set_notice(Some("engine engine_closed: miao-engine exited (exit code: 1): miao engine-shim: could not prepare the product engine plan: Native TUI requires default-agent capture support".into()));
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).expect("terminal");
+        terminal
+            .draw(|frame| home.render(frame, frame.area()))
+            .expect("draw");
+        let visible = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .flat_map(|cell| cell.symbol().chars())
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        assert!(
+            visible.contains("NativeTUIrequiresdefault-agentcapturesupport"),
+            "{visible}"
+        );
     }
 
     #[test]
