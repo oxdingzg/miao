@@ -250,3 +250,97 @@ async fn a_startup_refusal_reports_the_engines_own_stderr() {
         failure.message
     );
 }
+
+#[tokio::test]
+async fn a_shim_startup_refusal_preserves_the_reason_before_its_stack() {
+    let spawn = EngineSpawn {
+        env: vec![(
+            "MIAO_TUI_FAKE_STARTUP_ERROR".into(),
+            "miao engine-shim: could not prepare the product engine plan: Native TUI requires default-agent capture support\n    at ProductTuiAgent.prepare (C:\\source\\product-tui-agent.ts:36:11)\n    at Engine.tuiEnginePlan (C:\\source\\tui-engine-host.ts:107:40)\n    at Engine.tuiEnginePlan (definition)\n    at runEngineShim (C:\\source\\tui-engine-host.ts:157:5)".into(),
+        )],
+        ..fake()
+    };
+    let (_connection, mut events) = Connection::start(spawn, TIMEOUT).unwrap();
+    let failure = match next(&mut events).await {
+        TransportEvent::Failure(failure) => failure,
+        other => panic!("expected startup failure, got {other:?}"),
+    };
+    assert_eq!(failure.code, "engine_closed");
+    assert!(
+        failure
+            .message
+            .contains("Native TUI requires default-agent capture support"),
+        "{}",
+        failure.message
+    );
+    assert!(!failure.message.contains("product-tui-agent.ts"));
+}
+
+#[tokio::test]
+async fn a_long_unicode_startup_error_keeps_its_leading_reason_and_a_bound() {
+    let spawn = EngineSpawn {
+        env: vec![(
+            "MIAO_TUI_FAKE_STARTUP_ERROR".into(),
+            format!(
+                "Error: workspace storage is protected: {}",
+                "路径".repeat(200)
+            ),
+        )],
+        ..fake()
+    };
+    let (_connection, mut events) = Connection::start(spawn, TIMEOUT).unwrap();
+    let failure = match next(&mut events).await {
+        TransportEvent::Failure(failure) => failure,
+        other => panic!("expected startup failure, got {other:?}"),
+    };
+    assert!(
+        failure
+            .message
+            .contains("Error: workspace storage is protected:"),
+        "{}",
+        failure.message
+    );
+    assert!(failure.message.chars().count() <= 360);
+}
+
+#[tokio::test]
+async fn an_oversized_unicode_diagnostic_keeps_the_reason_without_poisoning_the_reader() {
+    let spawn = EngineSpawn {
+        env: vec![(
+            "MIAO_TUI_FAKE_STARTUP_ERROR".into(),
+            format!("Error: storage is protected: {}", "路".repeat(3000)),
+        )],
+        ..fake()
+    };
+    let (_connection, mut events) = Connection::start(spawn, TIMEOUT).unwrap();
+    let failure = match next(&mut events).await {
+        TransportEvent::Failure(failure) => failure,
+        other => panic!("expected startup failure, got {other:?}"),
+    };
+    assert!(
+        failure.message.contains("Error: storage is protected:"),
+        "{}",
+        failure.message
+    );
+    assert!(failure.message.chars().count() <= 360);
+}
+
+/// A fast child can exit before either pipe reader is scheduled. Every
+/// connection must drain its own diagnostic before publishing the failure.
+#[tokio::test]
+async fn fast_startup_refusals_keep_their_diagnostics() {
+    for index in 0..32 {
+        let reason = format!("Error: startup refusal {index}");
+        let spawn = EngineSpawn {
+            env: vec![("MIAO_TUI_FAKE_STARTUP_ERROR".into(), reason.clone())],
+            ..fake()
+        };
+        let (_connection, mut events) = Connection::start(spawn, TIMEOUT).unwrap();
+        let failure = match next(&mut events).await {
+            TransportEvent::Failure(failure) => failure,
+            other => panic!("expected startup failure, got {other:?}"),
+        };
+        assert_eq!(failure.code, "engine_closed");
+        assert!(failure.message.contains(&reason), "{}", failure.message);
+    }
+}
