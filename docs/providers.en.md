@@ -75,6 +75,21 @@ with `miao auth login commandcode` (browser-assisted) or set `CMD_API_KEY`; its
 models are discovered from your account when it connects. OpenCode Zen / Go
 remain available as optional third-party providers.
 
+### The mtty gateway
+
+`mtty` is mtty.dev's own OpenAI-compatible gateway (`https://my.mtty.dev/v1`),
+also maintained by miao in the catalog because models.dev does not list it.
+Connect it with:
+
+```bash
+miao auth login mtty
+```
+
+or set `MTTY_API_KEY`. Credentials are hub API keys (the `mhub_key_` prefix,
+created in the my.mtty.dev console), sent as `Authorization: Bearer`. The
+catalog currently declares `mtty/deepseek-v4-1-flash-261017`; run
+`miao models mtty` to see what the gateway serves.
+
 ## Custom providers
 
 The `providers` record in `miao.jsonc` adds or overrides a provider: its
