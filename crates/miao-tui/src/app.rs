@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use ratatui::Frame;
 use serde_json::Value;
 
@@ -589,6 +591,31 @@ impl App {
     /// The wheel moves through the open dialog, the Session list, or the
     /// transcript. Buttons are ignored: text selection stays with the terminal.
     fn handle_mouse(&mut self, mouse: MouseEvent) {
+        // A drag over the transcript copies what it covered, like the
+        // TypeScript UI: cells, not logical lines, because the transcript is
+        // wrapped.
+        if self.dialog.is_none() && self.screen == Screen::Session {
+            let position = ratatui::layout::Position::new(mouse.column, mouse.row);
+            match mouse.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    self.leader = false;
+                    self.shell.begin_selection(position);
+                    return;
+                }
+                MouseEventKind::Drag(MouseButton::Left) => {
+                    self.shell.update_selection(position);
+                    return;
+                }
+                MouseEventKind::Up(MouseButton::Left) => {
+                    if let Some(text) = self.shell.take_selection() {
+                        crate::platform::clipboard::copy(&text);
+                        self.notice(&format!("Copied {} characters", text.chars().count()));
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
         let delta = match mouse.kind {
             MouseEventKind::ScrollUp => -1,
             MouseEventKind::ScrollDown => 1,
