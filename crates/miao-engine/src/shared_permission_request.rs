@@ -64,7 +64,71 @@ pub(crate) fn initialize_origins(connection: &Connection) -> Result<(), Error> {
     Ok(())
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct Recovery {
+    pub settled: usize,
+    pub after: Option<String>,
+    pub has_more: bool,
+}
+
 impl Context {
+    /// Cancel only sources durably known to be inactive. A live foreign source
+    /// stays pending; this does not reconstruct its bridge or replay a provider.
+    pub async fn recover_source_requests(
+        &self,
+        source: &crate::store::Store,
+        after: Option<String>,
+        limit: usize,
+    ) -> Result<Recovery, Error> {
+        if self.workspace_id.is_some()
+            || limit == 0
+            || limit > 256
+            || after
+                .as_ref()
+                .is_some_and(|id| id.len() > 256 || id.chars().any(char::is_control))
+        {
+            return Err(Error::Invalid(
+                "invalid shared request recovery scope or page".into(),
+            ));
+        }
+        let context = self.clone();
+        let path = source.path().to_path_buf();
+        self.project.authority.call(move |connection| {
+            crate::permission_source_transaction::with_locked_source_database(connection,&path,|transaction,_| {
+                let database=path.to_str().ok_or_else(||Error::Invalid("invalid permission source database path".into()))?;
+                let mut rows={
+                    let mut statement=transaction.prepare("SELECT id,owner,session,binding,data,origin FROM permission_request WHERE project=?1 AND location=?2 AND state='pending' AND json_extract(origin,'$.database')=?3 AND (?4 IS NULL OR id>?4) ORDER BY id LIMIT ?5")?;
+                    let rows=statement.query_map(params![context.project.project,context.location,database,after,limit+1],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?,row.get::<_,String>(3)?,row.get::<_,String>(4)?,row.get::<_,String>(5)?)))?;
+                    rows.collect::<Result<Vec<_>,_>>()?
+                };
+                let has_more=rows.len()>limit;
+                rows.truncate(limit);
+                let after=rows.last().map(|row|row.0.clone()).or(after);
+                let mut settled=0;
+                let mut owners=std::collections::HashMap::new();
+                for (id,owner,session,binding,data,origin) in rows {
+                    let origin:crate::permission_source_transaction::Origin=serde_json::from_str(&origin)?;
+                    let mut record:Record=serde_json::from_str(&data)?;
+                    let expected=context.request_binding_for_origin(&transaction,&origin,&owner,&record.source)?;
+                    let input_hash=digest(&serde_json::to_vec(&json!({"binding":binding,"input":record.request}))?);
+                    if origin.database!=path || origin.owner_pid==0 || origin.lease_epoch==0 || binding!=expected || record.id!=id || record.request.request_id!=id || record.source.session_id!=session || record.workspace!=context.directory || record.input_hash!=input_hash || record.state!=State::Pending {
+                        return Err(Error::Invalid("corrupt shared request recovery binding".into()));
+                    }
+                    if expire_request(&transaction,&mut record)? {settled+=1;continue;}
+                    let active:bool=transaction.query_row("SELECT EXISTS(SELECT 1 FROM permission_source.engine_tool t JOIN permission_source.engine_run r ON r.id=t.run_id JOIN permission_source.engine_location l ON l.session_id=r.session_id JOIN permission_source.engine_lease e ON e.session_id=r.session_id WHERE t.id=?1 AND t.state='dispatched' AND r.id=?2 AND r.session_id=?3 AND r.state='running' AND l.root=?4 AND r.lease_epoch=?5 AND e.epoch=?5 AND e.owner_pid=?6)",params![format!("{}/{}",origin.run_id,record.source.call_id),origin.run_id,session,context.directory,origin.lease_epoch,origin.owner_pid],|row|row.get(0))?;
+                    let live=*owners.entry(origin.owner_pid).or_insert_with(||crate::store::pid_alive(origin.owner_pid));
+                    if active && live {continue;}
+                    record.state=State::Cancelled;
+                    record.reason=Some(if live {"source_finished"} else {"source_owner_exited"}.into());
+                    resolve_request(&transaction,&record)?;
+                    settled+=1;
+                }
+                transaction.commit()?;
+                Ok(Recovery{settled,after,has_more})
+            })
+        }).await
+    }
+
     /// The trusted host binds the context; every admission rechecks the actual
     /// Runtime source and its execution lease inside the Root write transaction.
     pub async fn admit_request(&self, source: &Source, input: Input) -> Result<Record, Error> {
@@ -368,9 +432,24 @@ impl Context {
     }
 
     fn request_binding(&self, connection: &Connection, source: &Source) -> Result<String, Error> {
+        self.request_binding_for_origin(
+            connection,
+            &source.origin(),
+            &source.context.owner,
+            &source.context.source,
+        )
+    }
+
+    fn request_binding_for_origin(
+        &self,
+        connection: &Connection,
+        origin: &crate::permission_source_transaction::Origin,
+        owner: &str,
+        source: &crate::product_permission::Source,
+    ) -> Result<String, Error> {
         let authority = crate::permission_changefeed::cursor(connection)?.authority;
         Ok(digest(&serde_json::to_vec(
-            &json!({"semantics":"shared-permission-source-v2","authority":authority,"project":self.project.project,"location":self.location,"origin":source.origin(),"owner":source.context.owner,"source":source.context.source}),
+            &json!({"semantics":"shared-permission-source-v2","authority":authority,"project":self.project.project,"location":self.location,"origin":origin,"owner":owner,"source":source}),
         )?))
     }
 
