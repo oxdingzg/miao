@@ -24,3 +24,14 @@ test("the status row reports the mode, background work and the next escape actio
   )
   expect(text({ permissionMode: "normal", runningJobs: 0, busy: false, waitingPrompts: 0 })).not.toContain("esc")
 })
+
+test("queued prompts are counted whether or not the session is busy", () => {
+  expect(text({ permissionMode: "normal", runningJobs: 0, busy: false, waitingPrompts: 0 })).not.toContain("queued")
+  expect(text({ permissionMode: "normal", runningJobs: 0, busy: true, waitingPrompts: 1 })).toContain("queued (1)")
+  expect(text({ permissionMode: "normal", runningJobs: 0, busy: false, waitingPrompts: 3 })).toContain("queued (3)")
+  // A queued prompt outranks the plain interrupt hint: esc now removes a
+  // waiting prompt instead of stopping the turn.
+  expect(text({ permissionMode: "normal", runningJobs: 0, busy: true, waitingPrompts: 2 })).toBe(
+    "auto-approve off · queued (2) · esc remove prompt",
+  )
+})

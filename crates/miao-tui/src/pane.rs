@@ -596,9 +596,20 @@ fn composer_height(composer: &Composer) -> u16 {
 
 fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
     let palette = theme.palette;
-    let title = match &composer.notice {
-        Some(notice) => format!(" composer · {notice} "),
-        None => " composer ".to_string(),
+    // The queue count rides the same title line as a transient notice so the
+    // composer answers "is my prompt waiting?" without a second row.
+    let queued = (composer.queued > 0).then(|| {
+        if composer.queued == 1 {
+            "1 queued".to_string()
+        } else {
+            format!("{} queued", composer.queued)
+        }
+    });
+    let title = match (&composer.notice, queued) {
+        (Some(notice), Some(queued)) => format!(" composer · {queued} · {notice} "),
+        (Some(notice), None) => format!(" composer · {notice} "),
+        (None, Some(queued)) => format!(" composer · {queued} "),
+        (None, None) => " composer ".to_string(),
     };
     let block = Block::bordered()
         .title(Span::styled(title, Style::new().fg(palette.primary)))

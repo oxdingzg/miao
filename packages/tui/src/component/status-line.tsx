@@ -42,6 +42,14 @@ export function statusHintSegments(source: StatusHint): StatusHintItem[] {
           },
         ]
       : []),
+    ...(source.waitingPrompts > 0
+      ? [
+          {
+            text: `queued (${source.waitingPrompts})`,
+            tone: "muted" as const,
+          },
+        ]
+      : []),
     ...(source.busy
       ? [{ text: `esc ${source.waitingPrompts > 0 ? "remove prompt" : "interrupt"}`, tone: "text" as const }]
       : []),

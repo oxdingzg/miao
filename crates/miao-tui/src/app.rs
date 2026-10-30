@@ -1591,9 +1591,13 @@ impl App {
     }
 
     fn update_status(&mut self) {
+        // The composer mirrors the durable queue every frame so the count stays
+        // live without the composer owning it.
+        self.shell.composer.queued = self.state.pending;
         if self.screen != Screen::Session {
             self.shell.title.set_status(None);
             self.shell.title.set_status_alert(false);
+            self.shell.composer.queued = 0;
             return;
         }
         let now = Instant::now();
@@ -2127,6 +2131,27 @@ mod tests {
         assert!(app.shell.panel.is_some());
         app.handle(key(KeyCode::Char('x'), KeyModifiers::NONE));
         assert!(app.shell.composer.editor.is_empty());
+    }
+
+    #[test]
+    fn the_composer_mirrors_the_queued_count_every_frame() {
+        let mut app = session_app();
+        let state = SessionState {
+            active_run: Some("run-1".into()),
+            ..SessionState::default()
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state,
+        });
+        assert_eq!(app.shell.composer.queued, 0);
+        app.state.pending = 3;
+        app.update_status();
+        assert_eq!(app.shell.composer.queued, 3);
+        app.state.pending = 0;
+        app.update_status();
+        assert_eq!(app.shell.composer.queued, 0);
     }
 
     #[test]
