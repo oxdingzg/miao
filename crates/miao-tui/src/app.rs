@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -1782,6 +1781,7 @@ fn first_line(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use crate::session::{Entry, RevertPlan, Transcript};
     use crate::theme::{self, DEFAULT_THEME};
 
