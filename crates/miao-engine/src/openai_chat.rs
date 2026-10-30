@@ -532,14 +532,35 @@ impl Parser for ChatState {
         // every frame; presence with a null value is not a tool call.
         if let Some(calls) = delta.get("tool_calls").filter(|value| !value.is_null()) {
             for tool in calls.as_array().ok_or_else(invalid)? {
-                if tool.get("type").is_some_and(|v| v != "function") {
+                // The same gateways open a streamed call with a fully
+                // null-filled placeholder frame, including `"type":null`.
+                // Reading that as a non-function type rejected a reply the
+                // provider had already begun, and tracking the placeholder as a
+                // call left an identity-less call that failed the whole turn at
+                // `finish`.
+                if tool
+                    .get("type")
+                    .is_some_and(|v| !v.is_null() && v != "function")
+                {
                     return Err(invalid());
                 }
+                let id = tool["id"].as_str().filter(|id| !id.is_empty());
+                let name = tool["function"]["name"]
+                    .as_str()
+                    .filter(|name| !name.is_empty());
+                let arguments = tool["function"]["arguments"]
+                    .as_str()
+                    .filter(|args| !args.is_empty());
+                if id.is_none() && name.is_none() && arguments.is_none() {
+                    continue;
+                }
+                // Some gateways (opencode-go) nest the call index inside
+                // `function` instead of the call level; accept both shapes.
                 let index = tool["index"]
                     .as_u64()
+                    .or_else(|| tool["function"]["index"].as_u64())
                     .filter(|i| *i < 64)
                     .ok_or_else(invalid)?;
-                let id = tool["id"].as_str().filter(|id| !id.is_empty());
                 // A first frame starts a call; so does a frame that names a
                 // different call than the one this index is streaming. Some
                 // gateways restart `index` at zero for every call, and
@@ -566,7 +587,7 @@ impl Parser for ChatState {
                         call.id.push_str(id);
                     }
                 }
-                if let Some(name) = tool["function"]["name"].as_str() {
+                if let Some(name) = name {
                     // A frame that carries the call id restates its name;
                     // id-less frames only extend a name that streamed in pieces.
                     if id.is_some() {
@@ -574,7 +595,7 @@ impl Parser for ChatState {
                     }
                     call.name.push_str(name);
                 }
-                if let Some(args) = tool["function"]["arguments"].as_str() {
+                if let Some(args) = arguments {
                     call.arguments.push_str(args);
                 }
             }

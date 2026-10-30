@@ -60,6 +60,7 @@ import { DialogConfirm } from "../../ui/dialog-confirm"
 import { DialogRecovery } from "./dialog-recovery"
 import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
+import { DialogTasks } from "../../component/dialog-tasks"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { SessionScrollbox } from "./scrollbox"
@@ -661,6 +662,16 @@ export function Session() {
         void sdk.api.sessions.compact({ sessionID: route.sessionID })
         dialog.clear()
       },
+    },
+    {
+      title: "Background tasks",
+      value: "session.tasks",
+      category: "Session",
+      slash: {
+        name: "tasks",
+        aliases: ["jobs", "ps"],
+      },
+      run: () => dialog.replace(() => <DialogTasks sessionID={route.sessionID} />),
     },
     {
       title: "Undo previous message",
@@ -1520,7 +1531,9 @@ export function Session() {
                 <Show when={session()?.parentID}>
                   <SubagentFooter />
                 </Show>
-                <Show when={!inlineReceipt() && latestReceipt()}>{(receipt) => <PromptStatus prompt={receipt()} />}</Show>
+                <Show when={!inlineReceipt() && latestReceipt()}>
+                  {(receipt) => <PromptStatus prompt={receipt()} count={sync.prompt.waiting(route.sessionID).length} />}
+                </Show>
                 <SessionTimers sessionID={route.sessionID} />
                 <Show when={visible()}>
                   <pluginRuntime.Slot

@@ -8,6 +8,7 @@ import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
 import { SessionModel } from "@miao/core/session/model"
 import { SessionRunnerProviderHeaders } from "@miao/core/session/runner/provider-headers"
+import { Hash } from "@miao/core/util/hash"
 import { it } from "./lib/effect"
 import { exchange, sse } from "./lib/llm-wire"
 
@@ -190,6 +191,14 @@ describe("V2 provider request overrides", () => {
         "X-Session-Id": "ses_test",
         "x-miao-session-id": "ses_test",
       })
+    }),
+  )
+
+  it.effect("opencode-go turns carry the opaque session routing header", () =>
+    Effect.sync(() => {
+      expect(turnHeaders("opencode-go")["x-opencode-session"]).toBe(Hash.sha256("ses_test"))
+      expect(turnHeaders("openai")).not.toHaveProperty("x-opencode-session")
+      expect(turnHeaders("anthropic")).not.toHaveProperty("x-opencode-session")
     }),
   )
 })

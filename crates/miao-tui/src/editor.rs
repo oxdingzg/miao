@@ -24,7 +24,22 @@ pub enum Action {
         text: String,
         attachments: Vec<Value>,
     },
+    /// A `!` command: it runs on the host shell through the engine and never
+    /// becomes a model prompt.
+    Shell {
+        command: String,
+    },
     Quit,
+}
+
+/// Which input the composer is collecting. Shell mode is explicit so a prompt
+/// that merely starts with `!` still reaches the model; the marker itself never
+/// enters the buffer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mode {
+    #[default]
+    Normal,
+    Shell,
 }
 
 #[derive(Debug, Default)]
@@ -391,14 +406,22 @@ impl Completion {
 
 pub struct Composer {
     pub editor: Editor,
+    mode: Mode,
     pub completion: Completion,
     pub notice: Option<String>,
+    /// Prompts durably admitted but not yet promoted into a turn. They are
+    /// re-read from the snapshot every frame, so this is display state rather
+    /// than a durable count the composer owns.
+    pub queued: usize,
     /// Inline media sent with the prompt. The composer only shows their
     /// `[Image N]` markers; the bytes travel beside the text.
     attachments: Vec<Value>,
     history: Vec<String>,
     history_index: Option<usize>,
     draft: String,
+    /// The mode the draft was written in, so leaving history restores the mode
+    /// the operator left rather than the one the recalled entry ran in.
+    draft_mode: Mode,
     files: Option<Vec<String>>,
     commands: Vec<String>,
     workspace: PathBuf,
@@ -410,12 +433,15 @@ impl Composer {
         let history_path = state_file();
         Self {
             editor: Editor::new(),
+            mode: Mode::Normal,
             completion: Completion::default(),
             notice: None,
+            queued: 0,
             attachments: Vec::new(),
             history: load_history(&history_path),
             history_index: None,
             draft: String::new(),
+            draft_mode: Mode::Normal,
             files: None,
             commands: Vec::new(),
             workspace: workspace.to_path_buf(),
@@ -474,7 +500,11 @@ impl Composer {
             Some(keybinds::Action::InputSubmit) => return self.submit(),
             Some(keybinds::Action::InputNewline) => self.editor.insert_char('\n'),
             Some(keybinds::Action::InputBackspace) => {
-                self.editor.backspace();
+                if self.mode == Mode::Shell && self.editor.is_empty() {
+                    self.mode = Mode::Normal;
+                } else {
+                    self.editor.backspace();
+                }
             }
             Some(keybinds::Action::InputDelete) => {
                 self.editor.delete_forward();
@@ -527,6 +557,9 @@ impl Composer {
                     self.editor.move_line_end();
                 }
                 KeyCode::Tab => self.editor.insert_str("  "),
+                KeyCode::Char('!') if self.mode == Mode::Normal && self.editor.is_empty() => {
+                    self.mode = Mode::Shell;
+                }
                 KeyCode::Char(c)
                     if !key.modifiers.contains(KeyModifiers::CONTROL)
                         && !key.modifiers.contains(KeyModifiers::ALT) =>
@@ -540,20 +573,36 @@ impl Composer {
     }
 
     fn submit(&mut self) -> Action {
+        if self.mode == Mode::Shell {
+            if self.editor.text().trim().is_empty() {
+                self.mode = Mode::Normal;
+                return Action::None;
+            }
+            let command = self.editor.take();
+            self.record_history(&format!("!{command}"));
+            self.mode = Mode::Normal;
+            return Action::Shell {
+                command: command.trim().to_string(),
+            };
+        }
         if self.editor.text().trim().is_empty() {
             return Action::None;
         }
         let text = self.editor.take();
         let attachments = std::mem::take(&mut self.attachments);
-        self.history.push(text.clone());
-        if self.history.len() > HISTORY_LIMIT {
-            self.history.drain(..self.history.len() - HISTORY_LIMIT);
-        }
+        self.record_history(&text);
         self.history_index = None;
         self.draft.clear();
         self.completion = Completion::default();
-        save_history(&self.history_path, &self.history);
         Action::Submit { text, attachments }
+    }
+
+    fn record_history(&mut self, entry: &str) {
+        self.history.push(entry.to_string());
+        if self.history.len() > HISTORY_LIMIT {
+            self.history.drain(..self.history.len() - HISTORY_LIMIT);
+        }
+        save_history(&self.history_path, &self.history);
     }
 
     fn history_previous(&mut self) -> bool {
@@ -563,14 +612,30 @@ impl Composer {
         match self.history_index {
             None => {
                 self.draft = self.editor.take();
+                self.draft_mode = self.mode;
                 self.history_index = Some(self.history.len() - 1);
             }
             Some(0) => return false,
             Some(index) => self.history_index = Some(index - 1),
         }
         let text = self.history[self.history_index.expect("index set")].clone();
-        self.editor.set_text(&text);
+        self.recall(&text);
         true
+    }
+
+    /// Text restored from history and from a failed send keeps its `!` marker:
+    /// the marker is how an entry remembers which mode produced it.
+    fn recall(&mut self, text: &str) {
+        match text.strip_prefix('!') {
+            Some(command) => {
+                self.editor.set_text(command);
+                self.mode = Mode::Shell;
+            }
+            None => {
+                self.editor.set_text(text);
+                self.mode = Mode::Normal;
+            }
+        }
     }
 
     fn history_next(&mut self) -> bool {
@@ -580,12 +645,13 @@ impl Composer {
         if index + 1 < self.history.len() {
             self.history_index = Some(index + 1);
             let text = self.history[index + 1].clone();
-            self.editor.set_text(&text);
+            self.recall(&text);
             return true;
         }
         self.history_index = None;
         let draft = std::mem::take(&mut self.draft);
         self.editor.set_text(&draft);
+        self.mode = self.draft_mode;
         true
     }
 
@@ -621,6 +687,26 @@ impl Composer {
     pub fn clear(&mut self) {
         self.editor.clear();
         self.attachments.clear();
+        self.mode = Mode::Normal;
+        self.completion = Completion::default();
+    }
+
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    pub fn set_mode(&mut self, mode: Mode) {
+        self.mode = mode;
+        if mode == Mode::Shell {
+            self.completion = Completion::default();
+        }
+    }
+
+    /// Put a rejected `!` command back in the composer, still in shell mode, so
+    /// the operator can fix and retry it instead of retyping it.
+    pub fn restore_shell(&mut self, command: &str) {
+        self.editor.set_text(command);
+        self.mode = Mode::Shell;
         self.completion = Completion::default();
     }
 
@@ -638,6 +724,7 @@ impl Composer {
     }
 
     pub fn restore_with(&mut self, text: &str, attachments: Vec<Value>) {
+        self.mode = Mode::Normal;
         self.editor.set_text(text);
         self.attachments = attachments;
         self.refresh_completion();
@@ -806,12 +893,15 @@ mod tests {
     fn composer(dir: &Path) -> Composer {
         Composer {
             editor: Editor::new(),
+            mode: Mode::Normal,
             completion: Completion::default(),
             notice: None,
+            queued: 0,
             attachments: Vec::new(),
             history: Vec::new(),
             history_index: None,
             draft: String::new(),
+            draft_mode: Mode::Normal,
             files: Some(Vec::new()),
             commands: Vec::new(),
             workspace: dir.to_path_buf(),
@@ -932,6 +1022,77 @@ mod tests {
         assert_eq!(composer.editor.text(), "first");
         assert!(composer.history_next());
         assert_eq!(composer.editor.text(), "draft");
+    }
+
+    #[test]
+    fn a_bang_enters_shell_mode_and_submitting_returns_the_command() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-shell-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let mut composer = composer(&dir);
+        let keys = Keymap::default();
+        composer.handle_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE), &keys);
+        assert_eq!(composer.mode(), Mode::Shell);
+        // The marker is a mode, not text: the buffer holds only the command.
+        assert!(composer.editor.is_empty());
+        composer.handle_key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE), &keys);
+        composer.handle_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE), &keys);
+        assert_eq!(composer.editor.text(), "gs");
+        let action = composer.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &keys);
+        let Action::Shell { command } = action else {
+            panic!("shell mode must submit a command, not a prompt");
+        };
+        assert_eq!(command, "gs");
+        assert_eq!(composer.mode(), Mode::Normal);
+        assert!(composer.editor.is_empty());
+    }
+
+    #[test]
+    fn shell_mode_exits_on_backspace_at_the_start_and_keeps_the_command() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-shell-exit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let mut composer = composer(&dir);
+        let keys = Keymap::default();
+        composer.handle_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE), &keys);
+        // Backspace on the empty command drops the mode, not the Session.
+        composer.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE), &keys);
+        assert_eq!(composer.mode(), Mode::Normal);
+        composer.handle_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE), &keys);
+        composer.handle_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE), &keys);
+        // Leaving shell mode keeps the typed command as a plain draft.
+        composer.set_mode(Mode::Normal);
+        assert_eq!(composer.editor.text(), "l");
+    }
+
+    #[test]
+    fn a_bang_mid_prompt_stays_model_text() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-bang-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let mut composer = composer(&dir);
+        let keys = Keymap::default();
+        composer.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE), &keys);
+        composer.handle_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE), &keys);
+        assert_eq!(composer.mode(), Mode::Normal);
+        assert_eq!(composer.editor.text(), "h!");
+    }
+
+    #[test]
+    fn history_replays_a_shell_command_back_into_shell_mode() {
+        let dir =
+            std::env::temp_dir().join(format!("miao-tui-shell-history-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let mut composer = composer(&dir);
+        let keys = Keymap::default();
+        composer.handle_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE), &keys);
+        composer.editor.insert_str("ls -l");
+        let action = composer.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &keys);
+        assert!(matches!(action, Action::Shell { .. }));
+        composer.editor.insert_str("next prompt");
+        assert!(composer.history_previous());
+        assert_eq!(composer.mode(), Mode::Shell);
+        assert_eq!(composer.editor.text(), "ls -l");
+        assert!(composer.history_next());
+        assert_eq!(composer.mode(), Mode::Normal);
+        assert_eq!(composer.editor.text(), "next prompt");
     }
 
     #[test]
