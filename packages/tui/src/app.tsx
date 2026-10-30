@@ -1379,8 +1379,16 @@ function App(props: {
 // columns arrived as two signals that both read 120. The renderer then keeps the
 // stale size until the next resize. Re-read the size shortly after each signal and
 // resize the renderer if it still disagrees with the terminal.
+//
+// Windows has no SIGWINCH, and the console reflows the visible rows itself as the
+// window grows or shrinks. A missed or intermediate size therefore leaves the
+// renderer painting for a width the terminal no longer has: rows land on the
+// wrong columns, the cells the terminal moved stay behind, and the damage never
+// reconciles because an incremental frame only rewrites what it thinks changed.
+// That reads as smeared text and stray single characters that survive until
+// something forces a full repaint. Node reports console size changes on stdout,
+// so settle there the same way instead of leaving Windows unguarded.
 function settleResizes(renderer: Awaited<ReturnType<typeof createCliRenderer>>) {
-  if (process.platform === "win32") return () => {}
   const timers = new Set<ReturnType<typeof setTimeout>>()
   const check = () => {
     const [width, height] = process.stdout.getWindowSize?.() ?? [process.stdout.columns, process.stdout.rows]
@@ -1395,6 +1403,16 @@ function settleResizes(renderer: Awaited<ReturnType<typeof createCliRenderer>>) 
         check()
       }, delay)
       timers.add(timer)
+    }
+  }
+  // Windows delivers the console size change on stdout rather than as a signal,
+  // and only a real console has a size to settle.
+  if (process.platform === "win32") {
+    if (!process.stdout.isTTY) return () => {}
+    process.stdout.on("resize", onResize)
+    return () => {
+      process.stdout.off("resize", onResize)
+      for (const timer of timers) clearTimeout(timer)
     }
   }
   process.on("SIGWINCH", onResize)
