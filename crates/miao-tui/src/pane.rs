@@ -8,7 +8,7 @@ use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 
 use crate::dialogs::{Dialog, ListDialog, ListKind, PaletteDialog};
-use crate::editor::Composer;
+use crate::editor::{Composer, Mode};
 use crate::session::{ApprovalView, Entry, Part, QuestionView, SessionSummary, Transcript};
 use crate::theme::Theme;
 use crate::{markdown, tool};
@@ -583,6 +583,8 @@ fn compact(text: &str) -> String {
 /// completion list live outside this budget.
 const COMPOSER_INPUT_ROWS: usize = 8;
 const COMPOSER_COMPLETION_ROWS: usize = 6;
+/// Display cells the `!` shell marker occupies left of the input.
+const SHELL_GUTTER: u16 = 2;
 
 fn composer_height(composer: &Composer) -> u16 {
     let input = composer.editor.line_count().clamp(1, COMPOSER_INPUT_ROWS);
@@ -596,12 +598,36 @@ fn composer_height(composer: &Composer) -> u16 {
 
 fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
     let palette = theme.palette;
-    let title = match &composer.notice {
-        Some(notice) => format!(" composer · {notice} "),
-        None => " composer ".to_string(),
+    // The queue count rides the same title line as a transient notice so the
+    // composer answers "is my prompt waiting?" without a second row.
+    let queued = (composer.queued > 0).then(|| {
+        if composer.queued == 1 {
+            "1 queued".to_string()
+        } else {
+            format!("{} queued", composer.queued)
+        }
+    });
+    // Shell mode says so in the title and on the input: a `!` line goes to the
+    // host shell, not the model, and Esc leaves it.
+    let shell = composer.mode() == Mode::Shell;
+    let name = if shell {
+        "shell · esc exit"
+    } else {
+        "composer"
+    };
+    let title = match (&composer.notice, queued) {
+        (Some(notice), Some(queued)) => format!(" {name} · {queued} · {notice} "),
+        (Some(notice), None) => format!(" {name} · {notice} "),
+        (None, Some(queued)) => format!(" {name} · {queued} "),
+        (None, None) => format!(" {name} "),
+    };
+    let accent = if shell {
+        palette.warning
+    } else {
+        palette.primary
     };
     let block = Block::bordered()
-        .title(Span::styled(title, Style::new().fg(palette.primary)))
+        .title(Span::styled(title, Style::new().fg(accent)))
         .border_style(Style::new().fg(palette.border))
         .style(Style::new().bg(palette.background));
     let inner = block.inner(area);
@@ -615,13 +641,35 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
         .items
         .len()
         .min(COMPOSER_COMPLETION_ROWS) as u16;
-    let input_area = Rect {
+    let input_rows = Rect {
         height: inner.height.saturating_sub(completion_rows),
         ..inner
     };
+    // Shell mode prints a gutter marker and shifts the input right by it, so
+    // the operator sees `! ` before the command while the buffer still holds
+    // only the command and the cursor keeps its cell offset.
+    let gutter = if shell { SHELL_GUTTER } else { 0 };
+    let input_area = Rect {
+        x: input_rows.x.saturating_add(gutter),
+        width: input_rows.width.saturating_sub(gutter),
+        ..input_rows
+    };
+    if shell && input_rows.width >= SHELL_GUTTER {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "! ",
+                Style::new().fg(accent).add_modifier(Modifier::BOLD),
+            ))),
+            Rect {
+                width: SHELL_GUTTER,
+                ..input_rows
+            },
+        );
+    }
     let (cursor_line, cursor_cell) = composer.editor.cursor_position();
     let row_offset = cursor_line.saturating_sub(input_area.height.saturating_sub(1) as usize);
     let cell_offset = cursor_cell.saturating_sub(input_area.width.saturating_sub(1) as usize);
+    let text_color = if shell { accent } else { palette.text };
     let lines = composer
         .editor
         .lines()
@@ -630,7 +678,7 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
         .map(|line| {
             Line::from(Span::styled(
                 clip_cells(&line, cell_offset, input_area.width),
-                Style::new().fg(palette.text),
+                Style::new().fg(text_color),
             ))
         })
         .collect::<Vec<_>>();
