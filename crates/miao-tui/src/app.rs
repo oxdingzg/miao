@@ -1304,6 +1304,40 @@ impl App {
             self.quit = true;
             return;
         }
+        // Filter mode owns the keyboard: printable keys narrow the list, and
+        // Escape leaves the mode before anything else can consume Escape.
+        if self.home.filtering() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.home.stop_filter();
+                    return;
+                }
+                KeyCode::Backspace => {
+                    self.home.filter_backspace();
+                    return;
+                }
+                KeyCode::Up => {
+                    self.home.move_cursor(-1);
+                    return;
+                }
+                KeyCode::Down => {
+                    self.home.move_cursor(1);
+                    return;
+                }
+                KeyCode::Enter => {
+                    let selected = self.home.current().map(|row| row.id.clone());
+                    if let (Some(id), Some(engine)) = (selected, self.engine.as_ref()) {
+                        engine.open(&id);
+                    }
+                    return;
+                }
+                KeyCode::Char(c) if !c.is_ascii_control() => {
+                    self.home.filter(c);
+                    return;
+                }
+                _ => {}
+            }
+        }
         match (key.code, key.modifiers) {
             (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
                 self.home.move_cursor(1);
@@ -1335,6 +1369,9 @@ impl App {
                 if let (Some(id), Some(engine)) = (selected, self.engine.as_ref()) {
                     engine.open(&id);
                 }
+            }
+            (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                self.home.start_filter();
             }
             (KeyCode::Char('p'), KeyModifiers::NONE) => {
                 let selected = self
@@ -2500,6 +2537,101 @@ mod tests {
         // A slot past the end opens nothing instead of opening the last row.
         app.handle(key(KeyCode::Char('9'), KeyModifiers::NONE));
         assert!(requests.try_recv().is_err());
+    }
+
+    fn home_with_named(rows: &[(&str, &str, Option<&str>)]) -> App {
+        let mut app = app();
+        app.handle(AppEvent::Sessions(
+            rows.iter()
+                .map(|(id, title, directory)| SessionSummary {
+                    id: id.to_string(),
+                    title: Some(title.to_string()),
+                    parent_id: None,
+                    updated_at_ms: Some(100),
+                    archived_at_ms: None,
+                    pinned_at_ms: None,
+                    directory: directory.map(str::to_string),
+                    model: None,
+                    credential_id: None,
+                })
+                .collect(),
+        ));
+        app
+    }
+
+    #[test]
+    fn slash_starts_a_filter_and_enter_opens_the_match() {
+        let mut app = home_with_named(&[
+            ("ses_a", "fix the parser", Some("/work/parser")),
+            ("ses_b", "write docs", Some("/work/docs")),
+        ]);
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert!(app.home.filtering());
+        for c in ['d', 'o', 'c'] {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        assert_eq!(app.home.query(), "doc");
+        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_b"));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Open(id)) if id == "ses_b"
+        ));
+    }
+
+    #[test]
+    fn a_filter_matches_the_directory_too_and_backspace_widens_it() {
+        let mut app = home_with_named(&[
+            ("ses_a", "fix the parser", Some("/work/parser")),
+            ("ses_b", "write docs", Some("/work/docs")),
+        ]);
+        // `p` and `r` are commands outside filter mode; inside it they are
+        // just letters, which is the whole reason the mode is explicit.
+        app.handle(key(KeyCode::Char('/'), KeyModifiers::NONE));
+        for c in ['p', 'a', 'r'] {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        assert_eq!(app.home.query(), "par");
+        // `par` matches only the parser Session: by title and by directory.
+        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
+        app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(app.home.query(), "pa");
+        app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(app.home.query(), "");
+        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
+    }
+
+    #[test]
+    fn escape_leaves_filter_mode_instead_of_leaving_the_list() {
+        let mut app = home_with_named(&[("ses_a", "fix the parser", None)]);
+        app.handle(key(KeyCode::Char('/'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('z'), KeyModifiers::NONE));
+        assert_eq!(app.home.query(), "z");
+        // Nothing matches, so there is no current Session while filtering.
+        assert!(app.home.current().is_none());
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.home.query(), "");
+        assert!(!app.home.filtering());
+        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
+        assert_eq!(app.screen, Screen::Home);
+    }
+
+    #[test]
+    fn commands_still_work_when_no_filter_is_open() {
+        let mut app = home_with_named(&[("ses_a", "fix the parser", None)]);
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        // `p` pins rather than typing a filter character.
+        app.handle(key(KeyCode::Char('p'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Pin { pinned: true, .. })
+        ));
+        assert_eq!(app.home.query(), "");
+        assert!(!app.home.filtering());
     }
 
     #[test]
