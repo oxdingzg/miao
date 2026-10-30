@@ -538,51 +538,59 @@ fn resize_keeps_process_alive() {
 
 #[test]
 fn multiline_paste_reaches_the_engine_verbatim() {
-    let mut harness = Harness::spawn_engine("paste");
-    assert!(
-        wait_for(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        harness.text()
-    );
-    harness.write(b"\r");
-    assert!(
-        wait_for(&harness, "hello from the fixture", Duration::from_secs(2)),
-        "the Session did not open:\n{}",
-        harness.text()
-    );
-    // A bracketed paste arrives as one event; the editor keeps the line
-    // break instead of treating it as a submit.
-    harness.write("\x1b[200~第一行\n第二行\x1b[201~".as_bytes());
-    assert!(
-        wait_for_screen(&harness, "第一行", Duration::from_secs(2))
-            && wait_for_screen(&harness, "第二行", Duration::from_secs(2)),
-        "CJK paste did not render:\n{}",
-        harness.screen()
-    );
-    harness.write(b"\r");
-    let log = harness.dir.join("admit.log");
-    let start = Instant::now();
-    let mut recorded = String::new();
-    while start.elapsed() < Duration::from_secs(5) {
-        recorded = std::fs::read_to_string(&log).unwrap_or_default();
-        if recorded.contains("第一行\\n第二行") {
-            break;
+    for (label, separator) in [("lf", "\n"), ("crlf", "\r\n"), ("cr", "\r")] {
+        let mut harness = Harness::spawn_engine(&format!("paste-{label}"));
+        assert!(
+            wait_for(&harness, "Project A", Duration::from_secs(2)),
+            "the home list did not render:\n{}",
+            harness.text()
+        );
+        harness.write(b"\r");
+        assert!(
+            wait_for(&harness, "hello from the fixture", Duration::from_secs(2)),
+            "the Session did not open:\n{}",
+            harness.text()
+        );
+        // A bracketed paste arrives as one event; the editor keeps the line
+        // break instead of treating it as a submit.
+        harness.write(format!("\x1b[200~第一行{separator}第二行\x1b[201~").as_bytes());
+        let rendered = wait_for_screen(&harness, "第一行", Duration::from_secs(2))
+            && wait_for_screen(&harness, "第二行", Duration::from_secs(2));
+        assert!(
+            !harness.dir.join("admit.log").exists(),
+            "{label} paste submitted a prompt before Enter"
+        );
+        harness.write(b"\r");
+        let log = harness.dir.join("admit.log");
+        let start = Instant::now();
+        let mut recorded = String::new();
+        while start.elapsed() < Duration::from_secs(5) {
+            recorded = std::fs::read_to_string(&log).unwrap_or_default();
+            if recorded.contains("第一行\\n第二行") {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
         }
-        std::thread::sleep(Duration::from_millis(50));
+        assert!(
+            recorded.contains("第一行\\n第二行"),
+            "admit did not carry the pasted prompt verbatim: {recorded}"
+        );
+        assert!(
+            rendered,
+            "{label} CJK paste did not render; receipt={recorded}; screen={}; raw={:?}",
+            harness.screen(),
+            harness.text()
+        );
+        assert!(
+            recorded.contains("\"delivery\":\"steer\""),
+            "the TUI must send steer prompts: {recorded}"
+        );
+        harness.write(b"\x03");
+        let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+            .expect("process did not exit after Ctrl+C");
+        assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+        harness.shutdown();
     }
-    assert!(
-        recorded.contains("第一行\\n第二行"),
-        "admit did not carry the pasted prompt verbatim: {recorded}"
-    );
-    assert!(
-        recorded.contains("\"delivery\":\"steer\""),
-        "the TUI must send steer prompts: {recorded}"
-    );
-    harness.write(b"\x03");
-    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
-        .expect("process did not exit after Ctrl+C");
-    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
-    harness.shutdown();
 }
 
 #[test]
