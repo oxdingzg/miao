@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::commands::{self, Builtin};
 use crate::dialogs::{AccountInfo, Action as DialogAction, ConfirmKind, Dialog, ModelInfo, Row};
-use crate::editor::Action;
+use crate::editor::{Action, Mode};
 use crate::engine;
 use crate::event::{AppEvent, Bus};
 use crate::keybinds::{self, Keymap};
@@ -520,6 +520,10 @@ impl App {
                 message,
             } => {
                 self.shell.composer.restore_with(&text, attachments);
+                self.shell.composer.notice = Some(message);
+            }
+            AppEvent::ShellFailed { command, message } => {
+                self.shell.composer.restore_shell(&command);
                 self.shell.composer.notice = Some(message);
             }
             AppEvent::EngineFailure(message) => {
@@ -1351,6 +1355,12 @@ impl App {
             if self.shell.composer.dismiss_completion() {
                 return;
             }
+            // `!` mode owns Escape: leaving the command is cheaper than
+            // leaving the Session, and the typed command survives.
+            if self.shell.composer.mode() == Mode::Shell {
+                self.shell.composer.set_mode(Mode::Normal);
+                return;
+            }
             if self.reject_question() {
                 return;
             }
@@ -1423,6 +1433,7 @@ impl App {
             Action::None => {}
             Action::Quit => self.quit = true,
             Action::Submit { text, attachments } => self.submit(text, attachments),
+            Action::Shell { command } => self.run_shell(command),
         }
     }
 
@@ -1719,6 +1730,23 @@ impl App {
             None => text,
         };
         engine.prompt(&session_id, &text, attachments);
+    }
+
+    /// `!` runs on the Session's host shell through the engine. The engine
+    /// records the command and its output in the Session, so it is visible to
+    /// the operator without becoming model context.
+    fn run_shell(&mut self, command: String) {
+        let session_id = self.session.as_ref().map(|session| session.id.clone());
+        let Some(engine) = self.engine.clone() else {
+            self.shell.composer.restore_shell(&command);
+            return;
+        };
+        let Some(session_id) = session_id else {
+            self.shell.composer.restore_shell(&command);
+            return;
+        };
+        self.shell.composer.notice = None;
+        engine.shell(&session_id, &command);
     }
 
     fn leave_session(&mut self) {
@@ -2495,6 +2523,59 @@ mod tests {
             requests.try_recv(),
             Ok(engine::Request::Pin { session_id, pinned: false }) if session_id == "ses_pinned"
         ));
+    }
+
+    #[test]
+    fn esc_leaves_shell_mode_before_it_leaves_the_session() {
+        let mut app = session_app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.shell.composer.set_mode(Mode::Shell);
+        app.shell.composer.editor.set_text("ls");
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Session);
+        assert_eq!(app.shell.composer.mode(), Mode::Normal);
+        // The typed command survives leaving the mode.
+        assert_eq!(app.shell.composer.editor.text(), "ls");
+        assert!(requests.try_recv().is_err(), "no interrupt was requested");
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Home);
+    }
+
+    #[test]
+    fn a_bang_command_runs_through_the_engine_instead_of_the_model() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_shell", 10)),
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        let session = app.session.as_ref().expect("session").id.clone();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        for c in ['!', 'e', 'c', 'h', 'o', ' ', 'h', 'i'] {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        assert_eq!(app.shell.composer.mode(), Mode::Shell);
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        let mut sent = Vec::new();
+        while let Ok(request) = requests.try_recv() {
+            sent.push(request);
+        }
+        assert!(
+            sent.iter().any(|request| matches!(
+                request,
+                engine::Request::Shell { session_id, command }
+                    if session_id == &session && command == "echo hi"
+            )),
+            "expected one shell request for the Session"
+        );
+        assert!(
+            !sent
+                .iter()
+                .any(|request| matches!(request, engine::Request::Prompt { .. })),
+            "shell mode must not admit a prompt"
+        );
     }
 
     #[test]
