@@ -427,6 +427,28 @@ export function Prompt(props: PromptProps) {
         },
       },
       {
+        // The fast lane beside the normal Enter submit: Enter is a steer that
+        // promotes at the next turn boundary, so a long or stuck turn holds the
+        // prompt behind it. This cuts in — it ends the running turn first, then
+        // sends, matching Claude Code's Ctrl+Enter.
+        title: "Submit now (interrupt current turn)",
+        name: "prompt.submit_now",
+        category: "Prompt",
+        hidden: true,
+        run: async () => {
+          if (!input.focused) return
+          if (props.sessionID && (status().type !== "idle" || waitingPrompts().length > 0)) {
+            await sdk.api.sessions
+              .interrupt({ sessionID: props.sessionID })
+              .catch(() => toast.show({ message: "Interrupt failed: session runtime unreachable", variant: "error" }))
+          }
+          const handled = await submit()
+          if (!handled) return
+
+          dialog.clear()
+        },
+      },
+      {
         title: "Remove editor context",
         name: "prompt.editor_context.clear",
         category: "Prompt",

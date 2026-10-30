@@ -41,6 +41,7 @@ impl Shell {
                 draft: Vec::new(),
                 scroll: 0,
                 follow: true,
+                expanded: false,
             },
             composer: Composer::new(workspace),
             panel: None,
@@ -53,7 +54,8 @@ impl Shell {
     }
 
     pub fn set_transcript(&mut self, transcript: &Transcript) {
-        self.transcript.lines = transcript_lines(transcript, &self.transcript.theme);
+        self.transcript.lines =
+            transcript_lines(transcript, &self.transcript.theme, self.transcript.expanded);
         let max = self.transcript.lines.len().saturating_sub(1);
         self.transcript.scroll = self.transcript.scroll.min(max as u16);
         self.last = Some(transcript.clone());
@@ -111,7 +113,7 @@ impl Shell {
             sidebar.theme = theme.clone();
         }
         if let Some(last) = &self.last {
-            self.transcript.lines = transcript_lines(last, &theme);
+            self.transcript.lines = transcript_lines(last, &theme, self.transcript.expanded);
         }
     }
 
@@ -130,6 +132,17 @@ impl Shell {
         self.transcript.scroll = 0;
         self.transcript.follow = false;
         self.last = None;
+    }
+
+    /// Fold or unfold every tool result and repaint the projection behind the
+    /// current lines, so the toggle applies without waiting for a snapshot.
+    pub fn toggle_tool_expansion(&mut self) -> bool {
+        self.transcript.expanded = !self.transcript.expanded;
+        if let Some(last) = &self.last {
+            self.transcript.lines =
+                transcript_lines(last, &self.transcript.theme, self.transcript.expanded);
+        }
+        self.transcript.expanded
     }
 
     pub fn scroll_transcript(&mut self, delta: i32) {
@@ -263,6 +276,8 @@ pub struct TranscriptPane {
     /// Follow the tail while new projections arrive. Any manual scroll clears
     /// it, so reading history is not interrupted by committed events.
     follow: bool,
+    /// Tool results render at their folded budget unless this is on.
+    expanded: bool,
 }
 
 impl Pane for TranscriptPane {
@@ -366,6 +381,12 @@ impl Home {
         self.selected = next.clamp(0, self.rows.len() as i32 - 1) as usize;
     }
 
+    /// The row a numbered slot opens. Slots follow the list as shown, and the
+    /// first nine are the ones a terminal keyboard can reach without a chord.
+    pub fn slot(&self, index: usize) -> Option<&SessionSummary> {
+        self.rows.get(index)
+    }
+
     pub fn current(&self) -> Option<&SessionSummary> {
         self.rows.get(self.selected)
     }
@@ -390,7 +411,7 @@ impl Home {
         let palette = self.theme.palette;
         let block = Block::bordered()
             .title(Span::styled(
-                " sessions · n new ",
+                " sessions · 1-9 open · p pin · n new ",
                 Style::new().fg(palette.primary),
             ))
             .border_style(Style::new().fg(palette.border))
@@ -432,6 +453,11 @@ impl Home {
             } else {
                 Style::new().fg(palette.text)
             };
+            let slot = if index < 9 {
+                format!("{} ", index + 1)
+            } else {
+                "  ".to_string()
+            };
             let detail = match (row.directory.as_deref(), row.updated_at_ms) {
                 (Some(directory), Some(updated)) => {
                     let name = Path::new(directory)
@@ -442,8 +468,21 @@ impl Home {
                 }
                 _ => String::new(),
             };
+            let detail = if row.pinned_at_ms.is_some() {
+                if detail.is_empty() {
+                    "pinned".to_string()
+                } else {
+                    format!("pinned  ·  {detail}")
+                }
+            } else {
+                detail
+            };
             Line::from(vec![
-                Span::styled(format!("{marker}{}", row.label()), style),
+                Span::styled(
+                    format!("{marker}{slot}"),
+                    Style::new().fg(palette.text_muted),
+                ),
+                Span::styled(row.label(), style),
                 Span::styled(
                     if detail.is_empty() {
                         String::new()
@@ -501,7 +540,7 @@ fn draft_lines(text: &str, reasoning: &str, theme: &Theme) -> Vec<Line<'static>>
     lines
 }
 
-fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>> {
+fn transcript_lines(transcript: &Transcript, theme: &Theme, expanded: bool) -> Vec<Line<'static>> {
     let palette = theme.palette;
     let mut lines = Vec::new();
     for entry in &transcript.entries {
@@ -541,6 +580,7 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>
                             call,
                             transcript.displays.get(&call.id).map(Vec::as_slice),
                             theme,
+                            expanded,
                         )),
                     }
                 }
@@ -596,9 +636,20 @@ fn composer_height(composer: &Composer) -> u16 {
 
 fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
     let palette = theme.palette;
-    let title = match &composer.notice {
-        Some(notice) => format!(" composer · {notice} "),
-        None => " composer ".to_string(),
+    // The queue count rides the same title line as a transient notice so the
+    // composer answers "is my prompt waiting?" without a second row.
+    let queued = (composer.queued > 0).then(|| {
+        if composer.queued == 1 {
+            "1 queued".to_string()
+        } else {
+            format!("{} queued", composer.queued)
+        }
+    });
+    let title = match (&composer.notice, queued) {
+        (Some(notice), Some(queued)) => format!(" composer · {queued} · {notice} "),
+        (Some(notice), None) => format!(" composer · {notice} "),
+        (None, Some(queued)) => format!(" composer · {queued} "),
+        (None, None) => " composer ".to_string(),
     };
     let block = Block::bordered()
         .title(Span::styled(title, Style::new().fg(palette.primary)))
@@ -1358,7 +1409,7 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let lines = transcript_lines(&transcript, &theme);
+        let lines = transcript_lines(&transcript, &theme, false);
         assert_eq!(lines[0].to_string(), "✗ provider unavailable");
         assert_eq!(lines[0].spans[0].style.fg, Some(theme.palette.error));
     }

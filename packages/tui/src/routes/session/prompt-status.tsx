@@ -4,8 +4,14 @@ import { useTheme } from "../../context/theme"
 import { useSecond } from "../../component/spinner"
 import { Locale } from "../../util/locale"
 
-export function PromptStatus(props: { prompt: PendingPrompt }) {
+export function PromptStatus(props: { prompt: PendingPrompt; count?: number }) {
   const theme = useTheme()
+  // One receipt describes only the newest waiting prompt; when several are
+  // stacked the reader needs the size of the stack, not one indistinguishable
+  // line, so the count rides the same label.
+  const queued = createMemo(
+    () => (props.count ?? 1) > 1 ? `${props.count} queued` : undefined,
+  )
   // A steer is promoted at a turn boundary, so a turn running a long tool
   // bounds the wait rather than the prompt itself. A static "waiting" line
   // reads as progress; the clock is what lets the user tell waiting from stuck.
@@ -36,8 +42,8 @@ export function PromptStatus(props: { prompt: PendingPrompt }) {
           : props.prompt.state === "failed"
             ? "SEND FAILED · use prompt history to retry"
             : props.prompt.delivery === "queue"
-              ? `QUEUED · starts when the current work finishes · esc removes waiting prompts, newest first${waited()}`
-              : `RECEIVED · joins at the next safe turn · esc removes waiting prompts, newest first${waited()}`}
+              ? `QUEUED${queued() ? ` · ${queued()}` : ""} · starts when the current work finishes · esc removes waiting prompts, newest first${waited()}`
+              : `RECEIVED${queued() ? ` · ${queued()}` : ""} · joins at the next safe turn · esc removes waiting prompts, newest first${waited()}`}
       </text>
       <Show when={props.prompt.error}>
         <text fg={props.prompt.state === "failed" ? theme.theme.error : theme.theme.warning}>{props.prompt.error}</text>

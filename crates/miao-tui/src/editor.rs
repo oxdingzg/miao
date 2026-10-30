@@ -393,6 +393,10 @@ pub struct Composer {
     pub editor: Editor,
     pub completion: Completion,
     pub notice: Option<String>,
+    /// Prompts durably admitted but not yet promoted into a turn. They are
+    /// re-read from the snapshot every frame, so this is display state rather
+    /// than a durable count the composer owns.
+    pub queued: usize,
     /// Inline media sent with the prompt. The composer only shows their
     /// `[Image N]` markers; the bytes travel beside the text.
     attachments: Vec<Value>,
@@ -412,6 +416,7 @@ impl Composer {
             editor: Editor::new(),
             completion: Completion::default(),
             notice: None,
+            queued: 0,
             attachments: Vec::new(),
             history: load_history(&history_path),
             history_index: None,
@@ -808,6 +813,7 @@ mod tests {
             editor: Editor::new(),
             completion: Completion::default(),
             notice: None,
+            queued: 0,
             attachments: Vec::new(),
             history: Vec::new(),
             history_index: None,
