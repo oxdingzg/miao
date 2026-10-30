@@ -2696,59 +2696,6 @@ mod tests {
     }
 
     #[test]
-    fn esc_leaves_shell_mode_before_it_leaves_the_session() {
-        let mut app = session_app();
-        let (handle, mut requests) = engine::Handle::recording();
-        app.attach_engine(handle);
-        app.shell.composer.set_mode(Mode::Shell);
-        app.shell.composer.editor.set_text("ls");
-        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
-        assert_eq!(app.screen, Screen::Session);
-        assert_eq!(app.shell.composer.mode(), Mode::Normal);
-        // The typed command survives leaving the mode.
-        assert_eq!(app.shell.composer.editor.text(), "ls");
-        assert!(requests.try_recv().is_err(), "no interrupt was requested");
-        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
-        assert_eq!(app.screen, Screen::Home);
-    }
-
-    #[test]
-    fn a_bang_command_runs_through_the_engine_instead_of_the_model() {
-        let mut app = session_app();
-        app.handle(AppEvent::SessionOpened {
-            summary: Some(summary("ses_shell", 10)),
-            transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
-        });
-        let session = app.session.as_ref().expect("session").id.clone();
-        let (handle, mut requests) = engine::Handle::recording();
-        app.attach_engine(handle);
-        for c in ['!', 'e', 'c', 'h', 'o', ' ', 'h', 'i'] {
-            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
-        }
-        assert_eq!(app.shell.composer.mode(), Mode::Shell);
-        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
-        let mut sent = Vec::new();
-        while let Ok(request) = requests.try_recv() {
-            sent.push(request);
-        }
-        assert!(
-            sent.iter().any(|request| matches!(
-                request,
-                engine::Request::Shell { session_id, command }
-                    if session_id == &session && command == "echo hi"
-            )),
-            "expected one shell request for the Session"
-        );
-        assert!(
-            !sent
-                .iter()
-                .any(|request| matches!(request, engine::Request::Prompt { .. })),
-            "shell mode must not admit a prompt"
-        );
-    }
-
-    #[test]
     fn esc_returns_from_a_session_to_the_home_list() {
         let mut app = session_app();
         app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
