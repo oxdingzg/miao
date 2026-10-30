@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
 import { Credential } from "@miao/core/credential"
+import { Database } from "@miao/core/database/database"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { Global } from "@miao/core/global"
 import { Location } from "@miao/core/location"
@@ -20,6 +21,7 @@ import { compactionSettings, engineSettings, nativeEngineOptions } from "./nativ
 import { ProductFormatter } from "./product-formatter"
 import { ProductHooks } from "./product-hooks"
 import { ProductMcp } from "./product-mcp"
+import { ProductPermission } from "./product-permission"
 import { ProductRoutes } from "./product-routes"
 import { ProductTuiAgent } from "./product-tui-agent"
 
@@ -102,12 +104,22 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   const context = yield* AmbientContext.prepare(ref, effective)
   const hooks = yield* ProductHooks.prepare(ref, { ...effective, ...context.options })
   const formatter = yield* ProductFormatter.prepare(ref, effective)
+  // Resolve the Agent before a permission handoff can freeze legacy ownership.
   const agent = yield* ProductTuiAgent.prepare(effective)
+  const database = yield* Database.Service
+  const permission = yield* ProductPermission.prepare(ref, {
+    binary,
+    source: input.database,
+    database,
+    enabled: process.env.MIAO_SHARED_PERMISSIONS === "1",
+    savedRules: configuration.savedRules,
+  })
   const options: EngineOptions = {
     ...effective,
     ...context.options,
     ...hooks,
     ...formatter,
+    ...permission.options,
     ...agent,
     db: input.database,
     workspace: input.workspace,
@@ -151,7 +163,7 @@ async function startPlan(
       ),
       Effect.flatMap(() => Effect.promise(() => stop.promise)),
       Effect.scoped,
-      Effect.provide(LayerNode.compile(LayerNode.group([Global.node, Credential.node, McpAuth.node]))),
+      Effect.provide(LayerNode.compile(LayerNode.group([Global.node, Credential.node, McpAuth.node, Database.node]))),
       Effect.provide(LocationServiceMap.Service.get(ref)),
       Effect.provide(locationServiceMapLayer),
       Effect.onExit(() =>
@@ -225,8 +237,8 @@ async function runEngine(argv: string[], env: Record<string, string | undefined>
 
 /**
  * Runs the engine the Rust TUI asked for, through the product's engine plan.
- * A preparation failure stops startup: raw engine arguments do not carry the
- * resolved Agent, permission profile or scoped product manifests.
+ * Preparation failures terminate startup, including partially completed permission
+ * handoffs; raw engine arguments cannot recover that ownership safely.
  */
 export async function runEngineShim(args: string[]): Promise<number> {
   const parsed = parseTuiEngineArgs(args)
@@ -267,23 +279,30 @@ export async function runEngineShim(args: string[]): Promise<number> {
 /**
  * Writes the shim script the Rust TUI starts in place of the engine. The TUI
  * appends its engine argv, so the script inserts the hidden shim command and
- * forwards everything else. Windows has no POSIX wrapper to write here; it
- * keeps the direct engine spawn.
+ * forwards everything else. Windows passes the executable and literal argument
+ * prefix directly to the Rust launcher without a shell wrapper.
  */
 export async function rustEngineShim(environment: Record<string, string | undefined> = process.env) {
-  if (process.platform === "win32") return undefined
   const engine = environment.MIAO_ENGINE_BIN ?? discoveredEngine()
   if (!engine) return undefined
   const self =
     typeof MIAO_PACKAGED !== "undefined" && MIAO_PACKAGED
       ? [process.execPath]
       : [process.execPath, ...process.execArgv, process.argv[1]]
+  if (process.platform === "win32")
+    return {
+      program: self[0]!,
+      args: [...self.slice(1), "__engine-shim"],
+      engine,
+      dispose: async () => {},
+    }
   const directory = await mkdtemp(path.join(os.tmpdir(), "miao-engine-shim-"))
   const program = path.join(directory, "miao-engine")
   await Bun.write(program, `#!/bin/sh\nexec ${self.map(quote).join(" ")} __engine-shim "$@"\n`)
   await chmod(program, 0o700)
   return {
     program,
+    args: [],
     engine,
     dispose: () => rm(directory, { recursive: true, force: true }),
   }

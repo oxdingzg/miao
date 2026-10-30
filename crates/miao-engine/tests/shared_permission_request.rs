@@ -1500,3 +1500,57 @@ async fn initial_policy_decisions_do_not_fake_ui_replies_and_peer_rule_settlemen
     assert_eq!(final_event.data["reply"], "always");
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn root_notifications_do_not_recreate_deleted_execution_history_or_block_the_cursor() {
+    for reuse_id in [false, true] {
+        let (directory, store, runtime, wire) = running().await;
+        let context = shared(directory.path()).await;
+        let source = runtime
+            .capture_permission_source(&runtime.controller(), &wire)
+            .unwrap();
+        context
+            .admit_request(&source, assertion("deleted-execution", "public/file", &[]))
+            .await
+            .unwrap();
+        runtime.shutdown().await;
+        drop(runtime);
+        store.remove_session("s").await.unwrap();
+        if reuse_id {
+            store
+                .initialize(
+                    "s",
+                    "new Session",
+                    &context.snapshot().await.unwrap().directory,
+                )
+                .await
+                .unwrap();
+        }
+        let before = serde_json::to_value(store.events("s", 0, 256).await.unwrap()).unwrap();
+        assert_eq!(
+            context
+                .recover_source_requests(&store, None, 10)
+                .await
+                .unwrap()
+                .settled,
+            1
+        );
+        let projection = context.project_request_events(&store, 256).await.unwrap();
+        assert_eq!(projection.emitted, 0);
+        assert!(!projection.has_more);
+        assert!(projection.cursor.seq > 0);
+        assert_eq!(
+            serde_json::to_value(store.events("s", 0, 256).await.unwrap()).unwrap(),
+            before
+        );
+        assert_eq!(
+            context
+                .project_request_events(&store, 256)
+                .await
+                .unwrap()
+                .emitted,
+            0
+        );
+        store.close().await.unwrap();
+    }
+}

@@ -384,12 +384,30 @@ pub fn settings(
     let config_dir = config_dir.or_else(crate::config::global_dir);
     let spawn = EngineSpawn {
         program: engine_binary(),
-        args: args(&db, workspace, &model, config_dir.as_deref(), |name| {
-            std::env::var(name).ok()
-        }),
+        args: launch_args(
+            args(&db, workspace, &model, config_dir.as_deref(), |name| {
+                std::env::var(name).ok()
+            }),
+            std::env::var("MIAO_ENGINE_LAUNCH_PREFIX").ok().as_deref(),
+        )?,
         env: Vec::new(),
     };
     Ok(Settings { spawn, model })
+}
+
+// The product passes a literal executable prefix on Windows, where a POSIX
+// wrapper cannot stand in for the engine. Never interpret it through a shell.
+fn launch_args(args: Vec<String>, prefix: Option<&str>) -> Result<Vec<String>, String> {
+    let mut prefix: Vec<String> = match prefix {
+        Some(value) => serde_json::from_str(value)
+            .map_err(|_| "MIAO_ENGINE_LAUNCH_PREFIX must be a JSON array of strings")?,
+        None => return Ok(args),
+    };
+    if prefix.iter().any(|argument| argument.contains('\0')) {
+        return Err("MIAO_ENGINE_LAUNCH_PREFIX arguments cannot contain NUL".into());
+    }
+    prefix.extend(args);
+    Ok(prefix)
 }
 
 /// The argv the engine is started with. Mirrors the product host's
@@ -1288,6 +1306,30 @@ mod tests {
                 "/config",
             ]
         );
+    }
+
+    #[test]
+    fn launcher_prefix_preserves_literal_arguments_and_engine_flags() {
+        let args = vec![
+            "serve".into(),
+            "--db".into(),
+            "C:\\profile dir\\engine.db".into(),
+        ];
+        assert_eq!(launch_args(args.clone(), None).unwrap(), args);
+        assert_eq!(launch_args(args.clone(), Some("[]")).unwrap(), args);
+        let mut expected = vec!["C:\\source dir\\index.ts".into(), "__engine-shim".into()];
+        expected.extend(args.clone());
+        assert_eq!(
+            launch_args(
+                args.clone(),
+                Some(r#"["C:\\source dir\\index.ts","__engine-shim"]"#)
+            )
+            .unwrap(),
+            expected
+        );
+        for invalid in ["{}", "[1]", "not-json", r#"["bad\u0000argument"]"#] {
+            assert!(launch_args(args.clone(), Some(invalid)).is_err());
+        }
     }
 
     #[test]
