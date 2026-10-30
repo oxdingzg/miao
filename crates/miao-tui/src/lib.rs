@@ -16,6 +16,7 @@ pub mod session;
 pub mod state;
 pub mod status;
 pub mod terminal;
+pub mod terminal_title;
 pub mod theme;
 pub mod tool;
 pub mod transport;
@@ -65,6 +66,11 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         keybinds::Keymap::from_overrides(&config.keybinds),
         config.attention,
         startup,
+    );
+    app.configure_terminal_title(
+        state::preferences().terminal_title_enabled.unwrap_or(true),
+        !std::env::var("MIAO_DISABLE_TERMINAL_TITLE")
+            .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true")),
     );
     let preferences = terminal::Preferences {
         mouse: config.mouse,
@@ -127,7 +133,9 @@ async fn drive(
     }
     app.set_bus(bus.clone());
     app.start();
+    let mut title = terminal_title::Title::new(std::io::stdout());
     loop {
+        title.update(app.terminal_title().as_deref())?;
         terminal.draw(|frame| app.render(frame))?;
         if std::env::var_os("MIAO_TUI_TEST_PANIC").is_some() {
             panic!("miao-tui: injected panic (MIAO_TUI_TEST_PANIC)");
@@ -147,6 +155,9 @@ async fn drive(
             _ = &mut termination => return Ok(()),
             event = events.recv() => match event {
                 Some(app_event) => {
+                    if matches!(&app_event, AppEvent::Focus(true) | AppEvent::Resize { .. }) {
+                        title.invalidate();
+                    }
                     app.handle(app_event);
                     if app.take_redraw_request() {
                         terminal::redraw(terminal)?;

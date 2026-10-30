@@ -672,6 +672,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "unicode-segmentation",
  "unicode-width",
  "vt100",
 ]
