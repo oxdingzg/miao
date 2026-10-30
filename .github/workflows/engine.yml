@@ -63,6 +63,12 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      # The self-hosted macOS runner is a launchd service whose PATH omits
+      # ~/.cargo/bin, so the dtolnay GITHUB_PATH export does not reach later
+      # steps and cargo resolves as command-not-found. Re-add it explicitly.
+      - name: Ensure cargo is on PATH (self-hosted runner)
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
