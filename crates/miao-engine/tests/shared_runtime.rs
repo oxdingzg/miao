@@ -572,6 +572,10 @@ async fn two_real_runtimes_share_always_and_tool_completion_cancels_unanswered_a
         )
         .await
         .unwrap();
+    // No status/list call wakes the second owner: its Root cursor supervisor
+    // must re-evaluate the real local source and deliver the durable event.
+    let resolved = permission_resolution(&second_store, "second", &second_pending.id).await;
+    assert_eq!(resolved["state"], "allowed");
     assert_eq!(
         second
             .product_permission_status(&second.controller(), &second_source, second_pending.id)
@@ -771,5 +775,120 @@ async fn shared_startup_agent_is_captured_and_denial_applies_at_real_dispatch() 
     assert!(!events
         .iter()
         .any(|event| event.kind == "approval.requested"));
+    runtime.shutdown().await;
+}
+
+async fn permission_resolution(store: &Store, session: &str, request: &str) -> Value {
+    tokio::time::timeout(std::time::Duration::from_secs(8), async {
+        loop {
+            let events = store.events(session, 0, 256).await.unwrap();
+            if let Some(event) = events.iter().find(|event| {
+                event.kind == "product.permission.resolved" && event.data["id"] == request
+            }) {
+                return event.data.clone();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|error| panic!("missing permission resolution {request}: {error}"))
+}
+
+#[tokio::test]
+async fn request_notifications_and_replaced_bridges_are_supervised_without_host_polling() {
+    use product_permission_request::{Reply, State};
+    let (directory, store, context, binding) = setup(true).await;
+    let runtime = Runtime::with_shared_permissions(
+        binding,
+        Arc::new(Caller("host_probe")),
+        Tools::new(directory.path().join("workspace"))
+            .await
+            .unwrap(),
+        policy(true),
+    )
+    .await
+    .unwrap();
+    let definition = ToolDefinition {
+        name: "host_probe".into(),
+        description: "fixture".into(),
+        input_schema: json!({"type":"object"}),
+    };
+    let (send, mut receive) = mpsc::channel(16);
+    runtime.with_product_tools(vec![definition.clone()], Bridge::new(send), None);
+    let source = host_call(&runtime, &mut receive, "supervised").await;
+    let controller = runtime.controller();
+    let pending = runtime
+        .admit_product_permission(
+            &controller,
+            &source,
+            assertion("external-once", "public/file"),
+        )
+        .await
+        .unwrap();
+    let captured = runtime
+        .capture_permission_source(&controller, &source)
+        .unwrap();
+    // A trusted external control writes a Root reply without any rule change
+    // or Runtime status call. UI projection must follow its separate journal.
+    context
+        .reply_request(&captured, response(&pending, Reply::Once))
+        .await
+        .unwrap();
+    let resolved = permission_resolution(&store, "supervised", &pending.id).await;
+    assert_eq!(resolved["state"], "allowed");
+    assert_eq!(resolved["reply"], "once");
+    let mut timed = assertion("expired-without-polling", "public/file");
+    timed.timeout_ms = Some(50);
+    let timed = runtime
+        .admit_product_permission(&controller, &source, timed)
+        .await
+        .unwrap();
+    assert_eq!(timed.state, State::Pending);
+    let resolved = permission_resolution(&store, "supervised", &timed.id).await;
+    assert_eq!(resolved["state"], "expired");
+    let pending = runtime
+        .admit_product_permission(
+            &controller,
+            &source,
+            assertion("replaced-bridge", "public/file"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(pending.state, State::Pending);
+    let (send, _replacement) = mpsc::channel(16);
+    runtime.with_product_tools(vec![definition], Bridge::new(send), None);
+    let resolved = permission_resolution(&store, "supervised", &pending.id).await;
+    assert_eq!(resolved["state"], "cancelled");
+    assert!(runtime
+        .reply_product_permission(&controller, &source, response(&pending, Reply::Always))
+        .await
+        .is_err());
+    assert!(context.snapshot().await.unwrap().patterns.is_empty());
+    runtime.cancel("supervised").await.unwrap();
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_idle_shared_supervisor_does_not_keep_writing_the_session_database() {
+    let (directory, store, _, binding) = setup(true).await;
+    let runtime = Runtime::with_shared_permissions(
+        binding,
+        Arc::new(Caller("host_probe")),
+        Tools::new(directory.path().join("workspace"))
+            .await
+            .unwrap(),
+        policy(true),
+    )
+    .await
+    .unwrap();
+    let observer = rusqlite::Connection::open(store.path()).unwrap();
+    let before: u64 = observer
+        .query_row("PRAGMA data_version", [], |row| row.get(0))
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(450)).await;
+    let after: u64 = observer
+        .query_row("PRAGMA data_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(before, after);
     runtime.shutdown().await;
 }
