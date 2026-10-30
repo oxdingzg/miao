@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { tabTitle, terminalTitle } from "../src/util/terminal-title"
+import { sessionTitle, tabTitle, terminalTitle } from "../src/util/terminal-title"
 
 test("an untitled Session's tab carries its request until the title arrives", () => {
   // A generated title needs an auxiliary model call, which a long first turn
@@ -34,4 +34,38 @@ test("truncates by grapheme without splitting emoji or combining characters", ()
     expect(terminalTitle("a".repeat(36) + char + "b".repeat(4))).toBe("a".repeat(36) + char + "…")
     expect(terminalTitle(char.repeat(40))).toBe(char.repeat(40))
   }
+})
+
+test("an idle Session reads as its plain title so done and ready are one glance", () => {
+  const now = 1_000_000
+  expect(sessionTitle({ title: "检查miao", status: { type: "idle" }, now })).toBe("检查miao")
+  expect(sessionTitle({ title: "检查miao", status: undefined, now })).toBe("检查miao")
+})
+
+test("a running turn marks the title with an advancing clock, not a frozen one", () => {
+  const since = 1_000_000
+  expect(sessionTitle({ title: "检查miao", status: { type: "busy", since }, now: since + 125_000 })).toBe(
+    "⏳ working 2m 5s · 检查miao",
+  )
+  // The same turn one second later must advance: a clock that never moves
+  // cannot be told apart from a hung session by a reader glancing at a tab.
+  expect(sessionTitle({ title: "检查miao", status: { type: "busy", since }, now: since + 126_000 })).toBe(
+    "⏳ working 2m 6s · 检查miao",
+  )
+})
+
+test("a busy turn with no phase start marks itself without a bogus clock", () => {
+  expect(sessionTitle({ title: "检查miao", status: { type: "busy" }, now: 1_000_000 })).toBe(
+    "⏳ working · 检查miao",
+  )
+})
+
+test("a retry names itself instead of a generic working", () => {
+  expect(
+    sessionTitle({
+      title: "检查miao",
+      status: { type: "retry", attempt: 2, message: "provider refused", next: 1 },
+      now: 1_000_000,
+    }),
+  ).toBe("⏳ retrying · 检查miao")
 })
