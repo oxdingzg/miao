@@ -624,6 +624,14 @@ impl App {
             Some(keybinds::Action::StashDraft) => self.run_builtin(Builtin::StashDraft),
             Some(keybinds::Action::EditorOpen) => self.run_builtin(Builtin::Editor),
             Some(keybinds::Action::CopyMessage) => self.copy_last_response(),
+            Some(keybinds::Action::ToolOutputToggle) => {
+                let expanded = self.shell.toggle_tool_expansion();
+                self.notice(if expanded {
+                    "Tool output expanded"
+                } else {
+                    "Tool output folded"
+                });
+            }
             Some(keybinds::Action::AppExit) => self.run_builtin(Builtin::Quit),
             Some(keybinds::Action::TerminalRedraw) => self.redraw_requested = true,
             Some(keybinds::Action::TerminalSuspend) => self.run_builtin(Builtin::Suspend),
