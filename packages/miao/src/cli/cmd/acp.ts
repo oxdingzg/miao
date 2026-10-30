@@ -39,10 +39,7 @@ export const AcpCommand = cmd({
     // intermediate buffering in either source or compiled mode.
     const output = new WritableStream<Uint8Array>({
       write: (chunk) => {
-        let offset = 0
-        while (offset < chunk.length) {
-          offset += writeSync(1, chunk.subarray(offset))
-        }
+        writeSync(1, chunk)
       },
     })
     const callbacks: { data?: (chunk: Buffer) => void; end?: () => void; error?: (error: Error) => void } = {}
