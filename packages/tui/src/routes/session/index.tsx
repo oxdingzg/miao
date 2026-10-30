@@ -1520,7 +1520,9 @@ export function Session() {
                 <Show when={session()?.parentID}>
                   <SubagentFooter />
                 </Show>
-                <Show when={!inlineReceipt() && latestReceipt()}>{(receipt) => <PromptStatus prompt={receipt()} />}</Show>
+                <Show when={!inlineReceipt() && latestReceipt()}>
+                  {(receipt) => <PromptStatus prompt={receipt()} count={sync.prompt.waiting(route.sessionID).length} />}
+                </Show>
                 <SessionTimers sessionID={route.sessionID} />
                 <Show when={visible()}>
                   <pluginRuntime.Slot
