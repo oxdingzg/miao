@@ -406,6 +406,22 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         ),
     )
     .add(
+      HttpApiEndpoint.post("session.sideQuestion", "/api/session/:sessionID/side-question", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ question: Schema.String }),
+        success: Schema.Struct({ answer: Schema.optional(Schema.String) }),
+        error: [SessionNotFoundError, ServiceUnavailableError, UnknownError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.side-question",
+            summary: "Ask a side question",
+            description: "Answer a question from the transcript with no tools, without entering history.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.wait", "/api/session/:sessionID/wait", {
         params: { sessionID: Session.ID },
         success: HttpApiSchema.NoContent,

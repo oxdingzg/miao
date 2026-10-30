@@ -54,6 +54,16 @@ miao models --all               # 全部目录，并标注当前 channel 跑不�
 
 [Command Code](https://commandcode.ai) 是订阅制供应商：用 `miao auth login commandcode`（浏览器辅助）连接，或设置 `CMD_API_KEY`；连接后会从你的账号发现其模型。OpenCode Zen / Go 仍作为可选的第三方供应商保留。
 
+### mtty 网关
+
+`mtty` 是 mtty.dev 自带的 OpenAI 兼容网关（`https://my.mtty.dev/v1`），目录里同样由 miao 维护、models.dev 没有收录。连接方式：
+
+```bash
+miao auth login mtty
+```
+
+或设置 `MTTY_API_KEY`。凭证是网关 API key（`sk-` 前缀，在 my.mtty.dev 的 `/console/` 里创建），以 `Authorization: Bearer` 发送。目前目录中声明了 `mtty/deepseek-v4-1-flash-261017`，用 `miao models mtty` 查看该网关上可用的模型。
+
 ## 自定义供应商
 
 `miao.jsonc` 里的 `providers` 记录可以新增或覆盖供应商：凭证、通信协议（`api`）、额外的请求头或 body、模型列表，以及以原生货币计的成本。

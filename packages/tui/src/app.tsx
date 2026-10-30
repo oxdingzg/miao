@@ -2,6 +2,7 @@ import { SessionStateProvider, useSessionState } from "./context/session-state"
 import type { SessionState } from "./util/session-state"
 import { render, TimeToFirstDraw, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { registerOpencodeSpinner } from "./component/register-spinner"
+import { useSecond } from "./component/spinner"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { Deferred, Effect } from "effect"
 import { Global } from "@miao/core/global"
@@ -87,7 +88,7 @@ import { PromptHistoryProvider } from "./component/prompt/history"
 import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
 import { ToastProvider, useToast } from "./ui/toast"
-import { tabTitle, terminalTitle } from "./util/terminal-title"
+import { sessionTitle, terminalTitle } from "./util/terminal-title"
 import { Locale } from "./util/locale"
 import { sessionEpilogue } from "./util/presentation"
 import { KVProvider, useKV } from "./context/kv"
@@ -480,6 +481,7 @@ function App(props: {
   const themeState = useTheme()
   const { theme, mode, setMode, locked, lock, unlock } = themeState
   const sync = useSync()
+  const seconds = useSecond()
   const project = useProject()
   const exit = useExit()
   const promptRef = usePromptRef()
@@ -655,7 +657,21 @@ function App(props: {
         return
       }
       const asked = sync.data.message[route.data.sessionID]?.find((message) => message.type === "user")
-      write(tabTitle({ title: session.title, prompt: asked?.type === "user" ? asked.text : undefined }))
+      const status = sync.data.session_status[route.data.sessionID]
+      const busy = status?.type === "busy" || status?.type === "retry"
+      // The clock is read only while busy so an idle title stays static and
+      // costs no per-second rewrite; the ticking elapsed is the signal that
+      // survives a tab switch and proves the session is progressing rather than
+      // hung, which a frozen timer cannot tell apart from a finished turn.
+      if (busy) seconds()
+      write(
+        sessionTitle({
+          title: session.title,
+          prompt: asked?.type === "user" ? asked.text : undefined,
+          status,
+          now: Date.now(),
+        }),
+      )
       return
     }
 
@@ -1379,8 +1395,16 @@ function App(props: {
 // columns arrived as two signals that both read 120. The renderer then keeps the
 // stale size until the next resize. Re-read the size shortly after each signal and
 // resize the renderer if it still disagrees with the terminal.
+//
+// Windows has no SIGWINCH, and the console reflows the visible rows itself as the
+// window grows or shrinks. A missed or intermediate size therefore leaves the
+// renderer painting for a width the terminal no longer has: rows land on the
+// wrong columns, the cells the terminal moved stay behind, and the damage never
+// reconciles because an incremental frame only rewrites what it thinks changed.
+// That reads as smeared text and stray single characters that survive until
+// something forces a full repaint. Node reports console size changes on stdout,
+// so settle there the same way instead of leaving Windows unguarded.
 function settleResizes(renderer: Awaited<ReturnType<typeof createCliRenderer>>) {
-  if (process.platform === "win32") return () => {}
   const timers = new Set<ReturnType<typeof setTimeout>>()
   const check = () => {
     const [width, height] = process.stdout.getWindowSize?.() ?? [process.stdout.columns, process.stdout.rows]
@@ -1395,6 +1419,16 @@ function settleResizes(renderer: Awaited<ReturnType<typeof createCliRenderer>>) 
         check()
       }, delay)
       timers.add(timer)
+    }
+  }
+  // Windows delivers the console size change on stdout rather than as a signal,
+  // and only a real console has a size to settle.
+  if (process.platform === "win32") {
+    if (!process.stdout.isTTY) return () => {}
+    process.stdout.on("resize", onResize)
+    return () => {
+      process.stdout.off("resize", onResize)
+      for (const timer of timers) clearTimeout(timer)
     }
   }
   process.on("SIGWINCH", onResize)
