@@ -381,6 +381,12 @@ impl Home {
         self.selected = next.clamp(0, self.rows.len() as i32 - 1) as usize;
     }
 
+    /// The row a numbered slot opens. Slots follow the list as shown, and the
+    /// first nine are the ones a terminal keyboard can reach without a chord.
+    pub fn slot(&self, index: usize) -> Option<&SessionSummary> {
+        self.rows.get(index)
+    }
+
     pub fn current(&self) -> Option<&SessionSummary> {
         self.rows.get(self.selected)
     }
@@ -405,7 +411,7 @@ impl Home {
         let palette = self.theme.palette;
         let block = Block::bordered()
             .title(Span::styled(
-                " sessions · n new ",
+                " sessions · 1-9 open · p pin · n new ",
                 Style::new().fg(palette.primary),
             ))
             .border_style(Style::new().fg(palette.border))
@@ -447,6 +453,11 @@ impl Home {
             } else {
                 Style::new().fg(palette.text)
             };
+            let slot = if index < 9 {
+                format!("{} ", index + 1)
+            } else {
+                "  ".to_string()
+            };
             let detail = match (row.directory.as_deref(), row.updated_at_ms) {
                 (Some(directory), Some(updated)) => {
                     let name = Path::new(directory)
@@ -457,8 +468,21 @@ impl Home {
                 }
                 _ => String::new(),
             };
+            let detail = if row.pinned_at_ms.is_some() {
+                if detail.is_empty() {
+                    "pinned".to_string()
+                } else {
+                    format!("pinned  ·  {detail}")
+                }
+            } else {
+                detail
+            };
             Line::from(vec![
-                Span::styled(format!("{marker}{}", row.label()), style),
+                Span::styled(
+                    format!("{marker}{slot}"),
+                    Style::new().fg(palette.text_muted),
+                ),
+                Span::styled(row.label(), style),
                 Span::styled(
                     if detail.is_empty() {
                         String::new()
