@@ -5069,7 +5069,7 @@ async fn finish_delegation(
             _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {}
         }
         ticks += 1;
-        if ticks % 5 == 0 {
+        if ticks.is_multiple_of(5) {
             // A parent the operator interrupted takes its background children
             // with it; a parent that finished its own turn on schedule leaves
             // them running, which is what makes a background task survive.
