@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -767,10 +768,18 @@ impl App {
                 },
             })
             .collect::<Vec<_>>();
-        rows.push(row(
-            "keys",
-            "Esc back · ctrl+r rename · ctrl+o accounts · ctrl+p commands · PgUp/PgDn scroll",
-        ));
+        // Keys come from the live keymap, not a hand-written summary: a help
+        // list that names a stroke the keymap no longer binds is worse than no
+        // list at all, because it sends the operator to the wrong key.
+        rows.extend(self.keys.bindings().into_iter().map(|(action, strokes)| Row {
+            id: action.name().to_string(),
+            label: action.name().to_string(),
+            detail: if strokes.is_empty() {
+                "unbound".to_string()
+            } else {
+                strokes
+            },
+        }));
         rows.extend(self.templates.iter().map(|template| Row {
             id: format!("/{}", template.name),
             label: format!("/{}", template.name),
@@ -1795,6 +1804,23 @@ mod tests {
         )
     }
 
+    /// An app whose keymap was overridden, so a test can prove the help view
+    /// follows live bindings instead of a written-down copy.
+    fn app_with_overrides(overrides: &BTreeMap<String, Option<Vec<String>>>) -> App {
+        let palette = theme::builtin(DEFAULT_THEME).expect("default theme is built in");
+        App::new(
+            PathBuf::from("."),
+            Theme {
+                name: DEFAULT_THEME.to_string(),
+                palette,
+            },
+            theme::Catalog::builtin(),
+            Keymap::from_overrides(overrides),
+            crate::config::AttentionConfig::default(),
+            Startup::default(),
+        )
+    }
+
     fn session_app() -> App {
         let mut app = app();
         app.handle(AppEvent::SessionOpened {
@@ -2495,6 +2521,29 @@ mod tests {
             requests.try_recv(),
             Ok(engine::Request::Pin { session_id, pinned: false }) if session_id == "ses_pinned"
         ));
+    }
+
+    #[test]
+    fn help_lists_the_bindings_the_keymap_actually_uses() {
+        let mut overrides = BTreeMap::new();
+        overrides.insert("session_rename".to_string(), Some(vec!["ctrl+n".to_string()]));
+        let mut app = app_with_overrides(&overrides);
+        app.run_builtin(Builtin::Help);
+        let Some(Dialog::Help(list)) = app.dialog.as_ref() else {
+            panic!("help dialog");
+        };
+        let row_for = |name: &str| {
+            list.rows
+                .iter()
+                .find(|row| row.label == name)
+                .map(|row| row.detail.clone())
+        };
+        // The override is what help shows; the default would be a lie.
+        assert_eq!(row_for("session_rename").as_deref(), Some("ctrl+n"));
+        // A leader chord prints the real leader key, not the placeholder.
+        assert_eq!(row_for("session_new").as_deref(), Some("ctrl+x+n"));
+        // The hand-written summary is gone: no row claims an unknown group.
+        assert!(list.rows.iter().all(|row| row.label != "keys"));
     }
 
     #[test]
