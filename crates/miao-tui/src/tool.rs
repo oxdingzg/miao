@@ -31,17 +31,52 @@ pub fn lines(
     let result = raw.and_then(parse_json);
     let mut out = Vec::new();
     match name {
-        "bash" => bash(&mut out, tool, &input, result.as_ref(), raw, theme, expanded),
+        "bash" => bash(
+            &mut out,
+            tool,
+            &input,
+            result.as_ref(),
+            raw,
+            theme,
+            expanded,
+        ),
         "read" => read(&mut out, tool, &input, result.as_ref(), theme, expanded),
-        "glob" | "grep" => search(&mut out, tool, name, &input, result.as_ref(), theme, expanded),
-        "write" | "edit" | "apply_patch" => file(&mut out, tool, name, &input, files, raw, theme, expanded),
-        "todowrite" => todos(&mut out, tool, &input, result.as_ref(), raw, theme, expanded),
+        "glob" | "grep" => search(
+            &mut out,
+            tool,
+            name,
+            &input,
+            result.as_ref(),
+            theme,
+            expanded,
+        ),
+        "write" | "edit" | "apply_patch" => {
+            file(&mut out, tool, name, &input, files, raw, theme, expanded)
+        }
+        "todowrite" => todos(
+            &mut out,
+            tool,
+            &input,
+            result.as_ref(),
+            raw,
+            theme,
+            expanded,
+        ),
         "question" => question(&mut out, tool, &input, result.as_ref(), theme),
         "webfetch" => inline(&mut out, tool, "WebFetch", &text(&input, "url"), theme),
         "websearch" => inline(&mut out, tool, "WebSearch", &text(&input, "query"), theme),
         "skill" => inline(&mut out, tool, "Skill", &text(&input, "name"), theme),
         "task" => task(&mut out, tool, &input, raw, theme),
-        _ => generic(&mut out, tool, name, &input, result.as_ref(), raw, theme, expanded),
+        _ => generic(
+            &mut out,
+            tool,
+            name,
+            &input,
+            result.as_ref(),
+            raw,
+            theme,
+            expanded,
+        ),
     }
     out
 }
@@ -202,7 +237,11 @@ fn bash(
     theme: &Theme,
     expanded: bool,
 ) {
-    let limit = if expanded { usize::MAX } else { TOOL_PREVIEW_LINES };
+    let limit = if expanded {
+        usize::MAX
+    } else {
+        TOOL_PREVIEW_LINES
+    };
     let palette = theme.palette;
     let command = text(input, "command");
     let first = command.lines().next().unwrap_or_default().trim();
@@ -283,7 +322,11 @@ fn read(
     theme: &Theme,
     expanded: bool,
 ) {
-    let limit = if expanded { usize::MAX } else { TOOL_PREVIEW_LINES };
+    let limit = if expanded {
+        usize::MAX
+    } else {
+        TOOL_PREVIEW_LINES
+    };
     let palette = theme.palette;
     let path = text(input, "filePath");
     out.push(header(tool, "read", &compact(&path), theme));
@@ -346,7 +389,11 @@ fn search(
     theme: &Theme,
     expanded: bool,
 ) {
-    let limit = if expanded { usize::MAX } else { TOOL_PREVIEW_LINES };
+    let limit = if expanded {
+        usize::MAX
+    } else {
+        TOOL_PREVIEW_LINES
+    };
     let palette = theme.palette;
     let pattern = text(input, "pattern");
     let path = text(input, "path");
@@ -396,8 +443,16 @@ fn file(
     theme: &Theme,
     expanded: bool,
 ) {
-    let diff_limit = if expanded { usize::MAX } else { DIFF_PREVIEW_LINES };
-    let limit = if expanded { usize::MAX } else { TOOL_PREVIEW_LINES };
+    let diff_limit = if expanded {
+        usize::MAX
+    } else {
+        DIFF_PREVIEW_LINES
+    };
+    let limit = if expanded {
+        usize::MAX
+    } else {
+        TOOL_PREVIEW_LINES
+    };
     let palette = theme.palette;
     let path = text(input, "filePath");
     let label = match name {
@@ -499,7 +554,11 @@ fn todos(
     theme: &Theme,
     expanded: bool,
 ) {
-    let limit = if expanded { usize::MAX } else { TOOL_PREVIEW_LINES };
+    let limit = if expanded {
+        usize::MAX
+    } else {
+        TOOL_PREVIEW_LINES
+    };
     let palette = theme.palette;
     let list = input
         .get("todos")
@@ -515,12 +574,7 @@ fn todos(
         .unwrap_or_default();
     out.push(header(tool, "todowrite", "", theme));
     if tool.failed {
-        preview(
-            out,
-            raw.unwrap_or_default(),
-            palette.error,
-            limit,
-        );
+        preview(out, raw.unwrap_or_default(), palette.error, limit);
         return;
     }
     for todo in &list {
@@ -660,7 +714,11 @@ fn generic(
     theme: &Theme,
     expanded: bool,
 ) {
-    let limit = if expanded { usize::MAX } else { TOOL_PREVIEW_LINES };
+    let limit = if expanded {
+        usize::MAX
+    } else {
+        TOOL_PREVIEW_LINES
+    };
     let palette = theme.palette;
     out.push(header(tool, label, &input_summary(input), theme));
     let body = if tool.failed {
@@ -852,7 +910,10 @@ mod tests {
 
     #[test]
     fn expanded_tool_output_shows_every_line_and_ignores_the_fold_budget() {
-        let output = (1..=12).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+        let output = (1..=12)
+            .map(|n| format!("line {n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let part = tool(
             "run_command",
             json!({"argv": ["seq", "12"]}),
