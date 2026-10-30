@@ -27,7 +27,6 @@ import { fromRow } from "./session/info"
 import { SessionTitleSettlement } from "./session/title-settlement"
 import { SessionStore } from "./session/store"
 import { SessionSideQuestion } from "./session/side-question"
-import { SessionModel } from "./session/model"
 import { LLMClient } from "@miao/llm"
 import { llmClient } from "./effect/app-node-platform"
 import { SessionV1 } from "./v1/session"
@@ -876,6 +875,11 @@ const layer = Layer.effect(
         const session = yield* result.get(input.sessionID)
         yield* requireMigrated(session.id)
         return yield* Effect.gen(function* () {
+          // Imported here, not at module top: model.ts builds a Location node
+          // whose deps (Catalog, Config, ...) are not initialized while
+          // session.ts itself is still loading, so an eager import is a
+          // temporal-dead-zone cycle.
+          const { SessionModel } = yield* Effect.promise(() => import("./session/model"))
           const history = yield* materializeBlobRefs(blob, yield* store.context(session.id))
           const models = yield* SessionModel.Service
           const resolved = yield* models.resolve(session)
