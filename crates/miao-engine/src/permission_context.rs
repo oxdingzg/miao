@@ -51,6 +51,35 @@ impl HandoffBinding {
         self.source.path()
     }
 
+    /// Admit a run explicitly marked for the future shared Runtime backend.
+    /// Existing legacy run entry points remain fenced after handoff.
+    pub async fn start_run_with_inputs_fenced(
+        &self,
+        session: &str,
+        run: &str,
+        force: bool,
+        lease: &crate::store::SessionLease,
+        runtime: String,
+    ) -> Result<Option<Vec<crate::protocol::Event>>, Error> {
+        uuid::Uuid::parse_str(&runtime)
+            .map_err(|_| Error::Invalid("invalid shared Runtime identity".into()))?;
+        self.snapshot().await?;
+        self.source
+            .start_run_with_shared_authority(
+                session,
+                run,
+                force,
+                lease,
+                Some(crate::permission_source::RunAuthority {
+                    target: self.receipt.target.clone(),
+                    fingerprint: self.receipt.fingerprint.clone(),
+                    runtime,
+                    owner_pid: std::process::id(),
+                }),
+            )
+            .await
+    }
+
     /// Read current rules while rechecking both original migration receipts.
     /// Revoked imported patterns need not remain in the current rule set.
     pub async fn snapshot(&self) -> Result<Snapshot, Error> {
