@@ -396,6 +396,7 @@ export class EngineClient {
     private readonly ephemeral: boolean = false,
     private readonly requestTimeoutMs = 60_000,
     private readonly onDiagnostic?: EngineOptions["onDiagnostic"],
+    readonly sharedPermission?: EngineOptions["sharedPermission"],
   ) {
     const stdout = this.readStdout().catch(() => {
       this.fail(new EngineError("engine_protocol", "miao-engine output stream failed"), true)
@@ -442,6 +443,7 @@ export class EngineClient {
         options.ephemeral ?? false,
         options.requestTimeoutMs,
         options.onDiagnostic,
+        options.sharedPermission,
       )
     } catch (error) {
       manifest?.dispose()

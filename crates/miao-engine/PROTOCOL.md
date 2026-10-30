@@ -1380,7 +1380,7 @@ replay, races and restart do not duplicate notifications; a failed page rolls ba
 Initial policy-final admission emits no fake UI reply. Pending requests released
 by saved rules retain `saved_rules_allowed` and the existing always settlement
 vocabulary. Notifications never authorize execution: host assertions still poll
-live fenced status. Explicit Runtime integration remains unfinished.
+live fenced status. Shared Runtime selection is described below.
 
 ### Explicit shared Runtime selection
 
@@ -1413,3 +1413,26 @@ The shared snapshot/change commands use Root-bound cursors, not legacy Source
 journal sequence numbers. Legacy saved-rule projection remains refused after
 handoff. A timed-out read does not terminate an unrelated active Session, while
 mutations retain the existing fail-closed timeout behavior.
+
+### Managed product migration preview
+
+For the managed native server, `MIAO_SHARED_PERMISSIONS=1` requests the paired
+project/directory migration before starting an owner. The Root is the persistent
+Core database path with `.permissions.db` appended, preserving channel isolation.
+The host verifies exact capabilities and canonical Root placement outside the
+workspace, initializes the Source without model execution, then completes the
+directory handoff before freezing Core project rules. An active legacy native
+run therefore blocks migration before Core freezes. Interrupted handoffs remain
+frozen and retryable; they never fall back to legacy authority.
+
+A persisted project handoff selects shared ownership on subsequent starts even
+when the preview flag is removed. Shared HTTP saved-rule views use Root records,
+preserve imported legacy IDs, and route revocation to Root without reading frozen
+Core rules or projecting legacy directory patterns. Queries for a migrated
+project without its owning native Location fail explicitly. Explicit workspace
+placement, an in-memory Core database and manual legacy saved-rule snapshots are
+unsupported for this startup path and fail before either source freezes.
+
+This preview does not enable migration by default or configure the direct Rust
+TUI shim. Shared changefeed supervision, legacy TS-session retirement and final
+product acceptance remain separate requirements before default activation.

@@ -2,12 +2,8 @@ import { Schema } from "effect"
 import type { EngineClient } from "./client"
 import type { Capabilities } from "./discovery"
 import { NativePermissionPattern } from "./native-permission-pattern"
+import { NativePermissionContext } from "./native-permission-context"
 
-const Counter = Schema.Finite.check(
-  Schema.isInt(),
-  Schema.isGreaterThanOrEqualTo(0),
-  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER),
-)
 const Binding = Schema.Struct({ project: Schema.String, directory: Schema.String, workspace_id: Schema.Null })
 const Source = Schema.Struct({
   workspace: Schema.String,
@@ -16,28 +12,6 @@ const Source = Schema.Struct({
   fingerprint: Schema.String,
   state: Schema.Literals(["prepared", "completed"]),
 })
-const Receipt = Schema.Struct({ fingerprint: Schema.String, imported: Counter })
-const Context = Schema.Struct({
-  project: Schema.Struct({
-    authority: Schema.String,
-    project: Schema.String,
-    revision: Counter,
-    migration: Schema.NullOr(Schema.Struct({ project: Schema.String, ...Receipt.fields })),
-    rules: Schema.Array(
-      Schema.Struct({
-        id: Schema.String,
-        origin: Schema.Literals(["native", "legacy"]),
-        rule: Schema.Struct({ action: Schema.String, resource: Schema.String, effect: Schema.Literal("allow") }),
-      }),
-    ).check(Schema.isMaxLength(512)),
-  }),
-  directory: Schema.String,
-  workspace_id: Schema.Null,
-  revision: Counter,
-  migration: Schema.NullOr(Receipt),
-  patterns: NativePermissionPattern.List.check(Schema.isMaxLength(512)),
-})
-
 /** Explicit trusted-host handoff; the caller owns both model-free controls. */
 export async function handoffNativeDirectoryPermissions(input: {
   projectID: string
@@ -51,7 +25,9 @@ export async function handoffNativeDirectoryPermissions(input: {
     input.capabilities.permissionContextHandoff !== 1
   )
     throw new Error("native directory permission handoff capabilities required before freezing source")
-  const before = Schema.decodeUnknownSync(Context)(await input.destination.request("context_snapshot"))
+  const before = Schema.decodeUnknownSync(NativePermissionContext.Snapshot)(
+    await input.destination.request("context_snapshot"),
+  )
   const binding = Schema.decodeUnknownSync(Binding)(await input.source.request("binding"))
   if (
     before.project.project !== input.projectID ||
@@ -71,7 +47,7 @@ export async function handoffNativeDirectoryPermissions(input: {
     await input.source.request("prepare", { authority: before.project.authority }),
   )
   requireSource(prepared, before)
-  const after = Schema.decodeUnknownSync(Context)(
+  const after = Schema.decodeUnknownSync(NativePermissionContext.Snapshot)(
     await input.destination.request("context_handoff", {
       authority: prepared.target.authority,
       patterns: prepared.patterns,
@@ -89,7 +65,7 @@ export async function handoffNativeDirectoryPermissions(input: {
   return after
 }
 
-function requireSource(source: typeof Source.Type, destination: typeof Context.Type) {
+function requireSource(source: typeof Source.Type, destination: typeof NativePermissionContext.Snapshot.Type) {
   if (
     source.workspace !== destination.directory ||
     source.target.directory !== destination.directory ||
@@ -100,7 +76,7 @@ function requireSource(source: typeof Source.Type, destination: typeof Context.T
     throw new Error("native directory source destination changed")
 }
 
-function requireReceipt(source: typeof Source.Type, destination: typeof Context.Type) {
+function requireReceipt(source: typeof Source.Type, destination: typeof NativePermissionContext.Snapshot.Type) {
   if (
     destination.migration?.fingerprint !== source.fingerprint ||
     destination.migration.imported !== source.patterns.length
