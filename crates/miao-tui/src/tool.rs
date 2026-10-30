@@ -433,6 +433,9 @@ fn search_summary(result: Option<&Value>) -> Option<String> {
     ))
 }
 
+// The render context is flat on purpose: every helper reads the same pieces
+// and a context struct would only rename them at each call site.
+#[allow(clippy::too_many_arguments)]
 fn file(
     out: &mut Vec<Line<'static>>,
     tool: &ToolPart,
@@ -704,6 +707,7 @@ fn task(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generic(
     out: &mut Vec<Line<'static>>,
     tool: &ToolPart,
