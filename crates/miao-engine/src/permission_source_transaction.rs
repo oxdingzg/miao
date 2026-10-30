@@ -31,15 +31,35 @@ impl Source {
         connection: &mut Connection,
         execute: impl FnOnce(&Transaction<'_>) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        with_source(connection, &self.path, &self.context, execute)
+        self.with_root_sources(connection, |transaction, _| execute(transaction))
+    }
+
+    pub(crate) fn with_root_sources<T>(
+        &self,
+        connection: &mut Connection,
+        execute: impl FnOnce(
+            &Transaction<'_>,
+            &[(
+                crate::product_permission::Source,
+                &crate::product_permission::Authority,
+            )],
+        ) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        with_sources(connection, &self.path, &self.context, execute)
     }
 }
 
-fn with_source<T>(
+fn with_sources<T>(
     connection: &mut Connection,
     path: &Path,
     context: &Context,
-    execute: impl FnOnce(&Transaction<'_>) -> Result<T, Error>,
+    execute: impl FnOnce(
+        &Transaction<'_>,
+        &[(
+            crate::product_permission::Source,
+            &crate::product_permission::Authority,
+        )],
+    ) -> Result<T, Error>,
 ) -> Result<T, Error> {
     if !connection.is_autocommit() || !path.is_file() {
         return Err(Error::Invalid(
@@ -102,11 +122,11 @@ fn with_source<T>(
         }
         context
             .bridge
-            .with_permission_authority(&context.source, |_| {
+            .with_permission_sources(&context.source, |sources| {
                 require_active(&transaction, context)?;
                 callback.store(true, Ordering::SeqCst);
                 let guard = CallbackPhase(callback.clone());
-                let result = execute(&transaction);
+                let result = execute(&transaction, sources);
                 drop(guard);
                 let result = result?;
                 require_active(&transaction, context)?;
