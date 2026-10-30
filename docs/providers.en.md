@@ -85,8 +85,8 @@ Connect it with:
 miao auth login mtty
 ```
 
-or set `MTTY_API_KEY`. Credentials are hub API keys (the `mhub_key_` prefix,
-created in the my.mtty.dev console), sent as `Authorization: Bearer`. The
+or set `MTTY_API_KEY`. Credentials are gateway API keys (the `sk-` prefix,
+created in the `/console/` of my.mtty.dev), sent as `Authorization: Bearer`. The
 catalog currently declares `mtty/deepseek-v4-1-flash-261017`; run
 `miao models mtty` to see what the gateway serves.
 
