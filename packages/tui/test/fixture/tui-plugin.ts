@@ -22,7 +22,9 @@ export function createTuiPluginApi(opts: Opts = {}) {
     attention: { notify: async () => ({ ok: false, notification: false, sound: false }), ...opts.attention },
     client: opts.client,
     event: opts.event,
-    keymap: opts.keymap,
+    // Plugins register command layers during setup; a stub keeps setup working
+    // for tests that only render slots.
+    keymap: opts.keymap ?? { registerLayer: () => () => {} },
     kv: {
       get(name: string, fallback?: unknown) {
         return values.has(name) ? values.get(name) : fallback
