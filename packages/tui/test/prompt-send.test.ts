@@ -39,7 +39,7 @@ test("a lost HTTP receipt retries the exact same durable prompt identity", async
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     const body = await request.json()
     ids.push(body.id)
-    if (ids.length === 1) return Response.error()
+    if (ids.length === 1) return new Response(null, { status: 500 })
     return Response.json({ data: { id: body.id } })
   } })
   let retries = 0

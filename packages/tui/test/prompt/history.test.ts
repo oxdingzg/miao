@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { isDuplicateEntry, MAX_HISTORY_ENTRIES, parsePromptHistory, type PromptInfo } from "../../src/prompt/history"
+import {
+  isDuplicateEntry,
+  MAX_HISTORY_ENTRIES,
+  parsePromptHistory,
+  previousHistoryMatch,
+  type PromptInfo,
+} from "../../src/prompt/history"
 
 const entry = (input: string, parts: PromptInfo["parts"] = []): PromptInfo => ({ input, parts })
 
@@ -35,5 +41,28 @@ describe("prompt history", () => {
       { type: "file", mime: "image/png", filename: "b.png", url: "data:image/png;base64,BBB" },
     ])
     expect(isDuplicateEntry(a, b)).toBe(false)
+  })
+
+  test("reverse search walks matching entries oldest-bound without a query", () => {
+    const history = [entry("fix auth"), entry("ship release"), entry("fix docs")]
+    // No query: nothing to match.
+    expect(previousHistoryMatch(history, 0, "", "")).toBeUndefined()
+    // First press from the typed prefix jumps to the newest match.
+    expect(previousHistoryMatch(history, 0, "fix", "fix")?.entry.input).toBe("fix docs")
+    // Each further press walks one matching entry older.
+    expect(previousHistoryMatch(history, -1, "fix", "fix docs")?.entry.input).toBe("fix auth")
+    // Past the oldest match there is nothing left.
+    expect(previousHistoryMatch(history, -3, "fix", "fix auth")).toBeUndefined()
+  })
+
+  test("editing the input restarts the search for the new query", () => {
+    const history = [entry("fix auth"), entry("ship release")]
+    // The cursor parked on a match, but the user changed the typed text.
+    expect(previousHistoryMatch(history, -1, "ship", "something else")?.entry.input).toBe("ship release")
+  })
+
+  test("non-matching queries leave the cursor alone", () => {
+    const history = [entry("fix auth"), entry("ship release")]
+    expect(previousHistoryMatch(history, 0, "zzz", "zzz")).toBeUndefined()
   })
 })
