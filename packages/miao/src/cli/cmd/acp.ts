@@ -32,11 +32,11 @@ export const AcpCommand = cmd({
         headers: ServerAuth.headers({ username: "miao", password: record.credential }),
       })
     })()
+    // Compiled Bun binaries fully buffer process.stdout when it is a pipe, so
+    // ACP responses would only flush at EOF and every client would hang on
+    // initialize. Bun.write(Bun.stdout) bypasses that buffering.
     const output = new WritableStream<Uint8Array>({
-      write: (chunk) =>
-        new Promise<void>((resolve, reject) =>
-          process.stdout.write(chunk, (error) => (error ? reject(error) : resolve())),
-        ),
+      write: (chunk) => Bun.write(Bun.stdout, chunk),
     })
     const callbacks: { data?: (chunk: Buffer) => void; end?: () => void; error?: (error: Error) => void } = {}
     const input = new ReadableStream<Uint8Array>({
