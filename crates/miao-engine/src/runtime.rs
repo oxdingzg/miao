@@ -5058,6 +5058,7 @@ async fn finish_delegation(
     // the same first page forever and the parent waits on a completion it can
     // never observe. Advance the cursor through every appended page instead.
     let mut after = admitted_seq;
+    let mut ticks = 0usize;
     loop {
         tokio::select! {
             _ = cancel.cancelled() => {
@@ -5066,6 +5067,24 @@ async fn finish_delegation(
                 break;
             }
             _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {}
+        }
+        ticks += 1;
+        if ticks.is_multiple_of(5) {
+            // A parent the operator interrupted takes its background children
+            // with it; a parent that finished its own turn on schedule leaves
+            // them running, which is what makes a background task survive.
+            let parent_finished = inner
+                .store
+                .latest_event(parent, "run.finished")
+                .await
+                .map_err(|_| ToolError::External("subagent events unavailable".into()))?;
+            if parent_finished
+                .is_some_and(|event| event.data["reason"].as_str() == Some("interrupted"))
+            {
+                let _ = cancel_session(inner, child).await;
+                reason = "cancelled";
+                break;
+            }
         }
         let finished = loop {
             let events = inner
@@ -5089,6 +5108,22 @@ async fn finish_delegation(
         }
     }
     drop(permit);
+    // The stop reason reflects how the child actually ended: a child the
+    // operator cancelled is "cancelled", not a completed turn with no text.
+    if reason == "completed" {
+        if let Some(event) = inner
+            .store
+            .latest_event(child, "run.finished")
+            .await
+            .map_err(|_| ToolError::External("subagent events unavailable".into()))?
+        {
+            reason = match event.data["reason"].as_str() {
+                Some("interrupted") => "cancelled",
+                Some("failed") => "failed",
+                _ => "completed",
+            };
+        }
+    }
     let history = inner
         .store
         .history(child)
