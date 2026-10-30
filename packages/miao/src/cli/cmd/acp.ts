@@ -1,3 +1,4 @@
+import { writeSync } from "node:fs"
 import path from "node:path"
 import { cmd } from "./cmd"
 import { withNetworkOptions, hasArg, resolveNetworkOptionsNoConfig } from "../network"
@@ -34,9 +35,15 @@ export const AcpCommand = cmd({
     })()
     // Compiled Bun binaries fully buffer process.stdout when it is a pipe, so
     // ACP responses would only flush at EOF and every client would hang on
-    // initialize. Bun.write(Bun.stdout) bypasses that buffering.
+    // initialize. writeSync on fd 1 goes straight to the kernel with no
+    // intermediate buffering in either source or compiled mode.
     const output = new WritableStream<Uint8Array>({
-      write: (chunk) => Bun.write(Bun.stdout, chunk),
+      write: (chunk) => {
+        let offset = 0
+        while (offset < chunk.length) {
+          offset += writeSync(1, chunk.subarray(offset))
+        }
+      },
     })
     const callbacks: { data?: (chunk: Buffer) => void; end?: () => void; error?: (error: Error) => void } = {}
     const input = new ReadableStream<Uint8Array>({
