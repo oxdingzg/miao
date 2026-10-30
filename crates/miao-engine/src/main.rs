@@ -69,6 +69,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "permission_project_handoff": 1,
                 "permission_context_handoff": 1,
                 "permission_source_handoff": 1,
+                "permission_source_initialize": 1,
+                "shared_permission_runtime": 1,
                 "product_permission_requests": 1,
                 "product_permission_replies": 1,
                 "product_permission_cancel": 1,
@@ -80,7 +82,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
-    if args.first().map(String::as_str) == Some("permission-source") {
+    if matches!(
+        args.first().map(String::as_str),
+        Some("permission-source" | "permission-source-init")
+    ) {
         let (flags, remainder) = args[1..].as_chunks::<2>();
         let mut options = HashMap::new();
         for flag in flags {
@@ -100,6 +105,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             &options["--db"],
             options["--project"].clone(),
             &options["--directory"],
+            args[0] == "permission-source-init",
         )
         .await;
         if let Err(error) = &result {
@@ -294,7 +300,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\n       miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]\n       miao-engine permission-source --db PATH --project ID --directory PATH\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\n       miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]\n       miao-engine permission-source --db PATH --project ID --directory PATH\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
         std::process::exit(2);
     }
     let acp = mode == Some("acp");
@@ -345,6 +351,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--http",
             "--http-token",
             "--http-idle-ms",
+            "--permission-root-db",
+            "--permission-project",
         ]
         .contains(&flag[0].as_str())
             || options.insert(flag[0].clone(), flag[1].clone()).is_some()
@@ -354,6 +362,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     if !remainder.is_empty() {
         return Err("missing option value".into());
+    }
+    if options.contains_key("--permission-root-db") != options.contains_key("--permission-project")
+    {
+        return Err(
+            "--permission-root-db and --permission-project must be selected together".into(),
+        );
     }
     let db = options.get("--db").ok_or("--db is required")?;
     let workspace = options
@@ -798,15 +812,54 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok::<_, miao_engine::protocol::Error>(agent)
         })
         .transpose()?;
-    let runtime = Runtime::with_policy_agent_and_tool_replay(
-        Store::open(db).await?,
-        provider,
-        tools,
-        policy,
-        replay,
-        default_agent,
-    )
-    .await?;
+    let runtime = match (
+        options.get("--permission-root-db"),
+        options.get("--permission-project"),
+    ) {
+        (Some(root), Some(project)) => {
+            if replay.is_some() {
+                return Err(
+                    "shared permissions cannot use a fresh diagnostic replay database".into(),
+                );
+            }
+            if !tokio::fs::metadata(root).await?.is_file() {
+                return Err(
+                    "shared permission selection requires an existing Root database".into(),
+                );
+            }
+            let authority = miao_engine::permission_project::Authority::open(root).await?;
+            let context = authority
+                .project(project.clone())?
+                .context(tools.location(), None)
+                .await?;
+            let source = Store::open(db).await?;
+            let binding = context.bind_handoff(&source).await?;
+            Runtime::with_shared_permissions_and_agent(
+                binding,
+                provider,
+                tools,
+                policy,
+                default_agent,
+            )
+            .await?
+        }
+        (None, None) => {
+            Runtime::with_policy_agent_and_tool_replay(
+                Store::open(db).await?,
+                provider,
+                tools,
+                policy,
+                replay,
+                default_agent,
+            )
+            .await?
+        }
+        _ => {
+            return Err(
+                "--permission-root-db and --permission-project must be selected together".into(),
+            )
+        }
+    };
     if let Some(limits) = context_limits {
         runtime.set_context_limits(Some(limits)).await;
     }
@@ -1024,11 +1077,19 @@ async fn serve_permissions(
     serve_permission_control(|value| controller.dispatch(value)).await
 }
 
-async fn serve_permission_source(path: &str, project: String, directory: &str) -> io::Result<()> {
-    let controller =
-        miao_engine::permission_source_control::Controller::open(path, project, directory)
+async fn serve_permission_source(
+    path: &str,
+    project: String,
+    directory: &str,
+    initialize: bool,
+) -> io::Result<()> {
+    let controller = if initialize {
+        miao_engine::permission_source_control::Controller::initialize(path, project, directory)
             .await
-            .map_err(io::Error::other)?;
+    } else {
+        miao_engine::permission_source_control::Controller::open(path, project, directory).await
+    }
+    .map_err(io::Error::other)?;
     let result = serve_permission_control(|value| controller.dispatch(value)).await;
     controller.close().await.map_err(io::Error::other)?;
     result
