@@ -785,3 +785,69 @@ async fn a_usage_only_frame_without_choices_is_not_fatal() {
     assert_eq!(reply.content[0]["text"], "answer");
     server.await.unwrap();
 }
+
+/// The opencode-go gateway opens a streamed call with a fully null-filled
+/// placeholder frame: `"type":null`, `"id":null`, `"name":null`, empty
+/// arguments. Reading the explicit null as a non-function type rejected the
+/// whole reply, and tracking the placeholder as a call would leave an
+/// identity-less call that failed the turn at `finish`.
+#[tokio::test]
+async fn a_null_filled_tool_call_placeholder_does_not_fail_the_reply() {
+    let body = frames(
+        vec![
+            chunk(
+                json!({
+                    "content":"",
+                    "reasoning_content":null,
+                    "role":null,
+                    "tool_calls":[{"function":{"arguments":"","name":null},"id":null,"index":0,"type":null}]
+                }),
+                json!(null),
+            ),
+            chunk(json!({"content":"ok"}), json!(null)),
+            chunk(json!({}), json!("stop")),
+        ],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(!reply.needs_tools);
+    assert_eq!(reply.content[0]["text"], "ok");
+    assert!(reply
+        .content
+        .as_array()
+        .is_some_and(|parts| parts.iter().all(|part| part["type"] != "tool_use")));
+    server.await.unwrap();
+}
+
+/// A real call whose first frame carries `"type":null` must still begin; only
+/// the frame that names nothing at all is a placeholder.
+#[tokio::test]
+async fn a_null_type_still_starts_a_named_call() {
+    let body = frames(
+        vec![
+            chunk(
+                json!({"tool_calls":[{"index":0,"id":"call_1","type":null,"function":{"name":"read_file","arguments":"{\"path\":\"a\"}"}}]}),
+                json!(null),
+            ),
+            chunk(json!({}), json!("tool_calls")),
+        ],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(reply.needs_tools);
+    assert_eq!(reply.content[0]["id"], "call_1");
+    assert_eq!(reply.content[0]["input"]["path"], "a");
+    server.await.unwrap();
+}
