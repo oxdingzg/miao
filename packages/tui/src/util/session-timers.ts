@@ -52,3 +52,46 @@ export function sessionTimerRows(activity: SessionsActivityOutput, now: number) 
     : []
   return [...pending, ...schedules, ...jobs, ...unknown]
 }
+
+/**
+ * One row per background item for the `/tasks` view: queued notices, wakeups,
+ * and every job (running, finished, failed, cancelled) — the full list the live
+ * timer row trims to a few lines, so a reader can see everything a long turn
+ * left running.
+ */
+export function taskRows(activity: SessionsActivityOutput, now: number) {
+  const rows: { id: string; title: string; detail?: string }[] = []
+  if (activity.pendingNotifications > 0)
+    rows.push({
+      id: "pending",
+      title: `${activity.pendingNotifications} notification(s) queued`,
+      detail: "waiting for a session boundary",
+    })
+  for (const schedule of activity.schedules) {
+    const due = schedule.nextAt > now ? `next in ${timerDuration(schedule.nextAt - now)}` : "due"
+    rows.push({
+      id: `schedule:${schedule.id}`,
+      title: `${schedule.recurring ? "Recurring check" : "Wakeup"} · ${due}`,
+      detail: `waited ${timerDuration(now - schedule.createdAt)}`,
+    })
+  }
+  for (const job of activity.jobs) {
+    const elapsed = job.startedAt === null ? undefined : Math.max(0, (job.completedAt ?? now) - job.startedAt)
+    const status =
+      job.status === "running"
+        ? "running"
+        : job.status === "completed"
+          ? "finished"
+          : job.status === "cancelled"
+            ? "cancelled"
+            : "failed"
+    rows.push({
+      id: `job:${job.id}`,
+      title: `${status} · ${(job.title ?? job.id).split("\n")[0].replace(/\s+/g, " ")}`,
+      detail: [elapsed === undefined ? "duration unknown" : timerDuration(elapsed), job.error]
+        .filter((part): part is string => Boolean(part))
+        .join(" · "),
+    })
+  }
+  return rows
+}
