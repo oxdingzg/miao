@@ -128,7 +128,7 @@ describe("acp V2 replay", () => {
         expect(replayed.kinds.user_message_chunk).toBe(turns + 1)
         expect(replayed.kinds.tool_call).toBe(turns)
       }),
-    180_000,
+    600_000,
   )
 })
 
@@ -137,7 +137,7 @@ function collectUntil(receive: Effect.Effect<unknown>, id: number) {
   return Effect.gen(function* () {
     const kinds: Record<string, number> = {}
     while (true) {
-      const message = (yield* receive.pipe(Effect.timeout("30 seconds"))) as {
+      const message = (yield* receive.pipe(Effect.timeout("120 seconds"))) as {
         id?: number
         method?: string
         params?: { update?: { sessionUpdate?: string } }

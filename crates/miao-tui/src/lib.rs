@@ -16,6 +16,7 @@ pub mod session;
 pub mod state;
 pub mod status;
 pub mod terminal;
+pub mod terminal_title;
 pub mod theme;
 pub mod tool;
 pub mod transport;
@@ -66,6 +67,11 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         config.attention,
         startup,
     );
+    app.configure_terminal_title(
+        state::preferences().terminal_title_enabled.unwrap_or(true),
+        !std::env::var("MIAO_DISABLE_TERMINAL_TITLE")
+            .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true")),
+    );
     let preferences = terminal::Preferences {
         mouse: config.mouse,
         cursor: config.cursor,
@@ -75,13 +81,12 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         .build()?;
     let termination = {
         let _entered = runtime.enter();
-        platform::signals::termination()?
+        platform::signals::Signals::new()?
     };
     let _restore = terminal::RestoreGuard;
     let mut terminal = terminal::init(preferences)?;
     terminal::install_panic_hook();
     let (bus, mut events) = event::bus();
-    input::spawn(bus.clone());
     runtime.block_on(drive(
         &mut terminal,
         &mut app,
@@ -100,9 +105,8 @@ async fn drive(
     bus: event::Bus,
     launch: Launch,
     preferences: terminal::Preferences,
-    termination: impl std::future::Future<Output = ()>,
+    mut termination: platform::signals::Signals,
 ) -> Result<(), Box<dyn Error>> {
-    tokio::pin!(termination);
     match engine::settings(
         &launch.workspace,
         launch.db,
@@ -126,8 +130,11 @@ async fn drive(
         Err(message) => app.handle(AppEvent::EngineFailure(message)),
     }
     app.set_bus(bus.clone());
+    let input = input::spawn(bus);
     app.start();
+    let mut title = terminal_title::Title::new(std::io::stdout());
     loop {
+        title.update(app.terminal_title().as_deref())?;
         terminal.draw(|frame| app.render(frame))?;
         if std::env::var_os("MIAO_TUI_TEST_PANIC").is_some() {
             panic!("miao-tui: injected panic (MIAO_TUI_TEST_PANIC)");
@@ -144,17 +151,36 @@ async fn drive(
             false => Duration::from_secs(60),
         };
         tokio::select! {
-            _ = &mut termination => return Ok(()),
+            _ = termination.next() => return Ok(()),
             event = events.recv() => match event {
                 Some(app_event) => {
+                    if matches!(&app_event, AppEvent::Focus(true) | AppEvent::Resize { .. }) {
+                        title.invalidate();
+                    }
                     app.handle(app_event);
                     if app.take_redraw_request() {
                         terminal::redraw(terminal)?;
                     }
                     if let Some(request) = app.take_editor_request() {
+                        let paused = input.pause()?;
                         terminal::suspend();
-                        let result = platform::editor::run(&request);
+                        let editor = platform::editor::run(&request);
+                        tokio::pin!(editor);
+                        let result = loop {
+                            tokio::select! {
+                                biased;
+                                signal = termination.next() => {
+                                    // Cooked Ctrl+C also reaches the foreground
+                                    // editor. Let it cancel editing, not the UI.
+                                    if signal == platform::signals::Signal::Exit {
+                                        return Ok(());
+                                    }
+                                }
+                                result = &mut editor => break result,
+                            }
+                        };
                         terminal::resume(terminal, preferences)?;
+                        drop(paused);
                         app.handle(AppEvent::EditorFinished(result));
                     }
                 }

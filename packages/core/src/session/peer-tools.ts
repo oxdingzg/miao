@@ -32,6 +32,7 @@ export interface PeerRow {
   readonly title: string
   readonly parent_id: string | null
   readonly lastActivity: number
+  readonly directory: string
 }
 
 /** The live peer facts `list_sessions` and `send_message` act on. */
@@ -108,6 +109,7 @@ export const make = (input: Dependencies): Readonly<Record<string, AnyTool>> => 
             title: work.title ?? row.title,
             ...(row.parent_id === null ? {} : { parentID: row.parent_id }),
             lastActivity: work.lastActivity ?? row.lastActivity,
+            directory: row.directory,
             execution: work.execution,
             task: work.task,
             backgroundJobs: work.backgroundJobs,
@@ -126,6 +128,13 @@ export const make = (input: Dependencies): Readonly<Record<string, AnyTool>> => 
             if (request.search === undefined) return true
             const needle = request.search.toLocaleLowerCase()
             return row.title.toLocaleLowerCase().includes(needle)
+          })
+          // A directory filter narrows the same list: Sessions in or under the
+          // requested path, matched on the normalized stored directory.
+          .filter((row) => {
+            if (request.directory === undefined) return true
+            const root = request.directory.replace(/\/$/, "")
+            return row.directory === root || row.directory.startsWith(`${root}/`)
           })
           .sort((a, b) => Number(b.active) - Number(a.active) || b.lastActivity - a.lastActivity)
           .slice(0, 50)
@@ -324,6 +333,7 @@ export const listPeerRows = (input: { db: Database.Interface["db"]; sender: Sess
       title: SessionTable.title,
       parent_id: SessionTable.parent_id,
       lastActivity: SessionTable.time_updated,
+      directory: SessionTable.directory,
     })
     .from(SessionTable)
     .where(
