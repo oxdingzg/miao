@@ -1,4 +1,6 @@
 import { isDefaultTitle } from "./session"
+import { Locale } from "./locale"
+import type { SessionStatus } from "@miao/schema/view-models"
 
 const segments = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 
@@ -21,4 +23,23 @@ export function terminalTitle(input: string) {
  */
 export function tabTitle(input: { title: string; prompt?: string }) {
   return terminalTitle(isDefaultTitle(input.title) ? (input.prompt ?? "") : input.title)
+}
+
+/**
+ * The terminal title for a Session, carrying a liveness marker only while a
+ * turn runs. A frozen elapsed timer cannot tell a hung session from a finished
+ * one, so the marker's clock advances only during an active turn: a title that
+ * keeps counting is the one signal that survives a tab switch and proves the
+ * session is progressing rather than stalled. An idle Session reads as its
+ * plain title — the "ready for input" state — so the presence or absence of
+ * `⏳` distinguishes working from done at a glance.
+ */
+export function sessionTitle(input: { title: string; prompt?: string; status?: SessionStatus; now: number }) {
+  const base = tabTitle({ title: input.title, prompt: input.prompt })
+  const status = input.status
+  if (status?.type !== "busy" && status?.type !== "retry") return base
+  const label = status.type === "retry" ? "retrying" : "working"
+  const since = status.type === "busy" ? status.since : undefined
+  if (since === undefined) return `⏳ ${label} · ${base}`
+  return `⏳ ${label} ${Locale.duration(Math.max(0, input.now - since))} · ${base}`
 }

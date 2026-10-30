@@ -61,6 +61,12 @@ pub enum Request {
         command: Value,
     },
     NewSession,
+    /// One `!` command for the host shell. It records in the Session without
+    /// starting a provider turn, so nothing here touches the model.
+    Shell {
+        session_id: String,
+        command: String,
+    },
     /// Interrupt the active run; idle Sessions answer `accepted: false`.
     Cancel {
         session_id: String,
@@ -202,6 +208,13 @@ impl Handle {
 
     pub fn new_session(&self) {
         let _ = self.tx.send(Request::NewSession);
+    }
+
+    pub fn shell(&self, session_id: &str, command: &str) {
+        let _ = self.tx.send(Request::Shell {
+            session_id: session_id.to_string(),
+            command: command.to_string(),
+        });
     }
 
     pub fn cancel(&self, session_id: &str) {
@@ -585,6 +598,20 @@ async fn run(
                         }),
                     }
                 }
+                Some(Request::Shell {
+                    session_id,
+                    command,
+                }) => match client.shell(&session_id, &new_id("sh"), &command).await {
+                    Ok(_) => {
+                        if open.as_ref().is_some_and(|state| state.id == session_id) {
+                            dirty.get_or_insert_with(Instant::now);
+                        }
+                    }
+                    Err(error) => bus.send(AppEvent::ShellFailed {
+                        command,
+                        message: format!("shell failed: {error}"),
+                    }),
+                },
                 Some(Request::Cancel { session_id }) => {
                     match client.cancel(&session_id).await {
                         Ok(_) => {

@@ -58,6 +58,7 @@ impl Harness {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn spawn_configured(
         label: &str,
         inject_panic: bool,

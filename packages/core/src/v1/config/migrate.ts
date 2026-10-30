@@ -39,8 +39,22 @@ function isV1Mcp(mcp: unknown) {
   return Object.keys(mcp).some((key) => key !== "servers" && key !== "timeout")
 }
 
+// JSON has no `undefined`: a key the source document never set must stay
+// absent, or the merge treats the materialized key as a leaf and overrides
+// an earlier document's value with nothing (a V1 file without `model` would
+// silently reset the model a higher-priority document set).
+function present(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(present)
+  if (typeof value !== "object" || value === null) return value
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .map(([key, item]) => [key, present(item)]),
+  )
+}
+
 export function migrate(info: typeof ConfigV1.Info.Type) {
-  return {
+  const migrated = {
     $schema: info.$schema,
     shell: info.shell,
     model: info.model,
@@ -85,6 +99,7 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
         : undefined,
     providers: providers(info.provider, info.disabled_providers),
   }
+  return present(migrated) as typeof migrated
 }
 
 function permissions(info?: ConfigPermissionV1.Info, tools?: Readonly<Record<string, boolean>>) {
@@ -125,7 +140,7 @@ export function migrateAgent(info: ConfigAgentV1.Info) {
     ...(info.temperature === undefined ? {} : { temperature: info.temperature }),
     ...(info.top_p === undefined ? {} : { top_p: info.top_p }),
   }
-  return {
+  const agent = {
     model: info.model,
     variant: info.variant,
     request: Object.keys(body).length ? { body } : undefined,
@@ -139,6 +154,7 @@ export function migrateAgent(info: ConfigAgentV1.Info) {
     disabled: info.disable,
     permissions: permissions(info.permission),
   }
+  return present(agent) as typeof agent
 }
 
 function mcp(info: typeof ConfigV1.Info.Type) {

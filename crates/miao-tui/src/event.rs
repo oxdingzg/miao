@@ -85,6 +85,12 @@ pub enum AppEvent {
         attachments: Vec<Value>,
         message: String,
     },
+    /// A `!` command the engine refused. The UI restores the command in shell
+    /// mode so it can be edited and retried.
+    ShellFailed {
+        command: String,
+        message: String,
+    },
     /// A terminal engine failure; the task stops after sending it.
     EngineFailure(String),
 }
