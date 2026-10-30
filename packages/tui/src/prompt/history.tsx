@@ -26,6 +26,34 @@ export type PromptInfo = {
 
 export const MAX_HISTORY_ENTRIES = 50
 
+/**
+ * Zsh-style history-search-backward: walk one matching entry older than
+ * `index`. The current input is the query; a mismatch between the entry the
+ * cursor parked on and the typed input means the user edited it, so the
+ * search restarts from the newest match for the new query.
+ */
+export function previousHistoryMatch(
+  history: readonly PromptInfo[],
+  index: number,
+  query: string,
+  typed: string,
+): { index: number; entry: PromptInfo } | undefined {
+  if (!history.length || !query) return undefined
+  const current = history.at(index)
+  // The cursor parked on a different text than what is typed now: the user
+  // edited the input, so the search restarts from the newest entry.
+  const start = index !== 0 && current && current.input !== typed ? 0 : index
+  let next = start === 0 ? -1 : start - 1
+  while (next < 0 && Math.abs(next) <= history.length) {
+    const candidate = history.at(next)
+    if (candidate?.input.includes(query)) {
+      return { index: next, entry: candidate }
+    }
+    next -= 1
+  }
+  return undefined
+}
+
 export function parsePromptHistory(text: string) {
   return text
     .split("\n")
@@ -81,6 +109,14 @@ export const { use: usePromptHistory, provider: PromptHistoryProvider } = create
         )
         if (store.index === 0) return { input: "", parts: [] }
         return store.history.at(store.index)
+      },
+      // Zsh-style history-search-backward: the current input is the query, and
+      // each press walks one more matching entry older. Editing the input resets
+      // the search to the newest match for the new query.
+      searchBackward(query: string, input: string) {
+        const match = previousHistoryMatch(store.history, store.index, query, input)
+        if (match) setStore("index", match.index)
+        return match?.entry
       },
       append(item: PromptInfo) {
         const entry = structuredClone(unwrap(item))

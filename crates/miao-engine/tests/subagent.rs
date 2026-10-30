@@ -1292,27 +1292,28 @@ async fn cancelling_the_parent_run_settles_its_background_child() {
     let parent_run = store.active_run("parent").await.unwrap().unwrap();
     // Cancelling the parent run must carry the child to a terminal state.
     runtime.cancel_if("parent", &parent_run).await.unwrap();
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+    let stop = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             let child_active = store.active_run(&child).await.unwrap();
             let parent_active = store.active_run("parent").await.unwrap();
+            // Clearing the active run precedes the watcher's durable report.
+            // Wait for the report itself rather than racing its separate write.
+            let stop = store
+                .events("parent", 0, 500)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|event| event.kind == "subagent_stop" && event.data["subagent_id"] == child);
             if child_active.is_none() && parent_active.is_none() {
-                break;
+                if let Some(stop) = stop {
+                    break stop;
+                }
             }
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
     })
     .await
-    .unwrap();
-    let stop = store
-        .events("parent", 0, 500)
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|event| event.kind == "subagent_stop");
-    assert!(
-        stop.is_some(),
-        "the child reports a terminal state to the parent"
-    );
+    .expect("the child reports a terminal state to the parent");
+    assert_eq!(stop.data["reason"], json!("cancelled"));
     runtime.shutdown().await;
 }
