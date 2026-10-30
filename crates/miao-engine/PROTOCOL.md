@@ -1351,3 +1351,12 @@ committing inbox promotion and the run. Active shared placement is immutable,
 while same-directory input admission remains available. Default Runtime startup
 still uses the legacy entry; this storage boundary alone does not activate the
 shared rule/approval backend or authorize a provider/tool operation.
+
+Shared authority schema v5 records the actual source database, run, captured lease
+epoch and PID in each request and binds them into its source/input hash. Source
+metadata is immutable. Reads, replies and sibling settlement validate the captured
+epoch, including a same-PID rewrite of both the run and lease. Schema-v4 pending
+requests lack a provable durable source: upgrade retains history and cancels them
+with `source_metadata_unavailable`, never retries a provider or changes saved
+rules. Old request INSERTs without metadata are refused. A corrupt old request
+rolls back the entire upgrade, preserving Root identity, rules and rule cursors.

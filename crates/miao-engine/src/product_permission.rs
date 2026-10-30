@@ -28,6 +28,7 @@ pub struct Request {
 #[derive(Clone)]
 pub(crate) struct Authority {
     pub run_id: String,
+    pub lease_epoch: u64,
     pub context: CallContext,
     pub policy_revision: String,
     pub configured: Option<Vec<Rule>>,
@@ -43,11 +44,12 @@ impl Store {
         run: String,
         call: String,
         workspace: String,
+        lease_epoch: u64,
     ) -> Result<Vec<Rule>, Error> {
         self.call(move |connection| {
             let transaction = connection.transaction()?;
             let active = source_active(&transaction, &session, &run, &call, &workspace)?;
-            if !active {
+            if !active || !source_epoch_matches(&transaction, &run, lease_epoch, false)? {
                 return Err(Error::Invalid("inactive product permission source".into()));
             }
             let rules = crate::permission_saved::rules(&transaction, &workspace)?;
@@ -82,6 +84,20 @@ pub(crate) fn source_active_in(
     Ok(connection.query_row(
         &format!("SELECT EXISTS(SELECT 1 FROM {schema}engine_tool t JOIN {schema}engine_run r ON r.id=t.run_id JOIN {schema}engine_location l ON l.session_id=r.session_id JOIN {schema}engine_lease e ON e.session_id=r.session_id WHERE t.id=?1 AND t.state='dispatched' AND r.id=?2 AND r.session_id=?3 AND r.state='running' AND l.root=?4 AND r.lease_epoch=e.epoch AND e.owner_pid=?5)"),
         params![format!("{run}/{call}"), run, session, workspace, std::process::id()],
+        |row| row.get(0),
+    )?)
+}
+
+pub(crate) fn source_epoch_matches(
+    connection: &Connection,
+    run: &str,
+    epoch: u64,
+    attached: bool,
+) -> Result<bool, Error> {
+    let schema = if attached { "permission_source." } else { "" };
+    Ok(connection.query_row(
+        &format!("SELECT EXISTS(SELECT 1 FROM {schema}engine_run WHERE id=?1 AND lease_epoch=?2)"),
+        params![run, epoch],
         |row| row.get(0),
     )?)
 }
