@@ -1,0 +1,34 @@
+{
+  "binary_sha256": "5d01a21d8016f32376df12ba0335761286ba53224a7e184672a60c2ff4edd510",
+  "schema": 2,
+  "expected": {
+    "authority": "a063c86b-b3a5-4a42-9d06-25484cd6dd3c",
+    "migration": {
+      "fingerprint": "d6d98409ef80d0516f505632455e765067db6040ea797b90a2f9e911190a885d",
+      "imported": 2,
+      "project": "fixture-project"
+    },
+    "project": "fixture-project",
+    "revision": 3,
+    "rules": [
+      {
+        "id": "legacy-b",
+        "origin": "legacy",
+        "rule": {
+          "action": "read",
+          "effect": "allow",
+          "resource": "public/**"
+        }
+      },
+      {
+        "id": "psv_native_project_16c86c9e996581da2a6081eb0d7781ba949a9d552cca425d3833e653b1ce779b",
+        "origin": "native",
+        "rule": {
+          "action": "read",
+          "effect": "allow",
+          "resource": "native/**"
+        }
+      }
+    ]
+  }
+}
