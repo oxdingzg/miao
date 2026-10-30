@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::commands::{self, Builtin};
 use crate::dialogs::{AccountInfo, Action as DialogAction, ConfirmKind, Dialog, ModelInfo, Row};
-use crate::editor::Action;
+use crate::editor::{Action, Mode};
 use crate::engine;
 use crate::event::{AppEvent, Bus};
 use crate::keybinds::{self, Keymap};
@@ -522,6 +522,10 @@ impl App {
                 self.shell.composer.restore_with(&text, attachments);
                 self.shell.composer.notice = Some(message);
             }
+            AppEvent::ShellFailed { command, message } => {
+                self.shell.composer.restore_shell(&command);
+                self.shell.composer.notice = Some(message);
+            }
             AppEvent::EngineFailure(message) => {
                 self.home.set_notice(Some(message.clone()));
                 self.shell.set_message(&message);
@@ -624,6 +628,14 @@ impl App {
             Some(keybinds::Action::StashDraft) => self.run_builtin(Builtin::StashDraft),
             Some(keybinds::Action::EditorOpen) => self.run_builtin(Builtin::Editor),
             Some(keybinds::Action::CopyMessage) => self.copy_last_response(),
+            Some(keybinds::Action::ToolOutputToggle) => {
+                let expanded = self.shell.toggle_tool_expansion();
+                self.notice(if expanded {
+                    "Tool output expanded"
+                } else {
+                    "Tool output folded"
+                });
+            }
             Some(keybinds::Action::AppExit) => self.run_builtin(Builtin::Quit),
             Some(keybinds::Action::TerminalRedraw) => self.redraw_requested = true,
             Some(keybinds::Action::TerminalSuspend) => self.run_builtin(Builtin::Suspend),
@@ -1315,6 +1327,24 @@ impl App {
                     engine.new_session();
                 }
             }
+            // Numbered slots open the n-th row of the list as it is shown, so a
+            // pinned Session keeps its number instead of needing a search.
+            (KeyCode::Char(digit @ '1'..='9'), KeyModifiers::NONE) => {
+                let slot = digit as usize - '1' as usize;
+                let selected = self.home.slot(slot).map(|row| row.id.clone());
+                if let (Some(id), Some(engine)) = (selected, self.engine.as_ref()) {
+                    engine.open(&id);
+                }
+            }
+            (KeyCode::Char('p'), KeyModifiers::NONE) => {
+                let selected = self
+                    .home
+                    .current()
+                    .map(|row| (row.id.clone(), row.pinned_at_ms.is_none()));
+                if let (Some((id, pinned)), Some(engine)) = (selected, self.engine.as_ref()) {
+                    engine.pin(&id, pinned);
+                }
+            }
             _ => {}
         }
     }
@@ -1323,6 +1353,12 @@ impl App {
         let action = |action| self.keys.matches(action, &key);
         if action(keybinds::Action::SessionInterrupt) {
             if self.shell.composer.dismiss_completion() {
+                return;
+            }
+            // `!` mode owns Escape: leaving the command is cheaper than
+            // leaving the Session, and the typed command survives.
+            if self.shell.composer.mode() == Mode::Shell {
+                self.shell.composer.set_mode(Mode::Normal);
                 return;
             }
             if self.reject_question() {
@@ -1397,6 +1433,7 @@ impl App {
             Action::None => {}
             Action::Quit => self.quit = true,
             Action::Submit { text, attachments } => self.submit(text, attachments),
+            Action::Shell { command } => self.run_shell(command),
         }
     }
 
@@ -1591,9 +1628,13 @@ impl App {
     }
 
     fn update_status(&mut self) {
+        // The composer mirrors the durable queue every frame so the count stays
+        // live without the composer owning it.
+        self.shell.composer.queued = self.state.pending;
         if self.screen != Screen::Session {
             self.shell.title.set_status(None);
             self.shell.title.set_status_alert(false);
+            self.shell.composer.queued = 0;
             return;
         }
         let now = Instant::now();
@@ -1689,6 +1730,23 @@ impl App {
             None => text,
         };
         engine.prompt(&session_id, &text, attachments);
+    }
+
+    /// `!` runs on the Session's host shell through the engine. The engine
+    /// records the command and its output in the Session, so it is visible to
+    /// the operator without becoming model context.
+    fn run_shell(&mut self, command: String) {
+        let session_id = self.session.as_ref().map(|session| session.id.clone());
+        let Some(engine) = self.engine.clone() else {
+            self.shell.composer.restore_shell(&command);
+            return;
+        };
+        let Some(session_id) = session_id else {
+            self.shell.composer.restore_shell(&command);
+            return;
+        };
+        self.shell.composer.notice = None;
+        engine.shell(&session_id, &command);
     }
 
     fn leave_session(&mut self) {
@@ -2130,6 +2188,27 @@ mod tests {
     }
 
     #[test]
+    fn the_composer_mirrors_the_queued_count_every_frame() {
+        let mut app = session_app();
+        let state = SessionState {
+            active_run: Some("run-1".into()),
+            ..SessionState::default()
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state,
+        });
+        assert_eq!(app.shell.composer.queued, 0);
+        app.state.pending = 3;
+        app.update_status();
+        assert_eq!(app.shell.composer.queued, 3);
+        app.state.pending = 0;
+        app.update_status();
+        assert_eq!(app.shell.composer.queued, 0);
+    }
+
+    #[test]
     fn esc_interrupts_an_active_run_instead_of_leaving() {
         let mut app = session_app();
         let state = SessionState {
@@ -2394,6 +2473,109 @@ mod tests {
         app.handle(opened(Transcript::default(), None));
         assert!(app.draft.is_none());
         assert!(app.shell.draft().is_empty());
+    }
+
+    fn home_with(rows: Vec<SessionSummary>) -> App {
+        let mut app = app();
+        // The home list is fed by `Sessions`; `Catalog` only fills the session
+        // catalog and answers `--continue`.
+        app.handle(AppEvent::Sessions(rows));
+        app
+    }
+
+    #[test]
+    fn numbered_slots_open_the_row_the_list_shows() {
+        let mut app = home_with(vec![
+            summary("ses_first", 300),
+            summary("ses_second", 200),
+            summary("ses_third", 100),
+        ]);
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Char('3'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Open(id)) if id == "ses_third"
+        ));
+        // A slot past the end opens nothing instead of opening the last row.
+        app.handle(key(KeyCode::Char('9'), KeyModifiers::NONE));
+        assert!(requests.try_recv().is_err());
+    }
+
+    #[test]
+    fn p_toggles_the_pin_of_the_selected_row() {
+        let mut app = home_with(vec![summary("ses_pin", 100)]);
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Char('p'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Pin { session_id, pinned: true }) if session_id == "ses_pin"
+        ));
+        // A pinned row unpins, so the key is a toggle rather than pin-only.
+        let mut pinned = summary("ses_pinned", 200);
+        pinned.pinned_at_ms = Some(1);
+        let mut app = home_with(vec![pinned]);
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Char('p'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Pin { session_id, pinned: false }) if session_id == "ses_pinned"
+        ));
+    }
+
+    #[test]
+    fn esc_leaves_shell_mode_before_it_leaves_the_session() {
+        let mut app = session_app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.shell.composer.set_mode(Mode::Shell);
+        app.shell.composer.editor.set_text("ls");
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Session);
+        assert_eq!(app.shell.composer.mode(), Mode::Normal);
+        // The typed command survives leaving the mode.
+        assert_eq!(app.shell.composer.editor.text(), "ls");
+        assert!(requests.try_recv().is_err(), "no interrupt was requested");
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Home);
+    }
+
+    #[test]
+    fn a_bang_command_runs_through_the_engine_instead_of_the_model() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_shell", 10)),
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        let session = app.session.as_ref().expect("session").id.clone();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        for c in ['!', 'e', 'c', 'h', 'o', ' ', 'h', 'i'] {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        assert_eq!(app.shell.composer.mode(), Mode::Shell);
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        let mut sent = Vec::new();
+        while let Ok(request) = requests.try_recv() {
+            sent.push(request);
+        }
+        assert!(
+            sent.iter().any(|request| matches!(
+                request,
+                engine::Request::Shell { session_id, command }
+                    if session_id == &session && command == "echo hi"
+            )),
+            "expected one shell request for the Session"
+        );
+        assert!(
+            !sent
+                .iter()
+                .any(|request| matches!(request, engine::Request::Prompt { .. })),
+            "shell mode must not admit a prompt"
+        );
     }
 
     #[test]

@@ -2,6 +2,7 @@ export * as SessionRunnerProviderHeaders from "./provider-headers"
 
 import type { Message, ToolContent } from "@miao/llm"
 import { ProviderV2 } from "../../provider"
+import { Hash } from "../../util/hash"
 
 /**
  * Per-turn headers that depend on the Session and the outgoing messages.
@@ -27,7 +28,20 @@ export const forTurn = (input: {
   // cache server and only hits whatever older prefix that server holds.
   ...(input.providerID === ProviderV2.ID.openai ? { "session-id": input.promptCacheKey } : {}),
   ...(input.providerID === ProviderV2.ID.githubCopilot ? copilot(input) : {}),
+  ...(input.providerID === ProviderV2.ID.opencodeGo ? { "x-opencode-session": Hash.sha256(input.sessionID) } : {}),
 })
+
+/**
+ * Session-bound routing headers shared by turn requests and auxiliary calls
+ * (title generation). opencode-go's gateway rejects a request without a stable
+ * conversation id; the native engine binds `$session` to the same opaque digest
+ * of the Session id, keeping sibling Sessions distinct for routing and caching.
+ */
+export const forSession = (input: {
+  readonly providerID: string
+  readonly sessionID: string
+}): Record<string, string> =>
+  input.providerID === ProviderV2.ID.opencodeGo ? { "x-opencode-session": Hash.sha256(input.sessionID) } : {}
 
 // Copilot bills and rate-limits premium requests by initiator: only a turn a
 // person typed counts as "user"; tool continuations and subagent turns are

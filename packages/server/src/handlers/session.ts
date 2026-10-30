@@ -611,6 +611,28 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.sideQuestion",
+        Effect.fn(function* (ctx) {
+          // A side question is best-effort: the core answers undefined on a
+          // model or history failure, so only a missing or unmigrated Session
+          // reaches the caller as an error.
+          const answer = yield* session
+            .sideQuestion({ sessionID: ctx.params.sessionID, question: ctx.payload.question })
+            .pipe(
+              Effect.catchTag("Session.NotFoundError", (error) =>
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+                ),
+              ),
+              Effect.catchTag("Session.LegacyNotMigratedError", (error) => Effect.fail(legacyNotMigrated(error))),
+            )
+          return { answer }
+        }),
+      )
+      .handle(
         "session.wait",
         Effect.fn(function* (ctx) {
           // A composed native transport owns its Sessions' execution, so the
