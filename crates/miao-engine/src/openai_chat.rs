@@ -538,12 +538,19 @@ impl Parser for ChatState {
                 // provider had already begun, and tracking the placeholder as a
                 // call left an identity-less call that failed the whole turn at
                 // `finish`.
-                if tool.get("type").is_some_and(|v| !v.is_null() && v != "function") {
+                if tool
+                    .get("type")
+                    .is_some_and(|v| !v.is_null() && v != "function")
+                {
                     return Err(invalid());
                 }
                 let id = tool["id"].as_str().filter(|id| !id.is_empty());
-                let name = tool["function"]["name"].as_str().filter(|name| !name.is_empty());
-                let arguments = tool["function"]["arguments"].as_str().filter(|args| !args.is_empty());
+                let name = tool["function"]["name"]
+                    .as_str()
+                    .filter(|name| !name.is_empty());
+                let arguments = tool["function"]["arguments"]
+                    .as_str()
+                    .filter(|args| !args.is_empty());
                 if id.is_none() && name.is_none() && arguments.is_none() {
                     continue;
                 }

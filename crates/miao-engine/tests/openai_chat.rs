@@ -818,12 +818,10 @@ async fn a_null_filled_tool_call_placeholder_does_not_fail_the_reply() {
         .unwrap();
     assert!(!reply.needs_tools);
     assert_eq!(reply.content[0]["text"], "ok");
-    assert!(
-        reply
-            .content
-            .as_array()
-            .is_some_and(|parts| parts.iter().all(|part| part["type"] != "tool_use"))
-    );
+    assert!(reply
+        .content
+        .as_array()
+        .is_some_and(|parts| parts.iter().all(|part| part["type"] != "tool_use")));
     server.await.unwrap();
 }
 
