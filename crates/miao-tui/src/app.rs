@@ -1323,6 +1323,24 @@ impl App {
                     engine.new_session();
                 }
             }
+            // Numbered slots open the n-th row of the list as it is shown, so a
+            // pinned Session keeps its number instead of needing a search.
+            (KeyCode::Char(digit @ '1'..='9'), KeyModifiers::NONE) => {
+                let slot = digit as usize - '1' as usize;
+                let selected = self.home.slot(slot).map(|row| row.id.clone());
+                if let (Some(id), Some(engine)) = (selected, self.engine.as_ref()) {
+                    engine.open(&id);
+                }
+            }
+            (KeyCode::Char('p'), KeyModifiers::NONE) => {
+                let selected = self
+                    .home
+                    .current()
+                    .map(|row| (row.id.clone(), row.pinned_at_ms.is_none()));
+                if let (Some((id, pinned)), Some(engine)) = (selected, self.engine.as_ref()) {
+                    engine.pin(&id, pinned);
+                }
+            }
             _ => {}
         }
     }
@@ -2427,6 +2445,56 @@ mod tests {
         app.handle(opened(Transcript::default(), None));
         assert!(app.draft.is_none());
         assert!(app.shell.draft().is_empty());
+    }
+
+    fn home_with(rows: Vec<SessionSummary>) -> App {
+        let mut app = app();
+        // The home list is fed by `Sessions`; `Catalog` only fills the session
+        // catalog and answers `--continue`.
+        app.handle(AppEvent::Sessions(rows));
+        app
+    }
+
+    #[test]
+    fn numbered_slots_open_the_row_the_list_shows() {
+        let mut app = home_with(vec![
+            summary("ses_first", 300),
+            summary("ses_second", 200),
+            summary("ses_third", 100),
+        ]);
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Char('3'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Open(id)) if id == "ses_third"
+        ));
+        // A slot past the end opens nothing instead of opening the last row.
+        app.handle(key(KeyCode::Char('9'), KeyModifiers::NONE));
+        assert!(requests.try_recv().is_err());
+    }
+
+    #[test]
+    fn p_toggles_the_pin_of_the_selected_row() {
+        let mut app = home_with(vec![summary("ses_pin", 100)]);
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Char('p'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Pin { session_id, pinned: true }) if session_id == "ses_pin"
+        ));
+        // A pinned row unpins, so the key is a toggle rather than pin-only.
+        let mut pinned = summary("ses_pinned", 200);
+        pinned.pinned_at_ms = Some(1);
+        let mut app = home_with(vec![pinned]);
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Char('p'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Pin { session_id, pinned: false }) if session_id == "ses_pinned"
+        ));
     }
 
     #[test]
