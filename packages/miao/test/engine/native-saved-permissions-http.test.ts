@@ -146,7 +146,81 @@ test.skipIf(!binary)(
   45_000,
 )
 
-async function serve(tmp: string, root: string, engine: "native" | "ts") {
+test.skipIf(!binary)(
+  "managed shared HTTP views migrate both authorities, revoke Root rules and reopen without legacy fallback",
+  async () => {
+    if (!binary) throw new Error("native engine required")
+    await using tmp = await tmpdir()
+    const workspace = path.join(tmp.path, "workspace")
+    const root = path.join(tmp.path, "engines")
+    await Promise.all([workspace, root].map((directory) => mkdir(directory, { recursive: true })))
+    const directory = await realpath(workspace)
+    const headers = {
+      "content-type": "application/json",
+      "x-opencode-directory": directory,
+      authorization: "Basic " + btoa("fixture:fixture-password"),
+    }
+    const seed = EngineClient.start({
+      binary,
+      db: SessionEnginePlacement.storageFor(root, Location.Ref.make({ directory: AbsolutePath.make(directory) })),
+      workspace: directory,
+      model: "fixture",
+      provider: "openai-chat",
+      endpoint: "http://127.0.0.1:9",
+      env: { OPENAI_API_KEY: "fixture-only" },
+    })
+    try {
+      await seed.request("permission_pattern_put", { rule: { action: "read", resource: "native/**", effect: "allow" } })
+    } finally {
+      await seed.close()
+    }
+    const initial = await serve(tmp.path, root, "native")
+    const initialRows = await fetch(`${initial.url}/api/permission/saved`, { headers })
+      .then((response) => response.json())
+      .then(Schema.decodeUnknownSync(Saved))
+    expect(initialRows.data).toHaveLength(1)
+    await initial[Symbol.asyncDispose]()
+    const { Database } = await import("bun:sqlite")
+    const storage = path.join(tmp.path, "miao-native.db")
+    const database = new Database(storage)
+    try {
+      database.run("PRAGMA busy_timeout = 5000")
+      database
+        .query(
+          "INSERT INTO permission_legacy(id,project_id,action,resource,time_created,time_updated) VALUES(?1,?2,?3,?4,?5,?6)",
+        )
+        .run("psv_legacy_shared_fixture", initialRows.data[0]!.projectID, "read", "legacy/**", Date.now(), Date.now())
+    } finally {
+      database.close()
+    }
+    const shared = await serve(tmp.path, root, "native", true)
+    try {
+      const response = await fetch(`${shared.url}/api/permission/saved`, { headers })
+      expect(response.status).toBe(200)
+      const rows = Schema.decodeUnknownSync(Saved)(await response.json()).data
+      expect(rows).toHaveLength(2)
+      expect(rows.filter((row) => row.id === "psv_legacy_shared_fixture")).toHaveLength(1)
+      expect(rows.filter((row) => row.origin === "native")).toHaveLength(1)
+      for (const row of rows)
+        expect(
+          (await fetch(`${shared.url}/api/permission/saved/${row.id}`, { method: "DELETE", headers })).status,
+        ).toBe(204)
+      const after = await fetch(`${shared.url}/api/permission/saved`, { headers })
+        .then((response) => response.json())
+        .then(Schema.decodeUnknownSync(Saved))
+      expect(after.data).toEqual([])
+    } finally {
+      await shared[Symbol.asyncDispose]()
+    }
+    await using reopened = await serve(tmp.path, root, "native")
+    const response = await fetch(`${reopened.url}/api/permission/saved`, { headers })
+    expect(response.status).toBe(200)
+    expect(Schema.decodeUnknownSync(Saved)(await response.json()).data).toEqual([])
+  },
+  90_000,
+)
+
+async function serve(tmp: string, root: string, engine: "native" | "ts", shared = false) {
   if (!binary) throw new Error("native engine required")
   const child = Bun.spawn(
     [process.execPath, "src/index.ts", "--engine", engine, "serve", "--hostname", "127.0.0.1", "--port", "0"],
@@ -159,6 +233,7 @@ async function serve(tmp: string, root: string, engine: "native" | "ts") {
         ...process.env,
         MIAO_DB: path.join(tmp, `miao-${engine}.db`),
         MIAO_ENGINE_BIN: binary,
+        MIAO_SHARED_PERMISSIONS: shared ? "1" : "",
         MIAO_ENGINE_STORAGE: engine === "ts" ? "" : root,
         MIAO_ENGINE_PROVIDER: "openai-chat",
         MIAO_ENGINE_MODEL: "fixture/fixture",

@@ -17,6 +17,7 @@ use std::{
 pub struct Source {
     pub(crate) path: PathBuf,
     pub(crate) context: Context,
+    pub(crate) shared: Option<crate::permission_source::RunAuthority>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -63,7 +64,13 @@ impl Source {
             )],
         ) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        with_sources(connection, &self.path, &self.context, execute)
+        with_sources(
+            connection,
+            &self.path,
+            &self.context,
+            self.shared.as_ref(),
+            execute,
+        )
     }
 }
 
@@ -71,6 +78,7 @@ fn with_sources<T>(
     connection: &mut Connection,
     path: &Path,
     context: &Context,
+    shared: Option<&crate::permission_source::RunAuthority>,
     execute: impl FnOnce(
         &Transaction<'_>,
         &[(
@@ -78,6 +86,36 @@ fn with_sources<T>(
             &crate::product_permission::Authority,
         )],
     ) -> Result<T, Error>,
+) -> Result<T, Error> {
+    with_locked_source_database(connection, path, |transaction, callback| {
+        let product = context.product.read().unwrap();
+        if !product
+            .bridge
+            .as_ref()
+            .is_some_and(|bridge| bridge.same_connection(&context.bridge))
+        {
+            return Err(Error::Invalid("inactive shared permission source".into()));
+        }
+        context
+            .bridge
+            .with_permission_sources(&context.source, |sources| {
+                require_active(&transaction, context, shared)?;
+                callback.store(true, Ordering::SeqCst);
+                let guard = CallbackPhase(callback.clone());
+                let result = execute(&transaction, sources);
+                drop(guard);
+                let result = result?;
+                require_active(&transaction, context, shared)?;
+                transaction.commit()?;
+                Ok(result)
+            })
+    })
+}
+
+pub(crate) fn with_locked_source_database<T>(
+    connection: &mut Connection,
+    path: &Path,
+    execute: impl FnOnce(Transaction<'_>, Arc<AtomicBool>) -> Result<T, Error>,
 ) -> Result<T, Error> {
     if !connection.is_autocommit() || !path.is_file() {
         return Err(Error::Invalid(
@@ -130,27 +168,7 @@ fn with_sources<T>(
         // SQLite acquires both databases before any process-local source lock.
         // Only main is writable, so no multi-database WAL atomicity is assumed.
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let product = context.product.read().unwrap();
-        if !product
-            .bridge
-            .as_ref()
-            .is_some_and(|bridge| bridge.same_connection(&context.bridge))
-        {
-            return Err(Error::Invalid("inactive shared permission source".into()));
-        }
-        context
-            .bridge
-            .with_permission_sources(&context.source, |sources| {
-                require_active(&transaction, context)?;
-                callback.store(true, Ordering::SeqCst);
-                let guard = CallbackPhase(callback.clone());
-                let result = execute(&transaction, sources);
-                drop(guard);
-                let result = result?;
-                require_active(&transaction, context)?;
-                transaction.commit()?;
-                Ok(result)
-            })
+        execute(transaction, callback)
     })();
     connection.authorizer(None::<fn(AuthContext<'_>) -> Authorization>);
     let detached = connection.execute_batch("DETACH DATABASE permission_source");
@@ -163,7 +181,28 @@ fn with_sources<T>(
     }
 }
 
-fn require_active(connection: &Connection, context: &Context) -> Result<(), Error> {
+fn require_active(
+    connection: &Connection,
+    context: &Context,
+    shared: Option<&crate::permission_source::RunAuthority>,
+) -> Result<(), Error> {
+    if let Some(expected) = shared {
+        let marker: Option<String> = connection.query_row(
+            "SELECT shared_permission FROM permission_source.engine_run WHERE id=?1",
+            [&context.authority.run_id],
+            |row| row.get(0),
+        )?;
+        let marker: crate::permission_source::RunAuthority = serde_json::from_str(
+            &marker.ok_or_else(|| Error::Invalid("shared run authority is missing".into()))?,
+        )?;
+        if &marker != expected
+            || marker.runtime != context.owner
+            || marker.owner_pid != std::process::id()
+        {
+            return Err(Error::Invalid("shared run authority mismatch".into()));
+        }
+    }
+
     if context.authority.cancel.is_cancelled()
         || !crate::product_permission::source_epoch_matches(
             connection,

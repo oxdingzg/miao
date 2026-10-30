@@ -50,6 +50,8 @@ does not prevent the engine from settling its own cancelled drain.
 | `select_account` | `session_id`, `credential_id` (string or null) | `{binding, account, changed}` |
 | `product_permission_evaluate` | `source`, `request` (active reverse-call facts) | `{effect, rules, authority_revision}` |
 | `permission_pattern_list` | — | native-owned standing patterns for this Runtime's workspace |
+| `shared_permission_snapshot` | — | bound shared Root/context snapshot and Root change cursor; shared Runtime only |
+| `shared_permission_changes` | `after: {authority,seq}`, `limit` | bound Root changefeed page; shared Runtime only |
 | `permission_pattern_snapshot` | — | atomic native standing-rule snapshot and change cursor |
 | `permission_pattern_changes` | `after`, `limit` (1–256) | ordered durable changes after a workspace cursor |
 | `permission_pattern_put` | `rule` (allow only) | persisted pattern with ID, workspace, source and timestamp |
@@ -1360,3 +1362,97 @@ requests lack a provable durable source: upgrade retains history and cancels the
 with `source_metadata_unavailable`, never retries a provider or changes saved
 rules. Old request INSERTs without metadata are refused. A corrupt old request
 rolls back the entire upgrade, preserving Root identity, rules and rule cursors.
+
+`Context.recover_source_requests(Store, after, limit)` conservatively sweeps a
+bounded page (1..256) for that exact database and context. The cursor advances
+past live rows. A Root write transaction locks the attached real source read-only
+and checks the recorded run/tool/location/epoch/PID and process existence. Live
+or uncertain foreign owners stay pending; inactive sources are only cancelled or
+expired. Receipts/events commit together or the page rolls back. No Session
+history/run, standing rule, provider or execution is changed. Runtime startup and
+finalization still need to call this library boundary explicitly.
+
+The shared request journal has a typed `permission_requests` cursor, distinct
+from standing-rule cursors. Pages validate Root identity/watermark and filter the
+actual source database plus bound project/directory. Session schema25 stores the
+projection event digest and scoped cursor atomically with Session UI events, so
+replay, races and restart do not duplicate notifications; a failed page rolls back.
+Initial policy-final admission emits no fake UI reply. Pending requests released
+by saved rules retain `saved_rules_allowed` and the existing always settlement
+vocabulary. Notifications never authorize execution: host assertions still poll
+live fenced status. Shared Runtime selection is described below.
+
+### Explicit shared Runtime selection
+
+`shared_permission_runtime: 1` supports `serve`/`acp` selection with both
+`--permission-root-db PATH --permission-project ID`. The Root database must
+already exist outside the model workspace. The Source directory handoff must be
+completed and match the actual Root/project/directory receipt, and the project
+handoff receipt must exist. Missing, prepared or mismatched receipts fail startup;
+there is no legacy fallback. Shared selection cannot use a fresh diagnostic tool
+replay database. Legacy constructors and invocations remain unchanged.
+
+The actual Runtime UUID, PID and captured Session lease bind shared runs. Even a
+configured native allow checks this identity; current Root standing rules and
+identity namespace the Source-owned exact invocation cache. Host assertions use
+the Root transactions and Source fences described above. Local cancellation
+withdraws bridge authority and retires pending Root requests before acknowledging;
+tool/run completion retires unanswered assertions. UI projection consumes events
+for removed executions without recreating deleted history, including reused
+Session IDs. Notifications never grant authority.
+
+`permission_source_initialize: 1` adds the explicit model-free command
+`permission-source-init --db PATH --project ID --directory PATH`. It validates the
+directory before opening or creating the Source database and creates no Session,
+provider or background execution. The existing `permission-source` command still
+requires an existing file. Both commands expose the same source control methods.
+A trusted host completes the project and directory handoffs before selecting the
+shared Runtime; these capabilities do not enable automatic product migration.
+
+The shared snapshot/change commands use Root-bound cursors, not legacy Source
+journal sequence numbers. Legacy saved-rule projection remains refused after
+handoff. A timed-out read does not terminate an unrelated active Session, while
+mutations retain the existing fail-closed timeout behavior.
+
+### Managed product migration preview
+
+For the managed native server, `MIAO_SHARED_PERMISSIONS=1` requests the paired
+project/directory migration before starting an owner. The Root is the persistent
+Core database path with `.permissions.db` appended, preserving channel isolation.
+The host verifies exact capabilities and canonical Root placement outside the
+workspace, initializes the Source without model execution, then completes the
+directory handoff before freezing Core project rules. An active legacy native
+run therefore blocks migration before Core freezes. Interrupted handoffs remain
+frozen and retryable; they never fall back to legacy authority.
+
+A persisted project handoff selects shared ownership on subsequent starts even
+when the preview flag is removed. Shared HTTP saved-rule views use Root records,
+preserve imported legacy IDs, and route revocation to Root without reading frozen
+Core rules or projecting legacy directory patterns. Queries for a migrated
+project without its owning native Location fail explicitly. Explicit workspace
+placement, an in-memory Core database and manual legacy saved-rule snapshots are
+unsupported for this startup path and fail before either source freezes.
+
+The product's Rust TUI engine shim uses the same paired preparation and persisted
+ownership check before launching its engine. A failed product plan exits without
+starting an engine from the original raw arguments. POSIX uses an executable
+wrapper; Windows passes the product executable and a literal argument prefix to
+the Rust launcher. `MIAO_ENGINE_LAUNCH_PREFIX` is a JSON array of strings prepended
+to the engine arguments without a shell. Malformed input fails startup. This lets
+packaged and source invocations reach the same hidden shim without `.cmd` quoting
+or bypassing product preparation. Direct invocation of `miao-engine` retains the
+explicit flag contract above.
+
+A shared Runtime supervises Root invalidations using a Root-bound rule cursor.
+Rule changes re-evaluate only captured sources belonging to the actual local
+bridge, inside the existing Source/run/lease-fenced Root transactions. Replaced
+or withdrawn local bridges retire their requests by cancellation, even without a
+rule change. Pending request deadlines are also settled without a host poll.
+Request notifications use their independent durable stream and are
+projected without a status/list call from the host. These notifications never
+authorize execution. An idle stream performs no Session database writes. Refresh
+failures retain the cursor for retry; execution still requires its own current
+fenced transaction. Shutdown stops and joins the supervisor.
+
+This preview does not enable migration by default. Legacy TS-session retirement
+and final product acceptance remain requirements before default activation.

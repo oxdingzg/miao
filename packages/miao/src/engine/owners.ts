@@ -8,7 +8,10 @@ import type { CredentialExpiredTrigger, EnginePricing } from "./session"
 /** Native children belong to the server scope, never to an individual HTTP request. */
 export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
   options: Omit<EngineOptions, "db" | "workspace">,
-  prepare?: (location: Location.Ref) => Effect.Effect<
+  prepare?: (
+    location: Location.Ref,
+    storage: string,
+  ) => Effect.Effect<
     {
       options: Partial<EngineOptions>
       refresh: Effect.Effect<void, EngineError>
@@ -94,7 +97,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
             const ready = yield* restore(
               Effect.gen(function* () {
                 const context = prepare
-                  ? yield* prepare(input.location).pipe(Effect.provideService(Scope.Scope, ownerScope))
+                  ? yield* prepare(input.location, input.storage).pipe(Effect.provideService(Scope.Scope, ownerScope))
                   : { options: {}, refresh: Effect.void }
                 const connection = yield* connectEngine(
                   {

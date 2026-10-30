@@ -147,6 +147,7 @@ impl Context<'_> {
                 &prepared,
                 self.cancel.child_token(),
                 TurnAuthority {
+                    lease: self.lease,
                     plan: self.plan(target.as_ref()).await?,
                     policy: &policy,
                     agent: target.as_ref(),
@@ -252,6 +253,7 @@ impl Context<'_> {
                 &prepared,
                 self.cancel.child_token(),
                 TurnAuthority {
+                    lease: self.lease,
                     plan: self.plan(parent.as_ref()).await?,
                     policy: &policy,
                     agent: parent.as_ref(),

@@ -1217,6 +1217,20 @@ export function Prompt(props: PromptProps) {
         .shell({ sessionID, command: inputText })
         .catch((error) => toast.show({ message: errorMessage(error), variant: "error" }))
       setStore("mode", "normal")
+    } else if (inputText.startsWith("/btw ")) {
+      // A side question answers from the transcript already in context, with no
+      // tools and without entering history — asking "is it alive / what just
+      // happened" without paying for a full turn. Claude Code's /btw.
+      const question = inputText.slice("/btw ".length).trim()
+      if (!question || !props.sessionID) return false
+      move.startSubmit()
+      void sdk.api.sessions
+        .sideQuestion({ sessionID: props.sessionID, question })
+        .then((result) => {
+          if (result.answer) void DialogAlert.show(dialog, "Side question", result.answer)
+          else toast.show({ message: "No answer from the current context", variant: "warning", duration: 4000 })
+        })
+        .catch((error) => toast.show({ message: errorMessage(error), variant: "error" }))
     } else if (
       inputText.startsWith("/") &&
       sync.data.command.some((x) => x.name === inputText.split("\n")[0].split(" ")[0].slice(1))
