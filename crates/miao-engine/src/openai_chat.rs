@@ -535,8 +535,11 @@ impl Parser for ChatState {
                 if tool.get("type").is_some_and(|v| v != "function") {
                     return Err(invalid());
                 }
+                // Some gateways (opencode-go) nest the call index inside
+                // `function` instead of the call level; accept both shapes.
                 let index = tool["index"]
                     .as_u64()
+                    .or_else(|| tool["function"]["index"].as_u64())
                     .filter(|i| *i < 64)
                     .ok_or_else(invalid)?;
                 let id = tool["id"].as_str().filter(|id| !id.is_empty());
