@@ -69,6 +69,43 @@ impl Project {
 }
 
 impl Context {
+    pub async fn observe(
+        &self,
+    ) -> Result<crate::permission_changefeed::Observation<Snapshot>, Error> {
+        let context = self.clone();
+        self.project
+            .authority
+            .call(move |connection| {
+                let transaction = connection.transaction()?;
+                let snapshot = context.view(&transaction)?;
+                let cursor = crate::permission_changefeed::cursor(&transaction)?;
+                transaction.commit()?;
+                Ok(crate::permission_changefeed::Observation { snapshot, cursor })
+            })
+            .await
+    }
+
+    pub async fn changes(
+        &self,
+        input: crate::permission_changefeed::Input,
+    ) -> Result<crate::permission_changefeed::Page, Error> {
+        let context = self.clone();
+        self.project
+            .authority
+            .call(move |connection| {
+                let transaction = connection.transaction()?;
+                let page = crate::permission_changefeed::page(
+                    &transaction,
+                    &context.project.project,
+                    Some(&context.location),
+                    input,
+                )?;
+                transaction.commit()?;
+                Ok(page)
+            })
+            .await
+    }
+
     pub async fn snapshot(&self) -> Result<Snapshot, Error> {
         let context = self.clone();
         self.project
@@ -442,7 +479,7 @@ mod tests {
                 .unwrap()
                 .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
                 .unwrap(),
-            2
+            3
         );
     }
 

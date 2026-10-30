@@ -56,7 +56,12 @@ export function installFatalHandlers() {
     recordCrash("uncaughtException", error)
     process.exit(1)
   })
-  process.on("unhandledRejection", (reason) => recordCrash("unhandledRejection", reason))
+  process.on("unhandledRejection", (reason) => {
+    // Bun reports a stream write's EPIPE as a rejected promise (not an
+    // uncaught exception), so the closed-stream exemption has to cover both.
+    if (closedStreamWrite(reason)) return
+    recordCrash("unhandledRejection", reason)
+  })
 }
 
 export * as Crash from "./crash"
