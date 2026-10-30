@@ -107,8 +107,9 @@ run_attempt() {
       wait "$pid" 2>/dev/null
       return 1
     fi
-    sleep 5
-    elapsed=$((elapsed + 5))
+    # Short files should not wait five seconds for their exit to be noticed.
+    sleep 1
+    elapsed=$((elapsed + 1))
   done
   wait "$pid" 2>/dev/null
   local code=$?

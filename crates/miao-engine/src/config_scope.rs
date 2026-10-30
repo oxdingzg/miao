@@ -103,7 +103,16 @@ fn strip_trailing_commas(bytes: &[u8]) -> Vec<u8> {
             while next < bytes.len() && bytes[next].is_ascii_whitespace() {
                 next += 1;
             }
-            if next < bytes.len() && (bytes[next] == b'}' || bytes[next] == b']') {
+            let previous = bytes[..index]
+                .iter()
+                .rev()
+                .copied()
+                .find(|byte| !byte.is_ascii_whitespace());
+            // A leading comma is invalid JSONC, not an optional trailing comma.
+            if next < bytes.len()
+                && (bytes[next] == b'}' || bytes[next] == b']')
+                && !matches!(previous, None | Some(b'{' | b'[' | b',' | b':'))
+            {
                 out.push(b' ');
                 index += 1;
                 continue;
@@ -186,6 +195,20 @@ fn merge_into(target: &mut serde_json::Value, value: &serde_json::Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn jsonc_commas_need_a_preceding_value() {
+        for text in [
+            "{,}",
+            "[,]",
+            "{/* note */,}",
+            "[/* note */,]",
+            r#"{"nested":[,]}"#,
+            r#"{"nested":{,}}"#,
+        ] {
+            assert!(parse_document(text).is_err(), "accepted {text}");
+        }
+    }
 
     #[test]
     fn comments_separate_tokens_instead_of_repairing_invalid_json() {
