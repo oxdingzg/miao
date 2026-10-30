@@ -5088,14 +5088,14 @@ async fn finish_delegation(
             // A parent the operator interrupted takes its background children
             // with it; a parent that finished its own turn on schedule leaves
             // them running, which is what makes a background task survive.
-            let parent_finished = inner
+            // Cancellation belongs to the spawning run, not a later turn of
+            // the same Session. Its persisted state cannot be hidden by newer events.
+            let parent_state = inner
                 .store
-                .latest_event(parent, "run.finished")
+                .run_state(parent, run)
                 .await
-                .map_err(|_| ToolError::External("subagent events unavailable".into()))?;
-            if parent_finished
-                .is_some_and(|event| event.data["reason"].as_str() == Some("interrupted"))
-            {
+                .map_err(|_| ToolError::External("subagent run state unavailable".into()))?;
+            if parent_state.as_deref() == Some("interrupted") {
                 let _ = cancel_session(inner, child).await;
                 reason = "cancelled";
                 break;
