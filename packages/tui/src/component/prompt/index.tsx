@@ -1015,6 +1015,37 @@ export function Prompt(props: PromptProps) {
     }
   })
 
+  useBindings(() => {
+    return {
+      target: inputTarget,
+      enabled: (() => {
+        cursorVersion()
+        return inputTarget() !== undefined && !props.disabled && !auto()?.visible && input !== undefined
+      })(),
+      commands: [
+        {
+          name: "prompt.history.reverse_search",
+          title: "Search prompt history backward",
+          category: "Prompt",
+          run() {
+            // The query is whatever is already typed; each press walks one
+            // matching entry older, zsh history-search-backward style.
+            const query = input.plainText
+            if (!query) return false
+            const item = history.searchBackward(query, query)
+            if (!item) return false
+            input.setText(item.input)
+            setStore("prompt", item)
+            setStore("mode", item.mode ?? "normal")
+            restoreExtmarksFromParts(item.parts)
+            input.cursorOffset = input.plainText.length
+          },
+        },
+      ],
+      bindings: tuiConfig.keybinds.get("prompt.history.reverse_search"),
+    }
+  })
+
   // Take back the newest prompt that is still waiting to be promoted. It is the
   // most recent thing the user typed, so editing it must not require retyping:
   // the server cancels it first, and only a confirmed cancel puts its text back
