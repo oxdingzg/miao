@@ -172,6 +172,9 @@ pub struct App {
     bus: Option<Bus>,
     pending_editor: Option<editor::Request>,
     redraw_requested: bool,
+    suspend_requested: bool,
+    terminal_title_enabled: bool,
+    terminal_title_allowed: bool,
     /// Approval and question ids already announced.
     notified: Vec<String>,
     /// The Zed selection already sent with an earlier prompt.
@@ -231,6 +234,9 @@ impl App {
             bus: None,
             pending_editor: None,
             redraw_requested: false,
+            suspend_requested: false,
+            terminal_title_enabled: true,
+            terminal_title_allowed: true,
             notified: Vec::new(),
             zed_selection_key: None,
             clipboard_busy: false,
@@ -271,8 +277,38 @@ impl App {
         self.pending_editor.take()
     }
 
+    pub fn take_suspend_request(&mut self) -> bool {
+        std::mem::take(&mut self.suspend_requested)
+    }
+
     pub fn take_redraw_request(&mut self) -> bool {
         std::mem::take(&mut self.redraw_requested)
+    }
+
+    pub fn configure_terminal_title(&mut self, enabled: bool, allowed: bool) {
+        self.terminal_title_enabled = enabled;
+        self.terminal_title_allowed = allowed;
+    }
+
+    pub fn terminal_title(&self) -> Option<String> {
+        if !self.terminal_title_enabled || !self.terminal_title_allowed {
+            return None;
+        }
+        if self.screen == Screen::Home {
+            return Some("miao".into());
+        }
+        let prompt = self.shell.transcript().and_then(|transcript| {
+            transcript.entries.iter().find_map(|entry| match entry {
+                Entry::User { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+        });
+        Some(crate::terminal_title::tab(
+            self.session
+                .as_ref()
+                .and_then(|session| session.title.as_deref()),
+            prompt,
+        ))
     }
 
     pub fn attach_engine(&mut self, engine: engine::Handle) {
@@ -499,6 +535,19 @@ impl App {
             // double every keystroke.
             return;
         }
+        if self
+            .keys
+            .matches(keybinds::Action::TerminalTitleToggle, &key)
+        {
+            self.leader = false;
+            self.run_builtin(Builtin::TerminalTitle);
+            return;
+        }
+        if self.keys.matches(keybinds::Action::TerminalSuspend, &key) {
+            self.leader = false;
+            self.run_builtin(Builtin::Suspend);
+            return;
+        }
         if self.keys.matches(keybinds::Action::TerminalRedraw, &key) {
             self.redraw_requested = true;
             self.leader = false;
@@ -577,6 +626,8 @@ impl App {
             Some(keybinds::Action::CopyMessage) => self.copy_last_response(),
             Some(keybinds::Action::AppExit) => self.run_builtin(Builtin::Quit),
             Some(keybinds::Action::TerminalRedraw) => self.redraw_requested = true,
+            Some(keybinds::Action::TerminalSuspend) => self.run_builtin(Builtin::Suspend),
+            Some(keybinds::Action::TerminalTitleToggle) => self.run_builtin(Builtin::TerminalTitle),
             _ => {}
         }
     }
@@ -584,6 +635,27 @@ impl App {
     fn run_builtin(&mut self, builtin: Builtin) {
         match builtin {
             Builtin::Redraw => self.redraw_requested = true,
+            Builtin::Suspend => {
+                #[cfg(unix)]
+                {
+                    self.suspend_requested = true;
+                }
+                #[cfg(windows)]
+                self.notice("Shell suspend is not supported on Windows");
+            }
+            Builtin::TerminalTitle => {
+                if !self.terminal_title_allowed {
+                    self.notice("Terminal titles are disabled by MIAO_DISABLE_TERMINAL_TITLE");
+                    return;
+                }
+                self.terminal_title_enabled = !self.terminal_title_enabled;
+                state::save_terminal_title(self.terminal_title_enabled);
+                self.notice(if self.terminal_title_enabled {
+                    "Terminal title enabled"
+                } else {
+                    "Terminal title disabled"
+                });
+            }
             Builtin::Models => self.open_models(),
             Builtin::Permissions => {
                 self.permission_generation += 1;
@@ -1723,12 +1795,7 @@ mod tests {
     }
 
     fn wheel(kind: MouseEventKind) -> AppEvent {
-        AppEvent::Mouse(MouseEvent {
-            kind,
-            column: 0,
-            row: 0,
-            modifiers: KeyModifiers::NONE,
-        })
+        AppEvent::Mouse(MouseEvent::new(kind, 0, 0, KeyModifiers::NONE))
     }
 
     #[test]
@@ -1879,6 +1946,30 @@ mod tests {
             state: SessionState::default(),
         });
         assert!(requests.try_recv().is_err());
+    }
+
+    #[test]
+    fn terminal_titles_follow_the_admitted_session_and_honor_disabled_preferences() {
+        let mut app = app();
+        assert_eq!(app.terminal_title().as_deref(), Some("miao"));
+        let mut session = summary("named", 1);
+        session.title = Some("New session".into());
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(session),
+            transcript: Box::new(Transcript {
+                entries: vec![Entry::User {
+                    text: "repair\x07 this test".into(),
+                    seq: 1,
+                }],
+                ..Default::default()
+            }),
+            state: SessionState::default(),
+        });
+        assert_eq!(app.terminal_title().as_deref(), Some("repair this test"));
+        app.configure_terminal_title(false, true);
+        assert_eq!(app.terminal_title(), None);
+        app.configure_terminal_title(true, false);
+        assert_eq!(app.terminal_title(), None);
     }
 
     #[test]

@@ -1090,7 +1090,16 @@ fn strip_trailing_commas(input: &str) -> String {
                 while next < chars.len() && chars[next].is_whitespace() {
                     next += 1;
                 }
-                if next >= chars.len() || (chars[next] != '}' && chars[next] != ']') {
+                let previous = chars[..index]
+                    .iter()
+                    .rev()
+                    .copied()
+                    .find(|character| !character.is_whitespace());
+                // Preserve leading/missing-value commas so parsing still rejects them.
+                if next >= chars.len()
+                    || (chars[next] != '}' && chars[next] != ']')
+                    || matches!(previous, None | Some('{' | '[' | ',' | ':'))
+                {
                     out.push(',');
                 } else {
                     out.push(' ');
@@ -1132,6 +1141,23 @@ const fn rgb(hex: &str) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn jsonc_commas_need_a_preceding_value() {
+        for text in [
+            "{,}",
+            "[,]",
+            "{/* note */,}",
+            "[/* note */,]",
+            r#"{"nested":[,]}"#,
+            r#"{"nested":{,}}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<serde_json::Value>(&strip_jsonc(text)).is_err(),
+                "accepted {text}"
+            );
+        }
+    }
 
     #[test]
     fn jsonc_carriage_returns_end_line_comments() {
