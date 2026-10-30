@@ -1,3 +1,4 @@
+import { writeSync } from "node:fs"
 import path from "node:path"
 import { cmd } from "./cmd"
 import { withNetworkOptions, hasArg, resolveNetworkOptionsNoConfig } from "../network"
@@ -32,16 +33,22 @@ export const AcpCommand = cmd({
         headers: ServerAuth.headers({ username: "miao", password: record.credential }),
       })
     })()
+    // Compiled Bun binaries fully buffer process.stdout when it is a pipe, so
+    // ACP responses would only flush at EOF and every client would hang on
+    // initialize. writeSync on fd 1 goes straight to the kernel with no
+    // intermediate buffering in either source or compiled mode.
     const output = new WritableStream<Uint8Array>({
-      write: (chunk) =>
-        new Promise<void>((resolve, reject) =>
-          process.stdout.write(chunk, (error) => (error ? reject(error) : resolve())),
-        ),
+      write: (chunk) => {
+        writeSync(1, chunk)
+      },
     })
     const callbacks: { data?: (chunk: Buffer) => void; end?: () => void; error?: (error: Error) => void } = {}
     const input = new ReadableStream<Uint8Array>({
       start(controller) {
-        callbacks.data = (chunk) => controller.enqueue(new Uint8Array(chunk))
+        callbacks.data = (chunk) => {
+          console.error(`[acp-debug] stdin data ${chunk.length} bytes`)
+          controller.enqueue(new Uint8Array(chunk))
+        }
         callbacks.end = () => controller.close()
         callbacks.error = (error) => controller.error(error)
         process.stdin.on("data", callbacks.data)
@@ -68,7 +75,11 @@ export const AcpCommand = cmd({
       defaultModel = undefined
     }
     try {
-      await serve({ client, version: InstallationVersion, defaultModel, output, input }).closed
+      console.error("[acp-debug] config done, calling serve")
+      const done = serve({ client, version: InstallationVersion, defaultModel, output, input })
+      console.error("[acp-debug] serve returned connection")
+      await done.closed
+      console.error("[acp-debug] connection closed")
     } finally {
       if (callbacks.data) process.stdin.off("data", callbacks.data)
       if (callbacks.end) process.stdin.off("end", callbacks.end)
