@@ -325,3 +325,19 @@ model-free 控制入口增加 observe/changes 与 context_observe/context_change
 
 这一步仍未迁移 pending/always 到共享事务，未接入跨进程 pending 重求值，没有放开冻结
 来源执行或自动交接。后续必须继续完成这些接线及同脚本询问次数验收。
+权限事务先等待 OS/SQLite 写锁，再持有 product 与 bridge 来源锁至提交。普通本地取消可在
+存储等待阶段撤回来源；已进入授权临界区的提交仍先于取消确认完成。带 run ID 的条件取消
+继续核验当前 durable run，不将过期 UI 观察当成取消当前来源的权限。这个锁顺序也约束后续
+共享库附加 Session 来源事务，避免来源锁与数据库锁互相等待。
+
+可信 Rust 宿主可从实际 Runtime product call 捕获不透明来源 handle，再通过共享
+Authority 的 `with_permission_source` 执行共享库操作。handle 不接受控制帧提供的数据库路径；来源路径、
+workspace、run 与 bridge 来自 Runtime。事务先以可读写但禁止内容写入的 URI 附加已有的
+Session 库，以 BEGIN IMMEDIATE 同时锁定两库，再持有实际 product/bridge 来源至共享库
+提交，前后核对 dispatched 工具、run、Location、lease epoch 与当前 PID。SQLite authorizer
+拒绝附加来源库写入、修改附加关系及回调自行控制事务；只有共享主库产生内容变更，因此
+不依赖跨 WAL 数据库写入的原子提交。回调失败或来源被取消时回滚，随后移除附加关系。
+
+该 Rust 接口仅提供执行来源的事务栅栏，不作权限决策，也不确认目录所有权交接；调用层
+仍须绑定目标项目/目录、核对交接完成状态，并接好共享 pending/always 和独立变更流。
+没有新增通用 SQL 控制 RPC，没有启用自动迁移，也没有据此放开已冻结来源的 legacy run。

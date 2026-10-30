@@ -323,14 +323,16 @@ fn with_source<T>(
     with_sources(connection, context, |transaction, _| execute(transaction))
 }
 
-fn with_sources<T>(
+pub(crate) fn with_sources<T>(
     connection: &mut Connection,
     context: &Context,
     execute: impl FnOnce(&Transaction<'_>, &[(Source, &Authority)]) -> Result<T, Error>,
 ) -> Result<T, Error> {
-    // Lock order matches bridge replacement/reply delivery: product then call.
-    // Both remain held through the SQL commit so an acknowledged cancellation
-    // or source replacement cannot precede a later authorization mutation.
+    // Wait for storage before taking process-local source locks. Attached
+    // shared-authority transactions must use the same order to avoid a cycle.
+    let transaction = crate::store::write_tx(connection)?;
+    // Keep product then call locked through commit; cancellation can withdraw
+    // while storage is busy, but cannot overtake an entered authorization.
     let product = context.product.read().unwrap();
     if !product
         .bridge
@@ -342,7 +344,6 @@ fn with_sources<T>(
     context
         .bridge
         .with_permission_sources(&context.source, |sources| {
-            let transaction = crate::store::write_tx(connection)?;
             require_active(&transaction, context)?;
             let result = execute(&transaction, sources)?;
             require_active(&transaction, context)?;

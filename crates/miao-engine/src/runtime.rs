@@ -652,6 +652,19 @@ impl Runtime {
             .await
     }
 
+    /// Capture a source for trusted shared-store operations. This handle does
+    /// not authorize an action and is revalidated inside every transaction.
+    pub fn capture_permission_source(
+        &self,
+        controller: &Controller,
+        source: &crate::product_permission::Source,
+    ) -> Result<crate::permission_source_transaction::Source, Error> {
+        Ok(crate::permission_source_transaction::Source {
+            path: self.inner.store.path().to_path_buf(),
+            context: self.product_permission_context(controller, source)?,
+        })
+    }
+
     fn product_permission_context(
         &self,
         controller: &Controller,
