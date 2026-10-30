@@ -41,6 +41,7 @@ impl Shell {
                 draft: Vec::new(),
                 scroll: 0,
                 follow: true,
+                expanded: false,
             },
             composer: Composer::new(workspace),
             panel: None,
@@ -53,7 +54,8 @@ impl Shell {
     }
 
     pub fn set_transcript(&mut self, transcript: &Transcript) {
-        self.transcript.lines = transcript_lines(transcript, &self.transcript.theme);
+        self.transcript.lines =
+            transcript_lines(transcript, &self.transcript.theme, self.transcript.expanded);
         let max = self.transcript.lines.len().saturating_sub(1);
         self.transcript.scroll = self.transcript.scroll.min(max as u16);
         self.last = Some(transcript.clone());
@@ -111,7 +113,7 @@ impl Shell {
             sidebar.theme = theme.clone();
         }
         if let Some(last) = &self.last {
-            self.transcript.lines = transcript_lines(last, &theme);
+            self.transcript.lines = transcript_lines(last, &theme, self.transcript.expanded);
         }
     }
 
@@ -130,6 +132,17 @@ impl Shell {
         self.transcript.scroll = 0;
         self.transcript.follow = false;
         self.last = None;
+    }
+
+    /// Fold or unfold every tool result and repaint the projection behind the
+    /// current lines, so the toggle applies without waiting for a snapshot.
+    pub fn toggle_tool_expansion(&mut self) -> bool {
+        self.transcript.expanded = !self.transcript.expanded;
+        if let Some(last) = &self.last {
+            self.transcript.lines =
+                transcript_lines(last, &self.transcript.theme, self.transcript.expanded);
+        }
+        self.transcript.expanded
     }
 
     pub fn scroll_transcript(&mut self, delta: i32) {
@@ -263,6 +276,8 @@ pub struct TranscriptPane {
     /// Follow the tail while new projections arrive. Any manual scroll clears
     /// it, so reading history is not interrupted by committed events.
     follow: bool,
+    /// Tool results render at their folded budget unless this is on.
+    expanded: bool,
 }
 
 impl Pane for TranscriptPane {
@@ -501,7 +516,7 @@ fn draft_lines(text: &str, reasoning: &str, theme: &Theme) -> Vec<Line<'static>>
     lines
 }
 
-fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>> {
+fn transcript_lines(transcript: &Transcript, theme: &Theme, expanded: bool) -> Vec<Line<'static>> {
     let palette = theme.palette;
     let mut lines = Vec::new();
     for entry in &transcript.entries {
@@ -541,6 +556,7 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>
                             call,
                             transcript.displays.get(&call.id).map(Vec::as_slice),
                             theme,
+                            expanded,
                         )),
                     }
                 }
@@ -1369,7 +1385,7 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let lines = transcript_lines(&transcript, &theme);
+        let lines = transcript_lines(&transcript, &theme, false);
         assert_eq!(lines[0].to_string(), "✗ provider unavailable");
         assert_eq!(lines[0].spans[0].style.fg, Some(theme.palette.error));
     }
