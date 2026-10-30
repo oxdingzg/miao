@@ -3,25 +3,6 @@ import path from "node:path"
 import { cmd } from "./cmd"
 import { withNetworkOptions, hasArg, resolveNetworkOptionsNoConfig } from "../network"
 
-function input_watcher(output: WritableStream<Uint8Array>, input: ReadableStream<Uint8Array>) {
-  void output
-  const reader = input.getReader()
-  void (async () => {
-    for (;;) {
-      try {
-        const { done, value } = await reader.read()
-        if (done) {
-          console.error("[acp-debug] input stream done")
-          return
-        }
-        console.error(`[acp-debug] input chunk ${value?.length ?? 0} bytes`)
-      } catch (error) {
-        console.error(`[acp-debug] input error: ${error}`)
-        return
-      }
-    }
-  })()
-}
 export const AcpCommand = cmd({
   command: "acp",
   describe: "start ACP (Agent Client Protocol) server",
@@ -64,7 +45,10 @@ export const AcpCommand = cmd({
     const callbacks: { data?: (chunk: Buffer) => void; end?: () => void; error?: (error: Error) => void } = {}
     const input = new ReadableStream<Uint8Array>({
       start(controller) {
-        callbacks.data = (chunk) => controller.enqueue(new Uint8Array(chunk))
+        callbacks.data = (chunk) => {
+          console.error(`[acp-debug] stdin data ${chunk.length} bytes`)
+          controller.enqueue(new Uint8Array(chunk))
+        }
         callbacks.end = () => controller.close()
         callbacks.error = (error) => controller.error(error)
         process.stdin.on("data", callbacks.data)
@@ -94,7 +78,6 @@ export const AcpCommand = cmd({
       console.error("[acp-debug] config done, calling serve")
       const done = serve({ client, version: InstallationVersion, defaultModel, output, input })
       console.error("[acp-debug] serve returned connection")
-      input_watcher(output, input)
       await done.closed
       console.error("[acp-debug] connection closed")
     } finally {
