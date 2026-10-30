@@ -13,7 +13,7 @@ use std::path::Path;
 use tokio::sync::{mpsc, oneshot};
 
 const APPLICATION_ID: u32 = 0x4d494150;
-const SCHEMA_VERSION: u32 = 3;
+const SCHEMA_VERSION: u32 = 4;
 const NATIVE_PREFIX: &str = "psv_native_project_";
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -92,6 +92,19 @@ impl Authority {
             authority: self.clone(),
             project,
         })
+    }
+
+    /// Run trusted shared-store work behind a live Runtime source fence.
+    /// Only this authority's main database is writable. This does not decide
+    /// permissions or validate a project/directory ownership handoff.
+    pub async fn with_permission_source<T: Send + 'static>(
+        &self,
+        source: &crate::permission_source_transaction::Source,
+        execute: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T, Error> + Send + 'static,
+    ) -> Result<T, Error> {
+        let source = source.clone();
+        self.call(move |connection| source.with_root_transaction(connection, execute))
+            .await
     }
 
     pub(crate) async fn call<T: Send + 'static>(
@@ -285,6 +298,9 @@ fn initialize(connection: &mut Connection) -> Result<(), Error> {
     }
     if version < 3 {
         crate::permission_changefeed::initialize(&transaction)?;
+    }
+    if version < 4 {
+        crate::shared_permission_request::initialize(&transaction)?;
     }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;

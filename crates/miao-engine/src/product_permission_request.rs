@@ -323,14 +323,16 @@ fn with_source<T>(
     with_sources(connection, context, |transaction, _| execute(transaction))
 }
 
-fn with_sources<T>(
+pub(crate) fn with_sources<T>(
     connection: &mut Connection,
     context: &Context,
     execute: impl FnOnce(&Transaction<'_>, &[(Source, &Authority)]) -> Result<T, Error>,
 ) -> Result<T, Error> {
-    // Lock order matches bridge replacement/reply delivery: product then call.
-    // Both remain held through the SQL commit so an acknowledged cancellation
-    // or source replacement cannot precede a later authorization mutation.
+    // Wait for storage before taking process-local source locks. Attached
+    // shared-authority transactions must use the same order to avoid a cycle.
+    let transaction = crate::store::write_tx(connection)?;
+    // Keep product then call locked through commit; cancellation can withdraw
+    // while storage is busy, but cannot overtake an entered authorization.
     let product = context.product.read().unwrap();
     if !product
         .bridge
@@ -342,7 +344,6 @@ fn with_sources<T>(
     context
         .bridge
         .with_permission_sources(&context.source, |sources| {
-            let transaction = crate::store::write_tx(connection)?;
             require_active(&transaction, context)?;
             let result = execute(&transaction, sources)?;
             require_active(&transaction, context)?;
@@ -492,7 +493,7 @@ fn evaluate(connection: &Connection, context: &Context, facts: &Request) -> Resu
     Ok(outcome)
 }
 
-fn classify(context: &Context, input: &Input) -> bool {
+pub(crate) fn classify(context: &Context, input: &Input) -> bool {
     use crate::agent_classifier::{bash, host_edit, Verdict};
     match input.facts.actions.first().map(String::as_str) {
         Some("edit") => host_edit(&input.facts.resources, &context.authority.host) == Verdict::Safe,
@@ -545,7 +546,7 @@ fn resolve(transaction: &Transaction<'_>, record: &Record) -> Result<(), Error> 
     Ok(())
 }
 
-fn state_name(state: State) -> &'static str {
+pub(crate) fn state_name(state: State) -> &'static str {
     match state {
         State::Pending => "pending",
         State::Allowed => "allowed",
@@ -561,7 +562,7 @@ fn input_hash(owner: &str, source: &Source, input: &Input) -> Result<String, Err
     )?))
 }
 
-fn require_input(input: &Input) -> Result<(), Error> {
+pub(crate) fn require_input(input: &Input) -> Result<(), Error> {
     if input.request_id.is_empty()
         || input.request_id.len() > 256
         || input.request_id.chars().any(char::is_control)

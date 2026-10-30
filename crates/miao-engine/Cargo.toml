@@ -37,7 +37,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "str
 htmd = "0.5.6"
 scraper = "0.26"
 encoding_rs = "0.8"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled", "hooks"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_jcs = "0.1"

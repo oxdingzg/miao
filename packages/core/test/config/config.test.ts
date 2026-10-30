@@ -115,6 +115,22 @@ describe("Config", () => {
     }),
   )
 
+  it.effect("keeps keys a V1 document never set absent, so earlier documents keep their values", () =>
+    Effect.sync(() => {
+      const migrated = Schema.decodeUnknownSync(Config.Info)(
+        ConfigMigrateV1.migrate(Schema.decodeUnknownSync(ConfigV1.Info)({ provider: {} })),
+      )
+      expect(Object.hasOwn(migrated, "model")).toBe(false)
+      const document = (path: string, input: unknown) =>
+        new Config.Document({ type: "document", path, info: Option.getOrThrow(Config.decodeDocument(input)) })
+      const explanation = ConfigExplain.explain([
+        { entry: document("/global/miao.json", { model: "global/model" }), scope: "global" as const },
+        { entry: document("/repo/.miao/miao.jsonc", migrated), scope: "local" as const },
+      ])
+      expect(explanation.keys.find((item) => item.path.join(".") === "model")?.value).toBe("global/model")
+    }),
+  )
+
   it.effect("migrates arbitrary v1 configuration into valid v2 configuration", () =>
     Effect.sync(() => {
       FastCheck.assert(

@@ -58,7 +58,7 @@ test.skipIf(!binary)("shared permission changes cross real control processes wit
     } finally { await reopened.close() }
     using stored = new Database(db, { readonly: true })
     expect(stored.query("select name from sqlite_schema where name like 'engine_%'").all()).toEqual([])
-    expect(stored.query("pragma user_version").get()).toEqual({ user_version: 3 })
+    expect(stored.query("pragma user_version").get()).toEqual({ user_version: 4 })
   } finally { await Promise.all([first.close(), peer.close(), explicit.close(), foreign.close()]) }
 }, 30_000)
 
