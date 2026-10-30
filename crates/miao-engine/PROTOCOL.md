@@ -1433,6 +1433,26 @@ project without its owning native Location fail explicitly. Explicit workspace
 placement, an in-memory Core database and manual legacy saved-rule snapshots are
 unsupported for this startup path and fail before either source freezes.
 
-This preview does not enable migration by default or configure the direct Rust
-TUI shim. Shared changefeed supervision, legacy TS-session retirement and final
-product acceptance remain separate requirements before default activation.
+The product's Rust TUI engine shim uses the same paired preparation and persisted
+ownership check before launching its engine. A failed product plan exits without
+starting an engine from the original raw arguments. POSIX uses an executable
+wrapper; Windows passes the product executable and a literal argument prefix to
+the Rust launcher. `MIAO_ENGINE_LAUNCH_PREFIX` is a JSON array of strings prepended
+to the engine arguments without a shell. Malformed input fails startup. This lets
+packaged and source invocations reach the same hidden shim without `.cmd` quoting
+or bypassing product preparation. Direct invocation of `miao-engine` retains the
+explicit flag contract above.
+
+A shared Runtime supervises Root invalidations using a Root-bound rule cursor.
+Rule changes re-evaluate only captured sources belonging to the actual local
+bridge, inside the existing Source/run/lease-fenced Root transactions. Replaced
+or withdrawn local bridges retire their requests by cancellation, even without a
+rule change. Pending request deadlines are also settled without a host poll.
+Request notifications use their independent durable stream and are
+projected without a status/list call from the host. These notifications never
+authorize execution. An idle stream performs no Session database writes. Refresh
+failures retain the cursor for retry; execution still requires its own current
+fenced transaction. Shutdown stops and joins the supervisor.
+
+This preview does not enable migration by default. Legacy TS-session retirement
+and final product acceptance remain requirements before default activation.
