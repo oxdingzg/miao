@@ -91,6 +91,8 @@ jobs:
         run: cargo test --manifest-path ../miao-credential/Cargo.toml --locked
 
       - name: Test
+        env:
+          RUST_MIN_STACK: "16777216"
         run: cargo test
 
       - name: Setup ACP client runtime
