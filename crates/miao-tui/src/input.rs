@@ -51,7 +51,11 @@ pub fn spawn(bus: Bus) -> Input {
             Ok(false) => continue,
             Err(_) => return,
             Ok(true) => match crossterm::event::read() {
-                Ok(raw) => bus.send(event::from_terminal(raw)),
+                Ok(raw) => {
+                    if let Some(event) = event::from_terminal(raw) {
+                        bus.send(event);
+                    }
+                }
                 Err(_) => return,
             },
         }
