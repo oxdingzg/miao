@@ -113,3 +113,5 @@ pub mod product_permission;
 pub mod product_permission_request;
 
 pub mod permission_source_transaction;
+
+pub mod shared_permission_request;

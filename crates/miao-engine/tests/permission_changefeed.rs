@@ -239,7 +239,7 @@ async fn actual_v2_upgrade_preserves_receipts_and_journals_already_prepared_olde
         older
             .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
             .unwrap(),
-        3
+        4
     );
 }
 
