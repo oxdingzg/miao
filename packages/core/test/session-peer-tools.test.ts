@@ -42,6 +42,7 @@ const peers: PeerTools.Peers = {
           title: session.title,
           parent_id: null,
           lastActivity: 10,
+          directory: String(session.location.directory),
         })),
     ),
   resolve: (_sender, to) => Effect.succeed(sessions.get(SessionSchema.ID.make(to))),
@@ -100,6 +101,16 @@ describe("peer tool factory", () => {
     expect(text).toContain("ses_target")
     expect(text).toContain("execution: busy")
     expect(text).toContain("background jobs: 1")
+  })
+
+  test("narrows the list to sessions under the requested directory", async () => {
+    const matched = await settle("list_sessions", { directory: "/tmp" })
+    const matchedText = matched.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+    expect(matchedText).toContain("ses_target")
+
+    const missed = await settle("list_sessions", { directory: "/elsewhere" })
+    const missedText = missed.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+    expect(missedText).not.toContain("ses_target")
   })
 
   test("narrows the list to titles containing the search text", async () => {
