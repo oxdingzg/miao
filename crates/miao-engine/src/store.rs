@@ -864,6 +864,25 @@ impl Store {
         .await
     }
 
+    /// The durable state of one run, even after its Session starts another run.
+    pub(crate) async fn run_state(
+        &self,
+        session: &str,
+        run: &str,
+    ) -> Result<Option<String>, Error> {
+        let (session, run) = (session.to_owned(), run.to_owned());
+        self.call(move |conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT state FROM engine_run WHERE session_id=?1 AND id=?2",
+                    params![session, run],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        })
+        .await
+    }
+
     /// Initialize identity and location without an inbox row. Retries preserve
     /// title edits and timestamps; another location cannot adopt the identity.
     pub async fn initialize(&self, session: &str, title: &str, root: &str) -> Result<Value, Error> {

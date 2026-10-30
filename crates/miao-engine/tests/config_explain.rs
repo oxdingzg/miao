@@ -83,6 +83,10 @@ fn directory_discovery_and_source_errors_work_without_provider_configuration() {
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
     let error = String::from_utf8(output.stderr).unwrap();
+    // `main` reports `Result` errors through `Debug`, so on Windows the path
+    // in the message arrives quoted and backslash-escaped; unescape before
+    // matching so the assertion tests the named source, not the formatting.
+    let error = error.replace("\\\\", "\\").replace('"', "");
     assert!(error.contains(file.to_str().unwrap()));
     assert!(error.contains("config root must be an object"));
 }
