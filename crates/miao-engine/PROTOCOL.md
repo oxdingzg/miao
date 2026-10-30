@@ -1435,10 +1435,14 @@ unsupported for this startup path and fail before either source freezes.
 
 The product's Rust TUI engine shim uses the same paired preparation and persisted
 ownership check before launching its engine. A failed product plan exits without
-starting an engine from the original raw arguments. The existing POSIX launcher
-uses this shim; the Windows TUI launcher still needs its equivalent wrapper.
-Direct invocation of `miao-engine` retains the explicit flag contract above.
+starting an engine from the original raw arguments. POSIX uses an executable
+wrapper; Windows passes the product executable and a literal argument prefix to
+the Rust launcher. `MIAO_ENGINE_LAUNCH_PREFIX` is a JSON array of strings prepended
+to the engine arguments without a shell. Malformed input fails startup. This lets
+packaged and source invocations reach the same hidden shim without `.cmd` quoting
+or bypassing product preparation. Direct invocation of `miao-engine` retains the
+explicit flag contract above.
 
 This preview does not enable migration by default. Shared changefeed supervision,
-legacy TS-session retirement, Windows TUI launcher integration and final product
-acceptance remain requirements before default activation.
+legacy TS-session retirement and final product acceptance remain requirements
+before default activation.
