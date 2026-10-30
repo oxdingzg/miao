@@ -45,6 +45,7 @@ pub struct Launch {
 }
 
 pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
+    platform::job_control::foreground()?;
     let workspace = launch.workspace.clone();
     let loaded = theme::load(&workspace);
     for warning in &loaded.warnings {
@@ -160,6 +161,19 @@ async fn drive(
                     app.handle(app_event);
                     if app.take_redraw_request() {
                         terminal::redraw(terminal)?;
+                    }
+                    #[cfg(unix)]
+                    if app.take_suspend_request() {
+                        let paused = input.pause()?;
+                        title.update(None)?;
+                        terminal::suspend();
+                        let result = platform::job_control::suspend();
+                        terminal::resume(terminal, preferences)?;
+                        drop(paused);
+                        title.invalidate();
+                        if let Err(error) = result {
+                            app.warn(&format!("cannot suspend to shell: {error}"));
+                        }
                     }
                     if let Some(request) = app.take_editor_request() {
                         let paused = input.pause()?;
