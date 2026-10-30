@@ -154,6 +154,10 @@ export type AcpHandle = {
   // Closes stdin. ACP exits cleanly on stdin EOF; the scope finalizer also
   // calls this, so tests only need it when asserting exit behavior.
   readonly close: () => void
+  // Diagnostic snapshot of what the child wrote to stderr, tail-truncated.
+  // A timed-out `receive` surfaces this so CI failures carry the engine's
+  // last words instead of a bare timeout.
+  readonly stderrTail: (n: number) => string
   readonly exited: Promise<number>
 }
 
@@ -477,6 +481,7 @@ export function withCliFixture<A, E>(
         receive: Queue.take(responses),
         // proc.stdin.end() is idempotent in Bun; no try/catch needed.
         close: () => proc.stdin.end(),
+        stderrTail: (n: number) => stderrChunks.join("").slice(-n),
         exited: proc.exited as Promise<number>,
       } satisfies AcpHandle
     })
@@ -547,6 +552,5 @@ export const cliIt = {
     name: string,
     body: (input: CliFixture) => Effect.Effect<A, E, Scope.Scope | HttpClient.HttpClient>,
     opts?: number | TestOptions,
-  ) =>
-    test(name, () => Effect.runPromise(Effect.scoped(withCliFixture(body))), opts),
+  ) => test(name, () => Effect.runPromise(Effect.scoped(withCliFixture(body))), opts),
 }
