@@ -368,6 +368,7 @@ fn spawn_engine(
     let failure: Shared = Arc::new(Mutex::new(None));
     let closed = Arc::new(AtomicBool::new(false));
     let stderr_tail: Arc<Mutex<Stderr>> = Arc::new(Mutex::new(Stderr::default()));
+    let (stderr_done_tx, stderr_done_rx) = watch::channel(false);
 
     let mut writer = stdin;
     tokio::spawn(async move {
@@ -392,6 +393,7 @@ fn spawn_engine(
     let reader_reap = reap.clone();
     let reader_child = child.clone();
     let reader_tail = stderr_tail.clone();
+    let mut reader_stderr_done = stderr_done_rx.clone();
     tokio::spawn(async move {
         let mut lines = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = lines.next_line().await {
@@ -404,6 +406,9 @@ fn spawn_engine(
         // engine's own words instead of losing a race with the stream closing.
         // A child that closed its output but keeps running is still a failure.
         let status = exit_status(&reader_child, EXIT_STATUS_GRACE).await;
+        // Exit status and stdout EOF do not mean the stderr task has drained.
+        // Bound the wait because a descendant can inherit the stderr pipe.
+        let _ = tokio::time::timeout(EXIT_STATUS_GRACE, reader_stderr_done.changed()).await;
         reap.publish(engine_failure(status, &reader_tail));
     });
 
@@ -414,9 +419,11 @@ fn spawn_engine(
             let mut buffer = tail.lock().expect("stderr tail");
             buffer.push(&line);
         }
+        let _ = stderr_done_tx.send(true);
     });
 
     let reaped_child = child.clone();
+    let mut reaper_stderr_done = stderr_done_rx;
     tokio::spawn(async move {
         loop {
             let status = {
@@ -424,6 +431,7 @@ fn spawn_engine(
                 guard.try_wait().ok().flatten()
             };
             if let Some(status) = status {
+                let _ = tokio::time::timeout(EXIT_STATUS_GRACE, reaper_stderr_done.changed()).await;
                 reader_reap.publish(engine_failure(Some(status), &stderr_tail));
                 let _ = exited_tx.send(true);
                 break;
