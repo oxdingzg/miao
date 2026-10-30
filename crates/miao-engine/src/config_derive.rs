@@ -74,11 +74,11 @@ fn validate(origin: &str, value: &serde_json::Value) -> Result<(), String> {
         return Err(format!("{origin}: config root must be an object"));
     };
     match object.get("sandbox") {
-        None | Some(serde_json::Value::Null) => {}
+        None => {}
         Some(sandbox) => validate_sandbox(origin, sandbox)?,
     }
     match object.get("lsp") {
-        None | Some(serde_json::Value::Null) => {}
+        None => {}
         Some(lsp) => validate_lsp(origin, lsp)?,
     }
     Ok(())
@@ -96,7 +96,7 @@ fn validate_sandbox(origin: &str, sandbox: &serde_json::Value) -> Result<(), Str
         }
     }
     if let Some(network) = sandbox.get("network") {
-        if !network.is_boolean() && !network.is_null() {
+        if !network.is_boolean() {
             return Err(format!("{origin}: sandbox.network must be a boolean"));
         }
     }
@@ -133,6 +133,11 @@ fn validate_lsp(origin: &str, lsp: &serde_json::Value) -> Result<(), String> {
         };
         if entry.get("disabled") == Some(&serde_json::Value::Bool(true)) {
             continue;
+        }
+        if let Some(disabled) = entry.get("disabled") {
+            if !disabled.is_boolean() {
+                return Err(format!("{origin}: lsp.{id}.disabled must be a boolean"));
+            }
         }
         // The product schema's Server variant requires a command; only the
         // Disabled variant may omit it, so a command-less entry refuses the
@@ -174,6 +179,13 @@ fn validate_lsp(origin: &str, lsp: &serde_json::Value) -> Result<(), String> {
             {
                 return Err(format!(
                     "{origin}: lsp.{id}.env must map strings to strings"
+                ));
+            }
+        }
+        if let Some(initialization) = entry.get("initialization") {
+            if !initialization.is_object() {
+                return Err(format!(
+                    "{origin}: lsp.{id}.initialization must be an object"
                 ));
             }
         }
@@ -891,6 +903,55 @@ mod validate_tests {
         assert!(validated(serde_json::json!({"lsp": {"gopls": {"command": "gopls"}}})).is_err());
         assert!(validated(serde_json::json!({"lsp": {"gopls": 3}})).is_err());
         assert!(validated(serde_json::json!({"lsp": false})).is_ok());
+    }
+
+    #[test]
+    fn known_config_fields_reject_null_and_mistyped_values() {
+        for (value, key) in [
+            (serde_json::json!({"sandbox": null}), "sandbox"),
+            (serde_json::json!({"lsp": null}), "lsp"),
+            (
+                serde_json::json!({"sandbox": {"network": null}}),
+                "sandbox.network",
+            ),
+            (
+                serde_json::json!({"lsp": {"test": {"command": ["test"], "disabled": "yes"}}}),
+                "lsp.test.disabled",
+            ),
+            (
+                serde_json::json!({"lsp": {"test": {"command": ["test"], "disabled": null}}}),
+                "lsp.test.disabled",
+            ),
+            (
+                serde_json::json!({"lsp": {"test": {"command": ["test"], "initialization": 42}}}),
+                "lsp.test.initialization",
+            ),
+            (
+                serde_json::json!({"lsp": {"test": {"command": ["test"], "initialization": null}}}),
+                "lsp.test.initialization",
+            ),
+            (
+                serde_json::json!({"lsp": {"test": {"command": ["test"], "initialization": []}}}),
+                "lsp.test.initialization",
+            ),
+        ] {
+            let error = validated(value.clone()).expect_err(&format!("accepted {value}"));
+            assert!(error.starts_with("miao.json:"), "{error}");
+            assert!(error.contains(key), "{error}");
+        }
+    }
+
+    #[test]
+    fn legal_lsp_switches_and_disabled_variants_remain_valid() {
+        for value in [
+            serde_json::json!({"sandbox": {"network": false}}),
+            serde_json::json!({"lsp": true}),
+            serde_json::json!({"lsp": false}),
+            serde_json::json!({"lsp": {"test": {"disabled": true, "command": 42, "initialization": 42}}}),
+            serde_json::json!({"lsp": {"test": {"command": ["test"], "disabled": false, "initialization": {"settings": {}}}}}),
+        ] {
+            assert!(validated(value.clone()).is_ok(), "rejected {value}");
+        }
     }
 
     #[test]
