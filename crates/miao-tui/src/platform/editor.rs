@@ -1,11 +1,11 @@
 //! External editor handoff for the composer.
 //!
-//! The caller suspends the TUI around [`run`], which blocks until the editor
+//! The caller suspends the TUI around [`run`], which waits asynchronously until the editor
 //! exits. The draft travels through a private temporary file, and the file is
 //! removed whether the editor succeeds or not.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use tokio::process::Command;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
@@ -49,22 +49,24 @@ pub fn parse(editor: &str) -> Result<Vec<String>, String> {
 
 /// Run the editor and return its saved contents. An empty file reads back as
 /// `None`, matching the TypeScript handoff.
-pub fn run(request: &Request) -> Result<Option<String>, String> {
-    let path = temp_path();
-    std::fs::write(&path, &request.text)
+pub async fn run(request: &Request) -> Result<Option<String>, String> {
+    let buffer = Buffer(temp_path());
+    let path = &buffer.0;
+    std::fs::write(path, &request.text)
         .map_err(|error| format!("cannot write the editor buffer: {error}"))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
     }
     let status = Command::new(&request.command[0])
         .args(&request.command[1..])
-        .arg(&path)
+        .arg(path)
         .current_dir(&request.workspace)
-        .status();
-    let saved = std::fs::read_to_string(&path).ok();
-    let _ = std::fs::remove_file(&path);
+        .kill_on_drop(true)
+        .status()
+        .await;
+    let saved = std::fs::read_to_string(path).ok();
     match status {
         Ok(status) if status.success() => Ok(saved.filter(|text| !text.is_empty())),
         Ok(status) => Err(match status.code() {
@@ -72,6 +74,15 @@ pub fn run(request: &Request) -> Result<Option<String>, String> {
             None => "editor was terminated by a signal".into(),
         }),
         Err(error) => Err(format!("cannot run {}: {error}", request.command[0])),
+    }
+}
+
+// Dropping the editor future on shutdown must remove its private draft too.
+struct Buffer(PathBuf);
+
+impl Drop for Buffer {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
     }
 }
 
@@ -84,7 +95,10 @@ fn temp_path() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{parse, request};
+    #[cfg(unix)]
+    use super::{run, Request};
+    use std::path::Path;
 
     #[test]
     fn an_editor_command_splits_on_whitespace() {
@@ -114,8 +128,8 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    fn the_temp_file_is_private_read_back_and_removed() {
+    #[tokio::test]
+    async fn the_temp_file_is_private_read_back_and_removed() {
         let dir = std::env::temp_dir().join(format!("miao-editor-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -129,13 +143,13 @@ mod tests {
             workspace: dir.clone(),
             text: "old".into(),
         };
-        assert_eq!(run(&request).unwrap().as_deref(), Some("edited"));
+        assert_eq!(run(&request).await.unwrap().as_deref(), Some("edited"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(unix)]
-    #[test]
-    fn a_failed_editor_reports_the_exit_and_leaves_no_file() {
+    #[tokio::test]
+    async fn a_failed_editor_reports_the_exit_and_leaves_no_file() {
         let dir = std::env::temp_dir().join(format!("miao-editor-fail-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -144,7 +158,7 @@ mod tests {
             workspace: dir.clone(),
             text: "draft".into(),
         };
-        let error = run(&request).unwrap_err();
+        let error = run(&request).await.unwrap_err();
         assert!(error.contains("code 3"), "{error}");
         let _ = std::fs::remove_dir_all(&dir);
     }

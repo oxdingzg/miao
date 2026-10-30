@@ -27,6 +27,10 @@ export const Input = Schema.Struct({
   search: Schema.optional(Schema.String).annotate({
     description: "Only Sessions whose title contains this text, case-insensitive.",
   }),
+  directory: Schema.optional(Schema.String).annotate({
+    description:
+      "Only Sessions whose working directory is this path or inside it. Matches the normalized stored directory.",
+  }),
 })
 export type List = (input: typeof Input.Type) => Effect.Effect<ReadonlyArray<Summary>, ToolFailure>
 export const Output = Schema.Struct({ sessions: Schema.Array(Summary) })
