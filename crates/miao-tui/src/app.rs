@@ -770,15 +770,20 @@ impl App {
         // Keys come from the live keymap, not a hand-written summary: a help
         // list that names a stroke the keymap no longer binds is worse than no
         // list at all, because it sends the operator to the wrong key.
-        rows.extend(self.keys.bindings().into_iter().map(|(action, strokes)| Row {
-            id: action.name().to_string(),
-            label: action.name().to_string(),
-            detail: if strokes.is_empty() {
-                "unbound".to_string()
-            } else {
-                strokes
-            },
-        }));
+        rows.extend(
+            self.keys
+                .bindings()
+                .into_iter()
+                .map(|(action, strokes)| Row {
+                    id: action.name().to_string(),
+                    label: action.name().to_string(),
+                    detail: if strokes.is_empty() {
+                        "unbound".to_string()
+                    } else {
+                        strokes
+                    },
+                }),
+        );
         rows.extend(self.templates.iter().map(|template| Row {
             id: format!("/{}", template.name),
             label: format!("/{}", template.name),
@@ -1781,9 +1786,9 @@ fn first_line(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
     use crate::session::{Entry, RevertPlan, Transcript};
     use crate::theme::{self, DEFAULT_THEME};
+    use std::collections::BTreeMap;
 
     fn app() -> App {
         app_with(Startup::default())
@@ -2526,7 +2531,10 @@ mod tests {
     #[test]
     fn help_lists_the_bindings_the_keymap_actually_uses() {
         let mut overrides = BTreeMap::new();
-        overrides.insert("session_rename".to_string(), Some(vec!["ctrl+n".to_string()]));
+        overrides.insert(
+            "session_rename".to_string(),
+            Some(vec!["ctrl+n".to_string()]),
+        );
         let mut app = app_with_overrides(&overrides);
         app.run_builtin(Builtin::Help);
         let Some(Dialog::Help(list)) = app.dialog.as_ref() else {

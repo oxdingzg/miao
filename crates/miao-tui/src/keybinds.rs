@@ -612,8 +612,10 @@ mod tests {
     #[test]
     fn bindings_follow_an_override_instead_of_the_defaults() {
         let overrides = overrides(&[("session_rename", Some(&["ctrl+n"])), ("session_new", None)]);
-        let bindings: BTreeMap<Action, String> =
-            Keymap::from_overrides(&overrides).bindings().into_iter().collect();
+        let bindings: BTreeMap<Action, String> = Keymap::from_overrides(&overrides)
+            .bindings()
+            .into_iter()
+            .collect();
         assert_eq!(bindings[&Action::SessionRename], "ctrl+n");
         // An unbound action stays listed: help must not hide a removed binding.
         assert_eq!(bindings[&Action::SessionNew], "");
