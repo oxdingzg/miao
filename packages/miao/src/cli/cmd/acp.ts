@@ -3,6 +3,25 @@ import path from "node:path"
 import { cmd } from "./cmd"
 import { withNetworkOptions, hasArg, resolveNetworkOptionsNoConfig } from "../network"
 
+function input_watcher(output: WritableStream<Uint8Array>, input: ReadableStream<Uint8Array>) {
+  void output
+  const reader = input.getReader()
+  void (async () => {
+    for (;;) {
+      try {
+        const { done, value } = await reader.read()
+        if (done) {
+          console.error("[acp-debug] input stream done")
+          return
+        }
+        console.error(`[acp-debug] input chunk ${value?.length ?? 0} bytes`)
+      } catch (error) {
+        console.error(`[acp-debug] input error: ${error}`)
+        return
+      }
+    }
+  })()
+}
 export const AcpCommand = cmd({
   command: "acp",
   describe: "start ACP (Agent Client Protocol) server",
@@ -72,7 +91,12 @@ export const AcpCommand = cmd({
       defaultModel = undefined
     }
     try {
-      await serve({ client, version: InstallationVersion, defaultModel, output, input }).closed
+      console.error("[acp-debug] config done, calling serve")
+      const done = serve({ client, version: InstallationVersion, defaultModel, output, input })
+      console.error("[acp-debug] serve returned connection")
+      input_watcher(output, input)
+      await done.closed
+      console.error("[acp-debug] connection closed")
     } finally {
       if (callbacks.data) process.stdin.off("data", callbacks.data)
       if (callbacks.end) process.stdin.off("end", callbacks.end)
