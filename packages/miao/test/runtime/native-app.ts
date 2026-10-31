@@ -195,9 +195,21 @@ export async function run() {
     state.ui = build
     const buildOutput = new Response(build.stdout).text()
     const buildErrors = new Response(build.stderr).text()
-    const buildTimeout = setTimeout(() => build.kill(), 240_000)
+    const buildTimeout = setTimeout(() => build.kill(), 600_000)
     try {
-      if ((await build.exited) !== 0) throw new Error("Native live fixture build failed")
+      if ((await build.exited) !== 0) {
+        // The full log stays in the fixture directory, but a reader of the job
+        // log cannot see it, which turned every build failure into the same
+        // unexplained message. Compiler diagnostics name the app's own public
+        // source, so the tail is safe to report; the fixture's own output is
+        // still only written to disk.
+        const tail = ((await buildOutput) + "\n" + (await buildErrors))
+          .trim()
+          .split("\n")
+          .slice(-40)
+          .join("\n")
+        throw new Error(`Native live fixture build failed\n${tail}`)
+      }
     } finally {
       clearTimeout(buildTimeout)
       await Bun.write(path.join(directory, "build.log"), (await buildOutput) + "\n" + (await buildErrors))
