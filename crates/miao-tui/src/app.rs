@@ -2712,7 +2712,6 @@ mod tests {
         assert_eq!(row_for("session_new").as_deref(), Some("ctrl+x+n"));
         // The hand-written summary is gone: no row claims an unknown group.
         assert!(list.rows.iter().all(|row| row.label != "keys"));
-
     }
 
     #[test]
