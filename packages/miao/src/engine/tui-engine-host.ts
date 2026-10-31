@@ -229,23 +229,23 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   // service graph, which is the only place that owns the product state.
   // Remote-control authority lives with the host's runtime identity, the same
   // place the device panel reads from.
-  const administration = async () => {
+  const resolveAdministration = async () => {
     const value = await Promise.resolve(identityService?.administration?.())
     if (!value) throw new Error("remote control is unavailable in this host")
     return value
   }
   const hostCall = async (op: string, params: unknown) => {
     const input = (params ?? {}) as Record<string, unknown>
-    if (op === "remote.pending") return (await administration()).pending()
+    if (op === "remote.pending") return (await resolveAdministration()).pending()
     if (op === "remote.approve") {
-      return (await administration()).approve(String(input.pairingID), String(input.publicKey))
+      return (await resolveAdministration()).approve(String(input.pairingID), String(input.publicKey))
     }
     if (op === "remote.reject") {
-      ;(await administration()).reject(String(input.pairingID))
+      ;(await resolveAdministration()).reject(String(input.pairingID))
       return { ok: true }
     }
     if (op === "remote.revoke") {
-      await (await administration()).revoke(String(input.grantID), Number(input.version))
+      await (await resolveAdministration()).revoke(String(input.grantID), Number(input.version))
       return { ok: true }
     }
     if (op !== "workspace.create") throw new Error(`unknown host call: ${op}`)
