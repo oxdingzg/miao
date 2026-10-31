@@ -220,7 +220,11 @@ impl TitlePane {
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| workspace.display().to_string());
         Self {
-            label: format!(" miao-tui · {name} · {}", git_branch(workspace)),
+            label: format!(
+                " miao-tui · {name} · {} · v{}",
+                git_branch(workspace),
+                crate::VERSION
+            ),
             status: None,
             status_alert: false,
             theme,
