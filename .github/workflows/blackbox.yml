@@ -13,7 +13,13 @@ concurrency:
 
 jobs:
   replay:
-    name: session blackbox replay
+    name: session blackbox replay (shard ${{ matrix.shard }}/3)
+    strategy:
+      # The replay walks every engine test file through the real sidecar; three
+      # shards keep it off the critical path of a full run.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -30,12 +36,15 @@ jobs:
         working-directory: crates/miao-engine
         run: cargo build --locked --bin miao-engine
       - name: Core tape and real Session replay
+        if: matrix.shard == 1
         working-directory: packages/core
         run: bun test test/blackbox*.test.ts test/session-runner.test.ts
       - name: HTTP and real sidecar replay
         working-directory: packages/miao
         env:
           MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine
+          INTEGRATION_SHARD: ${{ matrix.shard }}
+          INTEGRATION_SHARDS: "3"
         run: |
           mapfile -t replay_cases < <(find test/engine -name '*.test.ts' | sort)
           bun run test:integration "${replay_cases[@]}"

@@ -74,6 +74,32 @@ if [ "${#files[@]}" -eq 0 ]; then
   exit 1
 fi
 
+# CI splits this suite across matrix jobs. Round-robin keeps the split stable
+# as files are added, and each shard still runs one process per file with its
+# own timeout and reaping round.
+shard="${INTEGRATION_SHARD:-1}"
+shards="${INTEGRATION_SHARDS:-1}"
+case "$shard" in ''|*[!0-9]*) echo "INTEGRATION_SHARD must be a number" >&2; exit 1 ;; esac
+case "$shards" in ''|*[!0-9]*) echo "INTEGRATION_SHARDS must be a number" >&2; exit 1 ;; esac
+if [ "$shards" -lt 1 ] || [ "$shard" -lt 1 ] || [ "$shard" -gt "$shards" ]; then
+  echo "integration shard $shard/$shards is out of range" >&2
+  exit 1
+fi
+if [ "$shards" -gt 1 ]; then
+  selected=()
+  for index in "${!files[@]}"; do
+    if [ $((index % shards)) -eq $((shard - 1)) ]; then
+      selected+=("${files[$index]}")
+    fi
+  done
+  files=("${selected[@]}")
+  if [ "${#files[@]}" -eq 0 ]; then
+    echo "integration shard $shard/$shards has no files to run" >&2
+    exit 0
+  fi
+  echo "integration shard $shard/$shards: ${#files[@]} files"
+fi
+
 mkdir -p "$round"
 
 reap_group() {

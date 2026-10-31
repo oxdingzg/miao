@@ -36,18 +36,38 @@ jobs:
           bun crates/miao-engine/tests/differential/generate-personas.ts --check
 
   engine:
-    name: engine (${{ matrix.os }})
+    name: engine (${{ matrix.os }}, shard ${{ matrix.shard }}/${{ matrix.shards }})
     strategy:
       fail-fast: false
       matrix:
         include:
           # The macOS leg runs on the owner's self-hosted arm64 runner: hosted
           # macOS minutes bill at 10x, so one full engine run spends more than
-          # the account's entire monthly allowance.
+          # the account's entire monthly allowance. It stays one job: a single
+          # self-hosted runner runs one job at a time, so sharding there would
+          # only queue the shards behind each other.
           - os: macos-arm64
             runner: [self-hosted, macOS, ARM64]
+            shard: 1
+            shards: 1
+          # The ubuntu leg is the longest single job of a full CI run, so its
+          # 176 test targets are split across four parallel jobs.
           - os: ubuntu-24.04
             runner: ubuntu-24.04
+            shard: 1
+            shards: 4
+          - os: ubuntu-24.04
+            runner: ubuntu-24.04
+            shard: 2
+            shards: 4
+          - os: ubuntu-24.04
+            runner: ubuntu-24.04
+            shard: 3
+            shards: 4
+          - os: ubuntu-24.04
+            runner: ubuntu-24.04
+            shard: 4
+            shards: 4
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     defaults:
@@ -57,6 +77,19 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # The self-hosted macOS runner shares one volume with every cached build
+      # tree. A full volume surfaces as unrelated link errors, or as a killed
+      # test process reported as SIGTERM. Fail with the actual reason instead.
+      - name: Require free disk (self-hosted runner)
+        if: matrix.os == 'macos-14'
+        run: |
+          free=$(df -m "$RUNNER_TEMP" | awk 'NR==2 {print $4}')
+          echo "free disk under $RUNNER_TEMP: ${free}MB"
+          if [ "${free:-0}" -lt 8000 ]; then
+            echo "::error::runner has ${free}MB free but needs 8000MB; prune ~/builds before rerunning"
+            exit 1
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -99,7 +132,7 @@ jobs:
       - name: Test
         env:
           RUST_MIN_STACK: "16777216"
-        run: cargo test
+        run: bash ../../script/engine-test-shard.sh "${{ matrix.shard }}" "${{ matrix.shards }}"
 
       - name: Setup ACP client runtime
         uses: ./.github/actions/setup-bun
