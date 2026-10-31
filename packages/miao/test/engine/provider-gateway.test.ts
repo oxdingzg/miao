@@ -40,6 +40,24 @@ describe("provider gateway", () => {
     }
   })
 
+  test("routes the advertised endpoint to its model", async () => {
+    const gateway = await Effect.runPromise(ProviderGateway.prepare(aisdk))
+    try {
+      const endpoint = gateway.route(model("acme", "chat-1")).endpoint
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { authorization: `Bearer ${gateway.token}` },
+        body: "{}",
+      })
+      // The stub model fails to resolve, so a recognized route surfaces as a
+      // gateway 500. A 404 here means the path shape itself was rejected.
+      expect(response.status).toBe(500)
+      expect(await response.text()).not.toContain("gateway accepts")
+    } finally {
+      await Effect.runPromise(gateway.close)
+    }
+  })
+
   test("maps an OpenAI Chat history onto AI SDK model messages", () => {
     const { system, conversation } = ProviderGateway.toModelMessages([
       { role: "system", content: "be brief" },
