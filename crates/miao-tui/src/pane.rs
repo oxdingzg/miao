@@ -877,6 +877,12 @@ fn composer_height(composer: &Composer) -> u16 {
     (2 + input + completion) as u16
 }
 
+/// The home screen shows the same composer as a Session, so a prompt can be
+/// typed before any Session exists.
+pub fn render_home_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
+    render_composer(frame, area, composer, theme)
+}
+
 fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
     let palette = theme.palette;
     // The queue count rides the same title line as a transient notice so the

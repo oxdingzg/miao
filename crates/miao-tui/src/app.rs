@@ -148,6 +148,10 @@ pub struct App {
     pub session: Option<SessionSummary>,
     pub state: SessionState,
     pub quit: bool,
+    /// The home list owns the keyboard by default (filter, numbered slots,
+    /// pin); `Tab` moves focus to the prompt and back, so a first prompt can
+    /// still be typed from the landing screen.
+    home_list_focus: bool,
     dialog: Option<Dialog>,
     permission_generation: u64,
     workspace_changes_generation: u64,
@@ -226,6 +230,7 @@ impl App {
             session: None,
             state: SessionState::default(),
             quit: false,
+            home_list_focus: true,
             dialog: None,
             permission_generation: 0,
             workspace_changes_generation: 0,
@@ -342,12 +347,19 @@ impl App {
             Screen::Home => {
                 // The home list keeps the title bar so the workspace under
                 // view stays visible before a Session is open.
-                let [title, body] = ratatui::layout::Layout::vertical([
+                let [title, body, composer_area] = ratatui::layout::Layout::vertical([
                     ratatui::layout::Constraint::Length(1),
                     ratatui::layout::Constraint::Min(1),
+                    ratatui::layout::Constraint::Length(3),
                 ])
                 .areas(frame.area());
                 self.shell.title.render(frame, title);
+                crate::pane::render_home_composer(
+                    frame,
+                    composer_area,
+                    &self.shell.composer,
+                    &self.shell.theme().clone(),
+                );
                 self.home.render(frame, body);
             }
             Screen::Session => self.shell.render(frame),
@@ -1447,6 +1459,32 @@ impl App {
             self.quit = true;
             return;
         }
+        // Tab moves between the prompt and the list; the prompt owns the rest of
+        // the keys so a first prompt can be typed before any Session exists.
+        if key.code == KeyCode::Tab {
+            self.home_list_focus = !self.home_list_focus;
+            return;
+        }
+        if !self.home_list_focus {
+            match self.shell.composer.handle_key(key, &self.keys) {
+                Action::None => {}
+                Action::Quit => self.quit = true,
+                // A shell command needs the Session whose location it runs in.
+                Action::Shell { .. } => {
+                    self.notice("open a Session to run a shell command");
+                }
+                Action::Submit { text, .. } => {
+                    if text.trim().is_empty() {
+                        return;
+                    }
+                    self.startup.prompt = Some(text);
+                    if let Some(engine) = self.engine.as_ref() {
+                        engine.new_session();
+                    }
+                }
+            }
+            return;
+        }
         // Filter mode owns the keyboard: printable keys narrow the list, and
         // Escape leaves the mode before anything else can consume Escape.
         if self.home.filtering() {
@@ -2374,6 +2412,22 @@ mod tests {
         event.kind = KeyEventKind::Release;
         app.handle(AppEvent::Key(event));
         assert!(!app.quit);
+        assert!(app.shell.composer.editor.is_empty());
+    }
+
+    #[test]
+    #[test]
+    fn a_prompt_typed_on_home_starts_a_session_with_it() {
+        let mut app = app();
+        // The list owns the keyboard until Tab hands it to the prompt.
+        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
+        for character in "hello".chars() {
+            app.handle(key(KeyCode::Char(character), KeyModifiers::NONE));
+        }
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.startup.prompt.as_deref(), Some("hello"));
+        // The prompt is consumed by the Session it starts, not left on the home
+        // screen for the next one.
         assert!(app.shell.composer.editor.is_empty());
     }
 
