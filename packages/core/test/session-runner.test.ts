@@ -5630,25 +5630,36 @@ describe("SessionRunnerLLM", () => {
       }),
     )
   })
-  ;[true, false].forEach((autonomous) => {
-    it.effect(`durable goal authorizes continuation only with explicit autonomous opt-in (${autonomous})`, () =>
-      Effect.gen(function* () {
-        yield* setup
-        loopEnabled = false
-        const events = yield* EventV2.Service
-        const session = yield* SessionV2.Service
-        const todos = yield* SessionTodo.Service
-        yield* todos.update({ sessionID, todos: [{ content: "Ready work", status: "pending", priority: "high" }] })
-        yield* GoalTool.record(events, sessionID, { objective: "Finish ready work", status: "active", autonomous })
-        response = fragmentFixture("text", "wait", ["Stopping early"]).completeEvents
-        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Work" }), resume: false })
-        yield* session.resume(sessionID)
-        if (autonomous) expect(requests.length).toBeGreaterThan(1)
-        if (!autonomous) expect(requests).toHaveLength(1)
-        expect(requests.length).toBeLessThanOrEqual(5)
-      }),
-    )
-  })
+  it.effect("config loop.enabled false stops continuation even with an active autonomous goal", () =>
+    Effect.gen(function* () {
+      yield* setup
+      loopEnabled = false
+      const events = yield* EventV2.Service
+      const session = yield* SessionV2.Service
+      const todos = yield* SessionTodo.Service
+      yield* todos.update({ sessionID, todos: [{ content: "Ready work", status: "pending", priority: "high" }] })
+      yield* GoalTool.record(events, sessionID, { objective: "Finish ready work", status: "active", autonomous: true })
+      response = fragmentFixture("text", "wait", ["Stopping early"]).completeEvents
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Work" }), resume: false })
+      yield* session.resume(sessionID)
+      expect(requests).toHaveLength(1)
+    }),
+  )
+
+  it.effect("runnable todos keep the drain alive without any goal", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const todos = yield* SessionTodo.Service
+      yield* todos.update({ sessionID, todos: [{ content: "Ready work", status: "pending", priority: "high" }] })
+      response = fragmentFixture("text", "wait", ["Stopping early"]).completeEvents
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Work" }), resume: false })
+      yield* session.resume(sessionID)
+      // Two unchanged todo signatures trigger the stall guard and stop the loop.
+      expect(requests.length).toBeGreaterThan(1)
+      expect(requests.length).toBeLessThanOrEqual(5)
+    }),
+  )
 
   it.effect("keeps continuing while todos stay open, then stops on no progress", () =>
     Effect.gen(function* () {

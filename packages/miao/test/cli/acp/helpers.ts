@@ -40,6 +40,10 @@ export function verifierConfig(llmUrl: string, skills?: string) {
   return {
     ...config,
     model: "test/test-model",
+    // The ACP fixtures leave runnable todos behind, which the todo-driven
+    // loop would chase with continuation prompts; these tests are not about
+    // the loop, so it stays off here.
+    loop: { enabled: false },
     ...(skills ? { skills: { paths: [skills] } } : {}),
     provider: {
       test: {

@@ -15,7 +15,7 @@ export const Info = Schema.Struct({
   status: Status.annotate({ description: "active, paused, blocked, or done" }),
   autonomous: Schema.optional(Schema.Boolean).annotate({
     description:
-      "Set true only when the user explicitly authorizes continued autonomous work. Continues runnable todos across idle boundaries, with bounded iterations; waiting or blocked todos do not spin.",
+      "Records explicit user authorization for continued autonomous work. Continuation itself is todo-driven and does not require this flag; a goal that is not active stops it.",
   }),
   evidence: Schema.optional(Schema.String).annotate({
     description: "Concrete evidence the goal is met (for done), or the blocker (for blocked)",

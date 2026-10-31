@@ -100,6 +100,19 @@ describe("Config", () => {
     }),
   )
 
+  it.effect("carries a V2 loop block through the V1 migration of a V1-shaped document", () =>
+    Effect.sync(() => {
+      const input = {
+        provider: { custom: { name: "Custom" } },
+        permission: { edit: "ask" },
+        loop: { enabled: false },
+      }
+      expect(ConfigMigrateV1.isV1(input)).toBe(true)
+      const decoded = Option.getOrThrow(Config.decodeDocument(input))
+      expect(decoded.loop?.enabled).toBe(false)
+    }),
+  )
+
   it.effect("migrates disabled providers onto their V2 provider entries", () =>
     Effect.sync(() => {
       const migrated = Schema.decodeUnknownSync(Config.Info)(

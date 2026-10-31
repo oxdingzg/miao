@@ -70,13 +70,7 @@ impl Provider for Script {
     }
 }
 
-async fn setup(
-    store: &Store,
-    status: &str,
-    autonomous: bool,
-    ready: bool,
-    location: &std::path::Path,
-) {
+async fn seed_work(store: &Store, ready: bool, location: &std::path::Path) {
     store
         .admit_attachments_at(
             Input {
@@ -97,7 +91,6 @@ async fn setup(
         )
         .await
         .unwrap();
-    store.update_state("s", "goal", Mutation::parse("goal", json!({"objective":"Finish tasks","status":status,"autonomous":autonomous,"evidence":"Explicit engagement state"})).unwrap()).await.unwrap();
     let mut todos = vec![
         json!({"id":"4","content":"CI","status":"waiting","priority":"high"}),
         json!({"id":"5","content":"Release","status":"pending","priority":"high","depends_on":["4"]}),
@@ -113,6 +106,17 @@ async fn setup(
         )
         .await
         .unwrap();
+}
+
+async fn setup(
+    store: &Store,
+    status: &str,
+    autonomous: bool,
+    ready: bool,
+    location: &std::path::Path,
+) {
+    seed_work(store, ready, location).await;
+    store.update_state("s", "goal", Mutation::parse("goal", json!({"objective":"Finish tasks","status":status,"autonomous":autonomous,"evidence":"Explicit engagement state"})).unwrap()).await.unwrap();
 }
 async fn finished(store: &Store) {
     // Advance through the bounded journal pages rather than repeatedly
@@ -250,7 +254,6 @@ async fn no_progress_is_bounded_and_synthetic_admissions_do_not_restart_the_loop
 async fn only_waits_paused_goals_and_missing_authorization_never_create_extra_turns() {
     for (status, autonomous, ready) in [
         ("active", true, false),
-        ("active", false, true),
         ("paused", true, true),
         ("blocked", true, true),
         ("done", true, true),
@@ -324,10 +327,18 @@ async fn changing_progress_does_not_refill_the_provider_allowance() {
         churn: true,
         finish_after: None,
     });
-    let runtime = Runtime::new(
+    // The leash is explicit here: the default has no provider-turn budget, so
+    // an unlimited policy would churn forever instead of demonstrating the
+    // refill rule.
+    let runtime = Runtime::with_policy(
         store.clone(),
         provider.clone(),
         Tools::new(dir.path()).await.unwrap(),
+        Policy::new(Config {
+            max_provider_turns: Some(25),
+            ..Config::default()
+        })
+        .unwrap(),
     )
     .await
     .unwrap();
@@ -382,5 +393,118 @@ async fn unlimited_product_tasks_keep_continuing_past_twenty_five_goal_iteration
             .unwrap()
             .is_empty()
     );
+    runtime.shutdown().await;
+}
+
+/// Canned replies in sequence; an exhausted sequence falls back to a plain
+/// text-only stop, the shape that used to strand the session mid-task.
+struct Sequence {
+    calls: AtomicUsize,
+    steps: Vec<(bool, Value)>,
+}
+#[async_trait]
+impl Provider for Sequence {
+    async fn stream(
+        &self,
+        _: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let index = self.calls.fetch_add(1, Ordering::SeqCst);
+        let (needs_tools, content) = self
+            .steps
+            .get(index)
+            .map(|(needs_tools, content)| (*needs_tools, content.clone()))
+            .unwrap_or((false, json!([{"type":"text","text":"waiting"}])));
+        Ok(Reply {
+            needs_tools,
+            content,
+            usage: json!({}),
+        })
+    }
+}
+
+#[tokio::test]
+async fn runnable_todos_keep_draining_without_any_goal() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    seed_work(&store, true, dir.path()).await;
+    let provider = Arc::new(Sequence {
+        calls: AtomicUsize::new(0),
+        steps: vec![
+            (
+                true,
+                json!([{"type":"tool_use","id":"done-4","name":"todowrite","input":{"todos":[
+                    {"id":"4","content":"CI","status":"completed","priority":"high"},
+                    {"id":"5","content":"Release","status":"pending","priority":"high","depends_on":["4"]},
+                    {"id":"7","content":"Audit","status":"pending","priority":"medium"}
+                ]}}]),
+            ),
+            (
+                false,
+                json!([{"type":"text","text":"CI green; release next"}]),
+            ),
+            (
+                true,
+                json!([{"type":"tool_use","id":"done-5","name":"todowrite","input":{"todos":[
+                    {"id":"4","content":"CI","status":"completed","priority":"high"},
+                    {"id":"5","content":"Release","status":"completed","priority":"high","depends_on":["4"]},
+                    {"id":"7","content":"Audit","status":"completed","priority":"medium"}
+                ]}}]),
+            ),
+            (false, json!([{"type":"text","text":"all done"}])),
+        ],
+    });
+    let runtime = Runtime::new(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime.resume("s").await.unwrap();
+    finished(&store).await;
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 4);
+    let events = store.events("s", 0, 500).await.unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "loop.continuation")
+            .count(),
+        1
+    );
+    assert!(
+        miao_engine::state::runnable_state(&store.state("s").await.unwrap())
+            .unwrap()
+            .is_empty()
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn stalled_todos_pause_the_loop_without_any_goal() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    seed_work(&store, true, dir.path()).await;
+    let provider = Arc::new(Sequence {
+        calls: AtomicUsize::new(0),
+        steps: Vec::new(),
+    });
+    let runtime = Runtime::new(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime.resume("s").await.unwrap();
+    finished(&store).await;
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 3);
+    assert!(store
+        .events("s", 0, 500)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| event.kind == "loop.stopped" && event.data["reason"] == "no-progress"));
     runtime.shutdown().await;
 }
