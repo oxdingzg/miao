@@ -234,6 +234,7 @@ pub enum Dialog {
     Status(ListDialog),
     Debug(ListDialog),
     Help(ListDialog),
+    Message(TextDialog),
     Palette(PaletteDialog),
     Rename(RenameDialog),
     Confirm(ConfirmDialog),
@@ -241,6 +242,14 @@ pub enum Dialog {
 
 /// A filterable list of commands. The filter owns the keyboard while the
 /// palette is open; `Enter` hands the row's id back as the chosen command.
+/// A scrollable plain-text view: message details, and anything else that is
+/// read rather than chosen.
+pub struct TextDialog {
+    pub title: &'static str,
+    pub lines: Vec<String>,
+    pub scroll: usize,
+}
+
 pub struct PaletteDialog {
     pub input: Editor,
     pub rows: Vec<Row>,
@@ -333,6 +342,14 @@ impl Dialog {
         );
         list.selected = names.iter().position(|name| *name == current).unwrap_or(0);
         Dialog::Theme(list)
+    }
+
+    pub fn message(lines: Vec<String>) -> Self {
+        Dialog::Message(TextDialog {
+            title: "message",
+            lines,
+            scroll: 0,
+        })
     }
 
     pub fn sessions(rows: &[SessionSummary]) -> Self {
@@ -476,6 +493,7 @@ impl Dialog {
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => handle_list_key(list, key),
+            Dialog::Message(text) => handle_text_key(text, key),
             Dialog::Palette(palette) => handle_palette_key(palette, key),
             Dialog::Rename(rename) => handle_rename_key(&mut rename.input, key),
             Dialog::Confirm(confirm) => handle_confirm_key(confirm, key),
@@ -495,6 +513,7 @@ impl Dialog {
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => list.title,
+            Dialog::Message(text) => text.title,
             Dialog::Palette(_) => "commands",
             Dialog::Rename(_) => "rename session",
             Dialog::Confirm(confirm) => confirm.title,
@@ -560,6 +579,9 @@ impl Dialog {
     }
 
     pub fn height(&self) -> u16 {
+        if matches!(self, Dialog::Message(_)) {
+            return 22;
+        }
         if matches!(self, Dialog::SavedPermissions(_)) {
             return 18;
         }
@@ -598,6 +620,19 @@ pub enum Action {
     Revert(u64),
     /// Run the command the palette selected, by its id.
     Command(String),
+}
+
+fn handle_text_key(text: &mut TextDialog, key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc | KeyCode::Enter => return Action::Close,
+        KeyCode::Up | KeyCode::Char('k') => text.scroll = text.scroll.saturating_sub(1),
+        KeyCode::Down | KeyCode::Char('j') => text.scroll += 1,
+        KeyCode::PageUp => text.scroll = text.scroll.saturating_sub(10),
+        KeyCode::PageDown => text.scroll += 10,
+        KeyCode::Home => text.scroll = 0,
+        _ => {}
+    }
+    Action::None
 }
 
 fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
