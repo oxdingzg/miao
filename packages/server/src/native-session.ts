@@ -136,7 +136,10 @@ const record = (value: unknown): value is Record<string, unknown> =>
  * Wall-clock comes from the engine's timing side table; turns that predate
  * that column degrade to the Session's update time (a display fact, not a
  * billing one), and a model the catalog does not know still contributes its
- * tokens at zero cost instead of being dropped.
+ * tokens at zero cost instead of being dropped. A turn's recorded cost is
+ * the price it billed at its own time and tier, and is never recomputed
+ * against the current catalog; today's rates only estimate turns that were
+ * never priced.
  */
 export function nativeSessionUsage(input: {
   report: Readonly<Record<string, unknown>>
@@ -192,9 +195,13 @@ export function nativeSessionUsage(input: {
       unknownPriceObservations += 1
       continue
     }
+    // A recorded cost is what the turn billed at its own time and tier; the
+    // current catalog must not rewrite that history (COST-01). Estimation
+    // from today's rates applies only when no cost was recorded.
+    const recorded = number(entry["cost"])
     const resolved = resolveModel(input.models, model)
     const costs = resolved?.cost ?? []
-    if (costs.length === 0) unknownPriceObservations += 1
+    if (costs.length === 0 && recorded === undefined) unknownPriceObservations += 1
     if (!Object.values(usage).some((value) => number(value) !== undefined)) continue
     const ref = resolved ? { providerID: resolved.providerID, modelID: resolved.id } : ModelV2.parse(model)
     const key = `${ref.providerID}/${ref.modelID}`
@@ -208,7 +215,11 @@ export function nativeSessionUsage(input: {
       lastTurnMs: 0,
     }
     group.turns += 1
-    group.cost += SessionCost.ofTurn(costs, billed)
+    if (recorded !== undefined) {
+      group.cost += recorded
+    } else {
+      group.cost += SessionCost.ofTurn(costs, billed)
+    }
     group.tokens.input += count(billed.inputTokens)
     group.tokens.output += count(billed.outputTokens)
     group.tokens.reasoning += count(billed.reasoningTokens)
