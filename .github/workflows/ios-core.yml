@@ -13,11 +13,13 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   crypto-interop:
-    runs-on: macos-14
+    runs-on: macos-15
     # Both invitation and account UI scenarios have bounded multi-launch validation.
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Select the newest installed Xcode
+        run: ./script/select-xcode.sh
       - uses: ./.github/actions/setup-bun
         with:
           install-flags: --ignore-scripts --frozen-lockfile
@@ -66,10 +68,12 @@ jobs:
         run: bun apps/ios/scripts/check-app.ts
 
   roster-app:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Select the newest installed Xcode
+        run: ./script/select-xcode.sh
       - uses: ./.github/actions/setup-bun
         with:
           install-flags: --ignore-scripts --frozen-lockfile
