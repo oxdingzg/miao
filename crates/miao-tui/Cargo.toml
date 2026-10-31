@@ -26,6 +26,7 @@ unicode-segmentation = "1"
 unicode-width = "0.2"
 
 [target.'cfg(unix)'.dependencies]
+libc = "0.2"
 nix = { version = "0.28", features = ["process", "signal", "term"] }
 
 [dev-dependencies]
