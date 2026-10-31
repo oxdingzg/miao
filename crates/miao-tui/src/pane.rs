@@ -26,6 +26,9 @@ pub struct Shell {
     pub title: TitlePane,
     pub transcript: TranscriptPane,
     pub composer: Composer,
+    /// The row under the composer. It answers "which model, at what cost?"
+    /// without opening a dialog, the way the TypeScript status line does.
+    pub status: StatusStrip,
     pub panel: Option<Panel>,
     pub sidebar: Option<SidebarPane>,
     /// The projection behind `transcript.lines`, kept so a theme change can
@@ -39,6 +42,7 @@ impl Shell {
             title: TitlePane::new(workspace, theme.clone()),
             transcript: TranscriptPane::new(theme.clone()),
             composer: Composer::new(workspace),
+            status: StatusStrip::default(),
             panel: None,
             sidebar: Some(SidebarPane {
                 theme,
@@ -196,11 +200,12 @@ impl Shell {
 
     pub fn render(&mut self, frame: &mut Frame) {
         let panel_height = self.panel.as_ref().map_or(0, Panel::height);
-        let [title_area, body_area, panel_area, composer_area] = Layout::vertical([
+        let [title_area, body_area, panel_area, composer_area, status_area] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(panel_height),
             Constraint::Length(composer_height(&self.composer)),
+            Constraint::Length(1),
         ])
         .areas(frame.area());
         self.title.render(frame, title_area);
@@ -219,6 +224,7 @@ impl Shell {
             panel.render(frame, panel_area, &self.transcript.theme);
         }
         render_composer(frame, composer_area, &self.composer, &self.transcript.theme);
+        render_status(frame, status_area, &self.status, &self.transcript.theme);
     }
 }
 
@@ -1136,6 +1142,83 @@ fn compact(text: &str) -> String {
     let mut cut = single.chars().take(77).collect::<String>();
     cut.push('…');
     cut
+}
+
+/// What the open Session runs on and has cost so far. The row stays empty
+/// until a Session is open, so the home list keeps its full height.
+#[derive(Default)]
+pub struct StatusStrip {
+    pub model: Option<String>,
+    pub usage: Option<String>,
+    /// What the run waits on and what the next key does, right-aligned: an
+    /// approval that blocks the turn, a queued prompt, the interrupt key.
+    pub hints: Vec<StatusHint>,
+}
+
+/// One right-aligned status hint. `warning` marks something the operator must
+/// act on rather than a fact about the run.
+pub struct StatusHint {
+    pub text: String,
+    pub warning: bool,
+}
+
+fn render_status(frame: &mut Frame, area: Rect, status: &StatusStrip, theme: &Theme) {
+    let palette = theme.palette;
+    let mut spans = Vec::new();
+    if let Some(model) = &status.model {
+        spans.push(Span::styled(
+            format!(" {model} "),
+            Style::new().fg(palette.primary).bg(palette.surface),
+        ));
+    }
+    if let Some(usage) = &status.usage {
+        spans.push(Span::styled(
+            format!("· {usage} "),
+            Style::new().fg(palette.text_muted).bg(palette.surface),
+        ));
+    }
+    if spans.is_empty() && status.hints.is_empty() {
+        return;
+    }
+    let hints = status
+        .hints
+        .iter()
+        .map(|hint| hint.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let width = (UnicodeWidthStr::width(hints.as_str()) as u16 + 2).min(area.width);
+    let [left_area, right_area] =
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(width)]).areas(area);
+    frame.render_widget(
+        Paragraph::new(Line::from(spans)).style(Style::new().bg(palette.surface)),
+        left_area,
+    );
+    if status.hints.is_empty() {
+        return;
+    }
+    let mut spans = Vec::new();
+    for (index, hint) in status.hints.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::styled(
+                " · ",
+                Style::new().fg(palette.text_muted).bg(palette.surface),
+            ));
+        }
+        let tone = match hint.warning {
+            true => palette.warning,
+            false => palette.text_muted,
+        };
+        spans.push(Span::styled(
+            hint.text.clone(),
+            Style::new().fg(tone).bg(palette.surface),
+        ));
+    }
+    frame.render_widget(
+        Paragraph::new(Line::from(spans))
+            .style(Style::new().bg(palette.surface))
+            .alignment(ratatui::layout::Alignment::Right),
+        right_area,
+    );
 }
 
 /// Input rows the composer grows to before it scrolls; the border and the
