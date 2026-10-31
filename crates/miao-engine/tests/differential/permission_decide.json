@@ -1272,6 +1272,93 @@
           }
         ]
       }
+    },
+    {
+      "name": "auto-mode-settles-a-safe-ask",
+      "mode": "auto",
+      "request": {
+        "actions": [
+          "bash"
+        ],
+        "resources": [
+          "git status"
+        ],
+        "configured": [
+          {
+            "action": "bash",
+            "resource": "*",
+            "effect": "ask"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "bash",
+            "resource": "*",
+            "effect": "ask"
+          }
+        ]
+      }
+    },
+    {
+      "name": "auto-mode-keeps-an-ask-the-classifier-cannot-prove-safe",
+      "mode": "auto",
+      "request": {
+        "actions": [
+          "bash"
+        ],
+        "resources": [
+          "git push"
+        ],
+        "configured": [
+          {
+            "action": "bash",
+            "resource": "*",
+            "effect": "ask"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": [
+          {
+            "action": "bash",
+            "resource": "*",
+            "effect": "ask"
+          }
+        ]
+      }
+    },
+    {
+      "name": "auto-mode-never-settles-a-deny",
+      "mode": "auto",
+      "request": {
+        "actions": [
+          "bash"
+        ],
+        "resources": [
+          "git status"
+        ],
+        "configured": [
+          {
+            "action": "bash",
+            "resource": "*",
+            "effect": "deny"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "deny",
+        "rules": [
+          {
+            "action": "bash",
+            "resource": "*",
+            "effect": "deny"
+          }
+        ]
+      }
     }
   ]
 }
