@@ -131,6 +131,9 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
         })).map((workspace) => ({
           name: workspace.name,
           detail: workspace.branch ?? workspace.type,
+          // A move needs a destination path; the engine performs the transfer,
+          // the TUI only names where.
+          directory: workspace.directory ?? "",
         }))
       : []
   // Remote-control devices come from the host's administration; a graph

@@ -374,8 +374,8 @@ impl Dialog {
         Dialog::Workspaces(ListDialog::new(
             "workspaces",
             rows,
-            ListKind::ReadOnly,
-            "esc close",
+            ListKind::Plain,
+            "enter move session · esc cancel",
         ))
     }
 
