@@ -99,6 +99,21 @@ final class PairingUITests: XCTestCase {
                        "The sidebar account entry has an unambiguous identifier")
     }
 
+    /// SwiftUI renders `confirmationDialog` as an action sheet, and a newer
+    /// simulator does not always expose that sheet's buttons through the
+    /// application root's `buttons` query. Look in the containers that can host
+    /// it, and report the whole hierarchy when none of them has the button, so a
+    /// failing run says what the dialog actually looked like.
+    private func dialogButton(_ label: String, _ app: XCUIApplication) -> XCUIElement {
+        let hosts = [app.buttons, app.sheets.buttons, app.alerts.buttons, app.popovers.buttons]
+        for host in hosts {
+            let candidate = host[label]
+            if candidate.waitForExistence(timeout: 2) { return candidate }
+        }
+        XCTFail("No «\(label)» button in any dialog container:\n\(app.debugDescription)")
+        return app.buttons[label]
+    }
+
     @MainActor
     func testRealRuntimeRenameAndDraftRecovery() throws {
         guard let path = ProcessInfo.processInfo.environment["MIAO_UI_TEST_FIXTURE"], !path.isEmpty,
@@ -380,11 +395,21 @@ final class PairingUITests: XCTestCase {
         let remove = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "removeHost-")).firstMatch
         XCTAssertTrue(remove.waitForExistence(timeout: 5))
         remove.tap()
-        XCTAssertTrue(app.buttons["取消"].waitForExistence(timeout: 5))
-        app.buttons["取消"].tap()
+        let confirmation = app.sheets.firstMatch
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        if app.buttons["取消"].exists {
+            app.buttons["取消"].tap()
+        } else {
+            // iOS 26 renders this confirmation as a popover and no longer
+            // exposes the dialog's `.cancel` button, so dismissing the dialog is
+            // what cancelling means there.
+            app.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+            if confirmation.exists { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.26)).tap() }
+        }
+        XCTAssertTrue(confirmation.waitForNonExistence(timeout: 10), "Cancelling must close the confirmation")
         XCTAssertTrue(remove.exists, "Cancelling must keep the selected computer")
         remove.tap()
-        app.buttons["移除"].tap()
+        dialogButton("移除", app).tap()
         expectation(for: NSPredicate { _, _ in !remove.exists }, evaluatedWith: app)
         waitForExpectations(timeout: 15)
         app.terminate()
