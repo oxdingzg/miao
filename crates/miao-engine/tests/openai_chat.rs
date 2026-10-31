@@ -851,3 +851,41 @@ async fn a_null_type_still_starts_a_named_call() {
     assert_eq!(reply.content[0]["input"]["path"], "a");
     server.await.unwrap();
 }
+
+/// A gateway that replays a frame repeats the call id. Keeping the first call
+/// matches the TypeScript stream, which accumulates by index and never fails a
+/// finished reply over a repeated identity.
+#[tokio::test]
+async fn a_replayed_call_id_keeps_one_call_and_finishes() {
+    let body = frames(
+        vec![
+            chunk(
+                json!({"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"a\"}"}}]}),
+                json!(null),
+            ),
+            chunk(
+                json!({"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"a\"}"}}]}),
+                json!(null),
+            ),
+            chunk(json!({}), json!("tool_calls")),
+        ],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(reply.needs_tools);
+    let calls = reply
+        .content
+        .as_array()
+        .expect("content")
+        .iter()
+        .filter(|part| part["type"] == "tool_use")
+        .count();
+    assert_eq!(calls, 1, "the repeated identity keeps one call");
+    server.await.unwrap();
+}
