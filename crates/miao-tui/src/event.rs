@@ -56,6 +56,11 @@ pub enum AppEvent {
     Usage(UsageSummary),
     /// The host's workspace list, served by the engine.
     Workspaces(Vec<(String, String, String)>),
+    /// The host answered a call the engine does not own.
+    HostResult {
+        op: String,
+        result: serde_json::Value,
+    },
     /// The host's remote-control devices, served by the engine.
     Devices(Vec<(String, String)>),
     /// The open Session moved to another workspace.

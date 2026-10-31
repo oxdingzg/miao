@@ -457,6 +457,12 @@ impl App {
                 self.dialog = None;
                 self.shell.composer.notice = Some("session moved".into());
             }
+            AppEvent::HostResult { op, .. } if op == "workspace.create" => {
+                self.shell.composer.notice = Some("workspace created".into());
+            }
+            // Other host calls answer in their own slice; the reply must still
+            // be consumed so the stream stays ordered.
+            AppEvent::HostResult { .. } => {}
             AppEvent::Workspaces(workspaces) => {
                 self.workspaces = workspaces;
                 let rows = self
@@ -725,6 +731,7 @@ impl App {
             Some(keybinds::Action::SkillList) => self.open_skills(),
             Some(keybinds::Action::DeviceList) => self.open_devices(),
             Some(keybinds::Action::WorkspaceList) => self.open_workspaces(),
+            Some(keybinds::Action::WorkspaceCreate) => self.create_workspace(),
             Some(keybinds::Action::MessageView) => self.open_message(),
             Some(keybinds::Action::ToolOutputToggle) => {
                 let expanded = self.shell.toggle_tool_expansion();
@@ -1145,6 +1152,26 @@ impl App {
 
     /// Ask the engine for the host's workspace list; the dialog opens when the
     /// answer arrives, so the panel never reads a second source.
+    /// Create a workspace at the directory typed in the prompt. The host owns
+    /// workspace authority, so the request is a host call, not an engine
+    /// command.
+    fn create_workspace(&mut self) {
+        let directory = self.shell.composer.editor.text().trim().to_string();
+        if directory.is_empty() {
+            self.notice("type a directory for the new workspace");
+            return;
+        }
+        let Some(engine) = self.engine.as_ref() else {
+            self.notice("the engine is not connected");
+            return;
+        };
+        engine.host_call(
+            "workspace.create",
+            serde_json::json!({ "directory": directory }),
+        );
+        self.shell.composer.editor.clear();
+    }
+
     fn open_workspaces(&mut self) {
         match self.engine.as_ref() {
             Some(engine) => engine.workspaces(),
