@@ -225,6 +225,9 @@ impl App {
         shell
             .composer
             .set_commands(commands::completion_names(&templates));
+        shell
+            .composer
+            .set_command_details(commands::completion_details(&templates));
         Self {
             shell,
             home,
