@@ -1633,9 +1633,10 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
         height: 1,
         ..area
     };
-    // Plain lists carry a type-ahead filter; the line shows what has been
-    // typed so the reviewer can see why rows disappeared.
-    let filtered = list.kind == ListKind::Plain;
+    // Plain lists carry a type-ahead filter, and a Session list arms the same
+    // filter through `/`; either way the line shows what has been typed so the
+    // reviewer can see why rows disappeared.
+    let filtered = list.kind == ListKind::Plain || list.search;
     let filter_area = filtered.then_some(Rect { height: 1, ..area });
     let list_area = Rect {
         y: area.y + if filtered { 1 } else { 0 },

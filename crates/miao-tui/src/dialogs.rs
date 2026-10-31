@@ -155,6 +155,14 @@ pub struct ListDialog {
     pub filter: Editor,
     /// Indices into `rows` that match the filter, in display order.
     pub visible: Vec<usize>,
+    /// Sessions keep their letter commands, so `/` arms the same filter the
+    /// plain lists always have instead of making every key a query character.
+    /// While armed the query owns the keyboard and the filter line shows why
+    /// rows disappeared.
+    pub search: bool,
+    /// Sessions only: the pinned Session ids in display order, one per `1`-`9`
+    /// quick slot, so a digit reaches a pin without walking the list.
+    pub slots: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,6 +192,8 @@ impl ListDialog {
             hint,
             filter: Editor::new(),
             visible,
+            search: false,
+            slots: Vec::new(),
         }
     }
 
@@ -535,7 +545,7 @@ impl Dialog {
     }
 
     pub fn sessions(rows: &[SessionSummary]) -> Self {
-        Dialog::Sessions(ListDialog::new(
+        let mut list = ListDialog::new(
             "sessions",
             rows.iter()
                 .map(|row| {
@@ -557,8 +567,16 @@ impl Dialog {
                 })
                 .collect(),
             ListKind::Sessions,
-            "enter open · r rename · p pin · a archive · d delete · esc close",
-        ))
+            "enter open · 1-9 pinned · / search · r rename · p pin · a archive · d delete · esc close",
+        );
+        // The caller hands the rows over pinned-first, so the same order is the
+        // quick-slot order: `1` reaches the most recently pinned Session.
+        list.slots = rows
+            .iter()
+            .filter(|row| row.pinned_at_ms.is_some())
+            .map(|row| row.id.clone())
+            .collect();
+        Dialog::Sessions(list)
     }
 
     pub fn accounts(accounts: &[AccountInfo]) -> Self {
@@ -838,6 +856,47 @@ fn handle_text_key(text: &mut TextDialog, key: KeyEvent) -> Action {
 }
 
 fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
+    // An armed Session search owns the keyboard, so a query may contain the
+    // letters that otherwise rename, pin, archive, or delete. Esc leaves the
+    // search and restores the full list rather than closing the dialog.
+    if list.search {
+        match key.code {
+            KeyCode::Esc => {
+                list.search = false;
+                list.filter.clear();
+                list.refilter();
+                return Action::None;
+            }
+            KeyCode::Backspace => {
+                list.filter.backspace();
+                list.refilter();
+                return Action::None;
+            }
+            KeyCode::Delete => {
+                list.filter.delete_forward();
+                list.refilter();
+                return Action::None;
+            }
+            KeyCode::Up => {
+                list.move_cursor(-1);
+                return Action::None;
+            }
+            KeyCode::Down => {
+                list.move_cursor(1);
+                return Action::None;
+            }
+            KeyCode::Char(c)
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                list.filter.insert_char(c);
+                list.refilter();
+                return Action::None;
+            }
+            _ => {}
+        }
+    }
     if list.filterable() {
         match key.code {
             KeyCode::Backspace => {
@@ -894,6 +953,17 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
         }
         KeyCode::Char('r') if list.kind == ListKind::Devices => {
             return Action::DeviceChosen(list.selected, 2)
+        }
+        KeyCode::Char('/') if list.kind == ListKind::Sessions => {
+            list.search = true;
+            return Action::None;
+        }
+        KeyCode::Char(c @ '1'..='9') if list.kind == ListKind::Sessions => {
+            // A digit reaches a pinned Session by slot, and does nothing when
+            // that slot is empty so a typo cannot open an unrelated Session.
+            if let Some(id) = list.slots.get(c as usize - '1' as usize) {
+                return Action::OpenSession(id.clone());
+            }
         }
         KeyCode::Char('r') if list.kind == ListKind::Sessions => {
             if let Some(id) = list.current_id() {
@@ -1278,6 +1348,75 @@ mod tests {
             dialog.handle_key(key(KeyCode::Enter)),
             Action::Submit(title) if title == "New"
         ));
+    }
+
+    fn summary(id: &str, pinned: Option<u64>, directory: &str) -> SessionSummary {
+        SessionSummary {
+            id: id.into(),
+            title: Some(id.into()),
+            parent_id: None,
+            updated_at_ms: Some(100),
+            archived_at_ms: None,
+            pinned_at_ms: pinned,
+            directory: Some(directory.into()),
+            model: None,
+            credential_id: None,
+            preview: None,
+        }
+    }
+
+    #[test]
+    fn a_digit_reaches_the_pinned_session_in_that_slot() {
+        let rows = [
+            summary("ses_pinned_new", Some(20), "/repo/new"),
+            summary("ses_pinned_old", Some(10), "/repo/old"),
+            summary("ses_plain", None, "/repo/plain"),
+        ];
+        let mut dialog = Dialog::sessions(&rows);
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('2'))),
+            Action::OpenSession(id) if id == "ses_pinned_old"
+        ));
+        // Slot 3 is unpinned, so the digit does nothing rather than opening the
+        // third row of the list.
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('3'))),
+            Action::None
+        ));
+    }
+
+    #[test]
+    fn a_slash_arms_the_search_and_esc_restores_the_full_list() {
+        let rows = [
+            summary("ses_pinned", Some(20), "/repo/checked"),
+            summary("ses_plain", None, "/other/plain"),
+        ];
+        let mut dialog = Dialog::sessions(&rows);
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('/'))),
+            Action::None
+        ));
+        // Inside the search, an `r` is a query character rather than rename.
+        for c in "check".chars() {
+            assert!(matches!(
+                dialog.handle_key(key(KeyCode::Char(c))),
+                Action::None
+            ));
+        }
+        let list = dialog.list().expect("list");
+        assert_eq!(list.visible.len(), 1);
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Enter)),
+            Action::OpenSession(id) if id == "ses_pinned"
+        ));
+        // Esc leaves the search instead of closing the dialog.
+        let mut dialog = Dialog::sessions(&rows);
+        dialog.handle_key(key(KeyCode::Char('/')));
+        dialog.handle_key(key(KeyCode::Char('c')));
+        assert!(matches!(dialog.handle_key(key(KeyCode::Esc)), Action::None));
+        let list = dialog.list().expect("list");
+        assert!(!list.search);
+        assert_eq!(list.visible.len(), 2);
     }
 
     #[test]
