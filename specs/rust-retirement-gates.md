@@ -47,6 +47,33 @@ Windows 验收通过。构建与重型检查使用项目配置的构建机，机
 进程崩溃后的 provider continuation 仍可能不确定。删除或回滚不能引入自动
 重发 provider 请求或重新执行工具；需要单独的 durable recovery 设计和证据。
 
+## Bun/Node 必需依赖审计（2026-11-01，基线 `58118fc1dc`）
+
+审计对象是**产品默认路径**：发布产物自身、默认启动、默认工具与默认会话执行。
+开发/测试工具链、可选 worker、用户注册的外部程序分别记录，不与默认路径混算。
+
+方法与来源（均可在该基线上复现）：
+
+| 检查 | 命令/位置 | 结果 |
+| --- | --- | --- |
+| 产物形态 | `packages/miao/script/build.ts` 的 `compile` 块 | 单文件编译产物 `dist/<name>/bin/miao`，`target` 为 `bun-<os>`，`execArgv` 内嵌；JS 运行时**内嵌在产物里**，不要求用户另装 `bun` 或 `node` 命令 |
+| 产物内容 | 同上 `files` / `define` | 树树语法 worker、Web UI、引擎模块以 `*.gen.ts` 内嵌；`MIAO_PACKAGED=true` 使沙箱以隐藏命令 `__sandbox-run` 重执行自身 |
+| 外部 JS 运行时子进程 | `grep -rn 'Bun.spawn(\["bun"\|spawn(\["node"' packages/miao/src packages/core/src` | 默认路径无命中 |
+| 自身重执行 | `process.execPath` 使用点（`installation/index.ts`、`cli/cmd/tui.ts`、`cli/cmd/uninstall.ts`） | 均指向编译产物自身，不是外部运行时 |
+| 运行时依赖归属 | `packages/miao/package.json` 的 `dependencies` 与 `build.ts` 的 `external` | 运行时依赖（AI SDK providers 等）由构建期打包进产物；`external` 仅 `node-gyp`，默认路径不触发 |
+| 可选扩展 worker | `packages/miao/src/engine/native-engine.ts:1186` | 仅在显式 `MIAO_ENGINE_WORKER=1` 时创建；缺失或握手失败只使扩展工具不可用 |
+
+结论（只声明审计到的范围，不扩大）：
+
+1. 产品默认路径**不需要**外部 `bun`/`node` 命令；它是单文件产物内嵌 JS 运行时。
+2. 因此「用户没装 Bun」**不能**作为 Rust 化完成的证据：产品默认路径仍然执行 JS。
+   这与 `rus05-runtime-boundaries.md` §3 的判定口径一致，G2/G5 不因此勾选。
+3. 默认路径的可选扩展依赖是显式门控的；用户注册的 MCP/LSP/formatter/shell
+   属外部程序能力，按其自身安装与诊断规则记录，不计入「JS 内核」。
+
+仍未审计：编译产物在空目录、无源码且无外部 Bun/Node 的机器上的启动验证（G5 证据），
+以及各受支持平台的独立复现记录。这两项需要真实产物与隔离环境，属于后续删除 PR 的前置证据。
+
 ## 证据记录与状态
 
 每份候选记录至少包含：门槛 ID、完整源码 SHA、构建配置、平台、客户端/引擎
