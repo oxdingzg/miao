@@ -2349,6 +2349,7 @@ mod tests {
             directory: None,
             model: None,
             credential_id: None,
+            preview: None,
         }
     }
 
@@ -3092,6 +3093,7 @@ mod tests {
                     directory: directory.map(str::to_string),
                     model: None,
                     credential_id: None,
+                    preview: None,
                 })
                 .collect(),
         ));

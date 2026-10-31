@@ -1142,6 +1142,7 @@ mod tests {
             directory: None,
             model: None,
             credential_id: None,
+            preview: None,
         };
         let mut dialog = Dialog::sessions(&[row]);
         assert_eq!(dialog.list().expect("list").rows[0].label, "A");

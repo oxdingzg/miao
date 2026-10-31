@@ -893,6 +893,7 @@ impl Home {
             .unwrap_or(0);
         let mut body: Vec<Line<'static>> = Vec::new();
         let mut selected_line = 0usize;
+        let mut selected_tail = 0usize;
         let mut bucket: Option<&'static str> = None;
         for (index, row) in visible.iter().enumerate() {
             let group = match row.updated_at_ms {
@@ -941,6 +942,18 @@ impl Home {
                     Style::new().fg(palette.text_muted),
                 ),
             ]));
+            // The preview answers "which conversation was this?" without
+            // opening it. One muted line under the row keeps the main line
+            // scannable; the engine already bounded the text.
+            if let Some(preview) = row.preview.as_deref() {
+                if selected {
+                    selected_tail += 1;
+                }
+                body.push(Line::from(Span::styled(
+                    format!("    {preview}"),
+                    Style::new().fg(palette.text_muted),
+                )));
+            }
         }
         // Key hints belong at the bottom edge, where every comparable CLI puts
         // them, instead of permanently occupying the list header.
@@ -948,10 +961,12 @@ impl Home {
         let notice_take = notice_lines.len().min(body_height);
         let list_height = body_height - notice_take;
         let selected_body = selected_line.saturating_sub(notice_take);
+        // A selected row's preview counts toward the window, so both lines
+        // stay on screen when the selection rides the bottom edge.
         let offset = if list_height == 0 {
             0
         } else {
-            selected_body
+            (selected_body + selected_tail)
                 .saturating_sub(list_height.saturating_sub(1))
                 .min(body.len().saturating_sub(list_height))
         };
@@ -2536,6 +2551,41 @@ mod tests {
             visible.contains("NativeTUIrequiresdefault-agentcapturesupport"),
             "{visible}"
         );
+    }
+
+    #[test]
+    fn a_session_row_shows_its_preview_under_the_label() {
+        let mut home = Home::new(Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        });
+        home.set_rows(vec![SessionSummary {
+            id: "ses_p".into(),
+            title: Some("login fix".into()),
+            parent_id: None,
+            updated_at_ms: Some(10),
+            archived_at_ms: None,
+            pinned_at_ms: None,
+            directory: None,
+            model: None,
+            credential_id: None,
+            preview: Some("it was the stub config".into()),
+        }]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).expect("terminal");
+        terminal
+            .draw(|frame| home.render(frame, frame.area()))
+            .expect("draw");
+        let visible = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .flat_map(|cell| cell.symbol().chars())
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        assert!(visible.contains("itwasthestubconfig"), "{visible}");
+        assert!(visible.contains("loginfix"), "{visible}");
     }
 
     #[test]

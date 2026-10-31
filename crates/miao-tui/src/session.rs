@@ -27,6 +27,9 @@ pub struct SessionSummary {
     pub model: Option<String>,
     /// The account every turn of this Session runs on, when one is pinned.
     pub credential_id: Option<String>,
+    /// The engine's bounded "what this conversation last said", for the list
+    /// preview. `None` when the Session has no readable text yet.
+    pub preview: Option<String>,
 }
 
 impl SessionSummary {
@@ -58,6 +61,11 @@ impl SessionSummary {
             credential_id: snapshot
                 .get("account_selection")
                 .and_then(|selection| selection.get("credential_id"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            preview: snapshot
+                .get("preview")
+                .and_then(|preview| preview.get("text"))
                 .and_then(Value::as_str)
                 .map(str::to_string),
         })
@@ -810,6 +818,19 @@ mod tests {
         let bare = SessionSummary::from_snapshot(&json!({"session_id": "ses_b"})).expect("row");
         assert_eq!(bare.model, None);
         assert_eq!(bare.credential_id, None);
+    }
+
+    #[test]
+    fn a_snapshot_preview_becomes_the_list_preview() {
+        let value = json!({
+            "session_id": "ses_p",
+            "preview": { "text": "it was the stub config", "truncated": true },
+        });
+        let row = SessionSummary::from_snapshot(&value).expect("row");
+        assert_eq!(row.preview.as_deref(), Some("it was the stub config"));
+
+        let bare = SessionSummary::from_snapshot(&json!({"session_id": "ses_b"})).expect("row");
+        assert_eq!(bare.preview, None);
     }
 
     #[test]
