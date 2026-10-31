@@ -164,6 +164,8 @@ pub struct App {
     catalog: Vec<SessionSummary>,
     /// MCP servers the host exported for this workspace (name, transport).
     mcp: Vec<(String, String)>,
+    /// Integrations the host reported a stored credential for (name, label).
+    providers: Vec<(String, String)>,
     /// The model dialog waits for the catalog when nothing is cached yet.
     pending_models: bool,
     /// Same for the account dialog.
@@ -227,7 +229,8 @@ impl App {
             workspace,
             settings: None,
             models: Vec::new(),
-            mcp: parse_mcp(std::env::var("MIAO_TUI_MCP_JSON").ok().as_deref()),
+            mcp: parse_pairs(std::env::var("MIAO_TUI_MCP_JSON").ok().as_deref()),
+            providers: parse_pairs(std::env::var("MIAO_TUI_PROVIDERS_JSON").ok().as_deref()),
             accounts: Vec::new(),
             usage: None,
             stash: Vec::new(),
@@ -659,6 +662,7 @@ impl App {
             Some(keybinds::Action::EditorOpen) => self.run_builtin(Builtin::Editor),
             Some(keybinds::Action::CopyMessage) => self.copy_last_response(),
             Some(keybinds::Action::McpList) => self.open_mcp(),
+            Some(keybinds::Action::ProviderList) => self.open_providers(),
             Some(keybinds::Action::ToolOutputToggle) => {
                 let expanded = self.shell.toggle_tool_expansion();
                 self.notice(if expanded {
@@ -1021,6 +1025,10 @@ impl App {
 
     fn open_mcp(&mut self) {
         self.open_dialog(Dialog::mcp(&self.mcp));
+    }
+
+    fn open_providers(&mut self) {
+        self.open_dialog(Dialog::providers(&self.providers));
     }
 
     fn open_status(&mut self) {
@@ -3228,7 +3236,7 @@ mod tests {
 
 /// Parse the host's MCP export. A missing or malformed value means "no servers
 /// to show", never a startup failure: the TUI is a read-only client here.
-fn parse_mcp(raw: Option<&str>) -> Vec<(String, String)> {
+fn parse_pairs(raw: Option<&str>) -> Vec<(String, String)> {
     let Some(raw) = raw else {
         return Vec::new();
     };
@@ -3256,12 +3264,12 @@ fn parse_mcp(raw: Option<&str>) -> Vec<(String, String)> {
 }
 
 #[cfg(test)]
-mod mcp_tests {
-    use super::parse_mcp;
+mod host_panel_tests {
+    use super::parse_pairs;
 
     #[test]
     fn the_host_export_is_read_as_name_and_transport() {
-        let parsed = parse_mcp(Some(
+        let parsed = parse_pairs(Some(
             r#"[{"name":"everything","detail":"npx -y server-everything"},{"name":"remote","detail":"https://example.com/mcp"}]"#,
         ));
         assert_eq!(parsed.len(), 2);
@@ -3271,8 +3279,8 @@ mod mcp_tests {
 
     #[test]
     fn a_missing_or_malformed_export_is_empty() {
-        assert!(parse_mcp(None).is_empty());
-        assert!(parse_mcp(Some("not json")).is_empty());
-        assert!(parse_mcp(Some("{}")).is_empty());
+        assert!(parse_pairs(None).is_empty());
+        assert!(parse_pairs(Some("not json")).is_empty());
+        assert!(parse_pairs(Some("{}")).is_empty());
     }
 }

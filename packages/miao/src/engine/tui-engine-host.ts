@@ -107,6 +107,14 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   // Resolve the Agent before a permission handoff can freeze legacy ownership.
   const agent = yield* ProductTuiAgent.prepare(effective)
   const database = yield* Database.Service
+  // The TUI shows which integrations have a stored credential, never the values.
+  const credentials = yield* Credential.Service
+  const providers = (yield* credentials.all())
+    .filter((credential) => credential.active)
+    .map((credential) => ({
+      name: String(credential.integrationID),
+      detail: credential.label,
+    }))
   const permission = yield* ProductPermission.prepare(ref, {
     binary,
     source: input.database,
@@ -145,6 +153,7 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
       ...manifest?.environment,
       ...options.env,
       MIAO_TUI_MCP_JSON: JSON.stringify(mcpServers),
+      MIAO_TUI_PROVIDERS_JSON: JSON.stringify(providers),
     },
     argv: [options.binary, ...engineArgs({ ...options, mcpConfigFile: manifest?.file ?? options.mcpConfigFile })],
     dispose: manifest?.dispose,
