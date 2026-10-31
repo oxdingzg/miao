@@ -511,7 +511,7 @@ impl Home {
     /// a catalog that really has nothing in it.
     fn placeholder(&self) -> &str {
         if self.loaded {
-            "no sessions yet · press n to start one"
+            "no sessions yet · tab to type a prompt · n for an empty session"
         } else {
             "loading sessions…"
         }
@@ -644,7 +644,7 @@ impl Home {
         let block = Block::bordered()
             .title(Span::styled(
                 if self.query.is_empty() {
-                    " sessions · 1-9 open · p pin · / filter ".to_string()
+                    " sessions · 1-9 open · p pin · / filter · tab prompt · n new ".to_string()
                 } else {
                     format!(" sessions · filter \"{}\" · esc clear ", self.query)
                 },
@@ -1919,7 +1919,10 @@ mod tests {
         let mut home = Home::new(theme);
         assert_eq!(home.placeholder(), "loading sessions…");
         home.set_rows(Vec::new());
-        assert_eq!(home.placeholder(), "no sessions yet · press n to start one");
+        assert_eq!(
+            home.placeholder(),
+            "no sessions yet · tab to type a prompt · n for an empty session"
+        );
     }
 
     #[test]
