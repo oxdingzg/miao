@@ -395,7 +395,18 @@ final class PairingUITests: XCTestCase {
         let remove = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "removeHost-")).firstMatch
         XCTAssertTrue(remove.waitForExistence(timeout: 5))
         remove.tap()
-        dialogButton("取消", app).tap()
+        let confirmation = app.sheets.firstMatch
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        if app.buttons["取消"].exists {
+            app.buttons["取消"].tap()
+        } else {
+            // iOS 26 renders this confirmation as a popover and no longer
+            // exposes the dialog's `.cancel` button, so dismissing the dialog is
+            // what cancelling means there.
+            app.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+            if confirmation.exists { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.26)).tap() }
+        }
+        XCTAssertTrue(confirmation.waitForNonExistence(timeout: 10), "Cancelling must close the confirmation")
         XCTAssertTrue(remove.exists, "Cancelling must keep the selected computer")
         remove.tap()
         dialogButton("移除", app).tap()
