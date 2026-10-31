@@ -4110,10 +4110,14 @@ command: None,
         if !reply.needs_tools && !text_only && promoted.is_empty() && state_allowed {
             let state = inner.store.state(session).await?;
             let goal = &state["goal"]["value"];
-            if goal["status"] == "active"
-                && goal["autonomous"] == true
-                && !crate::state::runnable_state(&state)?.is_empty()
-            {
+            // Continuation is todo-driven, not goal-gated: runnable todos
+            // keep the drain alive with or without an engagement goal, so a
+            // text-only reply mid-task never hands the session back to the
+            // operator. A recorded goal that is not active is the operator's
+            // off switch; completion notifications arrive as promoted inputs
+            // either way.
+            let loop_allowed = goal["status"].is_null() || goal["status"] == "active";
+            if loop_allowed && !crate::state::runnable_state(&state)?.is_empty() {
                 let signature = serde_json::to_string(&state["todos"]["value"]["todos"])?;
                 goal_stalls = if goal_signature.as_ref() == Some(&signature) {
                     goal_stalls + 1

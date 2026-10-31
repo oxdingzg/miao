@@ -72,12 +72,13 @@ pub struct Config {
     #[serde(default = "approval_timeout")]
     pub approval_timeout_ms: u64,
     #[serde(default = "provider_turns")]
-    /// None explicitly disables the request-count budget. Missing JSON keeps
-    /// the conservative standalone default; products opt out with null.
+    /// None (the default) lets a drain continue until the model stops or a
+    /// stall guard closes it. An explicit count is an operator leash: the
+    /// final turn is forced text-only and the drain pauses with a summary.
     pub max_provider_turns: Option<u32>,
 }
 fn provider_turns() -> Option<u32> {
-    Some(25)
+    None
 }
 fn approval_timeout() -> u64 {
     60_000

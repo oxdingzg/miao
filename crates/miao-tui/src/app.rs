@@ -13,7 +13,7 @@ use crate::editor::{Action, Mode};
 use crate::engine;
 use crate::event::{AppEvent, Bus};
 use crate::keybinds::{self, Keymap};
-use crate::pane::{render_dialog, Home, Pane, Panel, PanelKind, Shell};
+use crate::pane::{render_dialog, Home, Pane, Panel, PanelKind, Shell, StatusHint};
 use crate::platform::attention::{self, Attention};
 use crate::platform::{clipboard, editor, zed};
 use crate::session::{Entry, Part, SessionState, SessionSummary};
@@ -225,6 +225,9 @@ impl App {
         shell
             .composer
             .set_commands(commands::completion_names(&templates));
+        shell
+            .composer
+            .set_command_details(commands::completion_details(&templates));
         Self {
             shell,
             home,
@@ -2007,6 +2010,10 @@ impl App {
             self.shell.title.set_status(None);
             self.shell.title.set_status_alert(false);
             self.shell.composer.queued = 0;
+            self.shell.composer.phase = None;
+            self.shell.status.model = None;
+            self.shell.status.usage = None;
+            self.shell.status.hints.clear();
             return;
         }
         let now = Instant::now();
@@ -2024,12 +2031,80 @@ impl App {
         let status = match (&self.state.active_run, self.state.pending) {
             (Some(_), 0) => format!("{phase} · Esc interrupt"),
             (Some(_), queued) => format!("{phase} · {queued} queued · Esc interrupt"),
-            (None, 0) => phase,
+            (None, 0) => phase.clone(),
             (None, queued) => format!("{phase} · {queued} queued"),
         };
         self.shell
             .title
             .set_status_alert(live.is_some_and(|live| live.silent(now)));
+        // The same phase rides the composer title, so the operator does not
+        // have to look away from the input to learn the run is working rather
+        // than waiting on them. An idle Session says nothing there.
+        self.shell.composer.phase = match self.state.active_run.is_some() || self.state.pending > 0
+        {
+            true => Some(phase.clone()),
+            false => None,
+        };
+        // Which model answers, and what the Session has cost so far. A pin on
+        // the Session wins over the engine default.
+        self.shell.status.model = self
+            .session
+            .as_ref()
+            .and_then(|session| session.model.clone())
+            .or_else(|| {
+                self.settings
+                    .as_ref()
+                    .map(|settings| settings.model.clone())
+            });
+        self.shell.status.usage =
+            self.usage
+                .as_ref()
+                .filter(|usage| usage.turns > 0)
+                .map(|usage| {
+                    format!(
+                        "{} turns · in {} · out {}",
+                        usage.turns,
+                        compact_tokens(usage.input_tokens),
+                        compact_tokens(usage.output_tokens)
+                    )
+                });
+        // What the run waits on, and what the next key does. An approval or a
+        // question blocks the turn, so it reads as a warning; the interrupt key
+        // is a fact about the run.
+        let mut hints = Vec::new();
+        if !self.state.approvals.is_empty() {
+            hints.push(StatusHint {
+                text: format!(
+                    "{} approval{} waiting",
+                    self.state.approvals.len(),
+                    match self.state.approvals.len() {
+                        1 => "",
+                        _ => "s",
+                    }
+                ),
+                warning: true,
+            });
+        }
+        if !self.state.questions.is_empty() {
+            hints.push(StatusHint {
+                text: format!(
+                    "{} question{} waiting",
+                    self.state.questions.len(),
+                    match self.state.questions.len() {
+                        1 => "",
+                        _ => "s",
+                    }
+                ),
+                warning: true,
+            });
+        }
+        if self.state.active_run.is_some() {
+            hints.push(StatusHint {
+                text: "esc interrupt".to_string(),
+                warning: false,
+            });
+        }
+        self.shell.status.hints = hints;
         self.shell.title.set_status(Some(status));
     }
 
@@ -2184,6 +2259,16 @@ fn db_argument(args: &[String]) -> String {
         .and_then(|index| args.get(index + 1))
         .cloned()
         .unwrap_or_else(|| "(none)".to_string())
+}
+
+/// Token counts as the status strip shows them: exact under a thousand,
+/// one decimal above, so a long Session does not widen the row.
+fn compact_tokens(tokens: u64) -> String {
+    match tokens {
+        0..=999 => tokens.to_string(),
+        1_000..=999_999 => format!("{:.1}k", tokens as f64 / 1_000.0),
+        _ => format!("{:.1}m", tokens as f64 / 1_000_000.0),
+    }
 }
 
 fn first_line(text: &str) -> String {
@@ -2641,6 +2726,66 @@ mod tests {
     }
 
     #[test]
+    fn the_composer_shows_the_run_phase_beside_the_input() {
+        let mut app = session_app();
+        let state = SessionState {
+            active_run: Some("run-1".into()),
+            ..SessionState::default()
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state,
+        });
+        assert_eq!(app.shell.composer.phase.as_deref(), Some("working"));
+        app.state.active_run = None;
+        app.update_status();
+        assert!(
+            app.shell.composer.phase.is_none(),
+            "an idle Session keeps the composer title quiet"
+        );
+    }
+
+    #[test]
+    fn the_status_strip_names_what_blocks_the_run() {
+        let mut app = session_app();
+        let state = SessionState {
+            active_run: Some("run-1".into()),
+            approvals: vec![crate::session::ApprovalView {
+                request_id: "req_1".into(),
+                tool: "bash".into(),
+                resource: "rm -rf /tmp/x".into(),
+                input: serde_json::json!({}),
+                input_hash: "hash".into(),
+                policy_revision: "rev-1".into(),
+                matcher: None,
+                expires_at_ms: None,
+            }],
+            ..SessionState::default()
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state,
+        });
+        app.update_status();
+        let hints = app
+            .shell
+            .status
+            .hints
+            .iter()
+            .map(|hint| hint.text.as_str())
+            .collect::<Vec<_>>();
+        assert!(hints.contains(&"1 approval waiting"), "{hints:?}");
+        assert!(hints.contains(&"esc interrupt"), "{hints:?}");
+        assert!(app.shell.status.hints[0].warning);
+        app.state.approvals.clear();
+        app.state.active_run = None;
+        app.update_status();
+        assert!(app.shell.status.hints.is_empty());
+    }
+
+    #[test]
     fn esc_interrupts_an_active_run_instead_of_leaving() {
         let mut app = session_app();
         let state = SessionState {
@@ -2825,7 +2970,7 @@ mod tests {
         }))
     }
 
-    fn drafted(app: &App) -> String {
+    fn drafted(app: &mut App) -> String {
         app.shell
             .draft()
             .iter()
@@ -2858,9 +3003,9 @@ mod tests {
         let draft = app.draft.as_ref().expect("a streaming draft");
         assert_eq!(draft.text, "Hello");
         assert!(
-            drafted(&app).contains("Hello"),
+            drafted(&mut app).contains("Hello"),
             "the transcript shows the streamed answer: {:?}",
-            drafted(&app)
+            drafted(&mut app)
         );
     }
 
@@ -2871,9 +3016,9 @@ mod tests {
         let draft = app.draft.as_ref().expect("a streaming draft");
         assert_eq!(draft.reasoning, "weighing");
         assert!(draft.text.is_empty(), "reasoning is not the answer");
-        assert_eq!(drafted(&app), "▸ thinking · 8 chars");
+        assert_eq!(drafted(&mut app), "▸ thinking · 8 chars");
         app.handle(delta_frame("run-1", "text.delta", "the answer"));
-        let shown = drafted(&app);
+        let shown = drafted(&mut app);
         assert!(shown.starts_with("▸ thinking · 8 chars"));
         assert!(shown.contains("the answer"));
     }
@@ -2889,7 +3034,7 @@ mod tests {
             .draft
             .as_ref()
             .is_some_and(|draft| draft.text == "Hello"));
-        assert!(drafted(&app).contains("Hello"));
+        assert!(drafted(&mut app).contains("Hello"));
         let committed = Transcript::from_snapshot(&serde_json::json!({
             "messages": [{"role": "assistant", "content": [{"type": "text", "text": "Hello"}]}],
         }));

@@ -6,6 +6,7 @@
 //! scrolls the way a terminal shows it. Everything that touches session state
 //! goes back to the UI as an [`Action`].
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -413,6 +414,10 @@ pub struct Composer {
     /// re-read from the snapshot every frame, so this is display state rather
     /// than a durable count the composer owns.
     pub queued: usize,
+    /// What the active run is doing, re-read from the snapshot every frame. It
+    /// rides the composer title so the phase is visible where the operator is
+    /// typing.
+    pub phase: Option<String>,
     /// Inline media sent with the prompt. The composer only shows their
     /// `[Image N]` markers; the bytes travel beside the text.
     attachments: Vec<Value>,
@@ -424,6 +429,8 @@ pub struct Composer {
     draft_mode: Mode,
     files: Option<Vec<String>>,
     commands: Vec<String>,
+    /// One-line meaning per command, shown beside it in the completion list.
+    pub details: HashMap<String, String>,
     workspace: PathBuf,
     history_path: PathBuf,
 }
@@ -437,6 +444,7 @@ impl Composer {
             completion: Completion::default(),
             notice: None,
             queued: 0,
+            phase: None,
             attachments: Vec::new(),
             history: load_history(&history_path),
             history_index: None,
@@ -444,6 +452,7 @@ impl Composer {
             draft_mode: Mode::Normal,
             files: None,
             commands: Vec::new(),
+            details: HashMap::new(),
             workspace: workspace.to_path_buf(),
             history_path,
         }
@@ -452,6 +461,11 @@ impl Composer {
     /// Names (without the leading `/`) offered by slash completion.
     pub fn set_commands(&mut self, commands: Vec<String>) {
         self.commands = commands;
+    }
+
+    /// The meaning shown beside each command in the completion list.
+    pub fn set_command_details(&mut self, details: Vec<(String, String)>) {
+        self.details = details.into_iter().collect();
     }
 
     /// Feed a key to the editor. The caller keeps the keys that mean app
@@ -897,6 +911,7 @@ mod tests {
             completion: Completion::default(),
             notice: None,
             queued: 0,
+            phase: None,
             attachments: Vec::new(),
             history: Vec::new(),
             history_index: None,
@@ -904,6 +919,7 @@ mod tests {
             draft_mode: Mode::Normal,
             files: Some(Vec::new()),
             commands: Vec::new(),
+            details: HashMap::new(),
             workspace: dir.to_path_buf(),
             history_path: dir.join("history.json"),
         }

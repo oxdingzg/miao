@@ -243,7 +243,7 @@ async fn the_last_allowed_turn_closes_the_prompt_without_tools() {
 #[test]
 fn budget_is_defaulted_validated_and_part_of_policy_identity() {
     let default: Config = serde_json::from_value(json!({})).unwrap();
-    assert_eq!(default.max_provider_turns, Some(25));
+    assert_eq!(default.max_provider_turns, None);
     let unlimited: Config = serde_json::from_value(json!({"max_provider_turns":null})).unwrap();
     assert_eq!(Policy::new(unlimited).unwrap().max_provider_turns(), None);
     assert!(Policy::new(Config {

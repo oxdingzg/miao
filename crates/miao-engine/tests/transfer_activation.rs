@@ -58,7 +58,10 @@ fn source(root: &Path) -> String {
         "artifacts":[
             {"hash":file_hash,"base64":base64::engine::general_purpose::STANDARD.encode(bytes)},
             {"hash":second_hash,"base64":base64::engine::general_purpose::STANDARD.encode(b"second snapshot bytes")}],"source_state":{},
-        "operational":{"goal":{"objective":"original objective","status":"active","autonomous":false},"todos":[{"task_id":"first","depends_on":null,"content":"Original todo","status":"pending","priority":"high"}]},
+        "operational":{"goal":{"objective":"original objective","status":"active","autonomous":false},// Waiting, not pending: a runnable todo would trigger todo-driven loop
+        // continuation and prepend extra provider requests to the capture
+        // channel, breaking the per-run request assertions below.
+        "todos":[{"task_id":"first","depends_on":null,"content":"Original todo","status":"waiting","priority":"high"}]},
         "snapshots":[
             {"id":"b".repeat(40),"files":[
                 {"path":"src/main.rs","source_path":"src/main.rs","hash":second_hash,"mode":"100644"},
