@@ -51,7 +51,9 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test
+        # The smoke suite drives real PTYs; run its files one test at a time so
+        # concurrent PTY fixtures cannot race each other into false failures.
+        run: cargo test -- --test-threads=1
 
   tui-windows:
     name: tui (windows)
@@ -84,4 +86,6 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test
+        # The smoke suite drives real PTYs; run its files one test at a time so
+        # concurrent PTY fixtures cannot race each other into false failures.
+        run: cargo test -- --test-threads=1

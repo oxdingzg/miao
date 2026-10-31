@@ -28,6 +28,8 @@ use crate::transport::{self, EngineClient, EngineSpawn, TransportEvent};
 const REFRESH_DELAY: Duration = Duration::from_millis(150);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const EVENTS_PAGE: usize = 100;
+/// Inputs read per `pending_inputs` page while looking for the newest one.
+const PENDING_INPUT_PAGE: usize = 100;
 
 pub enum Request {
     VcsChanges {
@@ -61,6 +63,12 @@ pub enum Request {
         command: Value,
     },
     NewSession,
+    /// Cancel the newest still-pending input and hand its text back. Escape
+    /// uses this before it touches the running turn: a queued prompt is cheaper
+    /// to take back than an interrupted turn is to resume.
+    CancelLastInput {
+        session_id: String,
+    },
     /// One `!` command for the host shell. It records in the Session without
     /// starting a provider turn, so nothing here touches the model.
     Shell {
@@ -208,6 +216,12 @@ impl Handle {
 
     pub fn new_session(&self) {
         let _ = self.tx.send(Request::NewSession);
+    }
+
+    pub fn cancel_last_input(&self, session_id: &str) {
+        let _ = self.tx.send(Request::CancelLastInput {
+            session_id: session_id.to_string(),
+        });
     }
 
     pub fn shell(&self, session_id: &str, command: &str) {
@@ -595,6 +609,30 @@ async fn run(
                             text: original,
                             attachments: Vec::new(),
                             message: format!("command failed: {error}"),
+                        }),
+                    }
+                }
+                Some(Request::CancelLastInput { session_id }) => {
+                    match cancel_last_input(&client, &session_id).await {
+                        Ok(Some(retrieved)) => {
+                            dirty.get_or_insert_with(Instant::now);
+                            let text = |key: &str| {
+                                retrieved
+                                    .get(key)
+                                    .and_then(Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string()
+                            };
+                            bus.send(AppEvent::InputRetrieved {
+                                prompt: text("prompt"),
+                                delivery: text("delivery"),
+                            });
+                        }
+                        Ok(None) => bus.send(AppEvent::InputNotRetrieved {
+                            reason: "no queued input to take back".into(),
+                        }),
+                        Err(error) => bus.send(AppEvent::InputNotRetrieved {
+                            reason: format!("could not read the queue: {error}"),
                         }),
                     }
                 }
@@ -1144,6 +1182,51 @@ fn attention_event(event: &transport::EngineEvent) -> Option<(attention::Kind, O
 
 /// Session and input ids are only opaque keys to the engine; hex keeps them
 /// readable and sorted by creation.
+/// Take back the newest input that is still waiting for promotion.
+///
+/// The inbox pages oldest first, so this walks to the end before choosing the
+/// last row. The cancel then decides: only an accepted cancel hands the text
+/// back, because an input that was promoted meanwhile is the running turn's
+/// history, not a draft.
+async fn cancel_last_input(
+    client: &EngineClient,
+    session_id: &str,
+) -> Result<Option<Value>, transport::TransportError> {
+    let mut after = None;
+    let mut newest: Option<Value> = None;
+    loop {
+        let page = client
+            .pending_inputs(session_id, after, PENDING_INPUT_PAGE)
+            .await?;
+        let inputs = page
+            .get("inputs")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let Some(last) = inputs.last() else { break };
+        let next = last.get("admitted_seq").and_then(Value::as_u64);
+        newest = Some(last.clone());
+        let has_more = page
+            .get("has_more")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        // A page that cannot advance would loop forever; stop instead.
+        if !has_more || next.is_none() || next == after {
+            break;
+        }
+        after = next;
+    }
+    let Some(newest) = newest else {
+        return Ok(None);
+    };
+    let input_id = newest.get("id").and_then(Value::as_str).unwrap_or_default();
+    let receipt = client.cancel_input(session_id, input_id).await?;
+    if receipt.get("accepted").and_then(Value::as_bool) != Some(true) {
+        return Ok(None);
+    }
+    Ok(Some(newest))
+}
+
 fn new_id(prefix: &str) -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);

@@ -42,6 +42,9 @@ impl Shell {
                 scroll: 0,
                 follow: true,
                 expanded: false,
+                area: Rect::default(),
+                selection: None,
+                rendered: Vec::new(),
             },
             composer: Composer::new(workspace),
             panel: None,
@@ -143,6 +146,19 @@ impl Shell {
                 transcript_lines(last, &self.transcript.theme, self.transcript.expanded);
         }
         self.transcript.expanded
+    }
+
+    /// Mouse selection lives on the transcript; the shell forwards the drag.
+    pub fn begin_selection(&mut self, position: Position) -> bool {
+        self.transcript.begin_selection(position)
+    }
+
+    pub fn update_selection(&mut self, position: Position) {
+        self.transcript.update_selection(position)
+    }
+
+    pub fn take_selection(&mut self) -> Option<String> {
+        self.transcript.take_selection()
     }
 
     pub fn scroll_transcript(&mut self, delta: i32) {
@@ -278,6 +294,16 @@ pub struct TranscriptPane {
     follow: bool,
     /// Tool results render at their folded budget unless this is on.
     expanded: bool,
+    /// The transcript's inner area from the last frame, in screen coordinates.
+    /// Mouse selection is expressed in the same space so a drag copies exactly
+    /// the cells the operator sees.
+    area: Rect,
+    /// Anchor and head of the current drag, in screen coordinates.
+    selection: Option<(Position, Position)>,
+    /// Symbols of the last rendered frame, one row of cells per line. Wide
+    /// characters own their first cell and leave the continuation empty, so a
+    /// column index is a screen column.
+    rendered: Vec<Vec<String>>,
 }
 
 impl Pane for TranscriptPane {
@@ -296,15 +322,138 @@ impl Pane for TranscriptPane {
             let viewport = area.height.saturating_sub(2) as usize;
             self.scroll = lines.len().saturating_sub(viewport) as u16;
         }
-        frame.render_widget(
-            Paragraph::new(lines)
-                .style(Style::new().fg(palette.text))
-                .block(block)
-                .wrap(Wrap { trim: false })
-                .scroll((self.scroll, 0)),
-            area,
-        );
+        let wrapped = Paragraph::new(lines)
+            .style(Style::new().fg(palette.text))
+            .block(block.clone())
+            .wrap(Wrap { trim: false })
+            .scroll((self.scroll, 0));
+        frame.render_widget(wrapped, area);
+        let inner = block.inner(area);
+        self.area = inner;
+        self.snapshot(frame, inner);
+        self.paint_selection(frame, inner);
     }
+}
+
+impl TranscriptPane {
+    /// Remember the symbols this frame drew so a drag can be copied verbatim.
+    fn snapshot(&mut self, frame: &mut Frame, inner: Rect) {
+        let buffer = frame.buffer_mut();
+        self.rendered = (inner.y..inner.bottom())
+            .map(|y| {
+                (inner.x..inner.right())
+                    .map(|x| {
+                        buffer
+                            .cell(Position::new(x, y))
+                            .map(|cell| cell.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect()
+            })
+            .collect();
+    }
+
+    /// Reverse the selected cells in place. The transcript is wrapped by
+    /// ratatui, so a selection is painted on the cells the operator covered
+    /// instead of being re-derived from the logical lines.
+    fn paint_selection(&mut self, frame: &mut Frame, inner: Rect) {
+        let Some((a, b)) = self.selection else {
+            return;
+        };
+        let (start, end) = if (a.y, a.x) > (b.y, b.x) {
+            (b, a)
+        } else {
+            (a, b)
+        };
+        let buffer = frame.buffer_mut();
+        for y in start.y.max(inner.y)..=end.y.min(inner.bottom().saturating_sub(1)) {
+            let from = if y == start.y { start.x } else { inner.x };
+            let to = if y == end.y {
+                end.x
+            } else {
+                inner.right().saturating_sub(1)
+            };
+            for x in from.max(inner.x)..=to.min(inner.right().saturating_sub(1)) {
+                if let Some(cell) = buffer.cell_mut(Position::new(x, y)) {
+                    cell.set_style(Style::new().add_modifier(Modifier::REVERSED));
+                }
+            }
+        }
+    }
+
+    /// Start a drag at a screen position when it lands inside the transcript.
+    pub fn begin_selection(&mut self, position: Position) -> bool {
+        if !self.area.contains(position) {
+            return false;
+        }
+        self.selection = Some((position, position));
+        true
+    }
+
+    /// Extend the drag. Positions outside the transcript clamp to its edges so
+    /// a drag that leaves the pane still copies what was covered.
+    pub fn update_selection(&mut self, position: Position) {
+        let Some((anchor, _)) = self.selection else {
+            return;
+        };
+        let clamped = Position::new(
+            position
+                .x
+                .clamp(self.area.x, self.area.right().saturating_sub(1)),
+            position
+                .y
+                .clamp(self.area.y, self.area.bottom().saturating_sub(1)),
+        );
+        self.selection = Some((anchor, clamped));
+    }
+
+    /// Finish the drag: return the selected text and clear the highlight.
+    pub fn take_selection(&mut self) -> Option<String> {
+        let (a, b) = self.selection.take()?;
+        if self.rendered.is_empty() {
+            return None;
+        }
+        let text = selection_text(&self.rendered, self.area, a, b);
+        (!text.is_empty()).then_some(text)
+    }
+}
+
+/// Slice the snapshot by screen coordinates. Rows keep their cell symbols, so a
+/// wide character contributes its symbol once and its continuation contributes
+/// nothing.
+fn selection_text(rendered: &[Vec<String>], inner: Rect, a: Position, b: Position) -> String {
+    let (start, end) = if (a.y, a.x) > (b.y, b.x) {
+        (b, a)
+    } else {
+        (a, b)
+    };
+    let mut lines: Vec<String> = Vec::new();
+    for y in start.y.max(inner.y)..=end.y.min(inner.bottom().saturating_sub(1)) {
+        let Some(row) = rendered.get((y - inner.y) as usize) else {
+            continue;
+        };
+        let from = if y == start.y {
+            start.x.saturating_sub(inner.x)
+        } else {
+            0
+        };
+        let to = if y == end.y {
+            end.x.saturating_sub(inner.x)
+        } else {
+            row.len().saturating_sub(1) as u16
+        };
+        let mut text = String::new();
+        for x in from..=to {
+            if let Some(symbol) = row.get(x as usize) {
+                text.push_str(symbol);
+            }
+        }
+        lines.push(text.trim_end().to_string());
+    }
+    while lines.last().is_some_and(|line| line.is_empty()) {
+        lines.pop();
+    }
+    lines.join("\n")
 }
 
 pub struct Home {
@@ -501,8 +650,8 @@ impl Home {
                 },
                 Style::new().fg(palette.primary),
             ))
-            .border_style(Style::new().fg(palette.border))
-            .style(Style::new().bg(palette.background));
+            .border_style(Style::new().fg(palette.border_active))
+            .style(Style::new().bg(palette.surface));
         let visible = self.visible();
         if visible.is_empty() {
             let mut lines = self.warning_lines();
@@ -540,6 +689,7 @@ impl Home {
             let style = if index == self.selected {
                 Style::new()
                     .fg(palette.primary)
+                    .bg(palette.element)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::new().fg(palette.text)
@@ -1017,6 +1167,7 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
                 let style = if selected {
                     Style::new()
                         .fg(palette.primary)
+                        .bg(palette.element)
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::new().fg(palette.text)
@@ -1689,5 +1840,32 @@ mod tests {
         assert_eq!(response["decision"], "allow");
         assert_eq!(response["policy_revision"], "rev-2");
         assert_eq!(response["matcher"]["kind"], "builtin");
+    }
+
+    #[test]
+    fn a_mouse_drag_copies_the_cells_it_covered() {
+        let inner = Rect::new(1, 2, 6, 3);
+        let cells = |text: &str| text.chars().map(|c| c.to_string()).collect::<Vec<_>>();
+        let rendered = vec![cells("abc   "), cells("def   "), cells("ghi   ")];
+        // One row, trailing blanks trimmed.
+        assert_eq!(
+            selection_text(&rendered, inner, Position::new(2, 2), Position::new(4, 2)),
+            "bc"
+        );
+        // A drag that crosses rows reads left-to-right, top-to-bottom.
+        assert_eq!(
+            selection_text(&rendered, inner, Position::new(2, 2), Position::new(3, 3)),
+            "bc\ndef"
+        );
+        // A drag that leaves the pane clamps instead of panicking.
+        assert_eq!(
+            selection_text(&rendered, inner, Position::new(1, 2), Position::new(9, 9)),
+            "abc\ndef\nghi"
+        );
+        // Blank cells copy nothing.
+        assert_eq!(
+            selection_text(&rendered, inner, Position::new(5, 2), Position::new(6, 2)),
+            ""
+        );
     }
 }
