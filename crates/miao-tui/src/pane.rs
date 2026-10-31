@@ -650,8 +650,8 @@ impl Home {
                 },
                 Style::new().fg(palette.primary),
             ))
-            .border_style(Style::new().fg(palette.border))
-            .style(Style::new().bg(palette.background));
+            .border_style(Style::new().fg(palette.border_active))
+            .style(Style::new().bg(palette.surface));
         let visible = self.visible();
         if visible.is_empty() {
             let mut lines = self.warning_lines();
@@ -689,6 +689,7 @@ impl Home {
             let style = if index == self.selected {
                 Style::new()
                     .fg(palette.primary)
+                    .bg(palette.element)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::new().fg(palette.text)
@@ -1103,6 +1104,21 @@ pub fn render_dialog(frame: &mut Frame, area: Rect, dialog: &Dialog, theme: &The
         saved.render(frame, inner, theme);
         return;
     }
+    if let Dialog::Message(text) = dialog {
+        let lines = text
+            .lines
+            .iter()
+            .map(|line| Line::from(line.clone()))
+            .collect::<Vec<_>>();
+        frame.render_widget(
+            Paragraph::new(lines)
+                .style(Style::new().fg(palette.text).bg(palette.surface))
+                .wrap(Wrap { trim: false })
+                .scroll((text.scroll.min(u16::MAX as usize) as u16, 0)),
+            inner,
+        );
+        return;
+    }
     if let Some(list) = dialog.list() {
         render_list(frame, inner, list, theme);
         return;
@@ -1166,6 +1182,7 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
                 let style = if selected {
                     Style::new()
                         .fg(palette.primary)
+                        .bg(palette.element)
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::new().fg(palette.text)

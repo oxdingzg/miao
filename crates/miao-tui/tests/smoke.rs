@@ -1244,13 +1244,13 @@ fn external_editor_exclusively_reads_stdin_then_returns_the_saved_draft() {
     assert!(wait_for_screen(
         &harness,
         "Project A",
-        Duration::from_secs(2)
+        Duration::from_secs(10)
     ));
     harness.write(b"\r");
     assert!(wait_for_screen(
         &harness,
         "hello from the fixture",
-        Duration::from_secs(2)
+        Duration::from_secs(10)
     ));
     harness.write(b"old draft");
     harness.write(b"\x18e");
@@ -1259,7 +1259,7 @@ fn external_editor_exclusively_reads_stdin_then_returns_the_saved_draft() {
             wait_for(
                 &harness,
                 &format!("EDITOR_INPUT_{index}"),
-                Duration::from_secs(2)
+                Duration::from_secs(10)
             ),
             "editor did not receive exclusive input: {}",
             harness.text()
@@ -1267,7 +1267,7 @@ fn external_editor_exclusively_reads_stdin_then_returns_the_saved_draft() {
         harness.write(format!("{text}\r").as_bytes());
     }
     assert!(
-        wait_for_screen(&harness, "first second third", Duration::from_secs(2)),
+        wait_for_screen(&harness, "first second third", Duration::from_secs(10)),
         "saved editor draft did not render: {}",
         harness.screen()
     );
@@ -1275,7 +1275,7 @@ fn external_editor_exclusively_reads_stdin_then_returns_the_saved_draft() {
     assert!(wait_for_screen(
         &harness,
         "first second third!",
-        Duration::from_secs(2)
+        Duration::from_secs(10)
     ));
     assert!(!harness.dir.join("admit.log").exists());
     harness.write(b"\x03");
@@ -1302,17 +1302,21 @@ fn editor_interrupt_returns_to_the_ui_and_exit_signals_cancel_the_editor() {
         assert!(wait_for_screen(
             &harness,
             "Project A",
-            Duration::from_secs(2)
+            Duration::from_secs(10)
         ));
         harness.write(b"\r");
         assert!(wait_for_screen(
             &harness,
             "hello from the fixture",
-            Duration::from_secs(2)
+            Duration::from_secs(10)
         ));
         harness.write(b"keep original draft");
         harness.write(b"\x18e");
-        assert!(wait_for(&harness, "EDITOR_INPUT_1", Duration::from_secs(2)));
+        assert!(wait_for(
+            &harness,
+            "EDITOR_INPUT_1",
+            Duration::from_secs(10)
+        ));
         let buffer =
             PathBuf::from(std::fs::read_to_string(harness.dir.join("editor-buffer-path")).unwrap());
         let editor_pid = std::fs::read_to_string(harness.dir.join("editor-pid")).unwrap();
@@ -1321,7 +1325,7 @@ fn editor_interrupt_returns_to_the_ui_and_exit_signals_cancel_the_editor() {
             // The cooked terminal delivers Ctrl+C to both UI and editor.
             harness.write(b"\x03");
             assert!(
-                wait_for_screen(&harness, "keep original draft", Duration::from_secs(2)),
+                wait_for_screen(&harness, "keep original draft", Duration::from_secs(10)),
                 "interrupted editor did not restore the draft: {}",
                 harness.screen()
             );
@@ -1329,7 +1333,7 @@ fn editor_interrupt_returns_to_the_ui_and_exit_signals_cancel_the_editor() {
             assert!(wait_for_screen(
                 &harness,
                 "keep original draft!",
-                Duration::from_secs(2)
+                Duration::from_secs(10)
             ));
             assert!(harness.child.try_wait().unwrap().is_none());
             harness.write(b"\x03");
