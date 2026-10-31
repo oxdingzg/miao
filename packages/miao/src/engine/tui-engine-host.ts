@@ -139,7 +139,12 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   // Remote-control devices come from the host's administration; a graph
   // without it exports none rather than failing the TUI start.
   const identityService = Option.getOrUndefined(yield* Effect.serviceOption(RuntimeIdentity.Service))
-  const devices = (identityService?.administration?.()?.devices() ?? [])
+  // `administration` may answer synchronously or with a promise; resolve both
+  // shapes before reading the device grants.
+  const administration = identityService?.administration
+    ? yield* Effect.promise(() => Promise.resolve(identityService.administration!()))
+    : undefined
+  const devices = (administration?.devices() ?? [])
     .filter((grant) => grant.revokedAt === null)
     .map((grant) => ({ name: grant.label, detail: grant.publicKey.slice(0, 16) }))
   const skills = skillService
