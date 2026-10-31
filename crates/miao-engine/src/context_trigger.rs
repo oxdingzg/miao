@@ -321,12 +321,17 @@ where
                     // the Session, so it can overflow too — and then the Session
                     // stays stuck retrying the same doomed slice. Retry once
                     // against a hard-truncated body: newest text that fits the
-                    // window, no second model round over the full slice.
-                    let retry = budget.window.and_then(|window| {
-                        let room = window.saturating_sub(budget.headroom.max(8_192));
-                        let trimmed = truncated_body(&body, (room.saturating_mul(3)) as usize);
-                        (trimmed.len() < body.len()).then_some(trimmed)
-                    });
+                    // window, no second model round over the full slice. Only an
+                    // overflow-shaped refusal earns the retry; any other failure
+                    // still answers the request on the first attempt.
+                    let retry = budget
+                        .window
+                        .filter(|_| looks_like_overflow(&reason))
+                        .and_then(|window| {
+                            let room = window.saturating_sub(budget.headroom.max(8_192));
+                            let trimmed = truncated_body(&body, (room.saturating_mul(3)) as usize);
+                            (trimmed.len() < body.len()).then_some(trimmed)
+                        });
                     let Some(trimmed) = retry else {
                         breaker.rejected();
                         notify(json!({
@@ -446,6 +451,17 @@ pub(crate) fn bounded(text: &str, budget: usize) -> String {
 }
 
 /// One summarizer pass's input: one bounded line per message.
+/// Whether a summarizer refusal reads like a context overflow. The retry is
+/// only honest for those: truncating the body can fix an oversized request,
+/// and it cannot fix any other refusal.
+fn looks_like_overflow(reason: &str) -> bool {
+    let reason = reason.to_ascii_lowercase();
+    reason.contains("context")
+        || reason.contains("too long")
+        || reason.contains("exceed")
+        || reason.contains("maximum")
+}
+
 /// Keep the newest `max_chars` characters of a summarizer body: the tail holds
 /// the state the next turn needs most, and dropping from the front is what
 /// makes the retry fit the window at all.
