@@ -1536,6 +1536,7 @@ impl App {
             return false;
         };
         let session_id = self.session.as_ref().map(|session| session.id.clone());
+        let typing = panel.typing().is_some();
         match &mut panel.kind {
             PanelKind::Approval(view) => {
                 let decision = match key.code {
@@ -1553,11 +1554,26 @@ impl App {
                     }
                 }
             }
+            PanelKind::Question(_) if typing => match key.code {
+                // While a custom answer is being typed, keys belong to it.
+                KeyCode::Enter => {
+                    panel.accept_typing();
+                }
+                KeyCode::Esc => {
+                    panel.cancel_typing();
+                }
+                KeyCode::Backspace => panel.backspace_typing(),
+                KeyCode::Char(character) => panel.type_char(character),
+                _ => {}
+            },
             PanelKind::Question(_) => match key.code {
                 KeyCode::Up | KeyCode::Char('k') => panel.move_cursor(-1),
                 KeyCode::Down | KeyCode::Char('j') => panel.move_cursor(1),
                 KeyCode::Char(' ') => panel.toggle(),
                 KeyCode::Enter => {
+                    if panel.begin_typing() {
+                        return true;
+                    }
                     if let Some(answer) = panel.submit() {
                         if let (Some(session_id), Some(engine)) =
                             (session_id.as_deref(), self.engine.as_ref())
