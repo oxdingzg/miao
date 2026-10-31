@@ -16,10 +16,11 @@ use crate::keybinds::{self, Keymap};
 use crate::pane::{render_dialog, Home, Pane, Panel, PanelKind, Shell};
 use crate::platform::attention::{self, Attention};
 use crate::platform::{clipboard, editor, zed};
-use crate::session::{Entry, SessionState, SessionSummary};
+use crate::session::{Entry, Part, SessionState, SessionSummary};
 use crate::state::{self, StashEntry};
 use crate::status::UsageSummary;
 use crate::theme::{self, Theme};
+use crate::tool;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
@@ -162,6 +163,14 @@ pub struct App {
     stash: Vec<StashEntry>,
     /// Every root Session, archived included, for the Session dialog.
     catalog: Vec<SessionSummary>,
+    /// MCP servers the host exported for this workspace (name, transport).
+    mcp: Vec<(String, String)>,
+    /// Integrations the host reported a stored credential for (name, label).
+    providers: Vec<(String, String)>,
+    /// Skills the host discovered (name, description).
+    skills: Vec<(String, String)>,
+    /// Workspaces the host reported (name, branch or type).
+    workspaces: Vec<(String, String)>,
     /// The model dialog waits for the catalog when nothing is cached yet.
     pending_models: bool,
     /// Same for the account dialog.
@@ -225,6 +234,10 @@ impl App {
             workspace,
             settings: None,
             models: Vec::new(),
+            mcp: parse_pairs(std::env::var("MIAO_TUI_MCP_JSON").ok().as_deref()),
+            providers: parse_pairs(std::env::var("MIAO_TUI_PROVIDERS_JSON").ok().as_deref()),
+            skills: parse_pairs(std::env::var("MIAO_TUI_SKILLS_JSON").ok().as_deref()),
+            workspaces: parse_pairs(std::env::var("MIAO_TUI_WORKSPACES_JSON").ok().as_deref()),
             accounts: Vec::new(),
             usage: None,
             stash: Vec::new(),
@@ -670,6 +683,11 @@ impl App {
             Some(keybinds::Action::StashDraft) => self.run_builtin(Builtin::StashDraft),
             Some(keybinds::Action::EditorOpen) => self.run_builtin(Builtin::Editor),
             Some(keybinds::Action::CopyMessage) => self.copy_last_response(),
+            Some(keybinds::Action::McpList) => self.open_mcp(),
+            Some(keybinds::Action::ProviderList) => self.open_providers(),
+            Some(keybinds::Action::SkillList) => self.open_skills(),
+            Some(keybinds::Action::WorkspaceList) => self.open_workspaces(),
+            Some(keybinds::Action::MessageView) => self.open_message(),
             Some(keybinds::Action::ToolOutputToggle) => {
                 let expanded = self.shell.toggle_tool_expansion();
                 self.notice(if expanded {
@@ -1041,6 +1059,67 @@ impl App {
             row.credential_id = credential_id;
         }
         self.shell.set_session(self.session.as_ref());
+    }
+
+    fn open_mcp(&mut self) {
+        self.open_dialog(Dialog::mcp(&self.mcp));
+    }
+
+    fn open_providers(&mut self) {
+        self.open_dialog(Dialog::providers(&self.providers));
+    }
+
+    fn open_skills(&mut self) {
+        self.open_dialog(Dialog::skills(&self.skills));
+    }
+
+    fn open_workspaces(&mut self) {
+        self.open_dialog(Dialog::workspaces(&self.workspaces));
+    }
+
+    /// The newest assistant reply as plain text: what the model said, how much
+    /// thinking it did, and which tools it ran.
+    fn open_message(&mut self) {
+        let Some(transcript) = self.shell.transcript() else {
+            self.notice("No message to show");
+            return;
+        };
+        let entry = transcript
+            .entries
+            .iter()
+            .rev()
+            .find(|entry| matches!(entry, Entry::Assistant { .. }));
+        let Some(Entry::Assistant {
+            agent,
+            model,
+            parts,
+        }) = entry
+        else {
+            self.notice("No message to show");
+            return;
+        };
+        let mut lines = vec![format!(
+            "agent: {}   model: {}",
+            agent.as_deref().unwrap_or("-"),
+            model.as_deref().unwrap_or("-")
+        )];
+        for part in parts {
+            match part {
+                Part::Text(text) => lines.extend(text.lines().map(str::to_string)),
+                Part::Reasoning(text) => {
+                    lines.push(format!("[thinking · {} chars]", text.chars().count()))
+                }
+                Part::Tool(call) => lines.push(format!(
+                    "[tool {} · {}]",
+                    tool::product_name(&call.name),
+                    if call.failed { "failed" } else { "ok" }
+                )),
+            }
+        }
+        if lines.len() == 1 {
+            lines.push("(no content)".to_string());
+        }
+        self.open_dialog(crate::dialogs::Dialog::message(lines));
     }
 
     fn open_status(&mut self) {
@@ -1536,6 +1615,7 @@ impl App {
             return false;
         };
         let session_id = self.session.as_ref().map(|session| session.id.clone());
+        let typing = panel.typing().is_some();
         match &mut panel.kind {
             PanelKind::Approval(view) => {
                 let decision = match key.code {
@@ -1553,11 +1633,26 @@ impl App {
                     }
                 }
             }
+            PanelKind::Question(_) if typing => match key.code {
+                // While a custom answer is being typed, keys belong to it.
+                KeyCode::Enter => {
+                    panel.accept_typing();
+                }
+                KeyCode::Esc => {
+                    panel.cancel_typing();
+                }
+                KeyCode::Backspace => panel.backspace_typing(),
+                KeyCode::Char(character) => panel.type_char(character),
+                _ => {}
+            },
             PanelKind::Question(_) => match key.code {
                 KeyCode::Up | KeyCode::Char('k') => panel.move_cursor(-1),
                 KeyCode::Down | KeyCode::Char('j') => panel.move_cursor(1),
                 KeyCode::Char(' ') => panel.toggle(),
                 KeyCode::Enter => {
+                    if panel.begin_typing() {
+                        return true;
+                    }
                     if let Some(answer) = panel.submit() {
                         if let (Some(session_id), Some(engine)) =
                             (session_id.as_deref(), self.engine.as_ref())
@@ -1814,6 +1909,11 @@ impl App {
                 engine.command(&session_id, &prompt, &text, &name, &arguments);
                 return;
             }
+            // A failed command is an error, not a message: sending the text as
+            // a plain prompt would silently hand a typo to the model.
+            self.shell.composer.restore_with(&text, attachments);
+            self.shell.composer.notice = Some(unknown_command_notice(&name));
+            return;
         }
         // Editor context is a prompt prefix rather than a wire field: the
         // engine admits one text string, and the TS client does the same.
@@ -3227,12 +3327,18 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_slash_word_still_reaches_the_composer_as_a_prompt() {
+    fn an_unknown_slash_command_is_reported_instead_of_sent_as_a_prompt() {
         let mut app = engine_session_app();
         app.shell.composer.editor.set_text("/nope plain text");
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         assert!(app.dialog.is_none());
-        assert!(app.shell.composer.editor.is_empty());
+        // The draft stays editable, and the notice names the typo: the text was
+        // never handed to the model.
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("unknown command: /nope")
+        );
+        assert!(!app.shell.composer.editor.is_empty());
     }
 
     /// An open Session whose transcript holds two user turns, with a handle
@@ -3389,5 +3495,72 @@ mod tests {
             requests.try_recv(),
             Ok(engine::Request::Redo { session_id }) if session_id == "ses_a"
         ));
+    }
+}
+
+/// The composer notice for a first-word command neither built in nor
+/// discovered. The draft stays in the composer so the typo can be fixed.
+fn unknown_command_notice(name: &str) -> String {
+    format!("unknown command: /{name}")
+}
+
+#[cfg(test)]
+mod command_notice_tests {
+    use super::unknown_command_notice;
+
+    #[test]
+    fn an_unknown_command_is_named_in_the_notice() {
+        assert_eq!(unknown_command_notice("nope"), "unknown command: /nope");
+    }
+}
+
+/// Parse the host's MCP export. A missing or malformed value means "no servers
+/// to show", never a startup failure: the TUI is a read-only client here.
+fn parse_pairs(raw: Option<&str>) -> Vec<(String, String)> {
+    let Some(raw) = raw else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+    value
+        .as_array()
+        .map(|servers| {
+            servers
+                .iter()
+                .filter_map(|server| {
+                    Some((
+                        server.get("name")?.as_str()?.to_string(),
+                        server
+                            .get("detail")?
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod host_panel_tests {
+    use super::parse_pairs;
+
+    #[test]
+    fn the_host_export_is_read_as_name_and_transport() {
+        let parsed = parse_pairs(Some(
+            r#"[{"name":"everything","detail":"npx -y server-everything"},{"name":"remote","detail":"https://example.com/mcp"}]"#,
+        ));
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].0, "everything");
+        assert_eq!(parsed[1].1, "https://example.com/mcp");
+    }
+
+    #[test]
+    fn a_missing_or_malformed_export_is_empty() {
+        assert!(parse_pairs(None).is_empty());
+        assert!(parse_pairs(Some("not json")).is_empty());
+        assert!(parse_pairs(Some("{}")).is_empty());
     }
 }

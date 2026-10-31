@@ -157,6 +157,10 @@ pub struct QuestionItem {
     pub header: String,
     pub options: Vec<Choice>,
     pub multi_select: bool,
+    /// The tool allows a typed answer (default true, as the question tool
+    /// documents). The Rust panel offers it as one extra row on single-select
+    /// questions.
+    pub custom: bool,
 }
 
 /// One pending `question` tool call, projected from `snapshot.questions`.
@@ -197,6 +201,7 @@ impl QuestionView {
                             })
                         })
                         .collect(),
+                    custom: item.get("custom").and_then(Value::as_bool).unwrap_or(true),
                     multi_select: item
                         .get("multiSelect")
                         .and_then(Value::as_bool)
