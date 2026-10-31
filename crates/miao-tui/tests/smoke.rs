@@ -392,8 +392,9 @@ fn boots_renders_panes_and_quits_on_ctrl_c() {
         harness.text()
     );
     let rendered = harness.text();
+    // The transcript is borderless now; the user entry marker proves it drew.
     assert!(
-        rendered.contains("transcript"),
+        rendered.contains("❯"),
         "transcript pane missing:\n{rendered}"
     );
     assert!(
