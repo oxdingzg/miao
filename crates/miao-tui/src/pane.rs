@@ -722,7 +722,7 @@ impl Home {
             } else {
                 detail
             };
-            Line::from(vec![
+            let row_line = Line::from(vec![
                 Span::styled(
                     format!("{marker}{slot}"),
                     Style::new().fg(palette.text_muted),
@@ -736,10 +736,23 @@ impl Home {
                     },
                     Style::new().fg(palette.text_muted),
                 ),
-            ])
+            ]);
+            // The preview answers "which conversation was this?" without
+            // opening it. One muted line under the row keeps the main line
+            // scannable; the engine already bounded the text.
+            match row.preview.as_deref() {
+                Some(preview) => vec![
+                    row_line,
+                    Line::from(Span::styled(
+                        format!("    {preview}"),
+                        Style::new().fg(palette.text_muted),
+                    )),
+                ],
+                None => vec![row_line],
+            }
         });
         frame.render_widget(
-            Paragraph::new(notice.chain(rows).collect::<Vec<_>>())
+            Paragraph::new(notice.chain(rows.flatten()).collect::<Vec<_>>())
                 .block(block)
                 .wrap(Wrap { trim: false }),
             area,
@@ -1976,6 +1989,41 @@ mod tests {
             visible.contains("NativeTUIrequiresdefault-agentcapturesupport"),
             "{visible}"
         );
+    }
+
+    #[test]
+    fn a_session_row_shows_its_preview_under_the_label() {
+        let mut home = Home::new(Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        });
+        home.set_rows(vec![SessionSummary {
+            id: "ses_p".into(),
+            title: Some("login fix".into()),
+            parent_id: None,
+            updated_at_ms: Some(10),
+            archived_at_ms: None,
+            pinned_at_ms: None,
+            directory: None,
+            model: None,
+            credential_id: None,
+            preview: Some("it was the stub config".into()),
+        }]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).expect("terminal");
+        terminal
+            .draw(|frame| home.render(frame, frame.area()))
+            .expect("draw");
+        let visible = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .flat_map(|cell| cell.symbol().chars())
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        assert!(visible.contains("itwasthestubconfig"), "{visible}");
+        assert!(visible.contains("loginfix"), "{visible}");
     }
 
     #[test]
