@@ -457,10 +457,14 @@ fn truncated_body(body: &str, max_chars: usize) -> String {
     while cut < body.len() && !body.is_char_boundary(cut) {
         cut += 1;
     }
+<<<<<<< HEAD
     format!(
         "(older conversation truncated to fit the model window)\n{}",
         &body[cut..]
     )
+=======
+    format!("(older conversation truncated to fit the model window)\n{}", &body[cut..])
+>>>>>>> origin/main
 }
 
 pub fn summarizer_body(messages: &[Message], per_message_chars: usize) -> String {
