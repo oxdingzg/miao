@@ -68,7 +68,12 @@ export const prepare = Effect.fn("Engine.providerGateway")(function* (aisdk: AIS
       }
       const url = new URL(request.url)
       const parts = url.pathname.split("/").filter(Boolean)
-      if (request.method !== "POST" || parts.length !== 3 || parts[2] !== "chat/completions") {
+      if (
+        request.method !== "POST" ||
+        parts.length !== 4 ||
+        parts[2] !== "chat" ||
+        parts[3] !== "completions"
+      ) {
         return json({ error: { message: "gateway accepts POST /:provider/:model/chat/completions" } }, 404)
       }
       const info = models.get(`${decodeURIComponent(parts[0])}/${decodeURIComponent(parts[1])}`)
