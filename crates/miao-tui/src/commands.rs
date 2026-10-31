@@ -189,6 +189,22 @@ pub fn completion_names(templates: &[Template]) -> Vec<String> {
     names
 }
 
+/// What each completion offers, as `(name, one-line meaning)`. Builtins carry
+/// their dialog label; a template carries its own description. The palette
+/// shows this beside the name so the operator does not have to open each one.
+pub fn completion_details(templates: &[Template]) -> Vec<(String, String)> {
+    let mut details = Builtin::ALL
+        .into_iter()
+        .map(|builtin| (builtin.name().to_string(), builtin.label().to_string()))
+        .collect::<Vec<_>>();
+    for template in templates {
+        if !details.iter().any(|(name, _)| name == &template.name) {
+            details.push((template.name.clone(), template.description.clone()));
+        }
+    }
+    details
+}
+
 /// Load every template command that applies to `workspace`, lowest priority
 /// first; a later definition of the same name replaces the earlier one but
 /// keeps its original position.
@@ -625,6 +641,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp dir");
         dir
+    }
+
+    #[test]
+    fn completion_details_name_builtins_and_templates_once() {
+        let details = completion_details(&[Template {
+            name: "review".into(),
+            description: "Review the working tree".into(),
+            template: "please review".into(),
+        }]);
+        assert!(details
+            .iter()
+            .any(|(name, detail)| name == "status" && detail == "Session status and usage"));
+        assert!(details
+            .iter()
+            .any(|(name, detail)| name == "review" && detail == "Review the working tree"));
+        assert_eq!(
+            details.iter().filter(|(name, _)| name == "status").count(),
+            1,
+            "a builtin is described once"
+        );
     }
 
     #[test]
