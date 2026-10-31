@@ -835,7 +835,7 @@ async fn run(
                 Request::Devices => {
                     let result = client.request("devices", json!({})).await;
                     match result {
-                        Ok(value) => bus.send(AppEvent::Devices(pairs_two(&value))),
+                        Ok(value) => bus.send(AppEvent::Devices(value)),
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("devices failed: {error}")))
                         }

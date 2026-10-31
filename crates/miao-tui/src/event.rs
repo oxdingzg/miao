@@ -62,7 +62,7 @@ pub enum AppEvent {
         result: serde_json::Value,
     },
     /// The host's remote-control devices, served by the engine.
-    Devices(Vec<(String, String)>),
+    Devices(serde_json::Value),
     /// The open Session moved to another workspace.
     SessionMoved,
     /// What a revert at one boundary would change, for the confirm dialog.

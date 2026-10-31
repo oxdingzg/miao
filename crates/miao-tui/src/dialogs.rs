@@ -169,6 +169,8 @@ pub enum ListKind {
     Timeline,
     /// No selection: `Enter` and `Esc` both close.
     ReadOnly,
+    /// `a` approves a pending candidate, `x` rejects it, `r` revokes a grant.
+    Devices,
 }
 
 impl ListDialog {
@@ -804,6 +806,8 @@ pub enum Action {
     None,
     Close,
     Chosen(usize),
+    /// A device row action: 0 approve, 1 reject, 2 revoke.
+    DeviceChosen(usize, u8),
     OpenSession(String),
     Rename(String),
     ToggleArchive(String),
@@ -881,6 +885,15 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
                 },
                 _ => Action::Chosen(row_index),
             };
+        }
+        KeyCode::Char('a') if list.kind == ListKind::Devices => {
+            return Action::DeviceChosen(list.selected, 0)
+        }
+        KeyCode::Char('x') if list.kind == ListKind::Devices => {
+            return Action::DeviceChosen(list.selected, 1)
+        }
+        KeyCode::Char('r') if list.kind == ListKind::Devices => {
+            return Action::DeviceChosen(list.selected, 2)
         }
         KeyCode::Char('r') if list.kind == ListKind::Sessions => {
             if let Some(id) = list.current_id() {
