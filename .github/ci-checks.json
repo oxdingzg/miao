@@ -44,7 +44,9 @@
     "packages/core/src/google-account*",
     "packages/core/src/google-account/**",
     "packages/core/src/provider-gateway.ts",
-    "packages/core/src/plugin/provider/google-account.ts"
+    "packages/core/src/plugin/provider/google-account.ts",
+    "script/test-integration.sh",
+    "script/engine-test-shard.sh"
   ],
   "native": [
     "crates/miao-native/**",
@@ -89,7 +91,9 @@
     ".github/scripts/ci-gate.py",
     ".github/scripts/test_ci_gate.py",
     ".github/actions/**",
-    "packages/miao/test/engine/native-tool-replay.test.ts"
+    "packages/miao/test/engine/native-tool-replay.test.ts",
+    "script/test-integration.sh",
+    "script/engine-test-shard.sh"
   ],
   "e2e": [
     ".github/workflows/e2e.yml",

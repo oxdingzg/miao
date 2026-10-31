@@ -93,10 +93,16 @@ jobs:
     # last. The runner executes one bun process per file with its own timeout
     # budget, one retry in a fresh process, and reaps orphan engines and temp
     # dirs between files.
-    name: integration tests (linux)
+    name: integration tests (linux, shard ${{ matrix.shard }}/4)
     timeout-minutes: 45
     needs: changes
     if: needs.changes.outputs.code == 'true'
+    strategy:
+      # One job per shard: the suite runs one bun process per file, so the
+      # shards are independent and a slow file only delays its own shard.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -125,6 +131,8 @@ jobs:
         env:
           MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine
           INTEGRATION_REQUIRE_ENGINE: "1"
+          INTEGRATION_SHARD: ${{ matrix.shard }}
+          INTEGRATION_SHARDS: "4"
         timeout-minutes: 40
         run: bun run test:integration
 
