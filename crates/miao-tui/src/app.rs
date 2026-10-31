@@ -2007,6 +2007,7 @@ impl App {
             self.shell.title.set_status(None);
             self.shell.title.set_status_alert(false);
             self.shell.composer.queued = 0;
+            self.shell.composer.phase = None;
             return;
         }
         let now = Instant::now();
@@ -2024,12 +2025,20 @@ impl App {
         let status = match (&self.state.active_run, self.state.pending) {
             (Some(_), 0) => format!("{phase} · Esc interrupt"),
             (Some(_), queued) => format!("{phase} · {queued} queued · Esc interrupt"),
-            (None, 0) => phase,
+            (None, 0) => phase.clone(),
             (None, queued) => format!("{phase} · {queued} queued"),
         };
         self.shell
             .title
             .set_status_alert(live.is_some_and(|live| live.silent(now)));
+        // The same phase rides the composer title, so the operator does not
+        // have to look away from the input to learn the run is working rather
+        // than waiting on them. An idle Session says nothing there.
+        self.shell.composer.phase = match self.state.active_run.is_some() || self.state.pending > 0
+        {
+            true => Some(phase.clone()),
+            false => None,
+        };
         self.shell.title.set_status(Some(status));
     }
 
@@ -2640,6 +2649,27 @@ mod tests {
     }
 
     #[test]
+    fn the_composer_shows_the_run_phase_beside_the_input() {
+        let mut app = session_app();
+        let state = SessionState {
+            active_run: Some("run-1".into()),
+            ..SessionState::default()
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state,
+        });
+        assert_eq!(app.shell.composer.phase.as_deref(), Some("working"));
+        app.state.active_run = None;
+        app.update_status();
+        assert!(
+            app.shell.composer.phase.is_none(),
+            "an idle Session keeps the composer title quiet"
+        );
+    }
+
+    #[test]
     fn esc_interrupts_an_active_run_instead_of_leaving() {
         let mut app = session_app();
         let state = SessionState {
@@ -2824,7 +2854,7 @@ mod tests {
         }))
     }
 
-    fn drafted(app: &App) -> String {
+    fn drafted(app: &mut App) -> String {
         app.shell
             .draft()
             .iter()
@@ -2857,9 +2887,9 @@ mod tests {
         let draft = app.draft.as_ref().expect("a streaming draft");
         assert_eq!(draft.text, "Hello");
         assert!(
-            drafted(&app).contains("Hello"),
+            drafted(&mut app).contains("Hello"),
             "the transcript shows the streamed answer: {:?}",
-            drafted(&app)
+            drafted(&mut app)
         );
     }
 
@@ -2870,9 +2900,9 @@ mod tests {
         let draft = app.draft.as_ref().expect("a streaming draft");
         assert_eq!(draft.reasoning, "weighing");
         assert!(draft.text.is_empty(), "reasoning is not the answer");
-        assert_eq!(drafted(&app), "▸ thinking · 8 chars");
+        assert_eq!(drafted(&mut app), "▸ thinking · 8 chars");
         app.handle(delta_frame("run-1", "text.delta", "the answer"));
-        let shown = drafted(&app);
+        let shown = drafted(&mut app);
         assert!(shown.starts_with("▸ thinking · 8 chars"));
         assert!(shown.contains("the answer"));
     }
@@ -2888,7 +2918,7 @@ mod tests {
             .draft
             .as_ref()
             .is_some_and(|draft| draft.text == "Hello"));
-        assert!(drafted(&app).contains("Hello"));
+        assert!(drafted(&mut app).contains("Hello"));
         let committed = Transcript::from_snapshot(&serde_json::json!({
             "messages": [{"role": "assistant", "content": [{"type": "text", "text": "Hello"}]}],
         }));

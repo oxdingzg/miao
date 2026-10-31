@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Modifier, Style};
@@ -35,17 +36,7 @@ impl Shell {
     pub fn new(workspace: &Path, theme: Theme) -> Self {
         Self {
             title: TitlePane::new(workspace, theme.clone()),
-            transcript: TranscriptPane {
-                theme: theme.clone(),
-                lines: vec![Line::from("no Session selected")],
-                draft: Vec::new(),
-                scroll: 0,
-                follow: true,
-                expanded: false,
-                area: Rect::default(),
-                selection: None,
-                rendered: Vec::new(),
-            },
+            transcript: TranscriptPane::new(theme.clone()),
             composer: Composer::new(workspace),
             panel: None,
             sidebar: Some(SidebarPane {
@@ -59,24 +50,26 @@ impl Shell {
     }
 
     pub fn set_transcript(&mut self, transcript: &Transcript) {
-        self.transcript.lines =
-            transcript_lines(transcript, &self.transcript.theme, self.transcript.expanded);
-        let max = self.transcript.lines.len().saturating_sub(1);
-        self.transcript.scroll = self.transcript.scroll.min(max as u16);
+        self.transcript.set_lines(transcript_lines(
+            transcript,
+            &self.transcript.theme,
+            self.transcript.expanded,
+        ));
+        let max = self.transcript.max_scroll();
+        self.transcript.scroll = self.transcript.scroll.min(max);
         self.last = Some(transcript.clone());
     }
 
     /// Show what the model is streaming before its message commits. Empty
     /// strings clear it.
     pub fn set_draft(&mut self, text: &str, reasoning: &str) {
-        self.transcript.draft = match text.is_empty() && reasoning.is_empty() {
-            true => Vec::new(),
-            false => draft_lines(text, reasoning, &self.transcript.theme),
-        };
+        self.transcript.set_draft(text, reasoning);
     }
 
     #[cfg(test)]
-    pub fn draft(&self) -> &[Line<'static>] {
+    pub fn draft(&mut self) -> &[Line<'static>] {
+        // A frame would refresh the throttled draft; a test reads it directly.
+        self.transcript.refresh_draft(true);
         &self.transcript.draft
     }
 
@@ -118,7 +111,8 @@ impl Shell {
             sidebar.theme = theme.clone();
         }
         if let Some(last) = &self.last {
-            self.transcript.lines = transcript_lines(last, &theme, self.transcript.expanded);
+            self.transcript
+                .set_lines(transcript_lines(last, &theme, self.transcript.expanded));
         }
     }
 
@@ -130,10 +124,10 @@ impl Shell {
     /// states where there is no Session content to render.
     pub fn set_message(&mut self, message: &str) {
         let palette = self.transcript.theme.palette;
-        self.transcript.lines = vec![Line::from(Span::styled(
+        self.transcript.set_lines(vec![Line::from(Span::styled(
             message.to_string(),
             Style::new().fg(palette.error),
-        ))];
+        ))]);
         self.transcript.scroll = 0;
         self.transcript.follow = false;
         self.last = None;
@@ -144,8 +138,11 @@ impl Shell {
     pub fn toggle_tool_expansion(&mut self) -> bool {
         self.transcript.expanded = !self.transcript.expanded;
         if let Some(last) = &self.last {
-            self.transcript.lines =
-                transcript_lines(last, &self.transcript.theme, self.transcript.expanded);
+            self.transcript.set_lines(transcript_lines(
+                last,
+                &self.transcript.theme,
+                self.transcript.expanded,
+            ));
         }
         self.transcript.expanded
     }
@@ -167,7 +164,7 @@ impl Shell {
         // Scrolling up detaches from the bottom; new content then lands above
         // the viewport instead of pulling it along.
         self.transcript.follow = false;
-        let max = self.transcript.lines.len().saturating_sub(1);
+        let max = self.transcript.max_scroll();
         let next = self.transcript.scroll as i32 + delta;
         self.transcript.scroll = next.clamp(0, max as i32) as u16;
     }
@@ -304,10 +301,26 @@ impl Pane for TitlePane {
 
 pub struct TranscriptPane {
     theme: Theme,
+    /// The projection's lines, unwrapped. A frame wraps them once per width
+    /// into `body` and paints only its viewport, so a keystroke costs the
+    /// window rather than the whole Session.
     lines: Vec<Line<'static>>,
     /// The streamed answer that the next projection replaces. Kept apart from
     /// `lines` so a projection can drop it in one assignment.
+    draft_source: Option<(String, String)>,
     draft: Vec<Line<'static>>,
+    /// A delta arrived and `draft` has not been rebuilt yet.
+    draft_dirty: bool,
+    draft_built: Option<Instant>,
+    /// `lines` and `draft` wrapped to `width`, each cached against the version
+    /// and width it was built for.
+    body: Vec<Line<'static>>,
+    draft_rows: Vec<Line<'static>>,
+    width: u16,
+    body_version: u64,
+    body_built: u64,
+    draft_version: u64,
+    draft_rows_built: u64,
     scroll: u16,
     /// Follow the tail while new projections arrive. Any manual scroll clears
     /// it, so reading history is not interrupted by committed events.
@@ -326,25 +339,193 @@ pub struct TranscriptPane {
     rendered: Vec<Vec<String>>,
 }
 
+/// How long a streamed draft may lag the deltas that arrived. Re-parsing a long
+/// answer per token is quadratic; 20 refreshes a second are indistinguishable
+/// from more.
+const DRAFT_REFRESH: Duration = Duration::from_millis(50);
+
+impl TranscriptPane {
+    fn new(theme: Theme) -> Self {
+        Self {
+            theme,
+            lines: vec![Line::from("no Session selected")],
+            draft_source: None,
+            draft: Vec::new(),
+            draft_dirty: false,
+            draft_built: None,
+            body: Vec::new(),
+            draft_rows: Vec::new(),
+            width: 0,
+            body_version: 1,
+            body_built: 0,
+            draft_version: 0,
+            draft_rows_built: 0,
+            scroll: 0,
+            follow: true,
+            expanded: false,
+            area: Rect::default(),
+            selection: None,
+            rendered: Vec::new(),
+        }
+    }
+
+    /// Replace the projection's lines. The bump invalidates the wrapped cache,
+    /// which is rebuilt on the next frame at that frame's width.
+    fn set_lines(&mut self, lines: Vec<Line<'static>>) {
+        self.lines = lines;
+        self.body_version += 1;
+    }
+
+    /// Record what the model is streaming. The lines are rendered on the next
+    /// frame at most `DRAFT_REFRESH` apart instead of once per delta.
+    fn set_draft(&mut self, text: &str, reasoning: &str) {
+        if text.is_empty() && reasoning.is_empty() {
+            self.draft_source = None;
+            self.draft.clear();
+            self.draft_rows.clear();
+            self.draft_dirty = false;
+            self.draft_version += 1;
+            return;
+        }
+        self.draft_source = Some((text.to_string(), reasoning.to_string()));
+        self.draft_dirty = true;
+    }
+
+    /// The largest scrollable row offset. Wrapped rows, because that is what
+    /// the viewport scrolls; the logical lines are a fallback before the first
+    /// frame.
+    fn max_scroll(&self) -> u16 {
+        let rows = self.body.len() + self.draft_rows.len();
+        match rows {
+            0 => self.lines.len().saturating_sub(1) as u16,
+            rows => rows.saturating_sub(1) as u16,
+        }
+    }
+
+    fn refresh_draft(&mut self, force: bool) {
+        if !self.draft_dirty {
+            return;
+        }
+        if !force
+            && self
+                .draft_built
+                .is_some_and(|at| at.elapsed() < DRAFT_REFRESH)
+        {
+            return;
+        }
+        self.draft = match &self.draft_source {
+            Some((text, reasoning)) => draft_lines(text, reasoning, &self.theme),
+            None => Vec::new(),
+        };
+        self.draft_dirty = false;
+        self.draft_built = Some(Instant::now());
+        self.draft_version += 1;
+    }
+}
+
 impl Pane for TranscriptPane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
+        self.refresh_draft(false);
+        let resized = area.width != self.width;
+        if resized || self.body_version != self.body_built {
+            self.body = wrap_lines(&self.lines, area.width);
+            self.body_built = self.body_version;
+        }
+        if resized || self.draft_version != self.draft_rows_built {
+            self.draft_rows = wrap_lines(&self.draft, area.width);
+            self.draft_rows_built = self.draft_version;
+        }
+        self.width = area.width;
+        let viewport = area.height as usize;
+        let rows = self.body.len() + self.draft_rows.len();
+        if self.follow {
+            self.scroll = rows.saturating_sub(viewport) as u16;
+        }
+        let start = (self.scroll as usize).min(rows.saturating_sub(1));
+        let visible = (start..rows)
+            .take(viewport)
+            .map(|row| match row < self.body.len() {
+                true => self.body[row].clone(),
+                false => self.draft_rows[row - self.body.len()].clone(),
+            })
+            .collect::<Vec<_>>();
         // Borderless, like the TypeScript layout this mirrors: a frame around
         // the transcript only steals columns from the text.
-        let mut lines = self.lines.clone();
-        lines.extend(self.draft.iter().cloned());
-        if self.follow {
-            self.scroll = lines.len().saturating_sub(area.height as usize) as u16;
-        }
-        let wrapped = Paragraph::new(lines)
-            .style(Style::new().fg(palette.text).bg(palette.background))
-            .wrap(Wrap { trim: false })
-            .scroll((self.scroll, 0));
-        frame.render_widget(wrapped, area);
+        frame.render_widget(
+            Paragraph::new(visible).style(Style::new().fg(palette.text).bg(palette.background)),
+            area,
+        );
         self.area = area;
-        self.snapshot(frame, area);
-        self.paint_selection(frame, area);
+        // Only a drag reads the cells back, so an idle frame does not copy the
+        // viewport into strings.
+        if self.selection.is_some() {
+            self.snapshot(frame, area);
+            self.paint_selection(frame, area);
+        }
     }
+}
+
+/// Split styled lines into rows no wider than `width` display cells, so the
+/// transcript is wrapped once per width instead of once per frame. Breaks
+/// prefer the last blank on the row, like the word wrapping it replaces, and
+/// only a word longer than the row is cut mid-word. Styles and alignment
+/// survive the split; a wide character never straddles a row.
+fn wrap_lines(lines: &[Line<'static>], width: u16) -> Vec<Line<'static>> {
+    let width = width.max(1) as usize;
+    let mut rows = Vec::with_capacity(lines.len());
+    for line in lines {
+        if line.spans.is_empty() || line.width() <= width {
+            rows.push(line.clone());
+            continue;
+        }
+        let cells = line
+            .spans
+            .iter()
+            .flat_map(|span| {
+                span.content
+                    .chars()
+                    .map(move |character| (character, span.style))
+            })
+            .collect::<Vec<_>>();
+        let mut start = 0;
+        while start < cells.len() {
+            let mut used = 0;
+            let mut blank = None;
+            let mut end = start;
+            while end < cells.len() {
+                let cell = cells[end].0.width().unwrap_or(0);
+                if used + cell > width && used > 0 {
+                    break;
+                }
+                used += cell;
+                end += 1;
+                if cells[end - 1].0 == ' ' {
+                    blank = Some(end);
+                }
+            }
+            let end = match blank {
+                Some(index) if index > start && index < end => index,
+                _ => end,
+            };
+            rows.push(row_from(&cells[start..end], line));
+            start = end;
+        }
+    }
+    rows
+}
+
+/// One wrapped row, with adjacent cells of the same style joined back into a
+/// span.
+fn row_from(cells: &[(char, Style)], line: &Line<'static>) -> Line<'static> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for (character, style) in cells {
+        match spans.last_mut() {
+            Some(span) if span.style == *style => span.content.to_mut().push(*character),
+            _ => spans.push(Span::styled(character.to_string(), *style)),
+        }
+    }
+    Line::from(spans).style(line.style)
 }
 
 impl TranscriptPane {
@@ -998,11 +1179,15 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
     } else {
         "composer"
     };
-    let title = match (&composer.notice, queued) {
-        (Some(notice), Some(queued)) => format!(" {name} · {queued} · {notice} "),
-        (Some(notice), None) => format!(" {name} · {notice} "),
-        (None, Some(queued)) => format!(" {name} · {queued} "),
-        (None, None) => format!(" {name} "),
+    // What the run is doing rides beside the input: the answer to "is it
+    // working, queued, or waiting on me?" belongs where the operator types,
+    // not only in the title bar at the top of the screen.
+    let mut parts = composer.phase.iter().cloned().collect::<Vec<_>>();
+    parts.extend(queued);
+    parts.extend(composer.notice.iter().cloned());
+    let title = match parts.is_empty() {
+        true => format!(" {name} "),
+        false => format!(" {name} · {} ", parts.join(" · ")),
     };
     let accent = if shell {
         palette.warning
@@ -1987,6 +2172,66 @@ mod tests {
             .expect("draw");
         let cells = &terminal.backend().buffer().content;
         assert!(cells.iter().all(|cell| cell.fg != palette.warning));
+    }
+
+    fn wrapped_text(rows: &[Line<'static>]) -> Vec<String> {
+        rows.iter()
+            .map(|row| {
+                row.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn wrapped_rows_break_on_the_last_blank() {
+        let rows = wrap_lines(&[Line::from("hello world again")], 10);
+        assert_eq!(wrapped_text(&rows), vec!["hello ", "world ", "again"]);
+    }
+
+    #[test]
+    fn a_word_longer_than_the_row_is_cut_at_the_edge() {
+        let rows = wrap_lines(&[Line::from("abcdefghijkl")], 10);
+        assert_eq!(wrapped_text(&rows), vec!["abcdefghij", "kl"]);
+    }
+
+    #[test]
+    fn a_wide_character_never_straddles_a_row() {
+        let rows = wrap_lines(&[Line::from("中文字符")], 5);
+        assert_eq!(wrapped_text(&rows), vec!["中文", "字符"]);
+    }
+
+    #[test]
+    fn wrapped_rows_keep_the_span_styles() {
+        let line = Line::from(vec![
+            Span::styled("plain ", Style::new().fg(ratatui::style::Color::Red)),
+            Span::styled("tail", Style::new().fg(ratatui::style::Color::Blue)),
+        ]);
+        let rows = wrap_lines(&[line], 7);
+        assert_eq!(wrapped_text(&rows), vec!["plain ", "tail"]);
+        assert_eq!(rows[1].spans[0].style.fg, Some(ratatui::style::Color::Blue));
+    }
+
+    #[test]
+    fn a_streamed_draft_is_parsed_on_demand_not_per_delta() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        shell.set_draft("streamed words", "");
+        assert!(
+            shell.transcript.draft.is_empty(),
+            "a delta must not re-parse the whole draft"
+        );
+        assert!(wrapped_text(shell.draft())
+            .join("")
+            .contains("streamed words"));
     }
 
     #[test]
