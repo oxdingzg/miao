@@ -1,0 +1,20 @@
+{
+  "model": "anthropic/claude-haiku",
+  "permissions": [
+    { "action": "bash", "resource": "*", "effect": "allow" },
+    { "action": "edit", "resource": "*", "effect": "deny" },
+    { "action": "edit", "resource": "*", "effect": "ask" }
+  ],
+  "agents": {
+    "reviewer": { "model": "anthropic/claude-haiku", "system": "review carefully" }
+  },
+  "snapshots": true,
+  "providers": {
+    "custom": {
+      "name": "Custom",
+      "api": { "type": "aisdk", "package": "@ai-sdk/openai", "url": "https://example.test/v1", "settings": {} },
+      "request": { "headers": { "Authorization": "Bearer sk-test" } }
+    }
+  },
+  "sandbox": { "mode": "off" }
+}

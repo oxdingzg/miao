@@ -16,6 +16,55 @@ import { SandboxPolicy } from "@miao/core/sandbox/policy"
  */
 const root = path.join(import.meta.dir, "../../../../crates/miao-engine/tests/fixtures/config-golden")
 
+const configCases = fs
+  .readdirSync(root)
+  .filter((name) => fs.existsSync(path.join(root, name, "expected-config.json")))
+  .sort()
+
+// The S5 unified read model: the engine's normalized config for these same
+// cases (`config_golden.rs` runs the identical corpus through
+// `normalized_from_sources`) must equal what the product's decode produces —
+// document precedence, V1 migration, JSONC tolerance, unknown-key filtering.
+const fileNames = ["miao.json", "miao.jsonc", "opencode.json", "opencode.jsonc"]
+
+const decodeDirectory = (directory: string) => {
+  const documents = []
+  for (const name of fileNames) {
+    const file = path.join(directory, name)
+    if (!fs.existsSync(file)) continue
+    documents.push(Option.getOrThrow(Config.decodeDocument(Config.parseJsonc(fs.readFileSync(file, "utf8")))))
+  }
+  return documents
+}
+
+for (const name of configCases) {
+  test(`golden case ${name} matches the shared expected normalized config`, () => {
+    const directory = path.join(root, name)
+    const plan = fs.existsSync(path.join(directory, "sources.json"))
+      ? (JSON.parse(fs.readFileSync(path.join(directory, "sources.json"), "utf8")) as Array<{ dir?: string; file?: string }>)
+      : [{ dir: "global" }]
+    const documents = plan.flatMap((source) => {
+      if (source.dir) return decodeDirectory(path.join(directory, source.dir))
+      const text = fs.readFileSync(path.join(directory, source.file!), "utf8")
+      return [Option.getOrThrow(Config.decodeDocument(Config.parseJsonc(text)))]
+    })
+    const entries = documents.map(
+      (info, index) => new Config.Document({ type: "document", path: path.join(directory, `doc-${index}`), info }),
+    )
+    // The merge result carries schema class instances; the JSON round trip is
+    // the normalized plain object both engines must agree on.
+    expect(JSON.parse(JSON.stringify(Config.merge(entries)))).toEqual(
+      JSON.parse(fs.readFileSync(path.join(directory, "expected-config.json"), "utf8")),
+    )
+  })
+}
+
+test("a golden document without an object root fails the product decode", () => {
+  const text = fs.readFileSync(path.join(root, "config-invalid-root", "global", "miao.json"), "utf8")
+  expect(Option.isNone(Config.decodeDocument(Config.parseJsonc(text)))).toBe(true)
+})
+
+
 const cases = fs
   .readdirSync(root)
   .filter((name) => fs.existsSync(path.join(root, name, "expected-policy.json")))

@@ -33,6 +33,24 @@ pub struct Document {
 /// Sections the engine derives are validated with their key paths, so a
 /// mistyped `sandbox` or `lsp` entry fails the way the product's schema
 /// decode does instead of silently falling back to the default.
+/// The S5 unified read model: load the same ordered sources the host
+/// forwards, migrate each V1-shaped document the way the product's decode
+/// does, filter unknown top-level keys, and merge lowest to highest. The
+/// result is the normalized document both engines must agree on, pinned by
+/// the shared golden samples.
+pub fn normalized_from_sources(sources: &[Source]) -> Result<Value, String> {
+    let documents = load(sources)?;
+    let mut values = Vec::with_capacity(documents.len());
+    for document in &documents {
+        values.push(if crate::config_v1::is_v1(&document.value) {
+            crate::config_v1::migrate(&document.value)
+        } else {
+            crate::config_v1::normalize(&document.value)
+        });
+    }
+    Ok(crate::config_scope::merge_values(&values))
+}
+
 pub fn load(sources: &[Source]) -> Result<Vec<Document>, String> {
     let mut documents = Vec::new();
     for source in sources {

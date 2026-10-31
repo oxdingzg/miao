@@ -55,6 +55,48 @@ fn derived_policy_matches_every_golden_case() {
     }
 }
 
+#[test]
+fn normalized_config_matches_every_golden_case() {
+    let cases = golden_cases("expected-config.json");
+    assert!(
+        cases.len() >= 4,
+        "expected the shared golden config cases, found {}: {:?}",
+        cases.len(),
+        cases
+    );
+    for case in cases {
+        let sources = match read_sources(&case) {
+            Some(sources) => sources,
+            None => vec![config_derive::Source::Dir(case.join("global"))],
+        };
+        let normalized = config_derive::normalized_from_sources(&sources)
+            .unwrap_or_else(|error| panic!("{}: {error}", case.display()));
+        let expected: Value = serde_json::from_str(
+            &std::fs::read_to_string(case.join("expected-config.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            normalized,
+            expected,
+            "{} drifted from the shared golden config",
+            case.display()
+        );
+    }
+}
+
+#[test]
+fn a_document_without_an_object_root_fails_the_normalized_read() {
+    let case = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/config-golden/config-invalid-root");
+    let sources = vec![config_derive::Source::Dir(case.join("global"))];
+    let error = config_derive::normalized_from_sources(&sources)
+        .expect_err("an array root must fail the normalized read");
+    assert!(
+        error.contains("config-invalid-root") || error.contains("miao.json"),
+        "the error should name the offending source: {error}"
+    );
+}
+
 /// A case with a `sources.json` plan drives the ordered multi-source loader
 /// the host forwards as `--config-sources`; paths are relative to the case.
 fn read_sources(case: &Path) -> Option<Vec<config_derive::Source>> {
