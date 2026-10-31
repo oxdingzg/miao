@@ -273,6 +273,9 @@ impl Host {
             Command::State { session_id } => runtime.store().state(&session_id).await,
             Command::Usage { session_id } => runtime.store().usage_report(&session_id).await,
             Command::VcsStatus { session_id } => runtime.store().vcs_status(&session_id).await,
+            Command::Workspaces => Ok(parse_workspaces(
+                std::env::var("MIAO_WORKSPACES_JSON").ok().as_deref(),
+            )),
             Command::SessionChildren { session_id } => {
                 runtime
                     .store()
@@ -664,5 +667,33 @@ impl Host {
             }
         }
         Ok(notifications)
+    }
+}
+
+/// The host prepares the workspace list (as it prepares model routes and MCP)
+/// and exports it in `MIAO_WORKSPACES_JSON`. A missing or malformed export is
+/// an empty list: the panel shows nothing instead of failing the request.
+fn parse_workspaces(raw: Option<&str>) -> Value {
+    raw.and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .filter(Value::is_array)
+        .unwrap_or_else(|| json!([]))
+}
+
+#[cfg(test)]
+mod workspace_tests {
+    use super::parse_workspaces;
+    use serde_json::json;
+
+    #[test]
+    fn the_host_export_is_served_verbatim() {
+        let parsed = parse_workspaces(Some(r#"[{"name":"main","detail":"main"}]"#));
+        assert_eq!(parsed, json!([{ "name": "main", "detail": "main" }]));
+    }
+
+    #[test]
+    fn a_missing_or_malformed_export_is_an_empty_list() {
+        assert_eq!(parse_workspaces(None), json!([]));
+        assert_eq!(parse_workspaces(Some("not json")), json!([]));
+        assert_eq!(parse_workspaces(Some("{}")), json!([]));
     }
 }
