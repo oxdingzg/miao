@@ -458,6 +458,14 @@ pub enum Command {
     VcsStatus {
         session_id: String,
     },
+    /// Move a drained Session's storage to another workspace directory. The
+    /// transfer is the existing export-move: the host names its product
+    /// database (as it names model routes and MCP), and the engine writes and
+    /// consumes the bundle itself.
+    MoveSession {
+        session_id: String,
+        target_directory: String,
+    },
     /// Workspaces the host prepared for this Location. The engine serves the
     /// host's list read-only, the same way it serves model routes and MCP: it
     /// never invents workspace authority of its own.
