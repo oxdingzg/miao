@@ -101,6 +101,11 @@ pub enum Request {
     },
     /// The host's workspace list, served by the engine (TUI-09).
     Workspaces,
+    /// Move the open Session to another workspace directory (TUI-09).
+    MoveSession {
+        session_id: String,
+        target_directory: String,
+    },
     /// Read the open Session's billed usage for the status dialog.
     Usage {
         session_id: String,
@@ -269,6 +274,13 @@ impl Handle {
         let _ = self.tx.send(Request::SelectModel {
             session_id: session_id.to_string(),
             binding,
+        });
+    }
+
+    pub fn move_session(&self, session_id: &str, target_directory: &str) {
+        let _ = self.tx.send(Request::MoveSession {
+            session_id: session_id.to_string(),
+            target_directory: target_directory.to_string(),
         });
     }
 
@@ -765,6 +777,23 @@ async fn run(
                         }
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("select failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::MoveSession {
+                    session_id,
+                    target_directory,
+                }) => {
+                    let result = client
+                        .request(
+                            "move_session",
+                            json!({ "session_id": session_id, "target_directory": target_directory }),
+                        )
+                        .await;
+                    match result {
+                        Ok(_) => bus.send(AppEvent::SessionMoved),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("move failed: {error}")))
                         }
                     }
                 }
@@ -1395,7 +1424,7 @@ mod tests {
 
 /// Name plus detail from the host's export, the shape every read-only panel
 /// uses. Anything else is dropped rather than shown as a broken row.
-fn pairs(value: &Value) -> Vec<(String, String)> {
+fn pairs(value: &Value) -> Vec<(String, String, String)> {
     value
         .as_array()
         .map(|rows| {
@@ -1404,6 +1433,10 @@ fn pairs(value: &Value) -> Vec<(String, String)> {
                     Some((
                         row.get("name")?.as_str()?.to_string(),
                         row.get("detail")?.as_str().unwrap_or_default().to_string(),
+                        row.get("directory")?
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string(),
                     ))
                 })
                 .collect()
