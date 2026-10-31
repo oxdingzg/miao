@@ -7,9 +7,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
+use unicode_width::UnicodeWidthStr;
 
 use crate::dialogs::{Dialog, ListDialog, ListKind, PaletteDialog};
-use crate::editor::{Composer, Mode};
+use crate::editor::{CompletionKind, Composer, Mode};
 use crate::session::{ApprovalView, Entry, Part, QuestionView, SessionSummary, Transcript};
 use crate::theme::Theme;
 use crate::{markdown, tool};
@@ -1266,6 +1267,17 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
         height: completion_rows,
         ..inner
     };
+    // A command row says what the command does, so the operator does not have
+    // to remember which of `status` and `sessions` prints usage. File
+    // completion keeps the bare path.
+    let names = composer
+        .completion
+        .items
+        .iter()
+        .take(COMPOSER_COMPLETION_ROWS)
+        .map(|path| UnicodeWidthStr::width(path.as_str()))
+        .max()
+        .unwrap_or(0);
     let items = composer
         .completion
         .items
@@ -1274,7 +1286,7 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
         .enumerate()
         .map(|(index, path)| {
             let selected = index == composer.completion.selected;
-            Line::from(Span::styled(
+            let mut spans = vec![Span::styled(
                 format!("{}{path}", if selected { "▸ " } else { "  " }),
                 if selected {
                     Style::new()
@@ -1283,7 +1295,19 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
                 } else {
                     Style::new().fg(palette.text_muted)
                 },
-            ))
+            )];
+            if let Some(detail) = composer
+                .details
+                .get(path)
+                .filter(|_| composer.completion.kind == CompletionKind::Command)
+            {
+                let pad = names.saturating_sub(UnicodeWidthStr::width(path.as_str())) + 2;
+                spans.push(Span::styled(
+                    format!("{}{detail}", " ".repeat(pad)),
+                    Style::new().fg(palette.text_muted),
+                ));
+            }
+            Line::from(spans)
         })
         .collect::<Vec<_>>();
     frame.render_widget(Paragraph::new(items), completion_area);
@@ -2368,6 +2392,41 @@ mod tests {
             home.placeholder(),
             "no sessions yet · tab to type a prompt · n for an empty session"
         );
+    }
+
+    #[test]
+    fn a_command_completion_row_says_what_the_command_does() {
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let mut composer = Composer::new(Path::new("."));
+        composer.completion = crate::editor::Completion {
+            kind: CompletionKind::Command,
+            query: String::new(),
+            token_start: 0,
+            items: vec!["status".to_string()],
+            selected: 0,
+        };
+        composer.set_command_details(vec![(
+            "status".to_string(),
+            "Session status and usage".to_string(),
+        )]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 8)).expect("terminal");
+        terminal
+            .draw(|frame| render_composer(frame, frame.area(), &composer, &theme))
+            .expect("draw");
+        let visible = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .flat_map(|cell| cell.symbol().chars())
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        assert!(visible.contains("status"), "{visible}");
+        assert!(visible.contains("Sessionstatusandusage"), "{visible}");
     }
 
     #[test]
