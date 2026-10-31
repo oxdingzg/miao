@@ -48,6 +48,12 @@ export interface TuiEnginePlan {
   readonly env: Record<string, string | undefined>
   /** Releases the MCP manifest when the engine that read it has exited. */
   readonly dispose?: () => void
+  /**
+   * Host authority the engine does not own. The shim answers a TUI
+   * `host_call` frame here instead of forwarding it, so workspace creation and
+   * remote-control pairing stay with the product services that own them.
+   */
+  readonly hostCall?: (op: string, params: unknown) => Promise<unknown>
 }
 
 /** The argv the Rust TUI passes the engine: only these carry a Location. */
@@ -196,7 +202,25 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
         ? { name, detail: server.command.join(" ") }
         : { name, detail: server.url },
     )
+  // Ops the TUI may ask the host to perform. Each one runs in this Effect's
+  // service graph, which is the only place that owns the product state.
+  const hostCall = async (op: string, params: unknown) => {
+    if (op !== "workspace.create") throw new Error(`unknown host call: ${op}`)
+    if (!projectService || !workspaceService) {
+      throw new Error("workspace creation is unavailable in this host")
+    }
+    const input = params as { directory?: string } | undefined
+    if (!input?.directory) throw new Error("workspace.create needs a directory")
+    const resolved = await Effect.runPromise(projectService.resolve(AbsolutePath.make(input.directory)))
+    return await Effect.runPromise(
+      workspaceService.create(params as never, {
+        projectID: resolved.id,
+        directory: resolved.directory,
+      }),
+    )
+  }
   return {
+    hostCall,
     // The shim inherits the operator's environment and stands in for the TUI's
     // direct child, so provider environment keys keep reaching the engine.
     env: {
@@ -278,15 +302,57 @@ async function startPlan(
  * the reader's buffer, which would leave the TUI waiting on a frame that never
  * ends.
  */
-async function runEngine(argv: string[], env: Record<string, string | undefined>): Promise<number> {
+async function runEngine(
+  argv: string[],
+  env: Record<string, string | undefined>,
+  hostCall?: (op: string, params: unknown) => Promise<unknown>,
+): Promise<number> {
   const child = Bun.spawn(argv, { stdin: "pipe", stdout: "pipe", stderr: "inherit", env })
+  // The TUI speaks NDJSON. With a host handler, frames are read line by line so
+  // a `host_call` can be answered here; without one every byte is forwarded.
   void (async () => {
     const input = Bun.stdin.stream().getReader()
+    const decoder = new TextDecoder()
+    let buffered = ""
+    const send = async (frame: unknown) => {
+      child.stdin.write(JSON.stringify(frame) + "\n")
+      await child.stdin.flush()
+    }
     try {
       for (;;) {
         const { done, value } = await input.read()
         if (done) break
-        child.stdin.write(value)
+        if (!hostCall) {
+          child.stdin.write(value)
+          await child.stdin.flush()
+          continue
+        }
+        buffered += decoder.decode(value, { stream: true })
+        let newline = buffered.indexOf("\n")
+        while (newline !== -1) {
+          const line = buffered.slice(0, newline)
+          buffered = buffered.slice(newline + 1)
+          let frame: { id?: unknown; method?: unknown; params?: unknown } | undefined
+          try {
+            frame = JSON.parse(line)
+          } catch {
+            frame = undefined
+          }
+          if (frame?.method === "host_call") {
+            try {
+              await send({ id: frame.id, result: await hostCall(String((frame.params as { op?: unknown })?.op), (frame.params as { params?: unknown })?.params) })
+            } catch (error) {
+              await send({ id: frame.id, error: error instanceof Error ? error.message : String(error) })
+            }
+          } else {
+            child.stdin.write(line + "\n")
+            await child.stdin.flush()
+          }
+          newline = buffered.indexOf("\n")
+        }
+      }
+      if (buffered.length > 0) {
+        child.stdin.write(buffered)
         await child.stdin.flush()
       }
     } catch {}
@@ -352,7 +418,7 @@ export async function runEngineShim(args: string[]): Promise<number> {
   })
   if (!started) return 1
   try {
-    return await runEngine(started.plan.argv, started.plan.env)
+    return await runEngine(started.plan.argv, started.plan.env, started.plan.hostCall)
   } finally {
     started.plan.dispose?.()
     await started.close()
