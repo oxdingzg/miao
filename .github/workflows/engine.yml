@@ -112,6 +112,11 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates/miao-engine
+          # An interrupted crates-io fetch left a truncated `cc` source in the
+          # cached registry, so every engine leg failed to compile it with
+          # "file not found for module apple" before its first test. Rotating
+          # the key retires that snapshot instead of restoring it forever.
+          key: registry-refetch-2026-11-01
 
       - name: Format
         if: matrix.os == 'ubuntu-24.04'
@@ -178,6 +183,11 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates/miao-engine
+          # An interrupted crates-io fetch left a truncated `cc` source in the
+          # cached registry, so every engine leg failed to compile it with
+          # "file not found for module apple" before its first test. Rotating
+          # the key retires that snapshot instead of restoring it forever.
+          key: registry-refetch-2026-11-01
 
       - name: Test
         # SQLite-backed event waits compete for disk on hosted Windows runners.
