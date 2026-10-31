@@ -31,14 +31,20 @@
 
 续跑逻辑在 `session/runner/llm.ts:2127-2165`：
 
-- **开关**：`goal.status === "active" && goal.autonomous === true` 才启用 loop（`llm.ts:2128`）。
+- **开关**：默认 todo 驱动——有 runnable Todo 就续跑，无需 Goal（`llm.ts:2136-2141`）。
+  停车开关：配置 `loop.enabled: false` 整体禁用；已记录的 Goal 非 `active`
+  （paused/blocked/done）抑制续跑。配置 `loop.enabled: true` 可覆盖
+  `max_iterations` 与 `continue_prompt`。
 - **燃料**：`SessionTodo.runnable(list)` 求就绪前沿，`list.length > 0 && open.length > 0` 才继续（`llm.ts:2141`）。
 - **边界**：`DEFAULT_LOOP_MAX_ITERATIONS = 25`、`LOOP_STALL_LIMIT = 2`（按 todo 判定签名是否停滞）、
   后台任务在跑则 `waiting-background-job` 挂起（`llm.ts:235-237`、`2141-2160`）。
 - **提示**：`DEFAULT_LOOP_PROMPT`（`llm.ts:237`）指示模型按 `depends_on` 就绪顺序取任务、
   外部等待标 `waiting`、需决策标 `blocked`、全部完成且验证后回 DONE 停止。
 
-即：**Goal 是续跑的主开关与停止判据，Todo 是续跑的燃料与进度账本**，二者在 loop 处耦合。
+即：**Todo 是续跑的默认开关、燃料与进度账本；Goal 从主开关降级为停车判据**，
+二者在 loop 处耦合。rust engine（`crates/miao-engine/src/runtime.rs`）同语义：
+默认 `max_provider_turns = null`（显式配置才是轮数缰绳），续跑条件为
+"有 runnable todo 且无非 active Goal"，停滞保护相同。
 
 ## 3. 分工代数（目标属主边界）
 

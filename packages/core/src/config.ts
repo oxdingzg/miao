@@ -57,10 +57,20 @@ const decodeOptions = { errors: "all", onExcessProperty: "ignore", propertyOrder
 const decodeInfo = Schema.decodeUnknownOption(Info, decodeOptions)
 const decodeV1Info = Schema.decodeUnknownOption(ConfigV1.Info, decodeOptions)
 
+/** V1 migration rebuilds a document from V1 fields only, so a V2 block on a
+ * V1-shaped document (anything carrying `provider` or `permission`, which is
+ * most real configs) would be silently dropped before the V2 decode. `loop`
+ * gates autonomous continuation, so it is carried over from the raw input. */
+const carryLoop = (input: unknown, migrated: Record<string, unknown>): Record<string, unknown> =>
+  isRecord(input) && input.loop !== undefined ? { loop: input.loop, ...migrated } : migrated
+
 /** Decodes a parsed document the way a location loads it: a document with any V1 key is migrated as a whole. */
 export const decodeDocument = (input: unknown) =>
   ConfigMigrateV1.isV1(input)
-    ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
+    ? decodeV1Info(input).pipe(
+        Option.map((v1) => carryLoop(input, ConfigMigrateV1.migrate(v1))),
+        Option.flatMap(decodeInfo),
+      )
     : decodeInfo(input)
 
 /** One ordered configuration source: the shape the engine's `--config-sources` reads. */
@@ -128,7 +138,7 @@ const layer = Layer.effect(
         const info = yield* ConfigMigrateV1.isV1(input)
           ? Effect.mapError(
               Effect.flatMap(Schema.decodeUnknownEffect(ConfigV1.Info, decodeOptions)(input), (v1) =>
-                Schema.decodeUnknownEffect(Info, decodeOptions)(ConfigMigrateV1.migrate(v1)),
+                Schema.decodeUnknownEffect(Info, decodeOptions)(carryLoop(input, ConfigMigrateV1.migrate(v1))),
               ),
               invalid,
             )

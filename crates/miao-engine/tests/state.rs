@@ -7,7 +7,9 @@ use miao_engine::{
 };
 use serde_json::{json, Value};
 fn todos(content: &str, revision: u64) -> Mutation {
-    Mutation::parse("todowrite",json!({"todos":[{"content":content,"status":"in_progress","priority":"high"}],"expected_revision":revision})).unwrap()
+    // Waiting, not in_progress: a runnable todo would trigger todo-driven loop
+    // continuation and add provider turns these fixtures never expect.
+    Mutation::parse("todowrite",json!({"todos":[{"content":content,"status":"waiting","priority":"high"}],"expected_revision":revision})).unwrap()
 }
 async fn setup(path: &std::path::Path) -> Store {
     let store = Store::open(path).await.unwrap();
