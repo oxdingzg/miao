@@ -1618,11 +1618,12 @@ impl Store {
                 "SELECT title,created_at_ms,updated_at_ms,archived_at_ms,pinned_at_ms FROM engine_session WHERE id=?1",
                 [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)),
             )?;
+            let preview=if metadata_only { metadata_preview(&tx,&session)? } else { None };
             let staged_revert:Option<(i64,String)>=tx.query_row("SELECT boundary_seq,snapshot_id FROM engine_staged_revert WHERE session_id=?1",[&session],|r|Ok((r.get(0)?,crate::snapshot::id_text(r.get(1)?)?))).optional()?;
             let staged_revert=staged_revert.map(|(boundary_seq,snapshot_id)|json!({"boundary_seq":boundary_seq,"snapshot_id":snapshot_id}));
             let event_base:u64=tx.query_row("SELECT CASE WHEN json_extract(bundle,'$.source.engine')='rust' THEN COALESCE(json_extract(bundle,'$.source.sequence'),0) ELSE 0 END FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?.unwrap_or(0);
             let transfer_import:Option<String>=tx.query_row("SELECT id FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?;
-            let mut snapshot=json!({"event_base":event_base,"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"message_count":message_count,"reverted_count":reverted_count,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"pinned_at_ms":pinned_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
+            let mut snapshot=json!({"event_base":event_base,"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"message_count":message_count,"reverted_count":reverted_count,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"pinned_at_ms":pinned_at_ms,"preview":preview,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
             if metadata_only {
                 snapshot.as_object_mut().unwrap().remove("messages");
             }
@@ -3627,6 +3628,56 @@ pub(crate) fn projected(
         messages.push(message);
     }
     Ok(messages)
+}
+
+/// The newest readable text in a Session, for catalog previews. The last
+/// messages' text parts win; a trailing tool-only turn is skipped so the
+/// preview keeps saying what the conversation last said. The bound matches
+/// the inbox preview: 200 characters plus a truncation flag.
+fn metadata_preview(tx: &Transaction<'_>, session: &str) -> Result<Option<Value>, Error> {
+    let mut stmt = tx.prepare(
+        "SELECT m.content FROM engine_message m WHERE m.session_id=?1 AND m.reverted=0 \
+         AND NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq) \
+         ORDER BY m.seq DESC LIMIT 20",
+    )?;
+    let rows = stmt.query_map([session], |row| row.get::<_, String>(0))?;
+    for row in rows {
+        let content = row?;
+        let Ok(content) = serde_json::from_str::<Value>(&content) else {
+            continue;
+        };
+        let parts = content.as_array().map(Vec::as_slice).unwrap_or(&[]);
+        let mut text = String::new();
+        for part in parts
+            .iter()
+            .filter(|part| part.get("type").and_then(Value::as_str) == Some("text"))
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+        {
+            if !text.is_empty() {
+                text.push(' ');
+            }
+            text.push_str(part);
+        }
+        let mut collapsed = String::new();
+        for word in text.split_whitespace() {
+            if !collapsed.is_empty() {
+                collapsed.push(' ');
+            }
+            collapsed.push_str(word);
+        }
+        if collapsed.is_empty() {
+            continue;
+        }
+        const LIMIT: usize = 200;
+        let truncated = collapsed.chars().count() > LIMIT;
+        let preview = if truncated {
+            collapsed.chars().take(LIMIT).collect()
+        } else {
+            collapsed
+        };
+        return Ok(Some(json!({"text":preview,"truncated":truncated})));
+    }
+    Ok(None)
 }
 
 /// Every assistant identity in one pass, keyed by the message it belongs to.
