@@ -26,12 +26,14 @@ gate is claimed.
 Latest run (2026-10-31, macmini M-series, PTY 80×24, TUI against the scripted
 engine, 36 distinct keystrokes after entering a session):
 
-| scenario      | samples | p50 | p95 | p99 | max |
-| ------------- | ------- | --- | --- | --- | --- |
-| composer-idle | 36      | 1 ms | 2 ms | 3 ms | 3 ms |
+| scenario          | samples | p50 | p95 | p99 | max |
+| ----------------- | ------- | --- | --- | --- | --- |
+| composer-idle     | 36      | 1 ms | 2 ms | 3 ms | 3 ms |
+| composer-streaming (during fake-engine session updates) | 36 | 1 ms | 2 ms | 2 ms | 2 ms |
 
-Not yet covered: echo latency during streaming output, under a 10k-line
-history, and with input-method composition.
+Not yet covered: echo latency under a 10k-line history and with
+input-method composition (the PTY harness cannot drive OS-level IM
+composition; both remain tracked on #1921).
 
 ## Binary size
 

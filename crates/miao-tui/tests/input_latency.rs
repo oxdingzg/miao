@@ -33,6 +33,10 @@ struct Harness {
 impl Harness {
     /// Boot the TUI against the scripted engine (fake sessions, no stream).
     fn spawn_engine(label: &str) -> Self {
+        Self::spawn_engine_env(label, &[])
+    }
+
+    fn spawn_engine_env(label: &str, environment: &[(&str, &str)]) -> Self {
         let dir = std::env::temp_dir().join(format!("miao-input-latency-{label}"));
         std::fs::create_dir_all(&dir).expect("workspace dir");
         let pair = native_pty_system()
@@ -61,6 +65,9 @@ impl Harness {
             env!("CARGO_BIN_EXE_miao-tui-fake-engine"),
         );
         cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
+        for (key, value) in environment {
+            cmd.env(key, value);
+        }
         cmd.arg("--db");
         cmd.arg(&db);
         let child = pair.slave.spawn_command(cmd).expect("spawn miao-tui");
@@ -277,6 +284,52 @@ fn typing_echo_latency_is_reported_for_the_composer() {
     // The TUI's exit does not stop its engine child: without this cleanup the
     // orphan keeps running into the next test binary and breaks the editor
     // signal tests that follow.
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", "miao-tui-fake-engine"])
+        .status();
+    std::thread::sleep(Duration::from_millis(150));
+}
+
+#[test]
+fn typing_echo_latency_during_streaming_output() {
+    // The fake engine streams continuous session updates while the composer
+    // accepts input - the load pattern the COST gate cares about.
+    let mut harness =
+        Harness::spawn_engine_env("streaming-typing", &[("MIAO_TUI_FAKE_STREAM", "1")]);
+    assert!(wait_for_plain(
+        &harness,
+        "Project A",
+        Duration::from_secs(4)
+    ),);
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(3)),
+        "the session transcript did not render:\n{}",
+        harness.text()
+    );
+    std::thread::sleep(Duration::from_millis(300));
+
+    let keys: Vec<u8> = b"abcdefghijklmnopqrstuvwxyz0123456789".to_vec();
+    let samples = measure_echo(&mut harness, &keys, Duration::from_millis(1500));
+
+    write_report(&harness.dir, "composer-streaming", &samples);
+    let worst = samples
+        .iter()
+        .map(|sample| sample.latency_ms)
+        .max()
+        .unwrap_or(0);
+    assert!(
+        worst < 1500,
+        "a keystroke took {worst} ms to echo during streaming - dropped input or a hung renderer"
+    );
+    harness.write(b"\x03");
+    std::thread::sleep(Duration::from_millis(200));
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(10)).expect("tui did not exit");
+    assert!(status.success());
+    drop(harness.writer);
+    drop(harness.pty);
+    let _ = harness.reader.join();
     let _ = std::process::Command::new("pkill")
         .args(["-f", "miao-tui-fake-engine"])
         .status();
