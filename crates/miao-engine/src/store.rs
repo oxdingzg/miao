@@ -25,6 +25,19 @@ pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 // a destination before its host has switched the authoritative placement.
 pub const SCHEMA_VERSION: u32 = 25;
 
+/// Schema versions at or above this floor share the modern run/lease format:
+/// the pre-epoch repair landed at 23, and every later delta is additive
+/// (new tables, no format rewrites). A live older engine keeps reading and
+/// writing the tables it knows, so it is not a reason to refuse an additive
+/// upgrade — only a format repair needs exclusive ownership.
+const ADDITIVE_UPGRADE_FLOOR: u32 = 23;
+
+/// Whether this upgrade rewrites the run/lease format (and therefore must not
+/// run while a live old owner could create rows in the old shape).
+fn needs_exclusive_ownership(version: u32, has_run_epoch: bool) -> bool {
+    version < ADDITIVE_UPGRADE_FLOOR || !has_run_epoch
+}
+
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
 /// The catalog columns a listing needs, in query order; a store written before
@@ -252,7 +265,7 @@ impl Store {
                     "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_run') WHERE name='lease_epoch')",
                     [], |row| row.get(0),
                 )?;
-                if engine && (version < SCHEMA_VERSION || !has_run_epoch) {
+                if engine && (version < SCHEMA_VERSION || !has_run_epoch) && needs_exclusive_ownership(version, has_run_epoch) {
                     let has_owner_pid: bool = conn.query_row(
                         "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_lease') WHERE name='owner_pid')", [], |row| row.get(0),
                     )?;
@@ -4368,5 +4381,27 @@ impl Store {
             created_ms,
             updated_ms,
         }
+    }
+}
+
+#[cfg(test)]
+mod upgrade_ownership_tests {
+    use super::needs_exclusive_ownership;
+
+    #[test]
+    fn additive_upgrades_do_not_require_exclusive_ownership() {
+        // 23-24 → 25 only adds tables; a live older engine keeps working, so a
+        // second window must not be forced to close it first.
+        assert!(!needs_exclusive_ownership(23, true));
+        assert!(!needs_exclusive_ownership(24, true));
+    }
+
+    #[test]
+    fn format_repairs_still_require_exclusive_ownership() {
+        // The pre-epoch repair rewrites run rows; a live old owner could write
+        // rows in the old shape mid-upgrade, so it must exit first.
+        assert!(needs_exclusive_ownership(22, false));
+        assert!(needs_exclusive_ownership(22, true));
+        assert!(needs_exclusive_ownership(23, false));
     }
 }
