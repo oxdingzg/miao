@@ -1075,7 +1075,6 @@ impl App {
 
     fn open_workspaces(&mut self) {
         self.open_dialog(Dialog::workspaces(&self.workspaces));
-
     }
 
     /// The newest assistant reply as plain text: what the model said, how much

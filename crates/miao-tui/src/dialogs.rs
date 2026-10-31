@@ -452,7 +452,6 @@ impl Dialog {
             ListKind::ReadOnly,
             "esc close",
         ))
-
     }
 
     pub fn message(lines: Vec<String>) -> Self {
