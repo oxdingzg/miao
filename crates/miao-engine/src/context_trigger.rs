@@ -317,12 +317,46 @@ where
                     }));
                 }
                 Ok(Err(reason)) => {
-                    breaker.rejected();
-                    notify(json!({
-                        "session_id": session, "run_id": run,
-                        "kind": "compaction.failed", "reason": reason,
-                    }));
-                    return Ok(false);
+                    // The summarizer must send the very history that overflowed
+                    // the Session, so it can overflow too — and then the Session
+                    // stays stuck retrying the same doomed slice. Retry once
+                    // against a hard-truncated body: newest text that fits the
+                    // window, no second model round over the full slice.
+                    let retry = budget.window.and_then(|window| {
+                        let room = window.saturating_sub(budget.headroom.max(8_192));
+                        let trimmed = truncated_body(&body, (room.saturating_mul(3)) as usize);
+                        (trimmed.len() < body.len()).then_some(trimmed)
+                    });
+                    let Some(trimmed) = retry else {
+                        breaker.rejected();
+                        notify(json!({
+                            "session_id": session, "run_id": run,
+                            "kind": "compaction.failed", "reason": reason,
+                        }));
+                        return Ok(false);
+                    };
+                    let instruction = format!(
+                        "Summarize this portion of the conversation; older history was truncated to fit the model window, so keep facts, decisions and the durable state block:\n{trimmed}"
+                    );
+                    match tokio::time::timeout(SUMMARY_TIMEOUT, summarize(instruction)).await {
+                        Ok(Ok(part)) => {
+                            parts.push(part);
+                            notify(json!({
+                                "session_id": session, "run_id": run,
+                                "kind": "compaction.progress", "segment": nth + 1,
+                                "total": plan.segments.len(), "truncated": true,
+                            }));
+                        }
+                        _ => {
+                            breaker.rejected();
+                            notify(json!({
+                                "session_id": session, "run_id": run,
+                                "kind": "compaction.failed", "reason": reason,
+                                "truncated": true,
+                            }));
+                            return Ok(false);
+                        }
+                    }
                 }
             }
         }
@@ -412,6 +446,20 @@ pub(crate) fn bounded(text: &str, budget: usize) -> String {
 }
 
 /// One summarizer pass's input: one bounded line per message.
+/// Keep the newest `max_chars` characters of a summarizer body: the tail holds
+/// the state the next turn needs most, and dropping from the front is what
+/// makes the retry fit the window at all.
+fn truncated_body(body: &str, max_chars: usize) -> String {
+    if body.len() <= max_chars {
+        return body.to_owned();
+    }
+    let mut cut = body.len() - max_chars;
+    while cut < body.len() && !body.is_char_boundary(cut) {
+        cut += 1;
+    }
+    format!("(older conversation truncated to fit the model window)\n{}", &body[cut..])
+}
+
 pub fn summarizer_body(messages: &[Message], per_message_chars: usize) -> String {
     messages
         .iter()
