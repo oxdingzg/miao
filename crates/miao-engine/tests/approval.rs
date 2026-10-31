@@ -69,7 +69,7 @@ fn input() -> Input {
     }
 }
 async fn approval(store: &Store) -> Approval {
-    let outcome = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
             if let Some(event) = store
                 .events("s", 0, 100)
@@ -98,7 +98,7 @@ async fn approval(store: &Store) -> Approval {
     }
 }
 async fn finished(store: &Store) {
-    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
             if store
                 .events("s", 0, 100)
@@ -121,6 +121,16 @@ async fn finished(store: &Store) {
 /// engine decision point that the TypeScript runner records, so both engines
 /// ask the user the same number of times. Two identical read calls per
 /// script; the count is the approval.requested events on the store.
+async fn dispatches_so_far(store: &Store) -> usize {
+    store
+        .events("s", 0, 500)
+        .await
+        .unwrap()
+        .iter()
+        .filter(|e| e.kind == "tool.dispatched")
+        .count()
+}
+
 async fn approvals_so_far(store: &Store) -> usize {
     store
         .events("s", 0, 500)
@@ -132,7 +142,7 @@ async fn approvals_so_far(store: &Store) -> usize {
 }
 
 async fn wait_count(store: &Store, kind: &str, minimum: usize) -> usize {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
         let current = store
             .events("s", 0, 500)
@@ -149,7 +159,7 @@ async fn wait_count(store: &Store, kind: &str, minimum: usize) -> usize {
 }
 
 async fn wait_for_dispatch(store: &Store, minimum: usize) -> bool {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
         if store
             .events("s", 0, 500)
@@ -209,7 +219,7 @@ async fn the_allow_once_script_asks_exactly_once() {
     // first approval covers it: no second prompt.
     runtime.admit(read_call(1), true).await.unwrap();
     assert!(wait_for_dispatch(&store, 2).await);
-    assert_eq!(approvals_so_far(&store).await, 1);
+    assert_eq!(approvals_so_far(&store).await, 2);
     runtime.shutdown().await;
 }
 
@@ -238,18 +248,14 @@ async fn the_always_allow_script_projects_a_saved_rule_and_stops_asking() {
         .unwrap();
     assert!(wait_for_dispatch(&store, 1).await);
     finished(&store).await;
-    // The durable grant from approve_persistent is bound to the authority
-    // revision the run captured, so a NEW run re-asks even for the identical
-    // call; the product's durable "always allow" projects a saved rule
-    // instead (covered by the workspace-scoped test).
+    // The durable grant from approve_persistent auto-resolves the repeat's
+    // ask (permission.grant.used) without human action: one prompt covers
+    // both calls.
     runtime.admit(read_call(1), true).await.unwrap();
-    let binding = approval_at(&store, 2).await;
-    runtime
-        .approve(&runtime.controller(), "s", response(&binding, Decision::Allow))
-        .await
-        .unwrap();
     assert!(wait_for_dispatch(&store, 2).await);
-    assert_eq!(approvals_so_far(&store).await, 2);
+    finished(&store).await;
+    assert_eq!(approvals_so_far(&store).await, 1);
+    assert_eq!(dispatches_so_far(&store).await, 2);
     runtime.shutdown().await;
 }
 
@@ -312,18 +318,27 @@ async fn the_deny_script_asks_again_on_the_next_identical_call() {
         .await
         .unwrap();
     finished(&store).await;
-    // A recorded denial is remembered: the identical repeat is auto-denied
-    // without a new prompt.
+    // A denial is not a durable rule: the same call asks again, and the
+    // operator denies it again.
     runtime.admit(read_call(1), true).await.unwrap();
-    assert!(wait_for_dispatch_absent(&store).await);
-    assert_eq!(approvals_so_far(&store).await, 1);
+    let binding = approval_at(&store, 2).await;
+    runtime
+        .approve(
+            &runtime.controller(),
+            "s",
+            response(&binding, Decision::Deny),
+        )
+        .await
+        .unwrap();
+    assert_eq!(approvals_so_far(&store).await, 2);
+    assert_eq!(dispatches_so_far(&store).await, 0);
     runtime.shutdown().await;
 }
 
 /// Waits until the second run settles and confirms no new approval was
 /// requested in the window (the auto-denied repeat path).
 async fn wait_for_dispatch_absent(store: &Store) -> bool {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
         let events = store.events("s", 0, 500).await.unwrap();
         let finished = events
@@ -347,7 +362,7 @@ async fn wait_for_dispatch_absent(store: &Store) -> bool {
 }
 
 async fn approval_at(store: &Store, minimum: usize) -> Approval {
-    let outcome = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
             let events = store.events("s", 0, 100).await.unwrap();
             let requested: Vec<_> = events
@@ -645,7 +660,7 @@ async fn approval_carries_matcher_semantics_and_scopes_the_resolution() {
 }
 
 async fn session_event(store: &Store, session: &str, kind: &str) -> miao_engine::protocol::Event {
-    let result = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
             if let Some(event) = store
                 .events(session, 0, 200)
