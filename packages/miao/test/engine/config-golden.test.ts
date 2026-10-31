@@ -3,6 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { Option } from "effect"
 import { Config } from "@miao/core/config"
+import { ConfigDiagnostics } from "@miao/core/config/diagnostics"
 import { ConfigExplain } from "@miao/core/config/explain"
 import { LSPServer } from "@miao/core/lsp/server"
 import { SandboxPolicy } from "@miao/core/sandbox/policy"
@@ -197,3 +198,20 @@ for (const name of explainCases) {
     expect(derived).toEqual(expected)
   })
 }
+
+/**
+ * The engine refuses a document whose root is not an object, naming the file
+ * and the key path. The TypeScript diagnostics must refuse the same document,
+ * at the same key path, instead of accepting it in silence: one shared sample,
+ * two implementations, one verdict.
+ */
+test("an invalid config root is refused with its key path", () => {
+  const fixture = path.join(root, "config-invalid-root")
+  const expected = JSON.parse(fs.readFileSync(path.join(fixture, "expected-error.json"), "utf8"))
+  const document = JSON.parse(fs.readFileSync(path.join(fixture, expected.origin), "utf8"))
+  const diagnostics = ConfigDiagnostics.of(document)
+  expect(diagnostics.length).toBeGreaterThan(0)
+  expect(diagnostics[0]!.kind).toBe("invalid-value")
+  expect(diagnostics[0]!.path).toEqual(expected.keyPath === "" ? [] : expected.keyPath.split("."))
+  expect(diagnostics[0]!.message).toContain("object")
+})

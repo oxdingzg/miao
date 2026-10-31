@@ -19,3 +19,12 @@ the host forwards as `--config-sources`: `[{"dir": …} | {"file": …} |
 {"content": …}]`, lowest priority first, paths relative to the case. Such a
 case proves the project chain and direct files override the global directory
 the way the product applies them.
+
+A `config-invalid-root` case is a *refusal* sample rather than a derivation
+one: it carries no `expected-config.json`, so the derivation tests skip it, and
+instead pins the one verdict both implementations owe the operator. Its
+`global/` holds a document whose root is not an object, and `expected-error.json`
+names the originating document plus the key path (`""` for the root) that both
+sides must report. The engine refuses the document outright
+(`config_derive::load`), and the TypeScript diagnostics refuse it at the same
+key path; neither may accept it in silence.

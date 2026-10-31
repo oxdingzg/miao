@@ -215,3 +215,28 @@ fn explained_provenance_matches_every_golden_case() {
         );
     }
 }
+
+/// A document both implementations read must be refused by both. The engine
+/// names the document and the key path it rejected, and the TypeScript
+/// diagnostics name the same key path, so an operator cannot end up with a TUI
+/// that silently accepted a document the engine refuses.
+#[test]
+fn an_invalid_config_root_is_refused_with_its_origin() {
+    let case = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/config-golden/config-invalid-root");
+    let expected: Value =
+        serde_json::from_str(&std::fs::read_to_string(case.join("expected-error.json")).unwrap())
+            .unwrap();
+    let origin = expected["origin"].as_str().unwrap();
+    let message = expected["message"].as_str().unwrap();
+    let error = config_derive::load(&[config_derive::Source::Dir(case.join("global"))])
+        .expect_err("a non-object config root must be refused");
+    assert!(
+        error.contains(message),
+        "refusal must state {message:?}, got {error:?}"
+    );
+    assert!(
+        error.contains(origin),
+        "refusal must name the document {origin:?}, got {error:?}"
+    );
+}

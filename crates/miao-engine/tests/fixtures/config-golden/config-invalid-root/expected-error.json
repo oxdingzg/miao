@@ -1,0 +1,5 @@
+{
+  "origin": "global/miao.json",
+  "keyPath": "",
+  "message": "config root must be an object"
+}

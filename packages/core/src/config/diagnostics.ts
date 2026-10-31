@@ -37,6 +37,13 @@ const strictDecode = Schema.decodeUnknownSync(Info, { errors: "all", onExcessPro
  * never escapes this function.
  */
 export function of(input: unknown): Diagnostic[] {
+  // The strict decode reports a non-object root without a key path, so `parse`
+  // has nothing to attach a diagnostic to and would drop the refusal entirely.
+  // The engine rejects the same document as "<origin>: config root must be an
+  // object", and a document both sides read must not be silently accepted by
+  // one of them.
+  if (input === null || typeof input !== "object" || Array.isArray(input))
+    return [{ kind: "invalid-value", path: [], message: `Expected an object, got ${shape(input)}` }]
   try {
     strictDecode(input)
     return []
@@ -48,6 +55,13 @@ export function of(input: unknown): Diagnostic[] {
     const message = (error as { message?: unknown }).message
     return parse(typeof message === "string" ? message : String(error))
   }
+}
+
+/** How a document's root looked instead of the object the schema requires. */
+function shape(input: unknown) {
+  if (input === null) return "null"
+  if (Array.isArray(input)) return "an array"
+  return `a ${typeof input}`
 }
 
 /** Turns a strict-decode failure message back into structured diagnostics. */
