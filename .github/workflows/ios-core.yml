@@ -2,6 +2,10 @@ name: ios-core
 on:
   workflow_call:
   workflow_dispatch:
+  # The legs need hosted macOS, which GitHub cancels within a second when it has
+  # no slot. They are not a merge gate; this schedule is their early warning.
+  schedule:
+    - cron: "37 4 * * *"
 permissions:
   contents: read
 concurrency:

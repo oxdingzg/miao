@@ -131,18 +131,6 @@
     ".github/scripts/test_ci_gate.py",
     ".github/actions/**"
   ],
-  "ios": [
-    "apps/ios/**",
-    "packages/remote-control/src/**",
-    "packages/miao/src/runtime/**",
-    "packages/miao/test/runtime/native-app.ts",
-    ".github/workflows/ios-core.yml",
-    ".github/workflows/ci.yml",
-    ".github/ci-checks.json",
-    ".github/scripts/ci-gate.py",
-    ".github/scripts/test_ci_gate.py",
-    ".github/actions/**"
-  ],
   "storybook": [
     ".github/workflows/storybook.yml",
     "package.json",
