@@ -694,8 +694,16 @@ impl Parser for ChatState {
         }
         let mut ids = std::collections::HashSet::new();
         for call in self.calls {
-            if call.id.is_empty() || call.name.is_empty() || !ids.insert(call.id.clone()) {
+            if call.id.is_empty() || call.name.is_empty() {
                 return Err(ProviderError::Stream("invalid tool identity".into()));
+            }
+            // A gateway that replays a frame repeats the same call id. Keeping
+            // the first call matches the TypeScript stream, which accumulates
+            // by index and never fails the reply over a repeated identity;
+            // ending the run here would discard an answer the provider already
+            // finished.
+            if !ids.insert(call.id.clone()) {
+                continue;
             }
             // The gateway serving MiMo lifts small calls out of the model's
             // own `<tool_call>` text but leaves a large argument object in the
