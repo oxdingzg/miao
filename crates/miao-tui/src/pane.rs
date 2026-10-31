@@ -220,7 +220,11 @@ impl TitlePane {
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| workspace.display().to_string());
         Self {
-            label: format!(" miao-tui · {name} · {}", git_branch(workspace)),
+            label: format!(
+                " miao-tui · {name} · {} · v{}",
+                git_branch(workspace),
+                crate::VERSION
+            ),
             status: None,
             status_alert: false,
             theme,
@@ -511,7 +515,7 @@ impl Home {
     /// a catalog that really has nothing in it.
     fn placeholder(&self) -> &str {
         if self.loaded {
-            "no sessions yet · press n to start one"
+            "no sessions yet · tab to type a prompt · n for an empty session"
         } else {
             "loading sessions…"
         }
@@ -644,7 +648,7 @@ impl Home {
         let block = Block::bordered()
             .title(Span::styled(
                 if self.query.is_empty() {
-                    " sessions · 1-9 open · p pin · / filter ".to_string()
+                    " sessions · 1-9 open · p pin · / filter · tab prompt · n new ".to_string()
                 } else {
                     format!(" sessions · filter \"{}\" · esc clear ", self.query)
                 },
@@ -875,6 +879,12 @@ fn composer_height(composer: &Composer) -> u16 {
         .len()
         .min(COMPOSER_COMPLETION_ROWS);
     (2 + input + completion) as u16
+}
+
+/// The home screen shows the same composer as a Session, so a prompt can be
+/// typed before any Session exists.
+pub fn render_home_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
+    render_composer(frame, area, composer, theme)
 }
 
 fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
@@ -1913,7 +1923,10 @@ mod tests {
         let mut home = Home::new(theme);
         assert_eq!(home.placeholder(), "loading sessions…");
         home.set_rows(Vec::new());
-        assert_eq!(home.placeholder(), "no sessions yet · press n to start one");
+        assert_eq!(
+            home.placeholder(),
+            "no sessions yet · tab to type a prompt · n for an empty session"
+        );
     }
 
     #[test]

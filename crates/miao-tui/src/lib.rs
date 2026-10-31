@@ -1,3 +1,11 @@
+/// The release build injects the product version; a source build falls back to
+/// the crate's version. The title bar names it so the operator can tell which
+/// build is running.
+pub const VERSION: &str = match option_env!("MIAO_TUI_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 pub mod app;
 pub mod commands;
 pub mod config;
