@@ -1365,14 +1365,6 @@ fn pairs(value: &Value) -> Vec<(String, String, String)> {
         .unwrap_or_default()
 }
 
-/// Name plus detail only, for panels with no destination path.
-fn pairs_two(value: &Value) -> Vec<(String, String)> {
-    pairs(value)
-        .into_iter()
-        .map(|(name, detail, _)| (name, detail))
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
