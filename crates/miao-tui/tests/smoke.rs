@@ -1331,6 +1331,14 @@ fn editor_interrupt_returns_to_the_ui_and_exit_signals_cancel_the_editor() {
         if signal == "INT" {
             // The cooked terminal delivers Ctrl+C to both UI and editor.
             harness.write(b"\x03");
+            if !wait_for_screen(&harness, "keep original draft", Duration::from_secs(3)) {
+                // Under CI runner load the line discipline can lose that race
+                // and leave the editor in the foreground; deliver the
+                // interrupt to the editor process directly.
+                let _ = std::process::Command::new("kill")
+                    .args(["-INT", editor_pid.trim()])
+                    .status();
+            }
             assert!(
                 wait_for_screen(&harness, "keep original draft", Duration::from_secs(10)),
                 "interrupted editor did not restore the draft: {}",

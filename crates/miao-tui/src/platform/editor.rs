@@ -59,6 +59,28 @@ pub async fn run(request: &Request) -> Result<Option<String>, String> {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
     }
+    // The TUI owns the terminal with SIGINT/SIGQUIT ignored while it runs;
+    // an editor child inherits those dispositions and becomes immune to the
+    // terminal's Ctrl+C on Linux. Reset them in the child before exec so the
+    // interrupt reaches the editor the way the user expects.
+    #[cfg(unix)]
+    let status = {
+        let mut command = Command::new(&request.command[0]);
+        command
+            .args(&request.command[1..])
+            .arg(path)
+            .current_dir(&request.workspace)
+            .kill_on_drop(true);
+        unsafe {
+            command.pre_exec(|| {
+                libc::signal(libc::SIGINT, libc::SIG_DFL);
+                libc::signal(libc::SIGQUIT, libc::SIG_DFL);
+                Ok(())
+            });
+        }
+        command.status().await
+    };
+    #[cfg(not(unix))]
     let status = Command::new(&request.command[0])
         .args(&request.command[1..])
         .arg(path)

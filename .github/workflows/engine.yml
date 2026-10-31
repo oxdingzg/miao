@@ -46,7 +46,7 @@ jobs:
           # the account's entire monthly allowance. It stays one job: a single
           # self-hosted runner runs one job at a time, so sharding there would
           # only queue the shards behind each other.
-          - os: macos-14
+          - os: macos-arm64
             runner: [self-hosted, macOS, ARM64]
             shard: 1
             shards: 1

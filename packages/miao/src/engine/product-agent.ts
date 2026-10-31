@@ -27,7 +27,11 @@ export function modelRoute(model: Model.Ref, catalog: readonly Route[]) {
       const reference = SessionModelRoute.reference(entry.route_id)
       return reference.providerID === model.providerID && reference.id === model.id
     }) ?? primary()
-  if (!route) throw new EngineError("unknown_model_route", "Model is not in the native host route catalog")
+  if (!route)
+    throw new EngineError(
+      "unknown_model_route",
+      `no native route for ${model.providerID}/${model.id}: the provider has no connected credential in the native host route catalog`,
+    )
   if (model.variant !== undefined && !route.variants?.includes(model.variant))
     throw new EngineError("unknown_model_variant", "Variant is not in the native host route catalog")
   return {
