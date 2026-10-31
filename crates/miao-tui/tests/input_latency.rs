@@ -56,7 +56,10 @@ impl Harness {
         cmd.env("MIAO_TUI_FAKE_READY_FILE", &ready);
         let db = dir.join("engine.db");
         std::fs::write(&db, b"").expect("engine db file");
-        cmd.env("MIAO_ENGINE_BIN", env!("CARGO_BIN_EXE_miao-tui-fake-engine"));
+        cmd.env(
+            "MIAO_ENGINE_BIN",
+            env!("CARGO_BIN_EXE_miao-tui-fake-engine"),
+        );
         cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
         cmd.arg("--db");
         cmd.arg(&db);
@@ -74,7 +77,9 @@ impl Harness {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
-                        seen.lock().expect("output lock").extend_from_slice(&buf[..n]);
+                        seen.lock()
+                            .expect("output lock")
+                            .extend_from_slice(&buf[..n]);
                         // ConPTY probes the attached terminal with a
                         // cursor-position report and stalls rendering until
                         // the terminal answers; act like one.
@@ -86,7 +91,10 @@ impl Harness {
                                 .any(|bytes| bytes == b"\x1b[6n")
                         {
                             replied_cpr = true;
-                            let _ = responder.lock().expect("writer lock").write_all(b"\x1b[1;1R");
+                            let _ = responder
+                                .lock()
+                                .expect("writer lock")
+                                .write_all(b"\x1b[1;1R");
                             let _ = responder.lock().expect("writer lock").flush();
                         }
                     }
@@ -121,7 +129,6 @@ impl Harness {
     fn text(&self) -> String {
         String::from_utf8_lossy(&self.output.lock().expect("output lock")).into_owned()
     }
-
 }
 
 fn wait_for_plain(harness: &Harness, needle: &str, timeout: Duration) -> bool {
@@ -248,7 +255,11 @@ fn typing_echo_latency_is_reported_for_the_composer() {
     // Sanity bound only: a dropped or multi-second-echo keystroke fails the
     // run. The COST gate itself is evaluated against the recorded percentiles
     // in the evidence JSON, not asserted here.
-    let worst = samples.iter().map(|sample| sample.latency_ms).max().unwrap_or(0);
+    let worst = samples
+        .iter()
+        .map(|sample| sample.latency_ms)
+        .max()
+        .unwrap_or(0);
     assert!(
         worst < 1500,
         "a keystroke took {worst} ms to echo — dropped input or a hung renderer"
