@@ -1256,6 +1256,24 @@ fn new_id(prefix: &str) -> String {
     )
 }
 
+/// Name plus detail from the host's export, the shape every read-only panel
+/// uses. Anything else is dropped rather than shown as a broken row.
+fn pairs(value: &Value) -> Vec<(String, String)> {
+    value
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    Some((
+                        row.get("name")?.as_str()?.to_string(),
+                        row.get("detail")?.as_str().unwrap_or_default().to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1391,22 +1409,4 @@ mod tests {
         assert_eq!(args.len(), 7);
         assert!(!args.iter().any(|arg| arg == "--credential-db"));
     }
-}
-
-/// Name plus detail from the host's export, the shape every read-only panel
-/// uses. Anything else is dropped rather than shown as a broken row.
-fn pairs(value: &Value) -> Vec<(String, String)> {
-    value
-        .as_array()
-        .map(|rows| {
-            rows.iter()
-                .filter_map(|row| {
-                    Some((
-                        row.get("name")?.as_str()?.to_string(),
-                        row.get("detail")?.as_str().unwrap_or_default().to_string(),
-                    ))
-                })
-                .collect()
-        })
-        .unwrap_or_default()
 }
