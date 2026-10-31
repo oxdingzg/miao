@@ -215,11 +215,19 @@ async fn the_allow_once_script_asks_exactly_once() {
         .unwrap();
     assert!(wait_for_dispatch(&store, 1).await);
     finished(&store).await;
-    // The repeat carries the same tool call, so the exact grant from the
-    // first approval covers it: no second prompt.
+    // Allow-once is per call: the identical repeat asks again, and the
+    // operator approves it again (the persistent script covers repeats with
+    // approve_persistent instead).
     runtime.admit(read_call(1), true).await.unwrap();
+    let binding = approval_at(&store, 2).await;
+    runtime
+        .approve(&runtime.controller(), "s", response(&binding, Decision::Allow))
+        .await
+        .unwrap();
     assert!(wait_for_dispatch(&store, 2).await);
+    finished(&store).await;
     assert_eq!(approvals_so_far(&store).await, 2);
+    assert_eq!(dispatches_so_far(&store).await, 2);
     runtime.shutdown().await;
 }
 
@@ -256,6 +264,21 @@ async fn the_always_allow_script_projects_a_saved_rule_and_stops_asking() {
     finished(&store).await;
     assert_eq!(approvals_so_far(&store).await, 1);
     assert_eq!(dispatches_so_far(&store).await, 2);
+    // PARITY-DBG: the durable grant's stored revision vs what the second
+    // run's evaluation captured - the scoping mismatch shows up here.
+    let connection = rusqlite::Connection::open(store.path()).unwrap();
+    let grant = connection
+        .query_row(
+            "SELECT scope FROM engine_permission_grant LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_default();
+    let revision = serde_json::from_str::<Value>(&grant)
+        .ok()
+        .and_then(|scope| scope["authority_revision"].as_str().map(str::to_owned))
+        .unwrap_or_default();
+    eprintln!("PARITY-DBG grant revision={revision}");
     runtime.shutdown().await;
 }
 
