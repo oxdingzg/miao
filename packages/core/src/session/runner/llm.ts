@@ -359,7 +359,7 @@ const layer = Layer.effect(
       // summaries. Lossy, so it stays configurable off.
       let prune = true
       let budget: number | undefined
-      let loop: { readonly maxIterations: number; readonly continuePrompt: string } | undefined
+      let loop: { readonly maxIterations: number; readonly continuePrompt: string } | null | undefined
       let disabledTools: ReadonlyArray<string> = []
       let disclosure: boolean | undefined
       let alwaysLoad: ReadonlyArray<string> | undefined
@@ -370,11 +370,14 @@ const layer = Layer.effect(
         if (entry.info.disabled_tools !== undefined) disabledTools = entry.info.disabled_tools
         if (entry.info.tools?.disclosure !== undefined) disclosure = entry.info.tools.disclosure
         if (entry.info.tools?.always_load !== undefined) alwaysLoad = entry.info.tools.always_load
-        if (entry.info.loop?.enabled === true)
-          loop = {
-            maxIterations: entry.info.loop.max_iterations ?? DEFAULT_LOOP_MAX_ITERATIONS,
-            continuePrompt: entry.info.loop.continue_prompt ?? DEFAULT_LOOP_PROMPT,
-          }
+        if (entry.info.loop !== undefined)
+          loop =
+            entry.info.loop.enabled === false
+              ? null
+              : {
+                  maxIterations: entry.info.loop.max_iterations ?? DEFAULT_LOOP_MAX_ITERATIONS,
+                  continuePrompt: entry.info.loop.continue_prompt ?? DEFAULT_LOOP_PROMPT,
+                }
       }
       return { ttl, prune, budget, loop, disabledTools, disclosure, alwaysLoad }
     })
@@ -2133,9 +2136,15 @@ const layer = Layer.effect(
                   )
               shouldRun = queuedNext || notificationNext
             const goal = !shouldRun ? yield* SessionGoal.current(db, input.sessionID) : undefined
-            const loop = settings.loop ?? (goal?.status === "active" && goal.autonomous === true
-              ? { maxIterations: DEFAULT_LOOP_MAX_ITERATIONS, continuePrompt: DEFAULT_LOOP_PROMPT } : undefined)
-            if (!shouldRun && loop !== undefined && (goal === undefined || goal.status === "active")) {
+            // Todo-driven by default: runnable todos keep the drain alive with
+            // or without an engagement goal, so a text-only reply mid-task
+            // never hands the session back to the operator. A recorded goal
+            // that is not active is the operator's off switch, and config
+            // `loop.enabled: false` disables continuation entirely.
+            const loop = settings.loop === undefined
+              ? { maxIterations: DEFAULT_LOOP_MAX_ITERATIONS, continuePrompt: DEFAULT_LOOP_PROMPT }
+              : settings.loop
+            if (!shouldRun && loop !== null && loop !== undefined && (goal === undefined || goal.status === "active")) {
               const current = yield* getSession(input.sessionID)
               if (exceeded(current)) {
                 yield* Effect.logWarning("session.loop-stopped", { sessionID: input.sessionID, reason: "budget" })
