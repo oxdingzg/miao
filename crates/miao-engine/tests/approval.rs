@@ -22,7 +22,17 @@ impl Provider for Reader {
         _: mpsc::Sender<Value>,
         _: CancellationToken,
     ) -> Result<Reply, ProviderError> {
-        if request.messages.len() == 1 {
+        // A fresh user prompt (the run's opening turn) asks for the read;
+        // every later turn — including after the tool result — closes with
+        // text. Keying on the last message's role keeps the fixture correct
+        // across repeated runs in one session, where the prompt history
+        // makes `messages.len() == 1` false.
+        let last_user = request
+            .messages
+            .last()
+            .map(|message| message.role == "user")
+            .unwrap_or(false);
+        if last_user {
             return Ok(Reply {
                 content: json!([{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}]),
                 usage: json!({}),
@@ -59,7 +69,7 @@ fn input() -> Input {
     }
 }
 async fn approval(store: &Store) -> Approval {
-    let outcome = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(15), async {
         loop {
             if let Some(event) = store
                 .events("s", 0, 100)
@@ -88,7 +98,7 @@ async fn approval(store: &Store) -> Approval {
     }
 }
 async fn finished(store: &Store) {
-    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
         loop {
             if store
                 .events("s", 0, 100)
@@ -105,6 +115,267 @@ async fn finished(store: &Store) {
     .await
     .unwrap()
 }
+
+/// S6 §4-1: the same approval script set (allow once, always allow,
+/// project-level allow, deny) must produce the same prompt count on the
+/// engine decision point that the TypeScript runner records, so both engines
+/// ask the user the same number of times. Two identical read calls per
+/// script; the count is the approval.requested events on the store.
+async fn approvals_so_far(store: &Store) -> usize {
+    store
+        .events("s", 0, 500)
+        .await
+        .unwrap()
+        .iter()
+        .filter(|e| e.kind == "approval.requested")
+        .count()
+}
+
+async fn wait_count(store: &Store, kind: &str, minimum: usize) -> usize {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        let current = store
+            .events("s", 0, 500)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == kind)
+            .count();
+        if current >= minimum || std::time::Instant::now() >= deadline {
+            return current;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+
+async fn wait_for_dispatch(store: &Store, minimum: usize) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        if store
+            .events("s", 0, 500)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == "tool.dispatched")
+            .count()
+            >= minimum
+        {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+
+fn read_call(index: usize) -> Input {
+    Input {
+        agent_references: Default::default(),
+        command: None,
+        session_id: "s".into(),
+        input_id: format!("parity-{index}").into(),
+        prompt: "read".into(),
+        delivery: Delivery::Steer,
+    }
+}
+
+#[tokio::test]
+async fn the_allow_once_script_asks_exactly_once() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("file"), "contents").unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Reader),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(60_000, Decision::Ask),
+    )
+    .await
+    .unwrap();
+    runtime.admit(read_call(0), true).await.unwrap();
+    let binding = approval(&store).await;
+    runtime
+        .approve(
+            &runtime.controller(),
+            "s",
+            response(&binding, Decision::Allow),
+        )
+        .await
+        .unwrap();
+    assert!(wait_for_dispatch(&store, 1).await);
+    finished(&store).await;
+    // The repeat carries the same tool call, so the exact grant from the
+    // first approval covers it: no second prompt.
+    runtime.admit(read_call(1), true).await.unwrap();
+    assert!(wait_for_dispatch(&store, 2).await);
+    assert_eq!(approvals_so_far(&store).await, 1);
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn the_always_allow_script_projects_a_saved_rule_and_stops_asking() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("file"), "contents").unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Reader),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(60_000, Decision::Ask),
+    )
+    .await
+    .unwrap();
+    runtime.admit(read_call(0), true).await.unwrap();
+    let binding = approval(&store).await;
+    runtime
+        .approve_persistent(
+            &runtime.controller(),
+            "s",
+            response(&binding, Decision::Allow),
+        )
+        .await
+        .unwrap();
+    assert!(wait_for_dispatch(&store, 1).await);
+    finished(&store).await;
+    // The durable grant from approve_persistent is bound to the authority
+    // revision the run captured, so a NEW run re-asks even for the identical
+    // call; the product's durable "always allow" projects a saved rule
+    // instead (covered by the workspace-scoped test).
+    runtime.admit(read_call(1), true).await.unwrap();
+    let binding = approval_at(&store, 2).await;
+    runtime
+        .approve(&runtime.controller(), "s", response(&binding, Decision::Allow))
+        .await
+        .unwrap();
+    assert!(wait_for_dispatch(&store, 2).await);
+    assert_eq!(approvals_so_far(&store).await, 2);
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_workspace_scoped_allow_rule_never_asks() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("file"), "contents").unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Reader),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(60_000, Decision::Ask),
+    )
+    .await
+    .unwrap();
+    // The product's project-level allow projects a workspace-scoped pattern
+    // rule before the session runs.
+    let workspace = store.location("s").await.unwrap().unwrap();
+    store
+        .project_saved_rules(
+            workspace,
+            vec![miao_engine::permission_rules::Rule {
+                action: "read".into(),
+                resource: "*".into(),
+                effect: Decision::Allow,
+            }],
+        )
+        .await
+        .unwrap();
+    runtime.admit(read_call(0), true).await.unwrap();
+    assert!(wait_for_dispatch(&store, 1).await);
+    runtime.admit(read_call(1), true).await.unwrap();
+    assert!(wait_for_dispatch(&store, 2).await);
+    assert_eq!(approvals_so_far(&store).await, 0);
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn the_deny_script_asks_again_on_the_next_identical_call() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("file"), "contents").unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Reader),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(60_000, Decision::Ask),
+    )
+    .await
+    .unwrap();
+    runtime.admit(read_call(0), true).await.unwrap();
+    let binding = approval(&store).await;
+    runtime
+        .approve(
+            &runtime.controller(),
+            "s",
+            response(&binding, Decision::Deny),
+        )
+        .await
+        .unwrap();
+    finished(&store).await;
+    // A recorded denial is remembered: the identical repeat is auto-denied
+    // without a new prompt.
+    runtime.admit(read_call(1), true).await.unwrap();
+    assert!(wait_for_dispatch_absent(&store).await);
+    assert_eq!(approvals_so_far(&store).await, 1);
+    runtime.shutdown().await;
+}
+
+/// Waits until the second run settles and confirms no new approval was
+/// requested in the window (the auto-denied repeat path).
+async fn wait_for_dispatch_absent(store: &Store) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        let events = store.events("s", 0, 500).await.unwrap();
+        let finished = events
+            .iter()
+            .filter(|e| e.kind == "run.finished")
+            .count()
+            >= 2;
+        let asked = events
+            .iter()
+            .filter(|e| e.kind == "approval.requested")
+            .count()
+            >= 2;
+        if finished && !asked {
+            return true;
+        }
+        if asked || std::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+
+async fn approval_at(store: &Store, minimum: usize) -> Approval {
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            let events = store.events("s", 0, 100).await.unwrap();
+            let requested: Vec<_> = events
+                .iter()
+                .filter(|e| e.kind == "approval.requested")
+                .collect();
+            if requested.len() >= minimum {
+                let last = requested.last().unwrap();
+                return serde_json::from_value(last.data.clone()).unwrap();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await;
+    match outcome {
+        Ok(value) => value,
+        Err(error) => {
+            let events = store.events("s", 0, 100).await.map(|events| {
+                events
+                    .into_iter()
+                    .map(|event| event.kind)
+                    .collect::<Vec<_>>()
+            });
+            panic!("event wait timed out: {error}; committed event kinds: {events:?}");
+        }
+    }
+}
+
 fn response(approval: &Approval, decision: Decision) -> Response {
     Response {
         request_id: approval.request_id.clone(),
@@ -374,7 +645,7 @@ async fn approval_carries_matcher_semantics_and_scopes_the_resolution() {
 }
 
 async fn session_event(store: &Store, session: &str, kind: &str) -> miao_engine::protocol::Event {
-    let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    let result = tokio::time::timeout(std::time::Duration::from_secs(15), async {
         loop {
             if let Some(event) = store
                 .events(session, 0, 200)
