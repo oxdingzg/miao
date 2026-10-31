@@ -86,6 +86,14 @@ does not prevent the engine from settling its own cancelled drain.
 retaining the same cursor, identity, pending work and Session state. An omitted
 `messages` field is not evidence that the Session has no history.
 
+A metadata-only snapshot also carries `preview`: the newest readable text in
+the Session as `{text, truncated}`, for catalog rows that show what a
+conversation last said without loading its transcript. Text comes from the
+last messages' text parts; a trailing tool-only turn is skipped, whitespace is
+collapsed to single spaces, and `text` is cut at 200 characters with
+`truncated: true`. A Session without readable text reports `preview: null`,
+and a full snapshot carries no `preview` because it already has the messages.
+
 `event` notifications are committed canonical events; `progress` notifications
 are ephemeral provider frames that are not durable and may be followed by a
 `resync`. A `config` notification carries the report of a reload that changed

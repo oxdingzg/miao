@@ -80,3 +80,70 @@ async fn metadata_snapshot_omits_large_history_but_preserves_catalog_facts() {
         assert_eq!(summary[key], full[key], "{key}");
     }
 }
+
+#[tokio::test]
+async fn metadata_snapshot_carries_a_bounded_last_message_preview() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store.ensure("s").await.unwrap();
+
+    // A Session without readable text has no preview to show.
+    assert_eq!(
+        store.snapshot_with_metadata("s", true).await.unwrap()["preview"],
+        serde_json::Value::Null
+    );
+
+    store
+        .message(
+            "s",
+            "user",
+            serde_json::json!([{ "type": "text", "text": "fix the failing login test" }]),
+        )
+        .await
+        .unwrap();
+    store
+        .message(
+            "s",
+            "assistant",
+            serde_json::json!([{ "type": "text", "text": "it  was\nthe  stub\nconfig" }]),
+        )
+        .await
+        .unwrap();
+    let preview = store.snapshot_with_metadata("s", true).await.unwrap()["preview"].clone();
+    assert_eq!(preview["text"], "it was the stub config");
+    assert_eq!(preview["truncated"], false);
+
+    // A trailing tool-only turn is skipped so the preview still says what the
+    // conversation last said.
+    store
+        .message(
+            "s",
+            "assistant",
+            serde_json::json!([{ "type": "tool_use", "id": "t1", "name": "bash", "input": {} }]),
+        )
+        .await
+        .unwrap();
+    let preview = store.snapshot_with_metadata("s", true).await.unwrap()["preview"].clone();
+    assert_eq!(preview["text"], "it was the stub config");
+
+    // Long text collapses to the bounded head with the flag set.
+    store
+        .message(
+            "s",
+            "user",
+            serde_json::json!([{ "type": "text", "text": "word ".repeat(80) }]),
+        )
+        .await
+        .unwrap();
+    let preview = store.snapshot_with_metadata("s", true).await.unwrap()["preview"].clone();
+    assert_eq!(preview["truncated"], true);
+    let text = preview["text"].as_str().unwrap();
+    assert_eq!(text.chars().count(), 200);
+    assert!(text.starts_with("word word"));
+
+    // A full snapshot needs no preview; it already carries the messages.
+    assert_eq!(
+        store.snapshot("s").await.unwrap()["preview"],
+        serde_json::Value::Null
+    );
+}
