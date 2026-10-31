@@ -20,7 +20,7 @@ use crate::session::{
     catalog_rows, home_rows, DisplayFile, RevertPlan, SessionState, SessionSummary, Transcript,
 };
 use crate::status::UsageSummary;
-use crate::transport::{self, EngineClient, EngineSpawn, TransportEvent};
+use crate::transport::{self, Connection, EngineClient, EngineSpawn, TransportEvent};
 
 /// Committed events that change what the transcript shows. Coalesced so one
 /// assistant turn does not trigger a snapshot per event. The first pending
@@ -535,10 +535,10 @@ fn engine_binary() -> PathBuf {
 }
 
 pub fn attach(settings: &Settings, bus: Bus) -> Result<Handle, String> {
-    let (client, events) = EngineClient::start(&settings.spawn, REQUEST_TIMEOUT)
+    let (connection, events) = Connection::start(settings.spawn.clone(), REQUEST_TIMEOUT)
         .map_err(|error| format!("cannot start the engine: {error}"))?;
     let (tx, rx) = mpsc::unbounded_channel();
-    tokio::spawn(run(client, events, rx, bus));
+    tokio::spawn(run(connection, events, rx, bus));
     Ok(Handle { tx })
 }
 
@@ -559,38 +559,54 @@ struct Opened {
 }
 
 async fn run(
-    client: EngineClient,
+    mut connection: Connection,
     mut events: transport::EventRx,
     mut requests: mpsc::UnboundedReceiver<Request>,
     bus: Bus,
 ) {
     let mut open: Option<Opened> = None;
     let mut dirty: Option<Instant> = None;
-    refresh_sessions(&client, &bus).await;
+    if let Ok(client) = connection.connect().await {
+        refresh_sessions(client, &bus).await;
+    }
     loop {
         let deadline = dirty.map(|start| start + REFRESH_DELAY);
         tokio::select! {
-            request = requests.recv() => match request {
-                None => {
-                    client.close().await;
+            request = requests.recv() => {
+                let Some(request) = request else {
+                    connection.close().await;
                     return;
-                }
-                Some(Request::RefreshSessions) => refresh_sessions(&client, &bus).await,
-                Some(Request::Refresh) => {
+                };
+                let client = match connection.connect().await {
+                    Ok(client) => client,
+                    Err(error) => {
+                        // The engine died (idle reclaim, a crash, or a binary swap
+                        // under a release update). Explain it and let the next
+                        // prompt try again instead of dying on a closed pipe with
+                        // nothing said.
+                        bus.send(AppEvent::EngineFailure(format!(
+                            "engine restart failed: {error}"
+                        )));
+                        continue;
+                    }
+                };
+                match request {
+                Request::RefreshSessions => refresh_sessions(client, &bus).await,
+                Request::Refresh => {
                     dirty = None;
                     if let Some(state) = open.as_mut() {
-                        project(&client, &bus, state).await;
+                        project(client, &bus, state).await;
                     }
                 }
-                Some(Request::Open(session_id)) => {
+                Request::Open(session_id) => {
                     dirty = None;
-                    open_session(&client, &bus, &mut open, session_id).await;
+                    open_session(client, &bus, &mut open, session_id).await;
                 }
-                Some(Request::Prompt {
+                Request::Prompt {
                     session_id,
                     text,
                     attachments,
-                }) => {
+                } => {
                     let input = json!({
                         "session_id": session_id.clone(),
                         "input_id": new_id("in"),
@@ -610,12 +626,12 @@ async fn run(
                         }),
                     }
                 }
-                Some(Request::Command {
+                Request::Command {
                     session_id,
                     text,
                     original,
                     command,
-                }) => {
+                } => {
                     let input = json!({
                         "session_id": session_id.clone(),
                         "input_id": new_id("in"),
@@ -636,8 +652,8 @@ async fn run(
                         }),
                     }
                 }
-                Some(Request::CancelLastInput { session_id }) => {
-                    match cancel_last_input(&client, &session_id).await {
+                Request::CancelLastInput { session_id } => {
+                    match cancel_last_input(client, &session_id).await {
                         Ok(Some(retrieved)) => {
                             dirty.get_or_insert_with(Instant::now);
                             let text = |key: &str| {
@@ -660,10 +676,10 @@ async fn run(
                         }),
                     }
                 }
-                Some(Request::Shell {
+                Request::Shell {
                     session_id,
                     command,
-                }) => match client.shell(&session_id, &new_id("sh"), &command).await {
+                } => match client.shell(&session_id, &new_id("sh"), &command).await {
                     Ok(_) => {
                         if open.as_ref().is_some_and(|state| state.id == session_id) {
                             dirty.get_or_insert_with(Instant::now);
@@ -674,7 +690,7 @@ async fn run(
                         message: format!("shell failed: {error}"),
                     }),
                 },
-                Some(Request::Cancel { session_id }) => {
+                Request::Cancel { session_id } => {
                     match client.cancel(&session_id).await {
                         Ok(_) => {
                             dirty.get_or_insert_with(Instant::now);
@@ -684,11 +700,11 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::Approve {
+                Request::Approve {
                     session_id,
                     response,
                     persistent,
-                }) => {
+                } => {
                     let method = if persistent { "approve_persistent" } else { "approve" };
                     let result = client
                         .request(method, json!({ "session_id": session_id, "response": response }))
@@ -702,7 +718,7 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::Answer { session_id, answer }) => {
+                Request::Answer { session_id, answer } => {
                     match client.answer_question(&session_id, answer).await {
                         Ok(_) => {
                             dirty.get_or_insert_with(Instant::now);
@@ -712,10 +728,10 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::RejectQuestion {
+                Request::RejectQuestion {
                     session_id,
                     rejection,
-                }) => {
+                } => {
                     let result = client
                         .request(
                             "reject_question",
@@ -731,7 +747,7 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::VcsChanges { generation, session_id }) => {
+                Request::VcsChanges { generation, session_id } => {
                     let result = client
                         .request("vcs_status", json!({ "session_id": session_id }))
                         .await
@@ -739,13 +755,13 @@ async fn run(
                         .and_then(crate::workspace_changes::decode);
                     bus.send(AppEvent::WorkspaceChanges { generation, result });
                 }
-                Some(Request::SavedPermissions { generation }) => {
+                Request::SavedPermissions { generation } => {
                     let result = client.command("permission_pattern_list").await
                         .map_err(|error| error.to_string())
                         .and_then(crate::saved_permissions::decode);
                     bus.send(AppEvent::SavedPermissions { generation, result });
                 }
-                Some(Request::RevokePermission { generation, id }) => {
+                Request::RevokePermission { generation, id } => {
                     let result = client.request("permission_pattern_remove", json!({ "rule_id": id })).await
                         .map_err(|error| error.to_string())
                         .and_then(|value| match value.get("removed").and_then(Value::as_bool) {
@@ -754,7 +770,7 @@ async fn run(
                         });
                     bus.send(AppEvent::PermissionRevoked { generation, id, result });
                 }
-                Some(Request::Catalog) => {
+                Request::Catalog => {
                     match client.command("model_catalog").await {
                         Ok(value) => {
                             bus.send(AppEvent::Accounts(AccountInfo::catalog(&value)));
@@ -765,10 +781,10 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::SelectModel {
+                Request::SelectModel {
                     session_id,
                     binding,
-                }) => {
+                } => {
                     let result = client
                         .request(
                             "select_model",
@@ -786,10 +802,10 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::MoveSession {
+                Request::MoveSession {
                     session_id,
                     target_directory,
-                }) => {
+                } => {
                     let result = client
                         .request(
                             "move_session",
@@ -803,7 +819,7 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::Devices) => {
+                Request::Devices => {
                     let result = client.request("devices", json!({})).await;
                     match result {
                         Ok(value) => bus.send(AppEvent::Devices(pairs_two(&value))),
@@ -812,7 +828,7 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::Workspaces) => {
+                Request::Workspaces => {
                     let result = client.request("workspaces", json!({})).await;
                     match result {
                         Ok(value) => bus.send(AppEvent::Workspaces(pairs(&value))),
@@ -821,7 +837,7 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::Usage { session_id }) => {
+                Request::Usage { session_id } => {
                     let result = client
                         .request("usage", json!({ "session_id": session_id }))
                         .await;
@@ -832,10 +848,10 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::SelectAccount {
+                Request::SelectAccount {
                     session_id,
                     credential_id,
-                }) => {
+                } => {
                     let result = client
                         .request(
                             "select_account",
@@ -853,7 +869,7 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::Rename { session_id, title }) => {
+                Request::Rename { session_id, title } => {
                     let result = client
                         .request(
                             "rename",
@@ -862,7 +878,7 @@ async fn run(
                         .await;
                     match result {
                         Ok(_) => {
-                            refresh_sessions(&client, &bus).await;
+                            refresh_sessions(client, &bus).await;
                             if open.as_ref().is_some_and(|state| state.id == session_id) {
                                 dirty.get_or_insert_with(Instant::now);
                             }
@@ -872,10 +888,10 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::Archive {
+                Request::Archive {
                     session_id,
                     archived,
-                }) => {
+                } => {
                     let result = client
                         .request(
                             "archive",
@@ -883,16 +899,16 @@ async fn run(
                         )
                         .await;
                     match result {
-                        Ok(_) => refresh_sessions(&client, &bus).await,
+                        Ok(_) => refresh_sessions(client, &bus).await,
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("archive failed: {error}")))
                         }
                     }
                 }
-                Some(Request::Pin {
+                Request::Pin {
                     session_id,
                     pinned,
-                }) => {
+                } => {
                     let result = client
                         .request(
                             "pin",
@@ -900,13 +916,13 @@ async fn run(
                         )
                         .await;
                     match result {
-                        Ok(_) => refresh_sessions(&client, &bus).await,
+                        Ok(_) => refresh_sessions(client, &bus).await,
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("pin failed: {error}")))
                         }
                     }
                 }
-                Some(Request::Remove { session_id }) => {
+                Request::Remove { session_id } => {
                     match client
                         .request("remove", json!({ "session_id": session_id }))
                         .await
@@ -916,17 +932,17 @@ async fn run(
                                 open = None;
                                 bus.send(AppEvent::SessionRemoved(session_id));
                             }
-                            refresh_sessions(&client, &bus).await;
+                            refresh_sessions(client, &bus).await;
                         }
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("delete failed: {error}")))
                         }
                     }
                 }
-                Some(Request::RevertPreview {
+                Request::RevertPreview {
                     session_id,
                     boundary_seq,
-                }) => {
+                } => {
                     let result = client
                         .request(
                             "revert_preview",
@@ -944,11 +960,11 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::Revert {
+                Request::Revert {
                     session_id,
                     boundary_seq,
                     files,
-                }) => {
+                } => {
                     let staged = client
                         .request(
                             "revert_stage",
@@ -980,7 +996,7 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::Redo { session_id }) => {
+                Request::Redo { session_id } => {
                     let result = client
                         .request("unrevert", json!({ "session_id": session_id }))
                         .await;
@@ -995,17 +1011,18 @@ async fn run(
                         }
                     }
                 }
-                Some(Request::NewSession) => {
+                Request::NewSession => {
                     dirty = None;
                     let id = new_id("ses");
                     match client.initialize(&id, "New session").await {
-                        Ok(_) => open_session(&client, &bus, &mut open, id).await,
+                        Ok(_) => open_session(client, &bus, &mut open, id).await,
                         Err(error) => {
                             bus.send(AppEvent::EngineFailure(format!(
                                 "cannot create a Session: {error}"
                             )));
                         }
                     }
+                }
                 }
             },
             event = events.recv() => match event {
@@ -1084,7 +1101,9 @@ async fn run(
             _ = tokio::time::sleep_until(deadline.unwrap_or_else(Instant::now)), if deadline.is_some() => {
                 dirty = None;
                 if let Some(state) = open.as_mut() {
-                    project(&client, &bus, state).await;
+                    if let Ok(client) = connection.connect().await {
+                        project(client, &bus, state).await;
+                    }
                 }
             }
         }
