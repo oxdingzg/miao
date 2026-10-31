@@ -16,10 +16,11 @@ use crate::keybinds::{self, Keymap};
 use crate::pane::{render_dialog, Home, Pane, Panel, PanelKind, Shell};
 use crate::platform::attention::{self, Attention};
 use crate::platform::{clipboard, editor, zed};
-use crate::session::{Entry, SessionState, SessionSummary};
+use crate::session::{Entry, Part, SessionState, SessionSummary};
 use crate::state::{self, StashEntry};
 use crate::status::UsageSummary;
 use crate::theme::{self, Theme};
+use crate::tool;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
@@ -670,6 +671,7 @@ impl App {
             Some(keybinds::Action::StashDraft) => self.run_builtin(Builtin::StashDraft),
             Some(keybinds::Action::EditorOpen) => self.run_builtin(Builtin::Editor),
             Some(keybinds::Action::CopyMessage) => self.copy_last_response(),
+            Some(keybinds::Action::MessageView) => self.open_message(),
             Some(keybinds::Action::ToolOutputToggle) => {
                 let expanded = self.shell.toggle_tool_expansion();
                 self.notice(if expanded {
@@ -1041,6 +1043,51 @@ impl App {
             row.credential_id = credential_id;
         }
         self.shell.set_session(self.session.as_ref());
+    }
+
+    /// The newest assistant reply as plain text: what the model said, how much
+    /// thinking it did, and which tools it ran.
+    fn open_message(&mut self) {
+        let Some(transcript) = self.shell.transcript() else {
+            self.notice("No message to show");
+            return;
+        };
+        let entry = transcript
+            .entries
+            .iter()
+            .rev()
+            .find(|entry| matches!(entry, Entry::Assistant { .. }));
+        let Some(Entry::Assistant {
+            agent,
+            model,
+            parts,
+        }) = entry
+        else {
+            self.notice("No message to show");
+            return;
+        };
+        let mut lines = vec![format!(
+            "agent: {}   model: {}",
+            agent.as_deref().unwrap_or("-"),
+            model.as_deref().unwrap_or("-")
+        )];
+        for part in parts {
+            match part {
+                Part::Text(text) => lines.extend(text.lines().map(str::to_string)),
+                Part::Reasoning(text) => {
+                    lines.push(format!("[thinking · {} chars]", text.chars().count()))
+                }
+                Part::Tool(call) => lines.push(format!(
+                    "[tool {} · {}]",
+                    tool::product_name(&call.name),
+                    if call.failed { "failed" } else { "ok" }
+                )),
+            }
+        }
+        if lines.len() == 1 {
+            lines.push("(no content)".to_string());
+        }
+        self.open_dialog(crate::dialogs::Dialog::message(lines));
     }
 
     fn open_status(&mut self) {

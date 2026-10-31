@@ -1999,7 +1999,9 @@ async fn read_stream_with_budget<P: Parser>(
         };
         total += chunk.len();
         if total > 8 * 1024 * 1024 {
-            return Err(ProviderError::Stream("message exceeds 8 MiB".into()));
+            return Err(ProviderError::Stream(
+                "the response exceeded 8 MiB before the provider finished the message; the streamed reply was discarded (a runaway or degenerate response, not a malformed request)".into(),
+            ));
         }
         for frame in decoder.push(&chunk)? {
             input_budget.frame(&frame)?;
