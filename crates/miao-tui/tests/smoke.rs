@@ -1312,7 +1312,11 @@ fn editor_interrupt_returns_to_the_ui_and_exit_signals_cancel_the_editor() {
         ));
         harness.write(b"keep original draft");
         harness.write(b"\x18e");
-        assert!(wait_for(&harness, "EDITOR_INPUT_1", Duration::from_secs(10)));
+        assert!(wait_for(
+            &harness,
+            "EDITOR_INPUT_1",
+            Duration::from_secs(10)
+        ));
         let buffer =
             PathBuf::from(std::fs::read_to_string(harness.dir.join("editor-buffer-path")).unwrap());
         let editor_pid = std::fs::read_to_string(harness.dir.join("editor-pid")).unwrap();
