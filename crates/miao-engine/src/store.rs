@@ -3918,6 +3918,14 @@ impl Store {
             let mut tool_calls = 0u64;
             let mut tool_failures = 0u64;
             let mut turn_detail: Vec<Value> = Vec::new();
+            // Attempts and turn replays are billed work too, and a retry that
+            // recovered must not disappear into the turn it saved. Both are
+            // attributed on their own so a report can answer "how much did
+            // retrying cost" without reading the raw event stream.
+            let mut attempts = 0u64;
+            let mut failed_attempts = 0u64;
+            let mut retry_detail: Vec<Value> = Vec::new();
+            let mut retried_turns = std::collections::BTreeSet::<(String, String)>::new();
             let mut provider_usage=crate::usage::Totals::default();
             let mut auxiliary_usage=crate::usage::Totals::default();
             let mut auxiliary_detail=Vec::new();
@@ -3927,7 +3935,7 @@ impl Store {
             let mut auxiliary_rejected=0u64;
             let mut role_starts=std::collections::HashMap::<u64,Option<u64>>::new();
             let mut stmt = conn.prepare(
-                "SELECT seq,kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','provider.request','tool.completed','role.provider.started','role.provider.completed') ORDER BY seq",
+                "SELECT seq,kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','provider.request','provider.attempt','provider.retry','tool.completed','role.provider.started','role.provider.completed') ORDER BY seq",
             )?;
             let mut rows = stmt.query(params![session])?;
             while let Some(row) = rows.next()? {
@@ -3948,6 +3956,33 @@ impl Store {
                         let duration=data["startedSeq"].as_u64().and_then(|seq|role_starts.get(&seq).copied().flatten()).zip(row.get::<_,Option<u64>>(3)?).and_then(|(start,end)|end.checked_sub(start));
                         let detail=json!({"receiptSeq":row.get::<_,u64>(0)?,"kind":"auxiliary","runID":data["run_id"],"role":data["role"],"path":data["path"],"accepted":data["accepted"],"providerSuccess":data["providerSuccess"],"protocol":data["identity"]["protocol"],"model":data["identity"]["model"],"identitySource":data["identitySource"],"usage":usage,"durationMs":duration,"turnMs":row.get::<_,Option<u64>>(3)?});
                         auxiliary_detail.push(detail.clone());provider_detail.push(detail);
+                    }
+                    "provider.attempt" => {
+                        attempts += 1;
+                        // A 4xx/5xx or an attempt whose transport died before
+                        // any status is a failed attempt, not a slow one.
+                        let failed = data["status"]
+                            .as_u64()
+                            .map(|status| status >= 400)
+                            .unwrap_or_else(|| {
+                                data["outcome"]
+                                    .as_str()
+                                    .is_some_and(|outcome| outcome.ends_with("unknown"))
+                            });
+                        if failed {
+                            failed_attempts += 1;
+                        }
+                    }
+                    "provider.retry" => {
+                        retried_turns.insert(key.clone());
+                        retry_detail.push(json!({
+                            "runID": data["run_id"],
+                            "step": data["step"],
+                            "attempt": data["attempt"],
+                            "status": data["status"],
+                            "reason": data["reason"],
+                            "delayMs": data["delay_ms"],
+                        }));
                     }
                     "provider.request" => {
                         requests += 1;
@@ -4074,6 +4109,12 @@ impl Store {
                         && tokens["input"].as_u64().unwrap_or(0) > 0 {
                         Some(tokens["cacheRead"].as_f64().unwrap_or(0.0) / tokens["input"].as_f64().unwrap_or(1.0))
                     } else { None },
+                },
+                "retries": {
+                    "attempts": attempts,
+                    "failedAttempts": failed_attempts,
+                    "replayedTurns": retried_turns.len(),
+                    "details": retry_detail,
                 },
                 "ttftMs": ttft_stats,
                 "lineage": lineage,
