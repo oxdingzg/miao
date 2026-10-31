@@ -146,7 +146,14 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
     : undefined
   const devices = (administration?.devices() ?? [])
     .filter((grant) => grant.revokedAt === null)
-    .map((grant) => ({ name: grant.label, detail: grant.publicKey.slice(0, 16) }))
+    .map((grant) => ({
+      name: grant.label,
+      // The panel shows one line per device; the fingerprint prefix and the
+      // pairing date are what an operator checks before revoking a grant.
+      detail: `${grant.publicKey.slice(0, 16)} · ${new Date(grant.createdAt * 1000)
+        .toISOString()
+        .slice(0, 10)}`,
+    }))
   const skills = skillService
     ? (yield* skillService.list()).map((skill) => ({
         name: skill.name,
