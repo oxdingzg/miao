@@ -123,7 +123,7 @@ fn notice_with_lines(head: String, notice: &Value) -> String {
     if let Some(lines) = notice.get("lines").and_then(Value::as_array) {
         let lines: Vec<&str> = lines.iter().filter_map(Value::as_str).collect();
         if !lines.is_empty() {
-            text.push_str("\n\nMatched output:\n");
+            text.push('\n');
             text.push_str(&lines.join("\n"));
         }
     }
@@ -135,20 +135,21 @@ fn notice_with_lines(head: String, notice: &Value) -> String {
 
 /// Durable input text for a mid-stream notice: the matched lines verbatim
 /// instead of the internal notice envelope.
-pub fn render_notice_text(job: &str, notice: &Value) -> String {
+pub fn render_notice_text(_job: &str, notice: &Value) -> String {
     let head = match notice_description(notice) {
-        Some(description) => {
-            format!("Monitor job {job} produced matching output ({description}):")
-        }
-        None => format!("Monitor job {job} produced matching output:"),
+        Some(description) => format!("watch \"{description}\" matched:"),
+        None => "watch matched:".to_string(),
     };
     notice_with_lines(head, notice)
 }
 
 /// Durable input text for a monitor's terminal settle. Merges the terminal
 /// state with the final matched lines so exit and output wake the model once.
-pub fn render_finish_text(job: &str, state_text: &str, notice: Option<&Value>) -> String {
-    let head = format!("Monitor job {job} {state_text}.");
+pub fn render_finish_text(_job: &str, state_text: &str, notice: Option<&Value>) -> String {
+    let head = match notice.and_then(notice_description) {
+        Some(description) => format!("watch \"{description}\" {state_text}."),
+        None => format!("watch {state_text}."),
+    };
     match notice {
         Some(notice) => notice_with_lines(head, notice),
         None => head,
@@ -212,7 +213,7 @@ mod tests {
         });
         assert_eq!(
             render_notice_text("job-1", &notice),
-            "Monitor job job-1 produced matching output (等待 foundation job 完成):\n\nMatched output:\nFINAL completed/success"
+            "watch \"等待 foundation job 完成\" matched:\nFINAL completed/success"
         );
     }
 
@@ -227,7 +228,7 @@ mod tests {
         });
         assert_eq!(
             render_notice_text("job-1", &notice),
-            "Monitor job job-1 produced matching output:\n\nMatched output:\na\nb\n(earlier matching lines were suppressed)"
+            "watch matched:\na\nb\n(earlier matching lines were suppressed)"
         );
     }
 
@@ -241,12 +242,12 @@ mod tests {
             "suppressed":false,
         });
         assert_eq!(
-            render_finish_text("job-1", "finished with state completed (exit code 0)", Some(&notice)),
-            "Monitor job job-1 finished with state completed (exit code 0).\n\nMatched output:\nREADY-final"
+            render_finish_text("job-1", "finished (exit code 0)", Some(&notice)),
+            "watch finished (exit code 0).\nREADY-final"
         );
         assert_eq!(
-            render_finish_text("job-1", "timed out after 30000 ms (state failed)", None),
-            "Monitor job job-1 timed out after 30000 ms (state failed)."
+            render_finish_text("job-1", "timed out after 30000 ms", None),
+            "watch timed out after 30000 ms."
         );
     }
 }
