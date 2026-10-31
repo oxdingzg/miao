@@ -650,8 +650,8 @@ impl Home {
                 },
                 Style::new().fg(palette.primary),
             ))
-            .border_style(Style::new().fg(palette.border))
-            .style(Style::new().bg(palette.background));
+            .border_style(Style::new().fg(palette.border_active))
+            .style(Style::new().bg(palette.surface));
         let visible = self.visible();
         if visible.is_empty() {
             let mut lines = self.warning_lines();
@@ -689,6 +689,7 @@ impl Home {
             let style = if index == self.selected {
                 Style::new()
                     .fg(palette.primary)
+                    .bg(palette.element)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::new().fg(palette.text)
@@ -1166,6 +1167,7 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
                 let style = if selected {
                     Style::new()
                         .fg(palette.primary)
+                        .bg(palette.element)
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::new().fg(palette.text)
