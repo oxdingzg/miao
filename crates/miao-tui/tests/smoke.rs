@@ -678,9 +678,11 @@ fn an_approval_is_answered_from_the_panel() {
         plain(&harness.text()).contains("ls -la"),
         "the approval resource is missing"
     );
+    // A blocking approval outranks the run phase, so the status line names the
+    // approval and the tool instead of a generic "working".
     assert!(
-        plain(&harness.text()).contains("working"),
-        "the status line did not show the active run"
+        plain(&harness.text()).contains("needs approval · bash"),
+        "the status line did not name the blocking approval"
     );
     harness.write(b"1");
     let log = harness.dir.join("admit.log");

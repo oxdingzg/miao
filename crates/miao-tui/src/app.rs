@@ -2023,10 +2023,30 @@ impl App {
             .filter(|live| self.state.active_run.as_deref() == Some(live.run_id.as_str()));
         // Without a frame the run is still starting; saying so with the plain
         // "working" avoids claiming a phase the engine never announced.
-        let phase = match (self.state.active_run.is_some(), live) {
-            (true, Some(live)) => live.describe(now),
-            (true, None) => "working".to_string(),
-            (false, _) => "idle".to_string(),
+        // A blocking approval or question means the turn waits on the operator
+        // rather than on the engine, so it outranks whatever the last frame
+        // said: a stale "running bash" would hide the only thing the operator
+        // has to act on.
+        let blocking = match (self.state.approvals.len(), self.state.questions.len()) {
+            (0, 0) => None,
+            (1, 0) => Some(format!("needs approval · {}", self.state.approvals[0].tool)),
+            (approvals, 0) => Some(format!("needs approval · {approvals} waiting")),
+            (0, 1) => Some("needs an answer".to_string()),
+            (0, questions) => Some(format!("needs an answer · {questions} waiting")),
+            (approvals, questions) => Some(format!(
+                "needs you · {approvals} approval{} · {questions} question{}",
+                plural(approvals),
+                plural(questions)
+            )),
+        };
+        let phase_needs_operator = blocking.is_some();
+        let phase = match blocking {
+            Some(blocking) => blocking,
+            None => match (self.state.active_run.is_some(), live) {
+                (true, Some(live)) => live.describe(now),
+                (true, None) => "working".to_string(),
+                (false, _) => "idle".to_string(),
+            },
         };
         let status = match (&self.state.active_run, self.state.pending) {
             (Some(_), 0) => format!("{phase} · Esc interrupt"),
@@ -2036,15 +2056,16 @@ impl App {
         };
         self.shell
             .title
-            .set_status_alert(live.is_some_and(|live| live.silent(now)));
+            .set_status_alert(phase_needs_operator || live.is_some_and(|live| live.silent(now)));
         // The same phase rides the composer title, so the operator does not
         // have to look away from the input to learn the run is working rather
         // than waiting on them. An idle Session says nothing there.
-        self.shell.composer.phase = match self.state.active_run.is_some() || self.state.pending > 0
-        {
-            true => Some(phase.clone()),
-            false => None,
-        };
+        self.shell.composer.phase =
+            match self.state.active_run.is_some() || self.state.pending > 0 || phase_needs_operator
+            {
+                true => Some(phase.clone()),
+                false => None,
+            };
         // Which model answers, and what the Session has cost so far. A pin on
         // the Session wins over the engine default.
         self.shell.status.model = self
@@ -2072,32 +2093,9 @@ impl App {
         // question blocks the turn, so it reads as a warning; the interrupt key
         // is a fact about the run.
         let mut hints = Vec::new();
-        if !self.state.approvals.is_empty() {
-            hints.push(StatusHint {
-                text: format!(
-                    "{} approval{} waiting",
-                    self.state.approvals.len(),
-                    match self.state.approvals.len() {
-                        1 => "",
-                        _ => "s",
-                    }
-                ),
-                warning: true,
-            });
-        }
-        if !self.state.questions.is_empty() {
-            hints.push(StatusHint {
-                text: format!(
-                    "{} question{} waiting",
-                    self.state.questions.len(),
-                    match self.state.questions.len() {
-                        1 => "",
-                        _ => "s",
-                    }
-                ),
-                warning: true,
-            });
-        }
+        // A blocking approval or question is already the phase line, so
+        // repeating it here would say the same thing twice in the one strip the
+        // operator scans.
         if self.state.active_run.is_some() {
             hints.push(StatusHint {
                 text: "esc interrupt".to_string(),
@@ -2240,6 +2238,15 @@ impl App {
         if let Some(engine) = self.engine.as_ref() {
             engine.refresh_sessions();
         }
+    }
+}
+
+/// The plural suffix for a count, so "1 approval" and "2 approvals" both read
+/// as English.
+fn plural(count: usize) -> &'static str {
+    match count {
+        1 => "",
+        _ => "s",
     }
 }
 
@@ -2692,6 +2699,55 @@ mod tests {
     }
 
     #[test]
+    fn a_blocking_prompt_outranks_a_running_phase() {
+        let mut app = session_app();
+        let state = SessionState {
+            active_run: Some("run-1".into()),
+            ..approval_state()
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state,
+        });
+        app.update_status();
+        // A stale "working" or a tool phase would hide the only thing the
+        // operator has to act on, so the approval wins over the run phase.
+        assert_eq!(
+            app.shell.title.status(),
+            Some("needs approval · bash · Esc interrupt")
+        );
+        assert!(app.shell.title.status_alert());
+    }
+
+    #[test]
+    fn a_pending_question_reads_as_needing_an_answer() {
+        let mut app = session_app();
+        let state = SessionState {
+            questions: vec![crate::session::QuestionView {
+                question_id: "run-1/q1".into(),
+                input_hash: "b".repeat(64),
+                questions: vec![crate::session::QuestionItem {
+                    question: "Ship it?".into(),
+                    header: "confirm".into(),
+                    options: Vec::new(),
+                    multi_select: false,
+                    custom: true,
+                }],
+            }],
+            ..SessionState::default()
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state,
+        });
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("needs an answer"));
+        assert_eq!(app.shell.composer.phase.as_deref(), Some("needs an answer"));
+    }
+
+    #[test]
     fn a_pending_approval_opens_a_panel_and_blocks_typing() {
         let mut app = session_app();
         app.handle(AppEvent::SessionOpened {
@@ -2776,9 +2832,20 @@ mod tests {
             .iter()
             .map(|hint| hint.text.as_str())
             .collect::<Vec<_>>();
-        assert!(hints.contains(&"1 approval waiting"), "{hints:?}");
+        // The blocking approval is the phase line itself, not a separate hint:
+        // one statement, in the place the operator already reads.
+        assert_eq!(
+            app.shell.title.status(),
+            Some("needs approval · bash · Esc interrupt")
+        );
+        // The approval is the phase, so the strip carries only the key fact and
+        // never repeats the approval as a second line.
+        assert!(
+            !hints.iter().any(|hint| hint.contains("approval")),
+            "{hints:?}"
+        );
         assert!(hints.contains(&"esc interrupt"), "{hints:?}");
-        assert!(app.shell.status.hints[0].warning);
+        assert!(app.shell.title.status_alert());
         app.state.approvals.clear();
         app.state.active_run = None;
         app.update_status();
