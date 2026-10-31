@@ -128,10 +128,24 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
     model: effective.model,
   }
   const manifest = prepareMcpConfig(options)
+  // Read-only TUI panels render what the host already resolved. MCP servers
+  // are the first: names and transports only, never headers or environment.
+  const mcpServers = Object.entries(configuration.mcpSettings?.servers ?? {})
+    .filter(([, server]) => !server.disabled)
+    .map(([name, server]) =>
+      server.type === "local"
+        ? { name, detail: server.command.join(" ") }
+        : { name, detail: server.url },
+    )
   return {
     // The shim inherits the operator's environment and stands in for the TUI's
     // direct child, so provider environment keys keep reaching the engine.
-    env: { ...process.env, ...manifest?.environment, ...options.env },
+    env: {
+      ...process.env,
+      ...manifest?.environment,
+      ...options.env,
+      MIAO_TUI_MCP_JSON: JSON.stringify(mcpServers),
+    },
     argv: [options.binary, ...engineArgs({ ...options, mcpConfigFile: manifest?.file ?? options.mcpConfigFile })],
     dispose: manifest?.dispose,
   } satisfies TuiEnginePlan

@@ -162,6 +162,8 @@ pub struct App {
     stash: Vec<StashEntry>,
     /// Every root Session, archived included, for the Session dialog.
     catalog: Vec<SessionSummary>,
+    /// MCP servers the host exported for this workspace (name, transport).
+    mcp: Vec<(String, String)>,
     /// The model dialog waits for the catalog when nothing is cached yet.
     pending_models: bool,
     /// Same for the account dialog.
@@ -225,6 +227,7 @@ impl App {
             workspace,
             settings: None,
             models: Vec::new(),
+            mcp: parse_mcp(std::env::var("MIAO_TUI_MCP_JSON").ok().as_deref()),
             accounts: Vec::new(),
             usage: None,
             stash: Vec::new(),
@@ -655,6 +658,7 @@ impl App {
             Some(keybinds::Action::StashDraft) => self.run_builtin(Builtin::StashDraft),
             Some(keybinds::Action::EditorOpen) => self.run_builtin(Builtin::Editor),
             Some(keybinds::Action::CopyMessage) => self.copy_last_response(),
+            Some(keybinds::Action::McpList) => self.open_mcp(),
             Some(keybinds::Action::ToolOutputToggle) => {
                 let expanded = self.shell.toggle_tool_expansion();
                 self.notice(if expanded {
@@ -1013,6 +1017,10 @@ impl App {
             row.credential_id = credential_id;
         }
         self.shell.set_session(self.session.as_ref());
+    }
+
+    fn open_mcp(&mut self) {
+        self.open_dialog(Dialog::mcp(&self.mcp));
     }
 
     fn open_status(&mut self) {
@@ -3215,5 +3223,56 @@ mod tests {
             requests.try_recv(),
             Ok(engine::Request::Redo { session_id }) if session_id == "ses_a"
         ));
+    }
+}
+
+/// Parse the host's MCP export. A missing or malformed value means "no servers
+/// to show", never a startup failure: the TUI is a read-only client here.
+fn parse_mcp(raw: Option<&str>) -> Vec<(String, String)> {
+    let Some(raw) = raw else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+    value
+        .as_array()
+        .map(|servers| {
+            servers
+                .iter()
+                .filter_map(|server| {
+                    Some((
+                        server.get("name")?.as_str()?.to_string(),
+                        server
+                            .get("detail")?
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod mcp_tests {
+    use super::parse_mcp;
+
+    #[test]
+    fn the_host_export_is_read_as_name_and_transport() {
+        let parsed = parse_mcp(Some(
+            r#"[{"name":"everything","detail":"npx -y server-everything"},{"name":"remote","detail":"https://example.com/mcp"}]"#,
+        ));
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].0, "everything");
+        assert_eq!(parsed[1].1, "https://example.com/mcp");
+    }
+
+    #[test]
+    fn a_missing_or_malformed_export_is_empty() {
+        assert!(parse_mcp(None).is_empty());
+        assert!(parse_mcp(Some("not json")).is_empty());
+        assert!(parse_mcp(Some("{}")).is_empty());
     }
 }

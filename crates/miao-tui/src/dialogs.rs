@@ -234,6 +234,7 @@ pub enum Dialog {
     Status(ListDialog),
     Debug(ListDialog),
     Help(ListDialog),
+    Mcp(ListDialog),
     Palette(PaletteDialog),
     Rename(RenameDialog),
     Confirm(ConfirmDialog),
@@ -333,6 +334,33 @@ impl Dialog {
         );
         list.selected = names.iter().position(|name| *name == current).unwrap_or(0);
         Dialog::Theme(list)
+    }
+
+    /// The MCP servers the host resolved for this workspace. Names and
+    /// transports only: the host never exports headers or environment.
+    pub fn mcp(servers: &[(String, String)]) -> Self {
+        let rows = if servers.is_empty() {
+            vec![Row {
+                id: String::new(),
+                label: "no MCP servers configured".to_string(),
+                detail: String::new(),
+            }]
+        } else {
+            servers
+                .iter()
+                .map(|(name, detail)| Row {
+                    id: name.clone(),
+                    label: name.clone(),
+                    detail: detail.clone(),
+                })
+                .collect()
+        };
+        Dialog::Mcp(ListDialog::new(
+            "mcp",
+            rows,
+            ListKind::ReadOnly,
+            "esc close",
+        ))
     }
 
     pub fn sessions(rows: &[SessionSummary]) -> Self {
@@ -476,6 +504,7 @@ impl Dialog {
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => handle_list_key(list, key),
+            Dialog::Mcp(list) => handle_list_key(list, key),
             Dialog::Palette(palette) => handle_palette_key(palette, key),
             Dialog::Rename(rename) => handle_rename_key(&mut rename.input, key),
             Dialog::Confirm(confirm) => handle_confirm_key(confirm, key),
@@ -495,6 +524,7 @@ impl Dialog {
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => list.title,
+            Dialog::Mcp(list) => list.title,
             Dialog::Palette(_) => "commands",
             Dialog::Rename(_) => "rename session",
             Dialog::Confirm(confirm) => confirm.title,
@@ -511,7 +541,8 @@ impl Dialog {
             | Dialog::Timeline(list)
             | Dialog::Status(list)
             | Dialog::Debug(list)
-            | Dialog::Help(list) => Some(list),
+            | Dialog::Help(list)
+            | Dialog::Mcp(list) => Some(list),
             _ => None,
         }
     }
@@ -526,7 +557,8 @@ impl Dialog {
             | Dialog::Timeline(list)
             | Dialog::Status(list)
             | Dialog::Debug(list)
-            | Dialog::Help(list) => Some(list),
+            | Dialog::Help(list)
+            | Dialog::Mcp(list) => Some(list),
             _ => None,
         }
     }
