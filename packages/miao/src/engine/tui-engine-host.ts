@@ -12,6 +12,7 @@ import { LocationServiceMap, locationServiceMapLayer } from "@miao/core/location
 import { McpAuth } from "@miao/core/mcp/auth"
 import { Logging } from "@miao/core/observability/logging"
 import { PluginV2 } from "@miao/core/plugin"
+import { SkillV2 } from "@miao/core/skill"
 import { AbsolutePath } from "@miao/core/schema"
 import { AmbientContext } from "./ambient-context"
 import { engineArgs, type EngineOptions } from "./client"
@@ -109,6 +110,15 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   const database = yield* Database.Service
   // The TUI shows which integrations have a stored credential, never the values.
   const credentials = yield* Credential.Service
+  // Skills are optional: a graph without the skill service exports none rather
+  // than failing the TUI start.
+  const skillService = Option.getOrUndefined(yield* Effect.serviceOption(SkillV2.Service))
+  const skills = skillService
+    ? (yield* skillService.list()).map((skill) => ({
+        name: skill.name,
+        detail: skill.description ?? "",
+      }))
+    : []
   const providers = (yield* credentials.all())
     .filter((credential) => credential.active)
     .map((credential) => ({
@@ -154,6 +164,7 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
       ...options.env,
       MIAO_TUI_MCP_JSON: JSON.stringify(mcpServers),
       MIAO_TUI_PROVIDERS_JSON: JSON.stringify(providers),
+      MIAO_TUI_SKILLS_JSON: JSON.stringify(skills),
     },
     argv: [options.binary, ...engineArgs({ ...options, mcpConfigFile: manifest?.file ?? options.mcpConfigFile })],
     dispose: manifest?.dispose,
