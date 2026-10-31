@@ -160,7 +160,6 @@ fn wait_exit(child: &mut Box<dyn Child + Send + Sync>, timeout: Duration) -> Opt
 /// One echo-latency sample: the bytes written and the ms until they showed up
 /// in the rendered output stream.
 struct Sample {
-    sent: u8,
     latency_ms: u128,
 }
 
@@ -183,7 +182,6 @@ fn measure_echo(harness: &mut Harness, keys: &[u8], per_key: Duration) -> Vec<Sa
             std::thread::sleep(Duration::from_micros(200));
         }
         samples.push(Sample {
-            sent,
             latency_ms: latency.unwrap_or(per_key).as_millis(),
         });
     }
