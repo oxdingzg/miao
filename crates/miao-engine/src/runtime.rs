@@ -6163,7 +6163,7 @@ async fn start_monitor(
                         &owner,
                         &task_id,
                         state,
-                        format!("finished with state {state} (exit code {code})"),
+                        format!("finished (exit code {code})"),
                         notice,
                         json!({"exit_code":code}),
                     )
@@ -6242,6 +6242,27 @@ async fn finish_monitor_job(
 ) {
     if let Some(notice) = &notice {
         let _ = inner.progress.send(notice.clone());
+    }
+    // A completed run that matched nothing since its last notice has nothing
+    // new to say: the match already woke the session once, and a second
+    // "finished" message only repeats the envelope. Abnormal settles and
+    // settles that carry fresh lines still speak.
+    if state == "completed" && notice.is_none() {
+        if let Err(error) = inner
+            .store
+            .finish_job_quiet(session, job, state, result)
+            .await
+        {
+            let _ = inner
+                .store
+                .record(
+                    session,
+                    "monitor.notice_failed",
+                    json!({"job_id":job,"message":error.to_string()}),
+                )
+                .await;
+        }
+        return;
     }
     let prompt = crate::monitor::render_finish_text(job, &state_text, notice.as_ref());
     let admitted = inner
