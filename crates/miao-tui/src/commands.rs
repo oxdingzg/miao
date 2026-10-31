@@ -90,6 +90,16 @@ impl Builtin {
         }
     }
 
+    /// Extra spellings a command answers to. `exit` is the word most people
+    /// reach for when they want to leave, and the TypeScript TUI's vocabulary
+    /// never taught them `quit`.
+    pub fn alias(self) -> Option<&'static str> {
+        match self {
+            Builtin::Quit => Some("exit"),
+            _ => None,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Builtin::Models => "Select a model",
@@ -150,7 +160,9 @@ impl Builtin {
     }
 
     pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|builtin| builtin.name() == name)
+        Self::ALL
+            .into_iter()
+            .find(|builtin| builtin.name() == name || builtin.alias() == Some(name))
     }
 }
 
