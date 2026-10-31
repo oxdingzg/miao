@@ -252,9 +252,9 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
     if (!projectService || !workspaceService) {
       throw new Error("workspace creation is unavailable in this host")
     }
-    const input = params as { directory?: string } | undefined
-    if (!input?.directory) throw new Error("workspace.create needs a directory")
-    const resolved = await Effect.runPromise(projectService.resolve(AbsolutePath.make(input.directory)))
+    const request = params as { directory?: string } | undefined
+    if (!request?.directory) throw new Error("workspace.create needs a directory")
+    const resolved = await Effect.runPromise(projectService.resolve(AbsolutePath.make(request.directory)))
     return await Effect.runPromise(
       workspaceService.create(params as never, {
         projectID: resolved.id,
