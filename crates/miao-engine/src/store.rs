@@ -265,7 +265,10 @@ impl Store {
                     "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_run') WHERE name='lease_epoch')",
                     [], |row| row.get(0),
                 )?;
-                if engine && (version < SCHEMA_VERSION || !has_run_epoch) && needs_exclusive_ownership(version, has_run_epoch) {
+                if engine
+                    && (version < SCHEMA_VERSION || !has_run_epoch)
+                    && needs_exclusive_ownership(version, has_run_epoch)
+                {
                     let has_owner_pid: bool = conn.query_row(
                         "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_lease') WHERE name='owner_pid')", [], |row| row.get(0),
                     )?;
