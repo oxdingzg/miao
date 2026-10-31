@@ -2467,7 +2467,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn a_prompt_typed_on_home_starts_a_session_with_it() {
         let mut app = app();
         // The list owns the keyboard until Tab hands it to the prompt.
