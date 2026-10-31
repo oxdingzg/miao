@@ -234,6 +234,10 @@ pub enum Dialog {
     Status(ListDialog),
     Debug(ListDialog),
     Help(ListDialog),
+    Mcp(ListDialog),
+    Providers(ListDialog),
+    Skills(ListDialog),
+    Workspaces(ListDialog),
     Message(TextDialog),
     Palette(PaletteDialog),
     Rename(RenameDialog),
@@ -342,6 +346,112 @@ impl Dialog {
         );
         list.selected = names.iter().position(|name| *name == current).unwrap_or(0);
         Dialog::Theme(list)
+    }
+
+    /// The MCP servers the host resolved for this workspace. Names and
+    /// transports only: the host never exports headers or environment.
+    /// The integrations the host has a stored credential for. Values never
+    /// cross the process boundary; only the name and the operator's label.
+    /// The skills the host discovered for this workspace.
+    /// The workspaces the host reported for this project.
+    pub fn workspaces(workspaces: &[(String, String)]) -> Self {
+        let rows = if workspaces.is_empty() {
+            vec![Row {
+                id: String::new(),
+                label: "no workspaces".to_string(),
+                detail: String::new(),
+            }]
+        } else {
+            workspaces
+                .iter()
+                .map(|(name, detail)| Row {
+                    id: name.clone(),
+                    label: name.clone(),
+                    detail: detail.clone(),
+                })
+                .collect()
+        };
+        Dialog::Workspaces(ListDialog::new(
+            "workspaces",
+            rows,
+            ListKind::ReadOnly,
+            "esc close",
+        ))
+    }
+
+    pub fn skills(skills: &[(String, String)]) -> Self {
+        let rows = if skills.is_empty() {
+            vec![Row {
+                id: String::new(),
+                label: "no skills discovered".to_string(),
+                detail: String::new(),
+            }]
+        } else {
+            skills
+                .iter()
+                .map(|(name, detail)| Row {
+                    id: name.clone(),
+                    label: name.clone(),
+                    detail: detail.clone(),
+                })
+                .collect()
+        };
+        Dialog::Skills(ListDialog::new(
+            "skills",
+            rows,
+            ListKind::ReadOnly,
+            "esc close",
+        ))
+    }
+
+    pub fn providers(providers: &[(String, String)]) -> Self {
+        let rows = if providers.is_empty() {
+            vec![Row {
+                id: String::new(),
+                label: "no providers configured".to_string(),
+                detail: String::new(),
+            }]
+        } else {
+            providers
+                .iter()
+                .map(|(name, detail)| Row {
+                    id: name.clone(),
+                    label: name.clone(),
+                    detail: detail.clone(),
+                })
+                .collect()
+        };
+        Dialog::Providers(ListDialog::new(
+            "providers",
+            rows,
+            ListKind::ReadOnly,
+            "esc close",
+        ))
+    }
+
+    pub fn mcp(servers: &[(String, String)]) -> Self {
+        let rows = if servers.is_empty() {
+            vec![Row {
+                id: String::new(),
+                label: "no MCP servers configured".to_string(),
+                detail: String::new(),
+            }]
+        } else {
+            servers
+                .iter()
+                .map(|(name, detail)| Row {
+                    id: name.clone(),
+                    label: name.clone(),
+                    detail: detail.clone(),
+                })
+                .collect()
+        };
+        Dialog::Mcp(ListDialog::new(
+            "mcp",
+            rows,
+            ListKind::ReadOnly,
+            "esc close",
+        ))
     }
 
     pub fn message(lines: Vec<String>) -> Self {
@@ -493,6 +603,10 @@ impl Dialog {
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => handle_list_key(list, key),
+            Dialog::Mcp(list) => handle_list_key(list, key),
+            Dialog::Providers(list) => handle_list_key(list, key),
+            Dialog::Skills(list) => handle_list_key(list, key),
+            Dialog::Workspaces(list) => handle_list_key(list, key),
             Dialog::Message(text) => handle_text_key(text, key),
             Dialog::Palette(palette) => handle_palette_key(palette, key),
             Dialog::Rename(rename) => handle_rename_key(&mut rename.input, key),
@@ -513,6 +627,10 @@ impl Dialog {
             | Dialog::Status(list)
             | Dialog::Debug(list)
             | Dialog::Help(list) => list.title,
+            Dialog::Mcp(list) => list.title,
+            Dialog::Providers(list) => list.title,
+            Dialog::Skills(list) => list.title,
+            Dialog::Workspaces(list) => list.title,
             Dialog::Message(text) => text.title,
             Dialog::Palette(_) => "commands",
             Dialog::Rename(_) => "rename session",
@@ -530,7 +648,11 @@ impl Dialog {
             | Dialog::Timeline(list)
             | Dialog::Status(list)
             | Dialog::Debug(list)
-            | Dialog::Help(list) => Some(list),
+            | Dialog::Help(list)
+            | Dialog::Mcp(list)
+            | Dialog::Providers(list)
+            | Dialog::Skills(list)
+            | Dialog::Workspaces(list) => Some(list),
             _ => None,
         }
     }
@@ -545,7 +667,11 @@ impl Dialog {
             | Dialog::Timeline(list)
             | Dialog::Status(list)
             | Dialog::Debug(list)
-            | Dialog::Help(list) => Some(list),
+            | Dialog::Help(list)
+            | Dialog::Mcp(list)
+            | Dialog::Providers(list)
+            | Dialog::Skills(list)
+            | Dialog::Workspaces(list) => Some(list),
             _ => None,
         }
     }
