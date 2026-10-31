@@ -1814,6 +1814,11 @@ impl App {
                 engine.command(&session_id, &prompt, &text, &name, &arguments);
                 return;
             }
+            // A failed command is an error, not a message: sending the text as
+            // a plain prompt would silently hand a typo to the model.
+            self.shell.composer.restore_with(&text, attachments);
+            self.shell.composer.notice = Some(unknown_command_notice(&name));
+            return;
         }
         // Editor context is a prompt prefix rather than a wire field: the
         // engine admits one text string, and the TS client does the same.
@@ -3227,12 +3232,18 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_slash_word_still_reaches_the_composer_as_a_prompt() {
+    fn an_unknown_slash_command_is_reported_instead_of_sent_as_a_prompt() {
         let mut app = engine_session_app();
         app.shell.composer.editor.set_text("/nope plain text");
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         assert!(app.dialog.is_none());
-        assert!(app.shell.composer.editor.is_empty());
+        // The draft stays editable, and the notice names the typo: the text was
+        // never handed to the model.
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("unknown command: /nope")
+        );
+        assert!(!app.shell.composer.editor.is_empty());
     }
 
     /// An open Session whose transcript holds two user turns, with a handle
@@ -3389,5 +3400,21 @@ mod tests {
             requests.try_recv(),
             Ok(engine::Request::Redo { session_id }) if session_id == "ses_a"
         ));
+    }
+}
+
+/// The composer notice for a first-word command neither built in nor
+/// discovered. The draft stays in the composer so the typo can be fixed.
+fn unknown_command_notice(name: &str) -> String {
+    format!("unknown command: /{name}")
+}
+
+#[cfg(test)]
+mod command_notice_tests {
+    use super::unknown_command_notice;
+
+    #[test]
+    fn an_unknown_command_is_named_in_the_notice() {
+        assert_eq!(unknown_command_notice("nope"), "unknown command: /nope");
     }
 }
