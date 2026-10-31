@@ -229,10 +229,14 @@ async fn monitor_natural_exit_settles_the_durable_job() {
         .filter(|event| event.kind == "input.admitted")
         .filter_map(|event| event.data["input_id"].as_str().map(str::to_owned))
         .collect();
+    // The settle wakes the session once: either the notice that carried the
+    // short-lived output, or the terminal `finished` input when that output was
+    // still unflushed. Which one lands is a race the platform decides, so the
+    // invariant is one wake for the exit, not one particular id.
     assert_eq!(
         admissions
             .iter()
-            .filter(|id| id.ends_with(":finished"))
+            .filter(|id| id.starts_with("monitor:"))
             .count(),
         1,
         "exit must settle with exactly one durable input: {admissions:?}"
