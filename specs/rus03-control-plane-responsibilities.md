@@ -55,13 +55,20 @@ ConfigWrite/Pty/MCP/LSP/Format/RuntimeIdentity 等），**没有一个走引擎 
 | pty          | pty.shells/list/create/get/update/remove/connect-token/connect（websocket）                 | Pty.Service + PtyTicket（票据/origin 校验）+ PtyEnvironment                                                         |
 | question     | question.request.list（全局）；session.question.\*（session 域）                            | Question + SessionV2/引擎                                                                                           |
 | reference    | reference.list                                                                              | Reference.Service                                                                                                   |
-| projectCopy  | projectCopy.create/remove/refresh                                                           | ProjectCopy.Service                                                                                                 |
+| project-copy  | project-copy.create/remove/refresh                                                           | ProjectCopy.Service                                                                                                 |
 | project      | project.list/current/directories/update/initGit                                             | ProjectV2/ProjectMetadata/GitCli（initGit 后失效 Location）                                                         |
 | vcs          | vcs.get/status/diff                                                                         | Git + GitCli + VcsDiff                                                                                              |
 | workspace    | workspace.list/status/adapters/create/syncList/warp/remove                                  | WorkspaceV2.Service                                                                                                 |
 | worktree     | worktree.create/remove/reset                                                                | ProjectWorktree.Service（先释放目标 location 再操作）                                                               |
-| controlPlane | controlPlane.moveSession                                                                    | MoveSession.Service                                                                                                 |
+| control-plane | control-plane.moveSession                                                                    | MoveSession.Service                                                                                                 |
 | runtime      | runtime.identity/stop + runtime.control.\*（13 端点：启停、账号信任、配对、设备授予）       | RuntimeIdentity（Remote Control administration，仅 hosted Runtime 可用）                                            |
+
+核对依据（`58118fc1dc`）：`packages/protocol/src/groups/` 共 29 个分组，
+除 `session`、`message` 两个 session 域分组外的 27 个都在上表逐项出现，
+组名与本表左列一致（早期版本写作 `projectCopy`、`controlPlane`，与协议分组的
+`project-copy`、`control-plane` 不符，已按代码订正）。属主列的实现入口是
+`packages/server/src/handlers/<组>.ts`；只有该目录存在的分组才算有产品属主，
+不能被同名 engine RPC 顶替。
 
 session 域（`session`、`message`，及 permission/question 组内的 `session.*` 端点）是
 S2–S6 与 Phase 3 的范围，本文只标界、不展开；其混合属主（TS 编排 + NativeEngine RPC，
