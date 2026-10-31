@@ -151,6 +151,10 @@ pub struct ListDialog {
     pub selected: usize,
     pub kind: ListKind,
     pub hint: &'static str,
+    /// Type-ahead filter for plain lists; the empty filter shows everything.
+    pub filter: Editor,
+    /// Indices into `rows` that match the filter, in display order.
+    pub visible: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -169,25 +173,54 @@ pub enum ListKind {
 
 impl ListDialog {
     pub fn new(title: &'static str, rows: Vec<Row>, kind: ListKind, hint: &'static str) -> Self {
+        let visible = (0..rows.len()).collect();
         Self {
             title,
             rows,
             selected: 0,
             kind,
             hint,
+            filter: Editor::new(),
+            visible,
         }
+    }
+
+    /// Plain lists (models, accounts, themes) type-ahead filter; list kinds
+    /// with their own letter commands keep their keyboard.
+    fn filterable(&self) -> bool {
+        self.kind == ListKind::Plain
+    }
+
+    pub(crate) fn refilter(&mut self) {
+        let needle = self.filter.text().to_lowercase();
+        self.visible = self
+            .rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| {
+                needle.is_empty()
+                    || row.label.to_lowercase().contains(&needle)
+                    || row.detail.to_lowercase().contains(&needle)
+                    || row.id.to_lowercase().contains(&needle)
+            })
+            .map(|(index, _)| index)
+            .collect();
+        self.selected = 0;
     }
 
     pub(crate) fn move_cursor(&mut self, delta: i32) {
-        if self.rows.is_empty() {
+        if self.visible.is_empty() {
             return;
         }
         let next = self.selected as i32 + delta;
-        self.selected = next.clamp(0, self.rows.len() as i32 - 1) as usize;
+        self.selected = next.clamp(0, self.visible.len() as i32 - 1) as usize;
     }
 
     fn current_id(&self) -> Option<String> {
-        self.rows.get(self.selected).map(|row| row.id.clone())
+        self.visible
+            .get(self.selected)
+            .and_then(|index| self.rows.get(*index))
+            .map(|row| row.id.clone())
     }
 }
 
@@ -312,20 +345,30 @@ pub struct RenameDialog {
 }
 
 impl Dialog {
-    pub fn models(models: &[ModelInfo]) -> Self {
+    pub fn models(models: &[ModelInfo], current: Option<&str>) -> Self {
         Dialog::Models(ListDialog::new(
             "models",
             models
                 .iter()
                 .enumerate()
-                .map(|(index, model)| Row {
-                    id: index.to_string(),
-                    label: model.label(),
-                    detail: model.route_id.clone().unwrap_or_default(),
+                .map(|(index, model)| {
+                    // The Session's own binding is marked so the list answers
+                    // "which one am I on" without opening the footer.
+                    let label = match current {
+                        Some(current) if current == model.label() => {
+                            format!("● {}", model.label())
+                        }
+                        _ => model.label(),
+                    };
+                    Row {
+                        id: index.to_string(),
+                        label,
+                        detail: model.route_id.clone().unwrap_or_default(),
+                    }
                 })
                 .collect(),
             ListKind::Plain,
-            "enter select · esc close",
+            "type to filter · ↑↓ move · enter select · esc close",
         ))
     }
 
@@ -528,7 +571,7 @@ impl Dialog {
                 })
                 .collect(),
             ListKind::Plain,
-            "enter switch · esc close",
+            "type to filter · ↑↓ move · enter switch · esc close",
         ))
     }
 
@@ -791,25 +834,52 @@ fn handle_text_key(text: &mut TextDialog, key: KeyEvent) -> Action {
 }
 
 fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
+    if list.filterable() {
+        match key.code {
+            KeyCode::Backspace => {
+                list.filter.backspace();
+                list.refilter();
+                return Action::None;
+            }
+            KeyCode::Delete => {
+                list.filter.delete_forward();
+                list.refilter();
+                return Action::None;
+            }
+            KeyCode::Char(c)
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                list.filter.insert_char(c);
+                list.refilter();
+                return Action::None;
+            }
+            _ => {}
+        }
+    }
     match key.code {
         KeyCode::Esc => return Action::Close,
-        KeyCode::Up | KeyCode::Char('k') => list.move_cursor(-1),
-        KeyCode::Down | KeyCode::Char('j') => list.move_cursor(1),
+        KeyCode::Up | KeyCode::Char('k') if !list.filterable() => list.move_cursor(-1),
+        KeyCode::Down | KeyCode::Char('j') if !list.filterable() => list.move_cursor(1),
+        KeyCode::Up => list.move_cursor(-1),
+        KeyCode::Down => list.move_cursor(1),
         KeyCode::Enter => {
             if list.kind == ListKind::ReadOnly {
                 return Action::Close;
             }
-            let Some(id) = list.current_id() else {
+            let Some(row_index) = list.visible.get(list.selected).copied() else {
                 return Action::None;
             };
+            let id = list.rows[row_index].id.clone();
             return match list.kind {
                 ListKind::Sessions => Action::OpenSession(id),
-                ListKind::Stash => Action::StashRestore(list.selected),
+                ListKind::Stash => Action::StashRestore(row_index),
                 ListKind::Timeline => match id.parse::<u64>() {
                     Ok(seq) => Action::Revert(seq),
                     Err(_) => Action::None,
                 },
-                _ => Action::Chosen(list.selected),
+                _ => Action::Chosen(row_index),
             };
         }
         KeyCode::Char('r') if list.kind == ListKind::Sessions => {
@@ -1031,7 +1101,7 @@ mod tests {
 
     #[test]
     fn list_navigation_clamps_and_enter_returns_the_row() {
-        let mut dialog = Dialog::models(&models());
+        let mut dialog = Dialog::models(&models(), None);
         dialog.handle_key(key(KeyCode::Down));
         dialog.handle_key(key(KeyCode::Down));
         dialog.handle_key(key(KeyCode::Down));

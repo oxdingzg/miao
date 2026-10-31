@@ -431,7 +431,12 @@ impl App {
                 if self.pending_models {
                     self.pending_models = false;
                     if self.dialog.is_none() {
-                        self.open_dialog(Dialog::models(&self.models));
+                        self.open_dialog(Dialog::models(
+                            &self.models,
+                            self.session
+                                .as_ref()
+                                .and_then(|summary| summary.model.as_deref()),
+                        ));
                     }
                 }
             }
@@ -822,7 +827,12 @@ impl App {
             self.pending_models = true;
             return;
         }
-        self.open_dialog(Dialog::models(&self.models));
+        self.open_dialog(Dialog::models(
+            &self.models,
+            self.session
+                .as_ref()
+                .and_then(|summary| summary.model.as_deref()),
+        ));
     }
 
     fn open_theme(&mut self) {
