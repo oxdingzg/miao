@@ -150,16 +150,30 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   const administration = identityService?.administration
     ? yield* Effect.promise(() => Promise.resolve(identityService.administration!()))
     : undefined
-  const devices = (administration?.devices() ?? [])
-    .filter((grant) => grant.revokedAt === null)
-    .map((grant) => ({
-      name: grant.label,
-      // The panel shows one line per device; the fingerprint prefix and the
-      // pairing date are what an operator checks before revoking a grant.
-      detail: `${grant.publicKey.slice(0, 16)} · ${new Date(grant.createdAt * 1000)
-        .toISOString()
-        .slice(0, 10)}`,
-    }))
+  // Rows carry the identity an approve or revoke must echo; pending candidates
+  // are listed beside the grants so one panel can settle both.
+  const devices = [
+    ...(administration?.devices() ?? [])
+      .filter((grant) => grant.revokedAt === null)
+      .map((grant) => ({
+        name: grant.label,
+        detail: `${grant.publicKey.slice(0, 16)} · ${new Date(grant.createdAt * 1000)
+          .toISOString()
+          .slice(0, 10)}`,
+        id: grant.id,
+        version: grant.version,
+        pairingKey: grant.publicKey,
+        kind: "grant",
+      })),
+    ...(administration?.pending() ?? []).map((candidate) => ({
+      name: `${candidate.candidate.label} (pending)`,
+      detail: `${candidate.candidate.publicKey.slice(0, 16)} · awaiting approval`,
+      id: candidate.pairingID,
+      version: 0,
+      pairingKey: candidate.candidate.publicKey,
+      kind: "pending",
+    })),
+  ]
   const skills = skillService
     ? (yield* skillService.list()).map((skill) => ({
         name: skill.name,
