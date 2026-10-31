@@ -101,14 +101,11 @@ pub enum Request {
     },
     /// The host's workspace list, served by the engine (TUI-09).
     Workspaces,
-<<<<<<< HEAD
     /// Move the open Session to another workspace directory (TUI-09).
     MoveSession {
         session_id: String,
         target_directory: String,
     },
-=======
->>>>>>> origin/main
     /// Read the open Session's billed usage for the status dialog.
     Usage {
         session_id: String,
@@ -280,7 +277,6 @@ impl Handle {
         });
     }
 
-<<<<<<< HEAD
     pub fn move_session(&self, session_id: &str, target_directory: &str) {
         let _ = self.tx.send(Request::MoveSession {
             session_id: session_id.to_string(),
@@ -288,8 +284,6 @@ impl Handle {
         });
     }
 
-=======
->>>>>>> origin/main
     pub fn workspaces(&self) {
         let _ = self.tx.send(Request::Workspaces);
     }
@@ -786,7 +780,6 @@ async fn run(
                         }
                     }
                 }
-<<<<<<< HEAD
                 Some(Request::MoveSession {
                     session_id,
                     target_directory,
@@ -804,8 +797,6 @@ async fn run(
                         }
                     }
                 }
-=======
->>>>>>> origin/main
                 Some(Request::Workspaces) => {
                     let result = client.request("workspaces", json!({})).await;
                     match result {
@@ -1296,11 +1287,7 @@ fn new_id(prefix: &str) -> String {
 
 /// Name plus detail from the host's export, the shape every read-only panel
 /// uses. Anything else is dropped rather than shown as a broken row.
-<<<<<<< HEAD
 fn pairs(value: &Value) -> Vec<(String, String, String)> {
-=======
-fn pairs(value: &Value) -> Vec<(String, String)> {
->>>>>>> origin/main
     value
         .as_array()
         .map(|rows| {
@@ -1309,13 +1296,10 @@ fn pairs(value: &Value) -> Vec<(String, String)> {
                     Some((
                         row.get("name")?.as_str()?.to_string(),
                         row.get("detail")?.as_str().unwrap_or_default().to_string(),
-<<<<<<< HEAD
                         row.get("directory")?
                             .as_str()
                             .unwrap_or_default()
                             .to_string(),
-=======
->>>>>>> origin/main
                     ))
                 })
                 .collect()
