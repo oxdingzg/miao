@@ -1,4 +1,5 @@
 import { PermissionV2 } from "../../../../packages/core/src/permission"
+import { PermissionClassifier } from "../../../../packages/core/src/permission/classifier"
 
 // Golden decisions come from the real layered TypeScript evaluator (S6 step 1).
 // Rust consumes this corpus to pin the rule semantics at the bridge: same
@@ -9,7 +10,7 @@ const rule = (action: string, resource: string, effect: PermissionV2.Effect) => 
   effect,
 })
 
-const cases = [
+const ruleCases = [
   { name: "explicit-without-an-agent-ruleset-still-filters-the-catch-all", request: {
     actions: ["sandbox-escape"], resources: ["host"], explicit: true,
   } },
@@ -210,7 +211,38 @@ const cases = [
     resources: ["a.ts"],
     configured: [rule("read*", "*", "allow"), rule("*", "*.env", "ask")],
   } },
-].map((item) => ({ ...item, expected: PermissionV2.decide(item.request) }))
+]
+
+// A case that names a mode pins what the product does with it: `decide` answers
+// the rules layer alone, and `auto` settles an ask the classifier can prove
+// safe. The engine keeps the distinction in `permission.rs::auto_settles`, so
+// the corpus has to state the settled effect rather than the raw ask.
+const autoCases = [
+  { name: "auto-mode-settles-a-safe-ask", mode: "auto", request: {
+    actions: ["bash"], resources: ["git status"],
+    configured: [rule("bash", "*", "ask")],
+  } },
+  { name: "auto-mode-keeps-an-ask-the-classifier-cannot-prove-safe", mode: "auto", request: {
+    actions: ["bash"], resources: ["git push"],
+    configured: [rule("bash", "*", "ask")],
+  } },
+  { name: "auto-mode-never-settles-a-deny", mode: "auto", request: {
+    actions: ["bash"], resources: ["git status"],
+    configured: [rule("bash", "*", "deny")],
+  } },
+]
+
+const cases = [
+  ...ruleCases.map((item) => ({ ...item, expected: PermissionV2.decide(item.request) })),
+  ...(await Promise.all(
+    autoCases.map(async (item) => {
+      const decided = PermissionV2.decide(item.request)
+      if (decided.effect !== "ask") return { ...item, expected: decided }
+      const verdict = await PermissionClassifier.bash(item.request.resources)
+      return { ...item, expected: verdict === "safe" ? { effect: "allow" as const, rules: decided.rules } : decided }
+    }),
+  )),
+]
 
 const file = new URL("permission_decide.json", import.meta.url)
 const content =
