@@ -237,6 +237,7 @@ pub enum Dialog {
     Mcp(ListDialog),
     Providers(ListDialog),
     Skills(ListDialog),
+    Workspaces(ListDialog),
     Palette(PaletteDialog),
     Rename(RenameDialog),
     Confirm(ConfirmDialog),
@@ -343,6 +344,32 @@ impl Dialog {
     /// The integrations the host has a stored credential for. Values never
     /// cross the process boundary; only the name and the operator's label.
     /// The skills the host discovered for this workspace.
+    /// The workspaces the host reported for this project.
+    pub fn workspaces(workspaces: &[(String, String)]) -> Self {
+        let rows = if workspaces.is_empty() {
+            vec![Row {
+                id: String::new(),
+                label: "no workspaces".to_string(),
+                detail: String::new(),
+            }]
+        } else {
+            workspaces
+                .iter()
+                .map(|(name, detail)| Row {
+                    id: name.clone(),
+                    label: name.clone(),
+                    detail: detail.clone(),
+                })
+                .collect()
+        };
+        Dialog::Workspaces(ListDialog::new(
+            "workspaces",
+            rows,
+            ListKind::ReadOnly,
+            "esc close",
+        ))
+    }
+
     pub fn skills(skills: &[(String, String)]) -> Self {
         let rows = if skills.is_empty() {
             vec![Row {
@@ -562,6 +589,7 @@ impl Dialog {
             Dialog::Mcp(list) => handle_list_key(list, key),
             Dialog::Providers(list) => handle_list_key(list, key),
             Dialog::Skills(list) => handle_list_key(list, key),
+            Dialog::Workspaces(list) => handle_list_key(list, key),
             Dialog::Palette(palette) => handle_palette_key(palette, key),
             Dialog::Rename(rename) => handle_rename_key(&mut rename.input, key),
             Dialog::Confirm(confirm) => handle_confirm_key(confirm, key),
@@ -584,6 +612,7 @@ impl Dialog {
             Dialog::Mcp(list) => list.title,
             Dialog::Providers(list) => list.title,
             Dialog::Skills(list) => list.title,
+            Dialog::Workspaces(list) => list.title,
             Dialog::Palette(_) => "commands",
             Dialog::Rename(_) => "rename session",
             Dialog::Confirm(confirm) => confirm.title,
@@ -603,7 +632,8 @@ impl Dialog {
             | Dialog::Help(list)
             | Dialog::Mcp(list)
             | Dialog::Providers(list)
-            | Dialog::Skills(list) => Some(list),
+            | Dialog::Skills(list)
+            | Dialog::Workspaces(list) => Some(list),
             _ => None,
         }
     }
@@ -621,7 +651,8 @@ impl Dialog {
             | Dialog::Help(list)
             | Dialog::Mcp(list)
             | Dialog::Providers(list)
-            | Dialog::Skills(list) => Some(list),
+            | Dialog::Skills(list)
+            | Dialog::Workspaces(list) => Some(list),
             _ => None,
         }
     }

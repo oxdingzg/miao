@@ -13,6 +13,8 @@ import { McpAuth } from "@miao/core/mcp/auth"
 import { Logging } from "@miao/core/observability/logging"
 import { PluginV2 } from "@miao/core/plugin"
 import { SkillV2 } from "@miao/core/skill"
+import { ProjectV2 } from "@miao/core/project"
+import { WorkspaceV2 } from "@miao/core/workspace"
 import { AbsolutePath } from "@miao/core/schema"
 import { AmbientContext } from "./ambient-context"
 import { engineArgs, type EngineOptions } from "./client"
@@ -113,6 +115,23 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   // Skills are optional: a graph without the skill service exports none rather
   // than failing the TUI start.
   const skillService = Option.getOrUndefined(yield* Effect.serviceOption(SkillV2.Service))
+  // Workspaces need the project the directory resolves to, plus the workspace
+  // service; either one missing exports no workspaces.
+  const projectService = Option.getOrUndefined(yield* Effect.serviceOption(ProjectV2.Service))
+  const workspaceService = Option.getOrUndefined(yield* Effect.serviceOption(WorkspaceV2.Service))
+  const resolved = projectService
+    ? yield* projectService.resolve(AbsolutePath.make(input.workspace))
+    : undefined
+  const workspaces =
+    resolved && workspaceService
+      ? (yield* workspaceService.list({
+          projectID: resolved.id,
+          directory: resolved.directory,
+        })).map((workspace) => ({
+          name: workspace.name,
+          detail: workspace.branch ?? workspace.type,
+        }))
+      : []
   const skills = skillService
     ? (yield* skillService.list()).map((skill) => ({
         name: skill.name,
@@ -165,6 +184,7 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
       MIAO_TUI_MCP_JSON: JSON.stringify(mcpServers),
       MIAO_TUI_PROVIDERS_JSON: JSON.stringify(providers),
       MIAO_TUI_SKILLS_JSON: JSON.stringify(skills),
+      MIAO_TUI_WORKSPACES_JSON: JSON.stringify(workspaces),
     },
     argv: [options.binary, ...engineArgs({ ...options, mcpConfigFile: manifest?.file ?? options.mcpConfigFile })],
     dispose: manifest?.dispose,

@@ -168,6 +168,8 @@ pub struct App {
     providers: Vec<(String, String)>,
     /// Skills the host discovered (name, description).
     skills: Vec<(String, String)>,
+    /// Workspaces the host reported (name, branch or type).
+    workspaces: Vec<(String, String)>,
     /// The model dialog waits for the catalog when nothing is cached yet.
     pending_models: bool,
     /// Same for the account dialog.
@@ -234,6 +236,7 @@ impl App {
             mcp: parse_pairs(std::env::var("MIAO_TUI_MCP_JSON").ok().as_deref()),
             providers: parse_pairs(std::env::var("MIAO_TUI_PROVIDERS_JSON").ok().as_deref()),
             skills: parse_pairs(std::env::var("MIAO_TUI_SKILLS_JSON").ok().as_deref()),
+            workspaces: parse_pairs(std::env::var("MIAO_TUI_WORKSPACES_JSON").ok().as_deref()),
             accounts: Vec::new(),
             usage: None,
             stash: Vec::new(),
@@ -667,6 +670,7 @@ impl App {
             Some(keybinds::Action::McpList) => self.open_mcp(),
             Some(keybinds::Action::ProviderList) => self.open_providers(),
             Some(keybinds::Action::SkillList) => self.open_skills(),
+            Some(keybinds::Action::WorkspaceList) => self.open_workspaces(),
             Some(keybinds::Action::ToolOutputToggle) => {
                 let expanded = self.shell.toggle_tool_expansion();
                 self.notice(if expanded {
@@ -1037,6 +1041,10 @@ impl App {
 
     fn open_skills(&mut self) {
         self.open_dialog(Dialog::skills(&self.skills));
+    }
+
+    fn open_workspaces(&mut self) {
+        self.open_dialog(Dialog::workspaces(&self.workspaces));
     }
 
     fn open_status(&mut self) {
