@@ -763,11 +763,17 @@ fn the_leader_opens_the_theme_dialog_and_saves_the_choice() {
         plain(&harness.text())
     );
     harness.write(b"\x18t");
-    // The menu holds every built-in theme and opens around the active one, so
-    // the first visible window is the end of the list rather than its head.
+    // The menu holds every built-in theme and opens around the active one; the
+    // hint belongs to the dialog only, and the active row proves the window
+    // opened around it.
     assert!(
-        wait_for_plain(&harness, "everforest", Duration::from_secs(2)),
+        wait_for_plain(&harness, "enter apply · esc close", Duration::from_secs(2)),
         "the theme dialog did not render:\n{}",
+        plain(&harness.text())
+    );
+    assert!(
+        wait_for_plain(&harness, "▸ miao", Duration::from_secs(2)),
+        "the theme dialog did not open around the active theme:\n{}",
         plain(&harness.text())
     );
     // One row down from the active theme ("miao") lands on "opencode".

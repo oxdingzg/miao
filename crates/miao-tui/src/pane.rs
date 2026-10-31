@@ -1153,14 +1153,35 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
         height: 1,
         ..area
     };
+    // Plain lists carry a type-ahead filter; the line shows what has been
+    // typed so the reviewer can see why rows disappeared.
+    let filtered = list.kind == ListKind::Plain;
+    let filter_area = filtered.then_some(Rect { height: 1, ..area });
     let list_area = Rect {
-        height: area.height - 1,
+        y: area.y + if filtered { 1 } else { 0 },
+        height: area.height - 1 - if filtered { 1 } else { 0 },
         ..area
     };
-    if list.rows.is_empty() {
+    if let Some(filter_area) = filter_area {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("› ", Style::new().fg(palette.primary)),
+                Span::styled(
+                    list.filter.text().to_string(),
+                    Style::new().fg(palette.text),
+                ),
+            ])),
+            filter_area,
+        );
+    }
+    if list.visible.is_empty() {
         frame.render_widget(
             Paragraph::new(Span::styled(
-                "nothing to show",
+                if list.rows.is_empty() {
+                    "nothing to show"
+                } else {
+                    "no match"
+                },
                 Style::new().fg(palette.text_muted),
             )),
             list_area,
@@ -1170,14 +1191,16 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
         let offset = list
             .selected
             .saturating_sub(visible.saturating_sub(1))
-            .min(list.rows.len().saturating_sub(visible));
+            .min(list.visible.len().saturating_sub(visible));
         let lines = list
-            .rows
+            .visible
             .iter()
             .enumerate()
             .skip(offset)
             .take(visible)
-            .map(|(index, row)| {
+            .map(|(position, row_index)| {
+                let row = &list.rows[*row_index];
+                let index = position;
                 // A read-only list has nothing to select, so it draws no
                 // marker and keeps every row in the same weight.
                 let read_only = list.kind == ListKind::ReadOnly;
