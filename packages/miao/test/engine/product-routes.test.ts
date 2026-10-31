@@ -83,6 +83,15 @@ it.live("product routes bind active accounts without persisting secrets and keep
       JSON.stringify({ type: "oauth", methodID: "fixture", access: "", refresh: "COPILOT_SECRET", expires: 0 }),
       0,
     )
+    // A provider added through the providers UI: it has a saved key but no
+    // registered integration definition.
+    db.query("INSERT INTO credential VALUES (?,?,?,?,?)").run(
+      "cred_mtty",
+      "mtty",
+      "default",
+      JSON.stringify({ type: "key", key: "MTTY_SECRET" }),
+      0,
+    )
     db.close()
     const file = yield* Effect.scoped(
       Effect.gen(function* () {
@@ -159,6 +168,22 @@ it.live("product routes bind active accounts without persisting secrets and keep
             model.capabilities.tools = true
             model.capabilities.output = ["text"]
           })
+          draft.provider.update(ProviderV2.ID.make("mtty"), (provider) => {
+            provider.api = {
+              type: "aisdk",
+              package: "@ai-sdk/openai-compatible",
+              url: "https://my.mtty.dev/v1",
+            }
+          })
+          draft.model.update(
+            ProviderV2.ID.make("mtty"),
+            ModelV2.ID.make("deepseek-v4-1-flash-261017"),
+            (model) => {
+              model.capabilities.tools = true
+              model.capabilities.input = ["text"]
+              model.capabilities.output = ["text"]
+            },
+          )
           draft.model.default.set(ProviderV2.ID.make("commandcode"), ModelV2.ID.make("model-0"))
           for (const id of ["expired", "unsupported", "custom", "opencode-go"]) {
             draft.provider.update(ProviderV2.ID.make(id), (provider) => {
@@ -202,10 +227,18 @@ it.live("product routes bind active accounts without persisting secrets and keep
           "REFRESH_SECRET",
           "HEADER_SECRET",
           "EXPIRED_SECRET",
+          "MTTY_SECRET",
         ])
           expect(content).not.toContain(secret)
         const routes = yield* Effect.promise(() => Bun.file(file).json())
-        expect(routes).toHaveLength(209)
+        expect(routes).toHaveLength(210)
+        // The saved credential alone is enough: without it the provider
+        // contributed nothing and every Session pinned to it was rejected at
+        // admission with "no native route for ...".
+        expect(routes.find((route: { id: string }) => route.id === "mtty/deepseek-v4-1-flash-261017")).toMatchObject({
+          account: { id: "cred_mtty", model_key: "mtty/deepseek-v4-1-flash-261017", default: true },
+          credential: { id: "cred_mtty" },
+        })
         const alternate = routes.find(
           (route: { account?: { id?: string; model_key: string } }) =>
             route.account?.id === "cred_backup" && route.account.model_key === "commandcode/model-0",
