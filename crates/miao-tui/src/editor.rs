@@ -413,6 +413,10 @@ pub struct Composer {
     /// re-read from the snapshot every frame, so this is display state rather
     /// than a durable count the composer owns.
     pub queued: usize,
+    /// What the active run is doing, re-read from the snapshot every frame. It
+    /// rides the composer title so the phase is visible where the operator is
+    /// typing.
+    pub phase: Option<String>,
     /// Inline media sent with the prompt. The composer only shows their
     /// `[Image N]` markers; the bytes travel beside the text.
     attachments: Vec<Value>,
@@ -437,6 +441,7 @@ impl Composer {
             completion: Completion::default(),
             notice: None,
             queued: 0,
+            phase: None,
             attachments: Vec::new(),
             history: load_history(&history_path),
             history_index: None,
@@ -897,6 +902,7 @@ mod tests {
             completion: Completion::default(),
             notice: None,
             queued: 0,
+            phase: None,
             attachments: Vec::new(),
             history: Vec::new(),
             history_index: None,
