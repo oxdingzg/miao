@@ -15,7 +15,7 @@ use crate::session::{DisplayFile, ToolPart};
 use crate::theme::Theme;
 
 /// Output lines one command row shows before collapsing.
-const TOOL_PREVIEW_LINES: usize = 6;
+const TOOL_PREVIEW_LINES: usize = 1;
 /// Diff lines one changed file shows before collapsing.
 const DIFF_PREVIEW_LINES: usize = 12;
 
@@ -217,8 +217,10 @@ fn preview(out: &mut Vec<Line<'static>>, text: &str, color: Color, limit: usize)
         )));
     }
     if lines.len() > limit {
+        // Say how to see the rest: a folded tool block that cannot be opened
+        // reads like lost output.
         out.push(Line::from(Span::styled(
-            format!("  │ … {} more lines", lines.len() - limit),
+            format!("  │ … {} more lines · <leader>u 展开", lines.len() - limit),
             Style::new().fg(color),
         )));
     }
@@ -265,7 +267,7 @@ fn bash(
         if tool.failed {
             palette.error
         } else {
-            palette.text
+            palette.text_muted
         },
         limit,
     );
@@ -909,7 +911,10 @@ mod tests {
         let rendered = rendered(&lines);
         assert_eq!(rendered[0], "✓ bash  echo hi");
         assert!(rendered.contains(&"  │ hi".to_string()));
-        assert!(rendered.contains(&"  │ [exit code 0]".to_string()));
+        // Folded output keeps one line; the tail and the hint stay reachable
+        // through the elision marker instead of crowding the transcript.
+        assert!(rendered.iter().any(|line| line.contains("more lines")));
+        assert!(rendered.iter().any(|line| line.contains("<leader>u")));
     }
 
     #[test]
@@ -959,7 +964,8 @@ mod tests {
             false,
         );
         let rendered = rendered(&lines(&part, None, &theme(), false));
-        assert!(rendered.contains(&"  │ … 5 more lines".to_string()));
+        assert!(rendered.iter().any(|line| line.contains("  │ … ")));
+        assert!(rendered.iter().any(|line| line.contains("<leader>u 展开")));
     }
 
     #[test]
