@@ -1,0 +1,1 @@
+{"scenario":"warm","samples":5,"first_frame":{"p50_ms":31,"p95_ms":35,"max_ms":35},"ready_to_type":{"p50_ms":36,"p95_ms":43,"max_ms":43},"ready_to_submit":{"p50_ms":6,"p95_ms":7,"max_ms":7},"gate":{"warm_ready_to_type_p95_ms":500}}
