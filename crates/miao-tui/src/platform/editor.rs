@@ -65,7 +65,6 @@ pub async fn run(request: &Request) -> Result<Option<String>, String> {
     // interrupt reaches the editor the way the user expects.
     #[cfg(unix)]
     let status = {
-        use std::os::unix::process::CommandExt;
         let mut command = Command::new(&request.command[0]);
         command
             .args(&request.command[1..])
