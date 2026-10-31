@@ -1,0 +1,7 @@
+{
+  // the default model for every new session
+  "model": "anthropic/claude-haiku",
+  "share": "manual",
+  "brand_new_key": { "nested": [1, 2] },
+  "mystery": 42,
+}

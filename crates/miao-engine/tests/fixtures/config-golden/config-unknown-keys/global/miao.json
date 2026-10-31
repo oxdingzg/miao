@@ -1,0 +1,6 @@
+{
+  "model": "anthropic/claude-haiku",
+  "share": "auto",
+  "wat": 123,
+  "another": { "deep": true }
+}

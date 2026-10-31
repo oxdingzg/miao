@@ -153,7 +153,10 @@ pub fn migrate(input: &Value) -> Value {
     if let Some(mcp) = mcp_section(&map) {
         out.insert("mcp".into(), mcp);
     }
-    if let Some(compaction) = map.get("compaction").and_then(|value| compaction(Some(value))) {
+    if let Some(compaction) = map
+        .get("compaction")
+        .and_then(|value| compaction(Some(value)))
+    {
         out.insert("compaction".into(), compaction);
     }
     if let Some(skills) = skills(&map) {
@@ -182,7 +185,9 @@ fn permissions(permission: Option<&Value>, tools: Option<&Value>) -> Option<Valu
     if let Some(Value::Object(tools)) = tools {
         for (action, enabled) in tools {
             let effect = if is_truthy(enabled) { "allow" } else { "deny" };
-            rules.push(json!({ "action": normalize_action(action), "resource": "*", "effect": effect }));
+            rules.push(
+                json!({ "action": normalize_action(action), "resource": "*", "effect": effect }),
+            );
         }
     }
     if let Some(Value::Object(permission)) = permission {
@@ -292,7 +297,9 @@ fn mcp_section(map: &Map<String, Value>) -> Option<Value> {
             }
         }
     }
-    let timeout = map.get("experimental").and_then(|experimental| experimental.get("mcp_timeout"));
+    let timeout = map
+        .get("experimental")
+        .and_then(|experimental| experimental.get("mcp_timeout"));
     if timeout.is_none() && servers.is_empty() {
         return None;
     }
@@ -411,13 +418,17 @@ fn experimental(map: &Map<String, Value>) -> Option<Value> {
         out.insert("policies".into(), policies.clone());
     }
     if let Some(disable_paste_summary) = disable_paste_summary {
-        out.insert("disable_paste_summary".into(), disable_paste_summary.clone());
+        out.insert(
+            "disable_paste_summary".into(),
+            disable_paste_summary.clone(),
+        );
     }
     Some(Value::Object(out))
 }
 
 fn providers(provider: Option<&Value>, disabled: Option<&Value>) -> Option<Value> {
-    let has_disabled = disabled.is_some_and(|value| value.as_array().is_some_and(|list| !list.is_empty()));
+    let has_disabled =
+        disabled.is_some_and(|value| value.as_array().is_some_and(|list| !list.is_empty()));
     let migrated = match provider.and_then(Value::as_object) {
         Some(map) if !map.is_empty() => {
             let mut migrated = Map::new();
@@ -465,7 +476,10 @@ fn migrate_provider(info: &Value) -> Value {
         if let Some(url) = url {
             api.insert("url".into(), url);
         }
-        api.insert("settings".into(), lowered.settings.clone().unwrap_or_else(|| json!({})));
+        api.insert(
+            "settings".into(),
+            lowered.settings.clone().unwrap_or_else(|| json!({})),
+        );
         out.insert("api".into(), Value::Object(api));
     }
     if map.get("options").is_some() {
@@ -520,8 +534,12 @@ fn migrate_model(info: &Value, package_name: Option<&str>) -> Value {
     let tool_call = map.get("tool_call");
     let modalities = map.get("modalities");
     let has_capabilities = tool_call.is_some()
-        || modalities.and_then(|modalities| modalities.get("input")).is_some()
-        || modalities.and_then(|modalities| modalities.get("output")).is_some();
+        || modalities
+            .and_then(|modalities| modalities.get("input"))
+            .is_some()
+        || modalities
+            .and_then(|modalities| modalities.get("output"))
+            .is_some();
     if has_capabilities {
         out.insert(
             "capabilities".into(),
@@ -600,7 +618,9 @@ fn int(value: &Value) -> Value {
     let Some(number) = value.as_f64() else {
         return value.clone();
     };
-    let clamped = number.trunc().clamp(-9_007_199_254_740_992.0, 9_007_199_254_740_992.0);
+    let clamped = number
+        .trunc()
+        .clamp(-9_007_199_254_740_992.0, 9_007_199_254_740_992.0);
     json!(clamped as i64)
 }
 
@@ -635,7 +655,17 @@ fn lowerer_provider(package: Option<&str>, options: &Map<String, Value>) -> Prov
                 url: string(options.get("baseURL")).map(Value::String),
                 headers: compact_strings(headers),
                 body: body_value(options.get("body")),
-                settings: Some(omit(options, &["apiKey", "baseURL", "organization", "project", "headers", "body"])),
+                settings: Some(omit(
+                    options,
+                    &[
+                        "apiKey",
+                        "baseURL",
+                        "organization",
+                        "project",
+                        "headers",
+                        "body",
+                    ],
+                )),
             }
         }
         Some("@ai-sdk/anthropic") | Some("@ai-sdk/google-vertex/anthropic") => {
@@ -644,7 +674,10 @@ fn lowerer_provider(package: Option<&str>, options: &Map<String, Value>) -> Prov
                 headers.insert("x-api-key".into(), Value::String(key));
             }
             if let Some(token) = string(options.get("authToken")) {
-                headers.insert("Authorization".into(), Value::String(format!("Bearer {token}")));
+                headers.insert(
+                    "Authorization".into(),
+                    Value::String(format!("Bearer {token}")),
+                );
             }
             if let Some(Value::Object(extra)) = options.get("headers") {
                 for (key, value) in extra {
@@ -657,7 +690,10 @@ fn lowerer_provider(package: Option<&str>, options: &Map<String, Value>) -> Prov
                 url: string(options.get("baseURL")).map(Value::String),
                 headers: compact_strings(headers),
                 body: body_value(options.get("body")),
-                settings: Some(omit(options, &["apiKey", "authToken", "baseURL", "headers", "body"])),
+                settings: Some(omit(
+                    options,
+                    &["apiKey", "authToken", "baseURL", "headers", "body"],
+                )),
             }
         }
         Some("@ai-sdk/google") | Some("@ai-sdk/google-vertex") => {
@@ -802,7 +838,12 @@ fn lowerer_request(package: Option<&str>, options: &Value) -> Value {
             result
         }
         Some("@ai-sdk/google") | Some("@ai-sdk/google-vertex") => {
-            let picked = ["thinkingConfig", "responseModalities", "mediaResolution", "imageConfig"];
+            let picked = [
+                "thinkingConfig",
+                "responseModalities",
+                "mediaResolution",
+                "imageConfig",
+            ];
             let mut generation_config = Map::new();
             let mut result = Map::new();
             if let Some(object) = options.as_object() {
@@ -873,7 +914,9 @@ fn headers_value(input: Option<&Value>) -> Option<Value> {
 }
 
 fn body_value(input: Option<&Value>) -> Option<Value> {
-    input.and_then(Value::as_object).map(|map| Value::Object(map.clone()))
+    input
+        .and_then(Value::as_object)
+        .map(|map| Value::Object(map.clone()))
 }
 
 fn compact_strings(map: Map<String, Value>) -> Option<Value> {
@@ -930,14 +973,20 @@ mod tests {
         assert!(is_v1(&json!({ "snapshot": false })));
         assert!(is_v1(&json!({ "snapshot": false, "agents": {} })));
         assert!(is_v1(&json!({ "provider": {} })));
-        assert!(!is_v1(&json!({ "shell": "/bin/zsh", "model": "anthropic/claude" })));
+        assert!(!is_v1(
+            &json!({ "shell": "/bin/zsh", "model": "anthropic/claude" })
+        ));
         assert!(!is_v1(&json!({ "references": {} })));
     }
 
     #[test]
     fn keyed_mcp_maps_make_a_document_v1() {
-        assert!(is_v1(&json!({ "mcp": { "github": { "type": "remote", "url": "https://example.com/mcp" } } })));
-        assert!(!is_v1(&json!({ "mcp": { "servers": {}, "timeout": { "request": 1000 } } })));
+        assert!(is_v1(
+            &json!({ "mcp": { "github": { "type": "remote", "url": "https://example.com/mcp" } } })
+        ));
+        assert!(!is_v1(
+            &json!({ "mcp": { "servers": {}, "timeout": { "request": 1000 } } })
+        ));
     }
 
     #[test]
@@ -991,7 +1040,10 @@ mod tests {
 
     #[test]
     fn autoshare_becomes_auto_share_when_no_share_is_set() {
-        assert_eq!(migrate(&json!({ "autoshare": true }))["share"], json!("auto"));
+        assert_eq!(
+            migrate(&json!({ "autoshare": true }))["share"],
+            json!("auto")
+        );
         assert_eq!(
             migrate(&json!({ "autoshare": true, "share": "manual" }))["share"],
             json!("manual")
