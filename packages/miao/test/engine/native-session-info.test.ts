@@ -334,3 +334,39 @@ test("an explicit primary binding projects the same model identity as resetting 
   })
   expect(info.model).toMatchObject({ providerID: "native-engine-default", id: "default" })
 })
+
+test("a recorded turn cost is never recomputed against the current catalog", () => {
+  const input = 40_000
+  const output = 10
+  const catalogRates = [{ input: 9, output: 4, cache: { read: 0.1, write: 0.2 } }]
+  // Recorded when the tier priced input at 1.5 and output at 2.0 per million.
+  const recordedCost = (input * 1.5 + output * 2) / 1_000_000
+  const usage = nativeSessionUsage({
+    models: [
+      {
+        providerID: "anthropic",
+        id: "claude-haiku",
+        cost: catalogRates,
+      } as never,
+    ],
+    snapshot: {},
+    report: {
+      providerDetail: [
+        {
+          model: "anthropic/claude-haiku",
+          cost: recordedCost,
+          usage: { inputTokens: input, outputTokens: output },
+        },
+        {
+          // No recorded cost: today's catalog estimates this turn.
+          model: "anthropic/claude-haiku",
+          usage: { inputTokens: 20_000, outputTokens: 5, nonCachedInputTokens: 20_000 },
+        },
+      ],
+    },
+  })
+  expect(usage).toBeDefined()
+  const group = usage!.models[0]
+  const estimated = (20_000 * 9 + 5 * 4) / 1_000_000
+  expect(group.cost).toBeCloseTo(recordedCost + estimated, 10)
+})

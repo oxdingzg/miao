@@ -248,7 +248,19 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
       ])
       continue
     }
-    const connection = yield* integrations.connection.active(integration)
+    // A provider added through the providers UI carries a credential but has no
+    // registered integration definition, so `active` finds no connection and the
+    // provider silently contributed no route — the engine then rejected every
+    // Session pinned to it with "Model is not in the native host route
+    // catalog". Fall back to the saved credential itself.
+    const connection =
+      (yield* integrations.connection.active(integration)) ??
+      (yield* credentials.list(integration)).map((saved) => ({
+        type: "credential" as const,
+        id: saved.id,
+        label: saved.label,
+        active: true,
+      }))[0]
     if (!connection) continue
     const credential = connection.type === "env" ? undefined : yield* credentials.get(connection.id)
     // Copilot device grants use zero expiry; generic OAuth resolution treats it as expired.

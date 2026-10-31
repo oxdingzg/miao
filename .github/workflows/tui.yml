@@ -20,10 +20,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - macos-14
-          - ubuntu-latest
-    runs-on: ${{ matrix.os }}
+        include:
+          # Hosted macOS bills at 10x, and when GitHub has no hosted macOS slot
+          # the job is assigned and cancelled within a second — which turned
+          # ci-gate red for reasons that had nothing to do with the change. Run
+          # it on the owner's self-hosted arm64 runner, as the engine workflow
+          # already does.
+          - os: macos-14
+            runner: [self-hosted, macOS, ARM64]
+          - os: ubuntu-latest
+            runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     defaults:
       run:
@@ -37,6 +44,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
+      # The self-hosted macOS runner is a launchd service whose PATH omits
+      # ~/.cargo/bin, so the dtolnay GITHUB_PATH export does not reach later
+      # steps.
+      - name: Ensure cargo is on PATH (self-hosted runner)
+        if: matrix.os == 'macos-14'
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
