@@ -101,6 +101,12 @@ pub enum Request {
     },
     /// The host's workspace list, served by the engine (TUI-09).
     Workspaces,
+    /// Host authority the engine does not own (workspace creation, remote
+    /// pairing); the shim answers it, never the engine.
+    HostCall {
+        op: String,
+        params: Value,
+    },
     /// The host's remote-control devices, served by the engine (TUI-10).
     Devices,
     /// Move the open Session to another workspace directory (TUI-09).
@@ -288,6 +294,13 @@ impl Handle {
 
     pub fn devices(&self) {
         let _ = self.tx.send(Request::Devices);
+    }
+
+    pub fn host_call(&self, op: &str, params: Value) {
+        let _ = self.tx.send(Request::HostCall {
+            op: op.to_string(),
+            params,
+        });
     }
 
     pub fn workspaces(&self) {
@@ -822,9 +835,20 @@ async fn run(
                 Request::Devices => {
                     let result = client.request("devices", json!({})).await;
                     match result {
-                        Ok(value) => bus.send(AppEvent::Devices(pairs_two(&value))),
+                        Ok(value) => bus.send(AppEvent::Devices(value)),
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("devices failed: {error}")))
+                        }
+                    }
+                }
+                Request::HostCall { op, params } => {
+                    let result = client
+                        .request("host_call", json!({ "op": op, "params": params }))
+                        .await;
+                    match result {
+                        Ok(value) => bus.send(AppEvent::HostResult { op, result: value }),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("{op} failed: {error}")))
                         }
                     }
                 }
@@ -1339,14 +1363,6 @@ fn pairs(value: &Value) -> Vec<(String, String, String)> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-/// Name plus detail only, for panels with no destination path.
-fn pairs_two(value: &Value) -> Vec<(String, String)> {
-    pairs(value)
-        .into_iter()
-        .map(|(name, detail, _)| (name, detail))
-        .collect()
 }
 
 #[cfg(test)]

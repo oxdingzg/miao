@@ -173,8 +173,9 @@ pub struct App {
     providers: Vec<(String, String)>,
     /// Skills the host discovered (name, description).
     skills: Vec<(String, String)>,
-    /// Remote-control devices the engine serves (label, key prefix).
-    devices: Vec<(String, String)>,
+    /// Remote-control devices the engine serves, with the identity an approve
+    /// or revoke call echoes.
+    devices: Vec<DeviceRow>,
     /// Workspaces the engine serves (name, branch or type, directory).
     workspaces: Vec<(String, String, String)>,
     /// The model dialog waits for the catalog when nothing is cached yet.
@@ -449,14 +450,20 @@ impl App {
                     }
                 }
             }
-            AppEvent::Devices(devices) => {
-                self.devices = devices;
-                self.open_dialog(Dialog::devices(&self.devices));
+            AppEvent::Devices(rows) => {
+                self.devices = parse_devices(&rows);
+                self.open_device_dialog();
             }
             AppEvent::SessionMoved => {
                 self.dialog = None;
                 self.shell.composer.notice = Some("session moved".into());
             }
+            AppEvent::HostResult { op, .. } if op == "workspace.create" => {
+                self.shell.composer.notice = Some("workspace created".into());
+            }
+            // Other host calls answer in their own slice; the reply must still
+            // be consumed so the stream stays ordered.
+            AppEvent::HostResult { .. } => {}
             AppEvent::Workspaces(workspaces) => {
                 self.workspaces = workspaces;
                 let rows = self
@@ -725,6 +732,7 @@ impl App {
             Some(keybinds::Action::SkillList) => self.open_skills(),
             Some(keybinds::Action::DeviceList) => self.open_devices(),
             Some(keybinds::Action::WorkspaceList) => self.open_workspaces(),
+            Some(keybinds::Action::WorkspaceCreate) => self.create_workspace(),
             Some(keybinds::Action::MessageView) => self.open_message(),
             Some(keybinds::Action::ToolOutputToggle) => {
                 let expanded = self.shell.toggle_tool_expansion();
@@ -951,6 +959,14 @@ impl App {
             DialogAction::None => {}
             DialogAction::Close => self.dialog = None,
             DialogAction::Chosen(index) => self.choose(index),
+            DialogAction::DeviceChosen(index, action) => self.device_action(
+                index,
+                match action {
+                    0 => DeviceAction::Approve,
+                    1 => DeviceAction::Reject,
+                    _ => DeviceAction::Revoke,
+                },
+            ),
             DialogAction::OpenSession(id) => {
                 self.dialog = None;
                 if let Some(engine) = self.engine.as_ref() {
@@ -1132,10 +1148,45 @@ impl App {
         self.open_dialog(Dialog::providers(&self.providers));
     }
 
+    fn open_device_dialog(&mut self) {
+        let list = self
+            .devices
+            .iter()
+            .map(|row| (row.name.clone(), row.detail.clone()))
+            .collect::<Vec<_>>();
+        self.open_dialog(Dialog::devices(&list));
+    }
+
+    /// Approve, reject or revoke the selected device row. Each action is host
+    /// authority, so it leaves as a host call.
+    fn device_action(&mut self, index: usize, action: DeviceAction) {
+        let Some(row) = self.devices.get(index).cloned() else {
+            return;
+        };
+        let Some(engine) = self.engine.as_ref() else {
+            return;
+        };
+        self.dialog = None;
+        match (action, row.kind.as_str()) {
+            (DeviceAction::Approve, "pending") => engine.host_call(
+                "remote.approve",
+                serde_json::json!({ "pairingID": row.id, "publicKey": row.pairing_key }),
+            ),
+            (DeviceAction::Reject, "pending") => {
+                engine.host_call("remote.reject", serde_json::json!({ "pairingID": row.id }))
+            }
+            (DeviceAction::Revoke, "grant") => engine.host_call(
+                "remote.revoke",
+                serde_json::json!({ "grantID": row.id, "version": row.version }),
+            ),
+            _ => {}
+        }
+    }
+
     fn open_devices(&mut self) {
         match self.engine.as_ref() {
             Some(engine) => engine.devices(),
-            None => self.open_dialog(Dialog::devices(&self.devices)),
+            None => self.open_device_dialog(),
         }
     }
 
@@ -1145,6 +1196,26 @@ impl App {
 
     /// Ask the engine for the host's workspace list; the dialog opens when the
     /// answer arrives, so the panel never reads a second source.
+    /// Create a workspace at the directory typed in the prompt. The host owns
+    /// workspace authority, so the request is a host call, not an engine
+    /// command.
+    fn create_workspace(&mut self) {
+        let directory = self.shell.composer.editor.text().trim().to_string();
+        if directory.is_empty() {
+            self.notice("type a directory for the new workspace");
+            return;
+        }
+        let Some(engine) = self.engine.as_ref() else {
+            self.notice("the engine is not connected");
+            return;
+        };
+        engine.host_call(
+            "workspace.create",
+            serde_json::json!({ "directory": directory }),
+        );
+        self.shell.composer.editor.clear();
+    }
+
     fn open_workspaces(&mut self) {
         match self.engine.as_ref() {
             Some(engine) => engine.workspaces(),
@@ -3625,6 +3696,65 @@ mod tests {
 /// discovered. The draft stays in the composer so the typo can be fixed.
 fn unknown_command_notice(name: &str) -> String {
     format!("unknown command: /{name}")
+}
+
+/// One device-panel row: what the operator sees plus the identity an approve or
+/// revoke must echo.
+#[derive(Clone)]
+struct DeviceRow {
+    name: String,
+    detail: String,
+    id: String,
+    version: i64,
+    pairing_key: String,
+    kind: String,
+}
+
+#[derive(Clone, Copy)]
+enum DeviceAction {
+    Approve,
+    Reject,
+    Revoke,
+}
+
+/// Rows without a name are dropped rather than drawn as broken lines.
+fn parse_devices(rows: &serde_json::Value) -> Vec<DeviceRow> {
+    rows.as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|row| {
+                    Some(DeviceRow {
+                        name: row.get("name")?.as_str()?.to_string(),
+                        detail: row
+                            .get("detail")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        id: row
+                            .get("id")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        version: row
+                            .get("version")
+                            .and_then(serde_json::Value::as_i64)
+                            .unwrap_or(0),
+                        pairing_key: row
+                            .get("pairingKey")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        kind: row
+                            .get("kind")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("grant")
+                            .to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
