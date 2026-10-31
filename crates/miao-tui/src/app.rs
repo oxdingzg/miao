@@ -2785,6 +2785,27 @@ mod tests {
     }
 
     #[test]
+    fn editor_results_never_lose_the_draft() {
+        let mut app = session_app();
+        app.shell.composer.restore("keep original draft");
+        // An editor that died by a signal reports an error; the draft it was
+        // handed must still be in the composer afterwards.
+        app.handle(AppEvent::EditorFinished(Err(
+            "editor was terminated by a signal".into(),
+        )));
+        assert_eq!(app.shell.composer.editor.text(), "keep original draft");
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("editor was terminated by a signal")
+        );
+        // A saved buffer replaces the draft, and clearing the notice is the
+        // signal that the handoff completed.
+        app.handle(AppEvent::EditorFinished(Ok(Some("rewritten".into()))));
+        assert_eq!(app.shell.composer.editor.text(), "rewritten");
+        assert!(app.shell.composer.notice.is_none());
+    }
+
+    #[test]
     fn esc_interrupts_an_active_run_instead_of_leaving() {
         let mut app = session_app();
         let state = SessionState {
