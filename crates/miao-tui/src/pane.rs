@@ -957,20 +957,6 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
             },
         );
     }
-    // An empty prompt names what it is for, like the landing page it replaced:
-    // the editor draws nothing, so this hint stays visible until typing starts.
-    if !shell && composer.editor.is_empty() {
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                "Ask anything…",
-                Style::new().fg(palette.text_muted),
-            ))),
-            Rect {
-                height: 1,
-                ..input_area
-            },
-        );
-    }
     let (cursor_line, cursor_cell) = composer.editor.cursor_position();
     let row_offset = cursor_line.saturating_sub(input_area.height.saturating_sub(1) as usize);
     let cell_offset = cursor_cell.saturating_sub(input_area.width.saturating_sub(1) as usize);
