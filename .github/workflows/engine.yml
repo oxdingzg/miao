@@ -73,6 +73,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates/miao-engine
+          # The self-hosted macOS runner keeps its own target directory across
+          # jobs, so re-uploading the archive every run only costs egress: on
+          # 2026-10-30 this step drove ~430 GiB/day through the proxy node.
+          save-if: false
 
       - name: Format
         if: matrix.os == 'ubuntu-24.04'
