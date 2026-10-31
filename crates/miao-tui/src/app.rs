@@ -429,6 +429,10 @@ impl App {
                     }
                 }
             }
+            AppEvent::Workspaces(workspaces) => {
+                self.workspaces = workspaces;
+                self.open_dialog(Dialog::workspaces(&self.workspaces));
+            }
             AppEvent::Usage(usage) => {
                 self.usage = Some(usage);
                 if matches!(self.dialog, Some(Dialog::Status(_))) {
@@ -1073,8 +1077,13 @@ impl App {
         self.open_dialog(Dialog::skills(&self.skills));
     }
 
+    /// Ask the engine for the host's workspace list; the dialog opens when the
+    /// answer arrives, so the panel never reads a second source.
     fn open_workspaces(&mut self) {
-        self.open_dialog(Dialog::workspaces(&self.workspaces));
+        match self.engine.as_ref() {
+            Some(engine) => engine.workspaces(),
+            None => self.open_dialog(Dialog::workspaces(&self.workspaces)),
+        }
     }
 
     /// The newest assistant reply as plain text: what the model said, how much

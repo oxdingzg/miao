@@ -54,6 +54,8 @@ pub enum AppEvent {
     Accounts(Vec<AccountInfo>),
     /// The open Session's billed usage, for the status dialog.
     Usage(UsageSummary),
+    /// The host's workspace list, served by the engine.
+    Workspaces(Vec<(String, String)>),
     /// What a revert at one boundary would change, for the confirm dialog.
     RevertPreview {
         session_id: String,

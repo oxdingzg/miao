@@ -99,6 +99,8 @@ pub enum Request {
         session_id: String,
         binding: Value,
     },
+    /// The host's workspace list, served by the engine (TUI-09).
+    Workspaces,
     /// Read the open Session's billed usage for the status dialog.
     Usage {
         session_id: String,
@@ -268,6 +270,10 @@ impl Handle {
             session_id: session_id.to_string(),
             binding,
         });
+    }
+
+    pub fn workspaces(&self) {
+        let _ = self.tx.send(Request::Workspaces);
     }
 
     pub fn usage(&self, session_id: &str) {
@@ -759,6 +765,15 @@ async fn run(
                         }
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("select failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::Workspaces) => {
+                    let result = client.request("workspaces", json!({})).await;
+                    match result {
+                        Ok(value) => bus.send(AppEvent::Workspaces(pairs(&value))),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("workspaces failed: {error}")))
                         }
                     }
                 }
@@ -1376,4 +1391,22 @@ mod tests {
         assert_eq!(args.len(), 7);
         assert!(!args.iter().any(|arg| arg == "--credential-db"));
     }
+}
+
+/// Name plus detail from the host's export, the shape every read-only panel
+/// uses. Anything else is dropped rather than shown as a broken row.
+fn pairs(value: &Value) -> Vec<(String, String)> {
+    value
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    Some((
+                        row.get("name")?.as_str()?.to_string(),
+                        row.get("detail")?.as_str().unwrap_or_default().to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
