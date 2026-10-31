@@ -14,6 +14,7 @@ import { Logging } from "@miao/core/observability/logging"
 import { PluginV2 } from "@miao/core/plugin"
 import { SkillV2 } from "@miao/core/skill"
 import { ProjectV2 } from "@miao/core/project"
+import { RuntimeIdentity } from "@miao/core/runtime/identity"
 import { WorkspaceV2 } from "@miao/core/workspace"
 import { AbsolutePath } from "@miao/core/schema"
 import { AmbientContext } from "./ambient-context"
@@ -132,6 +133,12 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
           detail: workspace.branch ?? workspace.type,
         }))
       : []
+  // Remote-control devices come from the host's administration; a graph
+  // without it exports none rather than failing the TUI start.
+  const identityService = Option.getOrUndefined(yield* Effect.serviceOption(RuntimeIdentity.Service))
+  const devices = (identityService?.administration?.()?.devices() ?? [])
+    .filter((grant) => grant.revokedAt === null)
+    .map((grant) => ({ name: grant.label, detail: grant.publicKey.slice(0, 16) }))
   const skills = skillService
     ? (yield* skillService.list()).map((skill) => ({
         name: skill.name,
@@ -187,6 +194,7 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
       MIAO_TUI_WORKSPACES_JSON: JSON.stringify(workspaces),
       // The engine serves the same list over the `workspaces` command so the
       // TUI can read it through the engine instead of the environment.
+      MIAO_DEVICES_JSON: JSON.stringify(devices),
       MIAO_WORKSPACES_JSON: JSON.stringify(workspaces),
       // The engine performs a Session move through the existing export-move;
       // the host names the product database it must detach from.
