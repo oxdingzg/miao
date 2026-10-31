@@ -260,7 +260,9 @@ impl Store {
                         let owners = {
                             let mut statement = conn.prepare("SELECT DISTINCT l.owner_pid, r.session_id FROM engine_run r JOIN engine_lease l ON l.session_id=r.session_id WHERE r.state='running' AND l.owner_pid IS NOT NULL")?;
                             let owners = statement
-                                .query_map([], |row| Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?)))?
+                                .query_map([], |row| {
+                                    Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?))
+                                })?
                                 .collect::<Result<Vec<_>, _>>()?;
                             owners
                         };
