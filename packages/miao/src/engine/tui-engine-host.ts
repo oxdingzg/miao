@@ -185,6 +185,9 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
       MIAO_TUI_PROVIDERS_JSON: JSON.stringify(providers),
       MIAO_TUI_SKILLS_JSON: JSON.stringify(skills),
       MIAO_TUI_WORKSPACES_JSON: JSON.stringify(workspaces),
+      // The engine serves the same list over the `workspaces` command so the
+      // TUI can read it through the engine instead of the environment.
+      MIAO_WORKSPACES_JSON: JSON.stringify(workspaces),
     },
     argv: [options.binary, ...engineArgs({ ...options, mcpConfigFile: manifest?.file ?? options.mcpConfigFile })],
     dispose: manifest?.dispose,
