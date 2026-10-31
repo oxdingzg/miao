@@ -1389,9 +1389,24 @@ pub struct QuestionProgress {
     focus: usize,
     cursor: Vec<usize>,
     chosen: Vec<Vec<bool>>,
+    /// Set once the answer left this process: the panel stays on screen until
+    /// the engine's snapshot settles it, and a second Enter must not answer it
+    /// twice.
+    submitted: bool,
+    /// Accepted custom answers, one per question.
+    typed: Vec<Option<String>>,
+    /// The custom answer being typed for the focused question.
+    typing: Option<String>,
 }
 
 const PANEL_ROWS: usize = 12;
+
+/// The extra "type your own answer" row, when the question allows one. It is a
+/// single-select affordance: a multi-select question collects labels.
+fn custom_row(view: &QuestionView, index: usize) -> Option<usize> {
+    let question = &view.questions[index];
+    (question.custom && !question.multi_select).then_some(question.options.len())
+}
 
 impl Panel {
     pub fn approval(view: ApprovalView) -> Self {
@@ -1401,7 +1416,8 @@ impl Panel {
     }
 
     pub fn question(view: QuestionView) -> Self {
-        let cursor = vec![0; view.questions.len()];
+        let questions = view.questions.len();
+        let cursor = vec![0; questions];
         let chosen = view
             .questions
             .iter()
@@ -1413,6 +1429,9 @@ impl Panel {
                 focus: 0,
                 cursor,
                 chosen,
+                submitted: false,
+                typed: vec![None; questions],
+                typing: None,
             }),
         }
     }
@@ -1446,9 +1465,11 @@ impl Panel {
         let PanelKind::Question(progress) = &mut self.kind else {
             return;
         };
-        let question = &progress.view.questions[progress.focus];
-        let next = progress.cursor[progress.focus] as i32 + delta;
-        progress.cursor[progress.focus] = next.clamp(0, question.options.len() as i32 - 1) as usize;
+        let focus = progress.focus;
+        let question = &progress.view.questions[focus];
+        let last = custom_row(&progress.view, focus).unwrap_or(question.options.len() - 1);
+        let next = progress.cursor[focus] as i32 + delta;
+        progress.cursor[focus] = next.clamp(0, last as i32) as usize;
     }
 
     /// Toggle the focused option for a multi-select question; a single-select
@@ -1460,6 +1481,9 @@ impl Panel {
         let focus = progress.focus;
         let cursor = progress.cursor[focus];
         let multi = progress.view.questions[focus].multi_select;
+        if !multi && cursor >= progress.chosen[focus].len() {
+            return;
+        }
         let chosen = &mut progress.chosen[focus];
         if multi {
             chosen[cursor] = !chosen[cursor];
@@ -1475,13 +1499,19 @@ impl Panel {
         let PanelKind::Question(progress) = &mut self.kind else {
             return None;
         };
+        if progress.submitted {
+            return None;
+        }
         let focus = progress.focus;
         let cursor = progress.cursor[focus];
         if !progress.view.questions[focus].multi_select {
             progress.chosen[focus]
                 .iter_mut()
                 .for_each(|mark| *mark = false);
-            progress.chosen[focus][cursor] = true;
+            // The custom row has no mark of its own: its answer is the text.
+            if cursor < progress.chosen[focus].len() {
+                progress.chosen[focus][cursor] = true;
+            }
         }
         let next = progress
             .chosen
@@ -1494,11 +1524,13 @@ impl Panel {
             progress.focus = index;
             return None;
         }
-        if progress
-            .chosen
-            .iter()
-            .any(|marks| !marks.iter().any(|mark| *mark))
-        {
+        if progress.chosen.iter().enumerate().any(|(index, marks)| {
+            let custom = custom_row(&progress.view, index) == Some(progress.cursor[index]);
+            if custom {
+                return progress.typed[index].as_deref().is_none_or(str::is_empty);
+            }
+            !marks.iter().any(|mark| *mark)
+        }) {
             progress.focus = focus;
             return None;
         }
@@ -1506,8 +1538,12 @@ impl Panel {
             .view
             .questions
             .iter()
+            .enumerate()
             .zip(&progress.chosen)
-            .map(|(question, marks)| {
+            .map(|((index, question), marks)| {
+                if custom_row(&progress.view, index) == Some(progress.cursor[index]) {
+                    return vec![progress.typed[index].clone().unwrap_or_default()];
+                }
                 question
                     .options
                     .iter()
@@ -1517,7 +1553,71 @@ impl Panel {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
+        progress.submitted = true;
         Some(progress.view.answer(answers))
+    }
+
+    /// The custom answer being typed, if any. While this is `Some`, characters
+    /// belong to the answer instead of the panel's keys.
+    pub fn typing(&self) -> Option<&str> {
+        match &self.kind {
+            PanelKind::Question(progress) => progress.typing.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Enter on the custom row starts typing; anywhere else it submits.
+    pub fn begin_typing(&mut self) -> bool {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return false;
+        };
+        let focus = progress.focus;
+        if custom_row(&progress.view, focus) != Some(progress.cursor[focus]) {
+            return false;
+        }
+        progress.typing = Some(String::new());
+        true
+    }
+
+    pub fn type_char(&mut self, character: char) {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return;
+        };
+        if let Some(buffer) = progress.typing.as_mut() {
+            buffer.push(character);
+        }
+    }
+
+    pub fn backspace_typing(&mut self) {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return;
+        };
+        if let Some(buffer) = progress.typing.as_mut() {
+            buffer.pop();
+        }
+    }
+
+    /// Accept the typed answer into the question it belongs to.
+    pub fn accept_typing(&mut self) -> bool {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return false;
+        };
+        let Some(buffer) = progress.typing.take() else {
+            return false;
+        };
+        let focus = progress.focus;
+        if buffer.trim().is_empty() {
+            return false;
+        }
+        progress.typed[focus] = Some(buffer);
+        true
+    }
+
+    pub fn cancel_typing(&mut self) -> bool {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return false;
+        };
+        progress.typing.take().is_some()
     }
 
     pub fn rejection(&self) -> Option<serde_json::Value> {
@@ -1609,6 +1709,28 @@ fn panel_lines(panel: &Panel, theme: &Theme) -> Vec<Line<'static>> {
                         Style::new().fg(palette.text_muted),
                     ),
                 ]));
+            }
+            if let Some(index) = custom_row(&progress.view, progress.focus) {
+                let focused = progress.cursor[progress.focus] == index;
+                let glyph = if focused { "▸ " } else { "  " };
+                let written = progress
+                    .typing
+                    .as_deref()
+                    .or(progress.typed[progress.focus].as_deref());
+                let detail = match written {
+                    Some(text) => format!("{glyph}Type your own answer: {text}"),
+                    None => format!("{glyph}Type your own answer"),
+                };
+                lines.push(Line::from(Span::styled(
+                    detail,
+                    if focused {
+                        Style::new()
+                            .fg(palette.primary)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::new().fg(palette.text_muted)
+                    },
+                )));
             }
             let last = progress.focus + 1 == progress.view.questions.len();
             lines.push(Line::default());
@@ -1766,6 +1888,7 @@ mod tests {
                     },
                 ],
                 multi_select: multi,
+                custom: true,
             }],
         }
     }
@@ -1828,6 +1951,39 @@ mod tests {
         panel.toggle();
         let answer = panel.submit().expect("answer");
         assert_eq!(answer["answers"], serde_json::json!([["src", "docs"]]));
+    }
+
+    #[test]
+    fn a_submitted_answer_is_not_sent_twice_while_the_panel_waits() {
+        let mut panel = Panel::question(question(false));
+        assert!(panel.submit().is_some(), "first Enter answers");
+        assert!(
+            panel.submit().is_none(),
+            "a second Enter must not answer the same question again"
+        );
+    }
+
+    #[test]
+    fn a_single_choice_question_accepts_a_typed_answer() {
+        let mut panel = Panel::question(question(false));
+        // The custom row sits directly after the two options.
+        panel.move_cursor(2);
+        assert!(panel.begin_typing(), "the custom row starts typing");
+        for character in "src/new.rs".chars() {
+            panel.type_char(character);
+        }
+        assert!(panel.accept_typing());
+        let answer = panel.submit().expect("answer");
+        assert_eq!(answer["answers"], serde_json::json!([["src/new.rs"]]));
+    }
+
+    #[test]
+    fn a_typed_answer_must_not_be_blank() {
+        let mut panel = Panel::question(question(false));
+        panel.move_cursor(2);
+        assert!(panel.begin_typing());
+        assert!(!panel.accept_typing(), "an empty answer is refused");
+        assert!(panel.submit().is_none(), "nothing chosen yet");
     }
 
     #[test]
