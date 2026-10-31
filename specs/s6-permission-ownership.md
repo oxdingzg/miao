@@ -72,6 +72,16 @@ policy 做优先级求值。两者不是同一种东西，所以 S6 不是"加�
 - 迁移后重复执行导入不产生重复 grant；
 - 删除 TS 判定路径后，全量测试与 blackbox 通过。
 
+## 4.1 已知发现（2026-10-31 实测）
+
+grant 的 Scope 绑定各 run 捕获的 authority revision（§7）：实测确认
+一次性 grant 与持久 grant 均不覆盖后续 run 中的相同调用（parity 测试
+`feat/s6-approval-parity` 分支，issue #1944）。产品语义的跨 run
+"always allow" 因此必须走 saved 规则投影（`permission_patterns`），
+`approve_persistent` 只覆盖同一 run 内的重复调用。该行为已记录为
+issue #1944 的追踪项。
+
+
 ## 5. 不做
 
 - 不改规则的匹配语法与优先级。
