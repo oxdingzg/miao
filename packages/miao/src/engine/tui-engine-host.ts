@@ -48,6 +48,12 @@ export interface TuiEnginePlan {
   readonly env: Record<string, string | undefined>
   /** Releases the MCP manifest when the engine that read it has exited. */
   readonly dispose?: () => void
+  /**
+   * Host authority the engine does not own. The shim answers a TUI
+   * `host_call` frame here instead of forwarding it, so workspace creation and
+   * remote-control pairing stay with the product services that own them.
+   */
+  readonly hostCall?: (op: string, params: unknown) => Promise<unknown>
 }
 
 /** The argv the Rust TUI passes the engine: only these carry a Location. */
@@ -144,16 +150,39 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   const administration = identityService?.administration
     ? yield* Effect.promise(() => Promise.resolve(identityService.administration!()))
     : undefined
-  const devices = (administration?.devices() ?? [])
-    .filter((grant) => grant.revokedAt === null)
-    .map((grant) => ({
-      name: grant.label,
-      // The panel shows one line per device; the fingerprint prefix and the
-      // pairing date are what an operator checks before revoking a grant.
-      detail: `${grant.publicKey.slice(0, 16)} · ${new Date(grant.createdAt * 1000)
-        .toISOString()
-        .slice(0, 10)}`,
-    }))
+  // Rows carry the identity an approve or revoke must echo. The annotation is
+  // explicit so the grant and pending halves share one row type instead of a
+  // union TypeScript cannot read fields from.
+  type DeviceRow = {
+    name: string
+    detail: string
+    id: string
+    version: number
+    pairingKey: string
+    kind: "grant" | "pending"
+  }
+  const devices: DeviceRow[] = [
+    ...(administration?.devices() ?? [])
+      .filter((grant) => grant.revokedAt === null)
+      .map((grant): DeviceRow => ({
+        name: grant.label,
+        detail: `${grant.publicKey.slice(0, 16)} · ${new Date(grant.createdAt * 1000)
+          .toISOString()
+          .slice(0, 10)}`,
+        id: grant.id,
+        version: grant.version,
+        pairingKey: grant.publicKey,
+        kind: "grant",
+      })),
+    ...(administration?.pending() ?? []).map((candidate): DeviceRow => ({
+      name: `${candidate.candidate.label} (pending)`,
+      detail: `${candidate.candidate.publicKey.slice(0, 16)} · awaiting approval`,
+      id: candidate.pairingID,
+      version: 0,
+      pairingKey: candidate.candidate.publicKey,
+      kind: "pending",
+    })),
+  ]
   const skills = skillService
     ? (yield* skillService.list()).map((skill) => ({
         name: skill.name,
@@ -196,7 +225,45 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
         ? { name, detail: server.command.join(" ") }
         : { name, detail: server.url },
     )
+  // Ops the TUI may ask the host to perform. Each one runs in this Effect's
+  // service graph, which is the only place that owns the product state.
+  // Remote-control authority lives with the host's runtime identity, the same
+  // place the device panel reads from.
+  const resolveAdministration = async () => {
+    const value = await Promise.resolve(identityService?.administration?.())
+    if (!value) throw new Error("remote control is unavailable in this host")
+    return value
+  }
+  const hostCall = async (op: string, params: unknown) => {
+    const input = (params ?? {}) as Record<string, unknown>
+    if (op === "remote.pending") return (await resolveAdministration()).pending()
+    if (op === "remote.approve") {
+      return (await resolveAdministration()).approve(String(input.pairingID), String(input.publicKey))
+    }
+    if (op === "remote.reject") {
+      ;(await resolveAdministration()).reject(String(input.pairingID))
+      return { ok: true }
+    }
+    if (op === "remote.revoke") {
+      await (await resolveAdministration()).revoke(String(input.grantID), Number(input.version))
+      return { ok: true }
+    }
+    if (op !== "workspace.create") throw new Error(`unknown host call: ${op}`)
+    if (!projectService || !workspaceService) {
+      throw new Error("workspace creation is unavailable in this host")
+    }
+    const request = params as { directory?: string } | undefined
+    if (!request?.directory) throw new Error("workspace.create needs a directory")
+    const resolved = await Effect.runPromise(projectService.resolve(AbsolutePath.make(request.directory)))
+    return await Effect.runPromise(
+      workspaceService.create(params as never, {
+        projectID: resolved.id,
+        directory: resolved.directory,
+      }),
+    )
+  }
   return {
+    hostCall,
     // The shim inherits the operator's environment and stands in for the TUI's
     // direct child, so provider environment keys keep reaching the engine.
     env: {
@@ -278,15 +345,57 @@ async function startPlan(
  * the reader's buffer, which would leave the TUI waiting on a frame that never
  * ends.
  */
-async function runEngine(argv: string[], env: Record<string, string | undefined>): Promise<number> {
+async function runEngine(
+  argv: string[],
+  env: Record<string, string | undefined>,
+  hostCall?: (op: string, params: unknown) => Promise<unknown>,
+): Promise<number> {
   const child = Bun.spawn(argv, { stdin: "pipe", stdout: "pipe", stderr: "inherit", env })
+  // The TUI speaks NDJSON. With a host handler, frames are read line by line so
+  // a `host_call` can be answered here; without one every byte is forwarded.
   void (async () => {
     const input = Bun.stdin.stream().getReader()
+    const decoder = new TextDecoder()
+    let buffered = ""
+    const send = async (frame: unknown) => {
+      child.stdin.write(JSON.stringify(frame) + "\n")
+      await child.stdin.flush()
+    }
     try {
       for (;;) {
         const { done, value } = await input.read()
         if (done) break
-        child.stdin.write(value)
+        if (!hostCall) {
+          child.stdin.write(value)
+          await child.stdin.flush()
+          continue
+        }
+        buffered += decoder.decode(value, { stream: true })
+        let newline = buffered.indexOf("\n")
+        while (newline !== -1) {
+          const line = buffered.slice(0, newline)
+          buffered = buffered.slice(newline + 1)
+          let frame: { id?: unknown; method?: unknown; params?: unknown } | undefined
+          try {
+            frame = JSON.parse(line)
+          } catch {
+            frame = undefined
+          }
+          if (frame?.method === "host_call") {
+            try {
+              await send({ id: frame.id, result: await hostCall(String((frame.params as { op?: unknown })?.op), (frame.params as { params?: unknown })?.params) })
+            } catch (error) {
+              await send({ id: frame.id, error: error instanceof Error ? error.message : String(error) })
+            }
+          } else {
+            child.stdin.write(line + "\n")
+            await child.stdin.flush()
+          }
+          newline = buffered.indexOf("\n")
+        }
+      }
+      if (buffered.length > 0) {
+        child.stdin.write(buffered)
         await child.stdin.flush()
       }
     } catch {}
@@ -352,7 +461,7 @@ export async function runEngineShim(args: string[]): Promise<number> {
   })
   if (!started) return 1
   try {
-    return await runEngine(started.plan.argv, started.plan.env)
+    return await runEngine(started.plan.argv, started.plan.env, started.plan.hostCall)
   } finally {
     started.plan.dispose?.()
     await started.close()
