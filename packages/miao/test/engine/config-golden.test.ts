@@ -3,6 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { Option } from "effect"
 import { Config } from "@miao/core/config"
+import { ConfigDiagnostics } from "@miao/core/config/diagnostics"
 import { ConfigExplain } from "@miao/core/config/explain"
 import { LSPServer } from "@miao/core/lsp/server"
 import { SandboxPolicy } from "@miao/core/sandbox/policy"
@@ -62,6 +63,22 @@ for (const name of configCases) {
 test("a golden document without an object root fails the product decode", () => {
   const text = fs.readFileSync(path.join(root, "config-invalid-root", "global", "miao.json"), "utf8")
   expect(Option.isNone(Config.decodeDocument(Config.parseJsonc(text)))).toBe(true)
+})
+
+/**
+ * The decode above refuses the document; the diagnostics that exist to name a
+ * document, a key path and the ignored value must not stay silent about the
+ * same refusal, which is what an operator sees.
+ */
+test("the same document is refused by the diagnostics that name the key path", () => {
+  const fixture = path.join(root, "config-invalid-root")
+  const expected = JSON.parse(fs.readFileSync(path.join(fixture, "expected-error.json"), "utf8"))
+  const document = Config.parseJsonc(fs.readFileSync(path.join(fixture, "global", "miao.json"), "utf8"))
+  const diagnostics = ConfigDiagnostics.of(document)
+  expect(diagnostics.length).toBeGreaterThan(0)
+  expect(diagnostics[0]!.kind).toBe("invalid-value")
+  expect(diagnostics[0]!.path).toEqual(expected.keyPath === "" ? [] : expected.keyPath.split("."))
+  expect(diagnostics[0]!.message).toContain("object")
 })
 
 

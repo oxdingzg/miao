@@ -91,9 +91,18 @@ fn a_document_without_an_object_root_fails_the_normalized_read() {
     let sources = vec![config_derive::Source::Dir(case.join("global"))];
     let error = config_derive::normalized_from_sources(&sources)
         .expect_err("an array root must fail the normalized read");
+    // The sample pins the refusal both implementations owe the operator: the
+    // document it came from and the key path it rejected.
+    let expected: Value =
+        serde_json::from_str(&std::fs::read_to_string(case.join("expected-error.json")).unwrap())
+            .unwrap();
     assert!(
-        error.contains("config-invalid-root") || error.contains("miao.json"),
+        error.contains(expected["origin"].as_str().unwrap()),
         "the error should name the offending source: {error}"
+    );
+    assert!(
+        error.contains(expected["message"].as_str().unwrap()),
+        "the error should state the refusal: {error}"
     );
 }
 
