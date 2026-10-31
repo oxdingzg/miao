@@ -85,7 +85,13 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         mouse: config.mouse,
         cursor: config.cursor,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    // The engine task projects whole Sessions (snapshot parse, markdown, syntax
+    // highlighting) on this runtime. On a current-thread runtime that
+    // synchronous work starves the UI future, so a long Session stops echoing
+    // input while a run is being projected. Worker threads keep the frame
+    // independent of that work.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
         .enable_all()
         .build()?;
     let termination = {
