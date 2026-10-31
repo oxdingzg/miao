@@ -169,8 +169,8 @@ pub struct App {
     providers: Vec<(String, String)>,
     /// Skills the host discovered (name, description).
     skills: Vec<(String, String)>,
-    /// Workspaces the host reported (name, branch or type).
-    workspaces: Vec<(String, String)>,
+    /// Workspaces the engine serves (name, branch or type, directory).
+    workspaces: Vec<(String, String, String)>,
     /// The model dialog waits for the catalog when nothing is cached yet.
     pending_models: bool,
     /// Same for the account dialog.
@@ -237,7 +237,7 @@ impl App {
             mcp: parse_pairs(std::env::var("MIAO_TUI_MCP_JSON").ok().as_deref()),
             providers: parse_pairs(std::env::var("MIAO_TUI_PROVIDERS_JSON").ok().as_deref()),
             skills: parse_pairs(std::env::var("MIAO_TUI_SKILLS_JSON").ok().as_deref()),
-            workspaces: parse_pairs(std::env::var("MIAO_TUI_WORKSPACES_JSON").ok().as_deref()),
+            workspaces: Vec::new(),
             accounts: Vec::new(),
             usage: None,
             stash: Vec::new(),
@@ -429,9 +429,18 @@ impl App {
                     }
                 }
             }
+            AppEvent::SessionMoved => {
+                self.dialog = None;
+                self.shell.composer.notice = Some("session moved".into());
+            }
             AppEvent::Workspaces(workspaces) => {
                 self.workspaces = workspaces;
-                self.open_dialog(Dialog::workspaces(&self.workspaces));
+                let rows = self
+                    .workspaces
+                    .iter()
+                    .map(|(name, detail, _)| (name.clone(), detail.clone()))
+                    .collect::<Vec<_>>();
+                self.open_dialog(Dialog::workspaces(&rows));
             }
             AppEvent::Usage(usage) => {
                 self.usage = Some(usage);
@@ -1033,6 +1042,26 @@ impl App {
                     engine.select_model(&session_id, binding);
                 }
             }
+            Some(Dialog::Workspaces(_)) => {
+                let Some(directory) = self
+                    .workspaces
+                    .get(index)
+                    .map(|(_, _, directory)| directory.clone())
+                else {
+                    return;
+                };
+                if directory.is_empty() {
+                    self.shell.composer.notice = Some("that workspace has no directory".into());
+                    return;
+                }
+                let Some(session_id) = self.session_id() else {
+                    self.shell.composer.notice = Some("open a Session to move".into());
+                    return;
+                };
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.move_session(&session_id, &directory);
+                }
+            }
             Some(Dialog::Accounts(_)) => {
                 let Some(account) = self.accounts.get(index) else {
                     return;
@@ -1082,7 +1111,14 @@ impl App {
     fn open_workspaces(&mut self) {
         match self.engine.as_ref() {
             Some(engine) => engine.workspaces(),
-            None => self.open_dialog(Dialog::workspaces(&self.workspaces)),
+            None => {
+                let rows = self
+                    .workspaces
+                    .iter()
+                    .map(|(name, detail, _)| (name.clone(), detail.clone()))
+                    .collect::<Vec<_>>();
+                self.open_dialog(Dialog::workspaces(&rows));
+            }
         }
     }
 
