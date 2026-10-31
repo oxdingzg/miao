@@ -51,6 +51,8 @@ impl Shell {
             sidebar: Some(SidebarPane {
                 theme,
                 session: None,
+                usage: None,
+                todos: Vec::new(),
             }),
             last: None,
         }
@@ -170,6 +172,24 @@ impl Shell {
         self.transcript.scroll = next.clamp(0, max as i32) as u16;
     }
 
+    pub fn set_usage(&mut self, usage: Option<&crate::status::UsageSummary>) {
+        if let Some(sidebar) = self.sidebar.as_mut() {
+            sidebar.usage = usage.cloned();
+        }
+    }
+
+    pub fn set_todos(&mut self, todos: &[crate::session::TodoView]) {
+        if let Some(sidebar) = self.sidebar.as_mut() {
+            sidebar.todos = todos
+                .iter()
+                .map(|todo| crate::session::TodoView {
+                    content: todo.content.clone(),
+                    status: todo.status.clone(),
+                })
+                .collect();
+        }
+    }
+
     pub fn set_session(&mut self, session: Option<&SessionSummary>) {
         if let Some(sidebar) = self.sidebar.as_mut() {
             sidebar.session = session.cloned();
@@ -220,11 +240,7 @@ impl TitlePane {
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| workspace.display().to_string());
         Self {
-            label: format!(
-                " miao-tui · {name} · {} · v{}",
-                git_branch(workspace),
-                crate::VERSION
-            ),
+            label: format!(" {name} · {} · v{}", git_branch(workspace), crate::VERSION),
             status: None,
             status_alert: false,
             theme,
@@ -313,29 +329,21 @@ pub struct TranscriptPane {
 impl Pane for TranscriptPane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
-        let block = Block::bordered()
-            .title(Span::styled(
-                " transcript ",
-                Style::new().fg(palette.primary),
-            ))
-            .border_style(Style::new().fg(palette.border))
-            .style(Style::new().bg(palette.background));
+        // Borderless, like the TypeScript layout this mirrors: a frame around
+        // the transcript only steals columns from the text.
         let mut lines = self.lines.clone();
         lines.extend(self.draft.iter().cloned());
         if self.follow {
-            let viewport = area.height.saturating_sub(2) as usize;
-            self.scroll = lines.len().saturating_sub(viewport) as u16;
+            self.scroll = lines.len().saturating_sub(area.height as usize) as u16;
         }
         let wrapped = Paragraph::new(lines)
-            .style(Style::new().fg(palette.text))
-            .block(block.clone())
+            .style(Style::new().fg(palette.text).bg(palette.background))
             .wrap(Wrap { trim: false })
             .scroll((self.scroll, 0));
         frame.render_widget(wrapped, area);
-        let inner = block.inner(area);
-        self.area = inner;
-        self.snapshot(frame, inner);
-        self.paint_selection(frame, inner);
+        self.area = area;
+        self.snapshot(frame, area);
+        self.paint_selection(frame, area);
     }
 }
 
@@ -648,11 +656,11 @@ impl Home {
         let block = Block::bordered()
             .title(Span::styled(
                 if self.query.is_empty() {
-                    " sessions · 1-9 open · p pin · / filter · tab prompt · n new ".to_string()
+                    format!(" sessions · {} ", self.rows.len())
                 } else {
                     format!(" sessions · filter \"{}\" · esc clear ", self.query)
                 },
-                Style::new().fg(palette.primary),
+                Style::new().fg(palette.text_muted),
             ))
             .border_style(Style::new().fg(palette.border_active))
             .style(Style::new().bg(palette.surface));
@@ -679,18 +687,48 @@ impl Home {
             );
             return;
         }
-        let notice = self
-            .warning_lines()
-            .into_iter()
-            .chain(self.notice.iter().flat_map(|notice| {
-                [
-                    Line::from(Span::styled(notice.clone(), Style::new().fg(palette.error))),
-                    Line::default(),
-                ]
-            }));
-        let rows = visible.iter().enumerate().map(|(index, row)| {
-            let marker = if index == self.selected { "▸ " } else { "  " };
-            let style = if index == self.selected {
+        let mut notice_lines: Vec<Line<'static>> = self.warning_lines();
+        if let Some(notice) = &self.notice {
+            notice_lines.push(Line::from(Span::styled(
+                notice.clone(),
+                Style::new().fg(palette.error),
+            )));
+            notice_lines.push(Line::default());
+        }
+        // Group by recency, the way comparable session pickers do: a flat wall
+        // of titles stops being scannable once a project has weeks of history.
+        let inner = block.inner(area);
+        let inner_width = inner.width as usize;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(0);
+        let mut body: Vec<Line<'static>> = Vec::new();
+        let mut selected_line = 0usize;
+        let mut selected_tail = 0usize;
+        let mut bucket: Option<&'static str> = None;
+        for (index, row) in visible.iter().enumerate() {
+            let group = match row.updated_at_ms {
+                Some(updated) => session_group(now, updated),
+                None => "Earlier",
+            };
+            if bucket != Some(group) {
+                if !body.is_empty() {
+                    body.push(Line::default());
+                }
+                body.push(Line::from(Span::styled(
+                    group.to_string(),
+                    Style::new()
+                        .fg(palette.text_muted)
+                        .add_modifier(Modifier::BOLD),
+                )));
+                bucket = Some(group);
+            }
+            let selected = index == self.selected;
+            if selected {
+                selected_line = notice_lines.len() + body.len();
+            }
+            let style = if selected {
                 Style::new()
                     .fg(palette.primary)
                     .bg(palette.element)
@@ -698,66 +736,122 @@ impl Home {
             } else {
                 Style::new().fg(palette.text)
             };
-            let slot = if index < 9 {
-                format!("{} ", index + 1)
-            } else {
-                "  ".to_string()
-            };
-            let detail = match (row.directory.as_deref(), row.updated_at_ms) {
-                (Some(directory), Some(updated)) => {
-                    let name = Path::new(directory)
-                        .file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| directory.to_string());
-                    format!("{}  ·  {}", relative_time(updated), name)
-                }
-                _ => String::new(),
-            };
-            let detail = if row.pinned_at_ms.is_some() {
-                if detail.is_empty() {
+            let marker = if selected { "▸ " } else { "  " };
+            let title = format!("{marker}{}", row.label());
+            let mut meta = row.updated_at_ms.map(relative_time).unwrap_or_default();
+            if row.pinned_at_ms.is_some() {
+                meta = if meta.is_empty() {
                     "pinned".to_string()
                 } else {
-                    format!("pinned  ·  {detail}")
-                }
-            } else {
-                detail
-            };
-            let row_line = Line::from(vec![
+                    format!("pinned · {meta}")
+                };
+            }
+            let pad = inner_width.saturating_sub(title.chars().count() + meta.chars().count() + 1);
+            body.push(Line::from(vec![
+                Span::styled(title, style),
                 Span::styled(
-                    format!("{marker}{slot}"),
+                    format!("{}{}", " ".repeat(pad), meta),
                     Style::new().fg(palette.text_muted),
                 ),
-                Span::styled(row.label(), style),
-                Span::styled(
-                    if detail.is_empty() {
-                        String::new()
-                    } else {
-                        format!("   {detail}")
-                    },
-                    Style::new().fg(palette.text_muted),
-                ),
-            ]);
+            ]));
             // The preview answers "which conversation was this?" without
             // opening it. One muted line under the row keeps the main line
             // scannable; the engine already bounded the text.
-            match row.preview.as_deref() {
-                Some(preview) => vec![
-                    row_line,
-                    Line::from(Span::styled(
-                        format!("    {preview}"),
-                        Style::new().fg(palette.text_muted),
-                    )),
-                ],
-                None => vec![row_line],
+            if let Some(preview) = row.preview.as_deref() {
+                if selected {
+                    selected_tail += 1;
+                }
+                body.push(Line::from(Span::styled(
+                    format!("    {preview}"),
+                    Style::new().fg(palette.text_muted),
+                )));
             }
-        });
+        }
+        // Key hints belong at the bottom edge, where every comparable CLI puts
+        // them, instead of permanently occupying the list header.
+        let body_height = inner.height.saturating_sub(1) as usize;
+        let notice_take = notice_lines.len().min(body_height);
+        let list_height = body_height - notice_take;
+        let selected_body = selected_line.saturating_sub(notice_take);
+        // A selected row's preview counts toward the window, so both lines
+        // stay on screen when the selection rides the bottom edge.
+        let offset = if list_height == 0 {
+            0
+        } else {
+            (selected_body + selected_tail)
+                .saturating_sub(list_height.saturating_sub(1))
+                .min(body.len().saturating_sub(list_height))
+        };
+        let body_area = Rect {
+            height: inner.height.saturating_sub(1),
+            ..inner
+        };
+        let hint_area = Rect {
+            y: inner.bottom().saturating_sub(1),
+            height: 1,
+            ..inner
+        };
+        frame.render_widget(block, area);
+        let notice_skip = notice_lines.len() - notice_take;
+        let all: Vec<Line> = notice_lines
+            .into_iter()
+            .skip(notice_skip)
+            .chain(body.into_iter().skip(offset).take(list_height))
+            .collect();
         frame.render_widget(
-            Paragraph::new(notice.chain(rows.flatten()).collect::<Vec<_>>())
-                .block(block)
+            Paragraph::new(all)
+                .style(Style::new().bg(palette.surface))
                 .wrap(Wrap { trim: false }),
-            area,
+            body_area,
+        );
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                " / filter · p pin · tab prompt · n new · 1-9 open · ? help",
+                Style::new().fg(palette.text_muted),
+            ))),
+            hint_area,
         );
     }
+}
+
+/// The section a Session belongs to in the home list. Days are bucketed on the
+/// local wall clock; "This week" covers the six days before yesterday.
+fn session_group(now_ms: u64, updated_ms: u64) -> &'static str {
+    let day = 86_400_000i64;
+    let offset = local_utc_offset_ms();
+    let local_now = now_ms as i64 + offset;
+    let today = local_now.div_euclid(day) * day - offset;
+    let updated = updated_ms as i64;
+    if updated >= today {
+        "Today"
+    } else if updated >= today - day {
+        "Yesterday"
+    } else if updated >= today - 7 * day {
+        "This week"
+    } else {
+        "Earlier"
+    }
+}
+
+#[cfg(unix)]
+fn local_utc_offset_ms() -> i64 {
+    // SAFETY: localtime_r writes into a caller-owned tm and retains no pointer.
+    unsafe {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs() as libc::time_t)
+            .unwrap_or(0);
+        let mut tm: libc::tm = std::mem::zeroed();
+        if libc::localtime_r(&now, &mut tm).is_null() {
+            return 0;
+        }
+        (tm.tm_gmtoff as i64) * 1000
+    }
+}
+
+#[cfg(not(unix))]
+fn local_utc_offset_ms() -> i64 {
+    0
 }
 
 fn relative_time(updated_at_ms: u64) -> String {
@@ -1049,16 +1143,16 @@ fn clip_cells(line: &str, offset: usize, width: u16) -> String {
 pub struct SidebarPane {
     theme: Theme,
     session: Option<SessionSummary>,
+    usage: Option<crate::status::UsageSummary>,
+    todos: Vec<crate::session::TodoView>,
 }
 
 impl Pane for SidebarPane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
-        let block = Block::bordered()
-            .title(Span::styled(" session ", Style::new().fg(palette.primary)))
-            .border_style(Style::new().fg(palette.border))
-            .style(Style::new().bg(palette.background));
-        let lines = match &self.session {
+        // The sidebar is a column of sections, not a framed panel: the frame
+        // ate two columns per side for a label the sections already carry.
+        let mut lines = match &self.session {
             None => vec![Line::from(Span::styled(
                 "no Session selected",
                 Style::new().fg(palette.text_muted),
@@ -1082,9 +1176,90 @@ impl Pane for SidebarPane {
                 )),
             ],
         };
+        if self.session.is_some() {
+            // Context: the same billed usage the status dialog reads, kept
+            // beside the transcript so cost and throughput stay glanceable.
+            lines.push(Line::default());
+            lines.push(Line::from(Span::styled(
+                "context",
+                Style::new()
+                    .fg(palette.primary)
+                    .add_modifier(Modifier::BOLD),
+            )));
+            match &self.usage {
+                None => lines.push(Line::from(Span::styled(
+                    "no usage yet",
+                    Style::new().fg(palette.text_muted),
+                ))),
+                Some(usage) => {
+                    if let Some(lineage) = usage.lineage.first() {
+                        lines.push(Line::from(Span::styled(
+                            lineage.clone(),
+                            Style::new().fg(palette.text),
+                        )));
+                    }
+                    lines.push(Line::from(Span::styled(
+                        format!("in {}  ·  out {}", usage.input_tokens, usage.output_tokens),
+                        Style::new().fg(palette.text_muted),
+                    )));
+                    lines.push(Line::from(Span::styled(
+                        format!(
+                            "cache {}  ·  turns {}",
+                            usage.cache_read_tokens, usage.turns
+                        ),
+                        Style::new().fg(palette.text_muted),
+                    )));
+                }
+            }
+            lines.push(Line::default());
+            let done = self
+                .todos
+                .iter()
+                .filter(|todo| todo.status == "completed")
+                .count();
+            let open = self
+                .todos
+                .iter()
+                .filter(|todo| todo.status != "completed" && todo.status != "cancelled")
+                .count();
+            lines.push(Line::from(Span::styled(
+                format!("todo {}  ·  {} open", done, open),
+                Style::new()
+                    .fg(palette.primary)
+                    .add_modifier(Modifier::BOLD),
+            )));
+            if self.todos.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "no todo list",
+                    Style::new().fg(palette.text_muted),
+                )));
+            }
+            let width = area.width.saturating_sub(3) as usize;
+            for todo in &self.todos {
+                let (glyph, style) = match todo.status.as_str() {
+                    "completed" => ("✓ ", Style::new().fg(palette.success)),
+                    "in_progress" => ("▸ ", Style::new().fg(palette.primary)),
+                    "cancelled" => ("✗ ", Style::new().fg(palette.text_muted)),
+                    "waiting" | "blocked" => ("· ", Style::new().fg(palette.warning)),
+                    _ => ("· ", Style::new().fg(palette.text_muted)),
+                };
+                let mut text = todo.content.clone();
+                if text.chars().count() > width.saturating_sub(2) {
+                    text = text
+                        .chars()
+                        .take(width.saturating_sub(3))
+                        .collect::<String>()
+                        + "…";
+                }
+                lines.push(Line::from(vec![
+                    Span::styled(glyph, style),
+                    Span::styled(text, Style::new().fg(palette.text)),
+                ]));
+            }
+        }
         frame.render_widget(
             Paragraph::new(lines)
-                .block(block)
+                .style(Style::new().bg(palette.background))
                 .wrap(Wrap { trim: false }),
             area,
         );

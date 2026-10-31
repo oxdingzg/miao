@@ -243,10 +243,19 @@ impl QuestionView {
     }
 }
 
+/// One todo row projected from the engine's Session state: the sidebar shows
+/// the same list the model owns, never a TUI-side copy.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TodoView {
+    pub content: String,
+    pub status: String,
+}
+
 /// What the Session is doing and what it is waiting on, re-read from every
 /// snapshot. Action state (which option is highlighted) stays in the UI.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SessionState {
+    pub todos: Vec<TodoView>,
     pub active_run: Option<String>,
     pub pending: usize,
     pub approvals: Vec<ApprovalView>,
@@ -258,7 +267,26 @@ pub struct SessionState {
 
 impl SessionState {
     pub fn from_snapshot(snapshot: &Value) -> Self {
+        let todos = snapshot
+            .get("state")
+            .and_then(|state| state.get("todos"))
+            .and_then(|todos| todos.get("value"))
+            .and_then(|value| value.get("todos"))
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| {
+                        Some(TodoView {
+                            content: item.get("content")?.as_str()?.to_string(),
+                            status: item.get("status")?.as_str()?.to_string(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         Self {
+            todos,
             active_run: snapshot
                 .get("active_run")
                 .and_then(Value::as_str)

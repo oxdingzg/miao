@@ -475,6 +475,7 @@ impl App {
             }
             AppEvent::Usage(usage) => {
                 self.usage = Some(usage);
+                self.shell.set_usage(self.usage.as_ref());
                 if matches!(self.dialog, Some(Dialog::Status(_))) {
                     let rows = self.status_rows();
                     self.open_dialog(Dialog::status(rows));
@@ -494,6 +495,7 @@ impl App {
                 transcript,
                 state,
             } => {
+                self.shell.set_todos(&state.todos);
                 self.session = summary;
                 if let Some(summary) = &self.session {
                     match self.catalog.iter_mut().find(|row| row.id == summary.id) {
@@ -525,6 +527,7 @@ impl App {
                 }
                 self.committed = committed;
                 self.shell.set_session(self.session.as_ref());
+                self.shell.set_usage(self.usage.as_ref());
                 self.shell.set_transcript(&transcript);
                 self.screen = Screen::Session;
                 self.sync_panel();
@@ -1017,6 +1020,7 @@ impl App {
                     }
                     self.session = summary;
                     self.shell.set_session(self.session.as_ref());
+                    self.shell.set_usage(self.usage.as_ref());
                 }
             }
             DialogAction::Confirmed(kind) => {
@@ -1138,6 +1142,7 @@ impl App {
             row.credential_id = credential_id;
         }
         self.shell.set_session(self.session.as_ref());
+        self.shell.set_usage(self.usage.as_ref());
     }
 
     fn open_mcp(&mut self) {
@@ -1281,6 +1286,7 @@ impl App {
             return;
         };
         self.usage = None;
+        self.shell.set_usage(None);
         if let Some(engine) = self.engine.as_ref() {
             engine.usage(&session_id);
         }
@@ -2148,6 +2154,7 @@ impl App {
         self.committed = 0;
         self.shell.set_draft("", "");
         self.usage = None;
+        self.shell.set_usage(None);
         self.pending_accounts = false;
         self.shell.panel = None;
         self.shell.set_session(None);
@@ -2581,6 +2588,7 @@ mod tests {
 
     fn approval_state() -> SessionState {
         SessionState {
+            todos: Vec::new(),
             active_run: None,
             pending: 0,
             approvals: vec![crate::session::ApprovalView {
