@@ -12,6 +12,17 @@ export type SessionState =
   | "error"
   | "unknown"
 
+/** The sidebar shows when the list last changed: a stale list rendered as
+ * current is how operators end up trusting an outdated plan. */
+export function todoAge(changedAt: number | undefined, now = Date.now()) {
+  if (changedAt === undefined) return { label: "", stale: false }
+  const ms = Math.max(0, now - changedAt)
+  const minutes = Math.floor(ms / 60_000)
+  const label =
+    minutes < 1 ? "just now" : minutes < 60 ? `${minutes}m ago` : `${Math.floor(minutes / 60)}h ago`
+  return { label, stale: ms > 30 * 60_000 }
+}
+
 export function todoSummary(todos: ReadonlyArray<Pick<Todo, "status" | "id" | "depends_on">>) {
   return {
     total: todos.length,

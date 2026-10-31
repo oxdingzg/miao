@@ -191,6 +191,9 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
       // The engine serves the same list over the `workspaces` command so the
       // TUI can read it through the engine instead of the environment.
       MIAO_WORKSPACES_JSON: JSON.stringify(workspaces),
+      // The engine performs a Session move through the existing export-move;
+      // the host names the product database it must detach from.
+      MIAO_PRODUCT_DATABASE: Database.path(),
     },
     argv: [options.binary, ...engineArgs({ ...options, mcpConfigFile: manifest?.file ?? options.mcpConfigFile })],
     dispose: manifest?.dispose,

@@ -273,6 +273,30 @@ impl Host {
             Command::State { session_id } => runtime.store().state(&session_id).await,
             Command::Usage { session_id } => runtime.store().usage_report(&session_id).await,
             Command::VcsStatus { session_id } => runtime.store().vcs_status(&session_id).await,
+            Command::MoveSession {
+                session_id,
+                target_directory,
+            } => {
+                let product = std::env::var("MIAO_PRODUCT_DATABASE").map_err(|_| {
+                    Error::Invalid("move-session requires the host's product database".into())
+                })?;
+                let bundle = std::env::temp_dir().join(format!(
+                    "miao-move-{}-{}.bundle",
+                    std::process::id(),
+                    session_id
+                ));
+                let result = runtime
+                    .store()
+                    .export_session_move(
+                        &session_id,
+                        std::path::Path::new(&product),
+                        &target_directory,
+                        bundle.clone(),
+                    )
+                    .await;
+                let _ = tokio::fs::remove_file(&bundle).await;
+                result
+            }
             Command::Workspaces => Ok(parse_workspaces(
                 std::env::var("MIAO_WORKSPACES_JSON").ok().as_deref(),
             )),
