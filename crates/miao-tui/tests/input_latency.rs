@@ -274,4 +274,11 @@ fn typing_echo_latency_is_reported_for_the_composer() {
     drop(harness.writer);
     drop(harness.pty);
     let _ = harness.reader.join();
+    // The TUI's exit does not stop its engine child: without this cleanup the
+    // orphan keeps running into the next test binary and breaks the editor
+    // signal tests that follow.
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", "miao-tui-fake-engine"])
+        .status();
+    std::thread::sleep(Duration::from_millis(150));
 }
