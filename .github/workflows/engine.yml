@@ -44,7 +44,7 @@ jobs:
           # The macOS leg runs on the owner's self-hosted arm64 runner: hosted
           # macOS minutes bill at 10x, so one full engine run spends more than
           # the account's entire monthly allowance.
-          - os: macos-14
+          - os: macos-arm64
             runner: [self-hosted, macOS, ARM64]
           - os: ubuntu-24.04
             runner: ubuntu-24.04
