@@ -452,6 +452,10 @@ pub enum Command {
     Usage {
         session_id: String,
     },
+    /// Devices the host's remote-control administration knows about. The
+    /// engine serves the host's list read-only; pairing and revocation stay
+    /// with the host that owns that authority.
+    Devices,
     /// Read-only Git state of the Session's workspace (WSP-02). A location that
     /// is not inside a repository answers `{"repository": false}` rather than
     /// failing, because "there is no repository here" is a normal answer.
