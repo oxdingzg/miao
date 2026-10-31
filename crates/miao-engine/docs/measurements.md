@@ -11,6 +11,28 @@ section states the conditions it was taken under.
 - Toolchain: rustc 1.99.0.
 - Profile: `cargo build --release` (default release profile).
 
+## Input echo latency (PERF-01)
+
+Typing responsiveness of the TUI composer: one byte is written to the PTY at
+a time and the time until that byte appears in the rendered output stream is
+recorded. The harness lives in `crates/miao-tui/tests/input_latency.rs`
+(`cargo test --manifest-path crates/miao-tui/Cargo.toml --test input_latency
+-- --nocapture`) and writes a JSON report beside its workspace.
+
+Gate (target, not a current result): p95 ≤ 50 ms, p99 ≤ 100 ms on a pinned
+machine, re-measured under streaming output and long-history load before the
+gate is claimed.
+
+Latest run (2026-10-31, macmini M-series, PTY 80×24, TUI against the scripted
+engine, 36 distinct keystrokes after entering a session):
+
+| scenario      | samples | p50 | p95 | p99 | max |
+| ------------- | ------- | --- | --- | --- | --- |
+| composer-idle | 36      | 1 ms | 2 ms | 3 ms | 3 ms |
+
+Not yet covered: echo latency during streaming output, under a 10k-line
+history, and with input-method composition.
+
 ## Binary size
 
 - `miao-engine` release binary: **19,251,552 bytes (18.4 MiB)**, macOS arm64.
