@@ -9,11 +9,12 @@ on:
   workflow_dispatch:
 concurrency:
   # PR and merge-group runs keep their per-number group so a new push cancels
-  # only that PR's older run. Pushes to main share one group: a squash merge
-  # supersedes the previous main run, which at merge-storm pace would
-  # otherwise queue tens of full verifications that no one consumes.
-  group: ${{ github.event_name == 'push' && 'ci-main-push' || format('ci-{0}', github.event.pull_request.number || github.sha) }}
-  cancel-in-progress: true
+  # only that PR's older run. A push to main gets its own group per commit: a
+  # squash merge used to cancel the run verifying the previous commit, which
+  # left a red X that never failed and left the release guard without a green
+  # run to name. The sharded legs make the extra run affordable.
+  group: ${{ github.event_name == 'push' && format('ci-main-{0}', github.sha) || format('ci-{0}', github.event.pull_request.number || github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
   checks: write
