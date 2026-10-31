@@ -85,6 +85,24 @@ pub enum AppEvent {
         attachments: Vec<Value>,
         message: String,
     },
+    /// The newest queued input was cancelled and handed back, so the operator
+    /// can edit and resend it instead of retyping it.
+    InputRetrieved {
+        prompt: String,
+        delivery: String,
+    },
+    /// Nothing was cancellable: the newest input was already promoted, or the
+    /// queue drained while the request was in flight. The caller may interrupt
+    /// the run instead, but it must not claim the input was cancelled.
+    InputNotRetrieved {
+        reason: String,
+    },
+    /// A `!` command the engine refused. The UI restores the command in shell
+    /// mode so it can be edited and retried.
+    ShellFailed {
+        command: String,
+        message: String,
+    },
     /// A terminal engine failure; the task stops after sending it.
     EngineFailure(String),
 }

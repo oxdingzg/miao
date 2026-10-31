@@ -17,9 +17,14 @@ const Snapshot = Schema.Struct({
   active_run: Schema.NullOr(Schema.String),
 })
 
-test.skipIf(!binary).each(["ask", "deny"] as const)(
-  "the actual TUI shim binds default agent %s rules before native dispatch",
-  async (decision) => {
+test.skipIf(!binary).each([
+  ["ask", false],
+  ["deny", false],
+  ["ask", true],
+  ["deny", true],
+] as const)(
+  "the actual TUI shim binds default agent %s rules before native dispatch (shared: %s)",
+  async (decision, shared) => {
     await using tmp = await tmpdir()
     const workspace = path.join(tmp.path, "workspace")
     await mkdir(workspace)
@@ -73,6 +78,7 @@ test.skipIf(!binary).each(["ask", "deny"] as const)(
         env: {
           ...process.env,
           MIAO_ENGINE_BIN: binary,
+        MIAO_SHARED_PERMISSIONS: shared ? "1" : "",
           MIAO_ENGINE_REAL_BIN: binary,
           MIAO_ENGINE_PROVIDER: "openai-chat",
           MIAO_ENGINE_ENDPOINT: new URL("chat/completions", provider.url).href,

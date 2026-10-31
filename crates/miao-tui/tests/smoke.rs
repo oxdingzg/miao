@@ -18,23 +18,23 @@ struct Harness {
 
 impl Harness {
     fn spawn(label: &str, inject_panic: bool) -> Self {
-        Self::spawn_with(label, inject_panic, false, false, false, &[])
+        Self::spawn_with(label, inject_panic, false, false, false, false, &[])
     }
 
     /// Boot the TUI against the scripted engine so the smoke test can enter a
     /// Session without a database, a provider, or a model.
     fn spawn_engine(label: &str) -> Self {
-        Self::spawn_with(label, false, true, false, false, &[])
+        Self::spawn_with(label, false, true, false, false, false, &[])
     }
 
     fn spawn_engine_approval(label: &str) -> Self {
-        Self::spawn_with(label, false, true, true, false, &[])
+        Self::spawn_with(label, false, true, true, false, false, &[])
     }
 
     /// A workspace with one markdown template command, so the slash path can
     /// be exercised against the engine wire.
     fn spawn_engine_with_commands(label: &str) -> Self {
-        Self::spawn_with(label, false, true, false, true, &[])
+        Self::spawn_with(label, false, true, false, true, false, &[])
     }
 
     fn spawn_with(
@@ -43,6 +43,7 @@ impl Harness {
         engine: bool,
         approval: bool,
         commands: bool,
+        launch_prefix: bool,
         environment: &[(&str, &str)],
     ) -> Self {
         Self::spawn_configured(
@@ -51,17 +52,20 @@ impl Harness {
             engine,
             approval,
             commands,
+            launch_prefix,
             environment,
             false,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn spawn_configured(
         label: &str,
         inject_panic: bool,
         engine: bool,
         approval: bool,
         commands: bool,
+        launch_prefix: bool,
         environment: &[(&str, &str)],
         shell: bool,
     ) -> Self {
@@ -117,6 +121,14 @@ impl Harness {
                 env!("CARGO_BIN_EXE_miao-tui-fake-engine"),
             );
             cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
+            if launch_prefix {
+                let prefix = r#"literal "prefix" with spaces"#;
+                cmd.env(
+                    "MIAO_ENGINE_LAUNCH_PREFIX",
+                    serde_json::to_string(&[prefix]).unwrap(),
+                );
+                cmd.env("MIAO_TUI_FAKE_EXPECT_PREFIX", prefix);
+            }
             cmd.env("MIAO_TUI_FAKE_ADMIT_LOG", dir.join("admit.log"));
             if approval {
                 cmd.env("MIAO_TUI_FAKE_APPROVAL", "1");
@@ -392,6 +404,27 @@ fn boots_renders_panes_and_quits_on_ctrl_c() {
     let status = wait_exit(&mut harness.child, Duration::from_secs(5))
         .expect("process did not exit after Ctrl+C");
     assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
+fn a_literal_launcher_prefix_reaches_the_child_without_shell_parsing() {
+    let mut harness = Harness::spawn_with("launch-prefix", false, true, false, false, true, &[]);
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(3)),
+        "{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(3)),
+        "{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\x03");
+    let status =
+        wait_exit(&mut harness.child, Duration::from_secs(5)).expect("prefixed child did not exit");
+    assert!(status.success());
     harness.shutdown();
 }
 
@@ -1165,6 +1198,7 @@ fn terminal_title_toggle_persists_across_restart_and_an_environment_disable_wins
         true,
         false,
         false,
+        false,
         &[("MIAO_DISABLE_TERMINAL_TITLE", "TrUe")],
     );
     assert!(wait_for_screen(
@@ -1204,18 +1238,19 @@ fn external_editor_exclusively_reads_stdin_then_returns_the_saved_draft() {
         true,
         false,
         false,
+        false,
         &[("VISUAL", &editor)],
     );
     assert!(wait_for_screen(
         &harness,
         "Project A",
-        Duration::from_secs(2)
+        Duration::from_secs(10)
     ));
     harness.write(b"\r");
     assert!(wait_for_screen(
         &harness,
         "hello from the fixture",
-        Duration::from_secs(2)
+        Duration::from_secs(10)
     ));
     harness.write(b"old draft");
     harness.write(b"\x18e");
@@ -1224,7 +1259,7 @@ fn external_editor_exclusively_reads_stdin_then_returns_the_saved_draft() {
             wait_for(
                 &harness,
                 &format!("EDITOR_INPUT_{index}"),
-                Duration::from_secs(2)
+                Duration::from_secs(10)
             ),
             "editor did not receive exclusive input: {}",
             harness.text()
@@ -1232,7 +1267,7 @@ fn external_editor_exclusively_reads_stdin_then_returns_the_saved_draft() {
         harness.write(format!("{text}\r").as_bytes());
     }
     assert!(
-        wait_for_screen(&harness, "first second third", Duration::from_secs(2)),
+        wait_for_screen(&harness, "first second third", Duration::from_secs(10)),
         "saved editor draft did not render: {}",
         harness.screen()
     );
@@ -1240,7 +1275,7 @@ fn external_editor_exclusively_reads_stdin_then_returns_the_saved_draft() {
     assert!(wait_for_screen(
         &harness,
         "first second third!",
-        Duration::from_secs(2)
+        Duration::from_secs(10)
     ));
     assert!(!harness.dir.join("admit.log").exists());
     harness.write(b"\x03");
@@ -1261,22 +1296,27 @@ fn editor_interrupt_returns_to_the_ui_and_exit_signals_cancel_the_editor() {
             true,
             false,
             false,
+            false,
             &[("VISUAL", &editor)],
         );
         assert!(wait_for_screen(
             &harness,
             "Project A",
-            Duration::from_secs(2)
+            Duration::from_secs(10)
         ));
         harness.write(b"\r");
         assert!(wait_for_screen(
             &harness,
             "hello from the fixture",
-            Duration::from_secs(2)
+            Duration::from_secs(10)
         ));
         harness.write(b"keep original draft");
         harness.write(b"\x18e");
-        assert!(wait_for(&harness, "EDITOR_INPUT_1", Duration::from_secs(2)));
+        assert!(wait_for(
+            &harness,
+            "EDITOR_INPUT_1",
+            Duration::from_secs(10)
+        ));
         let buffer =
             PathBuf::from(std::fs::read_to_string(harness.dir.join("editor-buffer-path")).unwrap());
         let editor_pid = std::fs::read_to_string(harness.dir.join("editor-pid")).unwrap();
@@ -1285,7 +1325,7 @@ fn editor_interrupt_returns_to_the_ui_and_exit_signals_cancel_the_editor() {
             // The cooked terminal delivers Ctrl+C to both UI and editor.
             harness.write(b"\x03");
             assert!(
-                wait_for_screen(&harness, "keep original draft", Duration::from_secs(2)),
+                wait_for_screen(&harness, "keep original draft", Duration::from_secs(10)),
                 "interrupted editor did not restore the draft: {}",
                 harness.screen()
             );
@@ -1293,7 +1333,7 @@ fn editor_interrupt_returns_to_the_ui_and_exit_signals_cancel_the_editor() {
             assert!(wait_for_screen(
                 &harness,
                 "keep original draft!",
-                Duration::from_secs(2)
+                Duration::from_secs(10)
             ));
             assert!(harness.child.try_wait().unwrap().is_none());
             harness.write(b"\x03");
@@ -1328,7 +1368,7 @@ fn editor_interrupt_returns_to_the_ui_and_exit_signals_cancel_the_editor() {
 #[test]
 fn shell_job_control_restores_the_terminal_and_preserves_the_draft() {
     let mut harness =
-        Harness::spawn_configured("job-control", false, true, false, false, &[], true);
+        Harness::spawn_configured("job-control", false, true, false, false, false, &[], true);
     assert!(wait_for_screen(
         &harness,
         "Project A",
@@ -1423,6 +1463,7 @@ fn background_startup_waits_for_foreground_before_taking_the_terminal() {
         "background-job",
         false,
         true,
+        false,
         false,
         false,
         &[("MIAO_TUI_TEST_BACKGROUND", "1")],

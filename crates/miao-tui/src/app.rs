@@ -1,23 +1,26 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use ratatui::Frame;
 use serde_json::Value;
 
 use crate::commands::{self, Builtin};
 use crate::dialogs::{AccountInfo, Action as DialogAction, ConfirmKind, Dialog, ModelInfo, Row};
-use crate::editor::Action;
+use crate::editor::{Action, Mode};
 use crate::engine;
 use crate::event::{AppEvent, Bus};
 use crate::keybinds::{self, Keymap};
 use crate::pane::{render_dialog, Home, Pane, Panel, PanelKind, Shell};
 use crate::platform::attention::{self, Attention};
 use crate::platform::{clipboard, editor, zed};
-use crate::session::{Entry, SessionState, SessionSummary};
+use crate::session::{Entry, Part, SessionState, SessionSummary};
 use crate::state::{self, StashEntry};
 use crate::status::UsageSummary;
 use crate::theme::{self, Theme};
+use crate::tool;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
@@ -160,6 +163,14 @@ pub struct App {
     stash: Vec<StashEntry>,
     /// Every root Session, archived included, for the Session dialog.
     catalog: Vec<SessionSummary>,
+    /// MCP servers the host exported for this workspace (name, transport).
+    mcp: Vec<(String, String)>,
+    /// Integrations the host reported a stored credential for (name, label).
+    providers: Vec<(String, String)>,
+    /// Skills the host discovered (name, description).
+    skills: Vec<(String, String)>,
+    /// Workspaces the host reported (name, branch or type).
+    workspaces: Vec<(String, String)>,
     /// The model dialog waits for the catalog when nothing is cached yet.
     pending_models: bool,
     /// Same for the account dialog.
@@ -223,6 +234,10 @@ impl App {
             workspace,
             settings: None,
             models: Vec::new(),
+            mcp: parse_pairs(std::env::var("MIAO_TUI_MCP_JSON").ok().as_deref()),
+            providers: parse_pairs(std::env::var("MIAO_TUI_PROVIDERS_JSON").ok().as_deref()),
+            skills: parse_pairs(std::env::var("MIAO_TUI_SKILLS_JSON").ok().as_deref()),
+            workspaces: parse_pairs(std::env::var("MIAO_TUI_WORKSPACES_JSON").ok().as_deref()),
             accounts: Vec::new(),
             usage: None,
             stash: Vec::new(),
@@ -522,6 +537,25 @@ impl App {
                 self.shell.composer.restore_with(&text, attachments);
                 self.shell.composer.notice = Some(message);
             }
+            AppEvent::InputRetrieved { prompt, delivery } => {
+                // The retrieved prompt is what the operator asked to edit, so a
+                // draft already in the composer is stashed rather than dropped.
+                if !self.shell.composer.editor.text().trim().is_empty() {
+                    self.stash_current();
+                }
+                self.shell.composer.restore(&prompt);
+                self.shell.composer.notice = Some(format!("retrieved {delivery} input"));
+            }
+            AppEvent::InputNotRetrieved { reason } => {
+                // Nothing was cancelled, so the run is the only thing left that
+                // Escape can act on; never report a take-back that did not happen.
+                self.shell.composer.notice = Some(reason);
+                self.interrupt_or_leave();
+            }
+            AppEvent::ShellFailed { command, message } => {
+                self.shell.composer.restore_shell(&command);
+                self.shell.composer.notice = Some(message);
+            }
             AppEvent::EngineFailure(message) => {
                 self.home.set_notice(Some(message.clone()));
                 self.shell.set_message(&message);
@@ -585,6 +619,31 @@ impl App {
     /// The wheel moves through the open dialog, the Session list, or the
     /// transcript. Buttons are ignored: text selection stays with the terminal.
     fn handle_mouse(&mut self, mouse: MouseEvent) {
+        // A drag over the transcript copies what it covered, like the
+        // TypeScript UI: cells, not logical lines, because the transcript is
+        // wrapped.
+        if self.dialog.is_none() && self.screen == Screen::Session {
+            let position = ratatui::layout::Position::new(mouse.column, mouse.row);
+            match mouse.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    self.leader = false;
+                    self.shell.begin_selection(position);
+                    return;
+                }
+                MouseEventKind::Drag(MouseButton::Left) => {
+                    self.shell.update_selection(position);
+                    return;
+                }
+                MouseEventKind::Up(MouseButton::Left) => {
+                    if let Some(text) = self.shell.take_selection() {
+                        crate::platform::clipboard::copy(&text);
+                        self.notice(&format!("Copied {} characters", text.chars().count()));
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
         let delta = match mouse.kind {
             MouseEventKind::ScrollUp => -1,
             MouseEventKind::ScrollDown => 1,
@@ -624,6 +683,19 @@ impl App {
             Some(keybinds::Action::StashDraft) => self.run_builtin(Builtin::StashDraft),
             Some(keybinds::Action::EditorOpen) => self.run_builtin(Builtin::Editor),
             Some(keybinds::Action::CopyMessage) => self.copy_last_response(),
+            Some(keybinds::Action::McpList) => self.open_mcp(),
+            Some(keybinds::Action::ProviderList) => self.open_providers(),
+            Some(keybinds::Action::SkillList) => self.open_skills(),
+            Some(keybinds::Action::WorkspaceList) => self.open_workspaces(),
+            Some(keybinds::Action::MessageView) => self.open_message(),
+            Some(keybinds::Action::ToolOutputToggle) => {
+                let expanded = self.shell.toggle_tool_expansion();
+                self.notice(if expanded {
+                    "Tool output expanded"
+                } else {
+                    "Tool output folded"
+                });
+            }
             Some(keybinds::Action::AppExit) => self.run_builtin(Builtin::Quit),
             Some(keybinds::Action::TerminalRedraw) => self.redraw_requested = true,
             Some(keybinds::Action::TerminalSuspend) => self.run_builtin(Builtin::Suspend),
@@ -759,10 +831,23 @@ impl App {
                 },
             })
             .collect::<Vec<_>>();
-        rows.push(row(
-            "keys",
-            "Esc back · ctrl+r rename · ctrl+o accounts · ctrl+p commands · PgUp/PgDn scroll",
-        ));
+        // Keys come from the live keymap, not a hand-written summary: a help
+        // list that names a stroke the keymap no longer binds is worse than no
+        // list at all, because it sends the operator to the wrong key.
+        rows.extend(
+            self.keys
+                .bindings()
+                .into_iter()
+                .map(|(action, strokes)| Row {
+                    id: action.name().to_string(),
+                    label: action.name().to_string(),
+                    detail: if strokes.is_empty() {
+                        "unbound".to_string()
+                    } else {
+                        strokes
+                    },
+                }),
+        );
         rows.extend(self.templates.iter().map(|template| Row {
             id: format!("/{}", template.name),
             label: format!("/{}", template.name),
@@ -974,6 +1059,67 @@ impl App {
             row.credential_id = credential_id;
         }
         self.shell.set_session(self.session.as_ref());
+    }
+
+    fn open_mcp(&mut self) {
+        self.open_dialog(Dialog::mcp(&self.mcp));
+    }
+
+    fn open_providers(&mut self) {
+        self.open_dialog(Dialog::providers(&self.providers));
+    }
+
+    fn open_skills(&mut self) {
+        self.open_dialog(Dialog::skills(&self.skills));
+    }
+
+    fn open_workspaces(&mut self) {
+        self.open_dialog(Dialog::workspaces(&self.workspaces));
+    }
+
+    /// The newest assistant reply as plain text: what the model said, how much
+    /// thinking it did, and which tools it ran.
+    fn open_message(&mut self) {
+        let Some(transcript) = self.shell.transcript() else {
+            self.notice("No message to show");
+            return;
+        };
+        let entry = transcript
+            .entries
+            .iter()
+            .rev()
+            .find(|entry| matches!(entry, Entry::Assistant { .. }));
+        let Some(Entry::Assistant {
+            agent,
+            model,
+            parts,
+        }) = entry
+        else {
+            self.notice("No message to show");
+            return;
+        };
+        let mut lines = vec![format!(
+            "agent: {}   model: {}",
+            agent.as_deref().unwrap_or("-"),
+            model.as_deref().unwrap_or("-")
+        )];
+        for part in parts {
+            match part {
+                Part::Text(text) => lines.extend(text.lines().map(str::to_string)),
+                Part::Reasoning(text) => {
+                    lines.push(format!("[thinking · {} chars]", text.chars().count()))
+                }
+                Part::Tool(call) => lines.push(format!(
+                    "[tool {} · {}]",
+                    tool::product_name(&call.name),
+                    if call.failed { "failed" } else { "ok" }
+                )),
+            }
+        }
+        if lines.len() == 1 {
+            lines.push("(no content)".to_string());
+        }
+        self.open_dialog(crate::dialogs::Dialog::message(lines));
     }
 
     fn open_status(&mut self) {
@@ -1292,6 +1438,40 @@ impl App {
             self.quit = true;
             return;
         }
+        // Filter mode owns the keyboard: printable keys narrow the list, and
+        // Escape leaves the mode before anything else can consume Escape.
+        if self.home.filtering() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.home.stop_filter();
+                    return;
+                }
+                KeyCode::Backspace => {
+                    self.home.filter_backspace();
+                    return;
+                }
+                KeyCode::Up => {
+                    self.home.move_cursor(-1);
+                    return;
+                }
+                KeyCode::Down => {
+                    self.home.move_cursor(1);
+                    return;
+                }
+                KeyCode::Enter => {
+                    let selected = self.home.current().map(|row| row.id.clone());
+                    if let (Some(id), Some(engine)) = (selected, self.engine.as_ref()) {
+                        engine.open(&id);
+                    }
+                    return;
+                }
+                KeyCode::Char(c) if !c.is_ascii_control() => {
+                    self.home.filter(c);
+                    return;
+                }
+                _ => {}
+            }
+        }
         match (key.code, key.modifiers) {
             (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
                 self.home.move_cursor(1);
@@ -1315,6 +1495,27 @@ impl App {
                     engine.new_session();
                 }
             }
+            // Numbered slots open the n-th row of the list as it is shown, so a
+            // pinned Session keeps its number instead of needing a search.
+            (KeyCode::Char(digit @ '1'..='9'), KeyModifiers::NONE) => {
+                let slot = digit as usize - '1' as usize;
+                let selected = self.home.slot(slot).map(|row| row.id.clone());
+                if let (Some(id), Some(engine)) = (selected, self.engine.as_ref()) {
+                    engine.open(&id);
+                }
+            }
+            (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                self.home.start_filter();
+            }
+            (KeyCode::Char('p'), KeyModifiers::NONE) => {
+                let selected = self
+                    .home
+                    .current()
+                    .map(|row| (row.id.clone(), row.pinned_at_ms.is_none()));
+                if let (Some((id, pinned)), Some(engine)) = (selected, self.engine.as_ref()) {
+                    engine.pin(&id, pinned);
+                }
+            }
             _ => {}
         }
     }
@@ -1325,22 +1526,28 @@ impl App {
             if self.shell.composer.dismiss_completion() {
                 return;
             }
+            // `!` mode owns Escape: leaving the command is cheaper than
+            // leaving the Session, and the typed command survives.
+            if self.shell.composer.mode() == Mode::Shell {
+                self.shell.composer.set_mode(Mode::Normal);
+                return;
+            }
             if self.reject_question() {
                 return;
             }
-            if self.state.active_run.is_some() {
+            // A queued prompt is cheaper to take back than a running turn is to
+            // interrupt, so Escape cancels the newest queued input first and
+            // only reaches the turn when the queue is empty.
+            if self.state.pending > 0 {
                 if let (Some(id), Some(engine)) = (
                     self.session.as_ref().map(|session| session.id.clone()),
                     self.engine.as_ref(),
                 ) {
-                    engine.cancel(&id);
+                    engine.cancel_last_input(&id);
+                    return;
                 }
-                return;
             }
-            if self.shell.panel.is_some() {
-                return;
-            }
-            self.leave_session();
+            self.interrupt_or_leave();
             return;
         }
         if action(keybinds::Action::InputClear) && !self.shell.composer.editor.is_empty() {
@@ -1397,6 +1604,7 @@ impl App {
             Action::None => {}
             Action::Quit => self.quit = true,
             Action::Submit { text, attachments } => self.submit(text, attachments),
+            Action::Shell { command } => self.run_shell(command),
         }
     }
 
@@ -1407,6 +1615,7 @@ impl App {
             return false;
         };
         let session_id = self.session.as_ref().map(|session| session.id.clone());
+        let typing = panel.typing().is_some();
         match &mut panel.kind {
             PanelKind::Approval(view) => {
                 let decision = match key.code {
@@ -1424,11 +1633,26 @@ impl App {
                     }
                 }
             }
+            PanelKind::Question(_) if typing => match key.code {
+                // While a custom answer is being typed, keys belong to it.
+                KeyCode::Enter => {
+                    panel.accept_typing();
+                }
+                KeyCode::Esc => {
+                    panel.cancel_typing();
+                }
+                KeyCode::Backspace => panel.backspace_typing(),
+                KeyCode::Char(character) => panel.type_char(character),
+                _ => {}
+            },
             PanelKind::Question(_) => match key.code {
                 KeyCode::Up | KeyCode::Char('k') => panel.move_cursor(-1),
                 KeyCode::Down | KeyCode::Char('j') => panel.move_cursor(1),
                 KeyCode::Char(' ') => panel.toggle(),
                 KeyCode::Enter => {
+                    if panel.begin_typing() {
+                        return true;
+                    }
                     if let Some(answer) = panel.submit() {
                         if let (Some(session_id), Some(engine)) =
                             (session_id.as_deref(), self.engine.as_ref())
@@ -1591,9 +1815,13 @@ impl App {
     }
 
     fn update_status(&mut self) {
+        // The composer mirrors the durable queue every frame so the count stays
+        // live without the composer owning it.
+        self.shell.composer.queued = self.state.pending;
         if self.screen != Screen::Session {
             self.shell.title.set_status(None);
             self.shell.title.set_status_alert(false);
+            self.shell.composer.queued = 0;
             return;
         }
         let now = Instant::now();
@@ -1681,6 +1909,11 @@ impl App {
                 engine.command(&session_id, &prompt, &text, &name, &arguments);
                 return;
             }
+            // A failed command is an error, not a message: sending the text as
+            // a plain prompt would silently hand a typo to the model.
+            self.shell.composer.restore_with(&text, attachments);
+            self.shell.composer.notice = Some(unknown_command_notice(&name));
+            return;
         }
         // Editor context is a prompt prefix rather than a wire field: the
         // engine admits one text string, and the TS client does the same.
@@ -1689,6 +1922,42 @@ impl App {
             None => text,
         };
         engine.prompt(&session_id, &text, attachments);
+    }
+
+    /// Interrupt the running turn, or leave the Session when nothing is
+    /// running. Shared by Escape and by a take-back that found nothing to
+    /// cancel, so both end in the same place.
+    fn interrupt_or_leave(&mut self) {
+        if self.state.active_run.is_some() {
+            if let (Some(id), Some(engine)) = (
+                self.session.as_ref().map(|session| session.id.clone()),
+                self.engine.as_ref(),
+            ) {
+                engine.cancel(&id);
+            }
+            return;
+        }
+        if self.shell.panel.is_some() {
+            return;
+        }
+        self.leave_session();
+    }
+
+    /// `!` runs on the Session's host shell through the engine. The engine
+    /// records the command and its output in the Session, so it is visible to
+    /// the operator without becoming model context.
+    fn run_shell(&mut self, command: String) {
+        let session_id = self.session.as_ref().map(|session| session.id.clone());
+        let Some(engine) = self.engine.clone() else {
+            self.shell.composer.restore_shell(&command);
+            return;
+        };
+        let Some(session_id) = session_id else {
+            self.shell.composer.restore_shell(&command);
+            return;
+        };
+        self.shell.composer.notice = None;
+        engine.shell(&session_id, &command);
     }
 
     fn leave_session(&mut self) {
@@ -1745,6 +2014,7 @@ mod tests {
     use super::*;
     use crate::session::{Entry, RevertPlan, Transcript};
     use crate::theme::{self, DEFAULT_THEME};
+    use std::collections::BTreeMap;
 
     fn app() -> App {
         app_with(Startup::default())
@@ -1762,6 +2032,23 @@ mod tests {
             Keymap::default(),
             crate::config::AttentionConfig::default(),
             startup,
+        )
+    }
+
+    /// An app whose keymap was overridden, so a test can prove the help view
+    /// follows live bindings instead of a written-down copy.
+    fn app_with_overrides(overrides: &BTreeMap<String, Option<Vec<String>>>) -> App {
+        let palette = theme::builtin(DEFAULT_THEME).expect("default theme is built in");
+        App::new(
+            PathBuf::from("."),
+            Theme {
+                name: DEFAULT_THEME.to_string(),
+                palette,
+            },
+            theme::Catalog::builtin(),
+            Keymap::from_overrides(overrides),
+            crate::config::AttentionConfig::default(),
+            Startup::default(),
         )
     }
 
@@ -2130,6 +2417,27 @@ mod tests {
     }
 
     #[test]
+    fn the_composer_mirrors_the_queued_count_every_frame() {
+        let mut app = session_app();
+        let state = SessionState {
+            active_run: Some("run-1".into()),
+            ..SessionState::default()
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state,
+        });
+        assert_eq!(app.shell.composer.queued, 0);
+        app.state.pending = 3;
+        app.update_status();
+        assert_eq!(app.shell.composer.queued, 3);
+        app.state.pending = 0;
+        app.update_status();
+        assert_eq!(app.shell.composer.queued, 0);
+    }
+
+    #[test]
     fn esc_interrupts_an_active_run_instead_of_leaving() {
         let mut app = session_app();
         let state = SessionState {
@@ -2394,6 +2702,313 @@ mod tests {
         app.handle(opened(Transcript::default(), None));
         assert!(app.draft.is_none());
         assert!(app.shell.draft().is_empty());
+    }
+
+    fn home_with(rows: Vec<SessionSummary>) -> App {
+        let mut app = app();
+        // The home list is fed by `Sessions`; `Catalog` only fills the session
+        // catalog and answers `--continue`.
+        app.handle(AppEvent::Sessions(rows));
+        app
+    }
+
+    #[test]
+    fn numbered_slots_open_the_row_the_list_shows() {
+        let mut app = home_with(vec![
+            summary("ses_first", 300),
+            summary("ses_second", 200),
+            summary("ses_third", 100),
+        ]);
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Char('3'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Open(id)) if id == "ses_third"
+        ));
+        // A slot past the end opens nothing instead of opening the last row.
+        app.handle(key(KeyCode::Char('9'), KeyModifiers::NONE));
+        assert!(requests.try_recv().is_err());
+    }
+
+    fn home_with_named(rows: &[(&str, &str, Option<&str>)]) -> App {
+        let mut app = app();
+        app.handle(AppEvent::Sessions(
+            rows.iter()
+                .map(|(id, title, directory)| SessionSummary {
+                    id: id.to_string(),
+                    title: Some(title.to_string()),
+                    parent_id: None,
+                    updated_at_ms: Some(100),
+                    archived_at_ms: None,
+                    pinned_at_ms: None,
+                    directory: directory.map(str::to_string),
+                    model: None,
+                    credential_id: None,
+                })
+                .collect(),
+        ));
+        app
+    }
+
+    #[test]
+    fn slash_starts_a_filter_and_enter_opens_the_match() {
+        let mut app = home_with_named(&[
+            ("ses_a", "fix the parser", Some("/work/parser")),
+            ("ses_b", "write docs", Some("/work/docs")),
+        ]);
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert!(app.home.filtering());
+        for c in ['d', 'o', 'c'] {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        assert_eq!(app.home.query(), "doc");
+        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_b"));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Open(id)) if id == "ses_b"
+        ));
+    }
+
+    #[test]
+    fn a_filter_matches_the_directory_too_and_backspace_widens_it() {
+        let mut app = home_with_named(&[
+            ("ses_a", "fix the parser", Some("/work/parser")),
+            ("ses_b", "write docs", Some("/work/docs")),
+        ]);
+        // `p` and `r` are commands outside filter mode; inside it they are
+        // just letters, which is the whole reason the mode is explicit.
+        app.handle(key(KeyCode::Char('/'), KeyModifiers::NONE));
+        for c in ['p', 'a', 'r'] {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        assert_eq!(app.home.query(), "par");
+        // `par` matches only the parser Session: by title and by directory.
+        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
+        app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(app.home.query(), "pa");
+        app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(app.home.query(), "");
+        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
+    }
+
+    #[test]
+    fn escape_leaves_filter_mode_instead_of_leaving_the_list() {
+        let mut app = home_with_named(&[("ses_a", "fix the parser", None)]);
+        app.handle(key(KeyCode::Char('/'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('z'), KeyModifiers::NONE));
+        assert_eq!(app.home.query(), "z");
+        // Nothing matches, so there is no current Session while filtering.
+        assert!(app.home.current().is_none());
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.home.query(), "");
+        assert!(!app.home.filtering());
+        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
+        assert_eq!(app.screen, Screen::Home);
+    }
+
+    #[test]
+    fn commands_still_work_when_no_filter_is_open() {
+        let mut app = home_with_named(&[("ses_a", "fix the parser", None)]);
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        // `p` pins rather than typing a filter character.
+        app.handle(key(KeyCode::Char('p'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Pin { pinned: true, .. })
+        ));
+        assert_eq!(app.home.query(), "");
+        assert!(!app.home.filtering());
+    }
+
+    #[test]
+    fn p_toggles_the_pin_of_the_selected_row() {
+        let mut app = home_with(vec![summary("ses_pin", 100)]);
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Char('p'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Pin { session_id, pinned: true }) if session_id == "ses_pin"
+        ));
+        // A pinned row unpins, so the key is a toggle rather than pin-only.
+        let mut pinned = summary("ses_pinned", 200);
+        pinned.pinned_at_ms = Some(1);
+        let mut app = home_with(vec![pinned]);
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Char('p'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Pin { session_id, pinned: false }) if session_id == "ses_pinned"
+        ));
+    }
+
+    #[test]
+    fn help_lists_the_bindings_the_keymap_actually_uses() {
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "session_rename".to_string(),
+            Some(vec!["ctrl+n".to_string()]),
+        );
+        let mut app = app_with_overrides(&overrides);
+        app.run_builtin(Builtin::Help);
+        let Some(Dialog::Help(list)) = app.dialog.as_ref() else {
+            panic!("help dialog");
+        };
+        let row_for = |name: &str| {
+            list.rows
+                .iter()
+                .find(|row| row.label == name)
+                .map(|row| row.detail.clone())
+        };
+        // The override is what help shows; the default would be a lie.
+        assert_eq!(row_for("session_rename").as_deref(), Some("ctrl+n"));
+        // A leader chord prints the real leader key, not the placeholder.
+        assert_eq!(row_for("session_new").as_deref(), Some("ctrl+x+n"));
+        // The hand-written summary is gone: no row claims an unknown group.
+        assert!(list.rows.iter().all(|row| row.label != "keys"));
+    }
+
+    #[test]
+    fn esc_leaves_shell_mode_before_it_leaves_the_session() {
+        let mut app = session_app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.shell.composer.set_mode(Mode::Shell);
+        app.shell.composer.editor.set_text("ls");
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Session);
+        assert_eq!(app.shell.composer.mode(), Mode::Normal);
+        // The typed command survives leaving the mode.
+        assert_eq!(app.shell.composer.editor.text(), "ls");
+        assert!(requests.try_recv().is_err(), "no interrupt was requested");
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Home);
+    }
+
+    #[test]
+    fn a_bang_command_runs_through_the_engine_instead_of_the_model() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_shell", 10)),
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        let session = app.session.as_ref().expect("session").id.clone();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        for c in ['!', 'e', 'c', 'h', 'o', ' ', 'h', 'i'] {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        assert_eq!(app.shell.composer.mode(), Mode::Shell);
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        let mut sent = Vec::new();
+        while let Ok(request) = requests.try_recv() {
+            sent.push(request);
+        }
+        assert!(
+            sent.iter().any(|request| matches!(
+                request,
+                engine::Request::Shell { session_id, command }
+                    if session_id == &session && command == "echo hi"
+            )),
+            "expected one shell request for the Session"
+        );
+        assert!(
+            !sent
+                .iter()
+                .any(|request| matches!(request, engine::Request::Prompt { .. })),
+            "shell mode must not admit a prompt"
+        );
+    }
+
+    #[test]
+    fn escape_takes_back_the_newest_queued_input_before_interrupting() {
+        let mut app = session_app();
+        let state = SessionState {
+            active_run: Some("run-1".into()),
+            pending: 2,
+            ..SessionState::default()
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_queue", 10)),
+            transcript: Box::new(Transcript::default()),
+            state,
+        });
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        let sent: Vec<_> = std::iter::from_fn(|| requests.try_recv().ok()).collect();
+        assert!(
+            sent.iter()
+                .any(|request| matches!(request, engine::Request::CancelLastInput { .. })),
+            "Escape takes back the queued input first"
+        );
+        assert!(
+            !sent
+                .iter()
+                .any(|request| matches!(request, engine::Request::Cancel { .. })),
+            "the running turn is not interrupted while input is queued"
+        );
+        assert_eq!(app.screen, Screen::Session);
+    }
+
+    #[test]
+    fn a_retrieved_input_returns_to_the_composer_and_keeps_the_draft() {
+        let mut app = session_app();
+        app.shell.composer.editor.set_text("draft in progress");
+        app.handle(AppEvent::InputRetrieved {
+            prompt: "queued question".into(),
+            delivery: "queue".into(),
+        });
+        assert_eq!(app.shell.composer.editor.text(), "queued question");
+        assert!(
+            app.stash
+                .iter()
+                .any(|entry| entry.text == "draft in progress"),
+            "the draft already in the composer is stashed, not dropped"
+        );
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("retrieved queue input")
+        );
+    }
+
+    #[test]
+    fn a_promoted_input_is_never_reported_as_cancelled() {
+        let mut app = session_app();
+        let state = SessionState {
+            active_run: Some("run-1".into()),
+            pending: 0,
+            ..SessionState::default()
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_promoted", 10)),
+            transcript: Box::new(Transcript::default()),
+            state,
+        });
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(AppEvent::InputNotRetrieved {
+            reason: "already promoted".into(),
+        });
+        // The turn is interrupted instead, and the composer stays empty: no
+        // text was handed back, so nothing pretends it was.
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Cancel { .. })
+        ));
+        assert!(app.shell.composer.editor.is_empty());
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("already promoted")
+        );
     }
 
     #[test]
@@ -2712,12 +3327,18 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_slash_word_still_reaches_the_composer_as_a_prompt() {
+    fn an_unknown_slash_command_is_reported_instead_of_sent_as_a_prompt() {
         let mut app = engine_session_app();
         app.shell.composer.editor.set_text("/nope plain text");
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         assert!(app.dialog.is_none());
-        assert!(app.shell.composer.editor.is_empty());
+        // The draft stays editable, and the notice names the typo: the text was
+        // never handed to the model.
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("unknown command: /nope")
+        );
+        assert!(!app.shell.composer.editor.is_empty());
     }
 
     /// An open Session whose transcript holds two user turns, with a handle
@@ -2874,5 +3495,72 @@ mod tests {
             requests.try_recv(),
             Ok(engine::Request::Redo { session_id }) if session_id == "ses_a"
         ));
+    }
+}
+
+/// The composer notice for a first-word command neither built in nor
+/// discovered. The draft stays in the composer so the typo can be fixed.
+fn unknown_command_notice(name: &str) -> String {
+    format!("unknown command: /{name}")
+}
+
+#[cfg(test)]
+mod command_notice_tests {
+    use super::unknown_command_notice;
+
+    #[test]
+    fn an_unknown_command_is_named_in_the_notice() {
+        assert_eq!(unknown_command_notice("nope"), "unknown command: /nope");
+    }
+}
+
+/// Parse the host's MCP export. A missing or malformed value means "no servers
+/// to show", never a startup failure: the TUI is a read-only client here.
+fn parse_pairs(raw: Option<&str>) -> Vec<(String, String)> {
+    let Some(raw) = raw else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+    value
+        .as_array()
+        .map(|servers| {
+            servers
+                .iter()
+                .filter_map(|server| {
+                    Some((
+                        server.get("name")?.as_str()?.to_string(),
+                        server
+                            .get("detail")?
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod host_panel_tests {
+    use super::parse_pairs;
+
+    #[test]
+    fn the_host_export_is_read_as_name_and_transport() {
+        let parsed = parse_pairs(Some(
+            r#"[{"name":"everything","detail":"npx -y server-everything"},{"name":"remote","detail":"https://example.com/mcp"}]"#,
+        ));
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].0, "everything");
+        assert_eq!(parsed[1].1, "https://example.com/mcp");
+    }
+
+    #[test]
+    fn a_missing_or_malformed_export_is_empty() {
+        assert!(parse_pairs(None).is_empty());
+        assert!(parse_pairs(Some("not json")).is_empty());
+        assert!(parse_pairs(Some("{}")).is_empty());
     }
 }

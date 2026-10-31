@@ -41,6 +41,10 @@ impl Shell {
                 draft: Vec::new(),
                 scroll: 0,
                 follow: true,
+                expanded: false,
+                area: Rect::default(),
+                selection: None,
+                rendered: Vec::new(),
             },
             composer: Composer::new(workspace),
             panel: None,
@@ -53,7 +57,8 @@ impl Shell {
     }
 
     pub fn set_transcript(&mut self, transcript: &Transcript) {
-        self.transcript.lines = transcript_lines(transcript, &self.transcript.theme);
+        self.transcript.lines =
+            transcript_lines(transcript, &self.transcript.theme, self.transcript.expanded);
         let max = self.transcript.lines.len().saturating_sub(1);
         self.transcript.scroll = self.transcript.scroll.min(max as u16);
         self.last = Some(transcript.clone());
@@ -111,7 +116,7 @@ impl Shell {
             sidebar.theme = theme.clone();
         }
         if let Some(last) = &self.last {
-            self.transcript.lines = transcript_lines(last, &theme);
+            self.transcript.lines = transcript_lines(last, &theme, self.transcript.expanded);
         }
     }
 
@@ -130,6 +135,30 @@ impl Shell {
         self.transcript.scroll = 0;
         self.transcript.follow = false;
         self.last = None;
+    }
+
+    /// Fold or unfold every tool result and repaint the projection behind the
+    /// current lines, so the toggle applies without waiting for a snapshot.
+    pub fn toggle_tool_expansion(&mut self) -> bool {
+        self.transcript.expanded = !self.transcript.expanded;
+        if let Some(last) = &self.last {
+            self.transcript.lines =
+                transcript_lines(last, &self.transcript.theme, self.transcript.expanded);
+        }
+        self.transcript.expanded
+    }
+
+    /// Mouse selection lives on the transcript; the shell forwards the drag.
+    pub fn begin_selection(&mut self, position: Position) -> bool {
+        self.transcript.begin_selection(position)
+    }
+
+    pub fn update_selection(&mut self, position: Position) {
+        self.transcript.update_selection(position)
+    }
+
+    pub fn take_selection(&mut self) -> Option<String> {
+        self.transcript.take_selection()
     }
 
     pub fn scroll_transcript(&mut self, delta: i32) {
@@ -263,6 +292,18 @@ pub struct TranscriptPane {
     /// Follow the tail while new projections arrive. Any manual scroll clears
     /// it, so reading history is not interrupted by committed events.
     follow: bool,
+    /// Tool results render at their folded budget unless this is on.
+    expanded: bool,
+    /// The transcript's inner area from the last frame, in screen coordinates.
+    /// Mouse selection is expressed in the same space so a drag copies exactly
+    /// the cells the operator sees.
+    area: Rect,
+    /// Anchor and head of the current drag, in screen coordinates.
+    selection: Option<(Position, Position)>,
+    /// Symbols of the last rendered frame, one row of cells per line. Wide
+    /// characters own their first cell and leave the continuation empty, so a
+    /// column index is a screen column.
+    rendered: Vec<Vec<String>>,
 }
 
 impl Pane for TranscriptPane {
@@ -281,20 +322,151 @@ impl Pane for TranscriptPane {
             let viewport = area.height.saturating_sub(2) as usize;
             self.scroll = lines.len().saturating_sub(viewport) as u16;
         }
-        frame.render_widget(
-            Paragraph::new(lines)
-                .style(Style::new().fg(palette.text))
-                .block(block)
-                .wrap(Wrap { trim: false })
-                .scroll((self.scroll, 0)),
-            area,
-        );
+        let wrapped = Paragraph::new(lines)
+            .style(Style::new().fg(palette.text))
+            .block(block.clone())
+            .wrap(Wrap { trim: false })
+            .scroll((self.scroll, 0));
+        frame.render_widget(wrapped, area);
+        let inner = block.inner(area);
+        self.area = inner;
+        self.snapshot(frame, inner);
+        self.paint_selection(frame, inner);
     }
+}
+
+impl TranscriptPane {
+    /// Remember the symbols this frame drew so a drag can be copied verbatim.
+    fn snapshot(&mut self, frame: &mut Frame, inner: Rect) {
+        let buffer = frame.buffer_mut();
+        self.rendered = (inner.y..inner.bottom())
+            .map(|y| {
+                (inner.x..inner.right())
+                    .map(|x| {
+                        buffer
+                            .cell(Position::new(x, y))
+                            .map(|cell| cell.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect()
+            })
+            .collect();
+    }
+
+    /// Reverse the selected cells in place. The transcript is wrapped by
+    /// ratatui, so a selection is painted on the cells the operator covered
+    /// instead of being re-derived from the logical lines.
+    fn paint_selection(&mut self, frame: &mut Frame, inner: Rect) {
+        let Some((a, b)) = self.selection else {
+            return;
+        };
+        let (start, end) = if (a.y, a.x) > (b.y, b.x) {
+            (b, a)
+        } else {
+            (a, b)
+        };
+        let buffer = frame.buffer_mut();
+        for y in start.y.max(inner.y)..=end.y.min(inner.bottom().saturating_sub(1)) {
+            let from = if y == start.y { start.x } else { inner.x };
+            let to = if y == end.y {
+                end.x
+            } else {
+                inner.right().saturating_sub(1)
+            };
+            for x in from.max(inner.x)..=to.min(inner.right().saturating_sub(1)) {
+                if let Some(cell) = buffer.cell_mut(Position::new(x, y)) {
+                    cell.set_style(Style::new().add_modifier(Modifier::REVERSED));
+                }
+            }
+        }
+    }
+
+    /// Start a drag at a screen position when it lands inside the transcript.
+    pub fn begin_selection(&mut self, position: Position) -> bool {
+        if !self.area.contains(position) {
+            return false;
+        }
+        self.selection = Some((position, position));
+        true
+    }
+
+    /// Extend the drag. Positions outside the transcript clamp to its edges so
+    /// a drag that leaves the pane still copies what was covered.
+    pub fn update_selection(&mut self, position: Position) {
+        let Some((anchor, _)) = self.selection else {
+            return;
+        };
+        let clamped = Position::new(
+            position
+                .x
+                .clamp(self.area.x, self.area.right().saturating_sub(1)),
+            position
+                .y
+                .clamp(self.area.y, self.area.bottom().saturating_sub(1)),
+        );
+        self.selection = Some((anchor, clamped));
+    }
+
+    /// Finish the drag: return the selected text and clear the highlight.
+    pub fn take_selection(&mut self) -> Option<String> {
+        let (a, b) = self.selection.take()?;
+        if self.rendered.is_empty() {
+            return None;
+        }
+        let text = selection_text(&self.rendered, self.area, a, b);
+        (!text.is_empty()).then_some(text)
+    }
+}
+
+/// Slice the snapshot by screen coordinates. Rows keep their cell symbols, so a
+/// wide character contributes its symbol once and its continuation contributes
+/// nothing.
+fn selection_text(rendered: &[Vec<String>], inner: Rect, a: Position, b: Position) -> String {
+    let (start, end) = if (a.y, a.x) > (b.y, b.x) {
+        (b, a)
+    } else {
+        (a, b)
+    };
+    let mut lines: Vec<String> = Vec::new();
+    for y in start.y.max(inner.y)..=end.y.min(inner.bottom().saturating_sub(1)) {
+        let Some(row) = rendered.get((y - inner.y) as usize) else {
+            continue;
+        };
+        let from = if y == start.y {
+            start.x.saturating_sub(inner.x)
+        } else {
+            0
+        };
+        let to = if y == end.y {
+            end.x.saturating_sub(inner.x)
+        } else {
+            row.len().saturating_sub(1) as u16
+        };
+        let mut text = String::new();
+        for x in from..=to {
+            if let Some(symbol) = row.get(x as usize) {
+                text.push_str(symbol);
+            }
+        }
+        lines.push(text.trim_end().to_string());
+    }
+    while lines.last().is_some_and(|line| line.is_empty()) {
+        lines.pop();
+    }
+    lines.join("\n")
 }
 
 pub struct Home {
     pub rows: Vec<SessionSummary>,
     pub selected: usize,
+    /// Case-insensitive substring the list is narrowed to. Empty shows
+    /// everything, so filtering is a mode of the same list rather than a
+    /// second screen whose selection has to be kept in step.
+    query: String,
+    /// Whether printable keys belong to the filter. An explicit mode keeps
+    /// single-letter commands (`n`, `r`, `p`, `j`, `k`) usable and still lets a
+    /// filter contain those letters.
+    filtering: bool,
     notice: Option<String>,
     /// A configuration problem that outlives one load: the catalog arriving is
     /// not an answer to it, so it is kept apart from the transient notice.
@@ -310,6 +482,8 @@ impl Home {
         Self {
             rows: Vec::new(),
             selected: 0,
+            query: String::new(),
+            filtering: false,
             notice: None,
             warning: None,
             loaded: false,
@@ -349,25 +523,104 @@ impl Home {
 
     pub fn set_rows(&mut self, rows: Vec<SessionSummary>) {
         self.loaded = true;
-        let selected_id = self.rows.get(self.selected).map(|row| row.id.clone());
+        let selected_id = self.current().map(|row| row.id.clone());
         self.rows = rows;
+        let visible = self.visible_len();
         self.selected = selected_id
-            .and_then(|id| self.rows.iter().position(|row| row.id == id))
+            .and_then(|id| self.visible().iter().position(|row| row.id == id))
             .unwrap_or(0)
-            .min(self.rows.len().saturating_sub(1));
+            .min(visible.saturating_sub(1));
+    }
+
+    /// The rows the list shows right now, in list order. Pinning and filtering
+    /// both change this view, so every caller reads it instead of `rows`.
+    fn visible(&self) -> Vec<&SessionSummary> {
+        if self.query.is_empty() {
+            return self.rows.iter().collect();
+        }
+        let needle = self.query.to_lowercase();
+        self.rows
+            .iter()
+            .filter(|row| {
+                row.label().to_lowercase().contains(&needle)
+                    || row
+                        .directory
+                        .as_deref()
+                        .is_some_and(|directory| directory.to_lowercase().contains(&needle))
+            })
+            .collect()
+    }
+
+    fn visible_len(&self) -> usize {
+        self.visible().len()
+    }
+
+    pub fn query(&self) -> &str {
+        &self.query
+    }
+
+    pub fn filtering(&self) -> bool {
+        self.filtering
+    }
+
+    /// Enter filter mode with an empty query, so the next printable key starts
+    /// a search instead of running a command.
+    pub fn start_filter(&mut self) {
+        self.filtering = true;
+        self.query.clear();
+        self.selected = 0;
+    }
+
+    /// Leave filter mode and show the whole list again.
+    pub fn stop_filter(&mut self) {
+        self.filtering = false;
+        self.query.clear();
+        self.selected = 0;
+    }
+
+    /// Narrow the list one character at a time; the selection goes back to the
+    /// first match so the operator sees the result immediately.
+    pub fn filter(&mut self, c: char) {
+        self.query.push(c);
+        self.selected = 0;
+    }
+
+    pub fn filter_backspace(&mut self) -> bool {
+        if self.query.pop().is_none() {
+            return false;
+        }
+        self.selected = 0;
+        true
+    }
+
+    /// Clearing the filter keeps filter mode but shows the whole list again.
+    pub fn clear_filter(&mut self) -> bool {
+        if self.query.is_empty() {
+            return false;
+        }
+        self.query.clear();
+        self.selected = 0;
+        true
     }
 
     pub fn move_cursor(&mut self, delta: i32) {
-        if self.rows.is_empty() {
+        let visible = self.visible_len();
+        if visible == 0 {
             self.selected = 0;
             return;
         }
         let next = self.selected as i32 + delta;
-        self.selected = next.clamp(0, self.rows.len() as i32 - 1) as usize;
+        self.selected = next.clamp(0, visible as i32 - 1) as usize;
+    }
+
+    /// The row a numbered slot opens. Slots follow the list as shown, and the
+    /// first nine are the ones a terminal keyboard can reach without a chord.
+    pub fn slot(&self, index: usize) -> Option<&SessionSummary> {
+        self.visible().into_iter().nth(index)
     }
 
     pub fn current(&self) -> Option<&SessionSummary> {
-        self.rows.get(self.selected)
+        self.visible().into_iter().nth(self.selected)
     }
 
     fn warning_lines(&self) -> Vec<Line<'static>> {
@@ -390,17 +643,25 @@ impl Home {
         let palette = self.theme.palette;
         let block = Block::bordered()
             .title(Span::styled(
-                " sessions · n new ",
+                if self.query.is_empty() {
+                    " sessions · 1-9 open · p pin · / filter ".to_string()
+                } else {
+                    format!(" sessions · filter \"{}\" · esc clear ", self.query)
+                },
                 Style::new().fg(palette.primary),
             ))
-            .border_style(Style::new().fg(palette.border))
-            .style(Style::new().bg(palette.background));
-        if self.rows.is_empty() {
+            .border_style(Style::new().fg(palette.border_active))
+            .style(Style::new().bg(palette.surface));
+        let visible = self.visible();
+        if visible.is_empty() {
             let mut lines = self.warning_lines();
-            let message = self
-                .notice
-                .clone()
-                .unwrap_or_else(|| self.placeholder().to_string());
+            let message = self.notice.clone().unwrap_or_else(|| {
+                if self.rows.is_empty() {
+                    self.placeholder().to_string()
+                } else {
+                    format!("nothing matches \"{}\"", self.query)
+                }
+            });
             lines.push(Line::from(Span::styled(
                 message,
                 Style::new().fg(palette.text_muted),
@@ -423,14 +684,20 @@ impl Home {
                     Line::default(),
                 ]
             }));
-        let rows = self.rows.iter().enumerate().map(|(index, row)| {
+        let rows = visible.iter().enumerate().map(|(index, row)| {
             let marker = if index == self.selected { "▸ " } else { "  " };
             let style = if index == self.selected {
                 Style::new()
                     .fg(palette.primary)
+                    .bg(palette.element)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::new().fg(palette.text)
+            };
+            let slot = if index < 9 {
+                format!("{} ", index + 1)
+            } else {
+                "  ".to_string()
             };
             let detail = match (row.directory.as_deref(), row.updated_at_ms) {
                 (Some(directory), Some(updated)) => {
@@ -442,8 +709,21 @@ impl Home {
                 }
                 _ => String::new(),
             };
+            let detail = if row.pinned_at_ms.is_some() {
+                if detail.is_empty() {
+                    "pinned".to_string()
+                } else {
+                    format!("pinned  ·  {detail}")
+                }
+            } else {
+                detail
+            };
             Line::from(vec![
-                Span::styled(format!("{marker}{}", row.label()), style),
+                Span::styled(
+                    format!("{marker}{slot}"),
+                    Style::new().fg(palette.text_muted),
+                ),
+                Span::styled(row.label(), style),
                 Span::styled(
                     if detail.is_empty() {
                         String::new()
@@ -501,7 +781,7 @@ fn draft_lines(text: &str, reasoning: &str, theme: &Theme) -> Vec<Line<'static>>
     lines
 }
 
-fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>> {
+fn transcript_lines(transcript: &Transcript, theme: &Theme, expanded: bool) -> Vec<Line<'static>> {
     let palette = theme.palette;
     let mut lines = Vec::new();
     for entry in &transcript.entries {
@@ -541,6 +821,7 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Vec<Line<'static>
                             call,
                             transcript.displays.get(&call.id).map(Vec::as_slice),
                             theme,
+                            expanded,
                         )),
                     }
                 }
@@ -823,6 +1104,21 @@ pub fn render_dialog(frame: &mut Frame, area: Rect, dialog: &Dialog, theme: &The
         saved.render(frame, inner, theme);
         return;
     }
+    if let Dialog::Message(text) = dialog {
+        let lines = text
+            .lines
+            .iter()
+            .map(|line| Line::from(line.clone()))
+            .collect::<Vec<_>>();
+        frame.render_widget(
+            Paragraph::new(lines)
+                .style(Style::new().fg(palette.text).bg(palette.surface))
+                .wrap(Wrap { trim: false })
+                .scroll((text.scroll.min(u16::MAX as usize) as u16, 0)),
+            inner,
+        );
+        return;
+    }
     if let Some(list) = dialog.list() {
         render_list(frame, inner, list, theme);
         return;
@@ -886,6 +1182,7 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
                 let style = if selected {
                     Style::new()
                         .fg(palette.primary)
+                        .bg(palette.element)
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::new().fg(palette.text)
@@ -1092,9 +1389,24 @@ pub struct QuestionProgress {
     focus: usize,
     cursor: Vec<usize>,
     chosen: Vec<Vec<bool>>,
+    /// Set once the answer left this process: the panel stays on screen until
+    /// the engine's snapshot settles it, and a second Enter must not answer it
+    /// twice.
+    submitted: bool,
+    /// Accepted custom answers, one per question.
+    typed: Vec<Option<String>>,
+    /// The custom answer being typed for the focused question.
+    typing: Option<String>,
 }
 
 const PANEL_ROWS: usize = 12;
+
+/// The extra "type your own answer" row, when the question allows one. It is a
+/// single-select affordance: a multi-select question collects labels.
+fn custom_row(view: &QuestionView, index: usize) -> Option<usize> {
+    let question = &view.questions[index];
+    (question.custom && !question.multi_select).then_some(question.options.len())
+}
 
 impl Panel {
     pub fn approval(view: ApprovalView) -> Self {
@@ -1104,7 +1416,8 @@ impl Panel {
     }
 
     pub fn question(view: QuestionView) -> Self {
-        let cursor = vec![0; view.questions.len()];
+        let questions = view.questions.len();
+        let cursor = vec![0; questions];
         let chosen = view
             .questions
             .iter()
@@ -1116,6 +1429,9 @@ impl Panel {
                 focus: 0,
                 cursor,
                 chosen,
+                submitted: false,
+                typed: vec![None; questions],
+                typing: None,
             }),
         }
     }
@@ -1149,9 +1465,11 @@ impl Panel {
         let PanelKind::Question(progress) = &mut self.kind else {
             return;
         };
-        let question = &progress.view.questions[progress.focus];
-        let next = progress.cursor[progress.focus] as i32 + delta;
-        progress.cursor[progress.focus] = next.clamp(0, question.options.len() as i32 - 1) as usize;
+        let focus = progress.focus;
+        let question = &progress.view.questions[focus];
+        let last = custom_row(&progress.view, focus).unwrap_or(question.options.len() - 1);
+        let next = progress.cursor[focus] as i32 + delta;
+        progress.cursor[focus] = next.clamp(0, last as i32) as usize;
     }
 
     /// Toggle the focused option for a multi-select question; a single-select
@@ -1163,6 +1481,9 @@ impl Panel {
         let focus = progress.focus;
         let cursor = progress.cursor[focus];
         let multi = progress.view.questions[focus].multi_select;
+        if !multi && cursor >= progress.chosen[focus].len() {
+            return;
+        }
         let chosen = &mut progress.chosen[focus];
         if multi {
             chosen[cursor] = !chosen[cursor];
@@ -1178,13 +1499,19 @@ impl Panel {
         let PanelKind::Question(progress) = &mut self.kind else {
             return None;
         };
+        if progress.submitted {
+            return None;
+        }
         let focus = progress.focus;
         let cursor = progress.cursor[focus];
         if !progress.view.questions[focus].multi_select {
             progress.chosen[focus]
                 .iter_mut()
                 .for_each(|mark| *mark = false);
-            progress.chosen[focus][cursor] = true;
+            // The custom row has no mark of its own: its answer is the text.
+            if cursor < progress.chosen[focus].len() {
+                progress.chosen[focus][cursor] = true;
+            }
         }
         let next = progress
             .chosen
@@ -1197,11 +1524,13 @@ impl Panel {
             progress.focus = index;
             return None;
         }
-        if progress
-            .chosen
-            .iter()
-            .any(|marks| !marks.iter().any(|mark| *mark))
-        {
+        if progress.chosen.iter().enumerate().any(|(index, marks)| {
+            let custom = custom_row(&progress.view, index) == Some(progress.cursor[index]);
+            if custom {
+                return progress.typed[index].as_deref().is_none_or(str::is_empty);
+            }
+            !marks.iter().any(|mark| *mark)
+        }) {
             progress.focus = focus;
             return None;
         }
@@ -1209,8 +1538,12 @@ impl Panel {
             .view
             .questions
             .iter()
+            .enumerate()
             .zip(&progress.chosen)
-            .map(|(question, marks)| {
+            .map(|((index, question), marks)| {
+                if custom_row(&progress.view, index) == Some(progress.cursor[index]) {
+                    return vec![progress.typed[index].clone().unwrap_or_default()];
+                }
                 question
                     .options
                     .iter()
@@ -1220,7 +1553,71 @@ impl Panel {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
+        progress.submitted = true;
         Some(progress.view.answer(answers))
+    }
+
+    /// The custom answer being typed, if any. While this is `Some`, characters
+    /// belong to the answer instead of the panel's keys.
+    pub fn typing(&self) -> Option<&str> {
+        match &self.kind {
+            PanelKind::Question(progress) => progress.typing.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Enter on the custom row starts typing; anywhere else it submits.
+    pub fn begin_typing(&mut self) -> bool {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return false;
+        };
+        let focus = progress.focus;
+        if custom_row(&progress.view, focus) != Some(progress.cursor[focus]) {
+            return false;
+        }
+        progress.typing = Some(String::new());
+        true
+    }
+
+    pub fn type_char(&mut self, character: char) {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return;
+        };
+        if let Some(buffer) = progress.typing.as_mut() {
+            buffer.push(character);
+        }
+    }
+
+    pub fn backspace_typing(&mut self) {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return;
+        };
+        if let Some(buffer) = progress.typing.as_mut() {
+            buffer.pop();
+        }
+    }
+
+    /// Accept the typed answer into the question it belongs to.
+    pub fn accept_typing(&mut self) -> bool {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return false;
+        };
+        let Some(buffer) = progress.typing.take() else {
+            return false;
+        };
+        let focus = progress.focus;
+        if buffer.trim().is_empty() {
+            return false;
+        }
+        progress.typed[focus] = Some(buffer);
+        true
+    }
+
+    pub fn cancel_typing(&mut self) -> bool {
+        let PanelKind::Question(progress) = &mut self.kind else {
+            return false;
+        };
+        progress.typing.take().is_some()
     }
 
     pub fn rejection(&self) -> Option<serde_json::Value> {
@@ -1312,6 +1709,28 @@ fn panel_lines(panel: &Panel, theme: &Theme) -> Vec<Line<'static>> {
                         Style::new().fg(palette.text_muted),
                     ),
                 ]));
+            }
+            if let Some(index) = custom_row(&progress.view, progress.focus) {
+                let focused = progress.cursor[progress.focus] == index;
+                let glyph = if focused { "▸ " } else { "  " };
+                let written = progress
+                    .typing
+                    .as_deref()
+                    .or(progress.typed[progress.focus].as_deref());
+                let detail = match written {
+                    Some(text) => format!("{glyph}Type your own answer: {text}"),
+                    None => format!("{glyph}Type your own answer"),
+                };
+                lines.push(Line::from(Span::styled(
+                    detail,
+                    if focused {
+                        Style::new()
+                            .fg(palette.primary)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::new().fg(palette.text_muted)
+                    },
+                )));
             }
             let last = progress.focus + 1 == progress.view.questions.len();
             lines.push(Line::default());
@@ -1406,7 +1825,7 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let lines = transcript_lines(&transcript, &theme);
+        let lines = transcript_lines(&transcript, &theme, false);
         assert_eq!(lines[0].to_string(), "✗ provider unavailable");
         assert_eq!(lines[0].spans[0].style.fg, Some(theme.palette.error));
     }
@@ -1469,6 +1888,7 @@ mod tests {
                     },
                 ],
                 multi_select: multi,
+                custom: true,
             }],
         }
     }
@@ -1534,6 +1954,39 @@ mod tests {
     }
 
     #[test]
+    fn a_submitted_answer_is_not_sent_twice_while_the_panel_waits() {
+        let mut panel = Panel::question(question(false));
+        assert!(panel.submit().is_some(), "first Enter answers");
+        assert!(
+            panel.submit().is_none(),
+            "a second Enter must not answer the same question again"
+        );
+    }
+
+    #[test]
+    fn a_single_choice_question_accepts_a_typed_answer() {
+        let mut panel = Panel::question(question(false));
+        // The custom row sits directly after the two options.
+        panel.move_cursor(2);
+        assert!(panel.begin_typing(), "the custom row starts typing");
+        for character in "src/new.rs".chars() {
+            panel.type_char(character);
+        }
+        assert!(panel.accept_typing());
+        let answer = panel.submit().expect("answer");
+        assert_eq!(answer["answers"], serde_json::json!([["src/new.rs"]]));
+    }
+
+    #[test]
+    fn a_typed_answer_must_not_be_blank() {
+        let mut panel = Panel::question(question(false));
+        panel.move_cursor(2);
+        assert!(panel.begin_typing());
+        assert!(!panel.accept_typing(), "an empty answer is refused");
+        assert!(panel.submit().is_none(), "nothing chosen yet");
+    }
+
+    #[test]
     fn a_question_panel_rejects_with_its_bound_hash() {
         let panel = Panel::question(question(false));
         let rejection = panel.rejection().expect("rejection");
@@ -1558,5 +2011,32 @@ mod tests {
         assert_eq!(response["decision"], "allow");
         assert_eq!(response["policy_revision"], "rev-2");
         assert_eq!(response["matcher"]["kind"], "builtin");
+    }
+
+    #[test]
+    fn a_mouse_drag_copies_the_cells_it_covered() {
+        let inner = Rect::new(1, 2, 6, 3);
+        let cells = |text: &str| text.chars().map(|c| c.to_string()).collect::<Vec<_>>();
+        let rendered = vec![cells("abc   "), cells("def   "), cells("ghi   ")];
+        // One row, trailing blanks trimmed.
+        assert_eq!(
+            selection_text(&rendered, inner, Position::new(2, 2), Position::new(4, 2)),
+            "bc"
+        );
+        // A drag that crosses rows reads left-to-right, top-to-bottom.
+        assert_eq!(
+            selection_text(&rendered, inner, Position::new(2, 2), Position::new(3, 3)),
+            "bc\ndef"
+        );
+        // A drag that leaves the pane clamps instead of panicking.
+        assert_eq!(
+            selection_text(&rendered, inner, Position::new(1, 2), Position::new(9, 9)),
+            "abc\ndef\nghi"
+        );
+        // Blank cells copy nothing.
+        assert_eq!(
+            selection_text(&rendered, inner, Position::new(5, 2), Position::new(6, 2)),
+            ""
+        );
     }
 }

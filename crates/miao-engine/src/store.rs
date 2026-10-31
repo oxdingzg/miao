@@ -23,7 +23,20 @@ use tokio::sync::{mpsc, oneshot, watch};
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 // Older readers do not understand inactive semantic imports and could execute
 // a destination before its host has switched the authoritative placement.
-pub const SCHEMA_VERSION: u32 = 23;
+pub const SCHEMA_VERSION: u32 = 25;
+
+/// Schema versions at or above this floor share the modern run/lease format:
+/// the pre-epoch repair landed at 23, and every later delta is additive
+/// (new tables, no format rewrites). A live older engine keeps reading and
+/// writing the tables it knows, so it is not a reason to refuse an additive
+/// upgrade — only a format repair needs exclusive ownership.
+const ADDITIVE_UPGRADE_FLOOR: u32 = 23;
+
+/// Whether this upgrade rewrites the run/lease format (and therefore must not
+/// run while a live old owner could create rows in the old shape).
+fn needs_exclusive_ownership(version: u32, has_run_epoch: bool) -> bool {
+    version < ADDITIVE_UPGRADE_FLOOR || !has_run_epoch
+}
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -252,20 +265,36 @@ impl Store {
                     "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_run') WHERE name='lease_epoch')",
                     [], |row| row.get(0),
                 )?;
-                if engine && (version < SCHEMA_VERSION || !has_run_epoch) {
+                if engine
+                    && (version < SCHEMA_VERSION || !has_run_epoch)
+                    && needs_exclusive_ownership(version, has_run_epoch)
+                {
                     let has_owner_pid: bool = conn.query_row(
                         "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_lease') WHERE name='owner_pid')", [], |row| row.get(0),
                     )?;
                     if has_owner_pid {
                         let owners = {
-                            let mut statement = conn.prepare("SELECT DISTINCT l.owner_pid FROM engine_run r JOIN engine_lease l ON l.session_id=r.session_id WHERE r.state='running' AND l.owner_pid IS NOT NULL")?;
+                            let mut statement = conn.prepare("SELECT DISTINCT l.owner_pid, r.session_id FROM engine_run r JOIN engine_lease l ON l.session_id=r.session_id WHERE r.state='running' AND l.owner_pid IS NOT NULL")?;
                             let owners = statement
-                                .query_map([], |row| row.get::<_, u32>(0))?
+                                .query_map([], |row| {
+                                    Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?))
+                                })?
                                 .collect::<Result<Vec<_>, _>>()?;
                             owners
                         };
-                        if owners.into_iter().any(pid_alive) {
-                            return Err(Error::Invalid("cannot upgrade Session storage while an older engine run owner is alive; stop the older engine first".into()));
+                        // Name the live owners: the operator has to close exactly
+                        // those windows, and a bare "stop the older engine" left
+                        // them guessing at which of several windows it meant.
+                        let live: Vec<String> = owners
+                            .into_iter()
+                            .filter(|(pid, _)| pid_alive(*pid))
+                            .map(|(pid, session)| format!("pid {pid} (session {session})"))
+                            .collect();
+                        if !live.is_empty() {
+                            return Err(Error::Invalid(format!(
+                                "cannot upgrade Session storage while an older engine run owner is alive; stop the older engine first: {}",
+                                live.join(", ")
+                            )));
                         }
                     }
                 }
@@ -293,6 +322,7 @@ impl Store {
                 crate::permission_patterns::initialize(&conn)?;
                 crate::permission_migration::initialize(&conn)?;
                 crate::product_permission_request::initialize(&conn)?;
+                crate::shared_permission_events::initialize_source(&conn)?;
                 // ADR-0019: content-addressed Session file snapshots and the one
                 // staged revert intent. Blobs live beside the database.
                 conn.execute_batch(
@@ -422,6 +452,13 @@ impl Store {
                 )?;
                 if !has_run_epoch {
                     conn.execute("ALTER TABLE engine_run ADD COLUMN lease_epoch INTEGER", [])?;
+                }
+                let has_shared_authority: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_run') WHERE name='shared_permission')", [], |row| row.get(0))?;
+                if !has_shared_authority {
+                    conn.execute(
+                        "ALTER TABLE engine_run ADD COLUMN shared_permission TEXT",
+                        [],
+                    )?;
                 }
                 crate::permission_source::initialize(&conn)?;
                 conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -2058,7 +2095,7 @@ impl Store {
     }
 
     pub async fn start_run(&self, session: &str, run: &str) -> Result<Event, Error> {
-        self.start_run_inner(session, run, None).await
+        self.start_run_inner(session, run, None, None).await
     }
 
     /// `start_run` under a Session claim: a superseded writer cannot open a run.
@@ -2068,7 +2105,7 @@ impl Store {
         run: &str,
         lease: &SessionLease,
     ) -> Result<Event, Error> {
-        self.start_run_inner(session, run, Some(lease.clone()))
+        self.start_run_inner(session, run, Some(lease.clone()), None)
             .await
     }
 
@@ -2081,6 +2118,18 @@ impl Store {
         run: &str,
         force: bool,
         lease: &SessionLease,
+    ) -> Result<Option<Vec<Event>>, Error> {
+        self.start_run_with_shared_authority(session, run, force, lease, None)
+            .await
+    }
+
+    pub(crate) async fn start_run_with_shared_authority(
+        &self,
+        session: &str,
+        run: &str,
+        force: bool,
+        lease: &SessionLease,
+        authority: Option<crate::permission_source::RunAuthority>,
     ) -> Result<Option<Vec<Event>>, Error> {
         let (session, run, lease) = (session.to_owned(), run.to_owned(), lease.clone());
         self.call(move |conn| {
@@ -2099,8 +2148,8 @@ impl Store {
                 return Err(Error::Invalid("Session has no admitted history".into()));
             }
             tx.execute(
-                "INSERT INTO engine_run(id,session_id,state,lease_epoch) VALUES(?1,?2,'running',?3)",
-                params![run, session, lease.epoch],
+                "INSERT INTO engine_run(id,session_id,state,lease_epoch,shared_permission) VALUES(?1,?2,'running',?3,?4)",
+                params![run, session, lease.epoch, authority.map(|authority|serde_json::to_string(&authority)).transpose()?],
             )?;
             append(&tx, &session, "run.started", json!({"run_id":run}))?;
             tx.commit()?;
@@ -2109,11 +2158,12 @@ impl Store {
         .await
     }
 
-    async fn start_run_inner(
+    pub(crate) async fn start_run_inner(
         &self,
         session: &str,
         run: &str,
         lease: Option<SessionLease>,
+        authority: Option<crate::permission_source::RunAuthority>,
     ) -> Result<Event, Error> {
         let (session, run) = (session.to_owned(), run.to_owned());
         self.call(move |conn| {
@@ -2122,8 +2172,8 @@ impl Store {
                 require_lease(&tx, &session, lease)?;
             }
             tx.execute(
-                "INSERT INTO engine_run(id,session_id,state,lease_epoch) VALUES(?1,?2,'running',?3)",
-                params![run, session, lease.as_ref().map(|lease| lease.epoch)],
+                "INSERT INTO engine_run(id,session_id,state,lease_epoch,shared_permission) VALUES(?1,?2,'running',?3,?4)",
+                params![run, session, lease.as_ref().map(|lease| lease.epoch),authority.map(|authority|serde_json::to_string(&authority)).transpose()?],
             )?;
             let e = append(&tx, &session, "run.started", json!({"run_id":run}))?;
             tx.commit()?;
@@ -4334,5 +4384,27 @@ impl Store {
             created_ms,
             updated_ms,
         }
+    }
+}
+
+#[cfg(test)]
+mod upgrade_ownership_tests {
+    use super::needs_exclusive_ownership;
+
+    #[test]
+    fn additive_upgrades_do_not_require_exclusive_ownership() {
+        // 23-24 → 25 only adds tables; a live older engine keeps working, so a
+        // second window must not be forced to close it first.
+        assert!(!needs_exclusive_ownership(23, true));
+        assert!(!needs_exclusive_ownership(24, true));
+    }
+
+    #[test]
+    fn format_repairs_still_require_exclusive_ownership() {
+        // The pre-epoch repair rewrites run rows; a live old owner could write
+        // rows in the old shape mid-upgrade, so it must exit first.
+        assert!(needs_exclusive_ownership(22, false));
+        assert!(needs_exclusive_ownership(22, true));
+        assert!(needs_exclusive_ownership(23, false));
     }
 }

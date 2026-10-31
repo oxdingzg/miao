@@ -32,7 +32,158 @@ pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
     Ok(())
 }
 
+pub(crate) fn initialize_origins(connection: &Connection) -> Result<(), Error> {
+    connection.execute_batch("ALTER TABLE permission_request ADD COLUMN origin TEXT;")?;
+    let records = {
+        let mut statement = connection
+            .prepare("SELECT id,data FROM permission_request WHERE state='pending' ORDER BY id")?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    for (id, data) in records {
+        let mut record: Record = serde_json::from_str(&data)?;
+        if record.id != id || record.state != State::Pending {
+            return Err(Error::Invalid(
+                "corrupt legacy shared permission request".into(),
+            ));
+        }
+        // A v4 row has no durable source run/epoch. Never guess the source or
+        // replay its provider; retain history and cancel only that pending ask.
+        record.state = State::Cancelled;
+        record.reason = Some("source_metadata_unavailable".into());
+        resolve_request(connection, &record)?;
+    }
+    connection.execute_batch("CREATE TRIGGER permission_request_origin_required BEFORE INSERT ON permission_request
+        WHEN NEW.origin IS NULL OR json_valid(NEW.origin)!=1
+        BEGIN SELECT RAISE(ABORT,'durable permission source metadata is required'); END;
+        CREATE TRIGGER permission_request_binding_immutable BEFORE UPDATE OF project,location,owner,session,binding,origin ON permission_request
+        WHEN NEW.project IS NOT OLD.project OR NEW.location IS NOT OLD.location OR NEW.owner IS NOT OLD.owner OR NEW.session IS NOT OLD.session OR NEW.binding IS NOT OLD.binding OR NEW.origin IS NOT OLD.origin
+        BEGIN SELECT RAISE(ABORT,'permission request source binding is immutable'); END;")?;
+    Ok(())
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct Recovery {
+    pub settled: usize,
+    pub after: Option<String>,
+    pub has_more: bool,
+}
+
 impl Context {
+    /// Cancel only sources durably known to be inactive. A live foreign source
+    /// stays pending; this does not reconstruct its bridge or replay a provider.
+    pub async fn recover_source_requests(
+        &self,
+        source: &crate::store::Store,
+        after: Option<String>,
+        limit: usize,
+    ) -> Result<Recovery, Error> {
+        if self.workspace_id.is_some()
+            || limit == 0
+            || limit > 256
+            || after
+                .as_ref()
+                .is_some_and(|id| id.len() > 256 || id.chars().any(char::is_control))
+        {
+            return Err(Error::Invalid(
+                "invalid shared request recovery scope or page".into(),
+            ));
+        }
+        let context = self.clone();
+        let path = source.path().to_path_buf();
+        self.project.authority.call(move |connection| {
+            crate::permission_source_transaction::with_locked_source_database(connection,&path,|transaction,_| {
+                let database=path.to_str().ok_or_else(||Error::Invalid("invalid permission source database path".into()))?;
+                let mut rows={
+                    let mut statement=transaction.prepare("SELECT id,owner,session,binding,data,origin FROM permission_request WHERE project=?1 AND location=?2 AND state='pending' AND json_extract(origin,'$.database')=?3 AND (?4 IS NULL OR id>?4) ORDER BY id LIMIT ?5")?;
+                    let rows=statement.query_map(params![context.project.project,context.location,database,after,limit+1],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?,row.get::<_,String>(3)?,row.get::<_,String>(4)?,row.get::<_,String>(5)?)))?;
+                    rows.collect::<Result<Vec<_>,_>>()?
+                };
+                let has_more=rows.len()>limit;
+                rows.truncate(limit);
+                let after=rows.last().map(|row|row.0.clone()).or(after);
+                let mut settled=0;
+                let mut owners=std::collections::HashMap::new();
+                for (id,owner,session,binding,data,origin) in rows {
+                    let origin:crate::permission_source_transaction::Origin=serde_json::from_str(&origin)?;
+                    let mut record:Record=serde_json::from_str(&data)?;
+                    let expected=context.request_binding_for_origin(&transaction,&origin,&owner,&record.source)?;
+                    let input_hash=digest(&serde_json::to_vec(&json!({"binding":binding,"input":record.request}))?);
+                    if origin.database!=path || origin.owner_pid==0 || origin.lease_epoch==0 || binding!=expected || record.id!=id || record.request.request_id!=id || record.source.session_id!=session || record.workspace!=context.directory || record.input_hash!=input_hash || record.state!=State::Pending {
+                        return Err(Error::Invalid("corrupt shared request recovery binding".into()));
+                    }
+                    if expire_request(&transaction,&mut record)? {settled+=1;continue;}
+                    let active:bool=transaction.query_row("SELECT EXISTS(SELECT 1 FROM permission_source.engine_tool t JOIN permission_source.engine_run r ON r.id=t.run_id JOIN permission_source.engine_location l ON l.session_id=r.session_id JOIN permission_source.engine_lease e ON e.session_id=r.session_id WHERE t.id=?1 AND t.state='dispatched' AND r.id=?2 AND r.session_id=?3 AND r.state='running' AND l.root=?4 AND r.lease_epoch=?5 AND e.epoch=?5 AND e.owner_pid=?6)",params![format!("{}/{}",origin.run_id,record.source.call_id),origin.run_id,session,context.directory,origin.lease_epoch,origin.owner_pid],|row|row.get(0))?;
+                    let live=*owners.entry(origin.owner_pid).or_insert_with(||crate::store::pid_alive(origin.owner_pid));
+                    if active && live {continue;}
+                    record.state=State::Cancelled;
+                    record.reason=Some(if live {"source_finished"} else {"source_owner_exited"}.into());
+                    resolve_request(&transaction,&record)?;
+                    settled+=1;
+                }
+                transaction.commit()?;
+                Ok(Recovery{settled,after,has_more})
+            })
+        }).await
+    }
+
+    pub(crate) async fn evaluate_source(
+        &self,
+        source: &Source,
+        facts: crate::product_permission::Request,
+    ) -> Result<Outcome, Error> {
+        if facts.actions.is_empty() || facts.resources.is_empty() {
+            return Err(Error::Invalid(
+                "product permission requires actions and resources".into(),
+            ));
+        }
+        let context = self.clone();
+        let source = source.clone();
+        self.project
+            .authority
+            .with_permission_source(&source.clone(), move |transaction| {
+                context.require_request_source(&source)?;
+                context.evaluate_request(
+                    transaction,
+                    &source,
+                    &Input {
+                        request_id: "evaluation".into(),
+                        facts,
+                        save: None,
+                        metadata: None,
+                        timeout_ms: None,
+                    },
+                )
+            })
+            .await
+    }
+
+    pub(crate) async fn pending_source_requests(
+        &self,
+        source: &Source,
+    ) -> Result<Vec<Record>, Error> {
+        let context = self.clone();
+        let source = source.clone();
+        self.project.authority.with_permission_source(&source.clone(), move |transaction| {
+            context.require_request_source(&source)?;
+            let binding = context.request_binding(transaction, &source)?;
+            let ids = {
+                let mut statement = transaction.prepare("SELECT id FROM permission_request WHERE binding=?1 AND state='pending' ORDER BY id")?;
+                let rows = statement.query_map([binding], |row|row.get::<_,String>(0))?;
+                rows.collect::<Result<Vec<_>,_>>()?
+            };
+            let mut records = Vec::new();
+            for id in ids {
+                let mut record = context.load_request(transaction,&source,&id)?.ok_or_else(||Error::Invalid("shared permission request disappeared".into()))?;
+                context.refresh_request(transaction,&source,&mut record)?;
+                if record.state==State::Pending { records.push(record); }
+            }
+            Ok(records)
+        }).await
+    }
+
     /// The trusted host binds the context; every admission rechecks the actual
     /// Runtime source and its execution lease inside the Root write transaction.
     pub async fn admit_request(&self, source: &Source, input: Input) -> Result<Record, Error> {
@@ -63,7 +214,7 @@ impl Context {
                 reason: if auto {Some("auto_allowed".into())} else {(state==State::Denied).then(||"policy_denied".into())},feedback:None,
                 denial:(outcome.effect==Decision::Deny).then_some(outcome),
             };
-            transaction.execute("INSERT INTO permission_request(id,project,location,owner,session,binding,state,data) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![record.id,context.project.project,context.location,source.context.owner,record.source.session_id,binding,crate::product_permission_request::state_name(record.state),serde_json::to_string(&record)?])?;
+            transaction.execute("INSERT INTO permission_request(id,project,location,owner,session,binding,state,data,origin) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",params![record.id,context.project.project,context.location,source.context.owner,record.source.session_id,binding,crate::product_permission_request::state_name(record.state),serde_json::to_string(&record)?,serde_json::to_string(&source.origin())?])?;
             request_event(transaction,&record)?;
             Ok(record)
         }).await
@@ -271,6 +422,12 @@ impl Context {
             let authority = match authority {
                 Some(authority)
                     if !authority.cancel.is_cancelled()
+                        && crate::product_permission::source_epoch_matches(
+                            transaction,
+                            &authority.run_id,
+                            authority.lease_epoch,
+                            true,
+                        )?
                         && crate::product_permission::source_active_in(
                             transaction,
                             &record.source.session_id,
@@ -291,6 +448,7 @@ impl Context {
             };
             let peer = Source {
                 path: source.path.clone(),
+                shared: source.shared.clone(),
                 context: crate::product_permission_request::Context {
                     source: record.source.clone(),
                     authority: authority.clone(),
@@ -330,9 +488,41 @@ impl Context {
     }
 
     fn request_binding(&self, connection: &Connection, source: &Source) -> Result<String, Error> {
+        if let Some(marker) = &source.shared {
+            let snapshot = self.view(connection)?;
+            if marker.target.authority != snapshot.project.authority
+                || marker.target.project != snapshot.project.project
+                || marker.target.directory != self.directory
+                || marker.target.workspace_id != self.workspace_id
+                || snapshot
+                    .migration
+                    .as_ref()
+                    .is_none_or(|receipt| receipt.fingerprint != marker.fingerprint)
+                || snapshot.project.migration.is_none()
+            {
+                return Err(Error::Invalid(
+                    "shared permission handoff binding mismatch".into(),
+                ));
+            }
+        }
+        self.request_binding_for_origin(
+            connection,
+            &source.origin(),
+            &source.context.owner,
+            &source.context.source,
+        )
+    }
+
+    pub(crate) fn request_binding_for_origin(
+        &self,
+        connection: &Connection,
+        origin: &crate::permission_source_transaction::Origin,
+        owner: &str,
+        source: &crate::product_permission::Source,
+    ) -> Result<String, Error> {
         let authority = crate::permission_changefeed::cursor(connection)?.authority;
         Ok(digest(&serde_json::to_vec(
-            &json!({"semantics":"shared-permission-source-v1","authority":authority,"project":self.project.project,"location":self.location,"path":source.path,"owner":source.context.owner,"source":source.context.source,"run":source.context.authority.run_id}),
+            &json!({"semantics":"shared-permission-source-v2","authority":authority,"project":self.project.project,"location":self.location,"origin":origin,"owner":owner,"source":source}),
         )?))
     }
 
@@ -342,14 +532,23 @@ impl Context {
         source: &Source,
         id: &str,
     ) -> Result<Option<Record>, Error> {
-        let row: Option<(String, String, String)> = connection
+        let row: Option<(String, String, String, Option<String>)> = connection
             .query_row(
-                "SELECT binding,state,data FROM permission_request WHERE id=?1",
+                "SELECT binding,state,data,origin FROM permission_request WHERE id=?1",
                 [id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .optional()?;
-        row.map(|(binding, state, data)| {
+        row.map(|(binding, state, data, origin)| {
+            let origin: crate::permission_source_transaction::Origin =
+                serde_json::from_str(origin.as_deref().ok_or_else(|| {
+                    Error::Invalid("shared permission source metadata is missing".into())
+                })?)?;
+            if origin != source.origin() {
+                return Err(Error::Invalid(
+                    "shared permission source metadata mismatch".into(),
+                ));
+            }
             let record: Record = serde_json::from_str(&data)?;
             let input_hash = digest(&serde_json::to_vec(
                 &json!({"binding":binding,"input":record.request}),
@@ -416,6 +615,7 @@ impl Context {
         } else {
             State::Denied
         };
+        record.reply = (outcome.effect == Decision::Allow).then_some(Reply::Always);
         record.reason = Some(
             if outcome.effect == Decision::Allow {
                 "saved_rules_allowed"
@@ -468,7 +668,7 @@ fn expire_request(transaction: &Transaction<'_>, record: &mut Record) -> Result<
     Ok(true)
 }
 
-fn resolve_request(transaction: &Transaction<'_>, record: &Record) -> Result<(), Error> {
+fn resolve_request(transaction: &Connection, record: &Record) -> Result<(), Error> {
     transaction.execute(
         "UPDATE permission_request SET state=?1,data=?2 WHERE id=?3",
         params![
@@ -480,7 +680,7 @@ fn resolve_request(transaction: &Transaction<'_>, record: &Record) -> Result<(),
     request_event(transaction, record)
 }
 
-fn request_event(transaction: &Transaction<'_>, record: &Record) -> Result<(), Error> {
+fn request_event(transaction: &Connection, record: &Record) -> Result<(), Error> {
     transaction.execute(
         "INSERT INTO permission_request_event(request_id,state,data) VALUES(?1,?2,?3)",
         params![

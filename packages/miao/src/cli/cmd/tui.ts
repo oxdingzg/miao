@@ -260,6 +260,7 @@ export const TuiThreadCommand = cmd({
         if (shim) {
           env.MIAO_ENGINE_BIN = shim.program
           env.MIAO_ENGINE_REAL_BIN = shim.engine
+          env.MIAO_ENGINE_LAUNCH_PREFIX = JSON.stringify(shim.args)
         }
         const child = Bun.spawn(argv, {
           cwd,

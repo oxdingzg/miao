@@ -263,6 +263,51 @@ impl EngineClient {
         .await
     }
 
+    /// Run one operator `!` command. Admission is durable and keyed by a stable
+    /// call identity, so replaying the same id re-reads the receipt instead of
+    /// repeating the external side effect.
+    pub async fn shell(
+        &self,
+        session_id: &str,
+        call_id: &str,
+        command: &str,
+    ) -> Result<Value, TransportError> {
+        self.request(
+            "shell",
+            json!({ "session_id": session_id, "call_id": call_id, "command": command }),
+        )
+        .await
+    }
+
+    /// Inputs durably admitted and still waiting for promotion, oldest first.
+    /// `after` is the last `admitted_seq` the caller already saw.
+    pub async fn pending_inputs(
+        &self,
+        session_id: &str,
+        after: Option<u64>,
+        limit: usize,
+    ) -> Result<Value, TransportError> {
+        self.request(
+            "pending_inputs",
+            json!({ "session_id": session_id, "after": after, "limit": limit }),
+        )
+        .await
+    }
+
+    /// Drop one admitted input before promotion. The engine keeps the admission
+    /// as cancelled evidence, so this cannot resurrect a dropped prompt.
+    pub async fn cancel_input(
+        &self,
+        session_id: &str,
+        input_id: &str,
+    ) -> Result<Value, TransportError> {
+        self.request(
+            "cancel_input",
+            json!({ "session_id": session_id, "input_id": input_id }),
+        )
+        .await
+    }
+
     pub async fn cancel(&self, session_id: &str) -> Result<Value, TransportError> {
         self.request("cancel", json!({ "session_id": session_id }))
             .await

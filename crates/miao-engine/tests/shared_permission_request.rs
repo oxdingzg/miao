@@ -721,3 +721,836 @@ async fn same_runtime_always_resolves_another_live_session_but_reject_never_cros
     );
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn durable_source_metadata_records_the_real_database_run_epoch_and_pid_and_is_immutable() {
+    let (directory, store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .admit_request(&source, assertion("origin", "public/file", &[]))
+        .await
+        .unwrap();
+    let sql = rusqlite::Connection::open(directory.path().join("permissions.db")).unwrap();
+    let encoded: String = sql
+        .query_row(
+            "SELECT origin FROM permission_request WHERE id='origin'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let origin: Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(origin["database"], store.path().to_str().unwrap());
+    assert_eq!(
+        origin["run_id"],
+        store.active_run("s").await.unwrap().unwrap()
+    );
+    assert_eq!(origin["owner_pid"], std::process::id());
+    let native = rusqlite::Connection::open(store.path()).unwrap();
+    let epoch: u64 = native
+        .query_row(
+            "SELECT lease_epoch FROM engine_run WHERE state='running'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(origin["lease_epoch"], epoch);
+    assert!(sql
+        .execute(
+            "UPDATE permission_request SET origin='{}' WHERE id='origin'",
+            []
+        )
+        .is_err());
+    assert!(sql
+        .execute(
+            "UPDATE permission_request SET owner='different' WHERE id='origin'",
+            []
+        )
+        .is_err());
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_old_source_cannot_adopt_a_rewritten_run_lease_epoch_even_in_the_same_process() {
+    use miao_engine::product_permission_request::Reply;
+    let (directory, store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    let pending = context
+        .admit_request(
+            &source,
+            assertion("superseded", "public/file", &["public/**"]),
+        )
+        .await
+        .unwrap();
+    let native = rusqlite::Connection::open(store.path()).unwrap();
+    native
+        .busy_timeout(std::time::Duration::from_secs(2))
+        .unwrap();
+    native.execute_batch("BEGIN IMMEDIATE; UPDATE engine_lease SET epoch=epoch+1; UPDATE engine_run SET lease_epoch=(SELECT epoch FROM engine_lease WHERE session_id=engine_run.session_id) WHERE state='running'; COMMIT;").unwrap();
+    assert!(context
+        .reply_request(&source, response(&pending, Reply::Always))
+        .await
+        .is_err());
+    assert!(runtime
+        .evaluate_product_permission(&runtime.controller(), &wire, request("public/file"))
+        .await
+        .is_err());
+    assert!(context.snapshot().await.unwrap().patterns.is_empty());
+    assert_eq!(context.retire_source_requests(&source).await.unwrap(), 1);
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn schema_four_requests_without_a_provable_source_are_cancelled_without_replaying_or_changing_rules(
+) {
+    let (directory, _store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .put(miao_engine::permission_rules::Rule {
+            action: "read".into(),
+            resource: "unrelated/**".into(),
+            effect: Decision::Allow,
+        })
+        .await
+        .unwrap();
+    context
+        .admit_request(&source, assertion("old-request", "public/file", &[]))
+        .await
+        .unwrap();
+    let before = context.observe().await.unwrap();
+    let sql = rusqlite::Connection::open(directory.path().join("permissions.db")).unwrap();
+    // Reconstruct precisely the v4 table shape; this is a schema compatibility
+    // fixture, not a claim that a second binary was run in this test.
+    sql.execute_batch("DROP TRIGGER permission_request_origin_required; DROP TRIGGER permission_request_binding_immutable; ALTER TABLE permission_request DROP COLUMN origin; PRAGMA user_version=4;").unwrap();
+    let mut old_insert=sql.prepare("INSERT INTO permission_request(id,project,location,owner,session,binding,state,data) SELECT 'old-writer',project,location,owner,session,binding,state,data FROM permission_request WHERE id='old-request'").unwrap();
+    let upgraded = shared(directory.path()).await;
+    assert_eq!(upgraded.observe().await.unwrap().cursor, before.cursor);
+    assert_eq!(upgraded.snapshot().await.unwrap(), before.snapshot);
+    let encoded: String = sql
+        .query_row(
+            "SELECT data FROM permission_request WHERE id='old-request'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let cancelled: Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(cancelled["state"], "cancelled");
+    assert_eq!(cancelled["reason"], "source_metadata_unavailable");
+    assert_eq!(
+        sql.query_row("SELECT count(*) FROM permission_request_event", [], |row| {
+            row.get::<_, u32>(0)
+        })
+        .unwrap(),
+        2
+    );
+    assert!(old_insert
+        .execute([])
+        .unwrap_err()
+        .to_string()
+        .contains("durable permission source metadata"));
+    assert!(upgraded
+        .request_status(&source, "old-request".into())
+        .await
+        .is_err());
+    assert_eq!(
+        upgraded
+            .admit_request(&source, assertion("fresh-request", "public/file", &[]))
+            .await
+            .unwrap()
+            .state,
+        miao_engine::product_permission_request::State::Pending
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_corrupt_legacy_request_rolls_back_the_entire_source_metadata_upgrade() {
+    let (directory, _store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .admit_request(&source, assertion("corrupt-old", "public", &[]))
+        .await
+        .unwrap();
+    let before = context.observe().await.unwrap();
+    let sql = rusqlite::Connection::open(directory.path().join("permissions.db")).unwrap();
+    sql.execute_batch("DROP TRIGGER permission_request_origin_required; DROP TRIGGER permission_request_binding_immutable; ALTER TABLE permission_request DROP COLUMN origin; PRAGMA user_version=4; UPDATE permission_request SET data='not JSON' WHERE id='corrupt-old';").unwrap();
+    assert!(miao_engine::permission_project::Authority::open(
+        directory.path().join("permissions.db")
+    )
+    .await
+    .is_err());
+    assert_eq!(
+        sql.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+            .unwrap(),
+        4
+    );
+    assert_eq!(
+        sql.query_row(
+            "SELECT count(*) FROM pragma_table_info('permission_request') WHERE name='origin'",
+            [],
+            |row| row.get::<_, u32>(0)
+        )
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        sql.query_row("SELECT count(*) FROM permission_request_event", [], |row| {
+            row.get::<_, u32>(0)
+        })
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        sql.query_row(
+            "SELECT state FROM permission_request WHERE id='corrupt-old'",
+            [],
+            |row| row.get::<_, String>(0)
+        )
+        .unwrap(),
+        "pending"
+    );
+    assert_eq!(context.observe().await.unwrap().cursor, before.cursor);
+    assert_eq!(context.snapshot().await.unwrap(), before.snapshot);
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn recovery_pages_pass_live_sources_and_cancel_only_the_actual_finished_database() {
+    use miao_engine::product_permission_request::State;
+    let (directory, store, runtime, wire) = running().await;
+    let workspace = directory.path().join("workspace");
+    let (_peer_directory, peer_store, peer, peer_wire, mut receive) =
+        running_in_workspace(None, Some(&workspace)).await;
+    tokio::spawn(async move { while receive.recv().await.is_some() {} });
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let peer_source = peer
+        .capture_permission_source(&peer.controller(), &peer_wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .admit_request(&source, assertion("a-live", "public", &[]))
+        .await
+        .unwrap();
+    context
+        .admit_request(&source, assertion("b-live", "public", &[]))
+        .await
+        .unwrap();
+    let foreign = context
+        .admit_request(&peer_source, assertion("foreign-db", "public", &[]))
+        .await
+        .unwrap();
+    assert!(context
+        .recover_source_requests(&store, None, 0)
+        .await
+        .is_err());
+    let first = context
+        .recover_source_requests(&store, None, 1)
+        .await
+        .unwrap();
+    assert_eq!(first.settled, 0);
+    assert!(first.has_more);
+    assert_eq!(first.after.as_deref(), Some("a-live"));
+    let last = context
+        .recover_source_requests(&store, first.after, 1)
+        .await
+        .unwrap();
+    assert_eq!(last.settled, 0);
+    assert!(!last.has_more);
+    assert!(runtime.cancel("s").await.unwrap());
+    runtime.shutdown().await;
+    let events = store.events("s", 0, 1000).await.unwrap().len();
+    let recovered = context
+        .recover_source_requests(&store, None, 256)
+        .await
+        .unwrap();
+    assert_eq!(recovered.settled, 2);
+    assert_eq!(
+        context
+            .recover_source_requests(&store, None, 256)
+            .await
+            .unwrap()
+            .settled,
+        0
+    );
+    assert_eq!(
+        store.events("s", 0, 1000).await.unwrap().len(),
+        events,
+        "recovery wrote the Session source"
+    );
+    assert_eq!(
+        context
+            .request_status(&peer_source, foreign.id)
+            .await
+            .unwrap()
+            .state,
+        State::Pending
+    );
+    assert_eq!(
+        context
+            .recover_source_requests(&peer_store, None, 256)
+            .await
+            .unwrap()
+            .settled,
+        0
+    );
+    assert!(context.snapshot().await.unwrap().patterns.is_empty());
+    peer.shutdown().await;
+}
+
+#[tokio::test]
+async fn recovery_failure_rolls_back_all_root_receipts_and_never_writes_the_source() {
+    let (directory, store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .admit_request(&source, assertion("a-retire", "public", &[]))
+        .await
+        .unwrap();
+    context
+        .admit_request(&source, assertion("b-retire", "public", &[]))
+        .await
+        .unwrap();
+    runtime.cancel("s").await.unwrap();
+    runtime.shutdown().await;
+    let events = store.events("s", 0, 1000).await.unwrap().len();
+    let sql = rusqlite::Connection::open(directory.path().join("permissions.db")).unwrap();
+    sql.execute_batch("CREATE TRIGGER fixture_failed_recovery BEFORE INSERT ON permission_request_event WHEN NEW.request_id='b-retire' AND NEW.state='cancelled' BEGIN SELECT RAISE(ABORT,'injected recovery event failure'); END;").unwrap();
+    assert!(context
+        .recover_source_requests(&store, None, 256)
+        .await
+        .is_err());
+    assert_eq!(
+        sql.query_row(
+            "SELECT count(*) FROM permission_request WHERE state='pending'",
+            [],
+            |row| row.get::<_, u32>(0)
+        )
+        .unwrap(),
+        2
+    );
+    assert_eq!(
+        sql.query_row("SELECT count(*) FROM permission_request_event", [], |row| {
+            row.get::<_, u32>(0)
+        })
+        .unwrap(),
+        2
+    );
+    assert_eq!(store.events("s", 0, 1000).await.unwrap().len(), events);
+    sql.execute_batch("DROP TRIGGER fixture_failed_recovery")
+        .unwrap();
+    assert_eq!(
+        context
+            .recover_source_requests(&store, None, 256)
+            .await
+            .unwrap()
+            .settled,
+        2
+    );
+    assert_eq!(
+        context
+            .recover_source_requests(&store, None, 256)
+            .await
+            .unwrap()
+            .settled,
+        0
+    );
+    assert!(context.snapshot().await.unwrap().patterns.is_empty());
+}
+
+struct OwnerProcess {
+    child: std::process::Child,
+    directory: Option<std::path::PathBuf>,
+}
+
+impl Drop for OwnerProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        if let Some(directory) = &self.directory {
+            let _ = std::fs::remove_dir_all(directory);
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "subprocess fixture selected explicitly by the owner-exit test"]
+async fn shared_owner_subprocess_helper() {
+    let root = std::path::PathBuf::from(
+        std::env::var_os("MIAO_SHARED_OWNER_FIXTURE").expect("owner fixture root"),
+    );
+    let (directory, store, runtime, wire, _receive) =
+        running_in_workspace(None, Some(&root.join("workspace"))).await;
+    let context = miao_engine::permission_project::Authority::open(root.join("permissions.db"))
+        .await
+        .unwrap()
+        .project("fixture".into())
+        .unwrap()
+        .context(root.join("workspace"), None)
+        .await
+        .unwrap();
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    context
+        .admit_request(&source, assertion("child-pending", "public/file", &[]))
+        .await
+        .unwrap();
+    std::fs::write(
+        root.join("ready.part"),
+        serde_json::to_vec(&json!({"source":store.path(),"directory":directory.path()})).unwrap(),
+    )
+    .unwrap();
+    std::fs::rename(root.join("ready.part"), root.join("ready.json")).unwrap();
+    std::future::pending::<()>().await;
+    runtime.shutdown().await;
+    drop(directory);
+}
+
+#[tokio::test]
+async fn an_actual_foreign_process_is_preserved_while_live_and_cancelled_after_it_exits() {
+    let root = tempfile::tempdir().unwrap();
+    let mut owner = OwnerProcess {
+        child: std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored", "--exact", "shared_owner_subprocess_helper"])
+            .env("MIAO_SHARED_OWNER_FIXTURE", root.path())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+        directory: None,
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !root.path().join("ready.json").exists() {
+        assert!(
+            owner.child.try_wait().unwrap().is_none(),
+            "owner fixture exited before readiness"
+        );
+        assert!(
+            std::time::Instant::now() < deadline,
+            "owner fixture readiness timed out"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let ready: Value =
+        serde_json::from_slice(&std::fs::read(root.path().join("ready.json")).unwrap()).unwrap();
+    owner.directory = Some(std::path::PathBuf::from(
+        ready["directory"].as_str().unwrap(),
+    ));
+    let source = Store::open(ready["source"].as_str().unwrap())
+        .await
+        .unwrap();
+    let context =
+        miao_engine::permission_project::Authority::open(root.path().join("permissions.db"))
+            .await
+            .unwrap()
+            .project("fixture".into())
+            .unwrap()
+            .context(root.path().join("workspace"), None)
+            .await
+            .unwrap();
+    let events = source.events("s", 0, 1000).await.unwrap().len();
+    assert_eq!(
+        context
+            .recover_source_requests(&source, None, 16)
+            .await
+            .unwrap()
+            .settled,
+        0,
+        "a foreign live source was treated as abandoned"
+    );
+    owner.child.kill().unwrap();
+    owner.child.wait().unwrap();
+    assert_eq!(
+        context
+            .recover_source_requests(&source, None, 16)
+            .await
+            .unwrap()
+            .settled,
+        1
+    );
+    assert_eq!(
+        context
+            .recover_source_requests(&source, None, 16)
+            .await
+            .unwrap()
+            .settled,
+        0
+    );
+    let sql = rusqlite::Connection::open(root.path().join("permissions.db")).unwrap();
+    let record: String = sql
+        .query_row(
+            "SELECT data FROM permission_request WHERE id='child-pending'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let record: Value = serde_json::from_str(&record).unwrap();
+    assert_eq!(record["state"], "cancelled");
+    assert_eq!(record["reason"], "source_owner_exited");
+    assert_eq!(
+        source.events("s", 0, 1000).await.unwrap().len(),
+        events,
+        "cleanup wrote Session history or replayed work"
+    );
+    assert!(
+        source.active_run("s").await.unwrap().is_some(),
+        "cleanup altered the source run"
+    );
+    assert!(context.snapshot().await.unwrap().patterns.is_empty());
+    source.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn root_request_notifications_project_once_and_keep_admission_distinct_from_resolution() {
+    use miao_engine::product_permission_request::Reply;
+    let (directory, store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    let pending = context
+        .admit_request(&source, assertion("projected", "public/file", &[]))
+        .await
+        .unwrap();
+    let first = context.project_request_events(&store, 16).await.unwrap();
+    assert_eq!(first.emitted, 1);
+    assert!(!first.has_more);
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        0
+    );
+    context
+        .reply_request(&source, response(&pending, Reply::Once))
+        .await
+        .unwrap();
+    let (left, right) = tokio::join!(
+        context.project_request_events(&store, 16),
+        context.project_request_events(&store, 16)
+    );
+    assert_eq!(left.unwrap().emitted + right.unwrap().emitted, 1);
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let projected = events
+        .iter()
+        .filter(|event| event.kind.starts_with("product.permission."))
+        .collect::<Vec<_>>();
+    assert_eq!(projected.len(), 2);
+    assert_eq!(projected[0].kind, "product.permission.requested");
+    assert_eq!(projected[1].kind, "product.permission.resolved");
+    assert_eq!(projected[1].data["reply"], "once");
+    runtime.shutdown().await;
+    drop(runtime);
+    store.close().await.unwrap();
+    let reopened = Store::open(directory.path().join("engine.db"))
+        .await
+        .unwrap();
+    assert_eq!(
+        context
+            .project_request_events(&reopened, 16)
+            .await
+            .unwrap()
+            .emitted,
+        0
+    );
+    assert_eq!(
+        reopened
+            .events("s", 0, 1000)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind.starts_with("product.permission."))
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn request_event_cursors_are_typed_root_bound_and_filter_the_actual_source_database() {
+    let (directory, store, runtime, wire) = running().await;
+    let workspace = directory.path().join("workspace");
+    let (_peer_directory, peer_store, peer, peer_wire, mut receive) =
+        running_in_workspace(None, Some(&workspace)).await;
+    tokio::spawn(async move { while receive.recv().await.is_some() {} });
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let peer_source = peer
+        .capture_permission_source(&peer.controller(), &peer_wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .admit_request(&source, assertion("own-event", "public", &[]))
+        .await
+        .unwrap();
+    context
+        .admit_request(&peer_source, assertion("foreign-event", "public", &[]))
+        .await
+        .unwrap();
+    let own = context.request_events(&store, None, 1).await.unwrap();
+    assert_eq!(own.events.len(), 1);
+    assert_eq!(own.events[0].record.id, "own-event");
+    assert!(!own.has_more);
+    let foreign = context.request_events(&peer_store, None, 1).await.unwrap();
+    assert_eq!(foreign.events[0].record.id, "foreign-event");
+    assert_eq!(
+        own.cursor, foreign.cursor,
+        "final cursors did not advance through filtered events"
+    );
+    assert!(context
+        .request_events(&store, Some(own.cursor.clone()), 1)
+        .await
+        .unwrap()
+        .events
+        .is_empty());
+    assert!(
+        serde_json::from_value::<miao_engine::shared_permission_events::Cursor>(
+            json!({"authority":own.cursor.authority,"seq":0})
+        )
+        .is_err()
+    );
+    let mut wrong = own.cursor.clone();
+    wrong.authority = uuid::Uuid::new_v4().to_string();
+    assert!(context
+        .request_events(&store, Some(wrong), 1)
+        .await
+        .is_err());
+    let mut future = own.cursor;
+    future.seq += 1;
+    assert!(context
+        .request_events(&store, Some(future), 1)
+        .await
+        .is_err());
+    assert!(context.request_events(&store, None, 0).await.is_err());
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        1
+    );
+    assert_eq!(
+        context
+            .project_request_events(&peer_store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        1
+    );
+    runtime.shutdown().await;
+    peer.shutdown().await;
+}
+
+#[tokio::test]
+async fn source_projection_failure_rolls_back_events_deduplication_and_cursor_together() {
+    let (directory, store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .admit_request(&source, assertion("project-a", "public", &[]))
+        .await
+        .unwrap();
+    context
+        .admit_request(&source, assertion("project-b", "public", &[]))
+        .await
+        .unwrap();
+    let sql = rusqlite::Connection::open(store.path()).unwrap();
+    sql.execute_batch("CREATE TRIGGER fixture_projection_failure BEFORE INSERT ON engine_event WHEN NEW.kind='product.permission.requested' AND json_extract(NEW.data,'$.id')='project-b' BEGIN SELECT RAISE(ABORT,'injected source projection failure'); END;").unwrap();
+    assert!(context.project_request_events(&store, 16).await.is_err());
+    assert_eq!(
+        sql.query_row(
+            "SELECT count(*) FROM engine_root_permission_event",
+            [],
+            |row| row.get::<_, u32>(0)
+        )
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        sql.query_row(
+            "SELECT count(*) FROM engine_root_permission_cursor",
+            [],
+            |row| row.get::<_, u32>(0)
+        )
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        store
+            .events("s", 0, 1000)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind.starts_with("product.permission."))
+            .count(),
+        0
+    );
+    sql.execute_batch("DROP TRIGGER fixture_projection_failure")
+        .unwrap();
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        2
+    );
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        0
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn initial_policy_decisions_do_not_fake_ui_replies_and_peer_rule_settlement_closes_the_question(
+) {
+    let (directory, store, runtime, wire) = running().await;
+    let source = runtime
+        .capture_permission_source(&runtime.controller(), &wire)
+        .unwrap();
+    let context = shared(directory.path()).await;
+    context
+        .put(miao_engine::permission_rules::Rule {
+            action: "read".into(),
+            resource: "preallowed/**".into(),
+            effect: Decision::Allow,
+        })
+        .await
+        .unwrap();
+    context
+        .admit_request(&source, assertion("preallowed", "preallowed/file", &[]))
+        .await
+        .unwrap();
+    context
+        .admit_request(&source, assertion("predenied", "secret", &[]))
+        .await
+        .unwrap();
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        0
+    );
+    let pending = context
+        .admit_request(&source, assertion("rule-changed", "public/file", &[]))
+        .await
+        .unwrap();
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        1
+    );
+    context
+        .put(miao_engine::permission_rules::Rule {
+            action: "read".into(),
+            resource: "public/**".into(),
+            effect: Decision::Allow,
+        })
+        .await
+        .unwrap();
+    let settled = context.request_status(&source, pending.id).await.unwrap();
+    assert_eq!(
+        settled.reply,
+        Some(miao_engine::product_permission_request::Reply::Always)
+    );
+    assert_eq!(settled.reason.as_deref(), Some("saved_rules_allowed"));
+    assert_eq!(
+        context
+            .project_request_events(&store, 16)
+            .await
+            .unwrap()
+            .emitted,
+        1
+    );
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let final_event = events
+        .iter()
+        .find(|event| event.kind == "product.permission.resolved")
+        .unwrap();
+    assert_eq!(final_event.data["id"], "rule-changed");
+    assert_eq!(final_event.data["reply"], "always");
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn root_notifications_do_not_recreate_deleted_execution_history_or_block_the_cursor() {
+    for reuse_id in [false, true] {
+        let (directory, store, runtime, wire) = running().await;
+        let context = shared(directory.path()).await;
+        let source = runtime
+            .capture_permission_source(&runtime.controller(), &wire)
+            .unwrap();
+        context
+            .admit_request(&source, assertion("deleted-execution", "public/file", &[]))
+            .await
+            .unwrap();
+        runtime.shutdown().await;
+        drop(runtime);
+        store.remove_session("s").await.unwrap();
+        if reuse_id {
+            store
+                .initialize(
+                    "s",
+                    "new Session",
+                    &context.snapshot().await.unwrap().directory,
+                )
+                .await
+                .unwrap();
+        }
+        let before = serde_json::to_value(store.events("s", 0, 256).await.unwrap()).unwrap();
+        assert_eq!(
+            context
+                .recover_source_requests(&store, None, 10)
+                .await
+                .unwrap()
+                .settled,
+            1
+        );
+        let projection = context.project_request_events(&store, 256).await.unwrap();
+        assert_eq!(projection.emitted, 0);
+        assert!(!projection.has_more);
+        assert!(projection.cursor.seq > 0);
+        assert_eq!(
+            serde_json::to_value(store.events("s", 0, 256).await.unwrap()).unwrap(),
+            before
+        );
+        assert_eq!(
+            context
+                .project_request_events(&store, 256)
+                .await
+                .unwrap()
+                .emitted,
+            0
+        );
+        store.close().await.unwrap();
+    }
+}

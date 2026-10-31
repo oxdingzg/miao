@@ -28,6 +28,8 @@ use crate::transport::{self, EngineClient, EngineSpawn, TransportEvent};
 const REFRESH_DELAY: Duration = Duration::from_millis(150);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const EVENTS_PAGE: usize = 100;
+/// Inputs read per `pending_inputs` page while looking for the newest one.
+const PENDING_INPUT_PAGE: usize = 100;
 
 pub enum Request {
     VcsChanges {
@@ -61,6 +63,18 @@ pub enum Request {
         command: Value,
     },
     NewSession,
+    /// Cancel the newest still-pending input and hand its text back. Escape
+    /// uses this before it touches the running turn: a queued prompt is cheaper
+    /// to take back than an interrupted turn is to resume.
+    CancelLastInput {
+        session_id: String,
+    },
+    /// One `!` command for the host shell. It records in the Session without
+    /// starting a provider turn, so nothing here touches the model.
+    Shell {
+        session_id: String,
+        command: String,
+    },
     /// Interrupt the active run; idle Sessions answer `accepted: false`.
     Cancel {
         session_id: String,
@@ -202,6 +216,19 @@ impl Handle {
 
     pub fn new_session(&self) {
         let _ = self.tx.send(Request::NewSession);
+    }
+
+    pub fn cancel_last_input(&self, session_id: &str) {
+        let _ = self.tx.send(Request::CancelLastInput {
+            session_id: session_id.to_string(),
+        });
+    }
+
+    pub fn shell(&self, session_id: &str, command: &str) {
+        let _ = self.tx.send(Request::Shell {
+            session_id: session_id.to_string(),
+            command: command.to_string(),
+        });
     }
 
     pub fn cancel(&self, session_id: &str) {
@@ -357,12 +384,30 @@ pub fn settings(
     let config_dir = config_dir.or_else(crate::config::global_dir);
     let spawn = EngineSpawn {
         program: engine_binary(),
-        args: args(&db, workspace, &model, config_dir.as_deref(), |name| {
-            std::env::var(name).ok()
-        }),
+        args: launch_args(
+            args(&db, workspace, &model, config_dir.as_deref(), |name| {
+                std::env::var(name).ok()
+            }),
+            std::env::var("MIAO_ENGINE_LAUNCH_PREFIX").ok().as_deref(),
+        )?,
         env: Vec::new(),
     };
     Ok(Settings { spawn, model })
+}
+
+// The product passes a literal executable prefix on Windows, where a POSIX
+// wrapper cannot stand in for the engine. Never interpret it through a shell.
+fn launch_args(args: Vec<String>, prefix: Option<&str>) -> Result<Vec<String>, String> {
+    let mut prefix: Vec<String> = match prefix {
+        Some(value) => serde_json::from_str(value)
+            .map_err(|_| "MIAO_ENGINE_LAUNCH_PREFIX must be a JSON array of strings")?,
+        None => return Ok(args),
+    };
+    if prefix.iter().any(|argument| argument.contains('\0')) {
+        return Err("MIAO_ENGINE_LAUNCH_PREFIX arguments cannot contain NUL".into());
+    }
+    prefix.extend(args);
+    Ok(prefix)
 }
 
 /// The argv the engine is started with. Mirrors the product host's
@@ -567,6 +612,44 @@ async fn run(
                         }),
                     }
                 }
+                Some(Request::CancelLastInput { session_id }) => {
+                    match cancel_last_input(&client, &session_id).await {
+                        Ok(Some(retrieved)) => {
+                            dirty.get_or_insert_with(Instant::now);
+                            let text = |key: &str| {
+                                retrieved
+                                    .get(key)
+                                    .and_then(Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string()
+                            };
+                            bus.send(AppEvent::InputRetrieved {
+                                prompt: text("prompt"),
+                                delivery: text("delivery"),
+                            });
+                        }
+                        Ok(None) => bus.send(AppEvent::InputNotRetrieved {
+                            reason: "no queued input to take back".into(),
+                        }),
+                        Err(error) => bus.send(AppEvent::InputNotRetrieved {
+                            reason: format!("could not read the queue: {error}"),
+                        }),
+                    }
+                }
+                Some(Request::Shell {
+                    session_id,
+                    command,
+                }) => match client.shell(&session_id, &new_id("sh"), &command).await {
+                    Ok(_) => {
+                        if open.as_ref().is_some_and(|state| state.id == session_id) {
+                            dirty.get_or_insert_with(Instant::now);
+                        }
+                    }
+                    Err(error) => bus.send(AppEvent::ShellFailed {
+                        command,
+                        message: format!("shell failed: {error}"),
+                    }),
+                },
                 Some(Request::Cancel { session_id }) => {
                     match client.cancel(&session_id).await {
                         Ok(_) => {
@@ -1099,6 +1182,51 @@ fn attention_event(event: &transport::EngineEvent) -> Option<(attention::Kind, O
 
 /// Session and input ids are only opaque keys to the engine; hex keeps them
 /// readable and sorted by creation.
+/// Take back the newest input that is still waiting for promotion.
+///
+/// The inbox pages oldest first, so this walks to the end before choosing the
+/// last row. The cancel then decides: only an accepted cancel hands the text
+/// back, because an input that was promoted meanwhile is the running turn's
+/// history, not a draft.
+async fn cancel_last_input(
+    client: &EngineClient,
+    session_id: &str,
+) -> Result<Option<Value>, transport::TransportError> {
+    let mut after = None;
+    let mut newest: Option<Value> = None;
+    loop {
+        let page = client
+            .pending_inputs(session_id, after, PENDING_INPUT_PAGE)
+            .await?;
+        let inputs = page
+            .get("inputs")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let Some(last) = inputs.last() else { break };
+        let next = last.get("admitted_seq").and_then(Value::as_u64);
+        newest = Some(last.clone());
+        let has_more = page
+            .get("has_more")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        // A page that cannot advance would loop forever; stop instead.
+        if !has_more || next.is_none() || next == after {
+            break;
+        }
+        after = next;
+    }
+    let Some(newest) = newest else {
+        return Ok(None);
+    };
+    let input_id = newest.get("id").and_then(Value::as_str).unwrap_or_default();
+    let receipt = client.cancel_input(session_id, input_id).await?;
+    if receipt.get("accepted").and_then(Value::as_bool) != Some(true) {
+        return Ok(None);
+    }
+    Ok(Some(newest))
+}
+
 fn new_id(prefix: &str) -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1178,6 +1306,30 @@ mod tests {
                 "/config",
             ]
         );
+    }
+
+    #[test]
+    fn launcher_prefix_preserves_literal_arguments_and_engine_flags() {
+        let args = vec![
+            "serve".into(),
+            "--db".into(),
+            "C:\\profile dir\\engine.db".into(),
+        ];
+        assert_eq!(launch_args(args.clone(), None).unwrap(), args);
+        assert_eq!(launch_args(args.clone(), Some("[]")).unwrap(), args);
+        let mut expected = vec!["C:\\source dir\\index.ts".into(), "__engine-shim".into()];
+        expected.extend(args.clone());
+        assert_eq!(
+            launch_args(
+                args.clone(),
+                Some(r#"["C:\\source dir\\index.ts","__engine-shim"]"#)
+            )
+            .unwrap(),
+            expected
+        );
+        for invalid in ["{}", "[1]", "not-json", r#"["bad\u0000argument"]"#] {
+            assert!(launch_args(args.clone(), Some(invalid)).is_err());
+        }
     }
 
     #[test]

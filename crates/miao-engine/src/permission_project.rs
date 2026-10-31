@@ -13,7 +13,7 @@ use std::path::Path;
 use tokio::sync::{mpsc, oneshot};
 
 const APPLICATION_ID: u32 = 0x4d494150;
-const SCHEMA_VERSION: u32 = 4;
+const SCHEMA_VERSION: u32 = 5;
 const NATIVE_PREFIX: &str = "psv_native_project_";
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -302,6 +302,10 @@ fn initialize(connection: &mut Connection) -> Result<(), Error> {
     if version < 4 {
         crate::shared_permission_request::initialize(&transaction)?;
     }
+    if version < 5 {
+        crate::shared_permission_request::initialize_origins(&transaction)?;
+    }
+    crate::shared_permission_events::initialize_root(&transaction)?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
     connection.pragma_update(None, "journal_mode", "WAL")?;

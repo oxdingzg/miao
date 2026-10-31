@@ -47,9 +47,28 @@ impl Controller {
         project: String,
         directory: impl AsRef<Path>,
     ) -> Result<Self, Error> {
+        Self::open_inner(path.as_ref(), project, directory.as_ref(), false).await
+    }
+
+    /// Explicit model-free initialization for a fresh owner database. Existing
+    /// source control continues to refuse missing files.
+    pub async fn initialize(
+        path: impl AsRef<Path>,
+        project: String,
+        directory: impl AsRef<Path>,
+    ) -> Result<Self, Error> {
+        Self::open_inner(path.as_ref(), project, directory.as_ref(), true).await
+    }
+
+    async fn open_inner(
+        path: &Path,
+        project: String,
+        directory: &Path,
+        initialize: bool,
+    ) -> Result<Self, Error> {
         crate::permission_migration::require_rules(&project, &[])?;
-        if directory.as_ref().as_os_str().is_empty()
-            || !tokio::fs::metadata(path.as_ref()).await?.is_file()
+        if directory.as_os_str().is_empty()
+            || (!initialize && !tokio::fs::metadata(path).await?.is_file())
         {
             return Err(Error::Invalid(
                 "permission source requires an existing database and directory".into(),

@@ -63,6 +63,8 @@ import type {
   SessionsShellOutput,
   SessionsCompactInput,
   SessionsCompactOutput,
+  SessionsSideQuestionInput,
+  SessionsSideQuestionOutput,
   SessionsWaitInput,
   SessionsWaitOutput,
   SessionsStageInput,
@@ -824,6 +826,18 @@ export function make(options: ClientOptions) {
             successStatus: 204,
             declaredStatuses: [404, 503, 400, 410, 409, 401],
             empty: true,
+          },
+          requestOptions,
+        ),
+      sideQuestion: (input: SessionsSideQuestionInput, requestOptions?: RequestOptions) =>
+        request<SessionsSideQuestionOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/side-question`,
+            body: { question: input["question"] },
+            successStatus: 200,
+            declaredStatuses: [404, 503, 500, 400, 410, 409, 401],
+            empty: false,
           },
           requestOptions,
         ),

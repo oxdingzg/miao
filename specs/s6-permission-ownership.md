@@ -373,3 +373,44 @@ always 保存规则后，仅重新求值同 Runtime owner、项目和目录的�
 调用者提供的快照作为绑定凭据。返回不可直接构造的 `HandoffBinding`；每次 snapshot 重新
 核对来源回执和目的端身份，读取当前规则并保留撤销结果。prepared、错误目的端或回执丢失
 均拒绝。它只证明原生目录来源交接，不代替产品项目级交接证明、不解冻来源、不允许执行。
+
+Session schema v24 为 engine_run 增加可空且不可改写的 shared_permission 标记。旧 INSERT
+省略该字段仍为 NULL，冻结目录继续拒绝旧运行，旧规则读写也仍冻结。只有显式调用已验证
+HandoffBinding 的运行准入入口，才携带 Root/项目/目录/原始指纹、Runtime UUID 和当前 PID；
+SQL 还核对 completed 回执及当前执行租约。失败时连同 inbox 提升一起回滚。活跃共享运行
+的目录不能删除或移走，同目录的重复输入准入仍可继续。此处只提供存储运行准入栅栏，
+默认 Runtime 仍走旧入口；共享规则判定、审批及来源清理实际接线完成前不启用共享执行。
+
+MIAP schema v5 在每条共享请求持久化实际来源数据库、run、捕获的租约 epoch 与 PID，并将
+这些事实纳入来源/输入摘要。来源字段不可改写；实际回复、只读判定和兄弟结算均核对捕获
+的 epoch，不能因同 PID 下 run/lease 同时改为新 epoch 就让旧回调重新获得权限。v4 的已有
+pending 没有可证明的持久来源，升级只保留历史并结算为 source_metadata_unavailable 取消；
+不猜 run、不重试 provider、不追加规则。旧请求 INSERT 缺来源字段会被 SQL 拒绝，已有
+standing 规则、Root UUID 与规则变更游标保持不变。任一旧请求损坏时整个升级回滚。
+
+共享请求来源清理按显式数据库及项目/目录分页，游标推进经过活跃记录，避免前页活跃来源
+阻塞后页清理。Root 写事务附加并锁定真实来源库，只读核对 run、工具、目录、epoch、PID
+及进程存活；来源仍活跃或存活不确定时不替其他进程结算。已失效来源只取消/过期请求，
+不放行、不写规则、不修改 Session 事件/run，也不重试 provider。Root 回执与结算事件在
+同一事务提交，任一事件写入失败则整页回滚。该库级入口仍待 Runtime 启动/收尾路径接线。
+
+共享请求事件流使用独立的 permission_requests 游标，校验 Root UUID 与水位并按真实来源
+数据库/项目/目录过滤。首次规则即允许或拒绝的准入不伪造 UI 回复；已 pending 后由 standing
+规则放行的请求保留 saved_rules_allowed 原因，并用既有 always 结算词汇关闭原生 UI 问题。
+Session schema25 为投影保存 Root事件摘要与分范围游标，事件、去重与游标同一来源事务
+提交；失败整体回滚，重放与重启不重复发布。Root 与来源库各自提交，不声称跨库原子写入。
+这些事件只通知界面；宿主仍通过带实际来源校验的 status/reply 获取当前许可。入口仍待
+共享 Runtime 构造、请求与终结路径调用，默认执行路径尚未切换。
+
+### 显式共享 Runtime 与启动门禁
+
+可信宿主现在可以用配对回执显式构造共享 Runtime。run 标记使用实际 Runtime UUID、PID
+和捕获的 Session lease；原生 configured allow 也先检查此归属。standing 规则和精确缓存
+命名空间来自 Root；精确调用 grant 继续留在 Source。宿主断言走 Root，取消及执行结束先
+撤回来源并清理 pending，再确认相应完成边界。旧执行已从 Source 删除时，通知只推进游标，
+不重新生成历史；同 Session ID 后来被重用也不接收旧执行的问题。
+
+CLI 的成对 Root/project 参数只接受已经完成的项目与目录交接，不隐式迁移或回退。
+显式 model-free 初始化入口只建 Source 存储，不建 Session 或启动 provider；旧控制入口仍
+拒绝缺失数据库。Root 文件须在模型工作目录之外，且作为受保护资源包含 WAL/SHM。
+这些草稿能力尚未接入受管理产品启动、跨进程变更唤醒及 TUI，仍不代表 §4 总体验收完成。

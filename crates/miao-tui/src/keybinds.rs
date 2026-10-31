@@ -19,6 +19,12 @@ pub enum Action {
     TerminalTitleToggle,
     CommandList,
     CopyMessage,
+    ToolOutputToggle,
+    McpList,
+    ProviderList,
+    SkillList,
+    WorkspaceList,
+    MessageView,
     SessionList,
     SessionNew,
     SessionRename,
@@ -67,6 +73,12 @@ impl Action {
             Action::TerminalTitleToggle => "terminal_title_toggle",
             Action::CommandList => "command_list",
             Action::CopyMessage => "messages_copy",
+            Action::ToolOutputToggle => "session_toggle_generic_tool_output",
+            Action::McpList => "mcp_list",
+            Action::ProviderList => "provider_list",
+            Action::SkillList => "skill_list",
+            Action::WorkspaceList => "workspace_list",
+            Action::MessageView => "messages_toggle_details",
             Action::SessionList => "session_list",
             Action::SessionNew => "session_new",
             Action::SessionRename => "session_rename",
@@ -118,6 +130,12 @@ const ACTIONS: &[Action] = &[
     Action::TerminalTitleToggle,
     Action::CommandList,
     Action::CopyMessage,
+    Action::ToolOutputToggle,
+    Action::McpList,
+    Action::ProviderList,
+    Action::SkillList,
+    Action::WorkspaceList,
+    Action::MessageView,
     Action::SessionList,
     Action::SessionNew,
     Action::SessionRename,
@@ -165,6 +183,12 @@ const DEFAULTS: &[(Action, &str)] = &[
     (Action::TerminalSuspend, "ctrl+z"),
     (Action::CommandList, "ctrl+p"),
     (Action::CopyMessage, "ctrl+y,<leader>y"),
+    (Action::ToolOutputToggle, "<leader>u"),
+    (Action::McpList, "<leader>i"),
+    (Action::ProviderList, "<leader>a"),
+    (Action::SkillList, "<leader>k"),
+    (Action::WorkspaceList, "<leader>w"),
+    (Action::MessageView, "<leader>v"),
     (Action::SessionList, "<leader>l"),
     (Action::SessionNew, "<leader>n"),
     (Action::SessionRename, "ctrl+r"),
@@ -314,6 +338,36 @@ impl Keymap {
             .find(|action| self.matches(*action, key))
     }
 
+    /// Every bound action with its effective strokes, so a help or which-key
+    /// view cannot claim a key the keymap does not use.
+    ///
+    /// Actions left unbound are included with an empty spelling: silently
+    /// dropping them would hide that the binding was removed.
+    pub fn bindings(&self) -> Vec<(Action, String)> {
+        let leader = self.strokes.get(&Action::Leader).and_then(|strokes| {
+            strokes.iter().find_map(|stroke| match stroke {
+                Stroke::Plain(key) => Some(*key),
+                Stroke::Leader(_) => None,
+            })
+        });
+        self.strokes
+            .iter()
+            .map(|(action, strokes)| {
+                let specs = strokes
+                    .iter()
+                    .map(|stroke| match stroke {
+                        Stroke::Plain(key) => key.spec(),
+                        Stroke::Leader(key) => match &leader {
+                            Some(leader) => format!("{}+{}", leader.spec(), key.spec()),
+                            None => format!("<leader>+{}", key.spec()),
+                        },
+                    })
+                    .collect::<Vec<_>>();
+                (*action, specs.join(", "))
+            })
+            .collect()
+    }
+
     /// The leader key itself, as configured.
     pub fn is_leader(&self, key: &KeyEvent) -> bool {
         self.strokes.get(&Action::Leader).is_some_and(|strokes| {
@@ -325,6 +379,48 @@ impl Keymap {
 }
 
 impl Key {
+    /// The `keybinds` spelling of this key. Shift is left out for character
+    /// keys because the character already carries its case, exactly as
+    /// `parse_spec` treats `shift+e` and `E` as the same key.
+    fn spec(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        for (modifier, name) in [
+            (KeyModifiers::CONTROL, "ctrl"),
+            (KeyModifiers::ALT, "alt"),
+            (KeyModifiers::META, "meta"),
+            (KeyModifiers::SUPER, "super"),
+            (KeyModifiers::HYPER, "hyper"),
+        ] {
+            if self.modifiers.contains(modifier) {
+                parts.push(name.to_string());
+            }
+        }
+        if self.modifiers.contains(KeyModifiers::SHIFT) && !matches!(self.code, KeyCode::Char(_)) {
+            parts.push("shift".to_string());
+        }
+        parts.push(match self.code {
+            KeyCode::Esc => "esc".to_string(),
+            KeyCode::Enter => "return".to_string(),
+            KeyCode::Tab => "tab".to_string(),
+            KeyCode::Backspace => "backspace".to_string(),
+            KeyCode::Delete => "delete".to_string(),
+            KeyCode::Insert => "insert".to_string(),
+            KeyCode::Up => "up".to_string(),
+            KeyCode::Down => "down".to_string(),
+            KeyCode::Left => "left".to_string(),
+            KeyCode::Right => "right".to_string(),
+            KeyCode::Home => "home".to_string(),
+            KeyCode::End => "end".to_string(),
+            KeyCode::PageUp => "pageup".to_string(),
+            KeyCode::PageDown => "pagedown".to_string(),
+            KeyCode::Char(' ') => "space".to_string(),
+            KeyCode::Char(c) => c.to_string(),
+            KeyCode::F(number) => format!("f{number}"),
+            other => format!("{other:?}").to_ascii_lowercase(),
+        });
+        parts.join("+")
+    }
+
     /// Only the modifiers a terminal reports for a shortcut are compared, so
     /// `ctrl+return` stays distinct from `return`. Shift is part of the
     /// character for letters (`shift+e` and `E` are the same key), so it is
@@ -519,6 +615,30 @@ mod tests {
             Action::CommandList,
             &key(KeyCode::Char(' '), KeyModifiers::CONTROL)
         ));
+    }
+
+    #[test]
+    fn bindings_print_the_effective_strokes_including_the_leader() {
+        let keymap = Keymap::default();
+        let bindings: BTreeMap<Action, String> = keymap.bindings().into_iter().collect();
+        // A plain chord keeps its spelling.
+        assert_eq!(bindings[&Action::SessionRename], "ctrl+r");
+        // A leader chord prints the configured leader, not the placeholder.
+        assert_eq!(bindings[&Action::SessionNew], "ctrl+x+n");
+        // Several strokes stay together, so help shows every way to reach it.
+        assert_eq!(bindings[&Action::AppExit], "ctrl+c, ctrl+d, ctrl+x+q");
+    }
+
+    #[test]
+    fn bindings_follow_an_override_instead_of_the_defaults() {
+        let overrides = overrides(&[("session_rename", Some(&["ctrl+n"])), ("session_new", None)]);
+        let bindings: BTreeMap<Action, String> = Keymap::from_overrides(&overrides)
+            .bindings()
+            .into_iter()
+            .collect();
+        assert_eq!(bindings[&Action::SessionRename], "ctrl+n");
+        // An unbound action stays listed: help must not hide a removed binding.
+        assert_eq!(bindings[&Action::SessionNew], "");
     }
 
     #[test]
