@@ -458,6 +458,10 @@ pub enum Command {
     VcsStatus {
         session_id: String,
     },
+    /// Workspaces the host prepared for this Location. The engine serves the
+    /// host's list read-only, the same way it serves model routes and MCP: it
+    /// never invents workspace authority of its own.
+    Workspaces,
     /// Sessions forked from or delegated to by this one, with the latest run
     /// that decides whether a child is still working (AGT-01). A Session with
     /// no children answers an empty list; an unknown Session is an error.
