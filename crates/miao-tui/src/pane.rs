@@ -1103,6 +1103,21 @@ pub fn render_dialog(frame: &mut Frame, area: Rect, dialog: &Dialog, theme: &The
         saved.render(frame, inner, theme);
         return;
     }
+    if let Dialog::Message(text) = dialog {
+        let lines = text
+            .lines
+            .iter()
+            .map(|line| Line::from(line.clone()))
+            .collect::<Vec<_>>();
+        frame.render_widget(
+            Paragraph::new(lines)
+                .style(Style::new().fg(palette.text).bg(palette.surface))
+                .wrap(Wrap { trim: false })
+                .scroll((text.scroll.min(u16::MAX as usize) as u16, 0)),
+            inner,
+        );
+        return;
+    }
     if let Some(list) = dialog.list() {
         render_list(frame, inner, list, theme);
         return;
