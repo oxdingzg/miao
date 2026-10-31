@@ -101,6 +101,8 @@ pub enum Request {
     },
     /// The host's workspace list, served by the engine (TUI-09).
     Workspaces,
+    /// The host's remote-control devices, served by the engine (TUI-10).
+    Devices,
     /// Move the open Session to another workspace directory (TUI-09).
     MoveSession {
         session_id: String,
@@ -282,6 +284,10 @@ impl Handle {
             session_id: session_id.to_string(),
             target_directory: target_directory.to_string(),
         });
+    }
+
+    pub fn devices(&self) {
+        let _ = self.tx.send(Request::Devices);
     }
 
     pub fn workspaces(&self) {
@@ -794,6 +800,15 @@ async fn run(
                         Ok(_) => bus.send(AppEvent::SessionMoved),
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("move failed: {error}")))
+                        }
+                    }
+                }
+                Some(Request::Devices) => {
+                    let result = client.request("devices", json!({})).await;
+                    match result {
+                        Ok(value) => bus.send(AppEvent::Devices(pairs_two(&value))),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("devices failed: {error}")))
                         }
                     }
                 }
@@ -1442,4 +1457,12 @@ fn pairs(value: &Value) -> Vec<(String, String, String)> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Name plus detail only, for panels with no destination path.
+fn pairs_two(value: &Value) -> Vec<(String, String)> {
+    pairs(value)
+        .into_iter()
+        .map(|(name, detail, _)| (name, detail))
+        .collect()
 }

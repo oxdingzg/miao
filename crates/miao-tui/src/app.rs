@@ -169,6 +169,8 @@ pub struct App {
     providers: Vec<(String, String)>,
     /// Skills the host discovered (name, description).
     skills: Vec<(String, String)>,
+    /// Remote-control devices the engine serves (label, key prefix).
+    devices: Vec<(String, String)>,
     /// Workspaces the engine serves (name, branch or type, directory).
     workspaces: Vec<(String, String, String)>,
     /// The model dialog waits for the catalog when nothing is cached yet.
@@ -238,6 +240,7 @@ impl App {
             providers: parse_pairs(std::env::var("MIAO_TUI_PROVIDERS_JSON").ok().as_deref()),
             skills: parse_pairs(std::env::var("MIAO_TUI_SKILLS_JSON").ok().as_deref()),
             workspaces: Vec::new(),
+            devices: Vec::new(),
             accounts: Vec::new(),
             usage: None,
             stash: Vec::new(),
@@ -428,6 +431,10 @@ impl App {
                         self.open_dialog(Dialog::accounts(&self.accounts));
                     }
                 }
+            }
+            AppEvent::Devices(devices) => {
+                self.devices = devices;
+                self.open_dialog(Dialog::devices(&self.devices));
             }
             AppEvent::SessionMoved => {
                 self.dialog = None;
@@ -699,6 +706,7 @@ impl App {
             Some(keybinds::Action::McpList) => self.open_mcp(),
             Some(keybinds::Action::ProviderList) => self.open_providers(),
             Some(keybinds::Action::SkillList) => self.open_skills(),
+            Some(keybinds::Action::DeviceList) => self.open_devices(),
             Some(keybinds::Action::WorkspaceList) => self.open_workspaces(),
             Some(keybinds::Action::MessageView) => self.open_message(),
             Some(keybinds::Action::ToolOutputToggle) => {
@@ -1100,6 +1108,13 @@ impl App {
 
     fn open_providers(&mut self) {
         self.open_dialog(Dialog::providers(&self.providers));
+    }
+
+    fn open_devices(&mut self) {
+        match self.engine.as_ref() {
+            Some(engine) => engine.devices(),
+            None => self.open_dialog(Dialog::devices(&self.devices)),
+        }
     }
 
     fn open_skills(&mut self) {

@@ -56,6 +56,8 @@ pub enum AppEvent {
     Usage(UsageSummary),
     /// The host's workspace list, served by the engine.
     Workspaces(Vec<(String, String, String)>),
+    /// The host's remote-control devices, served by the engine.
+    Devices(Vec<(String, String)>),
     /// The open Session moved to another workspace.
     SessionMoved,
     /// What a revert at one boundary would change, for the confirm dialog.
