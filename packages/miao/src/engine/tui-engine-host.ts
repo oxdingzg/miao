@@ -150,9 +150,39 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   const administration = identityService?.administration
     ? yield* Effect.promise(() => Promise.resolve(identityService.administration!()))
     : undefined
-  const devices = (administration?.devices() ?? [])
-    .filter((grant) => grant.revokedAt === null)
-    .map((grant) => ({ name: grant.label, detail: grant.publicKey.slice(0, 16) }))
+  // Rows carry the identity an approve or revoke must echo. The annotation is
+  // explicit so the grant and pending halves share one row type instead of a
+  // union TypeScript cannot read fields from.
+  type DeviceRow = {
+    name: string
+    detail: string
+    id: string
+    version: number
+    pairingKey: string
+    kind: "grant" | "pending"
+  }
+  const devices: DeviceRow[] = [
+    ...(administration?.devices() ?? [])
+      .filter((grant) => grant.revokedAt === null)
+      .map((grant): DeviceRow => ({
+        name: grant.label,
+        detail: `${grant.publicKey.slice(0, 16)} · ${new Date(grant.createdAt * 1000)
+          .toISOString()
+          .slice(0, 10)}`,
+        id: grant.id,
+        version: grant.version,
+        pairingKey: grant.publicKey,
+        kind: "grant",
+      })),
+    ...(administration?.pending() ?? []).map((candidate): DeviceRow => ({
+      name: `${candidate.candidate.label} (pending)`,
+      detail: `${candidate.candidate.publicKey.slice(0, 16)} · awaiting approval`,
+      id: candidate.pairingID,
+      version: 0,
+      pairingKey: candidate.candidate.publicKey,
+      kind: "pending",
+    })),
+  ]
   const skills = skillService
     ? (yield* skillService.list()).map((skill) => ({
         name: skill.name,
