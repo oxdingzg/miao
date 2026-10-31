@@ -12,6 +12,9 @@ import { LocationServiceMap, locationServiceMapLayer } from "@miao/core/location
 import { McpAuth } from "@miao/core/mcp/auth"
 import { Logging } from "@miao/core/observability/logging"
 import { PluginV2 } from "@miao/core/plugin"
+import { SkillV2 } from "@miao/core/skill"
+import { ProjectV2 } from "@miao/core/project"
+import { WorkspaceV2 } from "@miao/core/workspace"
 import { AbsolutePath } from "@miao/core/schema"
 import { AmbientContext } from "./ambient-context"
 import { engineArgs, type EngineOptions } from "./client"
@@ -107,6 +110,40 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
   // Resolve the Agent before a permission handoff can freeze legacy ownership.
   const agent = yield* ProductTuiAgent.prepare(effective)
   const database = yield* Database.Service
+  // The TUI shows which integrations have a stored credential, never the values.
+  const credentials = yield* Credential.Service
+  // Skills are optional: a graph without the skill service exports none rather
+  // than failing the TUI start.
+  const skillService = Option.getOrUndefined(yield* Effect.serviceOption(SkillV2.Service))
+  // Workspaces need the project the directory resolves to, plus the workspace
+  // service; either one missing exports no workspaces.
+  const projectService = Option.getOrUndefined(yield* Effect.serviceOption(ProjectV2.Service))
+  const workspaceService = Option.getOrUndefined(yield* Effect.serviceOption(WorkspaceV2.Service))
+  const resolved = projectService
+    ? yield* projectService.resolve(AbsolutePath.make(input.workspace))
+    : undefined
+  const workspaces =
+    resolved && workspaceService
+      ? (yield* workspaceService.list({
+          projectID: resolved.id,
+          directory: resolved.directory,
+        })).map((workspace) => ({
+          name: workspace.name,
+          detail: workspace.branch ?? workspace.type,
+        }))
+      : []
+  const skills = skillService
+    ? (yield* skillService.list()).map((skill) => ({
+        name: skill.name,
+        detail: skill.description ?? "",
+      }))
+    : []
+  const providers = (yield* credentials.all())
+    .filter((credential) => credential.active)
+    .map((credential) => ({
+      name: String(credential.integrationID),
+      detail: credential.label,
+    }))
   const permission = yield* ProductPermission.prepare(ref, {
     binary,
     source: input.database,
@@ -128,10 +165,27 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
     model: effective.model,
   }
   const manifest = prepareMcpConfig(options)
+  // Read-only TUI panels render what the host already resolved. MCP servers
+  // are the first: names and transports only, never headers or environment.
+  const mcpServers = Object.entries(configuration.mcpSettings?.servers ?? {})
+    .filter(([, server]) => !server.disabled)
+    .map(([name, server]) =>
+      server.type === "local"
+        ? { name, detail: server.command.join(" ") }
+        : { name, detail: server.url },
+    )
   return {
     // The shim inherits the operator's environment and stands in for the TUI's
     // direct child, so provider environment keys keep reaching the engine.
-    env: { ...process.env, ...manifest?.environment, ...options.env },
+    env: {
+      ...process.env,
+      ...manifest?.environment,
+      ...options.env,
+      MIAO_TUI_MCP_JSON: JSON.stringify(mcpServers),
+      MIAO_TUI_PROVIDERS_JSON: JSON.stringify(providers),
+      MIAO_TUI_SKILLS_JSON: JSON.stringify(skills),
+      MIAO_TUI_WORKSPACES_JSON: JSON.stringify(workspaces),
+    },
     argv: [options.binary, ...engineArgs({ ...options, mcpConfigFile: manifest?.file ?? options.mcpConfigFile })],
     dispose: manifest?.dispose,
   } satisfies TuiEnginePlan

@@ -258,14 +258,27 @@ impl Store {
                     )?;
                     if has_owner_pid {
                         let owners = {
-                            let mut statement = conn.prepare("SELECT DISTINCT l.owner_pid FROM engine_run r JOIN engine_lease l ON l.session_id=r.session_id WHERE r.state='running' AND l.owner_pid IS NOT NULL")?;
+                            let mut statement = conn.prepare("SELECT DISTINCT l.owner_pid, r.session_id FROM engine_run r JOIN engine_lease l ON l.session_id=r.session_id WHERE r.state='running' AND l.owner_pid IS NOT NULL")?;
                             let owners = statement
-                                .query_map([], |row| row.get::<_, u32>(0))?
+                                .query_map([], |row| {
+                                    Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?))
+                                })?
                                 .collect::<Result<Vec<_>, _>>()?;
                             owners
                         };
-                        if owners.into_iter().any(pid_alive) {
-                            return Err(Error::Invalid("cannot upgrade Session storage while an older engine run owner is alive; stop the older engine first".into()));
+                        // Name the live owners: the operator has to close exactly
+                        // those windows, and a bare "stop the older engine" left
+                        // them guessing at which of several windows it meant.
+                        let live: Vec<String> = owners
+                            .into_iter()
+                            .filter(|(pid, _)| pid_alive(*pid))
+                            .map(|(pid, session)| format!("pid {pid} (session {session})"))
+                            .collect();
+                        if !live.is_empty() {
+                            return Err(Error::Invalid(format!(
+                                "cannot upgrade Session storage while an older engine run owner is alive; stop the older engine first: {}",
+                                live.join(", ")
+                            )));
                         }
                     }
                 }

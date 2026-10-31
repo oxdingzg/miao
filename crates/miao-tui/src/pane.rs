@@ -1389,6 +1389,10 @@ pub struct QuestionProgress {
     focus: usize,
     cursor: Vec<usize>,
     chosen: Vec<Vec<bool>>,
+    /// Set once the answer left this process: the panel stays on screen until
+    /// the engine's snapshot settles it, and a second Enter must not answer it
+    /// twice.
+    submitted: bool,
 }
 
 const PANEL_ROWS: usize = 12;
@@ -1413,6 +1417,7 @@ impl Panel {
                 focus: 0,
                 cursor,
                 chosen,
+                submitted: false,
             }),
         }
     }
@@ -1475,6 +1480,9 @@ impl Panel {
         let PanelKind::Question(progress) = &mut self.kind else {
             return None;
         };
+        if progress.submitted {
+            return None;
+        }
         let focus = progress.focus;
         let cursor = progress.cursor[focus];
         if !progress.view.questions[focus].multi_select {
@@ -1517,6 +1525,7 @@ impl Panel {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
+        progress.submitted = true;
         Some(progress.view.answer(answers))
     }
 
@@ -1828,6 +1837,16 @@ mod tests {
         panel.toggle();
         let answer = panel.submit().expect("answer");
         assert_eq!(answer["answers"], serde_json::json!([["src", "docs"]]));
+    }
+
+    #[test]
+    fn a_submitted_answer_is_not_sent_twice_while_the_panel_waits() {
+        let mut panel = Panel::question(question(false));
+        assert!(panel.submit().is_some(), "first Enter answers");
+        assert!(
+            panel.submit().is_none(),
+            "a second Enter must not answer the same question again"
+        );
     }
 
     #[test]

@@ -163,6 +163,14 @@ pub struct App {
     stash: Vec<StashEntry>,
     /// Every root Session, archived included, for the Session dialog.
     catalog: Vec<SessionSummary>,
+    /// MCP servers the host exported for this workspace (name, transport).
+    mcp: Vec<(String, String)>,
+    /// Integrations the host reported a stored credential for (name, label).
+    providers: Vec<(String, String)>,
+    /// Skills the host discovered (name, description).
+    skills: Vec<(String, String)>,
+    /// Workspaces the host reported (name, branch or type).
+    workspaces: Vec<(String, String)>,
     /// The model dialog waits for the catalog when nothing is cached yet.
     pending_models: bool,
     /// Same for the account dialog.
@@ -226,6 +234,10 @@ impl App {
             workspace,
             settings: None,
             models: Vec::new(),
+            mcp: parse_pairs(std::env::var("MIAO_TUI_MCP_JSON").ok().as_deref()),
+            providers: parse_pairs(std::env::var("MIAO_TUI_PROVIDERS_JSON").ok().as_deref()),
+            skills: parse_pairs(std::env::var("MIAO_TUI_SKILLS_JSON").ok().as_deref()),
+            workspaces: parse_pairs(std::env::var("MIAO_TUI_WORKSPACES_JSON").ok().as_deref()),
             accounts: Vec::new(),
             usage: None,
             stash: Vec::new(),
@@ -671,6 +683,10 @@ impl App {
             Some(keybinds::Action::StashDraft) => self.run_builtin(Builtin::StashDraft),
             Some(keybinds::Action::EditorOpen) => self.run_builtin(Builtin::Editor),
             Some(keybinds::Action::CopyMessage) => self.copy_last_response(),
+            Some(keybinds::Action::McpList) => self.open_mcp(),
+            Some(keybinds::Action::ProviderList) => self.open_providers(),
+            Some(keybinds::Action::SkillList) => self.open_skills(),
+            Some(keybinds::Action::WorkspaceList) => self.open_workspaces(),
             Some(keybinds::Action::MessageView) => self.open_message(),
             Some(keybinds::Action::ToolOutputToggle) => {
                 let expanded = self.shell.toggle_tool_expansion();
@@ -1043,6 +1059,22 @@ impl App {
             row.credential_id = credential_id;
         }
         self.shell.set_session(self.session.as_ref());
+    }
+
+    fn open_mcp(&mut self) {
+        self.open_dialog(Dialog::mcp(&self.mcp));
+    }
+
+    fn open_providers(&mut self) {
+        self.open_dialog(Dialog::providers(&self.providers));
+    }
+
+    fn open_skills(&mut self) {
+        self.open_dialog(Dialog::skills(&self.skills));
+    }
+
+    fn open_workspaces(&mut self) {
+        self.open_dialog(Dialog::workspaces(&self.workspaces));
     }
 
     /// The newest assistant reply as plain text: what the model said, how much
@@ -3463,5 +3495,56 @@ mod command_notice_tests {
     #[test]
     fn an_unknown_command_is_named_in_the_notice() {
         assert_eq!(unknown_command_notice("nope"), "unknown command: /nope");
+    }
+}
+
+/// Parse the host's MCP export. A missing or malformed value means "no servers
+/// to show", never a startup failure: the TUI is a read-only client here.
+fn parse_pairs(raw: Option<&str>) -> Vec<(String, String)> {
+    let Some(raw) = raw else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+    value
+        .as_array()
+        .map(|servers| {
+            servers
+                .iter()
+                .filter_map(|server| {
+                    Some((
+                        server.get("name")?.as_str()?.to_string(),
+                        server
+                            .get("detail")?
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod host_panel_tests {
+    use super::parse_pairs;
+
+    #[test]
+    fn the_host_export_is_read_as_name_and_transport() {
+        let parsed = parse_pairs(Some(
+            r#"[{"name":"everything","detail":"npx -y server-everything"},{"name":"remote","detail":"https://example.com/mcp"}]"#,
+        ));
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].0, "everything");
+        assert_eq!(parsed[1].1, "https://example.com/mcp");
+    }
+
+    #[test]
+    fn a_missing_or_malformed_export_is_empty() {
+        assert!(parse_pairs(None).is_empty());
+        assert!(parse_pairs(Some("not json")).is_empty());
+        assert!(parse_pairs(Some("{}")).is_empty());
     }
 }
