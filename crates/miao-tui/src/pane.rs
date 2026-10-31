@@ -478,6 +478,9 @@ pub struct Home {
     /// Set once the engine has answered the first `sessions` request. Until
     /// then an empty list is a load in flight, not an empty catalog.
     loaded: bool,
+    /// First visible list line. Render keeps the selected row inside the
+    /// viewport instead of letting it disappear below the fold.
+    scroll: u16,
     theme: Theme,
 }
 
@@ -491,6 +494,7 @@ impl Home {
             notice: None,
             warning: None,
             loaded: false,
+            scroll: 0,
             theme,
         }
     }
@@ -643,7 +647,7 @@ impl Home {
             .collect()
     }
 
-    pub fn render(&self, frame: &mut Frame, area: Rect) {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
         let block = Block::bordered()
             .title(Span::styled(
@@ -679,18 +683,24 @@ impl Home {
             );
             return;
         }
-        let notice = self
-            .warning_lines()
-            .into_iter()
-            .chain(self.notice.iter().flat_map(|notice| {
-                [
-                    Line::from(Span::styled(notice.clone(), Style::new().fg(palette.error))),
-                    Line::default(),
-                ]
-            }));
-        let rows = visible.iter().enumerate().map(|(index, row)| {
-            let marker = if index == self.selected { "▸ " } else { "  " };
-            let style = if index == self.selected {
+        let mut head = self.warning_lines();
+        if let Some(message) = self.notice.clone() {
+            head.push(Line::from(Span::styled(
+                message,
+                Style::new().fg(palette.error),
+            )));
+            head.push(Line::default());
+        }
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        let mut selected_start = 0usize;
+        let mut selected_height = 1usize;
+        for (index, row) in visible.iter().enumerate() {
+            let selected = index == self.selected;
+            if selected {
+                selected_start = head.len() + lines.len();
+            }
+            let marker = if selected { "▸ " } else { "  " };
+            let style = if selected {
                 Style::new()
                     .fg(palette.primary)
                     .bg(palette.element)
@@ -722,12 +732,12 @@ impl Home {
             } else {
                 detail
             };
-            let row_line = Line::from(vec![
+            lines.push(Line::from(vec![
                 Span::styled(
                     format!("{marker}{slot}"),
                     Style::new().fg(palette.text_muted),
                 ),
-                Span::styled(row.label(), style),
+                Span::styled(row.label().to_string(), style),
                 Span::styled(
                     if detail.is_empty() {
                         String::new()
@@ -736,27 +746,44 @@ impl Home {
                     },
                     Style::new().fg(palette.text_muted),
                 ),
-            ]);
+            ]));
             // The preview answers "which conversation was this?" without
             // opening it. One muted line under the row keeps the main line
             // scannable; the engine already bounded the text.
-            match row.preview.as_deref() {
-                Some(preview) => vec![
-                    row_line,
-                    Line::from(Span::styled(
-                        format!("    {preview}"),
-                        Style::new().fg(palette.text_muted),
-                    )),
-                ],
-                None => vec![row_line],
+            if let Some(preview) = row.preview.as_deref() {
+                lines.push(Line::from(Span::styled(
+                    format!("    {preview}"),
+                    Style::new().fg(palette.text_muted),
+                )));
             }
-        });
-        frame.render_widget(
-            Paragraph::new(notice.chain(rows.flatten()).collect::<Vec<_>>())
-                .block(block)
-                .wrap(Wrap { trim: false }),
-            area,
-        );
+            if selected {
+                selected_height = lines.len() + head.len() - selected_start;
+            }
+        }
+        // The selection never leaves the viewport: follow it past the bottom
+        // edge and back up past the top. Notice lines scroll away with the
+        // list; the composer and title stay where the hand is.
+        let viewport = area.height.saturating_sub(2) as usize;
+        if viewport > 0 {
+            let scroll = self.scroll as usize;
+            let scroll = if selected_start < scroll {
+                selected_start
+            } else if selected_start + selected_height > scroll + viewport {
+                (selected_start + selected_height - viewport).min(selected_start)
+            } else {
+                scroll
+            };
+            self.scroll = (scroll.min(lines.len() + head.len() - 1)) as u16;
+        } else {
+            self.scroll = 0;
+        }
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        let [head_area, list_area] =
+            Layout::vertical([Constraint::Length(head.len() as u16), Constraint::Min(0)])
+                .areas(inner);
+        frame.render_widget(Paragraph::new(head).wrap(Wrap { trim: false }), head_area);
+        frame.render_widget(Paragraph::new(lines).scroll((self.scroll, 0)), list_area);
     }
 }
 
@@ -2024,6 +2051,45 @@ mod tests {
             .collect::<String>();
         assert!(visible.contains("itwasthestubconfig"), "{visible}");
         assert!(visible.contains("loginfix"), "{visible}");
+    }
+
+    #[test]
+    fn navigating_to_the_last_row_keeps_it_on_screen() {
+        let mut home = Home::new(Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        });
+        let rows = (0..8)
+            .map(|index| SessionSummary {
+                id: format!("ses_{index}"),
+                title: Some(format!("row {index}")),
+                parent_id: None,
+                updated_at_ms: Some(100 - index as u64),
+                archived_at_ms: None,
+                pinned_at_ms: None,
+                directory: None,
+                model: None,
+                credential_id: None,
+                preview: Some(format!("preview {index}")),
+            })
+            .collect();
+        home.set_rows(rows);
+        home.move_cursor(99);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 9)).expect("terminal");
+        terminal
+            .draw(|frame| home.render(frame, frame.area()))
+            .expect("draw");
+        let visible = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .flat_map(|cell| cell.symbol().chars())
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        assert!(visible.contains("row7"), "{visible}");
+        assert!(visible.contains("preview7"), "{visible}");
     }
 
     #[test]
