@@ -236,6 +236,7 @@ pub enum Dialog {
     Help(ListDialog),
     Mcp(ListDialog),
     Providers(ListDialog),
+    Devices(ListDialog),
     Skills(ListDialog),
     Workspaces(ListDialog),
     Message(TextDialog),
@@ -398,6 +399,32 @@ impl Dialog {
         };
         Dialog::Skills(ListDialog::new(
             "skills",
+            rows,
+            ListKind::ReadOnly,
+            "esc close",
+        ))
+    }
+
+    /// The devices the host's remote-control administration knows about.
+    pub fn devices(devices: &[(String, String)]) -> Self {
+        let rows = if devices.is_empty() {
+            vec![Row {
+                id: String::new(),
+                label: "no paired devices".to_string(),
+                detail: String::new(),
+            }]
+        } else {
+            devices
+                .iter()
+                .map(|(name, detail)| Row {
+                    id: name.clone(),
+                    label: name.clone(),
+                    detail: detail.clone(),
+                })
+                .collect()
+        };
+        Dialog::Devices(ListDialog::new(
+            "devices",
             rows,
             ListKind::ReadOnly,
             "esc close",
@@ -605,6 +632,7 @@ impl Dialog {
             | Dialog::Help(list) => handle_list_key(list, key),
             Dialog::Mcp(list) => handle_list_key(list, key),
             Dialog::Providers(list) => handle_list_key(list, key),
+            Dialog::Devices(list) => handle_list_key(list, key),
             Dialog::Skills(list) => handle_list_key(list, key),
             Dialog::Workspaces(list) => handle_list_key(list, key),
             Dialog::Message(text) => handle_text_key(text, key),
@@ -629,6 +657,7 @@ impl Dialog {
             | Dialog::Help(list) => list.title,
             Dialog::Mcp(list) => list.title,
             Dialog::Providers(list) => list.title,
+            Dialog::Devices(list) => list.title,
             Dialog::Skills(list) => list.title,
             Dialog::Workspaces(list) => list.title,
             Dialog::Message(text) => text.title,
