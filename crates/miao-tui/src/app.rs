@@ -2009,6 +2009,12 @@ impl App {
             // Space reveals the next page of history, the way a pager does:
             // the list opens at ten rows and grows while the operator asks.
             (KeyCode::Char(' '), KeyModifiers::NONE) => self.home.page(),
+            // The pager's other four keys, so a long list does not require the
+            // space bar and a walk back.
+            (KeyCode::PageDown, _) => self.home.page(),
+            (KeyCode::PageUp, _) => self.home.page_back(),
+            (KeyCode::Home, _) => self.home.select_first(),
+            (KeyCode::End, _) => self.home.select_last(),
             (KeyCode::Char('n'), KeyModifiers::NONE) => {
                 if let Some(engine) = self.engine.as_ref() {
                     engine.new_session();
@@ -4153,6 +4159,27 @@ mod tests {
             requests.try_recv(),
             Ok(engine::Request::NewSession)
         ));
+    }
+
+    #[test]
+    fn home_and_end_jump_to_the_ends_of_the_list() {
+        // The list is longer than the window, so reaching the last row by
+        // walking is the cost this removes.
+        let mut app = home_with(vec![
+            summary("ses_first", 300),
+            summary("ses_second", 200),
+            summary("ses_third", 100),
+        ]);
+        app.handle(key(KeyCode::End, KeyModifiers::NONE));
+        assert_eq!(
+            app.home.current().map(|row| row.id.as_str()),
+            Some("ses_third")
+        );
+        app.handle(key(KeyCode::Home, KeyModifiers::NONE));
+        assert_eq!(
+            app.home.current().map(|row| row.id.as_str()),
+            Some("ses_first")
+        );
     }
 
     #[test]

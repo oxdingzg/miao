@@ -836,6 +836,22 @@ impl Home {
         self.move_cursor(step);
     }
 
+    /// Move the selection one screenful back, the other half of the pager.
+    pub fn page_back(&mut self) {
+        let step = self.capacity.max(1) as i32;
+        self.move_cursor(-step);
+    }
+
+    /// Select the first matching row.
+    pub fn select_first(&mut self) {
+        self.selected = 0;
+    }
+
+    /// Select the last matching row.
+    pub fn select_last(&mut self) {
+        self.selected = self.visible_len().saturating_sub(1);
+    }
+
     /// Every matching row. The renderer paints the window, so the list itself
     /// does not need a second notion of how much history is "revealed".
     fn visible(&self) -> Vec<&SessionSummary> {
@@ -3569,6 +3585,18 @@ mod tests {
         // Paging past the end stops on the last row instead of wrapping.
         home.page();
         assert_eq!(home.selected, 39);
+        // And back, one screenful at a time, to the start.
+        home.page_back();
+        assert_eq!(home.selected, 21);
+        home.page_back();
+        assert_eq!(home.selected, 3);
+        home.page_back();
+        assert_eq!(home.selected, 0);
+        // The ends are one keystroke away from anywhere.
+        home.select_last();
+        assert_eq!(home.selected, 39);
+        home.select_first();
+        assert_eq!(home.selected, 0);
     }
 
     #[test]
