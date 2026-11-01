@@ -719,6 +719,9 @@ pub struct Home {
     /// single-letter commands (`n`, `r`, `p`, `j`, `k`) usable and still lets a
     /// filter contain those letters.
     filtering: bool,
+    /// Whether the list, rather than the prompt, owns the keyboard. The footer
+    /// names the place `Tab` reaches next, so it cannot be a fixed promise.
+    list_focus: bool,
     notice: Option<String>,
     /// A configuration problem that outlives one load: the catalog arriving is
     /// not an answer to it, so it is kept apart from the transient notice.
@@ -738,6 +741,7 @@ impl Home {
             capacity: 0,
             query: String::new(),
             filtering: false,
+            list_focus: false,
             notice: None,
             warning: None,
             loaded: false,
@@ -773,6 +777,11 @@ impl Home {
 
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
+    }
+
+    /// Follow the screen's focus, so the footer can say where `Tab` leads.
+    pub fn set_list_focus(&mut self, focused: bool) {
+        self.list_focus = focused;
     }
 
     pub fn set_rows(&mut self, rows: Vec<SessionSummary>) {
@@ -1091,12 +1100,7 @@ impl Home {
         // The hint names how much history is still folded away, so the extra
         // rows are discoverable without reading the help.
         let hidden = self.hidden();
-        let hint = match hidden {
-            0 => " / filter · p pin · tab prompt · n new · 1-9 open · ? help".to_string(),
-            hidden => format!(
-                " / filter · p pin · tab prompt · n new · 1-9 open · ? help · space more ({hidden})"
-            ),
-        };
+        let hint = home_hint(self.list_focus, hidden);
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 hint,
@@ -1104,6 +1108,20 @@ impl Home {
             ))),
             hint_area,
         );
+    }
+}
+
+/// The list's bottom-row key hint. `Tab` reaches whichever side does not hold
+/// the keyboard, so the line names that place instead of promising one
+/// direction: the prompt owns the landing screen, and a fixed `tab prompt`
+/// would point at the keyboard it already has.
+fn home_hint(list_focus: bool, hidden: usize) -> String {
+    let tab = if list_focus { "tab prompt" } else { "tab list" };
+    match hidden {
+        0 => format!(" / filter · p pin · {tab} · n new · 1-9 open · ? help"),
+        hidden => {
+            format!(" / filter · p pin · {tab} · n new · 1-9 open · ? help · space more ({hidden})")
+        }
     }
 }
 
@@ -3005,6 +3023,17 @@ mod tests {
             home.placeholder(),
             "no sessions yet · tab to type a prompt · n for an empty session"
         );
+    }
+
+    #[test]
+    fn the_hint_names_the_place_the_next_tab_reaches() {
+        // The prompt owns the landing screen, so a fixed `tab prompt` pointed at
+        // the keyboard it already had. `Tab` swaps sides, so the hint follows
+        // whoever is waiting for it.
+        assert!(home_hint(false, 0).contains("tab list"));
+        assert!(home_hint(true, 0).contains("tab prompt"));
+        // The folded-history count keeps its place at the end of the row.
+        assert!(home_hint(false, 12).ends_with("space more (12)"));
     }
 
     #[test]

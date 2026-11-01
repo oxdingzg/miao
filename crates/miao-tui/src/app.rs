@@ -1849,6 +1849,9 @@ impl App {
         // the keys so a first prompt can be typed before any Session exists.
         if key.code == KeyCode::Tab {
             self.home_list_focus = !self.home_list_focus;
+            // The footer names where the next `Tab` lands, so it has to follow
+            // the focus instead of repeating the default direction.
+            self.home.set_list_focus(self.home_list_focus);
             return;
         }
         if !self.home_list_focus {
