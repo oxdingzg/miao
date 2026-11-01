@@ -2850,7 +2850,64 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{plugin_entries, strip_comments};
+    use super::{lsp_servers, mcp_servers, parsed_session_location, plugin_entries, strip_comments};
+    use std::io::Write;
+
+    /// Write a throwaway config directory and hand back its path.
+    fn config_dir(tag: &str, body: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("miao-cli-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let mut file = std::fs::File::create(dir.join("miao.jsonc")).expect("config");
+        file.write_all(body.as_bytes()).expect("write");
+        dir
+    }
+
+    #[test]
+    fn mcp_section_maps_to_the_engine_shape() {
+        let dir = config_dir(
+            "mcp",
+            "{ // comment\n \"mcp\": { \"files\": { \"command\": [\"npx\", \"x\"], \"environment\": { \"A\": \"1\" } }, \"remote\": { \"url\": \"https://e.test/mcp\", \"headers\": { \"K\": \"v\" } } } }",
+        );
+        let servers = mcp_servers(Some(&dir)).expect("maps");
+        assert_eq!(servers.len(), 2);
+        let files = servers.iter().find(|s| s["name"] == "files").expect("stdio server");
+        assert_eq!(files["argv"], serde_json::json!(["npx", "x"]));
+        assert_eq!(files["env"], serde_json::json!({"A": "1"}));
+        let remote = servers.iter().find(|s| s["name"] == "remote").expect("http server");
+        assert_eq!(remote["url"], serde_json::json!("https://e.test/mcp"));
+        assert_eq!(remote["headers"], serde_json::json!({"K": "v"}));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn lsp_section_keeps_extensions_and_skips_servers_without_a_command() {
+        let dir = config_dir(
+            "lsp",
+            "{ \"lsp\": { \"ts\": { \"command\": [\"ts-ls\", \"--stdio\"], \"extensions\": [\".ts\"] }, \"broken\": { \"extensions\": [\".x\"] } } }",
+        );
+        let servers = lsp_servers(Some(&dir)).expect("maps");
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0]["argv"], serde_json::json!(["ts-ls", "--stdio"]));
+        assert_eq!(servers[0]["extensions"], serde_json::json!([".ts"]));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_config_without_extensions_needs_no_sidecar() {
+        let dir = config_dir("empty", "{ \"model\": \"a/b\" }");
+        assert!(mcp_servers(Some(&dir)).expect("maps").is_empty());
+        assert!(lsp_servers(Some(&dir)).expect("maps").is_empty());
+        assert!(plugin_entries(Some(&dir)).expect("maps").is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn bundle_location_is_read_back_verbatim() {
+        let bundle = br#"{"session":{"location":{"directory":"/private/tmp/x"}}}"#;
+        assert_eq!(parsed_session_location(bundle), r#"{"directory":"/private/tmp/x"}"#);
+        // A malformed bundle must not panic; activation would reject it anyway.
+        assert_eq!(parsed_session_location(b"not json"), "{}");
+    }
 
     #[test]
     fn comments_are_removed_but_strings_survive() {
