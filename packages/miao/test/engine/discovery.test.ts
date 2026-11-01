@@ -273,3 +273,27 @@ test("shared permission selection refuses engines without the exact runtime cont
     "/chosen",
   )
 })
+
+test.skipIf(process.platform === "win32")(
+  "a truncated or incomplete capability report is not a contract",
+  async () => {
+    await using tmp = await tmpdir()
+    const script = path.join(tmp.path, "miao-engine")
+    const probe = () =>
+      resolveEngine({ environment: { MIAO_ENGINE_BIN: script }, probe: capabilities, exists: () => true })
+
+    // An engine that dies mid-write leaves a prefix of an otherwise valid
+    // frame; it must not be read as a working pairing.
+    await Bun.write(script, `#!/bin/sh\nprintf '%s' '{"name":"miao-engine","version":"9.9.9","protocol":2'\n`)
+    await chmod(script, 0o755)
+    expect(capabilities(script)).toBeUndefined()
+    expect(probe).toThrow("cannot report capabilities")
+
+    // The pairing needs every field: a frame without protocol is unknown, not
+    // "protocol 0", so an explicitly chosen binary still refuses to start.
+    await Bun.write(script, `#!/bin/sh\nprintf '%s' '{"name":"miao-engine","version":"9.9.9","schema":12}'\n`)
+    expect(capabilities(script)).toBeUndefined()
+    expect(probe).toThrow("cannot report capabilities")
+  },
+  10_000,
+)
