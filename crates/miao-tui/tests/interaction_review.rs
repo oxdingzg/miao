@@ -192,8 +192,11 @@ fn reaching_the_change_list_costs_two_keys() {
         harness.text()
     );
     let started = Instant::now();
-    harness.write(b"\x18"); // leader
-    harness.write(b"g"); // workspace changes
+    // One write for the whole chord, the way every other PTY test sends a
+    // leader sequence: the leader expires on `leader_timeout`, so two writes
+    // can straddle it on a loaded runner and the chord is then just a stray
+    // `g` in the composer.
+    harness.write(b"\x18g"); // leader, workspace changes
     let opened = harness.wait_for_changes(Duration::from_secs(30));
     let elapsed_ms = started.elapsed().as_millis();
     assert!(
