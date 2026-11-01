@@ -27,6 +27,31 @@ parser.add_argument("--output", required=True)
 parser.add_argument("--duration", type=float, default=1800)
 parser.add_argument("--interval", type=float, default=15)
 parser.add_argument("--commit", required=True)
+parser.add_argument(
+    "--ready-text",
+    action="append",
+    default=None,
+    help="Text a screen line must contain before sampling starts; repeat for "
+    "several marks, all of which must appear. Defaults to the TypeScript TUI's "
+    "marks. The Rust TUI renders a 'sessions' panel and a 'composer' panel "
+    "instead, so pass --ready-text sessions --ready-text composer for it.",
+)
+parser.add_argument(
+    "--ready-absent",
+    action="append",
+    default=None,
+    help="Text that must not appear on screen for the measurement to start, "
+    "e.g. 'engine_closed' — a TUI that rendered its panels but lost its engine "
+    "is not a valid place to measure typing latency.",
+)
+parser.add_argument("--ready-min-cursor-row", type=int, default=27)
+parser.add_argument(
+    "--focus-key",
+    default=None,
+    help="Key sent once after readiness and before sampling, to put the caret in "
+    "the composer. The Rust TUI starts with the sessions panel focused and "
+    "advertises 'tab prompt' for this, so pass --focus-key tab for it.",
+)
 args = parser.parse_args()
 if args.duration <= 0 or args.interval <= 0:
     parser.error("duration and interval must be positive")
@@ -109,15 +134,32 @@ with tempfile.TemporaryDirectory(prefix="miao-input-pty-") as home, output.open(
         settings = termios.tcgetattr(master)
         settings[3] &= ~(termios.ECHO | termios.ECHONL)
         termios.tcsetattr(master, termios.TCSANOW, settings)
+        ready_text = args.ready_text or ["tab agents", "Build", "Test Model"]
+        absent = args.ready_absent or []
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             receive(0.25)
-            if (any("tab agents" in line for line in screen.display)
-                    and any("Build" in line and "Test Model" in line for line in screen.display)
-                    and screen.cursor.y >= 27):
+            text = "\n".join(screen.display)
+            if (
+                all(mark in text for mark in ready_text)
+                and not any(mark in text for mark in absent)
+                and screen.cursor.y >= args.ready_min_cursor_row
+            ):
                 break
         else:
-            raise RuntimeError("Session prompt did not become ready:\n" + "\n".join(screen.display[-10:]))
+            raise RuntimeError(
+                "Session prompt did not become ready for "
+                + " + ".join(repr(mark) for mark in ready_text)
+                + (" without " + " / ".join(repr(mark) for mark in absent) if absent else "")
+                + ":\n"
+                + "\n".join(screen.display[-10:])
+            )
+        if args.focus_key is not None:
+            key = b"\t" if args.focus_key == "tab" else args.focus_key.encode()
+            os.write(master, key)
+            focus_until = time.monotonic() + 0.5
+            while time.monotonic() < focus_until:
+                receive(0.05)
         started = time.monotonic()
         index = 0
         while time.monotonic() - started < args.duration:
