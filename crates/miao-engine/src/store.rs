@@ -3922,6 +3922,16 @@ impl Store {
             // recovered must not disappear into the turn it saved. Both are
             // attributed on their own so a report can answer "how much did
             // retrying cost" without reading the raw event stream.
+            // Operator interventions and rework are countable facts, not
+            // opinions: each one is an event the engine already records.
+            let mut approvals = 0u64;
+            let mut allow_alls = 0u64;
+            let mut answers = 0u64;
+            let mut rejections = 0u64;
+            let mut cancels = 0u64;
+            let mut input_edits = 0u64;
+            let mut tool_input_errors = 0u64;
+            let mut input_recovery_stopped = 0u64;
             let mut attempts = 0u64;
             let mut failed_attempts = 0u64;
             let mut retry_detail: Vec<Value> = Vec::new();
@@ -3935,7 +3945,7 @@ impl Store {
             let mut auxiliary_rejected=0u64;
             let mut role_starts=std::collections::HashMap::<u64,Option<u64>>::new();
             let mut stmt = conn.prepare(
-                "SELECT seq,kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','provider.request','provider.attempt','provider.retry','tool.completed','role.provider.started','role.provider.completed') ORDER BY seq",
+                "SELECT seq,kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','provider.request','provider.attempt','provider.retry','tool.completed','role.provider.started','role.provider.completed','permission.approved','permission.saved_allowed','question.resolved','input.cancelled','input.edited','tool.input_error','tool.input_recovery.stopped') ORDER BY seq",
             )?;
             let mut rows = stmt.query(params![session])?;
             while let Some(row) = rows.next()? {
@@ -3957,6 +3967,17 @@ impl Store {
                         let detail=json!({"receiptSeq":row.get::<_,u64>(0)?,"kind":"auxiliary","runID":data["run_id"],"role":data["role"],"path":data["path"],"accepted":data["accepted"],"providerSuccess":data["providerSuccess"],"protocol":data["identity"]["protocol"],"model":data["identity"]["model"],"identitySource":data["identitySource"],"usage":usage,"durationMs":duration,"turnMs":row.get::<_,Option<u64>>(3)?});
                         auxiliary_detail.push(detail.clone());provider_detail.push(detail);
                     }
+                    "permission.approved" => approvals += 1,
+                    "permission.saved_allowed" => allow_alls += 1,
+                    "question.resolved" => match data["state"].as_str() {
+                        Some("answered") => answers += 1,
+                        Some("rejected") => rejections += 1,
+                        _ => {}
+                    },
+                    "input.cancelled" => cancels += 1,
+                    "input.edited" => input_edits += 1,
+                    "tool.input_error" => tool_input_errors += 1,
+                    "tool.input_recovery.stopped" => input_recovery_stopped += 1,
                     "provider.attempt" => {
                         attempts += 1;
                         // A 4xx/5xx or an attempt whose transport died before
@@ -4160,6 +4181,18 @@ impl Store {
                     "sessions": children.len(),
                     "turns": subagent_turns,
                     "tokens": subagent_tokens,
+                },
+                "interventions": {
+                    "approvals": approvals,
+                    "allowAll": allow_alls,
+                    "answers": answers,
+                    "rejections": rejections,
+                    "cancels": cancels,
+                    "inputEdits": input_edits,
+                },
+                "rework": {
+                    "toolInputErrors": tool_input_errors,
+                    "inputRecoveryStopped": input_recovery_stopped,
                 },
                 "retries": {
                     "attempts": attempts,
