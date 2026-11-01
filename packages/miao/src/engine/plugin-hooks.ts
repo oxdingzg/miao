@@ -1,13 +1,10 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
-import os from "node:os"
-import path from "node:path"
 import { AgentV2 } from "@miao/core/agent"
 import { SessionSchema } from "@miao/core/session/schema"
 import { SessionStore } from "@miao/core/session/store"
 import { ToolPlugins } from "@miao/core/tool/plugins"
 import { Cause, Effect, Exit, Option } from "effect"
 import { ToolFailure } from "@miao/llm"
-import { EngineError, type EngineOptions } from "./client"
+import type { EngineOptions } from "./client"
 
 /**
  * Host side of the plugin tool-hook reverse bridge: the engine learns only
@@ -29,19 +26,9 @@ export const prepare = Effect.fn("Engine.pluginHooks")(function* (
     definition: plugins.has("definition"),
   }
   if (!marker.before && !marker.after && !marker.definition) return options
-  const directory = yield* Effect.acquireRelease(
-    Effect.tryPromise({
-      try: () => mkdtemp(path.join(os.tmpdir(), "miao-native-plugin-hooks-")),
-      catch: () => new EngineError("engine_plugin_hooks_io", "could not create native plugin-hooks directory"),
-    }),
-    (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true })),
-  )
-  const file = path.join(directory, "plugin-hooks.json")
-  yield* Effect.tryPromise({
-    try: () => writeFile(file, JSON.stringify(marker), { mode: 0o600 }),
-    catch: () => new EngineError("engine_plugin_hooks_io", "could not write native plugin-hooks marker"),
-  })
-  options.pluginHooksFile = file
+  // The marker is three booleans, so it travels inline in the child's
+  // environment: no temporary directory to create, chmod, and clean up.
+  options.env = { ...options.env, MIAO_ENGINE_PLUGIN_HOOKS: JSON.stringify(marker) }
   options.onHookTool = (call) =>
     Effect.runPromise(
       Effect.gen(function* () {
