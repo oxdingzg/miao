@@ -124,20 +124,14 @@ miao
 | 快捷键       | 动作                              |
 | ------------ | --------------------------------- |
 | `ctrl+p`     | 命令面板                          |
+| `ctrl+x` `b` | 显示/隐藏右侧边栏（子会话不显示） |
+| `ctrl+x` `m` | 选择模型                          |
 | `ctrl+x` `l` | 会话列表                          |
 | `ctrl+x` `n` | 新建会话                          |
-| `ctrl+x` `m` | 选择模型                          |
 | `ctrl+x` `t` | 主题                              |
-| `ctrl+x` `d` | 调试视图                          |
-| `ctrl+x` `j` | 后台任务                          |
-| `ctrl+x` `w` | 工作区                            |
-| `ctrl+x` `g` | 工作区改动                        |
+| `ctrl+x` `c` | 压缩会话                          |
+| `ctrl+x` `g` | 时间线                            |
 | `ctrl+x` `q` | 退出                              |
-
-在首屏会话列表上：`j`/`k` 移动，`space`/`PageDown` 与 `PageUp` 翻页，`Home`/`End`
-跳到两端，`enter` 打开，`/` 过滤，`n` 新建会话，`p` 置顶，`?` 打开按键清单，
-对同一行再次点击即打开。按下 leader 会画出它能到达的全部和弦，`?`（或 `/help`）
-显示 keymap 当前实际使用的清单——上面的表只是它的精简版。
 
 可在 `~/.config/miao/tui.json`（或 miao.jsonc 的 `keybinds`）里重绑定。
 
@@ -246,8 +240,8 @@ V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或
 **Q：侧边栏 LSP 一直显示 “LSPs are disabled”？**
 配置里没写 `lsp`（省略即禁用）。在 `miao.jsonc` 加 `"lsp": true` 即可：原生引擎会重载配置并连上语言服务器，不必重启；TypeScript 引擎仍需重启 miao。
 
-**Q：侧边栏在哪里？**
-它没有快捷键：会话主体宽度至少 100 列时自动出现，子会话（由 task/subagent 派生、`parent_id` 非空）会被隐藏。把终端拉宽即可恢复。
+**Q：`ctrl+x b` 打不开侧边栏？**
+子会话（由 task/subagent 派生、`parent_id` 非空）侧边栏被强制隐藏；顶层会话可用。窄终端（宽度 ≤120）auto 模式也不默认显示，但手动 toggle 有效。
 
 **Q：模型/供应商怎么配？**
 `miao providers login` 写凭据；`miao models` 查看；在 `miao.jsonc` 的 `providers` 里自定义。可用 `miao debug config` 查看生效配置，用 `miao debug info` 查看安装与插件信息；`miao debug` 列出子命令。
@@ -274,14 +268,15 @@ V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或
 
 ```bash
 miao db path              # 数据库路径
-miao db stats             # 文件体积、空闲页与每表行数
-miao db vacuum            # 默认 dry-run：只报告 VACUUM 能回收多少
-miao db vacuum --apply    # 真正回收空闲页
+miao db stats             # 表/事件占用（定位膨胀）
+miao db vacuum            # checkpoint + VACUUM 回收空闲页
+miao db backfill          # 把旧 V1 会话消息转成 V2 结构（幂等）
+miao db compact           # backfill 后：删除已退役的 message/part 表及其事件
 miao export <sessionID> --format jsonl   # 导出会话
 MIAO_CONFIG=/path/miao.jsonc miao        # 指定配置
 ```
 
-日志位于 `~/.local/share/miao/log/`。V2 之前的数据库膨胀主要来自遗留的逐 delta 事件；`miao db stats` 可监控，`miao db vacuum --apply` 可回收空闲页。尚无可用的 `backfill`/`compact` 命令：Rust 引擎里的 `compact` 是带摘要的上下文检查点，不是表退役，相关设计见 [会话存储设计](../specs/storage/session-storage-hardening.md)。
+日志位于 `~/.local/share/miao/log/`。V2 之前的数据库膨胀主要来自遗留的逐 delta 事件；`miao db stats` 可监控，`miao db compact` 可退役旧表，`vacuum` 可回收空闲页。
 
 ## 9. 开发
 

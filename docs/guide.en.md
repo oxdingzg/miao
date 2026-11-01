@@ -126,24 +126,17 @@ and `miao session migrate` moves an existing Session offline.
 
 The default **leader key is `ctrl+x`**:
 
-| Keys         | Action                                        |
-| ------------ | --------------------------------------------- |
-| `ctrl+p`     | command palette                               |
-| `ctrl+x` `l` | session list                                  |
-| `ctrl+x` `n` | new session                                   |
-| `ctrl+x` `m` | model picker                                  |
-| `ctrl+x` `t` | themes                                        |
-| `ctrl+x` `d` | debug view                                    |
-| `ctrl+x` `j` | background jobs                               |
-| `ctrl+x` `w` | workspaces                                    |
-| `ctrl+x` `g` | workspace changes                             |
-| `ctrl+x` `q` | quit                                          |
-
-On the landing list: `j`/`k` move, `space`/`PageDown` and `PageUp` page, `Home`/`End`
-jump to either end, `enter` opens, `/` filters, `n` starts a Session, `p` pins,
-`?` opens the key list, and a second click on a row opens it. Pressing the leader
-paints every chord it reaches, and `?` (or `/help`) shows the live list the
-keymap is actually using — the table above is the short version of it.
+| Keys         | Action                                               |
+| ------------ | ---------------------------------------------------- |
+| `ctrl+p`     | command palette                                      |
+| `ctrl+x` `b` | toggle the right sidebar (hidden for child sessions) |
+| `ctrl+x` `m` | model picker                                         |
+| `ctrl+x` `l` | session list                                         |
+| `ctrl+x` `n` | new session                                          |
+| `ctrl+x` `t` | themes                                               |
+| `ctrl+x` `c` | compact                                              |
+| `ctrl+x` `g` | timeline                                             |
+| `ctrl+x` `q` | quit                                                 |
 
 Rebind in `~/.config/miao/tui.json` (or `keybinds` in miao.jsonc).
 
@@ -262,10 +255,10 @@ All shipped clients use the single V2 session runtime; the V1 session runtime an
 `lsp` is omitted (omitted means disabled). Add `"lsp": true`: the native engine reloads the config
 and connects the server without a restart; the TypeScript engine still needs a restart.
 
-**Where is the sidebar?**
-There is no chord for it: the sidebar appears when the Session body is at least 100 columns
-wide, and child sessions (spawned by task/subagent, non-empty `parent_id`) hide it. Widen the
-terminal to get it back.
+**`ctrl+x b` does not open the sidebar?**
+Child sessions (spawned by task/subagent, non-empty `parent_id`) force-hide the sidebar;
+top-level sessions work. Narrow terminals (width ≤ 120) do not show it in `auto` mode, but the
+manual toggle still works.
 
 **How do I configure models/providers?**
 `miao providers login` writes credentials; `miao models` lists them; customize under
@@ -296,18 +289,17 @@ polluted; edits and commands follow the configured permission rules.
 
 ```bash
 miao db path              # database path
-miao db stats             # file size, free pages and row count per table
-miao db vacuum            # dry run: reports what a VACUUM would reclaim
-miao db vacuum --apply    # reclaim the free pages
+miao db stats             # per-table/event usage (find bloat)
+miao db vacuum            # checkpoint + VACUUM to reclaim free pages
+miao db backfill          # project legacy V1 session messages into the V2 schema (idempotent)
+miao db compact           # after backfill: drop the retired message/part tables and their events
 miao export <sessionID> --format jsonl
 MIAO_CONFIG=/path/miao.jsonc miao
 ```
 
 Logs live in `~/.local/share/miao/log/`. In databases written before V2, bloat comes mainly from
-legacy per-delta events; use `miao db stats` to monitor and `miao db vacuum --apply` to reclaim free
-pages. There is no `backfill` or `compact` command: `compact` in the Rust engine is a context
-checkpoint carrying a summary, not table retirement, and the design for the rest lives in
-[session storage](../specs/storage/session-storage-hardening.md).
+legacy per-delta events; use `miao db stats` to monitor, `miao db compact` to retire the old tables,
+and `vacuum` to reclaim free pages.
 
 ## 9. Development
 
