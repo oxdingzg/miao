@@ -1998,10 +1998,12 @@ async fn read_stream_with_budget<P: Parser>(
             Err(_) => return Err(parser.interrupted()),
         };
         total += chunk.len();
-        if total > 8 * 1024 * 1024 {
-            return Err(ProviderError::Stream(
-                "the response exceeded 8 MiB before the provider finished the message; the streamed reply was discarded (a runaway or degenerate response, not a malformed request)".into(),
-            ));
+        if total > 64 * 1024 * 1024 {
+            // The runaway guard: truncate the stream at 64 MiB of raw wire
+            // bytes and keep the partial reply instead of discarding it. The
+            // repetitive-delta guard catches degenerate loops; this bound only
+            // stops genuinely huge streams from hanging the turn.
+            return parser.finish();
         }
         for frame in decoder.push(&chunk)? {
             input_budget.frame(&frame)?;
