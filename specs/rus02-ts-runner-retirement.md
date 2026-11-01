@@ -52,7 +52,7 @@ bun docs/experiments/2026-10-28-ts-runner-retirement/generate.cjs
 
 | 文件                   | runner 目录外的实际消费者                                                           | 退役处理                                                                |
 | ---------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `model.ts`             | Location composition、`session/native-title.ts`、`miao/src/engine/native-engine.ts` | 先将产品模型/标题解析与 TS provider loop 分开；不能删除 native 启动依赖 |
+| `model.ts`             | Location composition、`session/native-title.ts`、`miao/src/engine/native-engine.ts` | 实现已在 `session/model.ts`；`runner/model.ts` 兼容壳已删除。native 启动依赖保留在 `session/model.ts`，不是 runner 入口 |
 | `cost.ts`              | `miao/src/engine/bridge.ts`、`server/src/native-session.ts`                         | **已迁出**至 `session/cost.ts`；`runner/cost.ts` 兼容壳已删除            |
 | `materialize-files.ts` | `core/src/session.ts`                                                               | **已迁出**至 `session/materialize-files.ts`；`runner/` 兼容壳已删除      |
 | `index.ts`             | Session 公共错误类型、execution 接口、local runner                                  | 在独立 PR 解开类型/服务耦合，再删除 TS 执行接口                         |
