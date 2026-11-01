@@ -101,7 +101,7 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
         match name.as_str() {
             "--workspace" => workspace = Some(PathBuf::from(value("--workspace")?)),
             "--db" => db = Some(PathBuf::from(value("--db")?)),
-            "--model" => model = Some(value("--model")?),
+            "--model" | "-m" => model = Some(value("--model")?),
             "--config-dir" => config_dir = Some(PathBuf::from(value("--config-dir")?)),
             "--session" => session = Some(value("--session")?),
             "--continue" => continue_last = true,
@@ -109,7 +109,8 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
             other => return Err(format!("unknown option {other}")),
         }
     }
-    let workspace = workspace.unwrap_or(std::env::current_dir().map_err(|error| error.to_string())?);
+    let workspace =
+        workspace.unwrap_or(std::env::current_dir().map_err(|error| error.to_string())?);
     // The TUI refuses to start without an engine database; every other
     // subcommand defaults one beside the workspace, so do the same here.
     let db = db.or_else(|| Some(default_db(&workspace)));
@@ -176,15 +177,18 @@ fn strip_comments(text: &str) -> String {
 /// native binary needs no JavaScript runtime at all: plugins are npm package
 /// names (`plugin: string | { package, options }[]`), never local directories.
 fn plugin_entries(config_dir: Option<&std::path::Path>) -> Result<Vec<String>, String> {
-    let Some(dir) = config_dir else { return Ok(Vec::new()) };
+    let Some(dir) = config_dir else {
+        return Ok(Vec::new());
+    };
     for name in ["miao.jsonc", "miao.json"] {
         let path = dir.join(name);
         if !path.is_file() {
             continue;
         }
-        let text = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
-        let parsed: serde_json::Value =
-            serde_json::from_str(&strip_comments(&text)).map_err(|error| format!("{}: {error}", path.display()))?;
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        let parsed: serde_json::Value = serde_json::from_str(&strip_comments(&text))
+            .map_err(|error| format!("{}: {error}", path.display()))?;
         let mut entries = Vec::new();
         if let Some(list) = parsed.get("plugin").and_then(|value| value.as_array()) {
             for item in list {
@@ -220,7 +224,10 @@ fn web(rest: &[String]) -> Result<(), String> {
 /// Probe a running server. `attach` used to mean "run a TUI against it"; the
 /// single binary reports reachability instead of pretending to attach.
 fn attach(rest: &[String]) -> Result<(), String> {
-    let url = rest.iter().find(|arg| !arg.starts_with("--")).ok_or("usage: miao attach URL")?;
+    let url = rest
+        .iter()
+        .find(|arg| !arg.starts_with("--"))
+        .ok_or("usage: miao attach URL")?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -235,12 +242,18 @@ fn attach(rest: &[String]) -> Result<(), String> {
 /// Minimal HTTP probe without pulling in an HTTP client crate: a TCP connect
 /// plus one request line is enough to tell "listening" from "nothing there".
 async fn reqwest_like_probe(url: &str) -> Result<String, String> {
-    let trimmed = url.trim_start_matches("http://").trim_start_matches("https://");
+    let trimmed = url
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
     let (authority, path) = match trimmed.split_once('/') {
         Some((authority, rest)) => (authority.to_string(), format!("/{rest}")),
         None => (trimmed.to_string(), "/".into()),
     };
-    let host = authority.split(':').next().unwrap_or(&authority).to_string();
+    let host = authority
+        .split(':')
+        .next()
+        .unwrap_or(&authority)
+        .to_string();
     let port: u16 = authority
         .split_once(':')
         .and_then(|(_, port)| port.parse().ok())
@@ -249,17 +262,22 @@ async fn reqwest_like_probe(url: &str) -> Result<String, String> {
         .await
         .map_err(|error| format!("{authority}: {error}"))?;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let request = format!("GET {path} HTTP/1.1
+    let request = format!(
+        "GET {path} HTTP/1.1
 Host: {authority}
 Connection: close
 
-");
+"
+    );
     stream
         .write_all(request.as_bytes())
         .await
         .map_err(|error| error.to_string())?;
     let mut buffer = vec![0u8; 256];
-    let read = stream.read(&mut buffer).await.map_err(|error| error.to_string())?;
+    let read = stream
+        .read(&mut buffer)
+        .await
+        .map_err(|error| error.to_string())?;
     let head = String::from_utf8_lossy(&buffer[..read]);
     Ok(head.lines().next().unwrap_or("no response").to_string())
 }
@@ -275,7 +293,10 @@ fn remote() -> Result<(), String> {
     }
     let text = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
     let parsed: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
-    let account = parsed.get("account").and_then(|value| value.as_str()).unwrap_or("paired");
+    let account = parsed
+        .get("account")
+        .and_then(|value| value.as_str())
+        .unwrap_or("paired");
     println!("remote    {account} ({})", path.display());
     Ok(())
 }
@@ -365,7 +386,10 @@ fn hub(rest: &[String]) -> Result<(), String> {
     let mut index = 0;
     while index < rest.len() {
         if rest[index] == "--idle-ms" {
-            idle_ms = rest.get(index + 1).and_then(|value| value.parse().ok()).unwrap_or(0);
+            idle_ms = rest
+                .get(index + 1)
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0);
             index += 2;
             continue;
         }
@@ -526,7 +550,9 @@ fn workflow_script(rest: &[String]) -> Result<(), String> {
     let ast = engine
         .compile_file(path.into())
         .map_err(|error| format!("{path}: {error}"))?;
-    let result: rhai::Dynamic = engine.eval_ast(&ast).map_err(|error| format!("{path}: {error}"))?;
+    let result: rhai::Dynamic = engine
+        .eval_ast(&ast)
+        .map_err(|error| format!("{path}: {error}"))?;
     println!("{result}");
     Ok(())
 }
@@ -568,7 +594,9 @@ fn session_import(rest: &[String]) -> Result<(), String> {
     let computed = format!("{:x}", Sha256::digest(&bytes));
     if let Some(expected) = expected.as_deref() {
         if expected != computed {
-            return Err(format!("bundle digest mismatch: expected {expected}, got {computed}"));
+            return Err(format!(
+                "bundle digest mismatch: expected {expected}, got {computed}"
+            ));
         }
     }
     let parsed: serde_json::Value =
@@ -670,7 +698,12 @@ fn session_import(rest: &[String]) -> Result<(), String> {
 fn parsed_session_location(bundle: &[u8]) -> String {
     serde_json::from_slice::<serde_json::Value>(bundle)
         .ok()
-        .and_then(|value| value.get("session").and_then(|s| s.get("location")).cloned())
+        .and_then(|value| {
+            value
+                .get("session")
+                .and_then(|s| s.get("location"))
+                .cloned()
+        })
         .map(|location| location.to_string())
         .unwrap_or_else(|| "{}".into())
 }
@@ -694,12 +727,18 @@ fn stats_via_engine(db: PathBuf, session: String) -> Result<(), String> {
         let (mut connection, _events) =
             Connection::start_embedded(configured.runtime, Duration::from_secs(60))
                 .map_err(|error| error.to_string())?;
-        let client = connection.connect().await.map_err(|error| error.to_string())?;
+        let client = connection
+            .connect()
+            .await
+            .map_err(|error| error.to_string())?;
         let usage = client
             .request("usage", serde_json::json!({ "session_id": session }))
             .await
             .map_err(|error| error.to_string())?;
-        println!("{}", serde_json::to_string_pretty(&usage).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&usage).unwrap_or_default()
+        );
         Ok(())
     })
 }
@@ -739,12 +778,17 @@ fn report(rest: &[String]) -> Result<(), String> {
 /// it is one step, so a crash mid-read re-delivers rather than dropping.
 fn drain_inbox(session: &str) -> Vec<String> {
     let file = hub_queue_dir().join(format!("{session}.jsonl"));
-    let Ok(text) = std::fs::read_to_string(&file) else { return Vec::new() };
+    let Ok(text) = std::fs::read_to_string(&file) else {
+        return Vec::new();
+    };
     let _ = std::fs::remove_file(&file);
     text.lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
         .filter_map(|entry| {
-            let from = entry.get("from").and_then(|value| value.as_str()).unwrap_or("another session");
+            let from = entry
+                .get("from")
+                .and_then(|value| value.as_str())
+                .unwrap_or("another session");
             let text = entry.get("text").and_then(|value| value.as_str())?;
             Some(format!("[message from {from}] {text}"))
         })
@@ -796,7 +840,10 @@ fn session_engine_call(rest: &[String], method: &str) -> Result<(), String> {
         let (mut connection, _events) =
             Connection::start_embedded(configured.runtime, Duration::from_secs(120))
                 .map_err(|error| error.to_string())?;
-        let client = connection.connect().await.map_err(|error| error.to_string())?;
+        let client = connection
+            .connect()
+            .await
+            .map_err(|error| error.to_string())?;
         // Location is keyed by the real path: `/tmp/x` and `/private/tmp/x` are
         // two different Locations, so a bundle exported under the short spelling
         // becomes unreachable for an engine that canonicalises its workspace.
@@ -842,7 +889,10 @@ fn session_engine_call(rest: &[String], method: &str) -> Result<(), String> {
             }
             _ => {}
         }
-        let result = client.request(method, params).await.map_err(|error| error.to_string())?;
+        let result = client
+            .request(method, params)
+            .await
+            .map_err(|error| error.to_string())?;
         println!("{}", serde_json::to_string(&result).unwrap_or_default());
         Ok(())
     })
@@ -851,7 +901,9 @@ fn session_engine_call(rest: &[String], method: &str) -> Result<(), String> {
 /// Talk to a running hub. Used by `send_message` and by tests.
 fn hubctl(rest: &[String]) -> Result<(), String> {
     use std::io::{BufRead, BufReader, Write};
-    let op = rest.first().ok_or("usage: miao hubctl register|list|ping")?;
+    let op = rest
+        .first()
+        .ok_or("usage: miao hubctl register|list|ping")?;
     let mut request = serde_json::json!({ "op": op });
     if op == "send" {
         request["to"] = serde_json::json!(rest.get(1).cloned().unwrap_or_default());
@@ -871,7 +923,9 @@ fn hubctl(rest: &[String]) -> Result<(), String> {
     let mut writer = stream.try_clone().map_err(|error| error.to_string())?;
     let mut line = serde_json::to_string(&request).unwrap_or_default();
     line.push('\n');
-    writer.write_all(line.as_bytes()).map_err(|error| error.to_string())?;
+    writer
+        .write_all(line.as_bytes())
+        .map_err(|error| error.to_string())?;
     let mut response = String::new();
     BufReader::new(stream)
         .read_line(&mut response)
@@ -946,8 +1000,8 @@ fn workflow_run(rest: &[String]) -> Result<(), String> {
         .find(|arg| !arg.starts_with("--"))
         .ok_or("usage: miao workflow run PLAN.json [--db PATH] [--model ID] [--config-dir PATH]")?;
     let text = std::fs::read_to_string(path).map_err(|error| format!("{path}: {error}"))?;
-    let plan: serde_json::Value = serde_json::from_str(&strip_comments(&text))
-        .map_err(|error| format!("{path}: {error}"))?;
+    let plan: serde_json::Value =
+        serde_json::from_str(&strip_comments(&text)).map_err(|error| format!("{path}: {error}"))?;
     let steps = plan
         .get("steps")
         .and_then(|value| value.as_array())
@@ -976,17 +1030,26 @@ fn workflow_run(rest: &[String]) -> Result<(), String> {
         let mut progressed = false;
         let mut next: Vec<&serde_json::Value> = Vec::new();
         for step in remaining {
-            let id = step.get("id").and_then(|value| value.as_str()).unwrap_or("");
+            let id = step
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
             let ready = step
                 .get("depends_on")
                 .and_then(|value| value.as_array())
-                .map(|deps| deps.iter().all(|dep| dep.as_str().is_some_and(|dep| done.contains(dep))))
+                .map(|deps| {
+                    deps.iter()
+                        .all(|dep| dep.as_str().is_some_and(|dep| done.contains(dep)))
+                })
                 .unwrap_or(true);
             if !ready {
                 next.push(step);
                 continue;
             }
-            let prompt = step.get("prompt").and_then(|value| value.as_str()).unwrap_or("");
+            let prompt = step
+                .get("prompt")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
             println!("--- step {id}");
             let status = std::process::Command::new(&exe)
                 .arg("run")
@@ -1020,26 +1083,44 @@ fn workflow_run(rest: &[String]) -> Result<(), String> {
 fn agent_list() -> Result<(), String> {
     let config = std::env::var_os("MIAO_CONFIG_DIR")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao")));
-    let Some(dir) = config else { return Err("MIAO_CONFIG_DIR is unset".into()) };
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao"))
+        });
+    let Some(dir) = config else {
+        return Err("MIAO_CONFIG_DIR is unset".into());
+    };
     for name in ["miao.jsonc", "miao.json"] {
         let path = dir.join(name);
         if !path.is_file() {
             continue;
         }
-        let text = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
         let parsed: serde_json::Value = serde_json::from_str(&strip_comments(&text))
             .map_err(|error| format!("{}: {error}", path.display()))?;
-        let default = parsed.get("default_agent").and_then(|value| value.as_str()).unwrap_or("");
+        let default = parsed
+            .get("default_agent")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
         match parsed.get("agent").and_then(|value| value.as_object()) {
             Some(agents) if !agents.is_empty() => {
                 for (name, agent) in agents {
-                    let model = agent.get("model").and_then(|value| value.as_str()).unwrap_or("-");
+                    let model = agent
+                        .get("model")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("-");
                     let mark = if name == default { " (default)" } else { "" };
                     println!("{name:<20} {model}{mark}");
                 }
             }
-            _ => println!("no agents configured{}", if default.is_empty() { "".to_string() } else { format!(" (default_agent = {default})") }),
+            _ => println!(
+                "no agents configured{}",
+                if default.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(" (default_agent = {default})")
+                }
+            ),
         }
         return Ok(());
     }
@@ -1053,20 +1134,25 @@ fn agent_list() -> Result<(), String> {
 /// through `MIAO_ENGINE_MCP_SERVERS`. The product writes them by name, so the
 /// name is lifted into the entry and `command`/`environment` are translated.
 fn mcp_servers(config_dir: Option<&std::path::Path>) -> Result<Vec<serde_json::Value>, String> {
-    let Some(dir) = config_dir else { return Ok(Vec::new()) };
+    let Some(dir) = config_dir else {
+        return Ok(Vec::new());
+    };
     for name in ["miao.jsonc", "miao.json"] {
         let path = dir.join(name);
         if !path.is_file() {
             continue;
         }
-        let text = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
         let parsed: serde_json::Value = serde_json::from_str(&strip_comments(&text))
             .map_err(|error| format!("{}: {error}", path.display()))?;
         let section = parsed
             .get("mcp")
             .or_else(|| parsed.get("mcpServers"))
             .and_then(|value| value.as_object());
-        let Some(section) = section else { return Ok(Vec::new()) };
+        let Some(section) = section else {
+            return Ok(Vec::new());
+        };
         let mut servers = Vec::new();
         for (name, entry) in section {
             let mut server = serde_json::json!({ "name": name });
@@ -1084,7 +1170,11 @@ fn mcp_servers(config_dir: Option<&std::path::Path>) -> Result<Vec<serde_json::V
             if let Some(url) = entry.get("url").and_then(|value| value.as_str()) {
                 server["url"] = serde_json::json!(url);
             }
-            for (from, to) in [("env", "env"), ("environment", "env"), ("headers", "headers")] {
+            for (from, to) in [
+                ("env", "env"),
+                ("environment", "env"),
+                ("headers", "headers"),
+            ] {
                 if let Some(value) = entry.get(from) {
                     server[to] = value.clone();
                 }
@@ -1129,7 +1219,9 @@ fn configured_model(config_dir: Option<&std::path::Path>) -> Option<String> {
 fn product_config_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
     explicit
         .or_else(|| std::env::var_os("MIAO_CONFIG_DIR").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao")))
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao"))
+        })
 }
 
 /// The engine database a workspace uses when none was named.
@@ -1168,8 +1260,12 @@ fn prepare_tui_engine(launch: &mut miao_tui::Launch) {
             std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao"))
         })
     });
-    let Ok(routes) = model_routes(config_dir.as_deref(), &model) else { return };
-    let Some(primary) = routes.iter().find(|route| route["primary"] == true) else { return };
+    let Ok(routes) = model_routes(config_dir.as_deref(), &model) else {
+        return;
+    };
+    let Some(primary) = routes.iter().find(|route| route["primary"] == true) else {
+        return;
+    };
     // The engine builds its base provider from --model and then requires the
     // primary route to carry the same identity (protocol + model), while a
     // route id is provider-qualified. Hand it the bare model name whatever the
@@ -1183,7 +1279,10 @@ fn prepare_tui_engine(launch: &mut miao_tui::Launch) {
             launch.model = Some(name.to_string());
         }
     }
-    for (key, variable) in [("provider", "MIAO_ENGINE_PROVIDER"), ("endpoint", "MIAO_ENGINE_ENDPOINT")] {
+    for (key, variable) in [
+        ("provider", "MIAO_ENGINE_PROVIDER"),
+        ("endpoint", "MIAO_ENGINE_ENDPOINT"),
+    ] {
         if let Some(value) = primary[key].as_str() {
             if !value.is_empty() {
                 std::env::set_var(variable, value);
@@ -1206,8 +1305,8 @@ fn prepare_tui_engine(launch: &mut miao_tui::Launch) {
     // and every tool call blocks on an approval the UI then has to surface.
     // Hand over the same auto-settling manifest `run` uses.
     if std::env::var_os("MIAO_ENGINE_AGENT_CONFIG").is_none() {
-        let instructions = assemble_instructions(&launch.workspace, config_dir.as_deref())
-            .unwrap_or_default();
+        let instructions =
+            assemble_instructions(&launch.workspace, config_dir.as_deref()).unwrap_or_default();
         let manifest = serde_json::json!({
             "name": "miao",
             "instructions": instructions,
@@ -1220,7 +1319,8 @@ fn prepare_tui_engine(launch: &mut miao_tui::Launch) {
     }
     if let Ok(encoded) = serde_json::to_string(&routes) {
         if encoded.len() <= 65536 {
-            let path = std::env::temp_dir().join(format!("miao-tui-routes-{}.json", std::process::id()));
+            let path =
+                std::env::temp_dir().join(format!("miao-tui-routes-{}.json", std::process::id()));
             if std::fs::write(&path, encoded).is_ok() {
                 std::env::set_var("MIAO_ENGINE_MODEL_ROUTES_CONFIG", path);
             }
@@ -1236,19 +1336,19 @@ fn agent_manifest_for(
     name: &str,
     base_instructions: Option<String>,
 ) -> Result<Option<(String, serde_json::Value)>, String> {
-    let Some(dir) = config_dir else { return Ok(None) };
+    let Some(dir) = config_dir else {
+        return Ok(None);
+    };
     for file in ["miao.jsonc", "miao.json"] {
         let path = dir.join(file);
         if !path.is_file() {
             continue;
         }
-        let text = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
         let parsed: serde_json::Value = serde_json::from_str(&strip_comments(&text))
             .map_err(|error| format!("{}: {error}", path.display()))?;
-        let Some(entry) = parsed
-            .get("agent")
-            .and_then(|value| value.get(name))
-        else {
+        let Some(entry) = parsed.get("agent").and_then(|value| value.get(name)) else {
             return Err(format!("no agent named {name} in {}", path.display()));
         };
         let mut instructions = base_instructions.unwrap_or_default();
@@ -1286,7 +1386,10 @@ fn agent_manifest_for(
                 manifest["permissions"] = serde_json::Value::Array(mapped);
             }
         }
-        if let Some(mode) = entry.get("permission_mode").and_then(|value| value.as_str()) {
+        if let Some(mode) = entry
+            .get("permission_mode")
+            .and_then(|value| value.as_str())
+        {
             manifest["permission_mode"] = serde_json::json!(mode);
         }
         return Ok(Some((model, manifest)));
@@ -1304,21 +1407,26 @@ fn model_routes(
     config_dir: Option<&std::path::Path>,
     requested: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let Some(dir) = config_dir else { return Ok(Vec::new()) };
+    let Some(dir) = config_dir else {
+        return Ok(Vec::new());
+    };
     let mut parsed: Option<serde_json::Value> = None;
     for name in ["miao.jsonc", "miao.json"] {
         let path = dir.join(name);
         if !path.is_file() {
             continue;
         }
-        let text = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
         parsed = Some(
             serde_json::from_str(&strip_comments(&text))
                 .map_err(|error| format!("{}: {error}", path.display()))?,
         );
         break;
     }
-    let Some(parsed) = parsed else { return Ok(Vec::new()) };
+    let Some(parsed) = parsed else {
+        return Ok(Vec::new());
+    };
     let Some(providers) = parsed.get("providers").and_then(|value| value.as_object()) else {
         return Ok(Vec::new());
     };
@@ -1357,13 +1465,23 @@ fn model_routes(
     };
     let mut routes = Vec::new();
     for (provider_id, provider) in providers {
-        let api = provider.get("api").cloned().unwrap_or(serde_json::Value::Null);
+        let api = provider
+            .get("api")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         // Some providers carry the URL per model instead of on the provider.
-        let provider_url = api.get("url").and_then(|value| value.as_str()).unwrap_or("");
+        let provider_url = api
+            .get("url")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
         let package = format!(
             "{}{}",
-            api.get("package").and_then(|value| value.as_str()).unwrap_or(""),
-            api.get("type").and_then(|value| value.as_str()).unwrap_or("")
+            api.get("package")
+                .and_then(|value| value.as_str())
+                .unwrap_or(""),
+            api.get("type")
+                .and_then(|value| value.as_str())
+                .unwrap_or("")
         );
         // The engine posts to the endpoint verbatim, so an OpenAI-compatible
         // base URL needs its completions path appended here.
@@ -1396,9 +1514,15 @@ fn model_routes(
                     .and_then(|value| value.get("url"))
                     .and_then(|value| value.as_str())
                     .unwrap_or("");
-                let base_url = if model_url.is_empty() { provider_url } else { model_url };
+                let base_url = if model_url.is_empty() {
+                    provider_url
+                } else {
+                    model_url
+                };
                 let endpoint = match protocol {
-                    "openai-chat" if !base_url.is_empty() && !base_url.ends_with("/chat/completions") => {
+                    "openai-chat"
+                        if !base_url.is_empty() && !base_url.ends_with("/chat/completions") =>
+                    {
                         format!("{}/chat/completions", base_url.trim_end_matches('/'))
                     }
                     _ => base_url.to_string(),
@@ -1463,13 +1587,16 @@ fn model_routes(
 /// engine discovers servers from this manifest, so without it the `lsp_*` tools
 /// have nothing to talk to.
 fn lsp_servers(config_dir: Option<&std::path::Path>) -> Result<Vec<serde_json::Value>, String> {
-    let Some(dir) = config_dir else { return Ok(Vec::new()) };
+    let Some(dir) = config_dir else {
+        return Ok(Vec::new());
+    };
     for name in ["miao.jsonc", "miao.json"] {
         let path = dir.join(name);
         if !path.is_file() {
             continue;
         }
-        let text = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
         let parsed: serde_json::Value = serde_json::from_str(&strip_comments(&text))
             .map_err(|error| format!("{}: {error}", path.display()))?;
         let Some(section) = parsed.get("lsp").and_then(|value| value.as_object()) else {
@@ -1491,9 +1618,15 @@ fn lsp_servers(config_dir: Option<&std::path::Path>) -> Result<Vec<serde_json::V
             let extensions: Vec<String> = entry
                 .get("extensions")
                 .and_then(|value| value.as_array())
-                .map(|items| items.iter().filter_map(|item| item.as_str().map(str::to_string)).collect())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default();
-            let mut server = serde_json::json!({ "name": name, "argv": argv, "extensions": extensions });
+            let mut server =
+                serde_json::json!({ "name": name, "argv": argv, "extensions": extensions });
             if let Some(env) = entry.get("env").or_else(|| entry.get("environment")) {
                 server["env"] = env.clone();
             }
@@ -1534,7 +1667,8 @@ fn acp_serve(rest: &[String]) -> Result<(), String> {
             _ => index += 1,
         }
     }
-    let workspace = workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let workspace =
+        workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let db = db.unwrap_or_else(|| default_db(&workspace));
     let model = model
         .or_else(|| std::env::var("MIAO_ENGINE_MODEL").ok())
@@ -1574,7 +1708,13 @@ fn debug(rest: &[String]) -> Result<(), String> {
                 println!("cache     {}", home.join(".cache/miao").display());
                 println!("state     {}", home.join(".local/state/miao").display());
             }
-            println!("config    {}", config.as_ref().map(|dir| dir.display().to_string()).unwrap_or_else(|| "unset".into()));
+            println!(
+                "config    {}",
+                config
+                    .as_ref()
+                    .map(|dir| dir.display().to_string())
+                    .unwrap_or_else(|| "unset".into())
+            );
             let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             println!("workspace {}", workspace.display());
             Ok(())
@@ -1582,7 +1722,10 @@ fn debug(rest: &[String]) -> Result<(), String> {
         Some("routes") => {
             let config = std::env::var_os("MIAO_CONFIG_DIR")
                 .map(PathBuf::from)
-                .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao")));
+                .or_else(|| {
+                    std::env::var_os("HOME")
+                        .map(|home| PathBuf::from(home).join(".config").join("miao"))
+                });
             let routes = model_routes(config.as_deref(), "")?;
             if routes.is_empty() {
                 println!("no model routes configured");
@@ -1594,7 +1737,10 @@ fn debug(rest: &[String]) -> Result<(), String> {
         Some("lsp") => {
             let config = std::env::var_os("MIAO_CONFIG_DIR")
                 .map(PathBuf::from)
-                .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao")));
+                .or_else(|| {
+                    std::env::var_os("HOME")
+                        .map(|home| PathBuf::from(home).join(".config").join("miao"))
+                });
             let servers = lsp_servers(config.as_deref())?;
             if servers.is_empty() {
                 println!("no LSP servers configured");
@@ -1606,7 +1752,10 @@ fn debug(rest: &[String]) -> Result<(), String> {
         Some("mcp") => {
             let config = std::env::var_os("MIAO_CONFIG_DIR")
                 .map(PathBuf::from)
-                .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao")));
+                .or_else(|| {
+                    std::env::var_os("HOME")
+                        .map(|home| PathBuf::from(home).join(".config").join("miao"))
+                });
             let servers = mcp_servers(config.as_deref())?;
             if servers.is_empty() {
                 println!("no MCP servers configured");
@@ -1617,10 +1766,20 @@ fn debug(rest: &[String]) -> Result<(), String> {
         }
         Some("info") => {
             println!("miao      {}", env!("CARGO_PKG_VERSION"));
-            println!("engine    protocol {} schema {}", miao_engine::PROTOCOL, miao_engine::store::SCHEMA_VERSION);
+            println!(
+                "engine    protocol {} schema {}",
+                miao_engine::PROTOCOL,
+                miao_engine::store::SCHEMA_VERSION
+            );
             let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             println!("database  {}", default_db(&workspace).display());
-            println!("config    {}", config.as_ref().map(|dir| dir.display().to_string()).unwrap_or_else(|| "unset".into()));
+            println!(
+                "config    {}",
+                config
+                    .as_ref()
+                    .map(|dir| dir.display().to_string())
+                    .unwrap_or_else(|| "unset".into())
+            );
             let plugins = plugin_entries(config.as_deref()).unwrap_or_default();
             println!("plugins   {} configured", plugins.len());
             Ok(())
@@ -1632,8 +1791,20 @@ fn debug(rest: &[String]) -> Result<(), String> {
 /// The command words this binary understands, in one place so the usage text
 /// and the completion script cannot drift apart.
 const COMMANDS: &[&str] = &[
-    "tui", "run", "serve", "session", "models", "auth", "plugins", "export", "stats", "doctor",
-    "providers", "memory", "db", "completion",
+    "tui",
+    "run",
+    "serve",
+    "session",
+    "models",
+    "auth",
+    "plugins",
+    "export",
+    "stats",
+    "doctor",
+    "providers",
+    "memory",
+    "db",
+    "completion",
 ];
 
 /// Print a completion script for the given shell.
@@ -1641,12 +1812,8 @@ fn completion(rest: &[String]) -> Result<(), String> {
     let shell = rest.first().map(String::as_str).unwrap_or("bash");
     let words = COMMANDS.join(" ");
     match shell {
-        "bash" => println!(
-            "complete -W \"{words}\" miao"
-        ),
-        "zsh" => println!(
-            "#compdef miao\n_miao() {{ compadd {words} }}\ncompdef _miao miao"
-        ),
+        "bash" => println!("complete -W \"{words}\" miao"),
+        "zsh" => println!("#compdef miao\n_miao() {{ compadd {words} }}\ncompdef _miao miao"),
         other => return Err(format!("unsupported shell {other}; use bash or zsh")),
     }
     Ok(())
@@ -1714,13 +1881,15 @@ fn memory(rest: &[String]) -> Result<(), String> {
             _ => index += 1,
         }
     }
-    let workspace = workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let workspace =
+        workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let store = workspace.join(".miao").join("knowledge.json");
     if !store.is_file() {
         println!("memory    none ({})", store.display());
         return Ok(());
     }
-    let text = std::fs::read_to_string(&store).map_err(|error| format!("{}: {error}", store.display()))?;
+    let text =
+        std::fs::read_to_string(&store).map_err(|error| format!("{}: {error}", store.display()))?;
     let parsed: serde_json::Value =
         serde_json::from_str(&text).map_err(|error| format!("{}: {error}", store.display()))?;
     let notes = parsed
@@ -1731,8 +1900,14 @@ fn memory(rest: &[String]) -> Result<(), String> {
     println!("memory    {} ({notes} note(s))", store.display());
     if let Some(notes) = parsed.get("notes").and_then(|notes| notes.as_object()) {
         for (id, note) in notes.iter().take(8) {
-            let title = note.get("title").and_then(|title| title.as_str()).unwrap_or("");
-            let kind = note.get("kind").and_then(|kind| kind.as_str()).unwrap_or("");
+            let title = note
+                .get("title")
+                .and_then(|title| title.as_str())
+                .unwrap_or("");
+            let kind = note
+                .get("kind")
+                .and_then(|kind| kind.as_str())
+                .unwrap_or("");
             println!("  {:<28} {:<12} {title}", id, kind);
         }
         if notes.len() > 8 {
@@ -1758,7 +1933,11 @@ fn doctor(rest: &[String]) -> Result<(), String> {
     }
     let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let db = db.unwrap_or_else(|| default_db(&workspace));
-    println!("engine    protocol {} schema {}", miao_engine::PROTOCOL, miao_engine::store::SCHEMA_VERSION);
+    println!(
+        "engine    protocol {} schema {}",
+        miao_engine::PROTOCOL,
+        miao_engine::store::SCHEMA_VERSION
+    );
     println!("database  {}", db.display());
     match std::fs::metadata(&db) {
         Ok(metadata) => println!("size      {} bytes", metadata.len()),
@@ -1775,12 +1954,17 @@ fn doctor(rest: &[String]) -> Result<(), String> {
         let store = miao_engine::store::Store::open(&db)
             .await
             .map_err(|error| format!("cannot open the store: {error}"))?;
-        store.sessions().await.map_err(|error| format!("cannot list sessions: {error}"))
+        store
+            .sessions()
+            .await
+            .map_err(|error| format!("cannot list sessions: {error}"))
     })?;
     println!("sessions  {}", sessions.len());
     let config_dir = std::env::var_os("MIAO_CONFIG_DIR")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao")));
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao"))
+        });
     match config_dir.as_ref() {
         Some(dir) if dir.is_dir() => println!("config    {}", dir.display()),
         Some(dir) => println!("config    missing: {}", dir.display()),
@@ -1813,10 +1997,13 @@ fn stats(rest: &[String]) -> Result<(), String> {
         .build()
         .map_err(|error| error.to_string())?;
     let sessions = runtime.block_on(async {
-        let store = miao_engine::store::Store::open(&db).await.map_err(|error| error.to_string())?;
+        let store = miao_engine::store::Store::open(&db)
+            .await
+            .map_err(|error| error.to_string())?;
         store.sessions().await.map_err(|error| error.to_string())
     })?;
-    let (mut input, mut output, mut cache_read, mut non_cached, mut turns) = (0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut input, mut output, mut cache_read, mut non_cached, mut turns) =
+        (0u64, 0u64, 0u64, 0u64, 0u64);
     let mut json = false;
     let mut only: Option<String> = None;
     let mut via_engine = false;
@@ -1843,7 +2030,10 @@ fn stats(rest: &[String]) -> Result<(), String> {
         return stats_via_engine(db.clone(), session);
     }
     let sessions: Vec<String> = match &only {
-        Some(one) => sessions.into_iter().filter(|session| session == one).collect(),
+        Some(one) => sessions
+            .into_iter()
+            .filter(|session| session == one)
+            .collect(),
         None => sessions,
     };
     for session in &sessions {
@@ -1851,7 +2041,9 @@ fn stats(rest: &[String]) -> Result<(), String> {
         miao_engine::export::committed_events(&db, session, 0, &mut buffer)
             .map_err(|error| error.to_string())?;
         for line in String::from_utf8_lossy(&buffer).lines() {
-            let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+            let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
             if event.get("kind").and_then(|kind| kind.as_str()) != Some("usage") {
                 continue;
             }
@@ -1876,7 +2068,9 @@ fn stats(rest: &[String]) -> Result<(), String> {
         // Same scope as the token totals: a single-session view must not mix
         // its TTFT with other sessions.
         let query = match &only {
-            Some(_) => "SELECT ttft_ms FROM engine_timing WHERE ttft_ms IS NOT NULL AND session_id=?1",
+            Some(_) => {
+                "SELECT ttft_ms FROM engine_timing WHERE ttft_ms IS NOT NULL AND session_id=?1"
+            }
             None => "SELECT ttft_ms FROM engine_timing WHERE ttft_ms IS NOT NULL",
         };
         if let Ok(mut statement) = connection.prepare(query) {
@@ -1933,7 +2127,9 @@ fn stats(rest: &[String]) -> Result<(), String> {
         // Same scope as the token totals: a single-session view must not mix
         // its TTFT with other sessions.
         let query = match &only {
-            Some(_) => "SELECT ttft_ms FROM engine_timing WHERE ttft_ms IS NOT NULL AND session_id=?1",
+            Some(_) => {
+                "SELECT ttft_ms FROM engine_timing WHERE ttft_ms IS NOT NULL AND session_id=?1"
+            }
             None => "SELECT ttft_ms FROM engine_timing WHERE ttft_ms IS NOT NULL",
         };
         if let Ok(mut statement) = connection.prepare(query) {
@@ -1979,7 +2175,10 @@ fn stats(rest: &[String]) -> Result<(), String> {
         );
         return Ok(());
     }
-    println!("cache     {cache_read} read / {non_cached} fresh ({:.1}% hit)", hit * 100.0);
+    println!(
+        "cache     {cache_read} read / {non_cached} fresh ({:.1}% hit)",
+        hit * 100.0
+    );
     if !ttfts.is_empty() {
         println!(
             "ttft      p50 {} ms / p95 {} ms ({} samples)",
@@ -2021,8 +2220,9 @@ fn export_session(rest: &[String]) -> Result<(), String> {
     let session = session.ok_or("usage: miao export SESSION [--db PATH] [--after N]")?;
     let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let db = db.unwrap_or_else(|| default_db(&workspace));
-    let cursor = miao_engine::export::committed_events(&db, &session, after, std::io::stdout().lock())
-        .map_err(|error| error.to_string())?;
+    let cursor =
+        miao_engine::export::committed_events(&db, &session, after, std::io::stdout().lock())
+            .map_err(|error| error.to_string())?;
     eprintln!("miao export: {cursor} event(s) written");
     Ok(())
 }
@@ -2032,7 +2232,9 @@ fn export_session(rest: &[String]) -> Result<(), String> {
 fn list_plugins() -> Result<(), String> {
     let config_dir = std::env::var_os("MIAO_CONFIG_DIR")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao")));
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao"))
+        });
     let entries = plugin_entries(config_dir.as_deref())?;
     if entries.is_empty() {
         println!("no plugins configured — the native binary needs no JavaScript runtime");
@@ -2041,7 +2243,10 @@ fn list_plugins() -> Result<(), String> {
     for entry in &entries {
         println!("plugin {entry}");
     }
-    println!("{} plugin(s) configured — a JavaScript sidecar would be required (not wired yet)", entries.len());
+    println!(
+        "{} plugin(s) configured — a JavaScript sidecar would be required (not wired yet)",
+        entries.len()
+    );
     Ok(())
 }
 
@@ -2115,7 +2320,10 @@ fn serve_forever(rest: &[String]) -> Result<(), String> {
         let value = |offset: usize| rest.get(offset + 1).cloned();
         match rest[index].as_str() {
             "--port" => {
-                port = value(index).ok_or("--port needs a value")?.parse().map_err(|_| "--port must be a number")?;
+                port = value(index)
+                    .ok_or("--port needs a value")?
+                    .parse()
+                    .map_err(|_| "--port must be a number")?;
                 index += 2;
             }
             "--db" => {
@@ -2137,9 +2345,12 @@ fn serve_forever(rest: &[String]) -> Result<(), String> {
             _ => index += 1,
         }
     }
-    let workspace = workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let workspace =
+        workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let db = db.unwrap_or_else(|| workspace.join(".miao-serve.db"));
-    let model = model.or_else(|| std::env::var("MIAO_ENGINE_MODEL").ok()).unwrap_or_else(|| "unavailable/model".into());
+    let model = model
+        .or_else(|| std::env::var("MIAO_ENGINE_MODEL").ok())
+        .unwrap_or_else(|| "unavailable/model".into());
     let config_dir = product_config_dir(None);
     let mut argv = engine_argv(&db, &workspace, &model, config_dir.as_deref());
     if let Some(skills) = assemble_skills(&workspace, config_dir.as_deref()) {
@@ -2163,7 +2374,8 @@ fn serve_forever(rest: &[String]) -> Result<(), String> {
             .await
             .map_err(|error| error.to_string())?;
         let address = listener.local_addr().map_err(|error| error.to_string())?;
-        let token = std::env::var("MIAO_SERVER_PASSWORD").unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
+        let token = std::env::var("MIAO_SERVER_PASSWORD")
+            .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
         println!("miao serve listening on http://{address} token={token}");
         miao_engine::http::serve_with_idle_timeout(
             configured.runtime,
@@ -2180,25 +2392,38 @@ fn serve_forever(rest: &[String]) -> Result<(), String> {
 /// global file first, then the workspace one, each under its own heading. The
 /// engine appends this block to its base system prompt, so a rule stated here
 /// reaches every turn without the host having to rewrite the prompt itself.
-fn assemble_instructions(workspace: &std::path::Path, config_dir: Option<&std::path::Path>) -> Option<String> {
+fn assemble_instructions(
+    workspace: &std::path::Path,
+    config_dir: Option<&std::path::Path>,
+) -> Option<String> {
     const LIMIT: usize = 64 * 1024;
     /// The product's own persona, embedded at compile time from the TypeScript
     /// asset so the two hosts can never drift into different personalities.
-    const PERSONA: &str = include_str!("../../../packages/core/src/system-context/persona/default.txt");
+    const PERSONA: &str =
+        include_str!("../../../packages/core/src/system-context/persona/default.txt");
     let mut blocks: Vec<String> = vec![PERSONA.trim().to_string()];
     let mut total = 0usize;
     for (label, path) in [
-        ("Global instructions", config_dir.map(|dir| dir.join("AGENTS.md"))),
+        (
+            "Global instructions",
+            config_dir.map(|dir| dir.join("AGENTS.md")),
+        ),
         ("Project instructions", Some(workspace.join("AGENTS.md"))),
     ] {
         let Some(path) = path else { continue };
-        let Ok(text) = std::fs::read_to_string(&path) else { continue };
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
         let text = text.trim();
         if text.is_empty() || total >= LIMIT {
             continue;
         }
         let room = LIMIT - total;
-        let block = if text.len() > room { &text[..room] } else { text };
+        let block = if text.len() > room {
+            &text[..room]
+        } else {
+            text
+        };
         total += block.len();
         blocks.push(format!("## {label} ({})\n{block}", path.display()));
     }
@@ -2208,7 +2433,10 @@ fn assemble_instructions(workspace: &std::path::Path, config_dir: Option<&std::p
 /// Directories the engine should discover skills in. The engine owns discovery
 /// and rendering (bodies load on demand), so the host only names the roots:
 /// the product's skill directory and the workspace's own.
-fn assemble_skills(workspace: &std::path::Path, config_dir: Option<&std::path::Path>) -> Option<PathBuf> {
+fn assemble_skills(
+    workspace: &std::path::Path,
+    config_dir: Option<&std::path::Path>,
+) -> Option<PathBuf> {
     let mut roots = Vec::new();
     for dir in [
         config_dir.map(|dir| dir.join("skills")),
@@ -2240,14 +2468,22 @@ fn agent_manifest(instructions: &str) -> Result<PathBuf, String> {
         "instructions": instructions,
         "permission_mode": "auto",
     });
-    std::fs::write(&path, manifest.to_string()).map_err(|error| format!("{}: {error}", path.display()))?;
+    std::fs::write(&path, manifest.to_string())
+        .map_err(|error| format!("{}: {error}", path.display()))?;
     Ok(path)
 }
 
 /// The engine argv the product hands `miao-engine serve`, built from the same
 /// flags and environment variables the TUI uses so both entries agree.
-fn engine_argv(db: &std::path::Path, workspace: &std::path::Path, model: &str, config_dir: Option<&std::path::Path>) -> Vec<String> {
-    engine_argv_with(db, workspace, model, config_dir, |name| std::env::var(name).ok())
+fn engine_argv(
+    db: &std::path::Path,
+    workspace: &std::path::Path,
+    model: &str,
+    config_dir: Option<&std::path::Path>,
+) -> Vec<String> {
+    engine_argv_with(db, workspace, model, config_dir, |name| {
+        std::env::var(name).ok()
+    })
 }
 
 /// Same mapping with the environment supplied by the caller, so the flags a
@@ -2300,7 +2536,8 @@ fn engine_argv_with(
                     // base provider built from --model: pass the route's bare
                     // model name in either case.
                     let known = routes.iter().any(|route| {
-                        route["id"].as_str() == Some(model) || route["model"].as_str() == Some(model)
+                        route["id"].as_str() == Some(model)
+                            || route["model"].as_str() == Some(model)
                     });
                     if !known {
                         if let Some(id) = primary["id"].as_str() {
@@ -2353,7 +2590,8 @@ fn engine_argv_with(
     if let Ok(servers) = lsp_servers(config_dir) {
         if !servers.is_empty() {
             if let Ok(encoded) = serde_json::to_string(&servers) {
-                let path = std::env::temp_dir().join(format!("miao-lsp-{}.json", std::process::id()));
+                let path =
+                    std::env::temp_dir().join(format!("miao-lsp-{}.json", std::process::id()));
                 if std::fs::write(&path, encoded).is_ok() {
                     argv.push("--lsp-config".into());
                     argv.push(path.display().to_string());
@@ -2371,7 +2609,10 @@ fn engine_argv_with(
         ("MIAO_ENGINE_POLICY", "--policy"),
         ("MIAO_ENGINE_CREDENTIAL_DB", "--credential-db"),
         ("MIAO_ENGINE_CREDENTIAL_ID", "--credential-id"),
-        ("MIAO_ENGINE_CREDENTIAL_INTEGRATION", "--credential-integration"),
+        (
+            "MIAO_ENGINE_CREDENTIAL_INTEGRATION",
+            "--credential-integration",
+        ),
         ("MIAO_ENGINE_MODEL_ROUTES_CONFIG", "--model-routes-config"),
     ] {
         // A derived manifest names a credential per route; passing the single
@@ -2379,7 +2620,9 @@ fn engine_argv_with(
         if derived_routes
             && matches!(
                 variable,
-                "MIAO_ENGINE_CREDENTIAL_DB" | "MIAO_ENGINE_CREDENTIAL_ID" | "MIAO_ENGINE_CREDENTIAL_INTEGRATION"
+                "MIAO_ENGINE_CREDENTIAL_DB"
+                    | "MIAO_ENGINE_CREDENTIAL_ID"
+                    | "MIAO_ENGINE_CREDENTIAL_INTEGRATION"
             )
         {
             continue;
@@ -2435,7 +2678,9 @@ fn collect_all_texts(value: &serde_json::Value, out: &mut Vec<String>) {
                 collect_all_texts(child, out);
             }
         }
-        serde_json::Value::Array(items) => items.iter().for_each(|item| collect_all_texts(item, out)),
+        serde_json::Value::Array(items) => {
+            items.iter().for_each(|item| collect_all_texts(item, out))
+        }
         _ => {}
     }
 }
@@ -2477,7 +2722,9 @@ fn credential_id() -> String {
         ^ (std::process::id() as u64) << 32;
     let mut id = String::from("cred_");
     for _ in 0..26 {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         id.push(ALPHABET[(seed >> 33) as usize % ALPHABET.len()] as char);
     }
     id
@@ -2487,14 +2734,19 @@ fn credential_id() -> String {
 /// action, so it is the single writer at that moment; the engine keeps reading
 /// the same table read-only and never gains write authority.
 fn auth_write(rest: &[String]) -> Result<(), String> {
-    let db = std::env::var("MIAO_ENGINE_CREDENTIAL_DB")
-        .map_err(|_| "set MIAO_ENGINE_CREDENTIAL_DB (the product passes it to the engine)".to_string())?;
+    let db = std::env::var("MIAO_ENGINE_CREDENTIAL_DB").map_err(|_| {
+        "set MIAO_ENGINE_CREDENTIAL_DB (the product passes it to the engine)".to_string()
+    })?;
     let connection = rusqlite::Connection::open(&db).map_err(|error| format!("{db}: {error}"))?;
     let now = (cli_now_ms() / 1) as i64;
     match rest.first().map(String::as_str) {
         Some("login") => {
-            let integration = rest.get(1).ok_or("usage: miao auth login INTEGRATION KEY")?;
-            let key = rest.get(2).ok_or("usage: miao auth login INTEGRATION KEY")?;
+            let integration = rest
+                .get(1)
+                .ok_or("usage: miao auth login INTEGRATION KEY")?;
+            let key = rest
+                .get(2)
+                .ok_or("usage: miao auth login INTEGRATION KEY")?;
             if key.trim().is_empty() {
                 return Err("the key must not be empty".into());
             }
@@ -2536,8 +2788,9 @@ fn auth_write(rest: &[String]) -> Result<(), String> {
 /// expiry metadata — the engine never serializes a secret — so this stays a
 /// read-only view and never touches the broker's write authority.
 fn list_credentials() -> Result<(), String> {
-    let path = std::env::var("MIAO_ENGINE_CREDENTIAL_DB")
-        .map_err(|_| "set MIAO_ENGINE_CREDENTIAL_DB (the product passes it to the engine)".to_string())?;
+    let path = std::env::var("MIAO_ENGINE_CREDENTIAL_DB").map_err(|_| {
+        "set MIAO_ENGINE_CREDENTIAL_DB (the product passes it to the engine)".to_string()
+    })?;
     let entries = miao_engine::credential::list_database(std::path::Path::new(&path))
         .map_err(|error| format!("{path}: {error}"))?;
     for entry in entries {
@@ -2557,8 +2810,9 @@ fn list_credentials() -> Result<(), String> {
 /// file the product passes as `--model-routes-config`, so this prints exactly
 /// what a turn can address rather than a separate opinion.
 fn list_models() -> Result<(), String> {
-    let path = std::env::var("MIAO_ENGINE_MODEL_ROUTES_CONFIG")
-        .map_err(|_| "set MIAO_ENGINE_MODEL_ROUTES_CONFIG (the product passes it to the engine)".to_string())?;
+    let path = std::env::var("MIAO_ENGINE_MODEL_ROUTES_CONFIG").map_err(|_| {
+        "set MIAO_ENGINE_MODEL_ROUTES_CONFIG (the product passes it to the engine)".to_string()
+    })?;
     let text = std::fs::read_to_string(&path).map_err(|error| format!("{path}: {error}"))?;
     let manifest: serde_json::Value =
         serde_json::from_str(&text).map_err(|error| format!("{path}: {error}"))?;
@@ -2598,10 +2852,12 @@ struct Target {
 /// the engine calls back into the host for; without them a single binary has no
 /// way to reach other sessions or the operator.
 fn product_tools() -> Vec<miao_engine::protocol::ToolDefinition> {
-    let spec = |name: &str, description: &str, schema: serde_json::Value| miao_engine::protocol::ToolDefinition {
-        name: name.into(),
-        description: description.into(),
-        input_schema: schema,
+    let spec = |name: &str, description: &str, schema: serde_json::Value| {
+        miao_engine::protocol::ToolDefinition {
+            name: name.into(),
+            description: description.into(),
+            input_schema: schema,
+        }
     };
     vec![
         spec(
@@ -2625,7 +2881,11 @@ fn product_tools() -> Vec<miao_engine::protocol::ToolDefinition> {
 /// Execute one product-tool call locally. The engine already dispatched it, so
 /// the only job here is to answer truthfully; an unknown name is an error, not
 /// a silent success.
-async fn call_product_tool(name: &str, input: &serde_json::Value, db: &std::path::Path) -> serde_json::Value {
+async fn call_product_tool(
+    name: &str,
+    input: &serde_json::Value,
+    db: &std::path::Path,
+) -> serde_json::Value {
     match name {
         // Answered from the engine's own view: opening the store a second time
         // in this process answers "runtime already owns this store".
@@ -2636,19 +2896,31 @@ async fn call_product_tool(name: &str, input: &serde_json::Value, db: &std::path
             };
             let mut buffer: Vec<u8> = Vec::new();
             match miao_engine::export::committed_events(db, session, 0, &mut buffer) {
-                Ok(_) => serde_json::json!({ "events": String::from_utf8_lossy(&buffer).lines().count(), "session_id": session }),
+                Ok(_) => {
+                    serde_json::json!({ "events": String::from_utf8_lossy(&buffer).lines().count(), "session_id": session })
+                }
                 Err(error) => serde_json::json!({ "error": error.to_string() }),
             }
         }
         "push_notification" => {
-            let message = input.get("message").and_then(|value| value.as_str()).unwrap_or("");
-            let title = input.get("title").and_then(|value| value.as_str()).unwrap_or("miao");
+            let message = input
+                .get("message")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let title = input
+                .get("title")
+                .and_then(|value| value.as_str())
+                .unwrap_or("miao");
             let script = format!(
                 "display notification \"{}\" with title \"{}\"",
                 message.replace('"', " "),
                 title.replace('"', " ")
             );
-            match std::process::Command::new("osascript").arg("-e").arg(&script).status() {
+            match std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .status()
+            {
                 Ok(status) if status.success() => serde_json::json!({ "delivered": true }),
                 Ok(status) => serde_json::json!({ "error": format!("osascript exited {status}") }),
                 Err(error) => serde_json::json!({ "error": error.to_string() }),
@@ -2658,7 +2930,12 @@ async fn call_product_tool(name: &str, input: &serde_json::Value, db: &std::path
     }
 }
 
-async fn run_prompt(argv: Vec<String>, prompt: String, target: Target, db: PathBuf) -> Result<(), String> {
+async fn run_prompt(
+    argv: Vec<String>,
+    prompt: String,
+    target: Target,
+    db: PathBuf,
+) -> Result<(), String> {
     // Placeholder replaced below once the session id is known.
     // Read the session list before the runtime claims the store: a process may
     // hold one store per path, so opening it after `configure` (or twice) would
@@ -2691,9 +2968,13 @@ async fn run_prompt(argv: Vec<String>, prompt: String, target: Target, db: PathB
     configured
         .runtime
         .with_product_tools(product_tools(), bridge.clone(), None);
-    let (mut connection, mut events) = Connection::start_embedded(configured.runtime, Duration::from_secs(120))
+    let (mut connection, mut events) =
+        Connection::start_embedded(configured.runtime, Duration::from_secs(120))
+            .map_err(|error| error.to_string())?;
+    let client = connection
+        .connect()
+        .await
         .map_err(|error| error.to_string())?;
-    let client = connection.connect().await.map_err(|error| error.to_string())?;
     // Reuse the requested session, or the most recent one for `--continue`;
     // otherwise start a fresh id so a one-shot run never inherits history.
     let session = match target.session.clone() {
@@ -2742,7 +3023,10 @@ async fn run_prompt(argv: Vec<String>, prompt: String, target: Target, db: PathB
     // An imported or previously used session already exists; initialize is a
     // create-if-absent step, so an existing row must not abort the run.
     let _ = client.initialize(&session, "run").await;
-    client.subscribe(&session, 0).await.map_err(|error| error.to_string())?;
+    client
+        .subscribe(&session, 0)
+        .await
+        .map_err(|error| error.to_string())?;
     client
         .admit(
             serde_json::json!({"session_id": session, "input_id": format!(
@@ -2783,14 +3067,22 @@ async fn run_prompt(argv: Vec<String>, prompt: String, target: Target, db: PathB
         // A headless run cannot answer an operator question. Say so at once
         // instead of blocking until the deadline, and name the way out.
         while let Ok(frame) = bridge_rx.try_recv() {
-            let Some(id) = frame.get("bridge_id").and_then(|value| value.as_u64()) else { continue };
-            let params = frame.get("params").cloned().unwrap_or(serde_json::Value::Null);
+            let Some(id) = frame.get("bridge_id").and_then(|value| value.as_u64()) else {
+                continue;
+            };
+            let params = frame
+                .get("params")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
             let name = params
                 .get("name")
                 .and_then(|value| value.as_str())
                 .unwrap_or("")
                 .to_string();
-            let input = params.get("input").cloned().unwrap_or(serde_json::Value::Null);
+            let input = params
+                .get("input")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
             let payload = if name == "list_sessions" {
                 serde_json::json!({ "sessions": known_sessions })
             } else {
@@ -2805,7 +3097,9 @@ async fn run_prompt(argv: Vec<String>, prompt: String, target: Target, db: PathB
             bridge.resolve(id, reply);
         }
         while let Ok(event) = events.try_recv() {
-            let miao_tui::transport::TransportEvent::Event(event) = event else { continue };
+            let miao_tui::transport::TransportEvent::Event(event) = event else {
+                continue;
+            };
             let kind = event.kind.to_lowercase();
             if kind == "approval.requested" {
                 // Nobody is watching a headless run, so deny precisely and let
@@ -2818,8 +3112,13 @@ async fn run_prompt(argv: Vec<String>, prompt: String, target: Target, db: PathB
                     "policy_revision": data.get("policy_revision").cloned().unwrap_or_default(),
                     "decision": "deny",
                 });
-                let tool = data.get("tool").and_then(|value| value.as_str()).unwrap_or("unknown");
-                eprintln!("miao run: denied approval for {tool} (headless run cannot ask a person)");
+                let tool = data
+                    .get("tool")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("unknown");
+                eprintln!(
+                    "miao run: denied approval for {tool} (headless run cannot ask a person)"
+                );
                 let _ = client.approve(&session, response).await;
                 continue;
             }
@@ -2827,7 +3126,11 @@ async fn run_prompt(argv: Vec<String>, prompt: String, target: Target, db: PathB
             // deadline would hide the reason.
             if kind.contains("failed") || kind.contains("failure") {
                 owner.shutdown().await;
-                let detail = event.data.get("message").and_then(|value| value.as_str()).unwrap_or(&kind);
+                let detail = event
+                    .data
+                    .get("message")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or(&kind);
                 return Err(format!("the turn failed: {detail}"));
             }
             if kind.contains("question.requested") {
@@ -2868,7 +3171,9 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
     // serves must never look like a working install.
     let config_dir = std::env::var_os("MIAO_CONFIG_DIR")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao")));
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao"))
+        });
     warn_missing_sidecar(config_dir.as_deref());
     let mut args = args.into_iter();
     match args.next().as_deref() {
@@ -2916,7 +3221,9 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                         workspace = value(index).map(PathBuf::from);
                         index += 2;
                     }
-                    "--model" => {
+                    // The product's `run` aliases the long flag as `-m`; without
+                    // it the token was swallowed into the prompt instead.
+                    "--model" | "-m" => {
                         model = value(index);
                         index += 2;
                     }
@@ -2951,7 +3258,8 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                 }
             }
             let prompt = prompt.ok_or("miao run needs a prompt");
-            let workspace = workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            let workspace = workspace
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
             let db = db.unwrap_or_else(|| default_db(&workspace));
             let config_dir = config_dir.or_else(|| product_config_dir(None));
             let model = model
@@ -2970,17 +3278,21 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                         // A named agent contributes its own system prompt, and its
                         // model stands in when the command named none.
                         Some(name) => {
-                            let chosen = match agent_manifest_for(config_dir.as_deref(), name, instructions) {
-                                Ok(chosen) => chosen,
-                                Err(message) => {
-                                    eprintln!("miao run: {message}");
-                                    return std::process::ExitCode::from(1);
-                                }
-                            };
+                            let chosen =
+                                match agent_manifest_for(config_dir.as_deref(), name, instructions)
+                                {
+                                    Ok(chosen) => chosen,
+                                    Err(message) => {
+                                        eprintln!("miao run: {message}");
+                                        return std::process::ExitCode::from(1);
+                                    }
+                                };
                             match chosen {
                                 Some((agent_model, agent_manifest_json)) => {
                                     if model == "unavailable/model" && !agent_model.is_empty() {
-                                        if let Some(position) = argv.iter().position(|arg| arg == "--model") {
+                                        if let Some(position) =
+                                            argv.iter().position(|arg| arg == "--model")
+                                        {
                                             argv[position + 1] = agent_model;
                                         }
                                     }
@@ -3006,14 +3318,21 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                             argv.push(path.display().to_string());
                         }
                     }
-                    let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                    let runtime = match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
                         Ok(runtime) => runtime,
                         Err(error) => {
                             eprintln!("miao run: {error}");
                             return std::process::ExitCode::from(1);
                         }
                     };
-                    let target = Target { session, continue_last, format: format.clone() };
+                    let target = Target {
+                        session,
+                        continue_last,
+                        format: format.clone(),
+                    };
                     match runtime.block_on(run_prompt(argv, prompt, target, db.clone())) {
                         Ok(()) => std::process::ExitCode::SUCCESS,
                         Err(message) => {
@@ -3219,13 +3538,15 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                         std::process::ExitCode::from(1)
                     }
                 },
-                Some("export-bundle") => match session_engine_call(&rest[1..], "transfer_export_move") {
-                    Ok(()) => std::process::ExitCode::SUCCESS,
-                    Err(message) => {
-                        eprintln!("miao session: {message}");
-                        std::process::ExitCode::from(1)
+                Some("export-bundle") => {
+                    match session_engine_call(&rest[1..], "transfer_export_move") {
+                        Ok(()) => std::process::ExitCode::SUCCESS,
+                        Err(message) => {
+                            eprintln!("miao session: {message}");
+                            std::process::ExitCode::from(1)
+                        }
                     }
-                },
+                }
                 Some("import") => match session_import(&rest[1..]) {
                     Ok(()) => std::process::ExitCode::SUCCESS,
                     Err(message) => {
@@ -3305,7 +3626,9 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                         }
                     };
                     match std::process::Command::new(exe).args(&forwarded).status() {
-                        Ok(status) => std::process::ExitCode::from(status.code().unwrap_or(1) as u8),
+                        Ok(status) => {
+                            std::process::ExitCode::from(status.code().unwrap_or(1) as u8)
+                        }
                         Err(error) => {
                             eprintln!("miao session: {error}");
                             std::process::ExitCode::from(1)
@@ -3313,7 +3636,9 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                     }
                 }
                 _ => {
-                    eprintln!("usage: miao session list [--db PATH] | resume ID PROMPT [--db PATH]");
+                    eprintln!(
+                        "usage: miao session list [--db PATH] | resume ID PROMPT [--db PATH]"
+                    );
                     std::process::ExitCode::from(2)
                 }
             }
@@ -3367,7 +3692,8 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        lsp_servers, mcp_servers, model_routes, parsed_session_location, plugin_entries, strip_comments,
+        lsp_servers, mcp_servers, model_routes, parsed_session_location, plugin_entries,
+        strip_comments,
     };
     use std::io::Write;
 
@@ -3388,10 +3714,16 @@ mod tests {
         );
         let servers = mcp_servers(Some(&dir)).expect("maps");
         assert_eq!(servers.len(), 2);
-        let files = servers.iter().find(|s| s["name"] == "files").expect("stdio server");
+        let files = servers
+            .iter()
+            .find(|s| s["name"] == "files")
+            .expect("stdio server");
         assert_eq!(files["argv"], serde_json::json!(["npx", "x"]));
         assert_eq!(files["env"], serde_json::json!({"A": "1"}));
-        let remote = servers.iter().find(|s| s["name"] == "remote").expect("http server");
+        let remote = servers
+            .iter()
+            .find(|s| s["name"] == "remote")
+            .expect("http server");
         assert_eq!(remote["url"], serde_json::json!("https://e.test/mcp"));
         assert_eq!(remote["headers"], serde_json::json!({"K": "v"}));
         std::fs::remove_dir_all(&dir).ok();
@@ -3425,7 +3757,10 @@ mod tests {
         );
         let routes = model_routes(Some(&dir), "").expect("derives");
         assert_eq!(routes.len(), 2);
-        let ids: Vec<&str> = routes.iter().filter_map(|route| route["id"].as_str()).collect();
+        let ids: Vec<&str> = routes
+            .iter()
+            .filter_map(|route| route["id"].as_str())
+            .collect();
         assert!(ids.contains(&"vendor/deepseek"), "ids: {ids:?}");
         assert!(ids.contains(&"mirror/deepseek"), "ids: {ids:?}");
         // The bare name is what goes upstream and what the engine compares
@@ -3433,8 +3768,10 @@ mod tests {
         assert!(routes.iter().all(|route| route["model"] == "deepseek"));
         // Exactly one default, and it is the configured one rather than
         // whichever provider happened to be enumerated first.
-        let primary: Vec<&serde_json::Value> =
-            routes.iter().filter(|route| route["primary"] == true).collect();
+        let primary: Vec<&serde_json::Value> = routes
+            .iter()
+            .filter(|route| route["primary"] == true)
+            .collect();
         assert_eq!(primary.len(), 1, "exactly one primary");
         assert_eq!(primary[0]["id"], "vendor/deepseek");
         std::fs::remove_dir_all(&dir).ok();
@@ -3466,6 +3803,28 @@ mod tests {
         assert!(lsp_servers(Some(&dir)).expect("maps").is_empty());
         assert!(plugin_entries(Some(&dir)).expect("maps").is_empty());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The product's `run` and `tui` alias `--model` as `-m`. Without the
+    /// alias the token was taken for the prompt text, so a run silently used
+    /// the default route while its prompt gained the flag and its value.
+    #[test]
+    fn the_short_model_flag_is_the_same_option() {
+        let launch = super::launch(
+            ["--workspace", "/tmp/ws", "-m", "mtty/claude-haiku-5-5"]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect("parses");
+        assert_eq!(launch.model.as_deref(), Some("mtty/claude-haiku-5-5"));
+        // The long spelling keeps working.
+        let launch = super::launch(
+            ["--workspace", "/tmp/ws", "--model", "vendor/model"]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect("parses");
+        assert_eq!(launch.model.as_deref(), Some("vendor/model"));
     }
 
     #[test]
@@ -3502,8 +3861,12 @@ mod tests {
             },
         );
         assert!(argv.windows(2).any(|w| w == ["--provider", "openai-chat"]));
-        assert!(argv.windows(2).any(|w| w == ["--endpoint", "https://e.test/v1"]));
-        assert!(argv.windows(2).any(|w| w == ["--credential-db", "/tmp/cred.db"]));
+        assert!(argv
+            .windows(2)
+            .any(|w| w == ["--endpoint", "https://e.test/v1"]));
+        assert!(argv
+            .windows(2)
+            .any(|w| w == ["--credential-db", "/tmp/cred.db"]));
         assert!(argv.windows(2).any(|w| w == ["--config-dir", "/tmp/cfg"]));
         // An unset variable contributes no flag at all, rather than an empty one.
         assert!(!argv.iter().any(|a| a == "--credential-id"));
@@ -3512,7 +3875,10 @@ mod tests {
     #[test]
     fn bundle_location_is_read_back_verbatim() {
         let bundle = br#"{"session":{"location":{"directory":"/private/tmp/x"}}}"#;
-        assert_eq!(parsed_session_location(bundle), r#"{"directory":"/private/tmp/x"}"#);
+        assert_eq!(
+            parsed_session_location(bundle),
+            r#"{"directory":"/private/tmp/x"}"#
+        );
         // A malformed bundle must not panic; activation would reject it anyway.
         assert_eq!(parsed_session_location(b"not json"), "{}");
     }
@@ -3538,7 +3904,10 @@ mod tests {
         )
         .expect("config");
         let entries = plugin_entries(Some(&dir)).expect("parses");
-        assert_eq!(entries, vec!["@scope/a".to_string(), "b-plugin".to_string()]);
+        assert_eq!(
+            entries,
+            vec!["@scope/a".to_string(), "b-plugin".to_string()]
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
