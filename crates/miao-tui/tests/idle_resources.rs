@@ -136,17 +136,31 @@ fn descriptors(pid: u32) -> Option<usize> {
     Some(text.lines().filter(|line| line.starts_with('n')).count())
 }
 
-/// The process itself plus its direct children. The TUI spawns the engine when
-/// embedding is off, and that child is the part of the tree a single-process
-/// sample would miss.
+/// The process and every descendant of it. The TUI spawns the engine when
+/// embedding is off, and the engine in turn spawns whatever it runs (a sandbox
+/// helper, an MCP or LSP server, a worker), so a one-level walk would miss the
+/// members the criterion names. The walk stops at a depth and a size bound so a
+/// pathological tree cannot loop.
 fn tree(pid: u32) -> Vec<u32> {
+    fn children(pid: u32) -> Vec<u32> {
+        let Ok(output) = Command::new("pgrep")
+            .args(["-P", &pid.to_string()])
+            .output()
+        else {
+            return Vec::new();
+        };
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| line.trim().parse::<u32>().ok())
+            .collect()
+    }
     let mut pids = vec![pid];
-    if let Ok(output) = Command::new("pgrep")
-        .args(["-P", &pid.to_string()])
-        .output()
-    {
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
-            if let Ok(child) = line.trim().parse::<u32>() {
+    let mut next = 0;
+    while next < pids.len() && pids.len() < 64 {
+        let current = pids[next];
+        next += 1;
+        for child in children(current) {
+            if !pids.contains(&child) {
                 pids.push(child);
             }
         }
@@ -154,7 +168,20 @@ fn tree(pid: u32) -> Vec<u32> {
     pids
 }
 
-/// Sum of the measured window across every process in the tree.
+/// The executable name, so a record can say which members the tree held
+/// instead of only how many.
+fn command_name(pid: u32) -> String {
+    let Ok(output) = Command::new("ps")
+        .args(["-o", "comm=", "-p", &pid.to_string()])
+        .output()
+    else {
+        return "unknown".to_string();
+    };
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    raw.rsplit('/').next().unwrap_or_default().to_string()
+}
+
+/// Sum of the measured window across every process in the tree./// Sum of the measured window across every process in the tree.
 fn measure_tree(harness: &Harness, label: &str, window: Duration) -> (usize, u128, u64, u64) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while !harness.ready() {
@@ -179,8 +206,13 @@ fn measure_tree(harness: &Harness, label: &str, window: Duration) -> (usize, u12
         fds += descriptors(*pid).unwrap_or(0) as u64;
     }
     let cpu_ms = cpu_ms.saturating_sub(before);
+    let members = pids
+        .iter()
+        .map(|pid| command_name(*pid))
+        .collect::<Vec<_>>()
+        .join(",");
     println!(
-        "PERF-04 {label}: processes={} cpu_ms={cpu_ms} over {}ms, rss_kb_total={rss_kb}, fds_total={fds}",
+        "PERF-04 {label}: processes={} [{members}] cpu_ms={cpu_ms} over {}ms, rss_kb_total={rss_kb}, fds_total={fds}",
         pids.len(),
         window.as_millis()
     );
