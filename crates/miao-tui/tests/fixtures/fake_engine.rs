@@ -185,6 +185,13 @@ fn main() {
                     });
                 }
             }
+            "tag" => {
+                log_action(&frame["params"], method);
+                send(
+                    &mut out,
+                    json!({"id":id,"result":{"accepted":true,"tag":frame["params"]["tag"]}}),
+                );
+            }
             "recall" => {
                 let handle = frame["params"]["tool_use_id"]
                     .as_str()

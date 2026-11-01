@@ -409,6 +409,39 @@ fn boots_renders_panes_and_quits_on_ctrl_c() {
 }
 
 #[test]
+fn tag_sets_the_label_from_its_argument() {
+    let mut harness = Harness::spawn_engine("tag");
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\x1b[B");
+    harness.write(b"\r");
+    assert!(wait_for_plain(
+        &harness,
+        "Fixture Notes",
+        Duration::from_secs(3)
+    ));
+
+    // An argument sets the label directly; the engine answers, and a refusal
+    // would surface as a notice.
+    harness.write(b"/tag release");
+    harness.write(b"\r");
+    assert!(
+        !wait_for_plain(&harness, "tag failed", Duration::from_secs(2)),
+        "the engine refused the tag:\n{}",
+        plain(&harness.text())
+    );
+
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
 fn recall_restores_an_elided_tool_output() {
     let mut harness = Harness::spawn_engine("recall");
     assert!(

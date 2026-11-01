@@ -22,6 +22,7 @@ pub enum Builtin {
     Sessions,
     NewSession,
     Rename,
+    Tag,
     Status,
     Accounts,
     Debug,
@@ -40,7 +41,7 @@ pub enum Builtin {
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 22] = [
+    pub const ALL: [Builtin; 23] = [
         Builtin::Models,
         Builtin::Permissions,
         Builtin::WorkspaceChanges,
@@ -48,6 +49,7 @@ impl Builtin {
         Builtin::Sessions,
         Builtin::NewSession,
         Builtin::Rename,
+        Builtin::Tag,
         Builtin::Status,
         Builtin::Accounts,
         Builtin::Debug,
@@ -75,6 +77,7 @@ impl Builtin {
             Builtin::Sessions => "sessions",
             Builtin::NewSession => "new",
             Builtin::Rename => "rename",
+            Builtin::Tag => "tag",
             Builtin::Status => "status",
             Builtin::Accounts => "accounts",
             Builtin::Debug => "debug",
@@ -112,6 +115,7 @@ impl Builtin {
             Builtin::Sessions => "Browse sessions",
             Builtin::NewSession => "New session",
             Builtin::Rename => "Rename this session",
+            Builtin::Tag => "Tag this session",
             Builtin::Status => "Session status and usage",
             Builtin::Accounts => "Switch account",
             Builtin::Debug => "Engine and workspace details",
@@ -140,6 +144,7 @@ impl Builtin {
             Builtin::Sessions => "<leader>l",
             Builtin::NewSession => "<leader>n",
             Builtin::Rename => "ctrl+r",
+            Builtin::Tag => "",
             Builtin::Status => "<leader>s",
             Builtin::Accounts => "ctrl+o",
             Builtin::Debug => "<leader>d",
@@ -662,6 +667,13 @@ mod tests {
             split("/recall call_abc"),
             Some(("recall".into(), "call_abc".into()))
         );
+    }
+
+    #[test]
+    fn tag_is_a_builtin_an_operator_can_find() {
+        assert_eq!(Builtin::from_name("tag"), Some(Builtin::Tag));
+        assert!(Builtin::ALL.contains(&Builtin::Tag));
+        assert_eq!(Builtin::Tag.label(), "Tag this session");
     }
 
     #[test]

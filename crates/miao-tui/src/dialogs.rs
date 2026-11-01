@@ -287,6 +287,7 @@ pub enum Dialog {
     Message(TextDialog),
     Palette(PaletteDialog),
     Rename(RenameDialog),
+    Tag(TagDialog),
     Confirm(ConfirmDialog),
 }
 
@@ -352,6 +353,13 @@ impl PaletteDialog {
 /// The rename dialog keeps its target beside the editor so a submit needs no
 /// lookup of the row it came from.
 pub struct RenameDialog {
+    pub session_id: String,
+    pub input: Editor,
+}
+
+/// The operator's own label for a Session. Confirming an empty label clears it,
+/// the same shape rename already has: the dialog is the edit.
+pub struct TagDialog {
     pub session_id: String,
     pub input: Editor,
 }
@@ -652,6 +660,15 @@ impl Dialog {
         Dialog::Palette(PaletteDialog::new(rows))
     }
 
+    pub fn tag(session_id: &str, tag: &str) -> Self {
+        let mut input = Editor::new();
+        input.set_text(tag);
+        Dialog::Tag(TagDialog {
+            session_id: session_id.to_string(),
+            input,
+        })
+    }
+
     pub fn rename(session_id: &str, title: &str) -> Self {
         let mut input = Editor::new();
         input.set_text(title);
@@ -709,6 +726,7 @@ impl Dialog {
             Dialog::Message(text) => handle_text_key(text, key),
             Dialog::Palette(palette) => handle_palette_key(palette, key),
             Dialog::Rename(rename) => handle_rename_key(&mut rename.input, key),
+            Dialog::Tag(tag) => handle_rename_key(&mut tag.input, key),
             Dialog::Confirm(confirm) => handle_confirm_key(confirm, key),
         }
     }
@@ -734,6 +752,7 @@ impl Dialog {
             Dialog::Message(text) => text.title,
             Dialog::Palette(_) => "commands",
             Dialog::Rename(_) => "rename session",
+            Dialog::Tag(_) => "tag session",
             Dialog::Confirm(confirm) => confirm.title,
         }
     }
@@ -779,6 +798,7 @@ impl Dialog {
     pub fn rename_input(&self) -> Option<&Editor> {
         match self {
             Dialog::Rename(rename) => Some(&rename.input),
+            Dialog::Tag(tag) => Some(&tag.input),
             _ => None,
         }
     }
@@ -786,6 +806,7 @@ impl Dialog {
     pub fn rename_session_id(&self) -> Option<&str> {
         match self {
             Dialog::Rename(rename) => Some(&rename.session_id),
+            Dialog::Tag(tag) => Some(&tag.session_id),
             _ => None,
         }
     }
@@ -1168,6 +1189,21 @@ fn handle_confirm_key(confirm: &mut ConfirmDialog, key: KeyEvent) -> Action {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_tag_dialog_starts_empty_for_the_open_session() {
+        let dialog = Dialog::tag("ses_a", "");
+        match &dialog {
+            Dialog::Tag(tag) => {
+                assert_eq!(tag.session_id, "ses_a");
+                assert!(tag.input.text().is_empty());
+            }
+            _ => panic!("Dialog::tag must build the tag dialog"),
+        }
+        assert_eq!(dialog.title(), "tag session");
+        assert_eq!(dialog.rename_session_id(), Some("ses_a"));
+        assert!(dialog.rename_input().is_some());
+    }
     use super::*;
 
     fn key(code: KeyCode) -> KeyEvent {
