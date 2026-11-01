@@ -2061,12 +2061,50 @@ fn engine_argv_with(
         argv.push("--config-dir".into());
         argv.push(dir.display().to_string());
     }
-    // Deriving the manifest is verified by `debug routes`, but the engine still
-    // rejects a derived primary route ("invalid default model route"), so the
-    // argv injection stays off until that shape is understood. Leaving it on
-    // would break every run.
-    let _ = &model_routes;
-    let derived_routes = false;
+    // The engine compares the primary route's identity against the base
+    // provider's, so the base provider must be built from the same route:
+    // provider, endpoint and credential all come from the primary entry.
+    let mut derived_routes = false;
+    if env("MIAO_ENGINE_MODEL_ROUTES_CONFIG").is_none() {
+        if let Ok(routes) = model_routes(config_dir, model) {
+            if !routes.is_empty() {
+                if let Some(primary) = routes.iter().find(|route| route["primary"] == true) {
+                    for (key, flag) in [("provider", "--provider"), ("endpoint", "--endpoint")] {
+                        if let Some(value) = primary[key].as_str() {
+                            if !value.is_empty() {
+                                argv.push(flag.into());
+                                argv.push(value.into());
+                            }
+                        }
+                    }
+                    let credential = &primary["credential"];
+                    if credential["type"].as_str() == Some("database") {
+                        for (key, flag) in [
+                            ("path", "--credential-db"),
+                            ("id", "--credential-id"),
+                            ("integration", "--credential-integration"),
+                        ] {
+                            if let Some(value) = credential[key].as_str() {
+                                argv.push(flag.into());
+                                argv.push(value.into());
+                            }
+                        }
+                    }
+                    if let Ok(encoded) = serde_json::to_string(&routes) {
+                        if encoded.len() <= 65536 {
+                            let path = std::env::temp_dir()
+                                .join(format!("miao-routes-{}.json", std::process::id()));
+                            if std::fs::write(&path, encoded).is_ok() {
+                                argv.push("--model-routes-config".into());
+                                argv.push(path.display().to_string());
+                                derived_routes = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     if let Ok(servers) = lsp_servers(config_dir) {
         if !servers.is_empty() {
             if let Ok(encoded) = serde_json::to_string(&servers) {
