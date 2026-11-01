@@ -724,7 +724,11 @@ impl App {
             self.run_builtin(Builtin::TerminalTitle);
             return;
         }
-        if self.keys.matches(keybinds::Action::TerminalSuspend, &key) {
+        // The composer owns `ctrl+z` while it has a step to take back; with
+        // nothing to undo the stroke keeps its page meaning and suspends.
+        if self.keys.matches(keybinds::Action::TerminalSuspend, &key)
+            && !self.shell.composer.can_undo()
+        {
             self.leader = false;
             self.run_builtin(Builtin::Suspend);
             return;
@@ -1860,6 +1864,17 @@ impl App {
     }
 
     fn handle_home_key(&mut self, key: KeyEvent) {
+        // `AppExit` also carries `ctrl+c`, and the landing prompt is the same
+        // composer a Session shows. A Session clears a non-empty draft before it
+        // quits; the landing screen quit outright, so one keystroke threw away a
+        // prompt typed before any Session existed.
+        if self.keys.matches(keybinds::Action::InputClear, &key)
+            && !self.shell.composer.editor.is_empty()
+        {
+            self.shell.composer.editor.clear();
+            self.shell.composer.dismiss_completion();
+            return;
+        }
         if self.keys.matches(keybinds::Action::AppExit, &key) {
             self.quit = true;
             return;
@@ -2063,7 +2078,9 @@ impl App {
             self.read_clipboard();
             return;
         }
-        if action(keybinds::Action::CopyMessage) {
+        // Same split as `ctrl+z`: a step waiting to be re-applied keeps the
+        // stroke for the composer, otherwise it copies the last response.
+        if action(keybinds::Action::CopyMessage) && !self.shell.composer.can_redo() {
             self.copy_last_response();
             return;
         }
@@ -4770,6 +4787,81 @@ mod tests {
         assert!(
             matches!(app.dialog, Some(Dialog::WorkspaceChanges(_))),
             "the chord did not open the changes view"
+        );
+    }
+
+    /// `ctrl+z` is shared with the page's suspend, so the composer has to win
+    /// it whenever it has a step to take back — otherwise typing a prompt and
+    /// reaching for undo stops the whole process instead.
+    /// `ctrl+c` clears the draft before it quits, on the landing screen too: a
+    /// prompt typed before any Session exists must survive a stray keystroke.
+    #[test]
+    fn ctrl_c_clears_a_landing_draft_instead_of_quitting() {
+        let mut app = app();
+        assert_eq!(app.screen, Screen::Home);
+        for c in "draft".chars() {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        assert_eq!(app.shell.composer.editor.text(), "draft");
+        app.handle(key(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert_eq!(app.shell.composer.editor.text(), "", "the draft is cleared");
+        assert!(!app.quit, "the app keeps running with a cleared draft");
+        // The clear is an editing step, so the same draft comes back on undo.
+        app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
+        assert_eq!(app.shell.composer.editor.text(), "draft");
+    }
+
+    /// With nothing to clear the stroke keeps its page meaning and quits.
+    #[test]
+    fn ctrl_c_quits_the_landing_screen_with_an_empty_draft() {
+        let mut app = app();
+        app.handle(key(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(app.quit);
+    }
+
+    #[test]
+    fn ctrl_z_undoes_the_draft_instead_of_suspending() {
+        let mut app = session_app();
+        for c in "draft".chars() {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        assert_eq!(app.shell.composer.editor.text(), "draft");
+        app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
+        assert_eq!(
+            app.shell.composer.editor.text(),
+            "",
+            "the run came back off"
+        );
+        assert!(
+            !app.suspend_requested,
+            "the process must not stop for an undo"
+        );
+    }
+
+    /// With nothing to undo the stroke keeps its page meaning: the process
+    /// still suspends, which is what a terminal operator expects.
+    #[test]
+    fn ctrl_z_still_suspends_with_nothing_to_undo() {
+        let mut app = session_app();
+        app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
+        assert!(app.suspend_requested, "an empty draft leaves suspend alone");
+    }
+
+    /// Redo re-applies the undone run, and the copy stroke stays out of the way
+    /// while a step is waiting.
+    #[test]
+    fn ctrl_y_reapplies_the_undone_draft() {
+        let mut app = session_app();
+        for c in "abc".chars() {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
+        assert_eq!(app.shell.composer.editor.text(), "");
+        app.handle(key(KeyCode::Char('y'), KeyModifiers::CONTROL));
+        assert_eq!(
+            app.shell.composer.editor.text(),
+            "abc",
+            "redo reapplies the run"
         );
     }
 

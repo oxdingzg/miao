@@ -16,6 +16,9 @@ use unicode_width::UnicodeWidthChar;
 use crate::keybinds::{self, Keymap};
 
 const HISTORY_LIMIT: usize = 100;
+/// How many editing steps the composer remembers. A prompt is short, so this is
+/// about surviving a mistake, not about keeping a document's full history.
+const UNDO_LIMIT: usize = 200;
 const FILE_LIMIT: usize = 2000;
 const TAB_CELLS: usize = 4;
 
@@ -43,6 +46,17 @@ pub enum Mode {
     Shell,
 }
 
+/// What started the newest undo step. Consecutive edits of one kind collapse
+/// into a single step, so undo takes back a word that was typed rather than one
+/// character of it; any other kind of edit starts a new step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EditKind {
+    Insert,
+    Backspace,
+    Delete,
+    Replace,
+}
+
 #[derive(Debug, Default)]
 pub struct Editor {
     buffer: String,
@@ -51,6 +65,12 @@ pub struct Editor {
     /// Display column a run of up/down motion is aiming at. Cleared by any
     /// horizontal edit so the next run re-reads the cursor.
     goal: Option<usize>,
+    /// States before each editing step, oldest first.
+    undo: Vec<(String, usize)>,
+    /// States a redo can re-apply, newest first.
+    redo: Vec<(String, usize)>,
+    /// The kind of the newest editing step, for coalescing runs.
+    group: Option<EditKind>,
 }
 
 impl Editor {
@@ -78,28 +98,104 @@ impl Editor {
         self.buffer = text.to_string();
         self.cursor = self.buffer.len();
         self.goal = None;
+        // A programmatic replacement (history recall, a stash, a restored
+        // draft) is not an editing step: undoing back into a previous
+        // session's prompt would be a surprise, not a convenience.
+        self.forget_history();
+    }
+
+    fn forget_history(&mut self) {
+        self.undo.clear();
+        self.redo.clear();
+        self.group = None;
+    }
+
+    /// Remember the state this edit is about to change, coalescing a run of the
+    /// same kind into one step.
+    fn record(&mut self, kind: EditKind) {
+        if self.group == Some(kind) {
+            return;
+        }
+        self.undo.push((self.buffer.clone(), self.cursor));
+        if self.undo.len() > UNDO_LIMIT {
+            self.undo.remove(0);
+        }
+        self.redo.clear();
+        self.group = Some(kind);
+    }
+
+    /// Whether there is an editing step to take back. The UI asks before it
+    /// claims a stroke the page also uses, so `ctrl+z` keeps suspending the
+    /// process when the draft has nothing to undo.
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    /// Whether a step is waiting to be re-applied.
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    /// Take back the newest editing step. Returns whether anything changed.
+    pub fn undo(&mut self) -> bool {
+        let Some((buffer, cursor)) = self.undo.pop() else {
+            return false;
+        };
+        self.redo
+            .push((std::mem::take(&mut self.buffer), self.cursor));
+        self.buffer = buffer;
+        self.cursor = cursor.min(self.buffer.len());
+        self.goal = None;
+        // The next edit starts its own step instead of extending the one just
+        // undone, which would otherwise be unreachable from a redo.
+        self.group = None;
+        true
+    }
+
+    /// Re-apply the step the last undo took back.
+    pub fn redo(&mut self) -> bool {
+        let Some((buffer, cursor)) = self.redo.pop() else {
+            return false;
+        };
+        self.undo
+            .push((std::mem::take(&mut self.buffer), self.cursor));
+        self.buffer = buffer;
+        self.cursor = cursor.min(self.buffer.len());
+        self.goal = None;
+        self.group = None;
+        true
     }
 
     /// Clear the buffer and hand the submitted text to the caller.
     pub fn take(&mut self) -> String {
         self.cursor = 0;
         self.goal = None;
+        self.forget_history();
         std::mem::take(&mut self.buffer)
     }
 
+    /// Empty the draft as an editing step, so `ctrl+z` brings back a prompt
+    /// that was cleared by accident. Submitting goes through [`Self::take`],
+    /// which forgets the history instead.
     pub fn clear(&mut self) {
+        if self.buffer.is_empty() {
+            return;
+        }
+        self.record(EditKind::Delete);
         self.buffer.clear();
         self.cursor = 0;
         self.goal = None;
     }
 
     pub fn insert_char(&mut self, c: char) {
+        self.record(EditKind::Insert);
         self.buffer.insert(self.cursor, c);
         self.cursor += c.len_utf8();
         self.goal = None;
     }
 
     pub fn insert_str(&mut self, text: &str) {
+        self.record(EditKind::Insert);
         self.buffer.insert_str(self.cursor, text);
         self.cursor += text.len();
         self.goal = None;
@@ -107,6 +203,7 @@ impl Editor {
 
     /// Replace `start..end` with `text`; used by completion and history.
     pub fn replace(&mut self, start: usize, end: usize, text: &str) {
+        self.record(EditKind::Replace);
         self.buffer.replace_range(start..end, text);
         self.cursor = start + text.len();
         self.goal = None;
@@ -116,6 +213,7 @@ impl Editor {
         if self.cursor == 0 {
             return false;
         }
+        self.record(EditKind::Backspace);
         let start = self.prev_boundary(self.cursor);
         self.buffer.replace_range(start..self.cursor, "");
         self.cursor = start;
@@ -127,6 +225,7 @@ impl Editor {
         if self.cursor == self.buffer.len() {
             return false;
         }
+        self.record(EditKind::Delete);
         let end = self.next_boundary(self.cursor);
         self.buffer.replace_range(self.cursor..end, "");
         self.goal = None;
@@ -138,6 +237,7 @@ impl Editor {
         if start == self.cursor {
             return false;
         }
+        self.record(EditKind::Delete);
         self.buffer.replace_range(start..self.cursor, "");
         self.cursor = start;
         self.goal = None;
@@ -149,6 +249,7 @@ impl Editor {
         if end == self.cursor {
             return false;
         }
+        self.record(EditKind::Delete);
         self.buffer.replace_range(self.cursor..end, "");
         self.goal = None;
         true
@@ -159,6 +260,7 @@ impl Editor {
         if start == self.cursor {
             return false;
         }
+        self.record(EditKind::Delete);
         self.buffer.replace_range(start..self.cursor, "");
         self.cursor = start;
         self.goal = None;
@@ -170,12 +272,14 @@ impl Editor {
         if end == self.cursor {
             return false;
         }
+        self.record(EditKind::Delete);
         self.buffer.replace_range(self.cursor..end, "");
         self.goal = None;
         true
     }
 
     pub fn move_left(&mut self) -> bool {
+        self.end_run();
         if self.cursor == 0 {
             return false;
         }
@@ -185,6 +289,7 @@ impl Editor {
     }
 
     pub fn move_right(&mut self) -> bool {
+        self.end_run();
         if self.cursor == self.buffer.len() {
             return false;
         }
@@ -194,6 +299,7 @@ impl Editor {
     }
 
     pub fn move_word_forward(&mut self) -> bool {
+        self.end_run();
         let end = self.word_end(self.cursor);
         if end == self.cursor {
             return false;
@@ -204,6 +310,7 @@ impl Editor {
     }
 
     pub fn move_word_backward(&mut self) -> bool {
+        self.end_run();
         let start = self.word_start(self.cursor);
         if start == self.cursor {
             return false;
@@ -214,6 +321,7 @@ impl Editor {
     }
 
     pub fn move_line_start(&mut self) -> bool {
+        self.end_run();
         let start = self.line_start(self.cursor);
         if start == self.cursor {
             return false;
@@ -224,6 +332,7 @@ impl Editor {
     }
 
     pub fn move_line_end(&mut self) -> bool {
+        self.end_run();
         let end = self.line_end(self.cursor);
         if end == self.cursor {
             return false;
@@ -234,6 +343,7 @@ impl Editor {
     }
 
     pub fn move_up(&mut self) -> bool {
+        self.end_run();
         let start = self.line_start(self.cursor);
         if start == 0 {
             return false;
@@ -250,6 +360,7 @@ impl Editor {
     }
 
     pub fn move_down(&mut self) -> bool {
+        self.end_run();
         let end = self.line_end(self.cursor);
         if end == self.buffer.len() {
             return false;
@@ -281,6 +392,12 @@ impl Editor {
                 })
                 .collect()
         })
+    }
+
+    /// Any cursor motion ends the current typing run: typing, moving, then
+    /// typing again are two undo steps rather than one.
+    fn end_run(&mut self) {
+        self.group = None;
     }
 
     fn motion_goal(&mut self) -> usize {
@@ -511,6 +628,12 @@ impl Composer {
     fn handle_edit_key(&mut self, key: KeyEvent, keys: &Keymap) -> Action {
         let action = keys.input_action(&key);
         match action {
+            Some(keybinds::Action::InputUndo) => {
+                self.editor.undo();
+            }
+            Some(keybinds::Action::InputRedo) => {
+                self.editor.redo();
+            }
             Some(keybinds::Action::InputSubmit) => return self.submit(),
             Some(keybinds::Action::InputNewline) => self.editor.insert_char('\n'),
             Some(keybinds::Action::InputBackspace) => {
@@ -724,6 +847,17 @@ impl Composer {
         self.completion = Completion::default();
     }
 
+    /// Whether the draft has an editing step to take back, so a shared stroke
+    /// belongs to the composer rather than to the page.
+    pub fn can_undo(&self) -> bool {
+        self.editor.can_undo()
+    }
+
+    /// Whether the draft has a step to re-apply.
+    pub fn can_redo(&self) -> bool {
+        self.editor.can_redo()
+    }
+
     pub fn dismiss_completion(&mut self) -> bool {
         if !self.completion.active() {
             return false;
@@ -923,6 +1057,86 @@ mod tests {
             workspace: dir.to_path_buf(),
             history_path: dir.join("history.json"),
         }
+    }
+
+    /// A run of typing is one step: undo takes back the word the operator just
+    /// typed, not one character of it.
+    #[test]
+    fn a_typing_run_undoes_as_one_step() {
+        let mut editor = Editor::new();
+        for c in "hello".chars() {
+            editor.insert_char(c);
+        }
+        assert_eq!(editor.text(), "hello");
+        assert!(editor.undo());
+        assert_eq!(editor.text(), "", "the whole run came back off");
+        assert!(!editor.undo(), "nothing else to take back");
+    }
+
+    /// Undo then redo round-trips the text and the cursor, so a mistake in the
+    /// middle of a prompt can be taken back and re-applied.
+    #[test]
+    fn undo_and_redo_restore_text_and_cursor() {
+        let mut editor = Editor::new();
+        editor.insert_str("one two");
+        editor.move_word_backward();
+        editor.insert_str("and ");
+        assert_eq!(editor.text(), "one and two");
+        let cursor = editor.cursor();
+        assert!(editor.undo());
+        assert_eq!(editor.text(), "one two");
+        assert!(editor.redo());
+        assert_eq!(editor.text(), "one and two");
+        assert_eq!(editor.cursor(), cursor, "redo puts the cursor back too");
+    }
+
+    /// A different kind of edit starts a new step, so undo does not swallow the
+    /// deletion together with the typing that preceded it.
+    #[test]
+    fn a_new_kind_of_edit_starts_its_own_step() {
+        let mut editor = Editor::new();
+        editor.insert_str("abc");
+        editor.backspace();
+        assert_eq!(editor.text(), "ab");
+        assert!(editor.undo());
+        assert_eq!(editor.text(), "abc", "only the deletion came back");
+        assert!(editor.undo());
+        assert_eq!(editor.text(), "", "then the typing run");
+    }
+
+    /// Clearing the draft is an editing step too: `ctrl+c` on a long prompt
+    /// has to be something `ctrl+z` can take back.
+    #[test]
+    fn clearing_the_draft_is_undoable() {
+        let mut editor = Editor::new();
+        editor.insert_str("a prompt worth keeping");
+        editor.clear();
+        assert_eq!(editor.text(), "");
+        assert!(editor.undo());
+        assert_eq!(editor.text(), "a prompt worth keeping");
+    }
+
+    /// A recalled prompt (history, stash, a restored draft) is not an editing
+    /// step: undoing into the previous session's text would be a surprise.
+    #[test]
+    fn a_recalled_prompt_forgets_the_undo_stack() {
+        let mut editor = Editor::new();
+        editor.insert_str("typo");
+        editor.set_text("recalled from history");
+        assert!(!editor.undo(), "the recalled text is the baseline");
+        assert_eq!(editor.text(), "recalled from history");
+    }
+
+    /// CJK and emoji are edited by grapheme, not by byte: undo takes back the
+    /// character the terminal showed.
+    #[test]
+    fn undo_takes_back_a_whole_cjk_grapheme() {
+        let mut editor = Editor::new();
+        editor.insert_char('你');
+        editor.insert_char('好');
+        assert_eq!(editor.text(), "你好");
+        assert!(editor.undo());
+        assert_eq!(editor.text(), "");
     }
 
     #[test]

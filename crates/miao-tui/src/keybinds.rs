@@ -47,6 +47,8 @@ pub enum Action {
     Stash,
     StashDraft,
     InputClear,
+    InputUndo,
+    InputRedo,
     InputSubmit,
     InputNewline,
     InputBackspace,
@@ -107,6 +109,8 @@ impl Action {
             Action::Stash => "stash",
             Action::StashDraft => "stash_draft",
             Action::InputClear => "input_clear",
+            Action::InputUndo => "input_undo",
+            Action::InputRedo => "input_redo",
             Action::InputSubmit => "input_submit",
             Action::InputNewline => "input_newline",
             Action::InputBackspace => "input_backspace",
@@ -170,6 +174,8 @@ const ACTIONS: &[Action] = &[
     Action::Stash,
     Action::StashDraft,
     Action::InputClear,
+    Action::InputUndo,
+    Action::InputRedo,
     Action::InputSubmit,
     Action::InputNewline,
     Action::InputBackspace,
@@ -236,6 +242,10 @@ const DEFAULTS: &[(Action, &str)] = &[
     (Action::Stash, "<leader>p"),
     (Action::StashDraft, "<leader>P"),
     (Action::InputClear, "ctrl+c"),
+    (Action::InputUndo, "ctrl+z"),
+    // ctrl+shift+z is what a terminal sends for shift+ctrl+z; ctrl+y is
+    // the other convention people reach for, so both redo.
+    (Action::InputRedo, "ctrl+shift+z,ctrl+y"),
     (Action::InputSubmit, "return"),
     (
         Action::InputNewline,
@@ -273,6 +283,8 @@ const DEFAULTS: &[(Action, &str)] = &[
 /// `history_previous` share a stroke; the cursor motion wins and the history
 /// becomes its fallback.
 const INPUT_ACTIONS: &[Action] = &[
+    Action::InputUndo,
+    Action::InputRedo,
     Action::InputSubmit,
     Action::InputNewline,
     Action::InputBackspace,
@@ -769,6 +781,10 @@ mod tests {
             ("ctrl+c", vec!["app_exit", "input_clear"]),
             // Delete forward, or quit outside the composer.
             ("ctrl+d", vec!["app_exit", "input_delete"]),
+            // Redo inside the composer, or copy the last message outside it.
+            ("ctrl+y", vec!["input_redo", "messages_copy"]),
+            // Undo inside the composer, or suspend the process outside it.
+            ("ctrl+z", vec!["input_undo", "terminal_suspend"]),
             // Walk prompt history, or move inside a multi-line draft.
             ("down", vec!["history_next", "input_move_down"]),
             ("up", vec!["history_previous", "input_move_up"]),
