@@ -1,0 +1,64 @@
+name: lint
+
+# A standalone validator for the workflow files themselves.
+#
+# `ci` runs actionlint inside its own `policy` job, which means an invalid
+# workflow file prevents the very workflow that would catch it from starting:
+# GitHub rejects the whole run at startup, `policy` never runs, and the pull
+# request shows zero jobs plus a failure that no gate explains. That happened
+# once (#2048), and it took main's CI out for an hour.
+#
+# This workflow deliberately does not call any other workflow, so it still runs
+# when `.github/workflows/ci.yml` is the file that is broken. It is cheap: a
+# single actionlint run plus the cheap formatters, well under a minute.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  workflows:
+    name: workflow syntax
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: actionlint
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -shellcheck=''
+
+  format:
+    name: format
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: rustfmt
+        run: |
+          # The tui and engine legs run `cargo fmt --check` late, after the whole
+          # matrix has been queued; this surfaces a formatting miss in a minute.
+          for crate in crates/miao-tui crates/miao-engine; do
+            cargo fmt --manifest-path "$crate/Cargo.toml" --check
+          done
