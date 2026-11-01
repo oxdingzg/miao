@@ -162,9 +162,9 @@ pub struct App {
     pub session: Option<SessionSummary>,
     pub state: SessionState,
     pub quit: bool,
-    /// The home list owns the keyboard by default (filter, numbered slots,
-    /// pin); `Tab` moves focus to the prompt and back, so a first prompt can
-    /// still be typed from the landing screen.
+    /// The prompt owns the keyboard on the landing screen, the way every other
+    /// agent CLI behaves: the first thing typed is the first prompt. `Tab`
+    /// moves focus to the home list (filter, numbered slots, pin) and back.
     home_list_focus: bool,
     dialog: Option<Dialog>,
     permission_generation: u64,
@@ -266,7 +266,7 @@ impl App {
             session: None,
             state: SessionState::default(),
             quit: false,
-            home_list_focus: true,
+            home_list_focus: false,
             dialog: None,
             permission_generation: 0,
             workspace_changes_generation: 0,
@@ -1852,6 +1852,17 @@ impl App {
             return;
         }
         if !self.home_list_focus {
+            // Enter on an empty prompt opens the selected Session: the prompt owns
+            // the keyboard on the landing screen, so Enter must still be the way in.
+            if key.code == KeyCode::Enter && self.shell.composer.editor.is_empty() {
+                if let Some(row) = self.home.current() {
+                    let id = row.id.clone();
+                    if let Some(engine) = self.engine.as_ref() {
+                        engine.open(&id);
+                    }
+                }
+                return;
+            }
             match self.shell.composer.handle_key(key, &self.keys) {
                 Action::None => {}
                 Action::Quit => self.quit = true,
@@ -1861,6 +1872,15 @@ impl App {
                 }
                 Action::Submit { text, .. } => {
                     if text.trim().is_empty() {
+                        // An empty prompt means "open what the list has selected":
+                        // the keyboard belongs to the prompt, so Enter has to keep
+                        // working as the way into a Session.
+                        if let Some(row) = self.home.current() {
+                            let id = row.id.clone();
+                            if let Some(engine) = self.engine.as_ref() {
+                                engine.open(&id);
+                            }
+                        }
                         return;
                     }
                     self.startup.prompt = Some(text);
@@ -3294,8 +3314,7 @@ mod tests {
     #[test]
     fn a_prompt_typed_on_home_starts_a_session_with_it() {
         let mut app = app();
-        // The list owns the keyboard until Tab hands it to the prompt.
-        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
+        // The prompt owns the keyboard on the landing screen.
         for character in "hello".chars() {
             app.handle(key(KeyCode::Char(character), KeyModifiers::NONE));
         }
@@ -3313,6 +3332,8 @@ mod tests {
             summary("ses_b", 30),
             summary("ses_a", 10),
         ]));
+        // j/k move the list, so the list has to own the keyboard first.
+        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
         assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_b"));
         app.handle(key(KeyCode::Char('j'), KeyModifiers::NONE));
         assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
@@ -3916,6 +3937,9 @@ mod tests {
         // The home list is fed by `Sessions`; `Catalog` only fills the session
         // catalog and answers `--continue`.
         app.handle(AppEvent::Sessions(rows));
+        // List behaviour starts from the list: Tab hands it the keyboard, as a
+        // user would, because the prompt owns the landing screen.
+        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
         app
     }
 
@@ -3956,6 +3980,9 @@ mod tests {
                 })
                 .collect(),
         ));
+        // List behaviour starts from the list: Tab hands it the keyboard, as a
+        // user would, because the prompt owns the landing screen.
+        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
         app
     }
 
