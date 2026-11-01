@@ -195,7 +195,7 @@ test("total sums the entries", () => {
 })
 test("render keeps one line per entry plus the total", () => {
   const entries = [{ label: "coffee", cents: 350 }, { label: "tea", cents: 250 }]
-  expect(render(entries)).toBe("coffee: 3.50\ntea: 2.50\ntotal: 6.00")
+  expect(render(entries)).toBe("coffee: 3.50\\ntea: 2.50\\ntotal: 6.00")
 })
 `,
     },
