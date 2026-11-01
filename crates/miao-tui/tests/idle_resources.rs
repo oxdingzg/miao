@@ -27,6 +27,12 @@ struct Harness {
 
 impl Harness {
     fn spawn(label: &str) -> Self {
+        Self::spawn_with(label, &[], None)
+    }
+
+    /// `session` lands the TUI inside that Session, which is what makes a
+    /// streaming measurement describe the paint path rather than the home list.
+    fn spawn_with(label: &str, environment: &[(&str, &str)], session: Option<&str>) -> Self {
         let dir = std::env::temp_dir().join(format!("miao-idle-resources-{label}"));
         std::fs::create_dir_all(&dir).expect("workspace dir");
         let pair = native_pty_system()
@@ -53,6 +59,13 @@ impl Harness {
             env!("CARGO_BIN_EXE_miao-tui-fake-engine"),
         );
         cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
+        for (key, value) in environment {
+            cmd.env(key, value);
+        }
+        if let Some(session) = session {
+            cmd.arg("--session");
+            cmd.arg(session);
+        }
         cmd.arg("--db");
         cmd.arg(&db);
         let child = pair.slave.spawn_command(cmd).expect("spawn miao-tui");
@@ -132,29 +145,37 @@ fn cpu_millis(spec: &str) -> u128 {
     (seconds * 1000.0) as u128
 }
 
-#[test]
-fn an_idle_tui_reports_its_cpu_and_memory() {
-    let harness = Harness::spawn("idle");
+/// Wait for the fixture, let the first frames settle, then measure one window.
+/// Both scenarios describe the same protocol so their numbers are comparable.
+fn measure(harness: &Harness, label: &str, window: Duration) -> (u128, u64, Option<usize>) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while !harness.ready() {
         assert!(
             Instant::now() < deadline,
-            "the fixture did not become ready; the measurement would describe a start-up, not an idle run"
+            "the fixture did not become ready; the measurement would describe a start-up, not a run"
         );
         std::thread::sleep(Duration::from_millis(20));
     }
     // Let the first frames and the engine's initial projections settle, so the
-    // window describes an idle TUI rather than its start-up.
+    // window describes steady state rather than start-up.
     std::thread::sleep(Duration::from_secs(2));
     let (before, _) = sample(harness.pid);
-    std::thread::sleep(Duration::from_secs(3));
+    std::thread::sleep(window);
     let (after, rss_kb) = sample(harness.pid);
     let cpu_ms = after.saturating_sub(before);
     let fds = descriptors(harness.pid);
     println!(
-        "PERF-04 idle: cpu_ms={cpu_ms} over 3000ms, rss_kb={rss_kb}, fds={}",
+        "PERF-04 {label}: cpu_ms={cpu_ms} over {}ms, rss_kb={rss_kb}, fds={}",
+        window.as_millis(),
         fds.map_or_else(|| "unavailable".to_string(), |count| count.to_string())
     );
+    (cpu_ms, rss_kb, fds)
+}
+
+#[test]
+fn an_idle_tui_reports_its_cpu_and_memory() {
+    let harness = Harness::spawn("idle");
+    let (cpu_ms, rss_kb, fds) = measure(&harness, "idle", Duration::from_secs(3));
     assert!(
         cpu_ms < 3_000,
         "an idle TUI used {cpu_ms} ms of CPU in three seconds, which is a busy loop rather than an idle wait"
@@ -170,6 +191,30 @@ fn an_idle_tui_reports_its_cpu_and_memory() {
         assert!(
             fds > 0 && fds < 1024,
             "an idle TUI held {fds} open file descriptors"
+        );
+    }
+}
+
+#[test]
+fn a_streaming_tui_reports_its_cpu_and_memory() {
+    // The criterion pairs idle runs with prolonged streaming, so both have to
+    // be recorded rather than only the quiet case. The fixture delivers a
+    // committed event every ten milliseconds for ten seconds.
+    // Inside the Session, so the stream is painted instead of merely arriving.
+    let harness = Harness::spawn_with("streaming", &[("MIAO_TUI_FAKE_STREAM", "1")], Some("ses_a"));
+    let (cpu_ms, rss_kb, fds) = measure(&harness, "streaming", Duration::from_secs(3));
+    assert!(
+        cpu_ms < 3_000,
+        "a streaming TUI used {cpu_ms} ms of CPU in three seconds, which is a busy loop rather than a stream"
+    );
+    assert!(
+        rss_kb > 0 && rss_kb < 512 * 1024,
+        "a streaming TUI held {rss_kb} kB of memory"
+    );
+    if let Some(fds) = fds {
+        assert!(
+            fds > 0 && fds < 1024,
+            "a streaming TUI held {fds} open file descriptors"
         );
     }
 }
