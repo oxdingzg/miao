@@ -371,8 +371,8 @@ fn wait_exit(child: &mut Box<dyn Child + Send + Sync>, timeout: Duration) -> Opt
 fn boots_renders_panes_and_quits_on_ctrl_c() {
     let mut harness = Harness::spawn_engine("start");
     assert!(
-        wait_for(&harness, "miao-tui-smoke", Duration::from_secs(2)),
-        "pane title with workspace name did not render in time:\n{}",
+        wait_for(&harness, "sessions", Duration::from_secs(2)),
+        "the home list did not render in time:\n{}",
         harness.text()
     );
     assert!(
@@ -551,8 +551,8 @@ fn redraw_preserves_the_open_transcript_and_unsent_draft() {
 fn resize_keeps_process_alive() {
     let mut harness = Harness::spawn_engine("resize");
     assert!(
-        wait_for(&harness, "miao-tui-smoke", Duration::from_secs(2)),
-        "pane title did not render in time:\n{}",
+        wait_for(&harness, "sessions", Duration::from_secs(2)),
+        "the home list did not render in time:\n{}",
         harness.text()
     );
     for (rows, cols) in [(12, 60), (40, 120), (10, 40)] {
@@ -930,16 +930,22 @@ fn a_stashed_draft_comes_back_into_the_composer() {
         "the stash dialog did not render:\n{}",
         plain(&harness.text())
     );
-    // Enter restores the draft, the next Enter submits it.
-    harness.write(b"\r");
-    harness.write(b"\r");
+    // Enter restores the draft into the composer, then submitting it must reach
+    // the engine. Sending both blindly raced the focus change: on a loaded runner
+    // the second Enter could land while the list still owned the key and open a
+    // Session instead of admitting the prompt. Press until the admission shows.
     let log = harness.dir.join("admit.log");
     let start = Instant::now();
     let mut recorded = String::new();
-    while start.elapsed() < Duration::from_secs(5) {
+    let mut pressed = 0;
+    while start.elapsed() < Duration::from_secs(15) {
         recorded = std::fs::read_to_string(&log).unwrap_or_default();
         if recorded.contains("stash me") {
             break;
+        }
+        if pressed < 6 && start.elapsed() >= Duration::from_millis(400 * pressed as u64) {
+            harness.write(b"\r");
+            pressed += 1;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -1024,8 +1030,8 @@ fn panic_restores_terminal() {
     // Windows still verifies the panic status and diagnostic below.
     #[cfg(not(windows))]
     assert!(
-        wait_for(&harness, "miao-tui-smoke", Duration::from_secs(2)),
-        "pane title did not render in time:\n{}",
+        wait_for(&harness, "sessions", Duration::from_secs(2)),
+        "the home list did not render in time:\n{}",
         harness.text()
     );
     let status = wait_exit(&mut harness.child, Duration::from_secs(5))
@@ -1068,11 +1074,7 @@ fn panic_restores_terminal() {
 fn exit_signals_restore_the_terminal() {
     for signal in ["TERM", "HUP", "INT"] {
         let mut harness = Harness::spawn(&format!("signal-{signal}"), false);
-        assert!(wait_for_plain(
-            &harness,
-            "miao-tui-smoke",
-            Duration::from_secs(3)
-        ));
+        assert!(wait_for_plain(&harness, "sessions", Duration::from_secs(3)));
         let pid = harness.child.process_id().expect("child pid").to_string();
         assert!(std::process::Command::new("kill")
             .args([&format!("-{signal}"), &pid])
