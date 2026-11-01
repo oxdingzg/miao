@@ -1159,13 +1159,20 @@ impl Home {
     }
 }
 
-/// The list's bottom-row key hint. `Tab` reaches whichever side does not hold
-/// the keyboard, so the line names that place instead of promising one
-/// direction: the prompt owns the landing screen, and a fixed `tab prompt`
-/// would point at the keyboard it already has.
+/// The bottom-row key hint. `Tab` reaches whichever side does not hold the
+/// keyboard, so the line names that place instead of promising one direction:
+/// the prompt owns the landing screen, and a fixed `tab prompt` would point at
+/// the keyboard it already has.
+///
+/// While the prompt holds the keyboard every other chord on this line reaches
+/// the composer as text — `/`, `p`, `n`, `1-9` and `?` all type themselves — so
+/// the hint lists only what works from there rather than advertising list
+/// chords that are inert until `Tab`.
 fn home_hint(list_focus: bool) -> String {
-    let tab = if list_focus { "tab prompt" } else { "tab list" };
-    format!(" / filter · p pin · {tab} · n new · 1-9 open · space page · ? help")
+    if !list_focus {
+        return " tab list · enter send".to_string();
+    }
+    " / filter · p pin · tab prompt · n new · 1-9 open · space page · ? help".to_string()
 }
 
 /// The section a Session belongs to in the home list. Days are bucketed on the
@@ -3091,8 +3098,18 @@ mod tests {
         assert!(home_hint(false).contains("tab list"));
         assert!(home_hint(true).contains("tab prompt"));
         // `space` pages the list, so the hint says what it does rather than
-        // counting rows the window could not show anyway.
-        assert!(home_hint(false).contains("space page"));
+        // counting rows the window could not show anyway — and it belongs to
+        // the list: while the prompt has the keyboard the list's chords are
+        // text, so the line must not promise them.
+        let prompt = home_hint(false);
+        for chord in ["filter", "pin", "new", "1-9", "space page", "? help"] {
+            assert!(
+                !prompt.contains(chord),
+                "the prompt-focused hint advertises {chord}: {prompt}"
+            );
+        }
+        assert!(home_hint(true).contains("space page"));
+        assert_eq!(home_hint(false), " tab list · enter send");
     }
 
     #[test]
