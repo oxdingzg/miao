@@ -1148,7 +1148,7 @@ impl Home {
                 .wrap(Wrap { trim: false }),
             body_area,
         );
-        let hint = home_hint(self.list_focus);
+        let hint = home_hint(self.list_focus, hint_area.width as usize);
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 hint,
@@ -1168,11 +1168,26 @@ impl Home {
 /// the composer as text — `/`, `p`, `n`, `1-9` and `?` all type themselves — so
 /// the hint lists only what works from there rather than advertising list
 /// chords that are inert until `Tab`.
-fn home_hint(list_focus: bool) -> String {
-    if !list_focus {
-        return " tab list · enter send".to_string();
+///
+/// A hint cut in the middle of a word teaches nothing either, and forty columns
+/// is a layout the product has to hold, so each mode walks down to the widest
+/// variant that fits the row.
+fn home_hint(list_focus: bool, width: usize) -> String {
+    let ladder: &[&str] = match list_focus {
+        true => &[
+            " / filter · p pin · tab prompt · n new · 1-9 open · space page · ? help",
+            " / filter · tab prompt · ? help",
+            " / filter · ? help",
+            " ? help",
+        ],
+        false => &[" tab list · enter send", " tab list · enter", " tab list"],
+    };
+    for hint in ladder {
+        if UnicodeWidthStr::width(*hint) <= width {
+            return hint.to_string();
+        }
     }
-    " / filter · p pin · tab prompt · n new · 1-9 open · space page · ? help".to_string()
+    fit("tab", width)
 }
 
 /// The section a Session belongs to in the home list. Days are bucketed on the
@@ -3103,21 +3118,40 @@ mod tests {
         // The prompt owns the landing screen, so a fixed `tab prompt` pointed at
         // the keyboard it already had. `Tab` swaps sides, so the hint follows
         // whoever is waiting for it.
-        assert!(home_hint(false).contains("tab list"));
-        assert!(home_hint(true).contains("tab prompt"));
+        assert!(home_hint(false, 120).contains("tab list"));
+        assert!(home_hint(true, 120).contains("tab prompt"));
         // `space` pages the list, so the hint says what it does rather than
-        // counting rows the window could not show anyway — and it belongs to
-        // the list: while the prompt has the keyboard the list's chords are
-        // text, so the line must not promise them.
-        let prompt = home_hint(false);
+        // While the prompt has the keyboard the list's chords are text, so the
+        // line must not promise them.
+        let prompt = home_hint(false, 120);
         for chord in ["filter", "pin", "new", "1-9", "space page", "? help"] {
             assert!(
                 !prompt.contains(chord),
                 "the prompt-focused hint advertises {chord}: {prompt}"
             );
         }
-        assert!(home_hint(true).contains("space page"));
-        assert_eq!(home_hint(false), " tab list · enter send");
+        assert_eq!(prompt, " tab list · enter send");
+        // `space` pages the list, so the list's own hint says what it does.
+        assert!(home_hint(true, 120).contains("space page"));
+    }
+
+    #[test]
+    fn a_narrow_frame_gets_a_shorter_hint_instead_of_a_clipped_one() {
+        // UX-03: forty columns is a layout the product has to hold. A hint cut
+        // in the middle of a word teaches nothing, so each mode walks down to
+        // the widest variant that fits, and the way to the key list survives.
+        for width in [40usize, 60, 80, 120] {
+            for list_focus in [false, true] {
+                let hint = home_hint(list_focus, width);
+                assert!(
+                    UnicodeWidthStr::width(hint.as_str()) <= width,
+                    "{width} columns must not clip: {hint:?}"
+                );
+            }
+            assert!(home_hint(true, width).contains("help"), "{width}");
+        }
+        assert_eq!(home_hint(true, 8), " ? help");
+        assert_eq!(home_hint(false, 8), "tab");
     }
 
     #[test]
