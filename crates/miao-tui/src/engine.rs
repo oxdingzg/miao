@@ -443,6 +443,10 @@ impl Handle {
 pub struct Settings {
     pub spawn: EngineSpawn,
     pub model: String,
+    /// Run the engine inside this process instead of spawning `miao-engine`.
+    /// The argv in `spawn` is reused verbatim, so the in-process engine is
+    /// configured by exactly the flags the child would have received.
+    pub embedded: bool,
 }
 
 /// The stand-in model a Session uses when nothing supplied a route. The engine
@@ -494,7 +498,13 @@ pub fn settings(
         )?,
         env: Vec::new(),
     };
-    Ok(Settings { spawn, model })
+    Ok(Settings {
+        spawn,
+        model,
+        // In-process is the default now: the engine is linked in, so a start
+        // costs one process. `MIAO_TUI_EMBEDDED=0` restores the spawned engine.
+        embedded: std::env::var("MIAO_TUI_EMBEDDED").map(|value| value != "0").unwrap_or(true),
+    })
 }
 
 // The product passes a literal executable prefix on Windows, where a POSIX
@@ -613,6 +623,37 @@ fn engine_binary() -> PathBuf {
 }
 
 pub fn attach(settings: &Settings, bus: Bus) -> Result<Handle, String> {
+    if settings.embedded {
+        // Same argv, same transport contract, no child process: the engine is
+        // built here and dispatched in-process. If that cannot be configured
+        // (missing credentials, for instance) fall back to the spawned engine
+        // rather than failing a start that used to work.
+        let argv = settings.spawn.args.clone();
+        let spawn = settings.spawn.clone();
+        let (tx, rx) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            match miao_engine::cli::configure(&argv).await {
+                Ok(configured) => match Connection::start_embedded(configured.runtime, REQUEST_TIMEOUT) {
+                    Ok((connection, events)) => run(connection, events, rx, bus).await,
+                    Err(error) => bus.send(AppEvent::EngineFailure(format!(
+                        "cannot start the in-process engine: {error}"
+                    ))),
+                },
+                Err(error) => match Connection::start(spawn, REQUEST_TIMEOUT) {
+                    Ok((connection, events)) => {
+                        bus.send(AppEvent::EngineFailure(format!(
+                            "in-process engine unavailable ({error}); using the spawned engine"
+                        )));
+                        run(connection, events, rx, bus).await
+                    }
+                    Err(error) => bus.send(AppEvent::EngineFailure(format!(
+                        "cannot start the engine: {error}"
+                    ))),
+                },
+            }
+        });
+        return Ok(Handle { tx });
+    }
     let (connection, events) = Connection::start(settings.spawn.clone(), REQUEST_TIMEOUT)
         .map_err(|error| format!("cannot start the engine: {error}"))?;
     let (tx, rx) = mpsc::unbounded_channel();

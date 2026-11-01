@@ -18,6 +18,7 @@ async fn continuous_committed_activity_keeps_refreshing_the_open_session() {
                     ("MIAO_TUI_FAKE_STREAM".into(), "1".into()),
                 ],
             },
+            embedded: false,
             model: "fixture".into(),
         },
         bus,

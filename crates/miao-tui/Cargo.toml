@@ -16,6 +16,7 @@ path = "tests/fixtures/fake_engine.rs"
 test = false
 
 [dependencies]
+miao-engine = { path = "../miao-engine" }
 base64 = "0.22"
 crossterm = "0.29"
 ratatui = "0.30"
@@ -40,3 +41,7 @@ serde_json = "1"
 # Pin exact source; do not resolve an unversioned branch at build time.
 [patch.crates-io]
 crossterm = { git = "https://github.com/eitsupi/crossterm.git", rev = "e2bc49e52a0f5813f5c15ceaa37b673b6b8414a7" }
+
+[[bin]]
+name = "embedded_probe"
+path = "src/bin/embedded_probe.rs"

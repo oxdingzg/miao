@@ -122,7 +122,7 @@ type EventTx = mpsc::UnboundedSender<TransportEvent>;
 pub type EventRx = mpsc::UnboundedReceiver<TransportEvent>;
 
 pub struct EngineClient {
-    child: Arc<Mutex<Child>>,
+    child: Option<Arc<Mutex<Child>>>,
     outbound: mpsc::UnboundedSender<Value>,
     pending: Pending,
     cursors: Cursors,
@@ -144,6 +144,81 @@ impl EngineClient {
         request_timeout: Duration,
     ) -> Result<(Self, EventRx), TransportError> {
         spawn_engine(spawn, request_timeout, Cursors::default())
+    }
+
+    /// Run the engine inside this process instead of spawning `miao-engine`.
+    ///
+    /// The client keeps the identical wire contract: callers still send
+    /// `{method, params}` frames and still receive replies and events through
+    /// the same receiver, so nothing above this layer can tell the two apart.
+    /// What disappears is the child process, its pipes, and its startup.
+    pub fn start_embedded(
+        runtime: miao_engine::runtime::Runtime,
+        request_timeout: Duration,
+    ) -> Result<(Self, EventRx), TransportError> {
+        let (outbound, mut inbound) = mpsc::unbounded_channel::<Value>();
+        let (events, event_rx) = mpsc::unbounded_channel::<TransportEvent>();
+        let (exited, exited_rx) = watch::channel(false);
+        let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
+        let cursors: Cursors = Arc::new(Mutex::new(HashMap::new()));
+        let failure: Shared = Arc::new(Mutex::new(None));
+        let closed = Arc::new(AtomicBool::new(false));
+        let reap = Reap {
+            pending: pending.clone(),
+            cursors: cursors.clone(),
+            events: events.clone(),
+            failure: failure.clone(),
+            closed: closed.clone(),
+            outbound: outbound.clone(),
+        };
+        tokio::spawn(async move {
+            use miao_engine::host::Host;
+            // Hold the sender for the runner's lifetime: dropping it would make
+            // the client read the watch channel as "the engine exited".
+            let _alive = exited;
+            let mut host = Host::new(runtime);
+            loop {
+                tokio::select! {
+                    frame = inbound.recv() => {
+                        let Some(frame) = frame else { break };
+                        let id = frame.get("id").cloned().unwrap_or(Value::Null);
+                        let outcome = match miao_engine::embed::decode(&frame) {
+                            Ok(command) => host.dispatch(command).await,
+                            Err(error) => Err(error),
+                        };
+                        let reply = miao_engine::embed::reply(id, outcome);
+                        if let Ok(line) = serde_json::to_string(&reply) {
+                            reap.dispatch(&line);
+                        }
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(20)) => {
+                        let Ok(values) = host.poll_events().await else { continue };
+                        for value in values {
+                            let frame = json!({ "method": "event", "params": value });
+                            if let Ok(line) = serde_json::to_string(&frame) {
+                                reap.dispatch(&line);
+                            }
+                        }
+                    }
+                }
+            }
+            reap.publish_restart();
+        });
+        Ok((
+            EngineClient {
+                child: None,
+                outbound,
+                pending,
+                cursors,
+                events,
+                failure,
+                closed,
+                next_id: AtomicU64::new(1),
+                request_timeout,
+                exited: exited_rx,
+            },
+            event_rx,
+        ))
     }
 
     pub fn available(&self) -> bool {
@@ -221,7 +296,9 @@ impl EngineClient {
                         self.request_timeout.as_millis()
                     ),
                 };
-                let _ = self.child.lock().expect("child lock").start_kill();
+                if let Some(child) = self.child.as_ref() {
+                    let _ = child.lock().expect("child lock").start_kill();
+                }
                 self.publish_failure(failure);
                 Err(error)
             }
@@ -369,7 +446,9 @@ impl EngineClient {
         if !*self.exited.borrow() {
             let stopped = tokio::time::timeout(Duration::from_secs(1), self.exited.changed()).await;
             if stopped.is_err() {
-                let _ = self.child.lock().expect("child lock").start_kill();
+                if let Some(child) = self.child.as_ref() {
+                    let _ = child.lock().expect("child lock").start_kill();
+                }
                 let _ = tokio::time::timeout(Duration::from_secs(1), self.exited.changed()).await;
             }
         }
@@ -498,7 +577,7 @@ fn spawn_engine(
     });
 
     let client = EngineClient {
-        child,
+        child: Some(child),
         outbound: outbound_tx,
         pending,
         cursors,
@@ -758,6 +837,9 @@ pub struct Connection {
     cursors: Cursors,
     events: EventTx,
     client: Option<EngineClient>,
+    /// The engine runs in this process, so there is no child to respawn. A
+    /// dead in-process engine is a terminal state, not a restart.
+    embedded: bool,
 }
 
 impl Connection {
@@ -772,9 +854,46 @@ impl Connection {
             cursors: Cursors::default(),
             events,
             client: None,
+            embedded: false,
         };
         connection.spawn()?;
         Ok((connection, events_rx))
+    }
+
+    /// Build a connection around an engine that runs in this process.
+    ///
+    /// The event channel and cursor map are wired exactly as the spawned path
+    /// wires them, so `connect()`/`subscribe()` replay behaves identically.
+    pub fn start_embedded(
+        runtime: miao_engine::runtime::Runtime,
+        request_timeout: Duration,
+    ) -> Result<(Self, EventRx), TransportError> {
+        let (events, events_rx) = mpsc::unbounded_channel();
+        let (client, client_events) = EngineClient::start_embedded(runtime, request_timeout)?;
+        let sink = events.clone();
+        tokio::spawn(async move {
+            let mut events = client_events;
+            while let Some(event) = events.recv().await {
+                if sink.send(event).is_err() {
+                    break;
+                }
+            }
+        });
+        Ok((
+            Self {
+                spawn: EngineSpawn {
+                    program: std::path::PathBuf::new(),
+                    args: Vec::new(),
+                    env: Vec::new(),
+                },
+                request_timeout,
+                cursors: Cursors::default(),
+                events,
+                client: Some(client),
+                embedded: true,
+            },
+            events_rx,
+        ))
     }
 
     /// The live client, spawning the engine again (and replaying every
@@ -811,6 +930,11 @@ impl Connection {
     }
 
     fn spawn(&mut self) -> Result<(), TransportError> {
+        if self.embedded {
+            return Err(TransportError::Protocol(
+                "the in-process engine stopped; restart miao-tui".into(),
+            ));
+        }
         let (client, events) =
             spawn_engine(&self.spawn, self.request_timeout, self.cursors.clone())?;
         let sink = self.events.clone();
