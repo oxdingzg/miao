@@ -1866,6 +1866,23 @@ fn db_read_only(path: &std::path::Path) -> Result<rusqlite::Connection, String> 
         .map_err(|error| error.to_string())
 }
 
+/// The three files a live database occupies: the main file, the write-ahead log
+/// and the shared-memory index. Each is absent until SQLite creates it, and an
+/// absent one counts as zero.
+fn db_file_bytes(path: &std::path::Path) -> (u64, u64, u64) {
+    let size = |candidate: String| {
+        std::fs::metadata(candidate)
+            .map(|meta| meta.len())
+            .unwrap_or(0)
+    };
+    let base = path.display().to_string();
+    (
+        size(base.clone()),
+        size(format!("{base}-wal")),
+        size(format!("{base}-shm")),
+    )
+}
+
 fn human_bytes(bytes: u64) -> String {
     const UNITS: [&str; 4] = ["B", "KiB", "MiB", "GiB"];
     let mut value = bytes as f64;
@@ -1888,12 +1905,15 @@ fn db_report(
     connection: &rusqlite::Connection,
     path: &std::path::Path,
 ) -> rusqlite::Result<Vec<String>> {
-    let bytes = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
+    let (main, wal, shm) = db_file_bytes(path);
+    let bytes = main + wal + shm;
     let page_size: i64 = connection.query_row("PRAGMA page_size", [], |row| row.get(0))?;
     let page_count: i64 = connection.query_row("PRAGMA page_count", [], |row| row.get(0))?;
     let free: i64 = connection.query_row("PRAGMA freelist_count", [], |row| row.get(0))?;
     let mut lines = vec![
         format!("database · {}", path.display()),
+        // A WAL database keeps recent commits in `-wal` and the shared index in
+        // `-shm`, so the main file alone understates what the database occupies.
         format!("file · {bytes} bytes ({})", human_bytes(bytes)),
         format!("pages · {page_count} × {page_size} bytes"),
         format!(
@@ -1910,6 +1930,9 @@ fn db_report(
         let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
+    if wal > 0 || shm > 0 {
+        lines.push(format!("sidecars · wal {wal} bytes · shm {shm} bytes"));
+    }
     for table in tables {
         // Names come from the schema, not from the operator, and are quoted so a
         // name with a space still counts instead of failing the report.
@@ -1953,8 +1976,12 @@ fn db_vacuum(rest: &[String]) -> Result<(), String> {
     connection
         .execute_batch("VACUUM")
         .map_err(|error| error.to_string())?;
-    let bytes = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
-    println!("vacuumed · {} · now {}", path.display(), human_bytes(bytes));
+    let (main, wal, shm) = db_file_bytes(&path);
+    println!(
+        "vacuumed · {} · now {}",
+        path.display(),
+        human_bytes(main + wal + shm)
+    );
     Ok(())
 }
 
@@ -3826,10 +3853,35 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        db_report, db_vacuum, lsp_servers, mcp_servers, model_routes, parsed_session_location,
-        plugin_entries, strip_comments,
+        db_file_bytes, db_report, db_vacuum, lsp_servers, mcp_servers, model_routes,
+        parsed_session_location, plugin_entries, strip_comments,
     };
     use std::io::Write;
+
+    #[test]
+    fn the_report_counts_the_write_ahead_log_and_the_shared_index() {
+        // A WAL database is up to three files. Reporting only the main one
+        // understates what it occupies, which is the number an operator acts on.
+        let dir = std::env::temp_dir().join(format!("miao-db-wal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("workspace dir");
+        let path = dir.join("engine.db");
+        std::fs::write(&path, vec![0u8; 64]).expect("main file");
+        let (main, wal, shm) = db_file_bytes(&path);
+        assert_eq!(
+            (main, wal, shm),
+            (64, 0, 0),
+            "absent sidecars count as zero"
+        );
+
+        // SQLite creates these when it writes in WAL mode; the report has to add
+        // them to the same total instead of treating the main file as the whole
+        // database.
+        std::fs::write(format!("{}-wal", path.display()), vec![0u8; 128]).expect("wal");
+        std::fs::write(format!("{}-shm", path.display()), vec![0u8; 32]).expect("shm");
+        assert_eq!(db_file_bytes(&path), (64, 128, 32));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn the_database_report_names_the_target_before_anything_is_written() {
