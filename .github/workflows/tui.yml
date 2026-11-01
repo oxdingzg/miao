@@ -21,16 +21,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Hosted macOS bills at 10x, and when GitHub has no hosted macOS slot
-          # the job is assigned and cancelled within a second — which turned
-          # ci-gate red for reasons that had nothing to do with the change. Run
-          # it on the owner's self-hosted arm64 runner, as the engine workflow
-          # already does.
+          # Hosted macOS bills at 10x and had no available slot, but the
+          # self-hosted runner also had PATH/cache issues. Skip pull requests
+          # and run on push to main + nightly, where a red mark means the
+          # merge itself broke macOS.
           - os: macos-14
             runner: [self-hosted, macOS, ARM64]
+            skip_pr: true
           - os: ubuntu-latest
             runner: ubuntu-latest
+            skip_pr: false
     runs-on: ${{ matrix.runner }}
+    if: matrix.skip_pr != true || github.event_name != 'pull_request'
     # The self-hosted macOS runner has no warm cargo cache for this crate, so
     # the first build of a run plus the PTY smoke suite passes the old 30
     # minutes and the job was killed at 30m20s.
