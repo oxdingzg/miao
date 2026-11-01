@@ -1626,7 +1626,6 @@ impl Tools {
                 .deferred_definitions()
                 .into_iter()
                 .chain(self.extension_definitions())
-                .into_iter()
                 .filter(|tool| {
                     let resource = self
                         .mcp
@@ -1654,7 +1653,9 @@ impl Tools {
                 .into_iter()
                 .map(|tool| tool.name)
                 .collect();
-            return Ok(crate::tool_catalog::Search::parse(prepared.input)?.run_with_native(tools, &native));
+            return Ok(
+                crate::tool_catalog::Search::parse(prepared.input)?.run_with_native(tools, &native)
+            );
         }
         if prepared.access() == Access::Execute {
             let _lease = tokio::select! {_=cancel.cancelled()=>return Err(ToolError::Interrupted),guard=self.gate.clone().write_owned()=>guard};

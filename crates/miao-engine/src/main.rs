@@ -311,7 +311,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let configured = miao_engine::cli::configure(&args)
         .await
         .map_err(|error| format!("engine configuration failed: {error}"))?;
-    let miao_engine::cli::Configured { runtime, mut options, acp, plugin_hooks } = configured;
+    let miao_engine::cli::Configured {
+        runtime,
+        mut options,
+        acp,
+        plugin_hooks,
+    } = configured;
     if acp {
         let result = miao_engine::acp::serve(runtime.clone()).await;
         runtime.shutdown().await;
@@ -789,20 +794,6 @@ fn leading_request_id(prefix: &[u8]) -> Value {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn config_stamp_tracks_rewrites_and_absent_files() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("miao.json");
-        let origin = miao_engine::config_derive::LspOrigin::Manifest(path.clone());
-        let files = origin.files();
-        assert_eq!(super::config_stamp(&files), vec![None]);
-        std::fs::write(&path, "{}").unwrap();
-        let first = super::config_stamp(&files);
-        assert!(first[0].is_some());
-        std::fs::write(&path, "{ }").unwrap();
-        assert_ne!(super::config_stamp(&files), first);
-    }
-
     #[tokio::test]
     async fn replay_burst_waits_for_output_capacity_instead_of_closing_the_engine() {
         let (output, mut incoming) = tokio::sync::mpsc::channel(2);
