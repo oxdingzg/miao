@@ -1116,6 +1116,14 @@ fn prepare_tui_engine(launch: &miao_tui::Launch) {
     });
     let Ok(routes) = model_routes(config_dir.as_deref(), &model) else { return };
     let Some(primary) = routes.iter().find(|route| route["primary"] == true) else { return };
+    // Without a chosen model the TUI would pass a placeholder name that matches
+    // no route, and the engine rejects the primary route on identity. Name the
+    // primary route's model so the two agree.
+    if let Some(id) = primary["id"].as_str() {
+        if std::env::var_os("MIAO_TUI_MODEL").is_none() {
+            std::env::set_var("MIAO_TUI_MODEL", id);
+        }
+    }
     for (key, variable) in [("provider", "MIAO_ENGINE_PROVIDER"), ("endpoint", "MIAO_ENGINE_ENDPOINT")] {
         if let Some(value) = primary[key].as_str() {
             if !value.is_empty() {
