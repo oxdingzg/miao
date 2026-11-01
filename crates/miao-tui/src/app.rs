@@ -513,6 +513,12 @@ impl App {
             // than on a placeholder that never fills.
             AppEvent::Jobs(rows) => {
                 self.open_dialog(Dialog::jobs(&rows));
+                self.preview_selected_job();
+            }
+            AppEvent::JobDetail { job_id, detail } => {
+                if let Some(Dialog::Jobs(list)) = self.dialog.as_mut() {
+                    list.set_detail(&job_id, detail);
+                }
             }
             AppEvent::SessionMoved => {
                 self.dialog = None;
@@ -764,6 +770,7 @@ impl App {
             if let Some(list) = self.dialog.as_mut().and_then(Dialog::list_mut) {
                 list.move_cursor(delta);
             }
+            self.preview_selected_job();
             return;
         }
         // A stray wheel event must not leave the leader armed.
@@ -785,6 +792,9 @@ impl App {
         };
         let action = dialog.handle_key(key);
         self.dialog_action(action);
+        // Moving to another job asks for its detail; the engine answers with
+        // `JobDetail`, which fills that row only.
+        self.preview_selected_job();
     }
 
     fn handle_leader(&mut self, key: KeyEvent) {
@@ -1272,6 +1282,24 @@ impl App {
             return;
         };
         engine.jobs(&session_id);
+    }
+
+    /// Preview the job under the cursor: the list only names its state, so the
+    /// row shows what the job produced once the engine answers. Asked once per
+    /// row, because the detail stays on the row until the list is rebuilt.
+    fn preview_selected_job(&mut self) {
+        let Some(Dialog::Jobs(list)) = self.dialog.as_ref() else {
+            return;
+        };
+        let (Some(job_id), Some(session_id), Some(engine)) =
+            (list.selected_id(), self.session_id(), self.engine.as_ref())
+        else {
+            return;
+        };
+        if list.detail_of(&job_id).is_some() {
+            return;
+        }
+        engine.job_detail(&session_id, &job_id);
     }
 
     fn open_mcp(&mut self) {
@@ -4176,6 +4204,70 @@ mod tests {
             requests.try_recv(),
             Ok(engine::Request::Jobs { session_id }) if session_id == "ses_a"
         ));
+    }
+
+    #[test]
+    fn opening_the_jobs_dialog_previews_the_selected_job() {
+        // The list only names each job's state, so the row the cursor is on asks
+        // for its detail as soon as the dialog has rows.
+        let (mut app, mut requests) = revert_session_app();
+        app.handle(AppEvent::Jobs(vec![
+            ("job_1".into(), "running".into()),
+            ("job_2".into(), "finished".into()),
+        ]));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::JobDetail { session_id, job_id })
+                if session_id == "ses_a" && job_id == "job_1"
+        ));
+    }
+
+    #[test]
+    fn a_job_detail_answer_lands_on_its_own_row() {
+        let (mut app, _requests) = revert_session_app();
+        app.handle(AppEvent::Jobs(vec![
+            ("job_1".into(), "finished".into()),
+            ("job_2".into(), "running".into()),
+        ]));
+        app.handle(AppEvent::JobDetail {
+            job_id: "job_2".into(),
+            detail: "running · no result yet".into(),
+        });
+        let list = app.dialog.as_ref().and_then(Dialog::list).expect("jobs");
+        assert_eq!(list.rows[0].detail, "");
+        assert_eq!(list.rows[1].detail, "running · no result yet");
+    }
+
+    #[test]
+    fn moving_between_jobs_previews_each_row_once() {
+        let (mut app, mut requests) = revert_session_app();
+        app.handle(AppEvent::Jobs(vec![
+            ("job_1".into(), "finished".into()),
+            ("job_2".into(), "running".into()),
+        ]));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::JobDetail { job_id, .. }) if job_id == "job_1"
+        ));
+        app.handle(AppEvent::JobDetail {
+            job_id: "job_1".into(),
+            detail: "finished · {\"exit_code\":0}".into(),
+        });
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::JobDetail { job_id, .. }) if job_id == "job_2"
+        ));
+        app.handle(AppEvent::JobDetail {
+            job_id: "job_2".into(),
+            detail: "running · no result yet".into(),
+        });
+        // Both rows know their detail, so walking back up asks for nothing.
+        app.handle(key(KeyCode::Up, KeyModifiers::NONE));
+        assert!(
+            requests.try_recv().is_err(),
+            "a known detail is not asked for twice"
+        );
     }
 
     #[test]

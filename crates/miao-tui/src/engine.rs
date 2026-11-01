@@ -15,6 +15,10 @@ use tokio::time::Instant;
 
 use crate::dialogs::{AccountInfo, ModelInfo};
 use crate::event::{AppEvent, Bus};
+
+/// How much of a job's result the preview row shows before it is clipped. The
+/// renderer clips to the row width anyway; this keeps the event small.
+const DETAIL_CHARS: usize = 120;
 use crate::platform::attention;
 use crate::session::{
     catalog_rows, home_rows, DisplayFile, RevertPlan, SessionState, SessionSummary, Transcript,
@@ -123,6 +127,11 @@ pub enum Request {
         session_id: String,
     },
     CancelJob {
+        session_id: String,
+        job_id: String,
+    },
+    /// One job's detail, for the preview of the selected row.
+    JobDetail {
         session_id: String,
         job_id: String,
     },
@@ -331,6 +340,15 @@ impl Handle {
     pub fn jobs(&self, session_id: &str) {
         let _ = self.tx.send(Request::Jobs {
             session_id: session_id.into(),
+        });
+    }
+
+    /// Ask for one background job's detail. The list only names the state, so
+    /// the preview costs a round trip per selected row rather than one per row.
+    pub fn job_detail(&self, session_id: &str, job_id: &str) {
+        let _ = self.tx.send(Request::JobDetail {
+            session_id: session_id.into(),
+            job_id: job_id.into(),
         });
     }
 
@@ -896,6 +914,26 @@ async fn run(
                     }
                 }
                 Request::Jobs { session_id } => refresh_jobs(client, &bus, &session_id).await,
+                Request::JobDetail {
+                    session_id,
+                    job_id,
+                } => {
+                    let answer = client
+                        .request(
+                            "job",
+                            json!({ "session_id": session_id, "job_id": job_id }),
+                        )
+                        .await;
+                    match answer {
+                        Ok(value) => bus.send(AppEvent::JobDetail {
+                            job_id: job_id.clone(),
+                            detail: job_detail(&value),
+                        }),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("job failed: {error}")))
+                        }
+                    }
+                }
                 Request::CancelJob {
                     session_id,
                     job_id,
@@ -1300,6 +1338,30 @@ async fn refresh_jobs(client: &EngineClient, bus: &Bus, session_id: &str) {
             bus.send(AppEvent::Jobs(rows));
         }
         Err(error) => bus.send(AppEvent::ActionFailed(format!("jobs failed: {error}"))),
+    }
+}
+
+/// The single line a jobs row shows for its selected job: the state it reached
+/// and what it produced. The engine answers `null` for a job it does not know,
+/// and `result` stays null while the job is queued or running.
+fn job_detail(value: &Value) -> String {
+    let Some(job) = value.as_object() else {
+        return "not found in this Session".into();
+    };
+    let state = job
+        .get("state")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    match job.get("result") {
+        Some(Value::Null) | None => format!("{state} · no result yet"),
+        Some(result) => {
+            let text = serde_json::to_string(result).unwrap_or_default();
+            let mut clipped = text.chars().take(DETAIL_CHARS).collect::<String>();
+            if clipped.len() < text.len() {
+                clipped.push('…');
+            }
+            format!("{state} · {clipped}")
+        }
     }
 }
 

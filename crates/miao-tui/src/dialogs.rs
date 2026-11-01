@@ -236,6 +236,31 @@ impl ListDialog {
             .and_then(|index| self.rows.get(*index))
             .map(|row| row.id.clone())
     }
+
+    /// The id of the row the cursor is on, for a dialog whose rows name
+    /// something the engine can answer more about.
+    pub(crate) fn selected_id(&self) -> Option<String> {
+        self.current_id()
+    }
+
+    /// Fill in a detail once the engine answers. Only the row with that id
+    /// changes, so an answer for a row the operator already left is ignored
+    /// instead of landing under the wrong job.
+    pub(crate) fn set_detail(&mut self, id: &str, detail: String) {
+        if let Some(row) = self.rows.iter_mut().find(|row| row.id == id) {
+            row.detail = detail;
+        }
+    }
+
+    /// Whether the detail of `id` is already known, so a preview is asked for
+    /// once per row instead of on every cursor move.
+    pub(crate) fn detail_of(&self, id: &str) -> Option<&str> {
+        self.rows
+            .iter()
+            .find(|row| row.id == id)
+            .map(|row| row.detail.as_str())
+            .filter(|detail| !detail.is_empty())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1437,6 +1462,29 @@ mod tests {
         ));
         let rows = dialog.list().expect("list");
         assert_eq!(rows.rows[1].label, "job_2 · finished");
+    }
+
+    #[test]
+    fn a_job_detail_fills_only_the_row_that_asked_for_it() {
+        // The preview answers once per selected row, so an answer for a job the
+        // operator already left must not land under the new one.
+        let mut dialog = Dialog::jobs(&[
+            ("job_1".into(), "running".into()),
+            ("job_2".into(), "finished".into()),
+        ]);
+        let list = dialog.list_mut().expect("list");
+        assert_eq!(list.selected_id().as_deref(), Some("job_1"));
+        assert!(list.detail_of("job_1").is_none(), "nothing is known yet");
+
+        list.set_detail("job_2", "finished · {\"exit_code\":0}".into());
+        let list = dialog.list().expect("list");
+        assert!(list.detail_of("job_1").is_none());
+        assert_eq!(
+            list.detail_of("job_2"),
+            Some("finished · {\"exit_code\":0}"),
+            "the answer names its job, so it fills that row only"
+        );
+        assert_eq!(list.rows[1].detail, "finished · {\"exit_code\":0}");
     }
 
     #[test]
