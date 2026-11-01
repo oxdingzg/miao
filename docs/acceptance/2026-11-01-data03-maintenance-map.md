@@ -23,8 +23,8 @@ done
 | `path` | `miao db path` | — | prints the database this workspace uses | none needed, reads nothing |
 | `stats` | `miao db stats` (#2265) | — | file size, page count × page size, free pages, row count per table; opens `SQLITE_OPEN_READ_ONLY` | none needed, cannot write |
 | `vacuum` | `miao db vacuum [--apply]` (#2265) | — | the same report, then reclaims free pages **only** with `--apply` | dry run by default; `--apply` is the authorisation |
-| `compact` | — | 4 fns | the engine compacts inside a Session; there is no operator command | not reachable from the CLI |
-| `restore` | — | 4 fns | the engine restores; there is no operator command | not reachable from the CLI |
+| `compact` | — | 2 fns, `history.rs` | **not storage compaction.** `Store::compact` and `compact_for_run` write a *context checkpoint* from a host-supplied `summary` and `through` sequence — Session authority, not page reclamation. Exposing them as `miao db compact` would let the CLI re-create that authority, which DATA-03 forbids. Reclaiming free pages is `vacuum`. | not applicable |
+| `restore` | — | 4 unrelated fns | **no database restore exists.** The hits are `patch.rs` (restoring patch text), `snapshot.rs` (`restore_manifest`), `permission_legacy.rs` (a test fixture) and `history.rs` (`restore_note`, a restart message). File-level backup and restore belong to DATA-05, not here. | not applicable |
 | `backfill` | — | — | absent in both | — |
 | `externalize` | — | — | absent in both (blob store is a later spec step) | — |
 | `gc` | — | — | absent in both | — |
@@ -58,10 +58,19 @@ its statements do not hold for the Rust engine:
 
 | action | next step | blocked on |
 | --- | --- | --- |
-| `compact`, `restore` | expose the existing engine functions behind a command that names the Session, its database and the rows affected | a decision on the command shape (`miao session …` vs `miao db …`) |
+| `compact`, `restore` | **no slice is wanted.** `compact` would re-create Session authority in the CLI; `restore` has no database-side implementation to wire. Both rows are corrected above rather than carried as pending work. | — |
 | `retention` | define “prunable” against the Rust schema, then the report-only form the spec asks for | design |
 | `backfill`, `externalize`, `gc` | the blob store and the projection move are prerequisites named by the spec | design, and the spec steps that precede them |
 | `auto_vacuum` | set `PRAGMA auto_vacuum=INCREMENTAL` before the first table is created | a decision, because it changes new databases only |
+
+## Correction after review
+
+The first version of this map said `compact` and `restore` each had four engine
+functions and were only "not reachable from the CLI". That was wrong in a way
+that mattered: it read as unwired plumbing, so the obvious next step would have
+been to wire it. Reading the signatures shows both names are used for something
+else in this tree — a context checkpoint and four unrelated helpers — and the two
+tables above now say so.
 
 ## Accepted here
 
