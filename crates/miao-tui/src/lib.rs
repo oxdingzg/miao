@@ -83,6 +83,7 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
             .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true")),
     );
     app.configure_scroll(config.scroll_speed, config.scroll_acceleration);
+    app.configure_leader_timeout(config.leader_timeout_ms);
     let preferences = terminal::Preferences {
         mouse: config.mouse,
         cursor: config.cursor,

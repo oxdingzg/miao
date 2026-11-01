@@ -161,6 +161,11 @@ pub struct App {
     workspace_changes_generation: u64,
     /// `Ctrl+X` was pressed; the next key completes the chord.
     leader: bool,
+    /// When the leader was armed, so a stale one expires instead of eating a
+    /// keystroke minutes later.
+    leader_since: Option<Instant>,
+    /// How long an armed leader waits for its chord key.
+    leader_timeout: Duration,
     keys: Keymap,
     workspace: PathBuf,
     /// What the engine was started with, shown by the debug dialog.
@@ -256,6 +261,8 @@ impl App {
             permission_generation: 0,
             workspace_changes_generation: 0,
             leader: false,
+            leader_since: None,
+            leader_timeout: Duration::from_millis(2000),
             keys,
             workspace,
             settings: None,
@@ -334,6 +341,11 @@ impl App {
     pub fn configure_terminal_title(&mut self, enabled: bool, allowed: bool) {
         self.terminal_title_enabled = enabled;
         self.terminal_title_allowed = allowed;
+    }
+
+    /// How long the leader chord stays armed, from `tui.json`.
+    pub fn configure_leader_timeout(&mut self, milliseconds: u64) {
+        self.leader_timeout = Duration::from_millis(milliseconds);
     }
 
     /// Take the wheel speed and acceleration from `tui.json`. Both are read at
@@ -719,12 +731,22 @@ impl App {
             return;
         }
         if self.leader {
+            let armed_for = self
+                .leader_since
+                .map(|since| since.elapsed())
+                .unwrap_or(self.leader_timeout);
             self.leader = false;
-            self.handle_leader(key);
-            return;
+            self.leader_since = None;
+            // A window that has passed is not a chord: the operator pressed the
+            // leader and moved on, so this key belongs to the active mode.
+            if armed_for <= self.leader_timeout {
+                self.handle_leader(key);
+                return;
+            }
         }
         if self.keys.is_leader(&key) {
             self.leader = true;
+            self.leader_since = Some(Instant::now());
             return;
         }
         if self.keys.matches(keybinds::Action::CommandList, &key) {
@@ -2723,6 +2745,33 @@ mod tests {
             });
         }
         transcript
+    }
+
+    #[test]
+    fn a_leader_chord_inside_its_window_still_fires() {
+        let mut app = app();
+        app.configure_leader_timeout(60_000);
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
+        app.handle(key(KeyCode::Char('t'), KeyModifiers::NONE));
+        assert!(
+            matches!(app.dialog, Some(Dialog::Theme(_))),
+            "the chord fires while the window is open"
+        );
+    }
+
+    #[test]
+    fn an_expired_leader_does_not_eat_the_next_key() {
+        // INP-07: press the leader, walk away, come back — the next key belongs
+        // to the mode that is active now, not to a chord armed minutes ago.
+        let mut app = app();
+        app.configure_leader_timeout(1);
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
+        std::thread::sleep(Duration::from_millis(5));
+        app.handle(key(KeyCode::Char('t'), KeyModifiers::NONE));
+        assert!(
+            app.dialog.is_none(),
+            "a chord whose window passed must not open the theme dialog"
+        );
     }
 
     #[test]
