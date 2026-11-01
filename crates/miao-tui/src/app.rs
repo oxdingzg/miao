@@ -1925,6 +1925,14 @@ impl App {
                 _ => {}
             }
         }
+        // The list's own footer advertises `? help`, so `?` has to reach the
+        // same key list `/help` opens instead of being a hint with nothing
+        // behind it. Filter mode returns above, so a `?` in a query stays a
+        // query character.
+        if self.keys.matches(keybinds::Action::Help, &key) {
+            self.open_help();
+            return;
+        }
         match (key.code, key.modifiers) {
             (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
                 self.home.move_cursor(1);
@@ -4108,6 +4116,31 @@ mod tests {
         assert_eq!(row_for("session_new").as_deref(), Some("ctrl+x+n"));
         // The hand-written summary is gone: no row claims an unknown group.
         assert!(list.rows.iter().all(|row| row.label != "keys"));
+    }
+
+    #[test]
+    fn the_advertised_question_mark_opens_the_key_list() {
+        // The list footer says `? help`, so `?` has to open it. A hint with no
+        // key behind it teaches the operator that the footer cannot be trusted.
+        let mut app = app();
+        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('?'), KeyModifiers::SHIFT));
+        assert!(
+            matches!(app.dialog.as_ref(), Some(Dialog::Help(_))),
+            "the list's own footer advertises it"
+        );
+    }
+
+    #[test]
+    fn a_question_mark_typed_into_the_filter_stays_a_query_character() {
+        // Filter mode claims printable keys before the keymap does, or a filter
+        // could never contain the character its hint is written with.
+        let mut app = app();
+        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('/'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('?'), KeyModifiers::SHIFT));
+        assert!(app.dialog.is_none(), "the filter is still narrowing");
+        assert_eq!(app.home.query(), "?");
     }
 
     #[test]
