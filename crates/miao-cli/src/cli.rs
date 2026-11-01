@@ -1099,6 +1099,31 @@ fn mcp_servers(config_dir: Option<&std::path::Path>) -> Result<Vec<serde_json::V
     Ok(Vec::new())
 }
 
+/// The model the product configuration names as its default. Rust commands
+/// honour it the way the product does, so a machine with one configured model
+/// needs no flags at all.
+fn configured_model(config_dir: Option<&std::path::Path>) -> Option<String> {
+    let dir = config_dir?;
+    for name in ["miao.jsonc", "miao.json"] {
+        let path = dir.join(name);
+        if !path.is_file() {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).ok()?;
+        let parsed: serde_json::Value = serde_json::from_str(&strip_comments(&text)).ok()?;
+        let configured = parsed.get("model").and_then(|value| value.as_str())?;
+        // Routes are keyed by bare model id; the product spells it
+        // `provider/model`.
+        return Some(
+            configured
+                .rsplit_once('/')
+                .map(|(_, model)| model.to_string())
+                .unwrap_or_else(|| configured.to_string()),
+        );
+    }
+    None
+}
+
 /// Where the product keeps its configuration. Resolving this in one place
 /// keeps every subcommand deriving the same routes from the same files.
 fn product_config_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
@@ -1131,7 +1156,11 @@ fn prepare_tui_engine(launch: &miao_tui::Launch) {
     if std::env::var_os("MIAO_ENGINE_MODEL_ROUTES_CONFIG").is_some() {
         return;
     }
-    let model = launch.model.clone().unwrap_or_default();
+    let model = launch
+        .model
+        .clone()
+        .or_else(|| configured_model(launch.config_dir.as_deref()))
+        .unwrap_or_default();
     // A TUI started without --config-dir still needs the product's providers:
     // resolve the same directory the product would use.
     let config_dir = launch.config_dir.clone().or_else(|| {
@@ -2873,6 +2902,7 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
             let config_dir = config_dir.or_else(|| product_config_dir(None));
             let model = model
                 .or_else(|| std::env::var("MIAO_ENGINE_MODEL").ok())
+                .or_else(|| configured_model(config_dir.as_deref()))
                 .unwrap_or_else(|| "unavailable/model".into());
             match prompt {
                 Ok(prompt) => {
