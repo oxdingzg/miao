@@ -96,7 +96,13 @@ Windows 验收通过。构建与重型检查使用项目配置的构建机，机
 
 即：不兼容引擎在写库前被明确拒绝，而不是静默回退。
 
-仍未取得的 G6 证据：受支持平台上的发布产物与 CLI/TUI/engine 的**成对**校验清单、以及畸形输入（截断 JSON、缺字段）的用例记录。
+畸形输入已在 `packages/miao/test/engine/discovery.test.ts` 覆盖：非 JSON 帧、
+截断帧（进程中途死亡留下的合法帧前缀）、缺 `protocol` 的帧、`routes_schema` 与
+`routesSchema` 互相矛盾、以及非数值 schema。每种都断言 `capabilities()` 返回
+`undefined`，且显式 `MIAO_ENGINE_BIN` 以 `cannot report capabilities` 拒绝启动，
+而不是静默回退。其中非 JSON 与矛盾帧先有，截断帧与缺字段由 #2101 补上。
+
+仍未取得的 G6 证据：受支持平台上的发布产物与 CLI/TUI/engine 的**成对**校验清单。
 
 ## 证据记录与状态
 
@@ -111,11 +117,13 @@ Windows 验收通过。构建与重型检查使用项目配置的构建机，机
 ## 基线上的已知未完成项
 
 - 默认产品仍有 TS CLI/服务控制面；Rust TUI 使用产品引擎 shim。
-- TS runner 仍有生产调用方和历史 placement。共享边界重构 #1596–#1598 仍是
-  待合入 PR，不能当作基线已具备的能力。
-- #1602 的编译产物 worker 启动、#1605 的诊断、#1608 的按完成任务统计，以及
-  #1609 的长会话归档召回均待合入；这些切片也不单独满足整个 G5/G7。
-- #1610 收紧 discovery capability 解码。`nativeEngineOptions` 的显式 binary
+- TS runner 仍有生产调用方和历史 placement。
+- 共享边界重构 #1596–#1598、编译产物 worker 启动 #1602、worker 诊断 #1605、
+  按完成任务统计 #1608、长会话归档召回 #1609、discovery capability 解码 #1610，
+  均已于 2026-10-28 合入 `main`（2026-11-01 复核：八个 merge commit 都是
+  `origin/main` 的祖先）。合入一个切片不等于该门槛通过：G5/G7 仍需隔离环境与
+  逐次原始结果的证据。
+- `nativeEngineOptions` 的显式 binary
   分支仍直接采用覆盖值；不能把 discovery 的独立单测说成所有启动路径的握手证明。
 - 当前没有本候选覆盖全部客户端、旧数据与回滚观察窗口的验收记录。
 - 版本提升到 0.3.16 的源码提交不证明 0.3.16 已正式发布。
