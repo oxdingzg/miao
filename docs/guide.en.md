@@ -126,17 +126,24 @@ and `miao session migrate` moves an existing Session offline.
 
 The default **leader key is `ctrl+x`**:
 
-| Keys         | Action                                               |
-| ------------ | ---------------------------------------------------- |
-| `ctrl+p`     | command palette                                      |
-| `ctrl+x` `b` | toggle the right sidebar (hidden for child sessions) |
-| `ctrl+x` `m` | model picker                                         |
-| `ctrl+x` `l` | session list                                         |
-| `ctrl+x` `n` | new session                                          |
-| `ctrl+x` `t` | themes                                               |
-| `ctrl+x` `c` | compact                                              |
-| `ctrl+x` `g` | timeline                                             |
-| `ctrl+x` `q` | quit                                                 |
+| Keys         | Action                                        |
+| ------------ | --------------------------------------------- |
+| `ctrl+p`     | command palette                               |
+| `ctrl+x` `l` | session list                                  |
+| `ctrl+x` `n` | new session                                   |
+| `ctrl+x` `m` | model picker                                  |
+| `ctrl+x` `t` | themes                                        |
+| `ctrl+x` `d` | debug view                                    |
+| `ctrl+x` `j` | background jobs                               |
+| `ctrl+x` `w` | workspaces                                    |
+| `ctrl+x` `g` | workspace changes                             |
+| `ctrl+x` `q` | quit                                          |
+
+On the landing list: `j`/`k` move, `space`/`PageDown` and `PageUp` page, `Home`/`End`
+jump to either end, `enter` opens, `/` filters, `n` starts a Session, `p` pins,
+`?` opens the key list, and a second click on a row opens it. Pressing the leader
+paints every chord it reaches, and `?` (or `/help`) shows the live list the
+keymap is actually using — the table above is the short version of it.
 
 Rebind in `~/.config/miao/tui.json` (or `keybinds` in miao.jsonc).
 
@@ -255,10 +262,10 @@ All shipped clients use the single V2 session runtime; the V1 session runtime an
 `lsp` is omitted (omitted means disabled). Add `"lsp": true`: the native engine reloads the config
 and connects the server without a restart; the TypeScript engine still needs a restart.
 
-**`ctrl+x b` does not open the sidebar?**
-Child sessions (spawned by task/subagent, non-empty `parent_id`) force-hide the sidebar;
-top-level sessions work. Narrow terminals (width ≤ 120) do not show it in `auto` mode, but the
-manual toggle still works.
+**Where is the sidebar?**
+There is no chord for it: the sidebar appears when the Session body is at least 100 columns
+wide, and child sessions (spawned by task/subagent, non-empty `parent_id`) hide it. Widen the
+terminal to get it back.
 
 **How do I configure models/providers?**
 `miao providers login` writes credentials; `miao models` lists them; customize under
