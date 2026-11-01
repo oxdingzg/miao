@@ -167,11 +167,24 @@ impl Shell {
 
     pub fn scroll_transcript(&mut self, delta: i32) {
         // Scrolling up detaches from the bottom; new content then lands above
-        // the viewport instead of pulling it along.
-        self.transcript.follow = false;
+        // the viewport instead of pulling it along. Scrolling back down to the
+        // last row re-attaches, so an operator never has to rediscover how to
+        // resume following.
         let max = self.transcript.max_scroll();
-        let next = self.transcript.scroll as i32 + delta;
-        self.transcript.scroll = next.clamp(0, max as i32) as u16;
+        let next = (self.transcript.scroll as i32 + delta).clamp(0, max as i32) as u16;
+        self.transcript.scroll = next;
+        self.transcript.follow = next >= max;
+    }
+
+    /// Follow the newest entry again, as opening a Session must: a scroll in a
+    /// previous Session used to leave the next one parked at its oldest rows.
+    pub fn follow_transcript(&mut self) {
+        self.transcript.follow = true;
+    }
+
+    /// Whether the transcript is showing its newest rows.
+    pub fn following(&self) -> bool {
+        self.transcript.follow
     }
 
     pub fn set_usage(&mut self, usage: Option<&crate::status::UsageSummary>) {
@@ -656,9 +669,15 @@ fn selection_text(rendered: &[Vec<String>], inner: Rect, a: Position, b: Positio
     lines.join("\n")
 }
 
+/// Rows the home list shows before the operator asks for more: a long history
+/// is scannable at ten, and the rest is one keypress away.
+const HOME_PAGE: usize = 10;
+
 pub struct Home {
     pub rows: Vec<SessionSummary>,
     pub selected: usize,
+    /// How many matching rows the list currently reveals.
+    limit: usize,
     /// Case-insensitive substring the list is narrowed to. Empty shows
     /// everything, so filtering is a mode of the same list rather than a
     /// second screen whose selection has to be kept in step.
@@ -682,6 +701,7 @@ impl Home {
         Self {
             rows: Vec::new(),
             selected: 0,
+            limit: HOME_PAGE,
             query: String::new(),
             filtering: false,
             notice: None,
@@ -734,7 +754,21 @@ impl Home {
 
     /// The rows the list shows right now, in list order. Pinning and filtering
     /// both change this view, so every caller reads it instead of `rows`.
+    /// Reveal one more page of history.
+    pub fn more(&mut self) {
+        self.limit = self.limit.saturating_add(HOME_PAGE);
+    }
+
+    /// Matching rows the list is not showing yet.
+    fn hidden(&self) -> usize {
+        self.matched().len().saturating_sub(self.limit)
+    }
+
     fn visible(&self) -> Vec<&SessionSummary> {
+        self.matched().into_iter().take(self.limit).collect()
+    }
+
+    fn matched(&self) -> Vec<&SessionSummary> {
         if self.query.is_empty() {
             return self.rows.iter().collect();
         }
@@ -925,7 +959,6 @@ impl Home {
                 Style::new().fg(palette.text)
             };
             let marker = if selected { "▸ " } else { "  " };
-            let title = format!("{marker}{}", row.label());
             let mut meta = row.updated_at_ms.map(relative_time).unwrap_or_default();
             if row.pinned_at_ms.is_some() {
                 meta = if meta.is_empty() {
@@ -934,9 +967,16 @@ impl Home {
                     format!("pinned · {meta}")
                 };
             }
-            let pad = inner_width.saturating_sub(title.chars().count() + meta.chars().count() + 1);
+            // Fit the title so the right edge keeps holding the age: at a
+            // mixed-width font the character count and the cell count differ.
+            let fitted = match inner_width.checked_sub(meta.len() + 3) {
+                Some(room) => format!("{marker}{}", fit(row.label(), room)),
+                None => String::new(),
+            };
+            let pad =
+                inner_width.saturating_sub(UnicodeWidthStr::width(fitted.as_str()) + meta.len());
             body.push(Line::from(vec![
-                Span::styled(title, style),
+                Span::styled(fitted, style),
                 Span::styled(
                     format!("{}{}", " ".repeat(pad), meta),
                     Style::new().fg(palette.text_muted),
@@ -949,8 +989,10 @@ impl Home {
                 if selected {
                     selected_tail += 1;
                 }
+                // A preview is a hint, not the conversation: one clipped line
+                // keeps the list scannable, and the engine already bounded it.
                 body.push(Line::from(Span::styled(
-                    format!("    {preview}"),
+                    format!("    {}", fit(preview, inner_width.saturating_sub(4))),
                     Style::new().fg(palette.text_muted),
                 )));
             }
@@ -992,9 +1034,18 @@ impl Home {
                 .wrap(Wrap { trim: false }),
             body_area,
         );
+        // The hint names how much history is still folded away, so the extra
+        // rows are discoverable without reading the help.
+        let hidden = self.hidden();
+        let hint = match hidden {
+            0 => " / filter · p pin · tab prompt · n new · 1-9 open · ? help".to_string(),
+            hidden => format!(
+                " / filter · p pin · tab prompt · n new · 1-9 open · ? help · space more ({hidden})"
+            ),
+        };
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                " / filter · p pin · tab prompt · n new · 1-9 open · ? help",
+                hint,
                 Style::new().fg(palette.text_muted),
             ))),
             hint_area,
@@ -1412,6 +1463,17 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
 }
 
 /// Skip `offset` display cells and take at most `width` cells of a line.
+/// One display row of text: newlines and runs of spaces collapse, and an
+/// overlong value is cut with an ellipsis so rows keep their alignment.
+fn fit(text: &str, width: usize) -> String {
+    let single = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if UnicodeWidthStr::width(single.as_str()) <= width {
+        return single;
+    }
+    let room = width.saturating_sub(1) as u16;
+    format!("{}…", clip_cells(&single, 0, room))
+}
+
 fn clip_cells(line: &str, offset: usize, width: u16) -> String {
     let mut skipped = 0;
     let mut taken = 0;
@@ -2384,6 +2446,18 @@ mod tests {
         assert!(wrapped_text(shell.draft())
             .join("")
             .contains("streamed words"));
+    }
+
+    #[test]
+    fn a_row_value_is_one_clipped_line() {
+        assert_eq!(fit("first\nsecond", 40), "first second");
+        assert_eq!(fit("a    b", 40), "a b");
+        let clipped = fit("x".repeat(30).as_str(), 10);
+        assert_eq!(UnicodeWidthStr::width(clipped.as_str()), 10);
+        assert!(clipped.ends_with('…'));
+        // Wide characters count two cells, so the clip never overflows.
+        let wide = fit("中文中文中文中文", 9);
+        assert!(UnicodeWidthStr::width(wide.as_str()) <= 9, "{wide:?}");
     }
 
     #[test]
