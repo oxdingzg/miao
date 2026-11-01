@@ -41,8 +41,13 @@ export const contextLimitsFor = (
     | undefined,
 ) => {
   if (compaction?.auto === false) return undefined
-  const window = model.limit.context
-  if (!Number.isFinite(window) || window <= 0) return undefined
+  // A provider without a declared window (custom gateways) used to switch
+  // automatic compaction off entirely, so context grew until the model or the
+  // runaway guard refused. Run on a conservative default instead: small enough
+  // that real models fit, large enough to keep real work durable.
+  const declared = model.limit.context
+  const window =
+    Number.isFinite(declared) && declared > 0 ? declared : 131_072
   return {
     window,
     ratio: compaction?.threshold ?? 0.9,
