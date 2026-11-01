@@ -2,10 +2,11 @@
 
 Measured 2026-11-01 on the macOS build host with the PTY harnesses in
 `crates/miao-tui/tests/`. VAL-03 asks for six tasks measured on time-to-state,
-keystrokes, mistakes and rework. Five of the six have a part that a script
-observes honestly — keystrokes are counted by construction and the clock stops
-when the target state renders. Mistakes and rework are not observable this way
-for any of the six and stay with the operator session.
+keystrokes, mistakes and rework. All six have a part that a script observes
+honestly — keystrokes are counted by construction and the clock stops when the
+target state renders. Mistakes and rework are not observable this way for any of
+the six and stay with the operator session. Reviewing changes only became
+measurable after the fix described below.
 
 ## Result
 
@@ -19,7 +20,7 @@ for any of the six and stay with the operator session.
 | editing input | retype the line instead | 120 | 91 ms | `interaction_edit.rs` |
 | approval | `1` on the blocking decision | 1 | 5 ms | `interaction_approval.rs` |
 | failure recovery | recall the failed prompt + send again | 2 | 30 ms | `interaction_recovery.rs` |
-| reviewing changes | `<leader>g` | 2 | not measured yet | — |
+| reviewing changes | `<leader>g` | 2 | 13 ms | `interaction_review.rs` |
 
 Reading it: the two findings VAL-03 can already state as numbers are that a
 query costs 11× fewer keystrokes than walking a 200-row list (13 vs 150) and that
@@ -33,19 +34,14 @@ here only so one table answers VAL-03's "startup" line.
 
 ## What is not measured, and why
 
-**reviewing changes.** The panel opens on `<leader>g` — the rendered frame shows
-the `workspace changes` title — but its body stays empty, so the test fails
-rather than reporting a fake number. The failure is not in the request path,
-which was traced before filing it as #2218: the fixture logs that it received
-`vcs_status` and answered with `repository: true` plus three files, and
-instrumentation in `app.rs` shows the dialog receiving them
-(`ok files=3 gen=1`, `dialog gen=1`). The data arrives and the panel still draws
-empty, and a keypress that forces a repaint does not change it. Ruled out on the
-way: the workspace not being a repository (`git init` plus commit only changed
-the header from `no git` to `main`), a pending approval suppressing the panel,
-the payload shape (`decode_parses_branch_and_files` builds the same one), and a
-generation mismatch. The remaining suspects are the drawing path and which
-widget owns the box; this row stays empty until #2218 is fixed.
+**reviewing changes — measured only after a fix.** Attempting it exposed a real
+defect (#2218): the panel opened, the engine answered `vcs_status` with a
+three-file set, the dialog received it (`ok files=3 gen=1`), and the body still
+drew empty. The cause was in `render_dialog`: every dialog family had a dispatch
+arm except the changes dialog, so the box was drawn with its title and nothing
+else. With that arm added, the row above is measurable — 2 keys to the first
+row, 13 ms — and the whole `miao-tui` suite passes (319 unit tests plus every
+integration test).
 
 **mistakes and rework.** Not observable from a script for any of the six tasks: a
 mistyped query, a wrong pane, or an overshoot is exactly what a scripted keystroke
