@@ -118,7 +118,7 @@ currency).
 Rust engine; `MIAO_ENGINE_STORAGE` overrides it. The release installs `miao-engine` next to the CLI,
 so no binary path is needed; existing Sessions keep their recorded engine. `miao doctor` reports the
 binary version, protocol and whether placement is on. Storage is separate from the TypeScript store,
-and `miao session migrate` moves an existing Session offline.
+and a Session keeps the engine it was created on — there is no `miao session migrate`.
 
 ## 5. Daily use
 
@@ -158,7 +158,9 @@ Rebind in `~/.config/miao/tui.json` (or `keybinds` in miao.jsonc).
 
 - Slash commands come from the `commands` config and are triggered by `/`.
 - Skills are matched by description; the model loads skill content with the `skill` tool.
-- `miao agent create` generates a custom agent.
+- Custom agents are configuration: define them under `agents` (model, system prompt,
+  permissions, step cap) and `miao agent list` shows what is loaded. There is no
+  `miao agent create`.
 
 ### 5.4 MCP
 

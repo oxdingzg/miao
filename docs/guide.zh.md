@@ -113,7 +113,7 @@ miao
 
 **本币计价**：`providers.<id>.models.<m>.cost` 用 provider 官方本币单价（如 DeepSeek 的 CNY），成本按配置费率估算；TUI 内 `/currency` 可切换显示货币（默认 USD，未声明本币的 provider 按静态汇率换算）。
 
-**原生引擎（可选开启）**：在全局配置里设置 `engine.storage`，新会话就会落在 Rust 引擎上；`MIAO_ENGINE_STORAGE` 优先于它。release 会把 `miao-engine` 装在 CLI 旁边，不需要手写二进制路径；已有会话保留原来的引擎。`miao doctor` 会显示引擎版本、协议，以及是否已开启放置。原生存储与 TypeScript 存储相互独立，已有会话可用 `miao session migrate` 离线迁移。
+**原生引擎（可选开启）**：在全局配置里设置 `engine.storage`，新会话就会落在 Rust 引擎上；`MIAO_ENGINE_STORAGE` 优先于它。release 会把 `miao-engine` 装在 CLI 旁边，不需要手写二进制路径；已有会话保留原来的引擎。`miao doctor` 会显示引擎版本、协议，以及是否已开启放置。原生存储与 TypeScript 存储相互独立，会话一旦创建就保留它所在的引擎，没有 `miao session migrate` 命令。
 
 ## 5. 日常使用
 
@@ -151,7 +151,8 @@ miao
 
 - 斜杠命令：在 prompt 输入 `/` 触发；命令来自 `commands` 配置。
 - 技能（skills）：按描述匹配，模型可用 `skill` 工具加载技能内容。
-- `miao agent create` 生成自定义 agent。
+- 自定义 agent 是配置：在 `agents` 里定义（模型、系统提示、权限、步数上限），
+  `miao agent list` 列出已加载的项。没有 `miao agent create` 命令。
 
 ### 5.4 MCP
 
