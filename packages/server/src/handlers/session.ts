@@ -1308,6 +1308,26 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.recall",
+        Effect.fn(function* (ctx) {
+          const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          // Archived tool output lives in the engine's archive, so a Session
+          // that does not run there cannot answer this. Say so instead of
+          // returning an empty window that reads like "nothing was archived".
+          if (!native || !placement)
+            return yield* new ConflictError({
+              message: "Archived tool output is only readable for a Session running on the native engine",
+            })
+          return yield* native.recall({
+            ...placement,
+            sessionID: ctx.params.sessionID,
+            toolUseID: ctx.query.toolUseID,
+            offset: ctx.query.offset ?? 0,
+          })
+        }),
+      )
+      .handle(
         "session.events",
         Effect.fn(function* (ctx) {
           const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))

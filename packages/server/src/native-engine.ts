@@ -349,6 +349,18 @@ export interface Interface {
     after: number
     limit: number
   }) => Effect.Effect<NativeJournalPage & { readonly hasMore: boolean }, ConflictError>
+  /**
+   * One window of an archived tool output, addressed by the handle its elision
+   * marker named. A handle the archive cannot resolve is a `ConflictError`: the
+   * engine answers with an empty window rather than inventing text.
+   */
+  readonly recall: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    toolUseID: string
+    offset: number
+  }) => Effect.Effect<NativeRecallWindow, ConflictError>
   /** Generate the product title for a native Session from its durable wire
    * page; returns the title it published, if any. */
   readonly title: (input: {
@@ -357,6 +369,18 @@ export interface Interface {
     location: Location.Ref
     prompt: string
   }) => Effect.Effect<string | undefined, ConflictError>
+}
+
+/** One 32 KiB window of an archived tool output restored by handle. */
+export interface NativeRecallWindow {
+  readonly toolUseID: string
+  readonly messageSeq: number
+  readonly isError: boolean
+  readonly offset: number
+  readonly text: string
+  readonly totalBytes: number
+  readonly truncated: boolean
+  readonly nextOffset?: number
 }
 
 export interface NativeJournalPage {

@@ -651,6 +651,32 @@ export class EngineClient {
     return this.request("history", { session_id: session, selected })
   }
 
+  /**
+   * Restore one archived tool output by the handle its elision marker named, or
+   * search immutable Session messages. The engine validates the two modes: a
+   * handle cannot be combined with a text query, and search needs a non-empty
+   * query with a bounded limit.
+   */
+  recall(
+    session: string,
+    input: {
+      query?: string
+      limit?: number
+      beforeMessageSeq?: number
+      toolUseID?: string
+      offset?: number
+    } = {},
+  ) {
+    return this.request("recall", {
+      session_id: session,
+      ...(input.query === undefined ? {} : { query: input.query }),
+      ...(input.limit === undefined ? {} : { limit: input.limit }),
+      ...(input.beforeMessageSeq === undefined ? {} : { before_message_seq: input.beforeMessageSeq }),
+      ...(input.toolUseID === undefined ? {} : { tool_use_id: input.toolUseID }),
+      ...(input.offset === undefined ? {} : { offset: input.offset }),
+    })
+  }
+
   shutdown() {
     return this.request("shutdown")
   }

@@ -107,6 +107,18 @@ export const SessionHistoryQuery = Schema.Struct({
   after: Schema.NumberFromString.pipe(Schema.decodeTo(NonNegativeInt), Schema.optional),
 })
 
+/** One window of a tool output the context manager archived. */
+export const SessionRecallWindow = Schema.Struct({
+  toolUseID: Schema.String,
+  messageSeq: NonNegativeInt,
+  isError: Schema.Boolean,
+  offset: NonNegativeInt,
+  text: Schema.String,
+  totalBytes: NonNegativeInt,
+  truncated: Schema.Boolean,
+  nextOffset: Schema.optional(NonNegativeInt),
+}).annotate({ identifier: "SessionRecallWindow" })
+
 const SessionsQueryCursor = SessionsCursor.annotate({
   description: "Opaque pagination cursor returned as cursor.previous or cursor.next in the previous response.",
 })
@@ -731,6 +743,26 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             summary: "Get session history",
             description:
               "Read one finite page of public durable Session events after an exclusive aggregate sequence. Newly committed events may appear on later pages.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.recall", "/api/session/:sessionID/recall", {
+        params: { sessionID: Session.ID },
+        query: Schema.Struct({
+          toolUseID: Schema.String,
+          offset: Schema.optional(Schema.NumberFromString.pipe(Schema.decodeTo(NonNegativeInt))),
+        }),
+        success: SessionRecallWindow,
+        error: [SessionNotFoundError, ConflictError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.recall",
+            summary: "Restore an archived tool output",
+            description:
+              "Read one window of a tool output the context manager archived from the outgoing request, addressed by the handle its elision marker named. nextOffset continues the window. A handle the archive cannot resolve is a conflict, never an empty document.",
           }),
         ),
     )
