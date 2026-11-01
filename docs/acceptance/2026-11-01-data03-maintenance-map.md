@@ -1,0 +1,71 @@
+# DATA-03 — maintenance actions mapped to the tree
+
+DATA-03’s first acceptance item is a map: *stats/backfill/vacuum/compact/restore/
+externalize/gc/retention are mapped item by item*. This record is that map at
+`main` after #2265, with the check that produced each row.
+
+Commands were run from the repository root; `cli:` counts occurrences in
+`crates/miao-cli/src/cli.rs`, `engine:` counts `fn <name>` in
+`crates/miao-engine/src/*.rs`.
+
+```
+for c in backfill compact restore externalize gc retention; do
+  printf "%-12s cli:%s engine:%s\n" "$c" \
+    "$(grep -c "\"$c\"" crates/miao-cli/src/cli.rs)" \
+    "$(grep -rc "fn $c" crates/miao-engine/src/*.rs | awk -F: '{s+=$2} END {print s+0}')"
+done
+```
+
+## The map
+
+| action | CLI | engine | what it does today | authorisation |
+| --- | --- | --- | --- | --- |
+| `path` | `miao db path` | — | prints the database this workspace uses | none needed, reads nothing |
+| `stats` | `miao db stats` (#2265) | — | file size, page count × page size, free pages, row count per table; opens `SQLITE_OPEN_READ_ONLY` | none needed, cannot write |
+| `vacuum` | `miao db vacuum [--apply]` (#2265) | — | the same report, then reclaims free pages **only** with `--apply` | dry run by default; `--apply` is the authorisation |
+| `compact` | — | 4 fns | the engine compacts inside a Session; there is no operator command | not reachable from the CLI |
+| `restore` | — | 4 fns | the engine restores; there is no operator command | not reachable from the CLI |
+| `backfill` | — | — | absent in both | — |
+| `externalize` | — | — | absent in both (blob store is a later spec step) | — |
+| `gc` | — | — | absent in both | — |
+| `retention` | — | — | absent in both | — |
+
+Adjacent commands that are **not** database-file maintenance, listed so they are
+not mistaken for it: `miao stats` (Session usage), `miao doctor` (readiness),
+`miao memory` (context window), `miao export` (Session export).
+
+## Where the storage spec and the Rust tree disagree
+
+`specs/storage/session-storage-hardening.md` is the basis DATA-03 cites. Three of
+its statements do not hold for the Rust engine:
+
+1. **Its tables are not the Rust tables.** The spec’s retention plan is written
+   against `event` and `session_message`. `grep -rn session_message --include=*.rs
+   crates` returns nothing, and no Rust module creates an `event` table, so
+   “events before each Session’s compaction baseline” has no direct meaning in
+   the Rust schema. `miao db retention` cannot be implemented from the spec text
+   alone; what is prunable in the Rust schema is a design question, and it is the
+   reason that action is still absent rather than merely unwired.
+2. **“`miao db retention` reports prunable rows — **Done** — report-only”** is a
+   statement about the TypeScript host. There is no such command in this tree.
+3. **`auto_vacuum = INCREMENTAL` for new databases** (migration plan, step 1) is
+   not set anywhere: `grep -rn auto_vacuum --include=*.rs crates` returns nothing.
+   The Rust engine creates databases without it, so free pages accumulate and
+   `db vacuum` stays a manual step. Setting it is a behaviour change for
+   databases created from now on, and is not in this record.
+
+## What each remaining slice needs
+
+| action | next step | blocked on |
+| --- | --- | --- |
+| `compact`, `restore` | expose the existing engine functions behind a command that names the Session, its database and the rows affected | a decision on the command shape (`miao session …` vs `miao db …`) |
+| `retention` | define “prunable” against the Rust schema, then the report-only form the spec asks for | design |
+| `backfill`, `externalize`, `gc` | the blob store and the projection move are prerequisites named by the spec | design, and the spec steps that precede them |
+| `auto_vacuum` | set `PRAGMA auto_vacuum=INCREMENTAL` before the first table is created | a decision, because it changes new databases only |
+
+## Accepted here
+
+- `stats` and `vacuum` are mapped, name their target by default, and treat real
+  data as something altered only under `--apply` (#2265).
+- Every remaining action is listed with the check that found it absent, so
+  neither a missing command nor a stale spec claim can be read as complete work.
