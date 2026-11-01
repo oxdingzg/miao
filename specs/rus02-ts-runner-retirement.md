@@ -53,8 +53,8 @@ bun docs/experiments/2026-10-28-ts-runner-retirement/generate.cjs
 | 文件                   | runner 目录外的实际消费者                                                           | 退役处理                                                                |
 | ---------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `model.ts`             | Location composition、`session/native-title.ts`、`miao/src/engine/native-engine.ts` | 先将产品模型/标题解析与 TS provider loop 分开；不能删除 native 启动依赖 |
-| `cost.ts`              | `miao/src/engine/bridge.ts`、`server/src/native-session.ts`                         | 原生费用投影仍需要计算，可先独立迁出                                    |
-| `materialize-files.ts` | `core/src/session.ts`                                                               | 保留历史 blob/附件物化，或提供已验收替代后迁出                          |
+| `cost.ts`              | `miao/src/engine/bridge.ts`、`server/src/native-session.ts`                         | **已迁出**至 `session/cost.ts`；`runner/cost.ts` 兼容壳已删除            |
+| `materialize-files.ts` | `core/src/session.ts`                                                               | **已迁出**至 `session/materialize-files.ts`；`runner/` 兼容壳已删除      |
 | `index.ts`             | Session 公共错误类型、execution 接口、local runner                                  | 在独立 PR 解开类型/服务耦合，再删除 TS 执行接口                         |
 | `provider-headers.ts`  | `session/native-title.ts`（runner 外）                                              | **已迁出**至 `packages/core/src/session/provider-headers.ts`；runner 改为从该处导入 |
 | 其余 runner 文件       | 主要由 `llm.ts` 与 runner 内部消费                                                  | 以清单及删除时的新依赖检查为准，随 TS loop 分批退役                     |
