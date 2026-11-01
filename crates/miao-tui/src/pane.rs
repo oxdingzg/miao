@@ -265,7 +265,7 @@ impl Shell {
         match &self.leader_hint {
             Some(menu) => frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
-                    fit(menu, status_area.width as usize),
+                    fit_chords(menu, status_area.width as usize),
                     Style::new().fg(self.transcript.theme.palette.primary),
                 ))),
                 status_area,
@@ -1193,7 +1193,7 @@ impl Home {
         // An armed leader replaces the key hint with its menu: those chords
         // are what the next keystroke can mean.
         let hint = match &self.leader_hint {
-            Some(menu) => fit(menu, hint_area.width as usize),
+            Some(menu) => fit_chords(menu, hint_area.width as usize),
             None => home_hint(self.list_focus, hint_area.width as usize),
         };
         frame.render_widget(
@@ -1235,6 +1235,37 @@ fn home_hint(list_focus: bool, width: usize) -> String {
         }
     }
     fit("tab", width)
+}
+
+/// Trim a which-key menu at a chord boundary.
+///
+/// `fit` cuts a line at a cell, which turns `n session new` into `n session n…`
+/// and tells the operator nothing. A menu is a list, so the tail is dropped by
+/// the chord and the row says how many are left — the rest are one `/help` away.
+fn fit_chords(menu: &str, width: usize) -> String {
+    if UnicodeWidthStr::width(menu) <= width {
+        return menu.to_string();
+    }
+    let mut parts = menu.split(" · ");
+    let Some(leader) = parts.next() else {
+        return fit(menu, width);
+    };
+    let chords = parts.collect::<Vec<_>>();
+    for take in (0..=chords.len()).rev() {
+        let head = match take {
+            0 => leader.to_string(),
+            _ => format!("{leader} · {}", chords[..take].join(" · ")),
+        };
+        let hidden = chords.len() - take;
+        let line = match hidden {
+            0 => head,
+            _ => format!("{head} · … +{hidden}"),
+        };
+        if UnicodeWidthStr::width(line.as_str()) <= width {
+            return line;
+        }
+    }
+    fit(leader, width)
 }
 
 /// The section a Session belongs to in the home list. Days are bucketed on the
@@ -3324,6 +3355,33 @@ mod tests {
         assert_eq!(prompt, " tab list · enter send");
         // `space` pages the list, so the list's own hint says what it does.
         assert!(home_hint(true, 120).contains("space page"));
+    }
+
+    #[test]
+    fn a_long_menu_is_cut_between_chords_not_inside_one() {
+        // `fit` cuts at a cell, which turns `n session new` into `n session n…`
+        // and teaches nothing. A menu drops whole chords instead and says how
+        // many are left; the rest are one `/help` away.
+        let menu = "ctrl+x · q app exit · n session new · g workspace changes · m models";
+        for width in [24usize, 34, 44] {
+            let narrow = fit_chords(menu, width);
+            assert!(
+                UnicodeWidthStr::width(narrow.as_str()) <= width,
+                "{width} columns overflow: {narrow}"
+            );
+            let whole = menu.split(" · ").collect::<Vec<_>>();
+            for part in narrow.split(" · ") {
+                if part == "ctrl+x" || part.starts_with('…') {
+                    continue;
+                }
+                assert!(
+                    whole.contains(&part),
+                    "{part:?} is half a chord in {narrow:?}"
+                );
+            }
+        }
+        // A menu that fits is painted as it is.
+        assert_eq!(fit_chords("ctrl+x · q app exit", 40), "ctrl+x · q app exit");
     }
 
     #[test]
