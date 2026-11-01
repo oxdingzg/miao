@@ -186,6 +186,13 @@ const ACTIONS: &[Action] = &[
     Action::LineDown,
 ];
 
+/// Actions the TypeScript host declares as `keybind("none", ...)`: they are
+/// reachable only when the operator binds them, so "no default stroke" is the
+/// intended state rather than a mouse-only gap. Every other action must have a
+/// default, which `every_action_is_reachable_without_a_mouse` enforces.
+#[cfg(test)]
+const UNBOUND_BY_DEFAULT: &[Action] = &[Action::TerminalTitleToggle];
+
 /// Defaults for the actions above. `messages_copy` keeps miao's `ctrl+y` and
 /// adds the TypeScript `<leader>y`; `debug_view` is miao-only.
 const DEFAULTS: &[(Action, &str)] = &[
@@ -690,6 +697,36 @@ mod tests {
             Action::CommandList,
             &key(KeyCode::Char('p'), KeyModifiers::CONTROL)
         ));
+    }
+
+    #[test]
+    fn every_action_is_reachable_without_a_mouse() {
+        // UX-02: no critical action may require a pointer. Everything the TUI
+        // knows has to carry a default stroke, or the only way to reach it would
+        // be a click.
+        let bound = Keymap::default()
+            .bindings()
+            .into_iter()
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let unbound = ACTIONS
+            .iter()
+            .filter(|action| !UNBOUND_BY_DEFAULT.contains(action))
+            .filter(|action| bound.get(action).is_none_or(|spec| spec.is_empty()))
+            .map(|action| action.name())
+            .collect::<Vec<_>>();
+        assert!(
+            unbound.is_empty(),
+            "these actions have no default key and would need a mouse: {unbound:?}"
+        );
+        // The exception list cannot go stale: an action named there really has
+        // to be unbound, so removing a default has to be a deliberate edit here.
+        for action in UNBOUND_BY_DEFAULT {
+            assert!(
+                bound.get(action).is_none_or(|spec| spec.is_empty()),
+                "{} is listed as unbound by default but has a stroke",
+                action.name()
+            );
+        }
     }
 
     #[test]
