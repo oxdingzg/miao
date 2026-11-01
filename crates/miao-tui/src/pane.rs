@@ -986,7 +986,6 @@ impl Home {
         }
         // Group by recency, the way comparable session pickers do: a flat wall
         // of titles stops being scannable once a project has weeks of history.
-        let inner_width = inner.width as usize;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|duration| duration.as_millis() as u64)
@@ -3240,13 +3239,13 @@ mod tests {
             "nothing has measured a viewport yet"
         );
         drawn(&mut home, 80, 20);
-        // Twenty rows of frame: two of border and one of key hints, so the list
-        // gets seventeen.
-        assert_eq!(home.visible_len(), 17);
-        assert_eq!(home.hidden(), 23);
+        // Twenty rows: one of header, one of key hints, so the list gets
+        // eighteen. The frame that used to cost two more is gone.
+        assert_eq!(home.visible_len(), 18);
+        assert_eq!(home.hidden(), 22);
         home.more();
-        assert_eq!(home.visible_len(), 34);
-        assert_eq!(home.hidden(), 6);
+        assert_eq!(home.visible_len(), 36);
+        assert_eq!(home.hidden(), 4);
     }
 
     #[test]
