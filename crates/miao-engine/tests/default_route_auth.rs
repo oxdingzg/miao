@@ -127,7 +127,7 @@ async fn owner_default_inherits_manifest_auth_without_replacing_transport_identi
                 selected
                     .stream(request(), progress, CancellationToken::new())
                     .await,
-                Err(ProviderError::Http(422))
+                Err(ProviderError::Http(422, _))
             ));
             let (uri, headers, _body) = seen.recv().await.unwrap();
             assert!(uri.starts_with(path));

@@ -63,7 +63,7 @@ async fn copilot_three_wires_load_device_token_and_derive_turn_headers() {
                 )
                 .await;
             assert!(
-                matches!(result, Err(ProviderError::Http(422))),
+                matches!(result, Err(ProviderError::Http(422, _))),
                 "{wire} did not reach fixture"
             );
             let (headers, _body) = seen.recv().await.unwrap();

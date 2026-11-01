@@ -559,6 +559,14 @@ impl Dialog {
                     if row.archived_at_ms.is_some() {
                         label.push_str(" (archived)");
                     }
+                    // The preview answers "which conversation was this?"
+                    // without opening it, and it rides the label so `/` finds a
+                    // Session by what it last said as well as by its title.
+                    if let Some(preview) = row.preview.as_deref().filter(|preview| !preview.is_empty())
+                    {
+                        label.push_str(" — ");
+                        label.push_str(preview);
+                    }
                     Row {
                         id: row.id.clone(),
                         label,
@@ -1363,6 +1371,21 @@ mod tests {
             credential_id: None,
             preview: None,
         }
+    }
+
+    #[test]
+    fn a_session_row_shows_what_the_conversation_last_said() {
+        let mut row = summary("ses_a", None, "/repo");
+        row.preview = Some("we moved the parser into the engine".into());
+        let dialog = Dialog::sessions(&[row]);
+        let list = dialog.list().expect("list");
+        assert_eq!(
+            list.rows[0].label,
+            "ses_a — we moved the parser into the engine"
+        );
+        // The directory keeps its own column so a long preview cannot hide
+        // where the Session lives.
+        assert_eq!(list.rows[0].detail, "/repo");
     }
 
     #[test]

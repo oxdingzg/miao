@@ -7,7 +7,7 @@ import { InstallationVersion } from "@miao/core/installation/version"
 import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
 import { SessionModel } from "@miao/core/session/model"
-import { SessionRunnerProviderHeaders } from "@miao/core/session/runner/provider-headers"
+import { SessionProviderHeaders } from "@miao/core/session/provider-headers"
 import { Hash } from "@miao/core/util/hash"
 import { it } from "./lib/effect"
 import { exchange, sse } from "./lib/llm-wire"
@@ -53,7 +53,7 @@ const chatStream = sse([
 ])
 
 const turnHeaders = (providerID: string, messages = [Message.user("Hello")], parentID?: string) =>
-  SessionRunnerProviderHeaders.forTurn({
+  SessionProviderHeaders.forTurn({
     providerID,
     sessionID: "ses_test",
     parentID,

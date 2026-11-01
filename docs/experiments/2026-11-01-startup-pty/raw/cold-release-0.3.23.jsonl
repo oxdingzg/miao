@@ -1,0 +1,5 @@
+{"type": "header", "commit": "release-0.3.23", "mode": "cold", "repeat": 3, "binary": "/Users/dingzg/.miao/bin/.versions/e7ca5938-4d4c-4f63-bb56-297b8f529bce/miao", "boundary": "spawn to first keystroke visible; kernel echo disabled"}
+{"paintedMs": 3583.331083, "readyMs": 3872.923208, "type": "startup", "index": 0, "mode": "cold"}
+{"paintedMs": 3317.499875, "readyMs": 3579.24775, "type": "startup", "index": 1, "mode": "cold"}
+{"paintedMs": 3020.742458, "readyMs": 3281.605, "type": "startup", "index": 2, "mode": "cold"}
+{"type": "summary", "mode": "cold", "commit": "release-0.3.23", "repeat": 3, "readySamples": 3, "timeouts": 0, "readyP50Ms": 3579.24775, "readyP95Ms": 3579.24775, "paintedP50Ms": 3317.499875, "paintedP95Ms": 3317.499875}

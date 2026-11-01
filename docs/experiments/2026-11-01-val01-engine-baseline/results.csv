@@ -1,0 +1,17 @@
+model,scope,engine,task,runs,passed,attempts,billed_input,cached_input,output,cost,p50_ms,p95_ms
+opencode-go/deepseek-v4.1-flash,total,ts,*,21,21,180,2852278,2563328,29421,0.06869,32242,99383
+opencode-go/deepseek-v4.1-flash,task,ts,bugfix,3,3,17,257431,223744,1429,0.00658,25015,27110
+opencode-go/deepseek-v4.1-flash,task,ts,feature,3,3,24,373441,326144,3434,0.01013,30712,37840
+opencode-go/deepseek-v4.1-flash,task,ts,refactor,3,3,24,375755,353408,3641,0.0066,32242,36095
+opencode-go/deepseek-v4.1-flash,task,ts,multifile,3,3,22,355072,319232,3587,0.00849,29962,47128
+opencode-go/deepseek-v4.1-flash,task,ts,recovery,3,3,47,775937,729984,8853,0.01439,60778,72653
+opencode-go/deepseek-v4.1-flash,task,ts,long-session,3,3,32,498953,445568,4445,0.01201,99383,129542
+opencode-go/deepseek-v4.1-flash,task,ts,impossible,3,3,14,215689,165248,4032,0.01048,29901,39772
+opencode-go/deepseek-v4.1-flash,total,rust,*,21,21,152,2427860,2230656,28595,0.05343,29337,89124
+opencode-go/deepseek-v4.1-flash,task,rust,bugfix,3,3,18,277453,245120,1675,0.00659,24975,25117
+opencode-go/deepseek-v4.1-flash,task,rust,feature,3,3,18,279867,231680,3018,0.00973,28794,29122
+opencode-go/deepseek-v4.1-flash,task,rust,refactor,3,3,24,385910,365568,4405,0.00679,32993,37545
+opencode-go/deepseek-v4.1-flash,task,rust,multifile,3,3,16,256935,248448,3415,0.00407,27552,28414
+opencode-go/deepseek-v4.1-flash,task,rust,recovery,3,3,32,529274,499968,6528,0.00981,64784,64939
+opencode-go/deepseek-v4.1-flash,task,rust,long-session,3,3,29,457489,435968,3935,0.0069,89124,106096
+opencode-go/deepseek-v4.1-flash,task,rust,impossible,3,3,15,240932,203904,5619,0.00954,34621,42856

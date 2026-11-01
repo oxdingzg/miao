@@ -357,7 +357,14 @@ it.effect("automatic context limits mirror the product compaction defaults", () 
       perPass: 8,
     })
     expect(ProductRoutes.contextLimitsFor(model, { auto: false })).toBeUndefined()
-    expect(ProductRoutes.contextLimitsFor({ limit: { context: 0 } }, undefined)).toBeUndefined()
+    // A provider without a declared window runs on the conservative default
+    // instead of switching automatic compaction off entirely.
+    expect(ProductRoutes.contextLimitsFor({ limit: { context: 0 } }, undefined)).toEqual({
+      window: 131_072,
+      ratio: 0.9,
+      headroom: 62_048,
+      perPass: 8,
+    })
     expect(
       ProductRoutes.contextLimitsFor(model, { threshold: 0.75, buffer: 4_000 }),
     ).toEqual({ window: 200_000, ratio: 0.75, headroom: 46_048, perPass: 8 })

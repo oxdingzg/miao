@@ -830,6 +830,37 @@ describe("Config", () => {
     ),
   )
 
+  it.live("names the line and column of a config file that does not parse", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          // The operator has to be able to jump to the break, so an offset
+          // alone is not actionable: line and column are what an editor takes.
+          yield* Effect.promise(() =>
+            fs.writeFile(path.join(tmp.path, "miao.jsonc"), '{\n  "model": "m",\n  "theme": ,\n}\n'),
+          )
+          const exit = yield* Effect.exit(
+            Effect.gen(function* () {
+              const config = yield* Config.Service
+              return yield* config.entries()
+            }).pipe(Effect.provide(testLayer(tmp.path))),
+          )
+          expect(Exit.isFailure(exit)).toBe(true)
+          if (Exit.isFailure(exit)) {
+            const rendered = JSON.stringify(exit.cause)
+            expect(rendered).toContain("ConfigJsonError")
+            expect(rendered).toContain("miao.jsonc")
+            expect(rendered).toContain("line 3")
+            expect(rendered).toContain("column")
+          }
+        }),
+      ),
+    ),
+  )
+
   it.live("names the failing key path for a schema-invalid config value", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),

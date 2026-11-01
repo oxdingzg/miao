@@ -88,14 +88,14 @@ import { SessionTitleSettlement } from "../title-settlement"
 import { LegacyNotMigratedError } from "../error"
 import { type RunError, Service } from "./index"
 import { SessionModel } from "../model"
-import { SessionRunnerProviderHeaders } from "./provider-headers"
+import { SessionProviderHeaders } from "../provider-headers"
 import { SessionRunnerProviderRetry } from "./provider-retry"
 import { SessionOutputGuard } from "./output-guard"
 import { SessionToolInputGuard } from "./tool-input-guard"
 import { SessionFirstByteGuard } from "./first-byte-guard"
 import { createLLMEventPublisher, progressContent, progressGate } from "./publish-llm-event"
 import { SessionToolDispatch } from "../tool-dispatch"
-import { toLLMMessages } from "./to-llm-message"
+import { toLLMMessages } from "../to-llm-message"
 import { inlineTextFiles, materializeBlobRefs } from "../materialize-files"
 import { BUDGET_EXHAUSTED_PROMPT, BUDGET_WRAP_UP_NOTE, MAX_STEPS_PROMPT } from "./max-steps"
 import { Token } from "../../util/token"
@@ -822,7 +822,7 @@ const layer = Layer.effect(
       const request = LLM.request({
         model,
         http: {
-          headers: SessionRunnerProviderHeaders.forTurn({
+          headers: SessionProviderHeaders.forTurn({
             providerID: model.provider,
             sessionID: session.id,
             parentID: session.parentID,

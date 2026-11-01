@@ -13,7 +13,7 @@ use crate::editor::{Action, Mode};
 use crate::engine;
 use crate::event::{AppEvent, Bus};
 use crate::keybinds::{self, Keymap};
-use crate::pane::{render_dialog, Home, Pane, Panel, PanelKind, Shell, StatusHint};
+use crate::pane::{render_dialog, Home, Panel, PanelKind, Shell, StatusHint};
 use crate::platform::attention::{self, Attention};
 use crate::platform::{clipboard, editor, zed};
 use crate::session::{Entry, Part, SessionState, SessionSummary};
@@ -352,15 +352,14 @@ impl App {
         self.update_status();
         match self.screen {
             Screen::Home => {
-                // The home list keeps the title bar so the workspace under
-                // view stays visible before a Session is open.
-                let [title, body, composer_area] = ratatui::layout::Layout::vertical([
-                    ratatui::layout::Constraint::Length(1),
+                // No title row: the terminal tab already names the workspace,
+                // and the list header carries the Session count. The row it
+                // used to take goes back to the list.
+                let [body, composer_area] = ratatui::layout::Layout::vertical([
                     ratatui::layout::Constraint::Min(1),
                     ratatui::layout::Constraint::Length(3),
                 ])
                 .areas(frame.area());
-                self.shell.title.render(frame, title);
                 crate::pane::render_home_composer(
                     frame,
                     composer_area,
@@ -532,6 +531,9 @@ impl App {
                 self.shell.set_session(self.session.as_ref());
                 self.shell.set_usage(self.usage.as_ref());
                 self.shell.set_transcript(&transcript);
+                // Opening a Session shows its newest turn: `follow` survives
+                // from whatever was scrolled before.
+                self.shell.follow_transcript();
                 self.screen = Screen::Session;
                 self.sync_panel();
                 self.update_status();
@@ -1678,6 +1680,9 @@ impl App {
                     engine.refresh_sessions();
                 }
             }
+            // Space reveals the next page of history, the way a pager does:
+            // the list opens at ten rows and grows while the operator asks.
+            (KeyCode::Char(' '), KeyModifiers::NONE) => self.home.more(),
             (KeyCode::Char('n'), KeyModifiers::NONE) => {
                 if let Some(engine) = self.engine.as_ref() {
                     engine.new_session();
@@ -2850,6 +2855,40 @@ mod tests {
         app.state.active_run = None;
         app.update_status();
         assert!(app.shell.status.hints.is_empty());
+    }
+
+    #[test]
+    fn opening_a_session_follows_its_newest_turn_again() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        assert!(app.shell.following(), "a fresh Session follows");
+        // Scrolling up detaches, which is how reading history works. It needs
+        // rows to scroll through: an empty transcript is always at the bottom.
+        let mut long = Transcript::default();
+        for index in 0..40 {
+            long.entries.push(crate::session::Entry::User {
+                text: format!("message {index}"),
+                seq: index as u64 + 1,
+            });
+        }
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(long),
+            state: SessionState::default(),
+        });
+        app.shell.scroll_transcript(-3);
+        assert!(!app.shell.following(), "scrolling up detaches");
+        // Opening a Session must not inherit that: it shows the newest turn.
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        assert!(app.shell.following(), "opening follows again");
     }
 
     #[test]

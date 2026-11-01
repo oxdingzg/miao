@@ -33,7 +33,7 @@ impl Provider for InvalidThenOk {
         _: CancellationToken,
     ) -> Result<Reply, ProviderError> {
         if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
-            return Err(ProviderError::Http(self.status));
+            return Err(ProviderError::Http(self.status, String::new()));
         }
         Ok(Reply {
             content: json!([{"type": "text", "text": "ok"}]),
@@ -63,7 +63,7 @@ impl Provider for ToolThenInvalid {
                 usage: json!({}),
                 needs_tools: true,
             }),
-            1 => Err(ProviderError::Http(400)),
+            1 => Err(ProviderError::Http(400, String::new())),
             _ => Ok(Reply {
                 content: json!([{"type": "text", "text": "ok"}]),
                 usage: json!({}),

@@ -1097,6 +1097,14 @@ async fn run(
                         dirty.get_or_insert_with(Instant::now);
                     }
                 }
+                Some(TransportEvent::Restart) => {
+                    // A clean exit is the engine restarting itself. The client
+                    // respawns on the next request and replays its cursors, so
+                    // the Session stays open; say so instead of failing it.
+                    bus.send(AppEvent::Notice(
+                        "engine restarted · it respawns on the next request".into(),
+                    ));
+                }
                 Some(TransportEvent::Failure(failure)) => {
                     bus.send(AppEvent::EngineFailure(format!(
                         "engine {}: {}",
