@@ -195,6 +195,58 @@ mod tests {
     }
 
     #[test]
+    fn the_diff_view_stays_readable_at_forty_columns() {
+        // UX-03: the changes view is where a diff is inspected, and 40 columns
+        // is the narrowest layout the item names. The branch, the kind and the
+        // path all have to survive there.
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let value = serde_json::json!({
+            "repository": true,
+            "branch": "fix/ux03-diff",
+            "detached": false,
+            "ahead": 1,
+            "files": [
+                {"path": "crates/miao-tui/src/workspace_changes.rs", "kind": "modified"},
+                {"path": "src/new.rs", "original_path": "src/old.rs", "kind": "renamed"}
+            ],
+            "truncated": false,
+            "file_count": 2
+        });
+        for width in [40u16, 80, 120] {
+            let mut dialog = Dialog::new(1, "ses_a");
+            dialog.loaded(Ok(decode(value.clone()).expect("state")));
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 12))
+                    .expect("terminal");
+            terminal
+                .draw(|frame| dialog.render(frame, frame.area(), &theme))
+                .expect("draw");
+            let text = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(
+                text.contains("fix/ux03-diff"),
+                "the branch survives {width} columns: {text}"
+            );
+            assert!(
+                text.contains("modified") && text.contains("renamed"),
+                "the kinds survive {width} columns: {text}"
+            );
+            assert!(
+                text.contains("workspace_changes.rs") || text.contains("workspace_changes"),
+                "the path survives {width} columns: {text}"
+            );
+        }
+    }
+
+    #[test]
     fn decode_reports_a_non_repository_workspace() {
         let value = serde_json::json!({"repository": false, "root": "/tmp"});
         let error = decode(value).unwrap_err();
