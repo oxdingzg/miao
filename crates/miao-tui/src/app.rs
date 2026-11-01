@@ -4790,8 +4790,15 @@ mod tests {
         }
         assert_eq!(app.shell.composer.editor.text(), "draft");
         app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
-        assert_eq!(app.shell.composer.editor.text(), "", "the run came back off");
-        assert!(!app.suspend_requested, "the process must not stop for an undo");
+        assert_eq!(
+            app.shell.composer.editor.text(),
+            "",
+            "the run came back off"
+        );
+        assert!(
+            !app.suspend_requested,
+            "the process must not stop for an undo"
+        );
     }
 
     /// With nothing to undo the stroke keeps its page meaning: the process
@@ -4814,7 +4821,11 @@ mod tests {
         app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
         assert_eq!(app.shell.composer.editor.text(), "");
         app.handle(key(KeyCode::Char('y'), KeyModifiers::CONTROL));
-        assert_eq!(app.shell.composer.editor.text(), "abc", "redo reapplies the run");
+        assert_eq!(
+            app.shell.composer.editor.text(),
+            "abc",
+            "redo reapplies the run"
+        );
     }
 
     #[test]

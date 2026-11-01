@@ -141,7 +141,8 @@ impl Editor {
         let Some((buffer, cursor)) = self.undo.pop() else {
             return false;
         };
-        self.redo.push((std::mem::take(&mut self.buffer), self.cursor));
+        self.redo
+            .push((std::mem::take(&mut self.buffer), self.cursor));
         self.buffer = buffer;
         self.cursor = cursor.min(self.buffer.len());
         self.goal = None;
@@ -156,7 +157,8 @@ impl Editor {
         let Some((buffer, cursor)) = self.redo.pop() else {
             return false;
         };
-        self.undo.push((std::mem::take(&mut self.buffer), self.cursor));
+        self.undo
+            .push((std::mem::take(&mut self.buffer), self.cursor));
         self.buffer = buffer;
         self.cursor = cursor.min(self.buffer.len());
         self.goal = None;
