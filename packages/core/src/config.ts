@@ -53,6 +53,14 @@ export const fileNames = ["miao.json", "miao.jsonc", "opencode.json", "opencode.
 /** Best-effort JSONC text parse for readers outside the Config service (the engine's global-file read). */
 export const parseJsonc = (text: string): unknown => parse(text, [], { allowTrailingComma: true })
 
+/** A JSONC parse error names an offset; an operator needs a place in the file. */
+const lineAndColumn = (text: string, offset: number) => {
+  const before = text.slice(0, offset)
+  const line = before.split("\n").length
+  const column = offset - before.lastIndexOf("\n")
+  return { line, column }
+}
+
 const decodeOptions = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
 const decodeInfo = Schema.decodeUnknownOption(Info, decodeOptions)
 const decodeV1Info = Schema.decodeUnknownOption(ConfigV1.Info, decodeOptions)
@@ -130,7 +138,12 @@ const layer = Layer.effect(
           return yield* Effect.fail(
             new ConfigErrorV1.JsonError({
               path: origin,
-              message: errors.map((error) => `${error.error} at offset ${error.offset}`).join("; "),
+              message: errors
+                .map((error) => {
+                  const position = lineAndColumn(text, error.offset)
+                  return `${error.error} at line ${position.line}, column ${position.column} (offset ${error.offset})`
+                })
+                .join("; "),
             }),
           )
         // A schema-invalid document names the file, the failing key paths, and
