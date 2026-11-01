@@ -1,3 +1,7 @@
+// Lets code that moves from the binary into this crate keep the
+// `miao_engine::` paths it was written with.
+extern crate self as miao_engine;
+
 pub mod acp;
 pub mod agent_classifier;
 pub mod agent_policy;
@@ -11,6 +15,7 @@ pub mod config_derive;
 pub mod config_explain;
 pub mod config_scope;
 pub mod config_v1;
+pub mod cli;
 pub mod context;
 pub mod context_overflow;
 pub mod context_trigger;
@@ -19,6 +24,7 @@ pub mod credential;
 pub mod cron;
 pub mod doctor;
 mod edit_recovery;
+pub mod embed;
 pub mod events;
 pub mod export;
 mod file_mutation;

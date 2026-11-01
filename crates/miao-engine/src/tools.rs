@@ -1623,7 +1623,9 @@ impl Tools {
         }
         if prepared.name() == "tool_search" && self.compact_disclosure {
             let tools = self
-                .extension_definitions()
+                .deferred_definitions()
+                .into_iter()
+                .chain(self.extension_definitions())
                 .into_iter()
                 .filter(|tool| {
                     let resource = self
@@ -1635,13 +1637,24 @@ impl Tools {
                                 .as_ref()
                                 .and_then(|registry| registry.resource(&tool.name))
                         });
-                    resource.is_some_and(|resource| {
-                        policy.evaluate(&tool.name, &resource, Access::External)
-                            != crate::permission::Decision::Deny
-                    })
+                    match resource {
+                        // A deferred built-in has no external resource to
+                        // consult: it was already advertised-or-not by the
+                        // native permission policy, so keep it searchable.
+                        None => true,
+                        Some(resource) => {
+                            policy.evaluate(&tool.name, &resource, Access::External)
+                                != crate::permission::Decision::Deny
+                        }
+                    }
                 })
                 .collect();
-            return Ok(crate::tool_catalog::Search::parse(prepared.input)?.run(tools));
+            let native: Vec<String> = self
+                .deferred_definitions()
+                .into_iter()
+                .map(|tool| tool.name)
+                .collect();
+            return Ok(crate::tool_catalog::Search::parse(prepared.input)?.run_with_native(tools, &native));
         }
         if prepared.access() == Access::Execute {
             let _lease = tokio::select! {_=cancel.cancelled()=>return Err(ToolError::Interrupted),guard=self.gate.clone().write_owned()=>guard};
@@ -1909,7 +1922,7 @@ impl Tools {
         }).collect()
     }
 
-    pub fn definitions(&self) -> Vec<ToolDefinition> {
+    fn all_definitions(&self) -> Vec<ToolDefinition> {
         let mut definitions=vec![ToolDefinition {
             name:"read_file".into(),
             description:"Read a UTF-8 file or PDF under the configured workspace. Text reads are limited to 32768 bytes; for larger files pass a 1-based line offset and a line limit (up to 2000 lines) to read one window. PDF reads return page text and page images; pass pages such as 1-3,5 (at most 20 pages) to select pages.".into(),
@@ -2030,6 +2043,23 @@ impl Tools {
             self.extension_definitions()
         });
         definitions
+    }
+
+    /// Advertised definitions for one turn. Under disclosure the model sees a
+    /// budgeted slice — core tools plus whatever else fits — and the remainder
+    /// rides behind `tool_search`. Deferred tools stay dispatchable by name, so
+    /// this changes what the model is told, never what it can call.
+    pub fn definitions(&self) -> Vec<ToolDefinition> {
+        // Built-in schemas stay advertised: a provider call can only target an
+        // advertised tool, so deferring a native tool would advertise a schema
+        // (through `tool_search`) that the model cannot actually call. Only
+        // extension catalogs — which have the `tool_call` bridge — defer.
+        self.all_definitions()
+    }
+
+    /// Definitions withheld from the advertised list this turn.
+    pub(crate) fn deferred_definitions(&self) -> Vec<ToolDefinition> {
+        vec![]
     }
 
     fn extension_definitions(&self) -> Vec<ToolDefinition> {

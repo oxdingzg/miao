@@ -86,6 +86,14 @@ pub struct Bridge {
 }
 
 impl Bridge {
+    /// Deliver a host reply to the pending product-tool call. This is the
+    /// host-facing half of the reverse dispatch: a host that drains the bridge
+    /// channel answers here, and an unknown id is dropped rather than answered
+    /// with a fabricated result.
+    pub fn resolve(&self, bridge_id: u64, value: Value) -> bool {
+        deliver(&self.pending, bridge_id, value)
+    }
+
     pub fn new(tx: mpsc::Sender<Value>) -> Self {
         Self {
             tx,
