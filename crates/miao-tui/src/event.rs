@@ -78,6 +78,11 @@ pub enum AppEvent {
     Devices(serde_json::Value),
     /// Background jobs of the open Session, as `(job_id, state)` newest first.
     Jobs(Vec<(String, String)>),
+    /// One background job's detail, for the row the operator selected.
+    JobDetail {
+        job_id: String,
+        detail: String,
+    },
     /// The open Session moved to another workspace.
     SessionMoved,
     /// What a revert at one boundary would change, for the confirm dialog.
