@@ -26,9 +26,9 @@ export const prepare = Effect.fn("Engine.pluginHooks")(function* (
     definition: plugins.has("definition"),
   }
   if (!marker.before && !marker.after && !marker.definition) return options
-  // The marker is three booleans, so it travels inline in the child's
-  // environment: no temporary directory to create, chmod, and clean up.
-  options.env = { ...options.env, MIAO_ENGINE_PLUGIN_HOOKS: JSON.stringify(marker) }
+  // The marker is three booleans, so it travels inline: no temporary directory
+  // to create, chmod, and clean up, and no dependency on a caller's env.
+  options.pluginHooks = JSON.stringify(marker)
   options.onHookTool = (call) =>
     Effect.runPromise(
       Effect.gen(function* () {
