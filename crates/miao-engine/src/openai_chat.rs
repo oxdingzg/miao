@@ -289,6 +289,13 @@ fn messages(
         let mut images = Vec::new();
         let mut calls = Vec::new();
         let mut reasoning = Vec::new();
+        // Tool results belong to the call in the previous assistant message, so
+        // they must reach the provider before anything else this message
+        // carries. Flushing this message's text or images first puts a `user`
+        // message between `tool_calls` and its `tool` answers, which the endpoint
+        // rejects with "An assistant message with 'tool_calls' must be followed
+        // by tool messages responding to each 'tool_call_id'".
+        let mut tools = Vec::new();
         for block in blocks {
             match (message.role.as_str(), block["type"].as_str()) {
                 ("user" | "assistant", Some("text")) => {
@@ -312,18 +319,13 @@ fn messages(
                     calls.push(json!({"id":block["id"].as_str().ok_or_else(invalid)?,"type":"function","function":{"name":block["name"].as_str().ok_or_else(invalid)?,"arguments":serde_json::to_string(&block["input"]).map_err(|_|invalid())?}}));
                 }
                 ("user", Some("tool_result")) => {
-                    if !text.is_empty() || !images.is_empty() {
-                        output.push(json!({"role":"user","content":user_content(&text,&images)}));
-                        text.clear();
-                        images.clear();
-                    }
                     let content = block["content"].as_str().ok_or_else(invalid)?;
                     let content = if block["is_error"] == true {
                         format!("Tool error: {content}")
                     } else {
                         content.into()
                     };
-                    output.push(json!({"role":"tool","tool_call_id":block["tool_use_id"].as_str().ok_or_else(invalid)?,"content":content}));
+                    tools.push(json!({"role":"tool","tool_call_id":block["tool_use_id"].as_str().ok_or_else(invalid)?,"content":content}));
                 }
                 _ => return Err(invalid()),
             }
@@ -346,8 +348,11 @@ fn messages(
                 message["tool_calls"] = Value::Array(calls);
             }
             output.push(message);
-        } else if !text.is_empty() || !images.is_empty() {
-            output.push(json!({"role":"user","content":user_content(&text,&images)}));
+        } else {
+            output.append(&mut tools);
+            if !text.is_empty() || !images.is_empty() {
+                output.push(json!({"role":"user","content":user_content(&text,&images)}));
+            }
         }
     }
     Ok(output)
@@ -727,5 +732,42 @@ impl Parser for ChatState {
             usage: crate::usage::chat(&self.usage),
             needs_tools,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn one(role: &str, blocks: Value) -> Vec<Message> {
+        vec![Message {
+            role: role.into(),
+            content: blocks,
+            checkpoint: None,
+            recorded_at_ms: None,
+        }]
+    }
+
+    #[test]
+    fn a_tool_result_precedes_the_images_that_arrived_with_it() {
+        // Chat Completions requires the tool answers immediately after the
+        // assistant message carrying `tool_calls`. A message that arrived with
+        // both a result and an image used to put the image first, which the
+        // endpoint refuses with "An assistant message with 'tool_calls' must be
+        // followed by tool messages responding to each 'tool_call_id'".
+        let wire = messages(
+            &one(
+                "user",
+                json!([
+                    {"type":"tool_result","tool_use_id":"call_1","content":"ok"},
+                    {"type":"image","mime":"image/png","data":"AAAA"},
+                ]),
+            ),
+            false,
+        )
+        .expect("lowers to chat completions");
+        assert_eq!(wire[0]["role"], "tool");
+        assert_eq!(wire[0]["tool_call_id"], "call_1");
+        assert_eq!(wire[1]["role"], "user");
     }
 }
