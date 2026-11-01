@@ -31,11 +31,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Vec::new(),
         )
         .await?;
-    println!("admit: {}", serde_json::to_string(&admitted).unwrap_or_default());
+    println!(
+        "admit: {}",
+        serde_json::to_string(&admitted).unwrap_or_default()
+    );
     // Admission only queues the input (`delivery: steer`); the drain that runs
     // the model turn starts on `resume`.
-    let resumed = client.request("resume", json!({ "session_id": &session })).await?;
-    println!("resume: {}", serde_json::to_string(&resumed).unwrap_or_default());
+    let resumed = client
+        .request("resume", json!({ "session_id": &session }))
+        .await?;
+    println!(
+        "resume: {}",
+        serde_json::to_string(&resumed).unwrap_or_default()
+    );
     tokio::time::sleep(Duration::from_secs(40)).await;
     println!("done");
     Ok(())

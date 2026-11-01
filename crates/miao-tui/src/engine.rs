@@ -530,7 +530,18 @@ pub fn settings(
         model,
         // In-process is the default now: the engine is linked in, so a start
         // costs one process. `MIAO_TUI_EMBEDDED=0` restores the spawned engine.
-        embedded: std::env::var("MIAO_TUI_EMBEDDED").map(|value| value != "0").unwrap_or(true),
+        //
+        // An explicit engine binary or launcher prefix names a *child* process.
+        // Running in-process would silently ignore it, and a launcher prefix in
+        // the in-process argv makes the embedded engine parse `literal prefix`
+        // as its subcommand — which is what the launcher-prefix smoke test hit.
+        // Those configurations keep spawning unless embedding is asked for.
+        embedded: std::env::var("MIAO_TUI_EMBEDDED")
+            .map(|value| value != "0")
+            .unwrap_or_else(|_| {
+                std::env::var_os("MIAO_ENGINE_BIN").is_none()
+                    && std::env::var_os("MIAO_ENGINE_LAUNCH_PREFIX").is_none()
+            }),
     })
 }
 
@@ -660,12 +671,14 @@ pub fn attach(settings: &Settings, bus: Bus) -> Result<Handle, String> {
         let (tx, rx) = mpsc::unbounded_channel();
         tokio::spawn(async move {
             match miao_engine::cli::configure(&argv).await {
-                Ok(configured) => match Connection::start_embedded(configured.runtime, REQUEST_TIMEOUT) {
-                    Ok((connection, events)) => run(connection, events, rx, bus).await,
-                    Err(error) => bus.send(AppEvent::EngineFailure(format!(
-                        "cannot start the in-process engine: {error}"
-                    ))),
-                },
+                Ok(configured) => {
+                    match Connection::start_embedded(configured.runtime, REQUEST_TIMEOUT) {
+                        Ok((connection, events)) => run(connection, events, rx, bus).await,
+                        Err(error) => bus.send(AppEvent::EngineFailure(format!(
+                            "cannot start the in-process engine: {error}"
+                        ))),
+                    }
+                }
                 Err(error) => match Connection::start(spawn, REQUEST_TIMEOUT) {
                     Ok((connection, events)) => {
                         bus.send(AppEvent::EngineFailure(format!(
