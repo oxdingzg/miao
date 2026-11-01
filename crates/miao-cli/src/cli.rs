@@ -1095,6 +1095,51 @@ fn mcp_servers(config_dir: Option<&std::path::Path>) -> Result<Vec<serde_json::V
     Ok(Vec::new())
 }
 
+/// The configured agent, as the engine's manifest: its `system` becomes the
+/// instructions and its `model` can stand in when none was named. Tool and
+/// permission narrowing stay with the policy until that mapping is proven.
+fn agent_manifest_for(
+    config_dir: Option<&std::path::Path>,
+    name: &str,
+    base_instructions: Option<String>,
+) -> Result<Option<(String, serde_json::Value)>, String> {
+    let Some(dir) = config_dir else { return Ok(None) };
+    for file in ["miao.jsonc", "miao.json"] {
+        let path = dir.join(file);
+        if !path.is_file() {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        let parsed: serde_json::Value = serde_json::from_str(&strip_comments(&text))
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        let Some(entry) = parsed
+            .get("agent")
+            .and_then(|value| value.get(name))
+        else {
+            return Err(format!("no agent named {name} in {}", path.display()));
+        };
+        let mut instructions = base_instructions.unwrap_or_default();
+        if let Some(system) = entry.get("system").and_then(|value| value.as_str()) {
+            if !instructions.is_empty() {
+                instructions.push_str("\n\n");
+            }
+            instructions.push_str(system);
+        }
+        let model = entry
+            .get("model")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string();
+        let manifest = serde_json::json!({
+            "name": name,
+            "instructions": instructions,
+            "permission_mode": "auto",
+        });
+        return Ok(Some((model, manifest)));
+    }
+    Ok(None)
+}
+
 /// Derive the engine's model-route manifest from the product configuration.
 ///
 /// The engine's catalogue only ever comes from `--model-routes-config`, so
@@ -2645,6 +2690,7 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
             let mut session = None;
             let mut continue_last = false;
             let mut format = "text".to_string();
+            let mut agent_name: Option<String> = None;
             let mut index = 0;
             while index < rest.len() {
                 let value = |offset: usize| rest.get(offset + 1).cloned();
@@ -2663,6 +2709,10 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                     }
                     "--config-dir" => {
                         config_dir = value(index).map(PathBuf::from);
+                        index += 2;
+                    }
+                    "--agent" => {
+                        agent_name = value(index);
                         index += 2;
                     }
                     "--session" => {
@@ -2701,13 +2751,45 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                         argv.push("--skills-config".into());
                         argv.push(skills.display().to_string());
                     }
-                    if let Some(instructions) = assemble_instructions(&workspace, config_dir.as_deref()) {
-                        match agent_manifest(&instructions) {
-                            Ok(path) => {
-                                argv.push("--agent-config".into());
-                                argv.push(path.display().to_string());
+                    let instructions = assemble_instructions(&workspace, config_dir.as_deref());
+                    let manifest = match agent_name.as_deref() {
+                        // A named agent contributes its own system prompt, and its
+                        // model stands in when the command named none.
+                        Some(name) => {
+                            let chosen = match agent_manifest_for(config_dir.as_deref(), name, instructions) {
+                                Ok(chosen) => chosen,
+                                Err(message) => {
+                                    eprintln!("miao run: {message}");
+                                    return std::process::ExitCode::from(1);
+                                }
+                            };
+                            match chosen {
+                                Some((agent_model, agent_manifest_json)) => {
+                                    if model == "unavailable/model" && !agent_model.is_empty() {
+                                        if let Some(position) = argv.iter().position(|arg| arg == "--model") {
+                                            argv[position + 1] = agent_model;
+                                        }
+                                    }
+                                    Some(agent_manifest_json.to_string())
+                                }
+                                None => None,
                             }
-                            Err(message) => eprintln!("miao run: {message}"),
+                        }
+                        None => instructions.map(|text| {
+                            serde_json::json!({
+                                "name": "miao",
+                                "instructions": text,
+                                "permission_mode": "auto",
+                            })
+                            .to_string()
+                        }),
+                    };
+                    if let Some(text) = manifest {
+                        let path = std::env::temp_dir()
+                            .join(format!("miao-agent-{}.json", std::process::id()));
+                        if std::fs::write(&path, text).is_ok() {
+                            argv.push("--agent-config".into());
+                            argv.push(path.display().to_string());
                         }
                     }
                     let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
