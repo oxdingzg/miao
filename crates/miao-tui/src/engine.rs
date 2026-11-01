@@ -1447,7 +1447,10 @@ async fn refresh_schedule(client: &EngineClient, bus: &Bus, session_id: &str) {
         let Some(id) = row.get("timer_id").and_then(Value::as_str) else {
             continue;
         };
-        let state = row.get("state").and_then(Value::as_str).unwrap_or("pending");
+        let state = row
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("pending");
         rows.push((
             format!("wakeup:{id}"),
             format!("wakeup {id} · {state}"),
@@ -1458,10 +1461,16 @@ async fn refresh_schedule(client: &EngineClient, bus: &Bus, session_id: &str) {
         let Some(id) = row.get("cron_id").and_then(Value::as_str) else {
             continue;
         };
-        let state = row.get("state").and_then(Value::as_str).unwrap_or("scheduled");
+        let state = row
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("scheduled");
         let expression = row.get("cron").and_then(Value::as_str).unwrap_or("");
         let fired = row.get("fired_count").and_then(Value::as_u64).unwrap_or(0);
-        let skipped = row.get("skipped_count").and_then(Value::as_u64).unwrap_or(0);
+        let skipped = row
+            .get("skipped_count")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
         rows.push((
             format!("cron:{id}"),
             format!("cron {id} · {state}"),
