@@ -2290,6 +2290,46 @@ fn report_diagnostics(value: &Value) -> Option<Value> {
     (!report.is_empty()).then(|| json!(report))
 }
 
+/// CFG-01 guard: a native Session never needs the product's tool layer.
+///
+/// The product's `write`/`edit`/`apply-patch` tools are the ones that read
+/// formatter and snapshot configuration through the product's own config
+/// reader. If the engine stopped advertising its equivalents, an engine-placed
+/// Session would silently fall back to them and configuration would be parsed
+/// twice again. This fails first, and it fails cheaply.
+#[cfg(test)]
+mod native_config_ownership_tests {
+    use super::{Gates, Tools};
+
+    #[tokio::test]
+    async fn a_writing_session_gets_the_engine_tools_that_read_config() {
+        let directory = tempfile::tempdir().unwrap();
+        let tools = Tools::new(directory.path()).await.unwrap();
+        tools.set_gates(Gates {
+            writes: true,
+            process: false,
+            process_network: false,
+            process_sandbox: false,
+            background: false,
+            delegation: false,
+            wakeup: false,
+            cron: false,
+        });
+        let names: Vec<String> = tools
+            .definitions()
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect();
+        for required in ["read_file", "write_file", "edit_file", "apply_patch"] {
+            assert!(
+                names.iter().any(|name| name == required),
+                "the engine no longer advertises {required}, so an engine-placed Session \
+                 would fall back to the product's tool layer and read config twice: {names:?}"
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod reference_generation_tests {
     use super::Tools;
