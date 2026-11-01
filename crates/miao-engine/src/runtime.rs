@@ -4147,11 +4147,11 @@ command: None,
                     // message" reads like the Session is still waiting on them.
                     let pause = match reason {
                         "budget" => format!(
-                            "Task paused: the provider turn limit ({} turns) is used up, so autonomous continuation stopped. Nothing is running now and it does not resume on its own — send a message to continue with a fresh allowance.",
+                            "Task paused: the provider turn limit ({} turns) is used up, so autonomous continuation stopped. Nothing is running now and it does not resume on its own. Send a message to continue with a fresh allowance.",
                             allowance.unwrap_or(0)
                         ),
                         _ => format!(
-                            "Task paused: the todo list did not change across {goal_stalls} continuation turns, so another continuation would repeat the same work. Nothing is running now and it does not resume on its own — update the todo list, or send a message with the next step."
+                            "Task paused: the todo list did not change across {goal_stalls} continuation turns, so another continuation would repeat the same work. Nothing is running now and it does not resume on its own. Update the todo list, then send a message with the next step."
                         ),
                     };
                     inner
@@ -4352,9 +4352,9 @@ command: None,
             if budget_exhausted {
                 let note = match budget {
                     Some(budget) => format!(
-                        "Task paused: the prompt token budget ({budget} tokens) is exhausted. Nothing is running now and it does not resume on its own — send a message to continue with a fresh budget."
+                        "Task paused: the prompt token budget ({budget} tokens) is exhausted. Nothing is running now and it does not resume on its own. Send a message to continue with a fresh budget."
                     ),
-                    None => "Task paused: the prompt token budget is exhausted. Nothing is running now and it does not resume on its own — send a message to continue with a fresh budget.".to_owned(),
+                    None => "Task paused: the prompt token budget is exhausted. Nothing is running now and it does not resume on its own. Send a message to continue with a fresh budget.".to_owned(),
                 };
                 inner
                     .store
