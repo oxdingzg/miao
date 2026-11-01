@@ -409,6 +409,15 @@ export class EngineClient {
       await Promise.race([Promise.all([stdout, stderr]), Bun.sleep(1_000)])
       const detail = this.stderr.trim()
       const busy = /(?:^|\n)Error: Busy(?:\r?\n|$)/.test(detail)
+      // A clean exit is the engine restarting itself: it refreshes its project
+      // copy and exits 0, and the owner recreates it on the next request
+      // (`available` turns false here). Reporting that as a terminal failure
+      // painted `miao-engine exited (code 0)` over a working Session.
+      if (code === 0 && !busy) {
+        this.restarted()
+        this.cleanup()
+        return
+      }
       this.fail(
         new EngineError(
           busy ? "engine_busy" : "engine_closed",
@@ -665,6 +674,22 @@ export class EngineClient {
     }
     await this.exited
     this.cleanup()
+  }
+
+  /**
+   * Settle a clean exit without publishing a failure. The client stops being
+   * available, so the owner recreates it on the next request; in-flight calls
+   * see a retriable `engine_restarted` instead of a Session-level failure.
+   */
+  private restarted() {
+    this.closed = true
+    const error = new EngineError("engine_restarted", "miao-engine restarted")
+    for (const pending of this.pending.values()) pending.reject(error)
+    this.pending.clear()
+    for (const call of this.productCalls.values()) call.abort(error)
+    this.productCalls.clear()
+    for (const call of this.hookCalls.values()) call.controller.abort(error)
+    this.hookCalls.clear()
   }
 
   private fail(error: Error, terminal = false) {
