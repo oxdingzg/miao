@@ -735,6 +735,53 @@ mod tests {
     }
 
     #[test]
+    fn the_only_shared_strokes_are_the_documented_dual_purpose_ones() {
+        // INP-07: a stroke that reaches two actions is a conflict unless the
+        // TUI means it — `ctrl+c` clears a draft in the composer and quits
+        // everywhere else. This pins the intended overlaps, so a new accidental
+        // one fails here instead of in an operator's hands.
+        let mut owners: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+        for (action, strokes) in Keymap::default().bindings() {
+            for stroke in strokes.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                owners
+                    .entry(stroke.to_string())
+                    .or_default()
+                    .push(action.name().to_string());
+            }
+        }
+        let shared = owners
+            .into_iter()
+            .filter(|(_, actions)| actions.len() > 1)
+            .map(|(stroke, mut actions)| {
+                actions.sort();
+                (stroke, actions)
+            })
+            .collect::<Vec<_>>();
+        // Each pair is deliberate: the composer owns the stroke while it has
+        // the keyboard, and the page owns it otherwise.
+        let documented = [
+            // Clear a draft, or quit outside the composer.
+            ("ctrl+c", vec!["app_exit", "input_clear"]),
+            // Delete forward, or quit outside the composer.
+            ("ctrl+d", vec!["app_exit", "input_delete"]),
+            // Walk prompt history, or move inside a multi-line draft.
+            ("down", vec!["history_next", "input_move_down"]),
+            ("up", vec!["history_previous", "input_move_up"]),
+        ];
+        assert_eq!(
+            shared,
+            documented
+                .into_iter()
+                .map(|(stroke, actions)| (
+                    stroke.to_string(),
+                    actions.iter().map(|a| a.to_string()).collect::<Vec<_>>()
+                ))
+                .collect::<Vec<_>>(),
+            "an unexpected shared stroke is a keybinding conflict"
+        );
+    }
+
+    #[test]
     fn shift_letters_and_function_keys_parse() {
         let keymap = Keymap::from_overrides(&overrides(&[(
             "debug_view",
