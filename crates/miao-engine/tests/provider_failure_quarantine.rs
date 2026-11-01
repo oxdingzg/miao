@@ -103,6 +103,28 @@ impl Provider for OverflowThenOk {
     }
 }
 
+/// Refuses every call with the endpoint's context refusal: the case where
+/// bounding the request cannot help, so the recovery must stop instead of
+/// retrying the same doomed request forever.
+struct AlwaysOverflow {
+    calls: AtomicUsize,
+}
+
+#[async_trait]
+impl Provider for AlwaysOverflow {
+    async fn stream(
+        &self,
+        _: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Err(ProviderError::Rejected(
+            "This model's maximum context length is 1024 tokens. However, you requested 4096 tokens (4096 in the messages, 0 in the completion). Please reduce the length of the messages or completion.".into(),
+        ))
+    }
+}
+
 async fn harness(provider: Arc<impl Provider + 'static>) -> (Runtime, Store) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
@@ -318,4 +340,33 @@ async fn a_context_overflow_is_learned_and_recovered_in_the_same_drain() {
         .any(|message| serde_json::to_string(&message.content)
             .unwrap()
             .contains("继续")));
+}
+
+/// Recovery is bounded. When even a trimmed request is refused — the history
+/// cannot be bounded, or the window is smaller than one message — the run has to
+/// fail with the marker instead of retrying the same request for the rest of the
+/// Session.
+#[tokio::test]
+async fn a_persistent_context_refusal_stops_instead_of_looping() {
+    let provider = Arc::new(AlwaysOverflow {
+        calls: AtomicUsize::new(0),
+    });
+    let (runtime, store) = harness(provider.clone()).await;
+    admit(&runtime, "one", "继续").await;
+    let events = wait_for_runs(&store, 1).await;
+    // The refused turn plus exactly one bounded retry.
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
+    let stop = events
+        .iter()
+        .rev()
+        .find(|event| event.kind == "stop_failure")
+        .unwrap();
+    assert!(
+        stop.data["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("context overflow:")),
+        "{}",
+        stop.data["message"]
+    );
+    assert!(!rejected_message(&events));
 }
