@@ -56,6 +56,10 @@ pub enum TransportEvent {
     Config(Value),
     Resync(String),
     Failure(EngineFailure),
+    /// The engine exited cleanly. That is a restart — it refreshes its project
+    /// copy and exits 0 — and the client respawns it on the next request. It
+    /// is not a fault and must not be reported as one.
+    Restart,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -454,7 +458,10 @@ fn spawn_engine(
         // Exit status and stdout EOF do not mean the stderr task has drained.
         // Bound the wait because a descendant can inherit the stderr pipe.
         let _ = tokio::time::timeout(EXIT_STATUS_GRACE, reader_stderr_done.changed()).await;
-        reap.publish(engine_failure(status, &reader_tail));
+        match status {
+            Some(status) if status.success() => reap.publish_restart(),
+            status => reap.publish(engine_failure(status, &reader_tail)),
+        }
     });
 
     let tail = stderr_tail.clone();
@@ -477,7 +484,11 @@ fn spawn_engine(
             };
             if let Some(status) = status {
                 let _ = tokio::time::timeout(EXIT_STATUS_GRACE, reaper_stderr_done.changed()).await;
-                reader_reap.publish(engine_failure(Some(status), &stderr_tail));
+                if status.success() {
+                    reader_reap.publish_restart();
+                } else {
+                    reader_reap.publish(engine_failure(Some(status), &stderr_tail));
+                }
                 let _ = exited_tx.send(true);
                 break;
             }
@@ -681,6 +692,21 @@ impl Reap {
             }
             _ => {}
         }
+    }
+
+    /// A clean exit. Mark the client unusable so the next request respawns it,
+    /// and tell the UI to keep the Session open.
+    fn publish_restart(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        self.failure.lock().expect("failure").take();
+        let restarted = EngineFailure {
+            code: "engine_restarted".into(),
+            message: "miao-engine restarted".into(),
+        };
+        for (_, reply) in self.pending.lock().expect("pending").drain() {
+            let _ = reply.send(Err(TransportError::Closed(restarted.clone())));
+        }
+        let _ = self.events.send(TransportEvent::Restart);
     }
 
     /// Publish the terminal failure exactly once, rejecting every pending call.
