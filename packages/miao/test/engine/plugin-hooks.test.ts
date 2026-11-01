@@ -45,8 +45,9 @@ describe("PluginHooks", () => {
         })
         .pipe(Scope.provide(scope))
       const options = yield* PluginHooks.prepare(configuration, { store })
-      expect(options.pluginHooksFile).toBeString()
-      const marker = yield* Effect.promise(() => Bun.file(options.pluginHooksFile!).json())
+      // The marker travels inline, so nothing is written to a temporary file.
+      expect(options.pluginHooksFile).toBeUndefined()
+      const marker = JSON.parse(options.pluginHooks ?? "null")
       expect(marker).toEqual({ before: true, after: false, definition: false })
       const verdict = yield* Effect.promise(() =>
         options.onHookTool!(call("before", { args: { text: "original" } })),
@@ -120,6 +121,7 @@ describe("PluginHooks", () => {
     Effect.gen(function* () {
       const options = yield* PluginHooks.prepare(configuration, { store })
       expect(options.pluginHooksFile).toBeUndefined()
+      expect(options.pluginHooks).toBeUndefined()
       expect(options.onHookTool).toBeUndefined()
     }),
   )

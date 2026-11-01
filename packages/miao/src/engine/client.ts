@@ -116,6 +116,8 @@ export interface EngineOptions {
   productToolsFile?: string
   /** Plugin hook families the host resolves; a marker, never the callbacks. */
   pluginHooksFile?: string
+  /** The hook-family marker as inline JSON; spawn turns it into the child env. */
+  pluginHooks?: string
   /**
    * Execute a product tool the engine planned. The reply becomes the tool
    * result, so a rejection must be thrown, never swallowed.
@@ -439,6 +441,9 @@ export class EngineClient {
       const args = engineArgs(options)
       const environment = engineEnvironment({ ...manifest?.environment, ...options.env })
       if (manifest) environment.MIAO_ENGINE_MCP_SERVERS = manifest.servers
+      // Set after the caller's env so an override cannot drop the marker: the
+      // hooks are a property of the prepared options, not of process env.
+      if (options.pluginHooks) environment.MIAO_ENGINE_PLUGIN_HOOKS = options.pluginHooks
       const child = spawn([options.binary, ...args], {
         stdin: "pipe",
         stdout: "pipe",

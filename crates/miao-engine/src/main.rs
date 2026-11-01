@@ -714,6 +714,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             serde_json::from_slice::<miao_engine::product::Marker>(&bytes)
                 .map_err(|_| "invalid plugin hooks host config")?,
         );
+    } else if let Some(raw) = std::env::var_os("MIAO_ENGINE_PLUGIN_HOOKS") {
+        // A host that knows which hook families are registered hands the marker
+        // over inline; an explicit `--plugin-hooks` file still wins.
+        if !options.contains_key("--product-tools") {
+            return Err("plugin hooks require the product tool bridge".into());
+        }
+        let bytes = raw.to_string_lossy();
+        if bytes.len() > 65536 {
+            return Err("Plugin hooks config exceeds 64 KiB".into());
+        }
+        plugin_hooks = Some(
+            serde_json::from_str::<miao_engine::product::Marker>(&bytes)
+                .map_err(|_| "invalid inline plugin hooks host config")?,
+        );
     }
     let mut mcp_origin = None;
     if let Some(raw) = std::env::var_os("MIAO_ENGINE_MCP_SERVERS") {
