@@ -46,6 +46,24 @@ The per-task table is in `results.md`. Reading it with both arms in mind:
   overall, but the spread between samples is wider than that difference, so the
   honest statement is "no measurable cost difference at this sample size".
 - Every failure is listed in `results.md` with its verifier message.
+- No sample exceeded the `$0.01` per-task budget (largest: `$0.0064` ts, `$0.0047`
+  rust), so the over-budget class is empty in this run. It is reported as empty
+  rather than dropped: the per-sample costs behind that statement are in
+  `raw/<arm>/evidence/`.
+
+## Suite provenance
+
+The families and report fields this record measures come from these merges, all
+in `main` before the run:
+
+- #2088 added `unfamiliar-repo` (the family later repaired by #2205);
+- #2098 added `test-repair` and `tool-failure` recovery;
+- #2100 stopped folding unknown billing into zero;
+- #2102 added the success-rate, per-success-cost and `--budget` columns;
+- #2191 made a cell with no provider step fail rather than pass vacuously.
+
+Versions: CLI `0.3.24` at `808cc110e`; engine `miao-engine 0.3.24` built from
+`071eed588d`; suite `script/engine-benchmark.ts` sha256 `6b0c8116…`; `bun 1.3.14`.
 
 ## One contaminated family, and its fix
 
