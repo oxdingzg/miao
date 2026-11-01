@@ -1579,6 +1579,39 @@ impl Pane for SidebarPane {
                             Style::new().fg(palette.text_muted),
                         )));
                     }
+                    // What a person had to decide, and what the model had to
+                    // redo: supervision cost and rework, in one glance.
+                    let decisions =
+                        usage.approvals + usage.answers + usage.rejections + usage.cancels;
+                    if decisions > 0 || usage.input_edits > 0 {
+                        lines.push(Line::from(Span::styled(
+                            format!(
+                                "needs you {}  ·  {} answer{}  ·  {} reject{}  ·  {} cancel{}",
+                                usage.approvals,
+                                usage.answers,
+                                if usage.answers == 1 { "" } else { "s" },
+                                usage.rejections,
+                                if usage.rejections == 1 { "" } else { "s" },
+                                usage.cancels,
+                                if usage.cancels == 1 { "" } else { "s" },
+                            ),
+                            Style::new().fg(palette.text_muted),
+                        )));
+                    }
+                    if usage.tool_input_errors > 0 {
+                        lines.push(Line::from(Span::styled(
+                            format!(
+                                "rework {}  ·  tool-input error{}",
+                                usage.tool_input_errors,
+                                if usage.tool_input_errors == 1 {
+                                    ""
+                                } else {
+                                    "s"
+                                },
+                            ),
+                            Style::new().fg(palette.warning),
+                        )));
+                    }
                     if usage.replayed_turns > 0 || usage.failed_attempts > 0 {
                         lines.push(Line::from(Span::styled(
                             format!(
