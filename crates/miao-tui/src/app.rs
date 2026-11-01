@@ -2707,9 +2707,6 @@ fn db_argument(args: &[String]) -> String {
         .unwrap_or_else(|| "(none)".to_string())
 }
 
-/// Token counts as the status strip shows them: exact under a thousand,
-/// one decimal above, so a long Session does not widen the row.
-
 fn first_line(text: &str) -> String {
     let line = text.lines().next().unwrap_or("").trim();
     let mut label = line.chars().take(60).collect::<String>();
