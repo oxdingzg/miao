@@ -814,6 +814,9 @@ impl App {
             if let Some(index) = self.home.row_at(mouse.row) {
                 self.home.select(index);
                 self.home_list_focus = true;
+                // The footer names the side the next `Tab` reaches, so a click
+                // that hands the list the keyboard moves the hint with it.
+                self.home.set_list_focus(true);
             }
             return;
         }
@@ -4112,6 +4115,17 @@ mod tests {
             Some("ses_third"),
             "the list owns the keyboard after a click"
         );
+        // The footer names the side the next `Tab` reaches, so it has to move
+        // with the keyboard the click just handed over.
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+        let painted = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(painted.contains("tab prompt"), "{painted}");
     }
 
     fn home_with_named(rows: &[(&str, &str, Option<&str>)]) -> App {
