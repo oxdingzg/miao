@@ -242,10 +242,14 @@ const DEFAULTS: &[(Action, &str)] = &[
     (Action::Stash, "<leader>p"),
     (Action::StashDraft, "<leader>P"),
     (Action::InputClear, "ctrl+c"),
-    (Action::InputUndo, "ctrl+z"),
-    // ctrl+shift+z is what a terminal sends for shift+ctrl+z; ctrl+y is
-    // the other convention people reach for, so both redo.
-    (Action::InputRedo, "ctrl+shift+z,ctrl+y"),
+    // Undo and redo stay off `ctrl+z`, which is the page's suspend. The
+    // TypeScript composer binds `ctrl+-`/`super+z`, but a terminal sends
+    // `ctrl+-` as 0x1f and this parser reports that as `ctrl+7` (and `ctrl+.`
+    // never arrives outside the kitty protocol), so the working chord here is
+    // `alt+z`/`alt+.`; the documented spellings stay bound for terminals that
+    // do deliver them.
+    (Action::InputUndo, "alt+z,super+z,ctrl+-,ctrl+_,ctrl+7"),
+    (Action::InputRedo, "alt+.,super+shift+z,ctrl+."),
     (Action::InputSubmit, "return"),
     (
         Action::InputNewline,
@@ -475,9 +479,12 @@ impl Key {
         if self.code != event.code {
             return false;
         }
+        // `super` belongs here: leaving it out let `super+z` match a bare `z`,
+        // so an undo chord silently swallowed the letter the operator typed.
         const SHORTCUT: KeyModifiers = KeyModifiers::CONTROL
             .union(KeyModifiers::ALT)
-            .union(KeyModifiers::META);
+            .union(KeyModifiers::META)
+            .union(KeyModifiers::SUPER);
         if (self.modifiers & SHORTCUT) != (event.modifiers & SHORTCUT) {
             return false;
         }
@@ -781,10 +788,6 @@ mod tests {
             ("ctrl+c", vec!["app_exit", "input_clear"]),
             // Delete forward, or quit outside the composer.
             ("ctrl+d", vec!["app_exit", "input_delete"]),
-            // Redo inside the composer, or copy the last message outside it.
-            ("ctrl+y", vec!["input_redo", "messages_copy"]),
-            // Undo inside the composer, or suspend the process outside it.
-            ("ctrl+z", vec!["input_undo", "terminal_suspend"]),
             // Walk prompt history, or move inside a multi-line draft.
             ("down", vec!["history_next", "input_move_down"]),
             ("up", vec!["history_previous", "input_move_up"]),
@@ -799,6 +802,29 @@ mod tests {
                 ))
                 .collect::<Vec<_>>(),
             "an unexpected shared stroke is a keybinding conflict"
+        );
+    }
+
+    /// A `super` chord must not swallow the bare letter: `super+z` bound to
+    /// undo matched a plain `z`, so typing a word with a `z` in it silently
+    /// undid the run instead of inserting the character.
+    #[test]
+    fn a_super_chord_does_not_claim_the_bare_key() {
+        let keymap = Keymap::default();
+        let bare = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE);
+        let chord = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::SUPER);
+        assert!(
+            keymap.matches(Action::InputUndo, &chord),
+            "the chord is bound"
+        );
+        assert!(
+            !keymap.matches(Action::InputUndo, &bare),
+            "a bare z must reach the composer"
+        );
+        assert_ne!(
+            keymap.input_action(&bare),
+            Some(Action::InputUndo),
+            "typing z is not an undo"
         );
     }
 

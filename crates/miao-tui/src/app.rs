@@ -730,11 +730,7 @@ impl App {
             self.run_builtin(Builtin::TerminalTitle);
             return;
         }
-        // The composer owns `ctrl+z` while it has a step to take back; with
-        // nothing to undo the stroke keeps its page meaning and suspends.
-        if self.keys.matches(keybinds::Action::TerminalSuspend, &key)
-            && !self.shell.composer.can_undo()
-        {
+        if self.keys.matches(keybinds::Action::TerminalSuspend, &key) {
             self.leader = false;
             self.run_builtin(Builtin::Suspend);
             return;
@@ -2084,9 +2080,7 @@ impl App {
             self.read_clipboard();
             return;
         }
-        // Same split as `ctrl+z`: a step waiting to be re-applied keeps the
-        // stroke for the composer, otherwise it copies the last response.
-        if action(keybinds::Action::CopyMessage) && !self.shell.composer.can_redo() {
+        if action(keybinds::Action::CopyMessage) {
             self.copy_last_response();
             return;
         }
@@ -4812,8 +4806,9 @@ mod tests {
         app.handle(key(KeyCode::Char('c'), KeyModifiers::CONTROL));
         assert_eq!(app.shell.composer.editor.text(), "", "the draft is cleared");
         assert!(!app.quit, "the app keeps running with a cleared draft");
-        // The clear is an editing step, so the same draft comes back on undo.
-        app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
+        // The clear is an editing step, so the same draft comes back on undo —
+        // `ctrl+-`, which leaves `ctrl+z` to the page.
+        app.handle(key(KeyCode::Char('-'), KeyModifiers::CONTROL));
         assert_eq!(app.shell.composer.editor.text(), "draft");
     }
 
@@ -4825,45 +4820,48 @@ mod tests {
         assert!(app.quit);
     }
 
+    /// The composer's undo uses `ctrl+-`, the chord the TypeScript composer
+    /// binds, so it never has to compete with the page's `ctrl+z` suspend.
     #[test]
-    fn ctrl_z_undoes_the_draft_instead_of_suspending() {
+    fn ctrl_minus_undoes_the_draft() {
         let mut app = session_app();
         for c in "draft".chars() {
             app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
         }
         assert_eq!(app.shell.composer.editor.text(), "draft");
-        app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
+        app.handle(key(KeyCode::Char('-'), KeyModifiers::CONTROL));
         assert_eq!(
             app.shell.composer.editor.text(),
             "",
             "the run came back off"
         );
-        assert!(
-            !app.suspend_requested,
-            "the process must not stop for an undo"
-        );
+        assert!(!app.suspend_requested, "undo is not a suspend");
     }
 
-    /// With nothing to undo the stroke keeps its page meaning: the process
-    /// still suspends, which is what a terminal operator expects.
+    /// `ctrl+z` keeps its page meaning even with a draft: job control has to
+    /// stay reachable while a prompt is half typed, and the draft survives the
+    /// round trip to the shell.
     #[test]
-    fn ctrl_z_still_suspends_with_nothing_to_undo() {
-        let mut app = session_app();
-        app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
-        assert!(app.suspend_requested, "an empty draft leaves suspend alone");
-    }
-
-    /// Redo re-applies the undone run, and the copy stroke stays out of the way
-    /// while a step is waiting.
-    #[test]
-    fn ctrl_y_reapplies_the_undone_draft() {
+    fn ctrl_z_still_suspends_with_a_draft() {
         let mut app = session_app();
         for c in "abc".chars() {
             app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
         }
         app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
+        assert!(app.suspend_requested, "the page still owns ctrl+z");
+        assert_eq!(app.shell.composer.editor.text(), "abc", "the draft is kept");
+    }
+
+    /// Redo re-applies the undone run on the composer's own chord.
+    #[test]
+    fn ctrl_period_reapplies_the_undone_draft() {
+        let mut app = session_app();
+        for c in "abc".chars() {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        app.handle(key(KeyCode::Char('-'), KeyModifiers::CONTROL));
         assert_eq!(app.shell.composer.editor.text(), "");
-        app.handle(key(KeyCode::Char('y'), KeyModifiers::CONTROL));
+        app.handle(key(KeyCode::Char('.'), KeyModifiers::CONTROL));
         assert_eq!(
             app.shell.composer.editor.text(),
             "abc",
