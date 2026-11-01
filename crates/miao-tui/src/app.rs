@@ -81,7 +81,7 @@ impl Live {
             ),
             LivePhase::Waiting => format!("waiting for model · {elapsed}"),
             LivePhase::Retrying { attempt } => format!("retrying attempt {attempt} · {elapsed}"),
-            LivePhase::Tool { name } => format!("running {name} · {elapsed}"),
+            LivePhase::Tool { name } => format!("running {} · {elapsed}", tool_label(name)),
         }
     }
 }
@@ -121,6 +121,16 @@ impl Draft {
 fn tool_label(name: &str) -> String {
     let line = name.lines().next().unwrap_or_default().trim();
     let label = line.split_whitespace().next().unwrap_or("tool");
+    // MCP tools are spelled `mcp__<server>__<tool>`; truncating that leaves
+    // `mcp__github__create_issu`, which names neither the server cleanly nor
+    // the work. `server/tool` survives the clip and still identifies the call.
+    let label = match label
+        .strip_prefix("mcp__")
+        .and_then(|rest| rest.split_once("__"))
+    {
+        Some((server, tool)) => format!("{server}/{tool}"),
+        None => label.to_string(),
+    };
     label.chars().take(24).collect()
 }
 
@@ -3726,6 +3736,33 @@ mod tests {
             },
         });
         assert!(app.live.is_none());
+    }
+
+    #[test]
+    fn mcp_lsp_and_subagent_waits_are_named_by_the_tool_that_blocks() {
+        // JOB-04 asks for wait reasons when execution blocks on MCP, LSP or a
+        // subagent. The TUI does not need a separate vocabulary for those: each
+        // is a tool call, and the status names the tool that is running. This
+        // pins that, so a future phase model cannot drop the name silently.
+        // Each pair is the engine's own spelling and what the status shows.
+        for (name, shown) in [
+            ("mcp__github__create_issue", "github/create_issue"),
+            ("lsp_diagnostics", "lsp_diagnostics"),
+            ("task", "task"),
+        ] {
+            let mut app = running_app("run-1");
+            app.handle(AppEvent::Provider(serde_json::json!({
+                "kind": "tool.planned",
+                "run_id": "run-1",
+                "name": name,
+            })));
+            app.update_status();
+            let status = app.shell.title.status().unwrap_or_default();
+            assert!(
+                status.starts_with(&format!("running {shown}")),
+                "{name} is named as {shown}, not clipped: {status}"
+            );
+        }
     }
 
     #[test]
