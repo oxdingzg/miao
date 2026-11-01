@@ -46,10 +46,16 @@ impl Harness {
     /// A Session with a long transcript, so typing is measured against a
     /// realistic history rather than two messages.
     fn spawn_engine_history(label: &str, messages: usize) -> Self {
-        Self::spawn_engine_full(label, false, Some(messages))
+        Self::spawn_engine_full(label, false, Some(("MIAO_TUI_FAKE_HISTORY", messages)))
     }
 
-    fn spawn_engine_full(label: &str, streaming: bool, history: Option<usize>) -> Self {
+    /// One message far larger than a screen, so typing is measured while the
+    /// renderer holds it.
+    fn spawn_engine_large_output(label: &str, bytes: usize) -> Self {
+        Self::spawn_engine_full(label, false, Some(("MIAO_TUI_FAKE_LARGE_OUTPUT", bytes)))
+    }
+
+    fn spawn_engine_full(label: &str, streaming: bool, knob: Option<(&str, usize)>) -> Self {
         let dir = std::env::temp_dir().join(format!("miao-input-latency-{label}"));
         std::fs::create_dir_all(&dir).expect("workspace dir");
         let pair = native_pty_system()
@@ -81,8 +87,8 @@ impl Harness {
         if streaming {
             cmd.env("MIAO_TUI_FAKE_STREAM", "1");
         }
-        if let Some(messages) = history {
-            cmd.env("MIAO_TUI_FAKE_HISTORY", messages.to_string());
+        if let Some((key, value)) = knob {
+            cmd.env(key, value.to_string());
         }
         cmd.arg("--db");
         cmd.arg(&db);
@@ -300,6 +306,54 @@ fn typing_echo_latency_is_reported_for_the_composer() {
     // The TUI's exit does not stop its engine child: without this cleanup the
     // orphan keeps running into the next test binary and breaks the editor
     // signal tests that follow.
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", "miao-tui-fake-engine"])
+        .status();
+    std::thread::sleep(Duration::from_millis(150));
+}
+
+#[test]
+fn typing_echo_latency_is_reported_while_a_large_output_is_on_screen() {
+    // PERF-01 also asks for large output: one message far bigger than a screen,
+    // so the per-keystroke cost is measured while the renderer holds it.
+    let mut harness = Harness::spawn_engine_large_output("large-output", 200_000);
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(6)),
+        "the home list did not render:\n{}",
+        harness.text()
+    );
+    harness.write(b"\r");
+    // The transcript scrolls to the tail of the oversized block, so the marker
+    // has to be something that stays on screen.
+    assert!(
+        wait_for_plain(&harness, "xxxxxxxxxxxxxxxxxxxx", Duration::from_secs(20)),
+        "the large output did not render:\n{}",
+        harness.text()
+    );
+    std::thread::sleep(Duration::from_millis(300));
+
+    let keys: Vec<u8> = b"abcdefghijklmnopqrstuvwxyz0123456789".to_vec();
+    let samples = measure_echo(&mut harness, &keys, Duration::from_millis(2000));
+
+    write_report(&harness.dir, "composer-large-output", &samples);
+    let worst = samples
+        .iter()
+        .map(|sample| sample.latency_ms)
+        .max()
+        .unwrap_or(0);
+    assert!(
+        worst < 2000,
+        "a keystroke took {worst} ms to echo with a large output on screen"
+    );
+
+    harness.write(b"\x03");
+    std::thread::sleep(Duration::from_millis(200));
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(10)).expect("tui did not exit");
+    assert!(status.success());
+    drop(harness.writer);
+    drop(harness.pty);
+    let _ = harness.reader.join();
     let _ = std::process::Command::new("pkill")
         .args(["-f", "miao-tui-fake-engine"])
         .status();

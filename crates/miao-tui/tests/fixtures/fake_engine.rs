@@ -61,6 +61,12 @@ fn main() {
     // existing smoke tests keep the two-session default.
     // A long transcript makes "type in a huge Session" measurable instead of
     // assumed; the smoke tests keep the two-message default.
+    // One oversized message, so typing is measured while the renderer holds a
+    // block far larger than a screen.
+    let large_output: usize = std::env::var("MIAO_TUI_FAKE_LARGE_OUTPUT")
+        .ok()
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(0);
     let history: usize = std::env::var("MIAO_TUI_FAKE_HISTORY")
         .ok()
         .and_then(|count| count.parse().ok())
@@ -283,7 +289,13 @@ fn main() {
                     // ses_b is the renderer fixture: markdown structure plus a
                     // completed tool call, so the smoke test can assert what a
                     // person sees rather than the transport bytes.
-                    snapshot["messages"] = if history > 0 {
+                    snapshot["messages"] = if large_output > 0 {
+                        let body = "x".repeat(large_output);
+                        json!([
+                            {"seq":1,"role":"user","content":"dump the whole log","checkpoint":null,"recorded_at_ms":null},
+                            {"seq":2,"role":"assistant","content":[{"type":"text","text":body}],"identity":{"agent":"build","provider":{"model":"fake/model"}},"checkpoint":null,"recorded_at_ms":null}
+                        ])
+                    } else if history > 0 {
                         // Every turn is one user line and one assistant line, so
                         // `history` messages means `history / 2` turns.
                         let mut messages = Vec::with_capacity(history);

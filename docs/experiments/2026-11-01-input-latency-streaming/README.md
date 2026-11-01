@@ -12,7 +12,7 @@ cargo test --test input_latency -- --nocapture --test-threads=1
 
 The harness boots the real `miao-tui` binary in a PTY, then measures, per
 keystroke, the time from writing the byte to that character appearing in the
-rendered output stream. Three scenarios:
+rendered output stream. Four scenarios:
 
 - `composer-idle` — the session is quiescent, 36 keystrokes.
 - `composer-streaming` — the fixture commits an event every 10 ms for ten
@@ -24,16 +24,21 @@ rendered output stream. Three scenarios:
   starts, which is the "10k-line history" case PERF-01 also asks for. The
   fixture builds it from `MIAO_TUI_FAKE_HISTORY`, so the renderer's
   per-keystroke cost is measured against a real transcript instead of assumed.
+- `composer-large-output` — one 200 KB message is on screen before typing
+  starts, so a single oversized block is held by the renderer while keys are
+  measured.
 
 | scenario | samples | p50 | p95 | p99 | max |
 | --- | --- | --- | --- | --- | --- |
 | composer-idle | 36 | 0 ms | 2 ms | 2 ms | 2 ms |
 | composer-streaming | 12 | 1 ms | 1 ms | 1 ms | 1 ms |
 | composer-long-history (10,000 messages) | 36 | 1 ms | 2 ms | 3 ms | 3 ms |
+| composer-large-output (200 KB message) | 36 | 0 ms | 0 ms | 0 ms | 0 ms |
 
 Against the gate recorded beside the harness (p95 ≤ 50 ms, p99 ≤ 100 ms), every
 scenario passes with two orders of magnitude of headroom — including the long
-transcript, so the cost does not grow with history size at this length.
+transcript and the oversized message, so the cost does not grow with either
+history length or output size at these scales.
 
 ## What this does not cover
 
