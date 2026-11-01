@@ -42,7 +42,14 @@ type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
 /// The catalog columns a listing needs, in query order; a store written before
 /// one of them existed reads that column as NULL.
-type CatalogFields = (String, Option<i64>, Option<i64>, Option<i64>, Option<i64>);
+type CatalogFields = (
+    String,
+    String,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+);
 
 /// A durable, fenced claim on one Session's execution. Every claim advances
 /// `epoch`, so a writer whose ownership was superseded is rejected even while
@@ -77,6 +84,9 @@ impl Drop for PathLease {
 
 /// One dedicated SQLite worker owns both the connection and store lease. Async
 /// callers never block a Tokio worker on SQLite locks or filesystem operations.
+/// A tag is a short operator label, not a second title.
+const MAX_TAG_BYTES: usize = 64;
+
 #[derive(Clone)]
 pub struct Store {
     work: mpsc::Sender<Work>,
@@ -161,20 +171,26 @@ impl Store {
                 let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
                 rows.collect::<Result<HashSet<_>, _>>()?
             };
-            let fields = ["title", "created_at_ms", "updated_at_ms", "archived_at_ms", "pinned_at_ms"].map(|name| {
-                if columns.contains(name) { name } else if name == "title" { "''" } else { "NULL" }
+            let fields = ["title", "tag", "created_at_ms", "updated_at_ms", "archived_at_ms", "pinned_at_ms"].map(|name| {
+                if columns.contains(name) {
+                    name
+                } else if name == "title" || name == "tag" {
+                    "''"
+                } else {
+                    "NULL"
+                }
             });
             let row: Option<CatalogFields> = tx.query_row(
                 &format!("SELECT {} FROM engine_session WHERE id=?1", fields.join(",")), [&session],
-                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)),
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?)),
             ).optional()?;
-            let Some((title, created, updated, archived, pinned)) = row else { return Ok(None) };
+            let Some((title, tag, created, updated, archived, pinned)) = row else { return Ok(None) };
             let parent: Option<String> = tx.query_row("SELECT parent_session_id FROM engine_lineage WHERE session_id=?1", [&session], |row| row.get(0)).optional()?;
             let model = crate::session_model::selected(&tx, &session)?;
             let account = crate::session_account::selected_at(&tx, &session, i64::MAX as u64)?;
             let agent = crate::session_agent::selected(&tx, &session)?.map(|(agent, _)| json!({"name":agent.name}));
             tx.commit()?;
-            Ok(Some(json!({"session_id":session,"title":title,"created_at_ms":created,"updated_at_ms":updated,"archived_at_ms":archived,"pinned_at_ms":pinned,"parent_session_id":parent,"model_selection":model,"account_selection":account,"agent":agent})))
+            Ok(Some(json!({"session_id":session,"title":title,"tag":tag,"created_at_ms":created,"updated_at_ms":updated,"archived_at_ms":archived,"pinned_at_ms":pinned,"parent_session_id":parent,"model_selection":model,"account_selection":account,"agent":agent})))
         }).await
     }
 
@@ -344,6 +360,13 @@ impl Store {
                 if !has_title {
                     conn.execute(
                         "ALTER TABLE engine_session ADD COLUMN title TEXT NOT NULL DEFAULT ''",
+                        [],
+                    )?;
+                }
+                let has_tag:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name='tag')",[],|r|r.get(0))?;
+                if !has_tag {
+                    conn.execute(
+                        "ALTER TABLE engine_session ADD COLUMN tag TEXT NOT NULL DEFAULT ''",
                         [],
                     )?;
                 }
@@ -1018,6 +1041,31 @@ impl Store {
         .await
     }
 
+    /// The operator's label for a Session. Empty clears it, so a tag is either
+    /// present or absent by the operator's choice, never stale.
+    pub async fn tag(&self, session: &str, tag: &str) -> Result<Event, Error> {
+        if tag.len() > MAX_TAG_BYTES {
+            return Err(Error::Invalid("session tag is too long".into()));
+        }
+        let (session, tag) = (session.to_owned(), tag.to_owned());
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let now = crate::approval::now_ms() as i64;
+            tx.execute(
+                "INSERT OR IGNORE INTO engine_session(id,next_seq,created_at_ms) VALUES(?1,0,?2)",
+                params![session, now],
+            )?;
+            tx.execute(
+                "UPDATE engine_session SET tag=?2, updated_at_ms=?3 WHERE id=?1",
+                params![session, tag, now],
+            )?;
+            let event = append(&tx, &session, "session.tagged", json!({"tag":tag}))?;
+            tx.commit()?;
+            Ok(event)
+        })
+        .await
+    }
+
     pub async fn location(&self, session: &str) -> Result<Option<String>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
@@ -1614,16 +1662,16 @@ impl Store {
             let account_selection=crate::session_account::selected_at(&tx,&session,i64::MAX as u64)?;
             let agent=crate::session_agent::selected(&tx,&session)?.map(|(agent,hash)|json!({"name":agent.name,"semantics":agent.semantics,"agent_hash":hash}));
             let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.unwrap_or_else(||"build".into());
-            let (title,created_at_ms,updated_at_ms,archived_at_ms,pinned_at_ms):(String,Option<i64>,Option<i64>,Option<i64>,Option<i64>)=tx.query_row(
-                "SELECT title,created_at_ms,updated_at_ms,archived_at_ms,pinned_at_ms FROM engine_session WHERE id=?1",
-                [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)),
+            let (title,tag,created_at_ms,updated_at_ms,archived_at_ms,pinned_at_ms):(String,String,Option<i64>,Option<i64>,Option<i64>,Option<i64>)=tx.query_row(
+                "SELECT title,tag,created_at_ms,updated_at_ms,archived_at_ms,pinned_at_ms FROM engine_session WHERE id=?1",
+                [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?)),
             )?;
             let preview=if metadata_only { metadata_preview(&tx,&session)? } else { None };
             let staged_revert:Option<(i64,String)>=tx.query_row("SELECT boundary_seq,snapshot_id FROM engine_staged_revert WHERE session_id=?1",[&session],|r|Ok((r.get(0)?,crate::snapshot::id_text(r.get(1)?)?))).optional()?;
             let staged_revert=staged_revert.map(|(boundary_seq,snapshot_id)|json!({"boundary_seq":boundary_seq,"snapshot_id":snapshot_id}));
             let event_base:u64=tx.query_row("SELECT CASE WHEN json_extract(bundle,'$.source.engine')='rust' THEN COALESCE(json_extract(bundle,'$.source.sequence'),0) ELSE 0 END FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?.unwrap_or(0);
             let transfer_import:Option<String>=tx.query_row("SELECT id FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?;
-            let mut snapshot=json!({"event_base":event_base,"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"message_count":message_count,"reverted_count":reverted_count,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"pinned_at_ms":pinned_at_ms,"preview":preview,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
+            let mut snapshot=json!({"event_base":event_base,"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"message_count":message_count,"reverted_count":reverted_count,"location":location,"mode":mode,"title":title,"tag":tag,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"pinned_at_ms":pinned_at_ms,"preview":preview,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
             if metadata_only {
                 snapshot.as_object_mut().unwrap().remove("messages");
             }

@@ -348,6 +348,11 @@ pub enum Command {
         session_id: String,
         title: String,
     },
+    /// The operator's label for a Session. Empty clears it.
+    Tag {
+        session_id: String,
+        tag: String,
+    },
     /// Set or clear a Session's archive timestamp. Archiving is a catalog fact:
     /// it changes no message, run or inbox row, so a Session can be archived
     /// while a drain is active and un-archived later.

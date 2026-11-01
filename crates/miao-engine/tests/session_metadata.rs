@@ -147,3 +147,24 @@ async fn metadata_snapshot_carries_a_bounded_last_message_preview() {
         serde_json::Value::Null
     );
 }
+
+/// A tag is the operator's own label for a Session: it round-trips through the
+/// snapshot, an empty tag clears it, and an oversized one is refused rather
+/// than truncated.
+#[tokio::test]
+async fn a_tag_round_trips_and_an_empty_tag_clears_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store.ensure("s").await.unwrap();
+    assert_eq!(store.snapshot("s").await.unwrap()["tag"], "");
+
+    let event = store.tag("s", "release").await.unwrap();
+    assert_eq!(event.kind, "session.tagged");
+    assert_eq!(store.snapshot("s").await.unwrap()["tag"], "release");
+
+    store.tag("s", "").await.unwrap();
+    assert_eq!(store.snapshot("s").await.unwrap()["tag"], "");
+
+    assert!(store.tag("s", &"x".repeat(65)).await.is_err());
+    assert_eq!(store.snapshot("s").await.unwrap()["tag"], "");
+}
