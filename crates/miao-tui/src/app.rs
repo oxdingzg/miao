@@ -19,6 +19,7 @@ use crate::keybinds::{self, Keymap};
 use crate::pane::{render_dialog, Home, Panel, PanelKind, Shell, StatusHint};
 use crate::platform::attention::{self, Attention};
 use crate::platform::{clipboard, editor, zed};
+use crate::scroll::Scroll;
 use crate::session::{Entry, Part, SessionState, SessionSummary};
 use crate::state::{self, StashEntry};
 use crate::status::UsageSummary;
@@ -194,6 +195,8 @@ pub struct App {
     pending_models: bool,
     /// Same for the account dialog.
     pending_accounts: bool,
+    /// Wheel speed and acceleration, from `tui.json`.
+    scroll: Scroll,
     /// Template commands discovered at startup; a slash prompt naming one is
     /// rendered and admitted as a command instead of plain text.
     templates: Vec<commands::Template>,
@@ -271,6 +274,7 @@ impl App {
             catalog: Vec::new(),
             pending_models: false,
             pending_accounts: false,
+            scroll: Scroll::default(),
             templates,
             attention: Attention::new(attention_config),
             bus: None,
@@ -330,6 +334,13 @@ impl App {
     pub fn configure_terminal_title(&mut self, enabled: bool, allowed: bool) {
         self.terminal_title_enabled = enabled;
         self.terminal_title_allowed = allowed;
+    }
+
+    /// Take the wheel speed and acceleration from `tui.json`. Both are read at
+    /// startup only, so a change needs a restart, like the other terminal
+    /// preferences.
+    pub fn configure_scroll(&mut self, speed: f64, acceleration: bool) {
+        self.scroll = Scroll::new(speed, acceleration);
     }
 
     pub fn terminal_title(&self) -> Option<String> {
@@ -754,7 +765,12 @@ impl App {
         self.leader = false;
         match self.screen {
             Screen::Home => self.home.move_cursor(delta),
-            Screen::Session => self.shell.scroll_transcript(delta * 3),
+            Screen::Session => {
+                // One notch moves `scroll_speed` rows, or more when the notches
+                // arrive in a burst and acceleration is enabled.
+                let rows = self.scroll.rows(Instant::now(), delta as i8) as i32;
+                self.shell.scroll_transcript(delta * rows);
+            }
         }
     }
 
@@ -2529,6 +2545,70 @@ mod tests {
 
     fn wheel(kind: MouseEventKind) -> AppEvent {
         AppEvent::Mouse(MouseEvent::new(kind, 0, 0, KeyModifiers::NONE))
+    }
+
+    #[test]
+    fn the_wheel_moves_the_configured_scroll_speed_in_the_transcript() {
+        let mut app = session_app();
+        // One row per notch, so the offset moves by exactly one.
+        app.configure_scroll(1.0, false);
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(forty_messages()),
+            state: SessionState::default(),
+        });
+        draw(&mut app);
+        let tail = app.shell.transcript_scroll();
+        assert!(app.shell.following());
+        app.handle(wheel(MouseEventKind::ScrollUp));
+        assert_eq!(app.shell.transcript_scroll(), tail - 1);
+        assert!(!app.shell.following(), "one notch up detaches");
+        app.handle(wheel(MouseEventKind::ScrollDown));
+        assert_eq!(app.shell.transcript_scroll(), tail);
+        assert!(
+            app.shell.following(),
+            "the last visible row is the tail, so one notch back follows again"
+        );
+    }
+
+    #[test]
+    fn a_wheel_notch_moves_the_default_three_rows() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(forty_messages()),
+            state: SessionState::default(),
+        });
+        draw(&mut app);
+        let tail = app.shell.transcript_scroll();
+        app.handle(wheel(MouseEventKind::ScrollUp));
+        assert_eq!(app.shell.transcript_scroll(), tail - 3);
+        app.handle(wheel(MouseEventKind::ScrollDown));
+        assert!(
+            app.shell.following(),
+            "scrolling back to the visible tail follows again instead of              needing an overshoot past it"
+        );
+    }
+
+    /// Paint one frame. The tail offset is computed while rendering, so a wheel
+    /// test that scrolls up has to render before the first notch.
+    fn draw(app: &mut App) {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 10)).expect("terminal");
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+    }
+
+    /// A transcript long enough that the viewport cannot show all of it, so
+    /// scrolling has rows to move through.
+    fn forty_messages() -> Transcript {
+        let mut transcript = Transcript::default();
+        for index in 0..40 {
+            transcript.entries.push(crate::session::Entry::User {
+                text: format!("message {index}"),
+                seq: index as u64 + 1,
+            });
+        }
+        transcript
     }
 
     #[test]

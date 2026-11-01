@@ -38,6 +38,13 @@ pub struct Config {
     /// Capture mouse input for wheel scrolling. Defaults to on, like the
     /// TypeScript host.
     pub mouse: bool,
+    /// Rows one wheel notch moves the transcript. The TypeScript host calls this
+    /// `scroll_speed` and defaults it to 3.
+    pub scroll_speed: f64,
+    /// `scroll_acceleration.enabled`: multiply the speed for notches that arrive
+    /// in a burst. The TypeScript host uses a trackpad model; here a burst is a
+    /// run of notches inside the same short window.
+    pub scroll_acceleration: bool,
     /// `None` leaves the terminal's own cursor shape alone.
     pub cursor: Option<Cursor>,
     /// `keybinds` entries, flattened to action name → strokes. `None` means the
@@ -50,6 +57,8 @@ impl Default for Config {
         Self {
             attention: AttentionConfig::default(),
             mouse: true,
+            scroll_speed: 3.0,
+            scroll_acceleration: false,
             cursor: None,
             keybinds: BTreeMap::new(),
         }
@@ -179,6 +188,18 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
     if let Some(cursor) = field("cursor") {
         merge_cursor(cursor, path, config, warnings);
     }
+    if let Some(speed) = field("scroll_speed") {
+        match speed.as_f64() {
+            Some(speed) if speed.is_finite() && speed > 0.0 => config.scroll_speed = speed,
+            _ => warnings.push(format!(
+                "tui config {}: scroll_speed must be a positive number, ignoring",
+                path.display()
+            )),
+        }
+    }
+    if let Some(acceleration) = field("scroll_acceleration") {
+        merge_scroll_acceleration(acceleration, path, config, warnings);
+    }
     if let Some(keybinds) = field("keybinds") {
         merge_keybinds(keybinds, path, config, warnings);
     }
@@ -226,6 +247,38 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
             "sounds" => merge_sounds(value, base, config, path, warnings),
             other => warnings.push(format!(
                 "tui config {}: ignoring unsupported attention field \"{other}\"",
+                path.display()
+            )),
+        }
+    }
+}
+
+/// `scroll_acceleration` is `{ "enabled": bool }` in the TypeScript schema; a
+/// bare boolean is refused there too, so it is refused here.
+fn merge_scroll_acceleration(
+    value: &serde_json::Value,
+    path: &Path,
+    config: &mut Config,
+    warnings: &mut Vec<String>,
+) {
+    let Some(object) = value.as_object() else {
+        warnings.push(format!(
+            "tui config {}: scroll_acceleration must be an object with an \"enabled\" flag, ignoring",
+            path.display()
+        ));
+        return;
+    };
+    for (key, value) in object {
+        match key.as_str() {
+            "enabled" => match value.as_bool() {
+                Some(enabled) => config.scroll_acceleration = enabled,
+                None => warnings.push(format!(
+                    "tui config {}: scroll_acceleration.enabled must be a boolean, ignoring",
+                    path.display()
+                )),
+            },
+            other => warnings.push(format!(
+                "tui config {}: ignoring unsupported scroll_acceleration field \"{other}\"",
                 path.display()
             )),
         }
@@ -440,6 +493,61 @@ mod tests {
         assert_eq!(
             config.cursor.map(|cursor| cursor.shape()),
             Some(CursorShape::Block)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn scroll_speed_and_acceleration_come_from_the_typescript_keys() {
+        let dir = temp_dir("scroll");
+        let (config, warnings) = merge_at(
+            r#"{"scroll_speed": 1.5, "scroll_acceleration": {"enabled": true}}"#,
+            &dir,
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(config.scroll_speed, 1.5);
+        assert!(config.scroll_acceleration);
+
+        // The host flattens a nested `tui` object, so the same keys under it
+        // must work too.
+        let (config, warnings) = merge_at(
+            r#"{"tui": {"scroll_speed": 6, "scroll_acceleration": {"enabled": false}}}"#,
+            &dir,
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(config.scroll_speed, 6.0);
+        assert!(!config.scroll_acceleration);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_bad_scroll_configuration_warns_and_keeps_the_default() {
+        let dir = temp_dir("scroll-bad");
+        let (config, warnings) = merge_at(
+            r#"{"scroll_speed": 0, "scroll_acceleration": true}"#,
+            &dir,
+        );
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert_eq!(config.scroll_speed, 3.0);
+        assert!(!config.scroll_acceleration);
+        assert!(
+            warnings[0].contains("scroll_speed must be a positive number"),
+            "{warnings:?}"
+        );
+        assert!(
+            warnings[1].contains("scroll_acceleration must be an object"),
+            "{warnings:?}"
+        );
+
+        let (config, warnings) = merge_at(
+            r#"{"scroll_speed": -2, "scroll_acceleration": {"enabled": "yes"}}"#,
+            &dir,
+        );
+        assert_eq!(config.scroll_speed, 3.0);
+        assert!(!config.scroll_acceleration);
+        assert!(
+            warnings[1].contains("scroll_acceleration.enabled must be a boolean"),
+            "{warnings:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
