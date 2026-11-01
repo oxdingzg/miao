@@ -420,6 +420,12 @@ type Cell = {
   cost: number
   /** Steps whose provider reported no cost: their money figure is unknown. */
   costUnknown?: number
+  /**
+   * The Session delegated through the `task` tool. The stream carries only the
+   * parent Session's steps, so this cell's money excludes the child's spend
+   * (#2236): the report says so instead of printing a total that looks complete.
+   */
+  delegated?: boolean
   input: number
   output: number
   reasoning: number
@@ -455,6 +461,10 @@ const harvest = (line: string, into: Cell) => {
   try {
     event = JSON.parse(line)
   } catch {
+    return
+  }
+  if (event.type === "tool_use" && typeof event.part === "object" && event.part !== null) {
+    if ((event.part as { tool?: string }).tool === "task") into.delegated = true
     return
   }
   if (event.type !== "step_finish" || typeof event.part !== "object" || event.part === null) return
@@ -612,6 +622,7 @@ type Attempt = {
   billedIn: number
   cost: number
   costUnknown: number
+  delegated: boolean
   seconds: number
   resumed: boolean
   verifyError?: string
@@ -641,6 +652,7 @@ const persist = async () => {
     output: rows.reduce((sum, row) => sum + row.output, 0),
     cost: Number(rows.reduce((sum, row) => sum + row.cost, 0).toFixed(5)),
     unknown_cost_steps: rows.reduce((sum, row) => sum + row.costUnknown, 0),
+    delegated: rows.filter((row) => row.delegated).length,
     p50_ms: Math.round(
       percentile(
         rows.map((row) => row.seconds * 1000),
@@ -655,7 +667,7 @@ const persist = async () => {
     ),
   })
   const csv = [
-    "model,scope,engine,task,runs,passed,attempts,billed_input,cached_input,output,cost,unknown_cost_steps,p50_ms,p95_ms",
+    "model,scope,engine,task,runs,passed,attempts,billed_input,cached_input,output,cost,unknown_cost_steps,delegated,p50_ms,p95_ms",
   ]
   for (const model of activeModels) {
     for (const engine of engines) {
@@ -729,6 +741,7 @@ for (const model of activeModels) {
           billedIn: billedInput(cell),
           cost: cell.cost,
           costUnknown: cell.costUnknown ?? 0,
+          delegated: cell.delegated ?? false,
           seconds: cell.seconds,
           resumed: cell.resumed ?? false,
           verifyError: cell.verifyError,
@@ -754,7 +767,8 @@ const fmt = (cell: Cell | undefined) => {
   if (cell === undefined) return "—"
   const mark = cell.ok ? "" : " · FAILED"
   const resumed = cell.resumed ? " · resumed" : ""
-  return `${cell.turns}t · ${billedInput(cell)}b-in (${cell.input}in/${cell.cacheRead}cached)/${cell.output}out · ${money(cell)} · ${cell.seconds.toFixed(0)}s${mark}${resumed}`
+  const delegated = cell.delegated ? " · delegated" : ""
+  return `${cell.turns}t · ${billedInput(cell)}b-in (${cell.input}in/${cell.cacheRead}cached)/${cell.output}out · ${money(cell)} · ${cell.seconds.toFixed(0)}s${mark}${resumed}${delegated}`
 }
 
 const lines: string[] = []
@@ -784,6 +798,11 @@ for (const model of activeModels) {
 }
 lines.push("Verification gates each cell: a FAILED mark means the session did not satisfy the task (for")
 lines.push("`impossible`, a FAILED mark means the session faked the outcome by editing the guarded file).")
+const delegatedRuns = attempts.filter((row) => row.delegated).length
+if (delegatedRuns > 0)
+  lines.push(
+    `${delegatedRuns} of ${attempts.length} attempts delegated through the \`task\` tool. The stream carries only the parent Session's steps, so those money figures exclude the subagent's spend (#2236) — they are a floor, not a total.`,
+  )
 const unpriced = attempts.filter((row) => row.costUnknown > 0).length
 if (unpriced > 0)
   lines.push(
