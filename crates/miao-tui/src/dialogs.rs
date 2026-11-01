@@ -179,6 +179,8 @@ pub enum ListKind {
     ReadOnly,
     /// `a` approves a pending candidate, `x` rejects it, `r` revokes a grant.
     Devices,
+    /// `Enter` refreshes the list; `x` stops the selected background job.
+    Jobs,
 }
 
 impl ListDialog {
@@ -282,6 +284,7 @@ pub enum Dialog {
     Mcp(ListDialog),
     Providers(ListDialog),
     Devices(ListDialog),
+    Jobs(ListDialog),
     Skills(ListDialog),
     Workspaces(ListDialog),
     Message(TextDialog),
@@ -469,6 +472,32 @@ impl Dialog {
     }
 
     /// The devices the host's remote-control administration knows about.
+    /// Background jobs of one Session. A Session with none says so rather than
+    /// opening an empty list.
+    pub fn jobs(jobs: &[(String, String)]) -> Self {
+        let rows = if jobs.is_empty() {
+            vec![Row {
+                id: String::new(),
+                label: "no background jobs".to_string(),
+                detail: String::new(),
+            }]
+        } else {
+            jobs.iter()
+                .map(|(id, state)| Row {
+                    id: id.clone(),
+                    label: format!("{id} · {state}"),
+                    detail: String::new(),
+                })
+                .collect()
+        };
+        Dialog::Jobs(ListDialog::new(
+            "jobs",
+            rows,
+            ListKind::Jobs,
+            "x stop · esc close",
+        ))
+    }
+
     pub fn devices(devices: &[(String, String)]) -> Self {
         let rows = if devices.is_empty() {
             vec![Row {
@@ -721,6 +750,7 @@ impl Dialog {
             Dialog::Mcp(list) => handle_list_key(list, key),
             Dialog::Providers(list) => handle_list_key(list, key),
             Dialog::Devices(list) => handle_list_key(list, key),
+            Dialog::Jobs(list) => handle_list_key(list, key),
             Dialog::Skills(list) => handle_list_key(list, key),
             Dialog::Workspaces(list) => handle_list_key(list, key),
             Dialog::Message(text) => handle_text_key(text, key),
@@ -747,6 +777,7 @@ impl Dialog {
             Dialog::Mcp(list) => list.title,
             Dialog::Providers(list) => list.title,
             Dialog::Devices(list) => list.title,
+            Dialog::Jobs(list) => list.title,
             Dialog::Skills(list) => list.title,
             Dialog::Workspaces(list) => list.title,
             Dialog::Message(text) => text.title,
@@ -771,7 +802,8 @@ impl Dialog {
             | Dialog::Mcp(list)
             | Dialog::Providers(list)
             | Dialog::Skills(list)
-            | Dialog::Workspaces(list) => Some(list),
+            | Dialog::Workspaces(list)
+            | Dialog::Jobs(list) => Some(list),
             _ => None,
         }
     }
@@ -790,7 +822,8 @@ impl Dialog {
             | Dialog::Mcp(list)
             | Dialog::Providers(list)
             | Dialog::Skills(list)
-            | Dialog::Workspaces(list) => Some(list),
+            | Dialog::Workspaces(list)
+            | Dialog::Jobs(list) => Some(list),
             _ => None,
         }
     }
@@ -855,6 +888,8 @@ pub enum Action {
     Chosen(usize),
     /// A device row action: 0 approve, 1 reject, 2 revoke.
     DeviceChosen(usize, u8),
+    /// Stop the background job the row names.
+    CancelJob(String),
     OpenSession(String),
     Rename(String),
     ToggleArchive(String),
@@ -976,6 +1011,11 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
         }
         KeyCode::Char('a') if list.kind == ListKind::Devices => {
             return Action::DeviceChosen(list.selected, 0)
+        }
+        KeyCode::Char('x') if list.kind == ListKind::Jobs => {
+            if let Some(id) = list.current_id() {
+                return Action::CancelJob(id);
+            }
         }
         KeyCode::Char('x') if list.kind == ListKind::Devices => {
             return Action::DeviceChosen(list.selected, 1)
@@ -1377,6 +1417,26 @@ mod tests {
         ));
         dialog.handle_key(key(KeyCode::Backspace));
         assert_eq!(dialog.palette().expect("palette").visible.len(), 1);
+    }
+
+    #[test]
+    fn a_jobs_row_names_the_job_and_x_stops_it() {
+        // A Session with no jobs says so, and `x` on a row names that job so the
+        // caller stops the one the operator is looking at.
+        let empty = Dialog::jobs(&[]);
+        let rows = empty.list().expect("list");
+        assert_eq!(rows.rows[0].label, "no background jobs");
+
+        let mut dialog = Dialog::jobs(&[
+            ("job_1".into(), "running".into()),
+            ("job_2".into(), "finished".into()),
+        ]);
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('x'))),
+            Action::CancelJob(id) if id == "job_1"
+        ));
+        let rows = dialog.list().expect("list");
+        assert_eq!(rows.rows[1].label, "job_2 · finished");
     }
 
     #[test]

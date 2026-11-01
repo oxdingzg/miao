@@ -498,6 +498,11 @@ impl App {
                 self.devices = parse_devices(&rows);
                 self.open_device_dialog();
             }
+            // The engine answers the list, so the dialog opens on data rather
+            // than on a placeholder that never fills.
+            AppEvent::Jobs(rows) => {
+                self.open_dialog(Dialog::jobs(&rows));
+            }
             AppEvent::SessionMoved => {
                 self.dialog = None;
                 self.shell.composer.notice = Some("session moved".into());
@@ -782,6 +787,7 @@ impl App {
             Some(keybinds::Action::ProviderList) => self.open_providers(),
             Some(keybinds::Action::SkillList) => self.open_skills(),
             Some(keybinds::Action::DeviceList) => self.open_devices(),
+            Some(keybinds::Action::JobList) => self.open_jobs(),
             Some(keybinds::Action::WorkspaceList) => self.open_workspaces(),
             // Reviewing the working tree had no direct key: it was reachable
             // only through the command list or a slash command whose completion
@@ -1021,6 +1027,13 @@ impl App {
             DialogAction::None => {}
             DialogAction::Close => self.dialog = None,
             DialogAction::Chosen(index) => self.choose(index),
+            DialogAction::CancelJob(job_id) => {
+                let session_id = self.session_id();
+                self.dialog = None;
+                if let (Some(session_id), Some(engine)) = (session_id, self.engine.as_ref()) {
+                    engine.cancel_job(&session_id, &job_id);
+                }
+            }
             DialogAction::DeviceChosen(index, action) => self.device_action(
                 index,
                 match action {
@@ -1229,6 +1242,20 @@ impl App {
             .and_then(|id| self.drafts.get(id).cloned())
             .unwrap_or_default();
         self.shell.composer.restore(&restored);
+    }
+
+    /// A background job belongs to the open Session; without one there is
+    /// nothing to list, and saying so beats an empty dialog.
+    fn open_jobs(&mut self) {
+        let Some(session_id) = self.session_id() else {
+            self.notice("open a Session to list background jobs");
+            return;
+        };
+        let Some(engine) = self.engine.as_ref() else {
+            self.notice("Engine is not connected");
+            return;
+        };
+        engine.jobs(&session_id);
     }
 
     fn open_mcp(&mut self) {
@@ -4056,6 +4083,19 @@ mod tests {
         let (handle, requests) = engine::Handle::recording();
         app.attach_engine(handle);
         (app, requests)
+    }
+
+    #[test]
+    fn the_jobs_chord_asks_the_engine_for_the_open_session() {
+        // `<leader>j` lists the open Session's background jobs: the operator's
+        // only way to see work the model started.
+        let (mut app, mut requests) = revert_session_app();
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
+        app.handle(key(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Jobs { session_id }) if session_id == "ses_a"
+        ));
     }
 
     #[test]
