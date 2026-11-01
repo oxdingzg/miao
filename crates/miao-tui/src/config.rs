@@ -523,10 +523,8 @@ mod tests {
     #[test]
     fn a_bad_scroll_configuration_warns_and_keeps_the_default() {
         let dir = temp_dir("scroll-bad");
-        let (config, warnings) = merge_at(
-            r#"{"scroll_speed": 0, "scroll_acceleration": true}"#,
-            &dir,
-        );
+        let (config, warnings) =
+            merge_at(r#"{"scroll_speed": 0, "scroll_acceleration": true}"#, &dir);
         assert_eq!(warnings.len(), 2, "{warnings:?}");
         assert_eq!(config.scroll_speed, 3.0);
         assert!(!config.scroll_acceleration);
