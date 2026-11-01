@@ -42,6 +42,11 @@ pub struct UsageSummary {
     /// Work the model had to redo on its own: malformed tool arguments it was
     /// asked to correct.
     pub tool_input_errors: u64,
+    /// Auxiliary role calls (compaction and the other small jobs). Their cost is
+    /// real spend that no main-model line accounts for.
+    pub auxiliary_calls: u64,
+    pub auxiliary_input_tokens: u64,
+    pub auxiliary_output_tokens: u64,
 }
 
 impl UsageSummary {
@@ -83,6 +88,11 @@ impl UsageSummary {
             cancels: u64_at(value, &["interventions", "cancels"]).unwrap_or(0),
             input_edits: u64_at(value, &["interventions", "inputEdits"]).unwrap_or(0),
             tool_input_errors: u64_at(value, &["rework", "toolInputErrors"]).unwrap_or(0),
+            auxiliary_calls: u64_at(value, &["auxiliary", "usage", "observations"]).unwrap_or(0),
+            auxiliary_input_tokens: u64_at(value, &["auxiliary", "usage", "tokens", "input"])
+                .unwrap_or(0),
+            auxiliary_output_tokens: u64_at(value, &["auxiliary", "usage", "tokens", "output"])
+                .unwrap_or(0),
         }
     }
 }
@@ -113,6 +123,7 @@ mod tests {
             "subagents": {"sessions": 2, "turns": 4, "tokens": {"input": 900, "cacheRead": 700}},
             "interventions": {"approvals": 2, "answers": 1, "rejections": 1, "cancels": 0, "inputEdits": 3},
             "rework": {"toolInputErrors": 4},
+            "auxiliary": {"usage": {"observations": 9, "tokens": {"input": 1524, "output": 3433}}},
         }));
         assert_eq!(usage.turns, 3);
         assert_eq!(usage.partial_turns, 1);
@@ -138,6 +149,11 @@ mod tests {
         assert_eq!(usage.rejections, 1);
         assert_eq!(usage.input_edits, 3);
         assert_eq!(usage.tool_input_errors, 4);
+        // Compaction is an auxiliary role call: real spend the main-model lines
+        // do not account for.
+        assert_eq!(usage.auxiliary_calls, 9);
+        assert_eq!(usage.auxiliary_input_tokens, 1524);
+        assert_eq!(usage.auxiliary_output_tokens, 3433);
     }
 
     #[test]

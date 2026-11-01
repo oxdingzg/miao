@@ -1598,6 +1598,20 @@ impl Pane for SidebarPane {
                             Style::new().fg(palette.text_muted),
                         )));
                     }
+                    // Compaction runs as an auxiliary role, so its spend is
+                    // real and absent from every main-model line above.
+                    if usage.auxiliary_calls > 0 {
+                        lines.push(Line::from(Span::styled(
+                            format!(
+                                "auxiliary {} call{}  ·  in {}  ·  out {}",
+                                usage.auxiliary_calls,
+                                if usage.auxiliary_calls == 1 { "" } else { "s" },
+                                usage.auxiliary_input_tokens,
+                                usage.auxiliary_output_tokens,
+                            ),
+                            Style::new().fg(palette.text_muted),
+                        )));
+                    }
                     if usage.tool_input_errors > 0 {
                         lines.push(Line::from(Span::styled(
                             format!(
