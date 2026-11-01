@@ -153,6 +153,52 @@ test("member discount applies once", () => {
     },
   },
   {
+    id: "unfamiliar-repo",
+    category: "unfamiliar repo",
+    // The convention (amounts are integer cents, formatted by one helper) is in
+    // the code, not in the prompt: the session has to read the module before it
+    // can satisfy the tests the way this workspace expects.
+    prompt:
+      "This workspace is a small ledger library and its tests fail. Make bun test pass without changing any test file.",
+    files: {
+      "package.json": `{"name":"bench-unfamiliar"}`,
+      "src/money.ts": `export const formatCents = (cents: number) => (cents / 100).toFixed(2)
+export const parseCents = (text: string) => Math.round(Number(text) * 100)
+`,
+      "src/ledger.ts": `import { formatCents } from "./money"
+export interface Entry {
+  readonly label: string
+  readonly cents: number
+}
+export const describe = (entry: Entry) => \`\${entry.label}: \${formatCents(entry.cents)}\`
+// TODO: total() and render() are missing.
+`,
+      "src/ledger.test.ts": `import { test, expect } from "bun:test"
+import { describe, render, total } from "./ledger"
+test("describe formats cents the way the module already does", () => {
+  expect(describe({ label: "coffee", cents: 350 })).toBe("coffee: 3.50")
+})
+test("total sums the entries", () => {
+  expect(total([{ label: "coffee", cents: 350 }, { label: "tea", cents: 250 }])).toBe("6.00")
+})
+test("render keeps one line per entry plus the total", () => {
+  const entries = [{ label: "coffee", cents: 350 }, { label: "tea", cents: 250 }]
+  expect(render(entries)).toBe("coffee: 3.50\ntea: 2.50\ntotal: 6.00")
+})
+`,
+    },
+    verify: async (workspace) => {
+      const failed = await bunTest(workspace)
+      if (failed) return failed
+      // The tests alone cannot tell "followed the convention" from
+      // "reimplemented it": the module has to keep using its formatter.
+      const source = await Bun.file(path.join(workspace, "src/ledger.ts")).text()
+      return source.includes("formatCents(")
+        ? undefined
+        : "ledger.ts formats money itself instead of reusing formatCents"
+    },
+  },
+  {
     id: "multifile",
     category: "multi-file consistency",
     prompt:
