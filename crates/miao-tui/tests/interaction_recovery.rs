@@ -112,6 +112,30 @@ impl Harness {
         String::from_utf8_lossy(&self.output.lock().expect("output lock")).into_owned()
     }
 
+    /// Wait until at least `count` inputs are admitted and the count has stopped
+    /// moving, which is how a test can tell that the turn behind them settled.
+    fn wait_for_admits_to_settle(&self, count: usize, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        let mut stable = 0;
+        let mut last = self.admitted();
+        loop {
+            std::thread::sleep(Duration::from_millis(20));
+            let now = self.admitted();
+            if now >= count && now == last {
+                stable += 1;
+                if stable >= 5 {
+                    return true;
+                }
+            } else {
+                stable = 0;
+            }
+            last = now;
+            if Instant::now() >= deadline {
+                return false;
+            }
+        }
+    }
+
     fn wait_for(&self, needle: &str, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         loop {
@@ -160,6 +184,10 @@ impl Harness {
 
 #[test]
 fn a_failed_turn_is_resent_with_two_keystrokes() {
+    // The failing run is stretched so the test can wait for it to start and to
+    // settle. Recalling while the client still believes the turn is running
+    // queues the prompt behind it, and the queued copy is admitted again once
+    // the run ends — an extra admission that has nothing to do with a retry.
     let mut harness = Harness::spawn();
     assert!(
         harness.wait_for("Project A", Duration::from_secs(30)),
@@ -180,6 +208,16 @@ fn a_failed_turn_is_resent_with_two_keystrokes() {
     assert!(
         harness.wait_for_admits(1, Duration::from_secs(30)),
         "the prompt was never admitted:\n{}",
+        harness.text()
+    );
+    // Let the failing turn settle before recovering. The fixture answers the
+    // client's snapshot only after the run ends, so a "working" frame is never
+    // painted; the settle is read off the admission count instead — it has to
+    // stop moving before the recovery keys are sent, otherwise the recalled
+    // prompt is queued behind a run the client still believes is live.
+    assert!(
+        harness.wait_for_admits_to_settle(1, Duration::from_secs(30)),
+        "the failed turn never settled:\n{}",
         harness.text()
     );
     // Recover: recall the prompt the failed turn consumed, then send it again.

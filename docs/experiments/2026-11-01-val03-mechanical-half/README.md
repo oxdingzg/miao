@@ -19,8 +19,15 @@ measurable after the fix described below.
 | editing input | line motions to fix the first character | 44 | 46 ms | `interaction_edit.rs` |
 | editing input | retype the line instead | 120 | 103 ms | `interaction_edit.rs` |
 | approval | `1` on the blocking decision | 1 | 7 ms | `interaction_approval.rs` |
-| failure recovery | recall the failed prompt + send again | 2 | 30 ms | `interaction_recovery.rs` |
+| failure recovery | recall the failed prompt + send again | 2 | 180 ms | `interaction_recovery.rs` |
 | reviewing changes | `<leader>g` | 2 | 16 ms | `interaction_review.rs` |
+
+The failure-recovery figure moved from 30 ms to about 180 ms when the test
+started waiting for the failed turn to settle before recalling the prompt. The
+earlier number measured recovery keys sent while the client still believed the
+turn was running, which queued the recalled prompt behind it and made the
+admission count depend on timing: under a loaded machine the same test produced
+a third admission. Both keystroke counts are unchanged.
 
 Reading it: the two findings VAL-03 can already state as numbers are that a
 query costs 11× fewer keystrokes than walking a 200-row list (14 vs 151) and that
