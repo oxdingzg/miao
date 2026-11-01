@@ -258,6 +258,23 @@ impl Harness {
         parser.screen().contents()
     }
 
+    /// Move the home list onto its second row.
+    ///
+    /// The prompt owns the landing screen's keyboard, so the list has to be
+    /// given focus with Tab before it will move; and both rows have to be
+    /// painted first, because a Down that arrives before they exist is dropped.
+    /// Without either, the test opened the first Session and then waited for
+    /// text only the second one has.
+    fn select_second_row(&mut self) {
+        assert!(
+            wait_for_plain(self, "Project B", Duration::from_secs(5)),
+            "the second row never rendered:\n{}",
+            plain(&self.text())
+        );
+        self.write(b"\t");
+        self.write(b"\x1b[B");
+    }
+
     fn write(&mut self, keys: &[u8]) {
         let mut writer = self.writer.lock().expect("writer lock");
         writer.write_all(keys).expect("write keys");
@@ -416,13 +433,13 @@ fn tag_sets_the_label_from_its_argument() {
         "the home list did not render:\n{}",
         plain(&harness.text())
     );
-    harness.write(b"\x1b[B");
+    harness.select_second_row();
     harness.write(b"\r");
-    assert!(wait_for_plain(
-        &harness,
-        "Fixture Notes",
-        Duration::from_secs(3)
-    ));
+    assert!(
+        wait_for_plain(&harness, "Fixture Notes", Duration::from_secs(3)),
+        "the Session never showed the fixture message:\n{}",
+        plain(&harness.text())
+    );
 
     // An argument sets the label directly; the engine answers, and a refusal
     // would surface as a notice.
@@ -449,7 +466,7 @@ fn recall_restores_an_elided_tool_output() {
         "the home list did not render:\n{}",
         plain(&harness.text())
     );
-    harness.write(b"\x1b[B");
+    harness.select_second_row();
     harness.write(b"\r");
     assert!(
         wait_for_plain(
@@ -494,7 +511,7 @@ fn recall_reports_a_handle_the_archive_cannot_resolve() {
         "the home list did not render:\n{}",
         plain(&harness.text())
     );
-    harness.write(b"\x1b[B");
+    harness.select_second_row();
     harness.write(b"\r");
     assert!(wait_for_plain(
         &harness,
@@ -555,7 +572,7 @@ fn the_transcript_renders_markdown_and_tool_rows() {
     );
     // Rows sort by recency: ses_a is first, and ses_b carries the renderer
     // fixture (markdown document plus one completed read).
-    harness.write(b"\x1b[B");
+    harness.select_second_row();
     harness.write(b"\r");
     assert!(
         wait_for_plain(&harness, "Fixture Notes", Duration::from_secs(2)),
@@ -950,7 +967,7 @@ fn the_leader_opens_the_theme_dialog_and_saves_the_choice() {
         plain(&harness.text())
     );
     // One row down from the active theme ("miao") lands on "opencode".
-    harness.write(b"\x1b[B");
+    harness.select_second_row();
     harness.write(b"\r");
     let preferences = harness.dir.join("state").join("preferences.json");
     let start = Instant::now();
@@ -1040,7 +1057,7 @@ fn ctrl_o_switches_the_pinned_account() {
         plain(&harness.text())
     );
     // The second row is the other credential.
-    harness.write(b"\x1b[B");
+    harness.select_second_row();
     harness.write(b"\r");
     let log = harness.dir.join("admit.log");
     let start = Instant::now();
