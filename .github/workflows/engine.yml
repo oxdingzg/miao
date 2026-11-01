@@ -70,6 +70,13 @@ jobs:
             shards: 4
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
+    env:
+      # Three self-hosted runners share one 16 GB arm64 host; an uncapped
+      # `cargo test` build peaks near 3 GB of rustc, so cap the job count to
+      # keep three concurrent legs inside memory instead of swapping.
+      # Four matches a hosted runner's core count, so Linux is unaffected; on
+      # macOS it bounds each of the three runners sharing a 16 GB host.
+      CARGO_BUILD_JOBS: "4"
     defaults:
       run:
         shell: bash
