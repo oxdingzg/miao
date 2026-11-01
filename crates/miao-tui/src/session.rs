@@ -251,11 +251,43 @@ pub struct TodoView {
     pub status: String,
 }
 
+/// The Session's persistent Goal, which the engine keeps apart from the todo
+/// list: the checklist says what this turn is doing, the Goal says why the
+/// Session exists and what would prove it finished. The engine refuses `done`
+/// and `blocked` without evidence, so this view never invents one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GoalView {
+    pub objective: String,
+    pub status: String,
+    pub budget: Option<String>,
+    pub evidence: Option<String>,
+}
+
+impl GoalView {
+    fn from_value(value: &Value) -> Option<Self> {
+        Some(Self {
+            objective: value.get("objective")?.as_str()?.to_string(),
+            status: value.get("status")?.as_str()?.to_string(),
+            budget: value
+                .get("budget")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            evidence: value
+                .get("evidence")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        })
+    }
+}
+
 /// What the Session is doing and what it is waiting on, re-read from every
 /// snapshot. Action state (which option is highlighted) stays in the UI.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SessionState {
     pub todos: Vec<TodoView>,
+    /// The durable Goal, separate from the checklist. `None` when the Session
+    /// never recorded one.
+    pub goal: Option<GoalView>,
     pub active_run: Option<String>,
     pub pending: usize,
     pub approvals: Vec<ApprovalView>,
@@ -287,6 +319,12 @@ impl SessionState {
             .unwrap_or_default();
         Self {
             todos,
+            goal: snapshot
+                .get("state")
+                .and_then(|state| state.get("goal"))
+                .and_then(|goal| goal.get("value"))
+                .filter(|value| !value.is_null())
+                .and_then(GoalView::from_value),
             active_run: snapshot
                 .get("active_run")
                 .and_then(Value::as_str)
@@ -756,6 +794,44 @@ mod tests {
         assert_eq!(ids, ["ses_b", "ses_a"]);
         assert_eq!(rows[0].label(), "newer");
         assert_eq!(rows[0].directory.as_deref(), Some("/work/miao"));
+    }
+
+    #[test]
+    fn the_goal_is_decoded_apart_from_the_todo_list() {
+        // The engine keeps the Goal and the checklist in separate state rows;
+        // the view must not fold one into the other.
+        let state = SessionState::from_snapshot(&json!({
+            "state": {
+                "todos": {
+                    "revision": 4,
+                    "value": { "todos": [{ "content": "wire the parser", "status": "completed" }] }
+                },
+                "goal": {
+                    "revision": 7,
+                    "value": {
+                        "objective": "ship the offset reporting",
+                        "status": "active",
+                        "budget": "two hours",
+                        "evidence": null
+                    }
+                }
+            }
+        }));
+        assert_eq!(state.todos.len(), 1);
+        let goal = state.goal.expect("goal");
+        assert_eq!(goal.objective, "ship the offset reporting");
+        assert_eq!(goal.status, "active");
+        assert_eq!(goal.budget.as_deref(), Some("two hours"));
+        assert_eq!(goal.evidence, None);
+    }
+
+    #[test]
+    fn a_session_without_a_goal_has_none() {
+        let state = SessionState::from_snapshot(&json!({
+            "state": { "todos": null, "goal": null }
+        }));
+        assert!(state.goal.is_none());
+        assert!(state.todos.is_empty());
     }
 
     #[test]

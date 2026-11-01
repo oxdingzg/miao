@@ -48,6 +48,7 @@ impl Shell {
                 theme,
                 session: None,
                 usage: None,
+                goal: None,
                 todos: Vec::new(),
             }),
             last: None,
@@ -197,6 +198,15 @@ impl Shell {
     pub fn set_usage(&mut self, usage: Option<&crate::status::UsageSummary>) {
         if let Some(sidebar) = self.sidebar.as_mut() {
             sidebar.usage = usage.cloned();
+        }
+    }
+
+    /// Show the Session's Goal in its own section. It is not a todo list: the
+    /// checklist answers "what is this turn doing", the Goal answers "why does
+    /// this Session exist and what would prove it done".
+    pub fn set_goal(&mut self, goal: Option<&crate::session::GoalView>) {
+        if let Some(sidebar) = self.sidebar.as_mut() {
+            sidebar.goal = goal.cloned();
         }
     }
 
@@ -1515,6 +1525,8 @@ pub struct SidebarPane {
     theme: Theme,
     session: Option<SessionSummary>,
     usage: Option<crate::status::UsageSummary>,
+    /// The durable Goal, painted above the checklist and never mixed into it.
+    goal: Option<crate::session::GoalView>,
     todos: Vec<crate::session::TodoView>,
 }
 
@@ -1659,6 +1671,29 @@ impl Pane for SidebarPane {
                 }
             }
             lines.push(Line::default());
+            if let Some(goal) = &self.goal {
+                lines.push(Line::from(Span::styled(
+                    format!("goal · {}", goal.status),
+                    Style::new()
+                        .fg(palette.primary)
+                        .add_modifier(Modifier::BOLD),
+                )));
+                let width = area.width.saturating_sub(3);
+                lines.push(Line::from(Span::styled(
+                    clip_cells(&goal.objective, 0, width),
+                    Style::new().fg(palette.text),
+                )));
+                if let Some(budget) = &goal.budget {
+                    lines.push(Line::from(Span::styled(
+                        format!(
+                            "budget · {}",
+                            clip_cells(budget, 0, width.saturating_sub(9))
+                        ),
+                        Style::new().fg(palette.text_muted),
+                    )));
+                }
+                lines.push(Line::default());
+            }
             let done = self
                 .todos
                 .iter()
@@ -2422,6 +2457,71 @@ fn panel_lines(panel: &Panel, theme: &Theme) -> Vec<Line<'static>> {
 mod tests {
     use super::*;
     use crate::session::{Choice, QuestionItem};
+
+    #[test]
+    fn the_goal_has_its_own_section_above_the_todo_list() {
+        // AGT-04: a displayed plan is not an implemented one, and a checklist is
+        // not a Goal. Both are painted, and the Goal comes first with its own
+        // header so the operator cannot read the todo list as the objective.
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        shell.set_session(Some(&SessionSummary {
+            id: "ses_a".into(),
+            title: Some("offset fix".into()),
+            parent_id: None,
+            updated_at_ms: Some(10),
+            archived_at_ms: None,
+            pinned_at_ms: None,
+            directory: Some("/work/miao".into()),
+            model: None,
+            credential_id: None,
+            preview: None,
+        }));
+        shell.set_goal(Some(&crate::session::GoalView {
+            objective: "ship the offset reporting".into(),
+            status: "active".into(),
+            budget: Some("two hours".into()),
+            evidence: None,
+        }));
+        shell.set_todos(&[crate::session::TodoView {
+            content: "wire the parser".into(),
+            status: "completed".into(),
+        }]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 20)).expect("terminal");
+        terminal
+            .draw(|frame| {
+                let sidebar = shell.sidebar.as_mut().expect("sidebar");
+                sidebar.render(frame, frame.area());
+            })
+            .expect("draw");
+        let text = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        let goal = text.find("goal · active").expect("goal header");
+        let objective = text.find("ship the offset reporting").expect("objective");
+        let budget = text.find("budget · two hours").expect("budget");
+        let todos = text.find("todo 1").expect("todo header");
+        assert!(goal < objective && objective < budget, "{text}");
+        assert!(
+            budget < todos,
+            "the Goal stays above the checklist instead of inside it: {text}"
+        );
+        assert!(
+            text.contains("wire the parser"),
+            "the checklist is still shown: {text}"
+        );
+    }
 
     #[test]
     fn an_alerting_status_is_painted_in_the_warning_color() {
