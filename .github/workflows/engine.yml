@@ -44,8 +44,13 @@ jobs:
         # self-hosted runner is unreliable on pull requests, and a reusable
         # workflow's job-level `if` cannot read the matrix context, so the
         # choice has to live in the matrix itself.
-        include: ${{ github.event_name == 'pull_request' && fromJSON('[{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":1,"shards":4},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":2,"shards":4},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":3,"shards":4},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":4,"shards":4}]') || fromJSON('[{"os":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"shard":1,"shards":1},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":1,"shards":4},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":2,"shards":4},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":3,"shards":4},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":4,"shards":4}]') }}
+        include: ${{ github.event_name == 'pull_request' && fromJSON('[{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":1,"shards":4,"experimental":false},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":2,"shards":4,"experimental":false},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":3,"shards":4,"experimental":false},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":4,"shards":4,"experimental":false}]') || fromJSON('[{"os":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"shard":1,"shards":1,"experimental":true},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":1,"shards":4,"experimental":false},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":2,"shards":4,"experimental":false},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":3,"shards":4,"experimental":false},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":4,"shards":4,"experimental":false}]') }}
     runs-on: ${{ matrix.runner }}
+    # The macOS leg reports but does not gate yet: the only host that can run it
+    # keeps failing to build aws-lc-sys (the extracted crate is missing its
+    # vendored iOS asm), so a permanently red leg blocked every release for a
+    # reason unrelated to the merge. It still runs and still shows red.
+    continue-on-error: ${{ matrix.experimental == true }}
     timeout-minutes: 60
     env:
       # Three self-hosted runners share one 16 GB arm64 host; an uncapped
