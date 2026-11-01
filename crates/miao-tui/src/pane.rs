@@ -1444,10 +1444,16 @@ fn render_status(frame: &mut Frame, area: Rect, status: &StatusStrip, theme: &Th
     if spans.is_empty() && status.hints.is_empty() {
         return;
     }
+    // A warning is marked with more than a colour: an operator reading a
+    // monochrome or low-colour terminal still has to see that this hint waits on
+    // them rather than describing the run.
     let hints = status
         .hints
         .iter()
-        .map(|hint| hint.text.as_str())
+        .map(|hint| match hint.warning {
+            true => format!("! {}", hint.text),
+            false => hint.text.clone(),
+        })
         .collect::<Vec<_>>()
         .join(" · ");
     let width = (UnicodeWidthStr::width(hints.as_str()) as u16 + 2).min(area.width);
@@ -1468,12 +1474,12 @@ fn render_status(frame: &mut Frame, area: Rect, status: &StatusStrip, theme: &Th
                 Style::new().fg(palette.text_muted).bg(palette.surface),
             ));
         }
-        let tone = match hint.warning {
-            true => palette.warning,
-            false => palette.text_muted,
+        let (text, tone) = match hint.warning {
+            true => (format!("! {}", hint.text), palette.warning),
+            false => (hint.text.clone(), palette.text_muted),
         };
         spans.push(Span::styled(
-            hint.text.clone(),
+            text,
             Style::new().fg(tone).bg(palette.surface),
         ));
     }
@@ -3003,6 +3009,46 @@ mod tests {
             .expect("draw");
         let cells = &terminal.backend().buffer().content;
         assert!(cells.iter().all(|cell| cell.fg != palette.warning));
+    }
+
+    #[test]
+    fn a_status_warning_reads_without_colour() {
+        // UX-03: state may not depend on colour alone. A hint that waits on the
+        // operator carries a glyph, so it still reads on a monochrome terminal
+        // or in a low-colour profile.
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let status = StatusStrip {
+            model: None,
+            usage: None,
+            hints: vec![
+                StatusHint {
+                    text: "approve or deny".into(),
+                    warning: true,
+                },
+                StatusHint {
+                    text: "ctrl+c to interrupt".into(),
+                    warning: false,
+                },
+            ],
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 1)).expect("terminal");
+        terminal
+            .draw(|frame| render_status(frame, frame.area(), &status, &theme))
+            .expect("draw");
+        let painted = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(painted.contains("! approve or deny"), "{painted}");
+        assert!(!painted.contains("! ctrl+c"), "{painted}");
+        assert!(painted.contains("ctrl+c to interrupt"), "{painted}");
     }
 
     fn wrapped_text(rows: &[Line<'static>]) -> Vec<String> {
