@@ -426,6 +426,40 @@ impl Keymap {
                 .any(|stroke| matches!(stroke, Stroke::Plain(bound) if bound.matches(key)))
         })
     }
+
+    /// What the armed leader can reach, as one line.
+    ///
+    /// A leader with no menu asks the operator to memorise the table. The list
+    /// comes from the live keymap, so an override or a removed binding shows up
+    /// here without a second table to keep in step.
+    pub fn leader_hint(&self) -> String {
+        let leader = self
+            .strokes
+            .get(&Action::Leader)
+            .and_then(|strokes| {
+                strokes.iter().find_map(|stroke| match stroke {
+                    Stroke::Plain(key) => Some(key.spec()),
+                    Stroke::Leader(_) => None,
+                })
+            })
+            .unwrap_or_else(|| "<leader>".to_string());
+        let chords = self
+            .strokes
+            .iter()
+            .flat_map(|(action, strokes)| {
+                strokes.iter().filter_map(move |stroke| match stroke {
+                    Stroke::Leader(key) => Some(format!(
+                        "{} {}",
+                        key.spec(),
+                        action.name().replace('_', " ")
+                    )),
+                    Stroke::Plain(_) => None,
+                })
+            })
+            .collect::<Vec<_>>()
+            .join(" · ");
+        format!("{leader} · {chords}")
+    }
 }
 
 impl Key {
@@ -668,6 +702,27 @@ mod tests {
             Action::CommandList,
             &key(KeyCode::Char(' '), KeyModifiers::CONTROL)
         ));
+    }
+
+    #[test]
+    fn the_leader_hint_names_the_chords_it_reaches() {
+        // UX-05: a leader with no menu asks the operator to memorise the table.
+        // The line comes from the live keymap, so the real leader key and the
+        // real actions are what it prints.
+        let hint = Keymap::default().leader_hint();
+        assert!(hint.starts_with("ctrl+x · "), "{hint}");
+        assert!(hint.contains("q app exit"), "{hint}");
+        assert!(hint.contains("n session new"), "{hint}");
+        assert!(hint.contains("g workspace changes"), "{hint}");
+        // An override moves the menu with it instead of printing the default.
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "session_new".to_string(),
+            Some(vec!["<leader>N".to_string()]),
+        );
+        let hint = Keymap::from_overrides(&overrides).leader_hint();
+        assert!(hint.contains("N session new"), "{hint}");
+        assert!(!hint.contains("n session new"), "{hint}");
     }
 
     #[test]

@@ -31,6 +31,8 @@ pub struct Shell {
     pub status: StatusStrip,
     pub panel: Option<Panel>,
     pub sidebar: Option<SidebarPane>,
+    /// The armed leader's menu, painted in the status row while it waits.
+    pub leader_hint: Option<String>,
     /// The projection behind `transcript.lines`, kept so a theme change can
     /// repaint the same content instead of waiting for the next snapshot.
     last: Option<Transcript>,
@@ -44,6 +46,7 @@ impl Shell {
             composer: Composer::new(workspace),
             status: StatusStrip::default(),
             panel: None,
+            leader_hint: None,
             sidebar: Some(SidebarPane {
                 theme,
                 session: None,
@@ -115,6 +118,11 @@ impl Shell {
                 Entry::User { .. } | Entry::Error { .. } => None,
             })?;
         Some(reply)
+    }
+
+    /// Show the armed leader's menu in the status row.
+    pub fn set_leader_hint(&mut self, hint: Option<String>) {
+        self.leader_hint = hint;
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
@@ -254,7 +262,16 @@ impl Shell {
             panel.render(frame, panel_area, &self.transcript.theme);
         }
         render_composer(frame, composer_area, &self.composer, &self.transcript.theme);
-        render_status(frame, status_area, &self.status, &self.transcript.theme);
+        match &self.leader_hint {
+            Some(menu) => frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    fit(menu, status_area.width as usize),
+                    Style::new().fg(self.transcript.theme.palette.primary),
+                ))),
+                status_area,
+            ),
+            None => render_status(frame, status_area, &self.status, &self.transcript.theme),
+        }
     }
 }
 
@@ -723,6 +740,9 @@ pub struct Home {
     /// Whether the list, rather than the prompt, owns the keyboard. The footer
     /// names the place `Tab` reaches next, so it cannot be a fixed promise.
     list_focus: bool,
+    /// The armed leader's menu. While the leader waits for its chord, the
+    /// footer names what it can reach instead of the usual key hint.
+    leader_hint: Option<String>,
     notice: Option<String>,
     /// A configuration problem that outlives one load: the catalog arriving is
     /// not an answer to it, so it is kept apart from the transient notice.
@@ -743,6 +763,7 @@ impl Home {
             query: String::new(),
             filtering: false,
             list_focus: false,
+            leader_hint: None,
             notice: None,
             warning: None,
             loaded: false,
@@ -783,6 +804,11 @@ impl Home {
     /// Follow the screen's focus, so the footer can say where `Tab` leads.
     pub fn set_list_focus(&mut self, focused: bool) {
         self.list_focus = focused;
+    }
+
+    /// Show the armed leader's menu in place of the key hint.
+    pub fn set_leader_hint(&mut self, hint: Option<String>) {
+        self.leader_hint = hint;
     }
 
     pub fn set_rows(&mut self, rows: Vec<SessionSummary>) {
@@ -1148,7 +1174,12 @@ impl Home {
                 .wrap(Wrap { trim: false }),
             body_area,
         );
-        let hint = home_hint(self.list_focus, hint_area.width as usize);
+        // An armed leader replaces the key hint with its menu: those chords
+        // are what the next keystroke can mean.
+        let hint = match &self.leader_hint {
+            Some(menu) => fit(menu, hint_area.width as usize),
+            None => home_hint(self.list_focus, hint_area.width as usize),
+        };
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 hint,
@@ -3133,6 +3164,28 @@ mod tests {
         assert_eq!(prompt, " tab list · enter send");
         // `space` pages the list, so the list's own hint says what it does.
         assert!(home_hint(true, 120).contains("space page"));
+    }
+
+    #[test]
+    fn the_footer_shows_the_leader_menu_while_it_is_armed() {
+        // The menu replaces the key hint because the next keystroke chooses
+        // from it, not from the usual chords.
+        let mut home = Home::new(home_theme());
+        home.set_rows(vec![home_row("ses_a", "login fix", None)]);
+        let plain = drawn(&mut home, 80, 12)
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(plain.contains("tab list"), "{plain}");
+        home.set_leader_hint(Some("ctrl+x · q app exit · n session new".into()));
+        let armed = drawn(&mut home, 80, 12)
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(armed.contains("q app exit"), "{armed}");
+        assert!(!armed.contains("tab list"), "{armed}");
     }
 
     #[test]
