@@ -1,0 +1,1 @@
+{"scenario":"composer-streaming","samples":12,"p50_ms":1,"p95_ms":1,"p99_ms":1,"max_ms":1,"gate_p95_ms":50,"gate_p99_ms":100}

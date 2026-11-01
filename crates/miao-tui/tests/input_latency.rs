@@ -31,8 +31,15 @@ struct Harness {
 }
 
 impl Harness {
-    /// Boot the TUI against the scripted engine (fake sessions, no stream).
+    /// Boot the TUI against the scripted engine without a stream.
     fn spawn_engine(label: &str) -> Self {
+        Self::spawn_engine_mode(label, false)
+    }
+
+    /// Boot the TUI against the scripted engine, optionally with the fixture's
+    /// sustained stream: one committed event every 10 ms for ten seconds, which
+    /// is deliberately longer than any typing sample needs.
+    fn spawn_engine_mode(label: &str, streaming: bool) -> Self {
         let dir = std::env::temp_dir().join(format!("miao-input-latency-{label}"));
         std::fs::create_dir_all(&dir).expect("workspace dir");
         let pair = native_pty_system()
@@ -61,6 +68,9 @@ impl Harness {
             env!("CARGO_BIN_EXE_miao-tui-fake-engine"),
         );
         cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
+        if streaming {
+            cmd.env("MIAO_TUI_FAKE_STREAM", "1");
+        }
         cmd.arg("--db");
         cmd.arg(&db);
         let child = pair.slave.spawn_command(cmd).expect("spawn miao-tui");
@@ -277,6 +287,58 @@ fn typing_echo_latency_is_reported_for_the_composer() {
     // The TUI's exit does not stop its engine child: without this cleanup the
     // orphan keeps running into the next test binary and breaks the editor
     // signal tests that follow.
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", "miao-tui-fake-engine"])
+        .status();
+    std::thread::sleep(Duration::from_millis(150));
+}
+
+#[test]
+fn typing_echo_latency_is_reported_while_the_turn_streams() {
+    // PERF-01 is about input-first latency under sustained load, so this is the
+    // scenario the gate actually cares about: the transcript is committing an
+    // event every 10 ms while the operator types.
+    let mut harness = Harness::spawn_engine_mode("streaming-typing", true);
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(4)),
+        "the home list did not render:\n{}",
+        harness.text()
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(3)),
+        "the session transcript did not render:\n{}",
+        harness.text()
+    );
+    // One byte per keystroke so the echo scan can never match an earlier
+    // occurrence of the same character, and few enough that the whole sample
+    // sits inside the fixture's ten seconds of streaming.
+    let keys: Vec<u8> = b"abcdefghijkl".to_vec();
+    let before = harness.output_len();
+    let samples = measure_echo(&mut harness, &keys, Duration::from_millis(1500));
+    // The stream advanced while the keystrokes were being measured; without
+    // this the scenario would silently degrade to the idle case.
+    assert!(
+        harness.output_len() > before,
+        "nothing streamed during the measurement"
+    );
+    write_report(&harness.dir, "composer-streaming", &samples);
+    let worst = samples
+        .iter()
+        .map(|sample| sample.latency_ms)
+        .max()
+        .unwrap_or(0);
+    assert!(
+        worst < 1500,
+        "a keystroke took {worst} ms to echo while the turn streamed"
+    );
+    harness.write(b"\x03");
+    std::thread::sleep(Duration::from_millis(200));
+    harness.write(b"\x03");
+    let _ = wait_exit(&mut harness.child, Duration::from_secs(10));
+    drop(harness.writer);
+    drop(harness.pty);
+    let _ = harness.reader.join();
     let _ = std::process::Command::new("pkill")
         .args(["-f", "miao-tui-fake-engine"])
         .status();
