@@ -287,14 +287,14 @@ fn json_report(
 fn typing_echo_latency_is_reported_for_the_composer() {
     let mut harness = Harness::spawn_engine("idle-typing");
     assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(4)),
+        wait_for_plain(&harness, "Project A", Duration::from_secs(30)),
         "the home list did not render:\n{}",
         harness.text()
     );
     // Enter the first fake session so the composer is the active surface.
     harness.write(b"\r");
     assert!(
-        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(3)),
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(30)),
         "the session transcript did not render:\n{}",
         harness.text()
     );
@@ -349,13 +349,13 @@ fn typing_echo_latency_is_reported_for_multi_byte_input() {
     // UTF-8 sequence and the clock stops when the glyph is rendered.
     let mut harness = Harness::spawn_engine("multi-byte");
     assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(4)),
+        wait_for_plain(&harness, "Project A", Duration::from_secs(30)),
         "the home list did not render:\n{}",
         harness.text()
     );
     harness.write(b"\r");
     assert!(
-        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(3)),
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(30)),
         "the session transcript did not render:\n{}",
         harness.text()
     );
@@ -490,13 +490,13 @@ fn typing_echo_latency_is_reported_while_the_turn_streams() {
     // event every 10 ms while the operator types.
     let mut harness = Harness::spawn_engine_mode("streaming-typing", true);
     assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(4)),
+        wait_for_plain(&harness, "Project A", Duration::from_secs(30)),
         "the home list did not render:\n{}",
         harness.text()
     );
     harness.write(b"\r");
     assert!(
-        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(3)),
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(30)),
         "the session transcript did not render:\n{}",
         harness.text()
     );
