@@ -4,6 +4,43 @@
 // exercised without the Rust binary, which is not built in a plain checkout.
 import { appendFileSync } from "node:fs"
 
+// Discovery probes an explicit engine with `--capabilities` before it will place
+// a Session on it; answering here is what lets harness tests run a native
+// Session without the Rust binary.
+if (process.argv.includes("--capabilities")) {
+  console.log(
+    JSON.stringify({
+      catalog: 1,
+      name: "miao-engine",
+      permission_changefeed: 1,
+      permission_context_handoff: 1,
+      permission_context_store: 1,
+      permission_import_changes: 1,
+      permission_pattern_changes: 1,
+      permission_patterns: 1,
+      permission_project_handoff: 1,
+      permission_project_store: 1,
+      permission_source_handoff: 1,
+      permission_source_initialize: 1,
+      product_permission_auto: 1,
+      product_permission_cancel: 1,
+      product_permission_diagnostics: 1,
+      product_permission_evaluation: 1,
+      product_permission_replies: 1,
+      product_permission_requests: 1,
+      protocol: 2,
+      routes_schema: 2,
+      saved_permission_migration: 1,
+      saved_rules_snapshot: 1,
+      schema: 25,
+      session_agent_defaults: 1,
+      shared_permission_runtime: 1,
+      version: "0.0.0-fixture",
+    }),
+  )
+  process.exit(0)
+}
+
 const decoder = new TextDecoder()
 // Harness tests assert the request order by pointing this at a file.
 const requestLog = process.env.ENGINE_FAKE_REQUESTS
@@ -139,6 +176,39 @@ function handle(request: {
     process.exit(0)
   }
   if (method === "cancel") cancelled(params)
+  if (method === "recall") {
+    // One handle resolves to a window; anything else is the engine's "archive
+    // cannot resolve this handle" answer, which the product must surface as a
+    // conflict instead of an empty document.
+    const handle = String(params.tool_use_id ?? "")
+    if (handle === "call_archived")
+      send({
+        id,
+        result: {
+          tool_use_id: handle,
+          message_seq: 7,
+          is_error: false,
+          offset: 0,
+          text: "restored from the archive",
+          total_bytes: 24,
+          truncated: true,
+          next_offset: 32768,
+        },
+      })
+    else
+      send({
+        id,
+        result: {
+          tool_use_id: handle,
+          message_seq: null,
+          text: null,
+          scanned_messages: 12,
+          exhausted: true,
+          next_before_message_seq: null,
+        },
+      })
+    return
+  }
   send({ id, result: { accepted: true } })
 }
 
