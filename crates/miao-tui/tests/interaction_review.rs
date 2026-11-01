@@ -132,6 +132,79 @@ impl Harness {
         String::from_utf8_lossy(&self.output.lock().expect("output lock")).into_owned()
     }
 
+    /// The PTY's escape stream replayed onto a text grid.
+    ///
+    /// Ratatui skips cells it does not have to repaint by moving the cursor, so
+    /// a single line can be written as `src` then `ESC[15;42H` then `/parser.rs`.
+    /// Matching a needle against the raw stream then fails although the screen
+    /// shows it, which made this file's assertions depend on how the host
+    /// happened to paint the first frame.
+    fn screen(&self) -> String {
+        let raw = self.text();
+        let mut rows: Vec<Vec<char>> = Vec::new();
+        let (mut row, mut column) = (0usize, 0usize);
+        let mut chars = raw.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch != '\x1b' {
+                match ch {
+                    '\r' => column = 0,
+                    '\n' => row += 1,
+                    _ => {
+                        if rows.len() <= row {
+                            rows.resize(row + 1, Vec::new());
+                        }
+                        let line = &mut rows[row];
+                        if line.len() <= column {
+                            line.resize(column + 1, ' ');
+                        }
+                        line[column] = ch;
+                        column += 1;
+                    }
+                }
+                continue;
+            }
+            match chars.peek() {
+                // A control sequence: `[` starts CSI, `]` starts an OSC title.
+                Some('[') => {
+                    chars.next();
+                    let mut params = String::new();
+                    while matches!(chars.peek(), Some(next) if next.is_ascii_digit() || *next == ';')
+                    {
+                        params.push(chars.next().expect("digit"));
+                    }
+                    if let Some(final_byte) = chars.next() {
+                        if final_byte == 'H' || final_byte == 'f' {
+                            let mut parts = params.split(';');
+                            let at = |value: Option<&str>| {
+                                value
+                                    .and_then(|value| value.parse::<usize>().ok())
+                                    .unwrap_or(1)
+                                    .saturating_sub(1)
+                            };
+                            row = at(parts.next());
+                            column = at(parts.next());
+                        }
+                    }
+                }
+                Some(']') => {
+                    chars.next();
+                    for next in chars.by_ref() {
+                        if next == '\x07' {
+                            break;
+                        }
+                    }
+                }
+                _ => {
+                    chars.next();
+                }
+            }
+        }
+        rows.iter()
+            .map(|line| line.iter().collect::<String>().trim_end().to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     fn wait_for(&self, needle: &str, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         loop {
@@ -147,10 +220,10 @@ impl Harness {
 
     /// Whether the change list has rendered.
     fn changes_visible(&self) -> bool {
-        let text = self.text().replace('\r', "");
+        let screen = self.screen();
         // The header counts the whole set; the body scrolls, so the first rows
         // are what a person sees on arrival.
-        text.contains("3 files") && text.contains("src/parser.rs")
+        screen.contains("3 files") && screen.contains("src/parser.rs")
     }
 
     fn wait_for_changes(&self, timeout: Duration) -> bool {
@@ -162,7 +235,9 @@ impl Harness {
             if Instant::now() >= deadline {
                 return false;
             }
-            std::thread::sleep(Duration::from_millis(5));
+            // Replaying the stream is linear in what the child has written, so
+            // this polls coarser than the plain text search above.
+            std::thread::sleep(Duration::from_millis(50));
         }
     }
 
