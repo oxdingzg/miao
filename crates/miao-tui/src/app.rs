@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -171,6 +172,9 @@ pub struct App {
     /// is the common reason to send one again, and retyping it is what makes
     /// recovery expensive.
     prompt_history: Vec<String>,
+    /// One draft per Session, so a prompt typed in one Session never appears in
+    /// another. Session removal drops its entry with the Session.
+    drafts: HashMap<String, String>,
     /// Where a recall is standing; `prompt_history.len()` means "not recalling".
     history_index: usize,
     /// Every root Session, archived included, for the Session dialog.
@@ -262,6 +266,7 @@ impl App {
             usage: None,
             stash: Vec::new(),
             prompt_history: Vec::new(),
+            drafts: HashMap::new(),
             history_index: 0,
             catalog: Vec::new(),
             pending_models: false,
@@ -534,6 +539,7 @@ impl App {
                 transcript,
                 state,
             } => {
+                self.swap_draft(summary.as_ref().map(|session| session.id.as_str()));
                 self.shell.set_todos(&state.todos);
                 self.session = summary;
                 if let Some(summary) = &self.session {
@@ -1206,6 +1212,23 @@ impl App {
         }
         self.shell.set_session(self.session.as_ref());
         self.shell.set_usage(self.usage.as_ref());
+    }
+
+    /// Keep one draft per Session: stash what the composer holds under the
+    /// Session being left, then restore whatever the next one had.
+    fn swap_draft(&mut self, next: Option<&str>) {
+        let text = self.shell.composer.editor.text().to_string();
+        if let Some(current) = self.session.as_ref().map(|session| session.id.clone()) {
+            if text.trim().is_empty() {
+                self.drafts.remove(&current);
+            } else {
+                self.drafts.insert(current, text);
+            }
+        }
+        let restored = next
+            .and_then(|id| self.drafts.get(id).cloned())
+            .unwrap_or_default();
+        self.shell.composer.restore(&restored);
     }
 
     fn open_mcp(&mut self) {
@@ -2320,6 +2343,10 @@ impl App {
             None => text,
         };
         engine.prompt(&session_id, &text, attachments);
+        // The prompt left the composer, so its draft is gone too: keeping it
+        // would restore text the Session already sent if the operator switched
+        // away and back.
+        self.drafts.remove(&session_id);
     }
 
     /// Interrupt the running turn, or leave the Session when nothing is
@@ -3746,6 +3773,26 @@ mod tests {
         assert!(app.shell.composer.editor.is_empty());
         leader(&mut app, 'q');
         assert!(app.quit);
+    }
+
+    #[test]
+    fn a_draft_belongs_to_the_session_it_was_typed_in() {
+        let mut app = session_app();
+        open_session(&mut app, "ses_a");
+        app.shell.composer.restore("half-written in A");
+
+        open_session(&mut app, "ses_b");
+        assert!(
+            app.shell.composer.editor.text().is_empty(),
+            "B must not inherit A's draft: {:?}",
+            app.shell.composer.editor.text()
+        );
+        app.shell.composer.restore("half-written in B");
+
+        open_session(&mut app, "ses_a");
+        assert_eq!(app.shell.composer.editor.text(), "half-written in A");
+        open_session(&mut app, "ses_b");
+        assert_eq!(app.shell.composer.editor.text(), "half-written in B");
     }
 
     #[test]
