@@ -717,7 +717,11 @@ pub fn trim_history_to_fit(messages: &mut Vec<Message>, budget: u64) -> TrimStat
     let mut stats = TrimStats::default();
     let sizes = messages
         .iter()
-        .map(|message| serde_json::to_vec(message).map(|bytes| bytes.len()).unwrap_or(0))
+        .map(|message| {
+            serde_json::to_vec(message)
+                .map(|bytes| bytes.len())
+                .unwrap_or(0)
+        })
         .collect::<Vec<_>>();
     let mut total = sizes.iter().sum::<usize>();
     stats.before_bytes = total;
@@ -1102,7 +1106,10 @@ mod tests {
 
     #[test]
     fn trimming_leaves_a_fitting_request_alone() {
-        let mut messages = vec![text_message("user", "small"), text_message("assistant", "ok")];
+        let mut messages = vec![
+            text_message("user", "small"),
+            text_message("assistant", "ok"),
+        ];
         let stats = trim_history_to_fit(&mut messages, 10_000);
         assert_eq!(stats.messages, 0);
         assert_eq!(messages.len(), 2);

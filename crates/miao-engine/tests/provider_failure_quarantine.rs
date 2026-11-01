@@ -291,9 +291,9 @@ async fn a_context_overflow_is_learned_and_recovered_in_the_same_drain() {
     let (runtime, store) = harness(provider.clone()).await;
     admit(&runtime, "one", "继续").await;
     let events = wait_for_runs(&store, 1).await;
-    assert!(events
-        .iter()
-        .any(|event| event.kind == "provider.overflow" && event.data["limit"] == json!(1_048_576u64)));
+    assert!(events.iter().any(
+        |event| event.kind == "provider.overflow" && event.data["limit"] == json!(1_048_576u64)
+    ));
     // Nothing is quarantined: the message was never the problem.
     assert!(!rejected_message(&events));
     // The refusal does not end the turn: the same drain retries and completes, so

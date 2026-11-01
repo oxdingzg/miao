@@ -80,10 +80,7 @@ fn exclusions() -> &'static Vec<Regex> {
 /// Whether `message` is the endpoint refusing a request that no longer fits its
 /// context window.
 pub fn is_context_overflow(message: &str) -> bool {
-    if exclusions()
-        .iter()
-        .any(|pattern| pattern.is_match(message))
-    {
+    if exclusions().iter().any(|pattern| pattern.is_match(message)) {
         return false;
     }
     patterns().iter().any(|pattern| pattern.is_match(message))
