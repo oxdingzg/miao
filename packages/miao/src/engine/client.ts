@@ -427,16 +427,18 @@ export class EngineClient {
       resolveEngine({ environment: { MIAO_ENGINE_BIN: options.binary }, requireSharedPermissions: true })
     const manifest = prepareMcpConfig(options)
     try {
-      const args = engineArgs({ ...options, mcpConfigFile: manifest?.file ?? options.mcpConfigFile })
+      const args = engineArgs(options)
+      const environment = engineEnvironment({ ...manifest?.environment, ...options.env })
+      if (manifest) environment.MIAO_ENGINE_MCP_SERVERS = manifest.servers
       const child = spawn([options.binary, ...args], {
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
-        env: engineEnvironment({ ...manifest?.environment, ...options.env }),
+        env: environment,
       })
       return new EngineClient(
         child,
-        manifest?.dispose,
+        undefined,
         options.onProductTool,
         options.onHookTool,
         options.onProductToolCancel,
@@ -446,7 +448,6 @@ export class EngineClient {
         options.sharedPermission,
       )
     } catch (error) {
-      manifest?.dispose()
       throw error
     }
   }

@@ -716,6 +716,29 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     let mut mcp_origin = None;
+    if let Some(raw) = std::env::var_os("MIAO_ENGINE_MCP_SERVERS") {
+        // A host that already holds the server list hands it over inline: no
+        // temporary file to write, guard, and clean up. An explicit
+        // `--mcp-config` still wins, so an operator's on-disk manifest is never
+        // silently replaced by a product default.
+        if !options.contains_key("--mcp-config") {
+            if !policy.mcp_enabled() {
+                return Err("MCP config requires explicit workspace allow_mcp authority".into());
+            }
+            let value: serde_json::Value = serde_json::from_str(&raw.to_string_lossy())
+                .map_err(|_| "invalid inline MCP host config")?;
+            let origin = miao_engine::config_derive::McpOrigin::Inline(value);
+            let registry = miao_engine::mcp::Registry::connect(
+                origin.derive()?,
+                std::path::Path::new(tools.location()),
+            )
+            .await?;
+            let registry = Arc::new(registry);
+            registry.start_watchers();
+            tools = tools.with_mcp(registry);
+            mcp_origin = Some(origin);
+        }
+    }
     if let Some(path) = options.get("--mcp-config") {
         if !policy.mcp_enabled() {
             return Err("MCP config requires explicit workspace allow_mcp authority".into());

@@ -305,6 +305,10 @@ pub enum McpOrigin {
     /// `--mcp-config`: a host-materialized server manifest outside the
     /// workspace.
     Manifest(PathBuf),
+    /// `MIAO_ENGINE_MCP_SERVERS`: the same manifest as inline JSON. A host that
+    /// already holds the servers in memory hands them over directly instead of
+    /// writing a temporary file the engine then has to protect and clean up.
+    Inline(serde_json::Value),
 }
 
 impl McpOrigin {
@@ -320,13 +324,27 @@ impl McpOrigin {
                     format!("{}: invalid MCP host config: {error}", path.display())
                 })
             }
+            McpOrigin::Inline(value) => {
+                // The same 64 KiB ceiling the file source enforces, so inline
+                // config cannot smuggle in a larger manifest than a file could.
+                if serde_json::to_string(value)
+                    .map(|encoded| encoded.len() > 65536)
+                    .unwrap_or(true)
+                {
+                    return Err("MCP config exceeds 64 KiB".into());
+                }
+                serde_json::from_value(value.clone())
+                    .map_err(|error| format!("inline MCP host config: {error}"))
+            }
         }
     }
 
-    /// The files a reload would read, for a cheap change check.
+    /// The files a reload would read, for a cheap change check. Inline config
+    /// has no file to watch, so it contributes none rather than a phantom path.
     pub fn files(&self) -> Vec<PathBuf> {
         match self {
             McpOrigin::Manifest(path) => vec![path.clone()],
+            McpOrigin::Inline(_) => Vec::new(),
         }
     }
 }
@@ -1102,6 +1120,33 @@ fn collect_defined(value: &Value, prefix: &mut Vec<String>, out: &mut Vec<Value>
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn inline_mcp_origin_parses_like_the_manifest_file() {
+        // The host hands over the same array a manifest file would contain, so
+        // the two sources must accept the same document.
+        let origin = McpOrigin::Inline(serde_json::json!([
+            {"name": "fixture", "argv": ["node", "peer.js"], "env": {"KEY": "value"}}
+        ]));
+        let servers = origin.derive().expect("inline servers parse");
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "fixture");
+        // Nothing to watch: a reload cannot re-read what was never a file.
+        assert!(origin.files().is_empty());
+    }
+
+    #[test]
+    fn inline_mcp_origin_refuses_a_manifest_larger_than_the_file_limit() {
+        let padded = "x".repeat(65536);
+        let origin = McpOrigin::Inline(serde_json::json!([
+            {"name": "fixture", "argv": ["node"], "env": {"PAD": padded}}
+        ]));
+        let error = origin
+            .derive()
+            .err()
+            .expect("oversized inline config is refused");
+        assert_eq!(error, "MCP config exceeds 64 KiB");
+    }
+
     use super::*;
 
     #[test]
