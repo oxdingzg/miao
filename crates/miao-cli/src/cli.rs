@@ -1152,7 +1152,7 @@ fn default_db(workspace: &std::path::Path) -> PathBuf {
 /// Hand the derived routes to the TUI through the variables its own argument
 /// builder already reads. Without this the default entry point has no model
 /// catalogue and cannot resolve a credential.
-fn prepare_tui_engine(launch: &miao_tui::Launch) {
+fn prepare_tui_engine(launch: &mut miao_tui::Launch) {
     if std::env::var_os("MIAO_ENGINE_MODEL_ROUTES_CONFIG").is_some() {
         return;
     }
@@ -1170,12 +1170,17 @@ fn prepare_tui_engine(launch: &miao_tui::Launch) {
     });
     let Ok(routes) = model_routes(config_dir.as_deref(), &model) else { return };
     let Some(primary) = routes.iter().find(|route| route["primary"] == true) else { return };
-    // Without a chosen model the TUI would pass a placeholder name that matches
-    // no route, and the engine rejects the primary route on identity. Name the
-    // primary route's model so the two agree.
-    if let Some(id) = primary["id"].as_str() {
+    // The engine builds its base provider from --model and then requires the
+    // primary route to carry the same identity (protocol + model), while a
+    // route id is provider-qualified. Hand it the bare model name whatever the
+    // operator wrote, so a qualified id resolves back to its route's model and
+    // a placeholder resolves to the default's.
+    if let Some(name) = primary["model"].as_str() {
         if std::env::var_os("MIAO_TUI_MODEL").is_none() {
-            std::env::set_var("MIAO_TUI_MODEL", id);
+            std::env::set_var("MIAO_TUI_MODEL", name);
+        }
+        if launch.model.is_some() {
+            launch.model = Some(name.to_string());
         }
     }
     for (key, variable) in [("provider", "MIAO_ENGINE_PROVIDER"), ("endpoint", "MIAO_ENGINE_ENDPOINT")] {
@@ -1317,7 +1322,14 @@ fn model_routes(
     let Some(providers) = parsed.get("providers").and_then(|value| value.as_object()) else {
         return Ok(Vec::new());
     };
-    let default_model = parsed.get("model").and_then(|value| value.as_str()).unwrap_or("");
+    // A caller with nothing specific to ask for (the read-only route dump)
+    // still wants the primary the product would actually use, so fall back to
+    // the configured default instead of an arbitrary first entry.
+    let configured = parsed.get("model").and_then(|value| value.as_str());
+    let requested = match requested.is_empty() {
+        true => configured.unwrap_or(""),
+        false => requested,
+    };
     let credential_db = std::env::var("MIAO_ENGINE_CREDENTIAL_DB").unwrap_or_else(|_| {
         std::env::var_os("HOME")
             .map(|home| {
@@ -1396,13 +1408,22 @@ fn model_routes(
                 if endpoint.is_empty() {
                     continue;
                 }
+                // The id is what the product and the engine address a route
+                // by, so it has to be unique: two entries can serve the same
+                // model name (a mirror and the vendor itself), and the engine
+                // rejects the whole catalogue when two routes claim one id.
+                // Qualify it with the provider, the way the product's own
+                // `model` setting already does ("volcengine/deepseek-...");
+                // `model` stays the bare name that goes upstream and carries
+                // the identity the engine compares against the base provider.
+                let id = format!("{provider_id}/{model_id}");
                 let mut route = serde_json::json!({
-                    "id": model_id,
+                    "id": id,
                     "provider": protocol,
                     "model": model_id,
                     "endpoint": endpoint,
                     "credential": credential,
-                    "primary": model_id == default_model,
+                    "primary": false,
                 });
                 if let Some(limit) = model.get("limit") {
                     route["limit"] = limit.clone();
@@ -1420,10 +1441,18 @@ fn model_routes(
     }
     // Exactly one route must be primary: the model actually being asked for,
     // falling back to the first usable route when the name is not configured.
-    if !routes.is_empty() && !routes.iter().any(|route| route["primary"] == true) {
+    // A provider-qualified name picks its exact route; a bare model name is
+    // accepted too, and then only the first match becomes primary — several
+    // providers can serve one model name, and the engine allows one default.
+    if !routes.is_empty() {
         let index = routes
             .iter()
             .position(|route| route["id"].as_str() == Some(requested))
+            .or_else(|| {
+                routes
+                    .iter()
+                    .position(|route| route["model"].as_str() == Some(requested))
+            })
             .unwrap_or(0);
         routes[index]["primary"] = serde_json::json!(true);
     }
@@ -2266,14 +2295,23 @@ fn engine_argv_with(
                     // A placeholder model name matches no route, and the engine
                     // compares the primary route's identity against the base
                     // provider's: name the route's own model instead.
-                    if !routes.iter().any(|route| route["id"].as_str() == Some(model)) {
+                    // A qualified route id names a route, not a model, but the
+                    // engine compares the primary route's identity against the
+                    // base provider built from --model: pass the route's bare
+                    // model name in either case.
+                    let known = routes.iter().any(|route| {
+                        route["id"].as_str() == Some(model) || route["model"].as_str() == Some(model)
+                    });
+                    if !known {
                         if let Some(id) = primary["id"].as_str() {
                             // Say which model a defaulted turn will use: a silent
                             // default here reads as "it hung" when that route is slow.
                             eprintln!("miao: no model chosen; using {id}");
-                            if let Some(position) = argv.iter().position(|arg| arg == "--model") {
-                                argv[position + 1] = id.to_string();
-                            }
+                        }
+                    }
+                    if let Some(name) = primary["model"].as_str() {
+                        if let Some(position) = argv.iter().position(|arg| arg == "--model") {
+                            argv[position + 1] = name.to_string();
                         }
                     }
                     for (key, flag) in [("provider", "--provider"), ("endpoint", "--endpoint")] {
@@ -2835,11 +2873,11 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
     let mut args = args.into_iter();
     match args.next().as_deref() {
         Some("tui") => match launch(args) {
-            Ok(launch) => match {
+            Ok(mut launch) => match {
                 // The Rust TUI builds its own engine argv from MIAO_ENGINE_*
                 // variables, so the routes derived here reach it exactly the way
                 // an operator-supplied manifest would.
-                prepare_tui_engine(&launch);
+                prepare_tui_engine(&mut launch);
                 miao_tui::run(launch)
             } {
                 Ok(()) => std::process::ExitCode::SUCCESS,
@@ -3328,7 +3366,9 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{lsp_servers, mcp_servers, parsed_session_location, plugin_entries, strip_comments};
+    use super::{
+        lsp_servers, mcp_servers, model_routes, parsed_session_location, plugin_entries, strip_comments,
+    };
     use std::io::Write;
 
     /// Write a throwaway config directory and hand back its path.
@@ -3367,6 +3407,55 @@ mod tests {
         assert_eq!(servers.len(), 1);
         assert_eq!(servers[0]["argv"], serde_json::json!(["ts-ls", "--stdio"]));
         assert_eq!(servers[0]["extensions"], serde_json::json!([".ts"]));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Two providers can serve one model name — a mirror and the vendor — and
+    /// the engine rejects the entire catalogue when two routes claim one id, so
+    /// the derived ids have to be provider-qualified.
+    #[test]
+    fn routes_sharing_a_model_name_get_distinct_ids() {
+        let dir = config_dir(
+            "routes-duplicate",
+            "{ \"model\": \"vendor/deepseek\", \"providers\": { \
+               \"vendor\": { \"api\": { \"type\": \"openai\", \"url\": \"https://vendor.test/v1\" }, \
+                 \"models\": { \"deepseek\": {} } }, \
+               \"mirror\": { \"api\": { \"type\": \"openai\", \"url\": \"https://mirror.test/v1\" }, \
+                 \"models\": { \"deepseek\": {} } } } }",
+        );
+        let routes = model_routes(Some(&dir), "").expect("derives");
+        assert_eq!(routes.len(), 2);
+        let ids: Vec<&str> = routes.iter().filter_map(|route| route["id"].as_str()).collect();
+        assert!(ids.contains(&"vendor/deepseek"), "ids: {ids:?}");
+        assert!(ids.contains(&"mirror/deepseek"), "ids: {ids:?}");
+        // The bare name is what goes upstream and what the engine compares
+        // against the base provider's identity.
+        assert!(routes.iter().all(|route| route["model"] == "deepseek"));
+        // Exactly one default, and it is the configured one rather than
+        // whichever provider happened to be enumerated first.
+        let primary: Vec<&serde_json::Value> =
+            routes.iter().filter(|route| route["primary"] == true).collect();
+        assert_eq!(primary.len(), 1, "exactly one primary");
+        assert_eq!(primary[0]["id"], "vendor/deepseek");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A bare model name in the config still selects a route, so a config
+    /// written before provider-qualified names kept working.
+    #[test]
+    fn a_bare_model_name_still_selects_a_route() {
+        let dir = config_dir(
+            "routes-bare",
+            "{ \"model\": \"deepseek\", \"providers\": { \
+               \"vendor\": { \"api\": { \"type\": \"openai\", \"url\": \"https://vendor.test/v1\" }, \
+                 \"models\": { \"deepseek\": {}, \"other\": {} } } } }",
+        );
+        let routes = model_routes(Some(&dir), "").expect("derives");
+        let primary = routes
+            .iter()
+            .find(|route| route["primary"] == true)
+            .expect("a primary");
+        assert_eq!(primary["id"], "vendor/deepseek");
         std::fs::remove_dir_all(&dir).ok();
     }
 
