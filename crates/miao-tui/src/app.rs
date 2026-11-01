@@ -165,6 +165,12 @@ pub struct App {
     accounts: Vec<AccountInfo>,
     usage: Option<UsageSummary>,
     stash: Vec<StashEntry>,
+    /// Prompts this Session already sent, oldest first. Retrying a failed turn
+    /// is the common reason to send one again, and retyping it is what makes
+    /// recovery expensive.
+    prompt_history: Vec<String>,
+    /// Where a recall is standing; `prompt_history.len()` means "not recalling".
+    history_index: usize,
     /// Every root Session, archived included, for the Session dialog.
     catalog: Vec<SessionSummary>,
     /// MCP servers the host exported for this workspace (name, transport).
@@ -253,6 +259,8 @@ impl App {
             accounts: Vec::new(),
             usage: None,
             stash: Vec::new(),
+            prompt_history: Vec::new(),
+            history_index: 0,
             catalog: Vec::new(),
             pending_models: false,
             pending_accounts: false,
@@ -1793,6 +1801,31 @@ impl App {
         if self.handle_panel_key(key) {
             return;
         }
+        // Recall before the composer sees the key: recalling is what turns a
+        // retry into one keystroke instead of a retype. While a recalled prompt
+        // is in the composer the arrows keep walking the history, so "one more
+        // back" works; any other key hands the composer back.
+        let empty =
+            self.shell.composer.editor.is_empty() && self.shell.composer.editor.line_count() == 1;
+        let recalling = self.history_index < self.prompt_history.len();
+        match key.code {
+            KeyCode::Up | KeyCode::Down if empty || recalling => {
+                let step = match key.code {
+                    KeyCode::Up => -1i32,
+                    _ => 1,
+                };
+                let next = (self.history_index as i32 + step)
+                    .clamp(0, self.prompt_history.len() as i32) as usize;
+                if next != self.history_index {
+                    self.history_index = next;
+                    let recalled = self.prompt_history.get(next).cloned().unwrap_or_default();
+                    self.shell.composer.editor.set_text(&recalled);
+                }
+                return;
+            }
+            _ if recalling => self.history_index = self.prompt_history.len(),
+            _ => {}
+        }
         match self.shell.composer.handle_key(key, &self.keys) {
             Action::None => {}
             Action::Quit => self.quit = true,
@@ -2159,6 +2192,15 @@ impl App {
             return;
         };
         self.shell.composer.notice = None;
+        if !text.trim().is_empty() && self.prompt_history.last() != Some(&text) {
+            self.prompt_history.push(text.clone());
+            // Fifty covers a session's recent work without keeping every prompt
+            // alive for the life of the process.
+            if self.prompt_history.len() > 50 {
+                self.prompt_history.remove(0);
+            }
+        }
+        self.history_index = self.prompt_history.len();
         // A first-word slash command the TUI knows runs here; a discovered
         // template is rendered and admitted with its command reference; any
         // other slash text is a plain prompt, like the TS composer.
@@ -3768,6 +3810,25 @@ mod tests {
         );
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         assert!(matches!(app.dialog, Some(Dialog::Theme(_))));
+    }
+
+    #[test]
+    fn an_empty_composer_recalls_the_last_prompt() {
+        // A failed turn is the common reason to send a prompt again; recalling
+        // it turns the recovery into keystrokes instead of a retype. The history
+        // is set directly so the test covers the recall, not the submit path.
+        let mut app = engine_session_app();
+        app.prompt_history = vec!["first prompt".into(), "second prompt".into()];
+        app.history_index = app.prompt_history.len();
+        app.shell.composer.editor.clear();
+        app.handle(key(KeyCode::Up, KeyModifiers::NONE));
+        assert_eq!(app.shell.composer.editor.text(), "second prompt");
+        app.handle(key(KeyCode::Up, KeyModifiers::NONE));
+        assert_eq!(app.shell.composer.editor.text(), "first prompt");
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.shell.composer.editor.text(), "second prompt");
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        assert!(app.shell.composer.editor.is_empty());
     }
 
     #[test]
