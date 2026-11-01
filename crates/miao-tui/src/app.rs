@@ -2206,6 +2206,31 @@ impl App {
         self.screen == Screen::Session && self.state.active_run.is_some()
     }
 
+    /// How long the painted relative timestamps stay true, so an idle TUI wakes
+    /// when a label would actually change instead of once a minute. `None` means
+    /// nothing on screen is time-relative, so the loop may wait for events alone.
+    pub fn next_repaint(&self) -> Option<Duration> {
+        let now = crate::pane::now_ms();
+        let stamps = match self.screen {
+            Screen::Home => self
+                .home
+                .rows
+                .iter()
+                .filter_map(|row| row.updated_at_ms)
+                .collect::<Vec<_>>(),
+            Screen::Session => self
+                .session
+                .as_ref()
+                .and_then(|session| session.updated_at_ms)
+                .into_iter()
+                .collect(),
+        };
+        stamps
+            .into_iter()
+            .map(|updated| crate::pane::next_relative_change(updated, now))
+            .min()
+    }
+
     fn update_status(&mut self) {
         // The composer mirrors the durable queue every frame so the count stays
         // live without the composer owning it.
@@ -2665,6 +2690,34 @@ mod tests {
             });
         }
         transcript
+    }
+
+    #[test]
+    fn an_idle_screen_waits_for_its_next_label_change() {
+        // Two hours old: the sidebar reads "2h ago" and must sleep for the rest
+        // of that hour rather than wake every minute.
+        let mut app = session_app();
+        let now = crate::pane::now_ms();
+        app.session = Some(SessionSummary {
+            updated_at_ms: Some(now.saturating_sub(2 * 3_600_000)),
+            ..summary("ses_a", 1)
+        });
+        let wait = app.next_repaint().expect("the sidebar shows a timestamp");
+        assert!(
+            wait > Duration::from_secs(3_000) && wait <= Duration::from_secs(3_600),
+            "{wait:?} is the wait until \"2h ago\" becomes \"3h ago\""
+        );
+    }
+
+    #[test]
+    fn a_home_screen_without_timestamps_never_repaints_on_its_own() {
+        let mut app = app();
+        app.home.rows = vec![summary("ses_a", 1)];
+        app.home.rows[0].updated_at_ms = None;
+        assert!(
+            app.next_repaint().is_none(),
+            "nothing on screen is relative, so only events can repaint"
+        );
     }
 
     #[test]
