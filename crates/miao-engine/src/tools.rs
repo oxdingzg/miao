@@ -1626,7 +1626,6 @@ impl Tools {
                 .deferred_definitions()
                 .into_iter()
                 .chain(self.extension_definitions())
-                .into_iter()
                 .filter(|tool| {
                     let resource = self
                         .mcp

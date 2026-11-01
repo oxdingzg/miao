@@ -753,3 +753,25 @@ fn config_stamp(files: &[std::path::PathBuf]) -> Vec<Option<(u128, u64)>> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `config_stamp` moved here with the CLI; the test that covers it moved
+    /// with it so the binary's test build does not reference a function this
+    /// module keeps private.
+    #[test]
+    fn config_stamp_tracks_rewrites_and_absent_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("miao.json");
+        let origin = crate::config_derive::LspOrigin::Manifest(path.clone());
+        let files = origin.files();
+        assert_eq!(config_stamp(&files), vec![None]);
+        std::fs::write(&path, "{}").unwrap();
+        let first = config_stamp(&files);
+        assert!(first[0].is_some());
+        std::fs::write(&path, "{ }").unwrap();
+        assert_ne!(config_stamp(&files), first);
+    }
+}
