@@ -132,6 +132,18 @@ impl Harness {
         String::from_utf8_lossy(&self.output.lock().expect("output lock")).into_owned()
     }
 
+    /// What the terminal currently shows.
+    ///
+    /// The TUI repaints only the cells that changed, so the byte stream can
+    /// carry one word split across cursor moves. A person reads the screen, so
+    /// a check about what rendered has to read it too.
+    fn screen(&self) -> String {
+        let size = self.pty.get_size().expect("pty size");
+        let mut parser = vt100::Parser::new(size.rows, size.cols, 0);
+        parser.process(&self.output.lock().expect("output lock"));
+        parser.screen().contents()
+    }
+
     fn wait_for(&self, needle: &str, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         loop {
@@ -147,10 +159,13 @@ impl Harness {
 
     /// Whether the change list has rendered.
     fn changes_visible(&self) -> bool {
-        let text = self.text().replace('\r', "");
+        // The panel was painting correctly while this check failed: the diff
+        // repaint delivered `sr`, a cursor move, then `/parser.rs`, so a
+        // substring test on the raw stream never saw the path the screen holds.
+        let screen = self.screen();
         // The header counts the whole set; the body scrolls, so the first rows
         // are what a person sees on arrival.
-        text.contains("3 files") && text.contains("src/parser.rs")
+        screen.contains("3 files") && screen.contains("src/parser.rs")
     }
 
     fn wait_for_changes(&self, timeout: Duration) -> bool {
