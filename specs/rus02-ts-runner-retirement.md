@@ -64,12 +64,12 @@ bun docs/experiments/2026-10-28-ts-runner-retirement/generate.cjs
 | 模块                | runner 外的消费者                                        | 性质     |
 | ------------------- | -------------------------------------------------------- | -------- |
 | `llm.ts`            | `core/src/location-services.ts`、3 个测试                 | **生产** |
-| `to-llm-message.ts` | `core/src/session/side-question.ts`、1 个测试             | **生产** |
+| `to-llm-message.ts` | 原为 `core/src/session/side-question.ts` + 1 个测试        | **已迁出**至 `session/to-llm-message.ts` |
 | `index.ts`          | `core/src/session/execution/local.ts`、3 个测试           | **生产** |
 | `max-steps.ts`      | 无                                                       | —        |
 | 其余 7 个模块       | 仅测试（`first-byte-guard`、`metrics`、`model-io`、`output-guard`、`provider-retry`、`publish-llm-event`、`tool-input-guard`） | 仅测试 |
 
-结论：runner 目录之外真正的**生产**耦合只有三处（`location-services`、`side-question`、`execution/local`），
+结论：`provider-headers` 与 `to-llm-message` 迁出后，runner 目录之外真正的**生产**耦合只剩两处（`location-services` → `llm`、`execution/local` → `index`）；
 其余模块的消费者都是测试。退役顺序应按这三处推进，而不是按「runner 内部消费」的概括判断。
 
 注：本表上一版把 `provider-headers.ts` 归入「其余 runner 文件」，与事实不符——它当时已有
