@@ -660,6 +660,51 @@ fn ctrl_c_clears_a_draft_before_it_quits() {
     harness.shutdown();
 }
 
+/// TUI-02 asks for the default view to be readable in a three-second scan. The
+/// blocking case is the one that matters: the operator has to learn that a
+/// human is needed without hunting. Measure it rather than assume it.
+#[test]
+fn a_blocking_approval_is_readable_within_a_three_second_scan() {
+    let mut harness = Harness::spawn_engine_approval("approval-scan");
+    let spawned = Instant::now();
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "always allow", Duration::from_secs(3)),
+        "the approval panel did not render:\n{}",
+        plain(&harness.text())
+    );
+    let panel_at = spawned.elapsed();
+    let phase_deadline = Instant::now() + Duration::from_secs(3);
+    let mut phase_at = None;
+    while Instant::now() < phase_deadline {
+        if plain(&harness.text()).contains("needs approval · bash") {
+            phase_at = Some(spawned.elapsed());
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let phase_at = phase_at.expect("the status line never named the blocking approval");
+    println!(
+        "TUI-02 approval-scan: panel {} ms, phase {} ms after spawn",
+        panel_at.as_millis(),
+        phase_at.as_millis()
+    );
+    assert!(
+        phase_at - panel_at < Duration::from_secs(3),
+        "the phase lagged the panel by {:?}",
+        phase_at - panel_at
+    );
+    // The pending approval keeps the child alive, so end it directly instead of
+    // waiting for a run this test never completes.
+    let _ = harness.child.kill();
+    harness.shutdown();
+}
+
 #[test]
 fn an_approval_is_answered_from_the_panel() {
     let mut harness = Harness::spawn_engine_approval("approval");
