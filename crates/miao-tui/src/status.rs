@@ -26,6 +26,10 @@ pub struct UsageSummary {
     /// Turns the runner replayed after a transport failure. Retried work is
     /// billed work, so it is reported rather than folded into the turn count.
     pub replayed_turns: u64,
+    /// The most recent turns with their own timings. COST-04 asks for the phase
+    /// timings of each turn in one reviewable place; an average hides the turn
+    /// that was slow.
+    pub turn_timings: Vec<TurnTiming>,
     /// Child Sessions this Session delegated to. A subagent bills on its own
     /// Session, so without this line its cost is missing from the only screen
     /// that shows cost.
@@ -47,6 +51,15 @@ pub struct UsageSummary {
     pub auxiliary_calls: u64,
     pub auxiliary_input_tokens: u64,
     pub auxiliary_output_tokens: u64,
+}
+
+/// One settled turn's timing, as the engine recorded it beside the receipt.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TurnTiming {
+    pub step: u64,
+    pub model: Option<String>,
+    pub turn_ms: Option<u64>,
+    pub ttft_ms: Option<u64>,
 }
 
 impl UsageSummary {
@@ -77,6 +90,35 @@ impl UsageSummary {
             attempts: u64_at(value, &["retries", "attempts"]).unwrap_or(0),
             failed_attempts: u64_at(value, &["retries", "failedAttempts"]).unwrap_or(0),
             replayed_turns: u64_at(value, &["retries", "replayedTurns"]).unwrap_or(0),
+            turn_timings: value
+                .get("providerDetail")
+                .and_then(Value::as_array)
+                .map(|rows| {
+                    rows.iter()
+                        .filter_map(|row| {
+                            let turn_ms = row.get("turnMs").and_then(Value::as_u64);
+                            let ttft_ms = row.get("ttftMs").and_then(Value::as_u64);
+                            // A turn the engine never timed teaches nothing.
+                            if turn_ms.is_none() && ttft_ms.is_none() {
+                                return None;
+                            }
+                            Some(TurnTiming {
+                                step: row.get("step").and_then(Value::as_u64).unwrap_or(0),
+                                model: row.get("model").and_then(Value::as_str).map(str::to_string),
+                                turn_ms,
+                                ttft_ms,
+                            })
+                        })
+                        // The report lists oldest first; the view wants the most
+                        // recent turns, and a long Session must not cost a frame.
+                        .rev()
+                        .take(5)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect()
+                })
+                .unwrap_or_default(),
             subagent_sessions: u64_at(value, &["subagents", "sessions"]).unwrap_or(0),
             subagent_turns: u64_at(value, &["subagents", "turns"]).unwrap_or(0),
             subagent_input_tokens: u64_at(value, &["subagents", "tokens", "input"]).unwrap_or(0),
@@ -154,6 +196,32 @@ mod tests {
         assert_eq!(usage.auxiliary_calls, 9);
         assert_eq!(usage.auxiliary_input_tokens, 1524);
         assert_eq!(usage.auxiliary_output_tokens, 3433);
+    }
+
+    #[test]
+    fn each_recent_turn_keeps_its_own_timings() {
+        // An average cannot say which turn was slow, so the view needs the
+        // turns themselves: newest five, timing-less rows dropped.
+        let rows = (1..=8)
+            .map(|step| {
+                json!({"step": step, "model": "glm-5", "turnMs": step * 1000, "ttftMs": step * 100})
+            })
+            .chain(std::iter::once(json!({"step": 9, "model": "glm-5"})))
+            .collect::<Vec<_>>();
+        let usage = UsageSummary::from_value(&json!({"turns": 8, "providerDetail": rows}));
+        assert_eq!(usage.turn_timings.len(), 5, "{:?}", usage.turn_timings);
+        // The newest five, still oldest-first so the list reads as a timeline.
+        assert_eq!(
+            usage
+                .turn_timings
+                .iter()
+                .map(|timing| timing.step)
+                .collect::<Vec<_>>(),
+            vec![4, 5, 6, 7, 8]
+        );
+        assert_eq!(usage.turn_timings[4].turn_ms, Some(8000));
+        assert_eq!(usage.turn_timings[4].ttft_ms, Some(800));
+        assert_eq!(usage.turn_timings[4].model.as_deref(), Some("glm-5"));
     }
 
     #[test]
