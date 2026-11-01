@@ -1870,6 +1870,18 @@ fn agent_manifest(instructions: &str) -> Result<PathBuf, String> {
 /// The engine argv the product hands `miao-engine serve`, built from the same
 /// flags and environment variables the TUI uses so both entries agree.
 fn engine_argv(db: &std::path::Path, workspace: &std::path::Path, model: &str, config_dir: Option<&std::path::Path>) -> Vec<String> {
+    engine_argv_with(db, workspace, model, config_dir, |name| std::env::var(name).ok())
+}
+
+/// Same mapping with the environment supplied by the caller, so the flags a
+/// turn inherits can be asserted without mutating process state.
+fn engine_argv_with(
+    db: &std::path::Path,
+    workspace: &std::path::Path,
+    model: &str,
+    config_dir: Option<&std::path::Path>,
+    env: impl Fn(&str) -> Option<String>,
+) -> Vec<String> {
     // The engine reads the server list from this variable (it prefers it over a
     // manifest file), so a configured MCP section reaches every command with no
     // extra plumbing. Absent configuration leaves the variable alone.
@@ -1919,7 +1931,7 @@ fn engine_argv(db: &std::path::Path, workspace: &std::path::Path, model: &str, c
         ("MIAO_ENGINE_CREDENTIAL_INTEGRATION", "--credential-integration"),
         ("MIAO_ENGINE_MODEL_ROUTES_CONFIG", "--model-routes-config"),
     ] {
-        if let Ok(value) = std::env::var(variable) {
+        if let Some(value) = env(variable) {
             argv.push(flag.into());
             argv.push(value);
         }
@@ -2899,6 +2911,47 @@ mod tests {
         assert!(lsp_servers(Some(&dir)).expect("maps").is_empty());
         assert!(plugin_entries(Some(&dir)).expect("maps").is_empty());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn argv_carries_the_base_flags_and_workspace_mode() {
+        let argv = super::engine_argv_with(
+            std::path::Path::new("/tmp/x.db"),
+            std::path::Path::new("/tmp/ws"),
+            "m",
+            None,
+            |_| None,
+        );
+        assert_eq!(argv[0], "serve");
+        assert!(argv.windows(2).any(|w| w == ["--db", "/tmp/x.db"]));
+        assert!(argv.windows(2).any(|w| w == ["--workspace", "/tmp/ws"]));
+        assert!(argv.windows(2).any(|w| w == ["--model", "m"]));
+        // Without `--mode workspace` the engine keeps its read-only default and
+        // never advertises process or write tools.
+        assert!(argv.windows(2).any(|w| w == ["--mode", "workspace"]));
+        assert!(!argv.iter().any(|a| a == "--config-dir"));
+    }
+
+    #[test]
+    fn argv_maps_every_engine_variable_to_its_flag() {
+        let argv = super::engine_argv_with(
+            std::path::Path::new("/tmp/x.db"),
+            std::path::Path::new("/tmp/ws"),
+            "m",
+            Some(std::path::Path::new("/tmp/cfg")),
+            |name| match name {
+                "MIAO_ENGINE_PROVIDER" => Some("openai-chat".into()),
+                "MIAO_ENGINE_ENDPOINT" => Some("https://e.test/v1".into()),
+                "MIAO_ENGINE_CREDENTIAL_DB" => Some("/tmp/cred.db".into()),
+                _ => None,
+            },
+        );
+        assert!(argv.windows(2).any(|w| w == ["--provider", "openai-chat"]));
+        assert!(argv.windows(2).any(|w| w == ["--endpoint", "https://e.test/v1"]));
+        assert!(argv.windows(2).any(|w| w == ["--credential-db", "/tmp/cred.db"]));
+        assert!(argv.windows(2).any(|w| w == ["--config-dir", "/tmp/cfg"]));
+        // An unset variable contributes no flag at all, rather than an empty one.
+        assert!(!argv.iter().any(|a| a == "--credential-id"));
     }
 
     #[test]
