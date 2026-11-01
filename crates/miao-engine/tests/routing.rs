@@ -132,7 +132,7 @@ async fn accepted_body_transport_semantic_and_auth_failures_do_not_switch_model(
                 matches!(*source, ProviderError::ContinuableTransport { ref partial, unexecuted_calls: 0 } if partial.content[0]["text"] == "partial")
             );
         } else if status == 401 {
-            assert!(matches!(*source, ProviderError::Http(401)));
+            assert!(matches!(*source, ProviderError::Http(401, _)));
         } else {
             assert!(matches!(*source, ProviderError::Stream(_)));
         }
@@ -163,7 +163,7 @@ async fn concurrent_turns_each_have_three_attempts_without_budget_leakage() {
             panic!("routing metadata missing");
         };
         assert_eq!(selection["http_attempts"], 3);
-        assert!(matches!(*source, ProviderError::Http(503)));
+        assert!(matches!(*source, ProviderError::Http(503, _)));
     }
     at.await.unwrap();
     bt.await.unwrap();
