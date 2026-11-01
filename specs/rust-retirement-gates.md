@@ -74,6 +74,30 @@ Windows 验收通过。构建与重型检查使用项目配置的构建机，机
 仍未审计：编译产物在空目录、无源码且无外部 Bun/Node 的机器上的启动验证（G5 证据），
 以及各受支持平台的独立复现记录。这两项需要真实产物与隔离环境，属于后续删除 PR 的前置证据。
 
+## G6 证据：本地产物清点与不兼容引擎拒绝（2026-11-01）
+
+这是**本机产物**的清点，不是一套发布产物，也不是 G6 的通过声明。它证明的是配对关系可被核验。
+
+| 产物 | 版本 | SHA-256（前 16 位） | 引擎自报 |
+| --- | --- | --- | --- |
+| `~/.miao/bin/miao`（release 通道） | 0.3.23 | `c139faec33a012fb…` | — |
+| `~/.local/bin/miao-preview`（本地构建） | 0.3.16 | `01cd1b8d61f8f935…` | — |
+| `bench-engine/miao-engine`（基线 `58118fc1dc` 构建） | miao-engine 0.3.23 | `4d45ab6ca72141fc…` | `protocol 2`、`routes_schema 2` |
+| `native-repair-preview/miao-engine`（2026-10-24） | miao-engine 0.3.1 | 未计入（早于基线） | `protocol 2`、`routes_schema 2`、`schema 21` |
+
+注意最后一行：一个**更旧但协议相同**的引擎不会被协议守卫拒绝，因此「旧」不等于「不兼容」，两者要分开记录。
+
+拒绝路径实测（`packages/miao/src/engine/discovery.ts`）：
+
+- 构造一个自报 `protocol 1`、`routes_schema 1` 的引擎（脚本级替身，不写库）；
+- `resolveEngine({ environment: { MIAO_ENGINE_BIN: <该替身> } })` 抛出：
+  `MIAO_ENGINE_BIN=… reports protocol 1 and route schema 1 but this build requires protocol 2 and route schema 2`；
+- 同一构建对基线引擎（`protocol 2`、`routes_schema 2`、0.3.23）**接受**。
+
+即：不兼容引擎在写库前被明确拒绝，而不是静默回退。
+
+仍未取得的 G6 证据：受支持平台上的发布产物与 CLI/TUI/engine 的**成对**校验清单、以及畸形输入（截断 JSON、缺字段）的用例记录。
+
 ## 证据记录与状态
 
 每份候选记录至少包含：门槛 ID、完整源码 SHA、构建配置、平台、客户端/引擎
