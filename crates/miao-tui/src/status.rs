@@ -26,6 +26,13 @@ pub struct UsageSummary {
     /// Turns the runner replayed after a transport failure. Retried work is
     /// billed work, so it is reported rather than folded into the turn count.
     pub replayed_turns: u64,
+    /// Child Sessions this Session delegated to. A subagent bills on its own
+    /// Session, so without this line its cost is missing from the only screen
+    /// that shows cost.
+    pub subagent_sessions: u64,
+    pub subagent_turns: u64,
+    pub subagent_input_tokens: u64,
+    pub subagent_cache_read_tokens: u64,
 }
 
 impl UsageSummary {
@@ -56,6 +63,11 @@ impl UsageSummary {
             attempts: u64_at(value, &["retries", "attempts"]).unwrap_or(0),
             failed_attempts: u64_at(value, &["retries", "failedAttempts"]).unwrap_or(0),
             replayed_turns: u64_at(value, &["retries", "replayedTurns"]).unwrap_or(0),
+            subagent_sessions: u64_at(value, &["subagents", "sessions"]).unwrap_or(0),
+            subagent_turns: u64_at(value, &["subagents", "turns"]).unwrap_or(0),
+            subagent_input_tokens: u64_at(value, &["subagents", "tokens", "input"]).unwrap_or(0),
+            subagent_cache_read_tokens: u64_at(value, &["subagents", "tokens", "cacheRead"])
+                .unwrap_or(0),
         }
     }
 }
@@ -83,6 +95,7 @@ mod tests {
             "ttftMs": {"count": 3, "avg": 812, "min": 400, "max": 1200},
             "lineage": [{"protocol": "chat", "model": "glm-5", "turns": 3}],
             "retries": {"attempts": 5, "failedAttempts": 2, "replayedTurns": 1, "details": []},
+            "subagents": {"sessions": 2, "turns": 4, "tokens": {"input": 900, "cacheRead": 700}},
         }));
         assert_eq!(usage.turns, 3);
         assert_eq!(usage.partial_turns, 1);
@@ -95,6 +108,12 @@ mod tests {
         assert_eq!(usage.attempts, 5);
         assert_eq!(usage.failed_attempts, 2);
         assert_eq!(usage.replayed_turns, 1);
+        // Delegated work bills on its own Session; the parent screen has to say
+        // so or the number it shows is not the Session's cost.
+        assert_eq!(usage.subagent_sessions, 2);
+        assert_eq!(usage.subagent_turns, 4);
+        assert_eq!(usage.subagent_input_tokens, 900);
+        assert_eq!(usage.subagent_cache_read_tokens, 700);
     }
 
     #[test]
