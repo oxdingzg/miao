@@ -1095,6 +1095,45 @@ fn mcp_servers(config_dir: Option<&std::path::Path>) -> Result<Vec<serde_json::V
     Ok(Vec::new())
 }
 
+/// Hand the derived routes to the TUI through the variables its own argument
+/// builder already reads. Without this the default entry point has no model
+/// catalogue and cannot resolve a credential.
+fn prepare_tui_engine(launch: &miao_tui::Launch) {
+    if std::env::var_os("MIAO_ENGINE_MODEL_ROUTES_CONFIG").is_some() {
+        return;
+    }
+    let model = launch.model.clone().unwrap_or_default();
+    let Ok(routes) = model_routes(launch.config_dir.as_deref(), &model) else { return };
+    let Some(primary) = routes.iter().find(|route| route["primary"] == true) else { return };
+    for (key, variable) in [("provider", "MIAO_ENGINE_PROVIDER"), ("endpoint", "MIAO_ENGINE_ENDPOINT")] {
+        if let Some(value) = primary[key].as_str() {
+            if !value.is_empty() {
+                std::env::set_var(variable, value);
+            }
+        }
+    }
+    let credential = &primary["credential"];
+    if credential["type"].as_str() == Some("database") {
+        for (key, variable) in [
+            ("path", "MIAO_ENGINE_CREDENTIAL_DB"),
+            ("id", "MIAO_ENGINE_CREDENTIAL_ID"),
+            ("integration", "MIAO_ENGINE_CREDENTIAL_INTEGRATION"),
+        ] {
+            if let Some(value) = credential[key].as_str() {
+                std::env::set_var(variable, value);
+            }
+        }
+    }
+    if let Ok(encoded) = serde_json::to_string(&routes) {
+        if encoded.len() <= 65536 {
+            let path = std::env::temp_dir().join(format!("miao-tui-routes-{}.json", std::process::id()));
+            if std::fs::write(&path, encoded).is_ok() {
+                std::env::set_var("MIAO_ENGINE_MODEL_ROUTES_CONFIG", path);
+            }
+        }
+    }
+}
+
 /// The configured agent, as the engine's manifest: its `system` becomes the
 /// instructions and its `model` can stand in when none was named. Tool and
 /// permission narrowing stay with the policy until that mapping is proven.
@@ -2687,7 +2726,13 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
     let mut args = args.into_iter();
     match args.next().as_deref() {
         Some("tui") => match launch(args) {
-            Ok(launch) => match miao_tui::run(launch) {
+            Ok(launch) => match {
+                // The Rust TUI builds its own engine argv from MIAO_ENGINE_*
+                // variables, so the routes derived here reach it exactly the way
+                // an operator-supplied manifest would.
+                prepare_tui_engine(&launch);
+                miao_tui::run(launch)
+            } {
                 Ok(()) => std::process::ExitCode::SUCCESS,
                 Err(error) => {
                     eprintln!("miao tui: {error}");
