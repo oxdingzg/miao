@@ -33,6 +33,15 @@ pub struct UsageSummary {
     pub subagent_turns: u64,
     pub subagent_input_tokens: u64,
     pub subagent_cache_read_tokens: u64,
+    /// Decisions a person had to make for this Session to keep going.
+    pub approvals: u64,
+    pub answers: u64,
+    pub rejections: u64,
+    pub cancels: u64,
+    pub input_edits: u64,
+    /// Work the model had to redo on its own: malformed tool arguments it was
+    /// asked to correct.
+    pub tool_input_errors: u64,
 }
 
 impl UsageSummary {
@@ -68,6 +77,12 @@ impl UsageSummary {
             subagent_input_tokens: u64_at(value, &["subagents", "tokens", "input"]).unwrap_or(0),
             subagent_cache_read_tokens: u64_at(value, &["subagents", "tokens", "cacheRead"])
                 .unwrap_or(0),
+            approvals: u64_at(value, &["interventions", "approvals"]).unwrap_or(0),
+            answers: u64_at(value, &["interventions", "answers"]).unwrap_or(0),
+            rejections: u64_at(value, &["interventions", "rejections"]).unwrap_or(0),
+            cancels: u64_at(value, &["interventions", "cancels"]).unwrap_or(0),
+            input_edits: u64_at(value, &["interventions", "inputEdits"]).unwrap_or(0),
+            tool_input_errors: u64_at(value, &["rework", "toolInputErrors"]).unwrap_or(0),
         }
     }
 }
@@ -96,6 +111,8 @@ mod tests {
             "lineage": [{"protocol": "chat", "model": "glm-5", "turns": 3}],
             "retries": {"attempts": 5, "failedAttempts": 2, "replayedTurns": 1, "details": []},
             "subagents": {"sessions": 2, "turns": 4, "tokens": {"input": 900, "cacheRead": 700}},
+            "interventions": {"approvals": 2, "answers": 1, "rejections": 1, "cancels": 0, "inputEdits": 3},
+            "rework": {"toolInputErrors": 4},
         }));
         assert_eq!(usage.turns, 3);
         assert_eq!(usage.partial_turns, 1);
@@ -114,6 +131,13 @@ mod tests {
         assert_eq!(usage.subagent_turns, 4);
         assert_eq!(usage.subagent_input_tokens, 900);
         assert_eq!(usage.subagent_cache_read_tokens, 700);
+        // Supervision cost: what a person had to decide, and what the model had
+        // to redo without asking.
+        assert_eq!(usage.approvals, 2);
+        assert_eq!(usage.answers, 1);
+        assert_eq!(usage.rejections, 1);
+        assert_eq!(usage.input_edits, 3);
+        assert_eq!(usage.tool_input_errors, 4);
     }
 
     #[test]
