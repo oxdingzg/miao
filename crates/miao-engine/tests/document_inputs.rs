@@ -85,7 +85,7 @@ async fn physical_adapters_lower_documents_and_normalize_declared_text_only_mode
                 selected
                     .stream(original.clone(), progress, CancellationToken::new())
                     .await,
-                Err(ProviderError::Http(422))
+                Err(ProviderError::Http(422, _))
             ));
             let body = seen.recv().await.unwrap();
             let encoded = body.to_string();
@@ -268,7 +268,7 @@ async fn host_route_modalities_apply_to_the_owner_default_and_explicit_route() {
             selected
                 .stream(request(), progress, CancellationToken::new())
                 .await,
-            Err(ProviderError::Http(422))
+            Err(ProviderError::Http(422, _))
         ));
         let body = seen.recv().await.unwrap().to_string();
         assert!(!body.contains(PNG));

@@ -57,6 +57,12 @@ fn main() {
     // smoke test. Without it `snapshot` stays silent, which is the transport
     // suite's request-timeout case.
     let sessions = std::env::var_os("MIAO_TUI_FAKE_SESSIONS").is_some();
+    // A long catalog makes "walk the list" measurable against "search it": the
+    // existing smoke tests keep the two-session default.
+    let catalog: usize = std::env::var("MIAO_TUI_FAKE_SESSION_COUNT")
+        .ok()
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(0);
     // The approval scenario keeps one request outstanding until the client
     // resolves it, so the panel has something to show on the first snapshot.
     let mut approval_pending = std::env::var_os("MIAO_TUI_FAKE_APPROVAL").is_some();
@@ -173,9 +179,16 @@ fn main() {
                 let target = frame["params"]["session_id"].as_str().unwrap_or("ses_a");
                 let metadata_only = frame["params"]["metadata_only"].as_bool().unwrap_or(false);
                 let (title, updated) = if target == "ses_a" {
-                    ("Project A", 2_000)
+                    ("Project A".to_string(), 2_000)
+                } else if let Some(index) = target
+                    .strip_prefix("ses_n")
+                    .and_then(|rest| rest.parse::<u64>().ok())
+                {
+                    // A generated catalog row: newest first, so row n is the
+                    // n-th most recent Session.
+                    (format!("Note session {index}"), 10_000 - index)
                 } else {
-                    ("Project B", 1_000)
+                    ("Project B".to_string(), 1_000)
                 };
                 let mut snapshot = json!({
                     "session_id": target,
@@ -248,7 +261,13 @@ fn main() {
             "unsubscribe" if sessions => {
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
             }
-            "sessions" if sessions => unit_command(&mut out, id, &frame, json!(["ses_a", "ses_b"])),
+            "sessions" if sessions => {
+                let ids: Vec<String> = match catalog {
+                    0 => vec!["ses_a".to_string(), "ses_b".to_string()],
+                    count => (1..=count).map(|index| format!("ses_n{index}")).collect(),
+                };
+                unit_command(&mut out, id, &frame, json!(ids));
+            }
             // Accepted writes are logged verbatim so the smoke test can assert
             // exactly what the composer sent.
             "initialize" if sessions => {

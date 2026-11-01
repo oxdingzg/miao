@@ -320,7 +320,9 @@ impl Provider for Bedrock {
             let result = match result {
                 Ok(Ok(output)) => Ok(output),
                 Ok(Err(error)) => Err(match error.raw_response() {
-                    Some(response) => ProviderError::Http(response.status().as_u16()),
+                    Some(response) => {
+                        ProviderError::Http(response.status().as_u16(), String::new())
+                    }
                     None => ProviderError::Transport(format!("Bedrock request failed: {error}")),
                 }),
                 Err(error) => Err(error),

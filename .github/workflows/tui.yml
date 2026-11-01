@@ -20,17 +20,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # Hosted macOS bills at 10x, and when GitHub has no hosted macOS slot
-          # the job is assigned and cancelled within a second — which turned
-          # ci-gate red for reasons that had nothing to do with the change. Run
-          # it on the owner's self-hosted arm64 runner, as the engine workflow
-          # already does.
-          - os: macos-14
-            runner: [self-hosted, macOS, ARM64]
-          - os: ubuntu-latest
-            runner: ubuntu-latest
+        # macOS legs run on push to main and the nightly schedule: the
+        # self-hosted runner is unreliable on pull requests, and a reusable
+        # workflow's job-level `if` cannot read the matrix context, so the
+        # choice has to live in the matrix itself.
+        include: ${{ github.event_name == 'pull_request' && fromJSON('[{"os":"ubuntu-latest","runner":"ubuntu-latest"}]') || fromJSON('[{"os":"macos-14","runner":["self-hosted","macOS","ARM64"]},{"os":"ubuntu-latest","runner":"ubuntu-latest"}]') }}
     runs-on: ${{ matrix.runner }}
+    env:
+      # Shares one 16 GB arm64 host with the engine legs.
+      # Four matches a hosted runner's core count, so Linux is unaffected; on
+      # macOS it bounds each of the three runners sharing a 16 GB host.
+      CARGO_BUILD_JOBS: "4"
     # The self-hosted macOS runner has no warm cargo cache for this crate, so
     # the first build of a run plus the PTY smoke suite passes the old 30
     # minutes and the job was killed at 30m20s.
