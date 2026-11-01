@@ -85,6 +85,16 @@ impl Dialog {
         }
     }
 
+    /// Rows the painted body needs: the branch header, a separator, and one row
+    /// per change (or the line that says the tree is clean). The caller adds
+    /// the two border rows.
+    pub fn body_rows(&self) -> usize {
+        match &self.state {
+            Some(state) => state.files.len().clamp(1, 14) + 2,
+            None => 1,
+        }
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> Action {
         if key.kind != KeyEventKind::Press {
             return Action::None;

@@ -924,6 +924,11 @@ impl Dialog {
         if matches!(self, Dialog::SavedPermissions(_)) {
             return 18;
         }
+        // The change set is the point of the panel, so the box grows with it
+        // instead of the fixed six rows that left the body empty.
+        if let Dialog::WorkspaceChanges(changes) = self {
+            return (changes.body_rows() + 2).min(u16::MAX as usize) as u16;
+        }
         if let Some(palette) = self.palette() {
             // Filter line, one row even when nothing matches, and the border.
             return (palette.visible.len().clamp(1, 12) + 3) as u16;
@@ -1295,6 +1300,49 @@ fn handle_confirm_key(confirm: &mut ConfirmDialog, key: KeyEvent) -> Action {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_workspace_changes_panel_grows_with_its_change_set() {
+        // The panel used to fall through to the default six-row box, which is
+        // four body rows for a change set of any size: the branch header, a
+        // separator, and then the first two files.
+        let state = |files: usize| crate::workspace_changes::VcsState {
+            branch: Some("main".into()),
+            detached: false,
+            ahead: None,
+            behind: None,
+            files: (0..files)
+                .map(|index| crate::workspace_changes::Change {
+                    path: format!("src/file{index}.rs"),
+                    original_path: None,
+                    kind: "modified".into(),
+                })
+                .collect(),
+            truncated: false,
+            file_count: Some(files as u64),
+            repository: true,
+        };
+        let changes = crate::workspace_changes::Dialog::new(1, "ses_a");
+        assert_eq!(
+            Dialog::WorkspaceChanges(changes).height(),
+            3,
+            "one line while the engine is still answering"
+        );
+        let mut changes = crate::workspace_changes::Dialog::new(2, "ses_a");
+        changes.loaded(Ok(state(3)));
+        assert_eq!(
+            Dialog::WorkspaceChanges(changes).height(),
+            7,
+            "header, separator, three files and the borders"
+        );
+        let mut changes = crate::workspace_changes::Dialog::new(3, "ses_a");
+        changes.loaded(Ok(state(40)));
+        assert_eq!(
+            Dialog::WorkspaceChanges(changes).height(),
+            18,
+            "a long change set still stays bounded"
+        );
+    }
 
     #[test]
     fn the_tag_dialog_starts_empty_for_the_open_session() {
