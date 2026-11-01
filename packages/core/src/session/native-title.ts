@@ -5,7 +5,7 @@ import type { Credential } from "@miao/schema/credential"
 import type { LLMError, LLMEvent, LLMRequest } from "@miao/llm"
 import { SessionTitle } from "./title"
 import { SessionModel } from "./model"
-import { SessionRunnerProviderHeaders } from "./runner/provider-headers"
+import { SessionProviderHeaders } from "./provider-headers"
 import type { SessionStore } from "./store"
 import { AgentV2 } from "../agent"
 import type { EventV2 } from "../event"
@@ -87,7 +87,7 @@ export const afterRun = Effect.fn("SessionNativeTitle.afterRun")(function* (inpu
       const answered = yield* SessionTitle.generate({
         llm: input.llm,
         model: resolved.model,
-        http: SessionRunnerProviderHeaders.forSession({
+        http: SessionProviderHeaders.forSession({
           providerID: resolved.model.provider,
           sessionID: input.sessionID,
         }),
