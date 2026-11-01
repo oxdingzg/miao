@@ -181,6 +181,8 @@ pub enum ListKind {
     Devices,
     /// `Enter` refreshes the list; `x` stops the selected background job.
     Jobs,
+    /// `Enter` refreshes; `x` cancels the selected wakeup or cron.
+    Schedule,
 }
 
 impl ListDialog {
@@ -310,6 +312,7 @@ pub enum Dialog {
     Providers(ListDialog),
     Devices(ListDialog),
     Jobs(ListDialog),
+    Schedule(ListDialog),
     Skills(ListDialog),
     Workspaces(ListDialog),
     Message(TextDialog),
@@ -493,6 +496,33 @@ impl Dialog {
             rows,
             ListKind::ReadOnly,
             "esc close",
+        ))
+    }
+
+    /// The Session's scheduled wakeups and cron jobs. Each row names what it is
+    /// (`wakeup <id>` or `cron <id>`) so `x` can cancel the right kind, and the
+    /// detail carries the timing the engine reported.
+    pub fn schedule(rows: &[(String, String, String)]) -> Self {
+        let rows = if rows.is_empty() {
+            vec![Row {
+                id: String::new(),
+                label: "nothing scheduled".to_string(),
+                detail: String::new(),
+            }]
+        } else {
+            rows.iter()
+                .map(|(id, label, detail)| Row {
+                    id: id.clone(),
+                    label: label.clone(),
+                    detail: detail.clone(),
+                })
+                .collect()
+        };
+        Dialog::Schedule(ListDialog::new(
+            "scheduled",
+            rows,
+            ListKind::Schedule,
+            "x cancel · esc close",
         ))
     }
 
@@ -776,6 +806,7 @@ impl Dialog {
             Dialog::Providers(list) => handle_list_key(list, key),
             Dialog::Devices(list) => handle_list_key(list, key),
             Dialog::Jobs(list) => handle_list_key(list, key),
+            Dialog::Schedule(list) => handle_list_key(list, key),
             Dialog::Skills(list) => handle_list_key(list, key),
             Dialog::Workspaces(list) => handle_list_key(list, key),
             Dialog::Message(text) => handle_text_key(text, key),
@@ -803,6 +834,7 @@ impl Dialog {
             Dialog::Providers(list) => list.title,
             Dialog::Devices(list) => list.title,
             Dialog::Jobs(list) => list.title,
+            Dialog::Schedule(list) => list.title,
             Dialog::Skills(list) => list.title,
             Dialog::Workspaces(list) => list.title,
             Dialog::Message(text) => text.title,
@@ -828,7 +860,8 @@ impl Dialog {
             | Dialog::Providers(list)
             | Dialog::Skills(list)
             | Dialog::Workspaces(list)
-            | Dialog::Jobs(list) => Some(list),
+            | Dialog::Jobs(list)
+            | Dialog::Schedule(list) => Some(list),
             _ => None,
         }
     }
@@ -848,7 +881,8 @@ impl Dialog {
             | Dialog::Providers(list)
             | Dialog::Skills(list)
             | Dialog::Workspaces(list)
-            | Dialog::Jobs(list) => Some(list),
+            | Dialog::Jobs(list)
+            | Dialog::Schedule(list) => Some(list),
             _ => None,
         }
     }
@@ -915,6 +949,8 @@ pub enum Action {
     DeviceChosen(usize, u8),
     /// Stop the background job the row names.
     CancelJob(String),
+    /// Cancel the wakeup or cron the row names, written `kind:id`.
+    CancelSchedule(String),
     OpenSession(String),
     Rename(String),
     ToggleArchive(String),
@@ -1040,6 +1076,11 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
         KeyCode::Char('x') if list.kind == ListKind::Jobs => {
             if let Some(id) = list.current_id() {
                 return Action::CancelJob(id);
+            }
+        }
+        KeyCode::Char('x') if list.kind == ListKind::Schedule => {
+            if let Some(id) = list.current_id() {
+                return Action::CancelSchedule(id);
             }
         }
         KeyCode::Char('x') if list.kind == ListKind::Devices => {
@@ -1485,6 +1526,40 @@ mod tests {
             "the answer names its job, so it fills that row only"
         );
         assert_eq!(list.rows[1].detail, "finished · {\"exit_code\":0}");
+    }
+
+    #[test]
+    fn a_schedule_row_names_its_kind_so_x_cancels_the_right_thing() {
+        let empty = Dialog::schedule(&[]);
+        assert_eq!(
+            empty.list().expect("list").rows[0].label,
+            "nothing scheduled"
+        );
+
+        let mut dialog = Dialog::schedule(&[
+            (
+                "wakeup:t1".into(),
+                "wakeup t1 · pending".into(),
+                "in 5m".into(),
+            ),
+            (
+                "cron:c1".into(),
+                "cron c1 · scheduled".into(),
+                "*/5 * * * * · 2 fired · 0 skipped".into(),
+            ),
+        ]);
+        let rows = dialog.list().expect("list");
+        assert_eq!(rows.rows[0].detail, "in 5m");
+        assert_eq!(rows.rows[1].detail, "*/5 * * * * · 2 fired · 0 skipped");
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('x'))),
+            Action::CancelSchedule(entry) if entry == "wakeup:t1"
+        ));
+        dialog.handle_key(key(KeyCode::Down));
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('x'))),
+            Action::CancelSchedule(entry) if entry == "cron:c1"
+        ));
     }
 
     #[test]

@@ -515,6 +515,9 @@ impl App {
                 self.open_dialog(Dialog::jobs(&rows));
                 self.preview_selected_job();
             }
+            AppEvent::Schedule(rows) => {
+                self.open_dialog(Dialog::schedule(&rows));
+            }
             AppEvent::JobDetail { job_id, detail } => {
                 if let Some(Dialog::Jobs(list)) = self.dialog.as_mut() {
                     list.set_detail(&job_id, detail);
@@ -815,6 +818,7 @@ impl App {
             Some(keybinds::Action::SkillList) => self.open_skills(),
             Some(keybinds::Action::DeviceList) => self.open_devices(),
             Some(keybinds::Action::JobList) => self.open_jobs(),
+            Some(keybinds::Action::ScheduleList) => self.open_schedule(),
             Some(keybinds::Action::WorkspaceList) => self.open_workspaces(),
             // Reviewing the working tree had no direct key: it was reachable
             // only through the command list or a slash command whose completion
@@ -1054,6 +1058,21 @@ impl App {
             DialogAction::None => {}
             DialogAction::Close => self.dialog = None,
             DialogAction::Chosen(index) => self.choose(index),
+            DialogAction::CancelSchedule(entry) => {
+                // The row names what it is (`kind:id`) so the cancel call can
+                // reach `cancel_cron` or `cancel_wakeup`.
+                let (kind, id) = entry
+                    .split_once(':')
+                    .map(|(kind, id)| (kind.to_string(), id.to_string()))
+                    .unwrap_or_default();
+                let session_id = self.session_id();
+                self.dialog = None;
+                if let (Some(session_id), Some(engine), false) =
+                    (session_id, self.engine.as_ref(), id.is_empty())
+                {
+                    engine.cancel_schedule(&session_id, &kind, &id);
+                }
+            }
             DialogAction::CancelJob(job_id) => {
                 let session_id = self.session_id();
                 self.dialog = None;
@@ -1301,6 +1320,20 @@ impl App {
             return;
         }
         engine.job_detail(&session_id, &job_id);
+    }
+
+    /// List what the Session has scheduled: wakeups and cron jobs both cancel
+    /// through the same chord, and the engine owns both.
+    fn open_schedule(&mut self) {
+        let Some(session_id) = self.session_id() else {
+            self.notice("open a Session to list scheduled tasks");
+            return;
+        };
+        let Some(engine) = self.engine.as_ref() else {
+            self.notice("Engine is not connected");
+            return;
+        };
+        engine.schedule(&session_id);
     }
 
     fn open_mcp(&mut self) {
@@ -4323,6 +4356,34 @@ mod tests {
             requests.try_recv().is_err(),
             "a known detail is not asked for twice"
         );
+    }
+
+    #[test]
+    fn the_schedule_chord_asks_the_engine_for_the_open_session() {
+        let (mut app, mut requests) = revert_session_app();
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
+        app.handle(key(KeyCode::Char('S'), KeyModifiers::SHIFT));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Schedule { session_id }) if session_id == "ses_a"
+        ));
+    }
+
+    #[test]
+    fn cancelling_a_scheduled_row_names_its_kind_to_the_engine() {
+        let (mut app, mut requests) = revert_session_app();
+        app.handle(AppEvent::Schedule(vec![(
+            "cron:c1".into(),
+            "cron c1 · scheduled".into(),
+            "*/5 * * * * · 2 fired · 0 skipped".into(),
+        )]));
+        assert!(matches!(app.dialog, Some(Dialog::Schedule(_))));
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::CancelSchedule { session_id, kind, id })
+                if session_id == "ses_a" && kind == "cron" && id == "c1"
+        ));
     }
 
     #[test]

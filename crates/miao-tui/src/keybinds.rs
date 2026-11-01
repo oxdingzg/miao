@@ -26,6 +26,8 @@ pub enum Action {
     DeviceList,
     /// Background jobs of the open Session: list and stop.
     JobList,
+    /// Scheduled wakeups and cron jobs of the open Session.
+    ScheduleList,
     WorkspaceList,
     WorkspaceChanges,
     WorkspaceCreate,
@@ -84,6 +86,7 @@ impl Action {
             Action::SkillList => "skill_list",
             Action::DeviceList => "device_list",
             Action::JobList => "job_list",
+            Action::ScheduleList => "schedule_list",
             Action::WorkspaceList => "workspace_list",
             Action::WorkspaceChanges => "workspace_changes",
             Action::WorkspaceCreate => "workspace_create",
@@ -145,6 +148,7 @@ const ACTIONS: &[Action] = &[
     Action::SkillList,
     Action::DeviceList,
     Action::JobList,
+    Action::ScheduleList,
     Action::WorkspaceList,
     Action::WorkspaceChanges,
     Action::WorkspaceCreate,
@@ -209,6 +213,7 @@ const DEFAULTS: &[(Action, &str)] = &[
     (Action::SkillList, "<leader>k"),
     (Action::DeviceList, "<leader>D"),
     (Action::JobList, "<leader>j"),
+    (Action::ScheduleList, "<leader>S"),
     (Action::WorkspaceList, "<leader>w"),
     (Action::WorkspaceChanges, "<leader>g"),
     (Action::WorkspaceCreate, "<leader>C"),

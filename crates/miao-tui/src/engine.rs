@@ -135,6 +135,16 @@ pub enum Request {
         session_id: String,
         job_id: String,
     },
+    /// The Session's scheduled wakeups and cron jobs.
+    Schedule {
+        session_id: String,
+    },
+    /// Cancel one scheduled wakeup or cron, named `kind:id`.
+    CancelSchedule {
+        session_id: String,
+        kind: String,
+        id: String,
+    },
     /// Move the open Session to another workspace directory (TUI-09).
     MoveSession {
         session_id: String,
@@ -340,6 +350,23 @@ impl Handle {
     pub fn jobs(&self, session_id: &str) {
         let _ = self.tx.send(Request::Jobs {
             session_id: session_id.into(),
+        });
+    }
+
+    /// List this Session's scheduled wakeups and cron jobs.
+    pub fn schedule(&self, session_id: &str) {
+        let _ = self.tx.send(Request::Schedule {
+            session_id: session_id.into(),
+        });
+    }
+
+    /// Cancel one scheduled item, then ask for the list again so the panel
+    /// shows the state the engine reached.
+    pub fn cancel_schedule(&self, session_id: &str, kind: &str, id: &str) {
+        let _ = self.tx.send(Request::CancelSchedule {
+            session_id: session_id.into(),
+            kind: kind.into(),
+            id: id.into(),
         });
     }
 
@@ -955,6 +982,35 @@ async fn run(
                     }
                 }
                 Request::Jobs { session_id } => refresh_jobs(client, &bus, &session_id).await,
+                Request::Schedule { session_id } => {
+                    refresh_schedule(client, &bus, &session_id).await
+                }
+                Request::CancelSchedule {
+                    session_id,
+                    kind,
+                    id,
+                } => {
+                    let method = match kind.as_str() {
+                        "cron" => "cancel_cron",
+                        _ => "cancel_wakeup",
+                    };
+                    let id_field = match kind.as_str() {
+                        "cron" => "cron_id",
+                        _ => "timer_id",
+                    };
+                    let result = client
+                        .request(
+                            method,
+                            json!({ "session_id": session_id, id_field: id }),
+                        )
+                        .await;
+                    match result {
+                        Ok(_) => refresh_schedule(client, &bus, &session_id).await,
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("cancel failed: {error}")))
+                        }
+                    }
+                }
                 Request::JobDetail {
                     session_id,
                     job_id,
@@ -1403,6 +1459,88 @@ fn job_detail(value: &Value) -> String {
             }
             format!("{state} · {clipped}")
         }
+    }
+}
+
+/// Ask the engine for the Session's scheduled wakeups and cron jobs and hand
+/// them to the panel. Each row is `kind:id` so a cancel names the right kind,
+/// with the timing the engine reported as its detail.
+async fn refresh_schedule(client: &EngineClient, bus: &Bus, session_id: &str) {
+    let wakeups = client
+        .request("wakeups", json!({ "session_id": session_id }))
+        .await;
+    let crons = client
+        .request("crons", json!({ "session_id": session_id }))
+        .await;
+    let (wakeups, crons) = match (wakeups, crons) {
+        (Ok(wakeups), Ok(crons)) => (wakeups, crons),
+        (Err(error), _) => {
+            bus.send(AppEvent::ActionFailed(format!("wakeups failed: {error}")));
+            return;
+        }
+        (_, Err(error)) => {
+            bus.send(AppEvent::ActionFailed(format!("crons failed: {error}")));
+            return;
+        }
+    };
+    let mut rows = Vec::new();
+    for row in wakeups.as_array().into_iter().flatten() {
+        let Some(id) = row.get("timer_id").and_then(Value::as_str) else {
+            continue;
+        };
+        let state = row
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("pending");
+        rows.push((
+            format!("wakeup:{id}"),
+            format!("wakeup {id} · {state}"),
+            due_in(row.get("due_at_ms").and_then(Value::as_u64)),
+        ));
+    }
+    for row in crons.as_array().into_iter().flatten() {
+        let Some(id) = row.get("cron_id").and_then(Value::as_str) else {
+            continue;
+        };
+        let state = row
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("scheduled");
+        let expression = row.get("cron").and_then(Value::as_str).unwrap_or("");
+        let fired = row.get("fired_count").and_then(Value::as_u64).unwrap_or(0);
+        let skipped = row
+            .get("skipped_count")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        rows.push((
+            format!("cron:{id}"),
+            format!("cron {id} · {state}"),
+            format!("{expression} · {fired} fired · {skipped} skipped"),
+        ));
+    }
+    bus.send(AppEvent::Schedule(rows));
+}
+
+/// How far away a scheduled wakeup is, in the same coarse units the rest of the
+/// TUI uses for time. A due timer reads as overdue rather than as a negative
+/// duration, because it means the engine has not fired it yet.
+fn due_in(due_at_ms: Option<u64>) -> String {
+    let Some(due_at_ms) = due_at_ms else {
+        return String::new();
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_millis() as u64)
+        .unwrap_or(0);
+    if due_at_ms <= now {
+        return "due now".into();
+    }
+    let seconds = (due_at_ms - now) / 1000;
+    match seconds {
+        0..=59 => format!("in {seconds}s"),
+        60..=3599 => format!("in {}m", seconds / 60),
+        3600..=86_399 => format!("in {}h", seconds / 3600),
+        _ => format!("in {}d", seconds / 86_400),
     }
 }
 
