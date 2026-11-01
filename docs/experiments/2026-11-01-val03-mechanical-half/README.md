@@ -14,19 +14,25 @@ measurable after the fix described below.
 | --- | --- | --- | --- | --- |
 | startup | warm store, first frame | — | 31 ms (p50) | `startup_latency.rs` |
 | startup | warm store, ready to type / to submit | — | 36 ms / 6 ms (p50) | `startup_latency.rs` |
-| finding a session | walk `j` × 149 + `Enter` (200-Session catalog) | 150 | 456 ms | `interaction_cost.rs` |
-| finding a session | `/` + `session 150` + `Enter` | 13 | 48 ms | `interaction_cost.rs` |
+| finding a session | walk `j` × 149 + `Enter` (200-Session catalog) | 151 | 463 ms | `interaction_cost.rs` |
+| finding a session | `/` + `session 150` + `Enter` | 14 | 47 ms | `interaction_cost.rs` |
 | editing input | line motions to fix the first character | 44 | 46 ms | `interaction_edit.rs` |
-| editing input | retype the line instead | 120 | 91 ms | `interaction_edit.rs` |
-| approval | `1` on the blocking decision | 1 | 5 ms | `interaction_approval.rs` |
+| editing input | retype the line instead | 120 | 103 ms | `interaction_edit.rs` |
+| approval | `1` on the blocking decision | 1 | 7 ms | `interaction_approval.rs` |
 | failure recovery | recall the failed prompt + send again | 2 | 30 ms | `interaction_recovery.rs` |
-| reviewing changes | `<leader>g` | 2 | 13 ms | `interaction_review.rs` |
+| reviewing changes | `<leader>g` | 2 | 16 ms | `interaction_review.rs` |
 
 Reading it: the two findings VAL-03 can already state as numbers are that a
-query costs 11× fewer keystrokes than walking a 200-row list (13 vs 150) and that
+query costs 11× fewer keystrokes than walking a 200-row list (14 vs 151) and that
 line motions cost about a third of retyping (44 vs 120), for the same outcome on
 the same surface. Approval is one keystroke because the decision is a closed
 vocabulary, not because of any optimisation.
+
+All figures were re-measured on `main` after the panel relayout fix (#2241) and
+replace the first round, whose numbers appear in the history of this file. The
+two exact counts moved by one keystroke each (150→151 and 13→14) after the
+keybinding work in between, so they are re-stated rather than assumed stable;
+the ratio they support is unchanged.
 
 Startup figures are quoted from `docs/experiments/2026-11-01-startup-latency`,
 which owns that measurement and its own scenario definitions; they are repeated
