@@ -545,6 +545,7 @@ impl App {
                 state,
             } => {
                 self.swap_draft(summary.as_ref().map(|session| session.id.as_str()));
+                self.shell.set_goal(state.goal.as_ref());
                 self.shell.set_todos(&state.todos);
                 self.session = summary;
                 if let Some(summary) = &self.session {
@@ -2875,6 +2876,7 @@ mod tests {
     fn approval_state() -> SessionState {
         SessionState {
             todos: Vec::new(),
+            goal: None,
             active_run: None,
             pending: 0,
             approvals: vec![crate::session::ApprovalView {
