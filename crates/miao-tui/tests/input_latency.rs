@@ -217,6 +217,35 @@ fn measure_echo(harness: &mut Harness, keys: &[u8], per_key: Duration) -> Vec<Sa
     samples
 }
 
+/// Like `measure_echo`, but for input a terminal delivers as several bytes: each
+/// chunk is written whole and the clock stops when that exact sequence is in the
+/// rendered output.
+fn measure_echo_chunks(harness: &mut Harness, chunks: &[&str], per_key: Duration) -> Vec<Sample> {
+    let mut samples = Vec::new();
+    for chunk in chunks {
+        let marker = harness.output_len();
+        let sent_at = Instant::now();
+        harness.write(chunk.as_bytes());
+        let needle = chunk.as_bytes();
+        let mut latency: Option<Duration> = None;
+        while sent_at.elapsed() < per_key {
+            if harness
+                .output_since(marker)
+                .windows(needle.len())
+                .any(|window| window == needle)
+            {
+                latency = Some(sent_at.elapsed());
+                break;
+            }
+            std::thread::sleep(Duration::from_micros(200));
+        }
+        samples.push(Sample {
+            latency_ms: latency.unwrap_or(per_key).as_millis(),
+        });
+    }
+    samples
+}
+
 fn percentile(sorted: &[u128], fraction: f64) -> u128 {
     if sorted.is_empty() {
         return 0;
@@ -306,6 +335,54 @@ fn typing_echo_latency_is_reported_for_the_composer() {
     // The TUI's exit does not stop its engine child: without this cleanup the
     // orphan keeps running into the next test binary and breaks the editor
     // signal tests that follow.
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", "miao-tui-fake-engine"])
+        .status();
+    std::thread::sleep(Duration::from_millis(150));
+}
+
+#[test]
+fn typing_echo_latency_is_reported_for_multi_byte_input() {
+    // PERF-01 also asks about input methods. A PTY sees the composed text rather
+    // than the IME's candidate window, so what is measured here is the product's
+    // handling of multi-byte input: each CJK character is delivered as its own
+    // UTF-8 sequence and the clock stops when the glyph is rendered.
+    let mut harness = Harness::spawn_engine("multi-byte");
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(4)),
+        "the home list did not render:\n{}",
+        harness.text()
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(3)),
+        "the session transcript did not render:\n{}",
+        harness.text()
+    );
+    std::thread::sleep(Duration::from_millis(300));
+
+    let chunks = ["中", "文", "输", "入", "法", "测", "试"];
+    let samples = measure_echo_chunks(&mut harness, &chunks, Duration::from_millis(1500));
+
+    write_report(&harness.dir, "composer-multi-byte", &samples);
+    let worst = samples
+        .iter()
+        .map(|sample| sample.latency_ms)
+        .max()
+        .unwrap_or(0);
+    assert!(
+        worst < 1500,
+        "a multi-byte character took {worst} ms to echo — dropped input or a hung renderer"
+    );
+
+    harness.write(b"\x03");
+    std::thread::sleep(Duration::from_millis(200));
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(10)).expect("tui did not exit");
+    assert!(status.success());
+    drop(harness.writer);
+    drop(harness.pty);
+    let _ = harness.reader.join();
     let _ = std::process::Command::new("pkill")
         .args(["-f", "miao-tui-fake-engine"])
         .status();
