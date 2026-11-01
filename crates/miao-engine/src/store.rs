@@ -272,6 +272,14 @@ impl Store {
                     )));
                 }
 
+                // A brand-new database can still choose its free-page policy;
+                // an existing one would need a full VACUUM to change it, so it is
+                // left alone. Incremental vacuum hands the free pages back as the
+                // file shrinks instead of letting them accumulate until someone
+                // remembers to run `miao db vacuum`.
+                if existing == 0 {
+                    conn.execute_batch("PRAGMA auto_vacuum=INCREMENTAL;")?;
+                }
                 conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; BEGIN IMMEDIATE;")?;
                 // Keep old-format run creation outside this schema transaction.
                 // A live old owner keeps its unchanged database until it exits.
