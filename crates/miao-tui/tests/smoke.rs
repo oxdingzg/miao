@@ -409,6 +409,89 @@ fn boots_renders_panes_and_quits_on_ctrl_c() {
 }
 
 #[test]
+fn recall_restores_an_elided_tool_output() {
+    let mut harness = Harness::spawn_engine("recall");
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\x1b[B");
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(
+            &harness,
+            "elided by context management",
+            Duration::from_secs(3)
+        ),
+        "the elision marker did not render:\n{}",
+        plain(&harness.text())
+    );
+
+    harness.write(b"/recall call_elided");
+    assert!(
+        wait_for_plain(&harness, "call_elided", Duration::from_secs(3)),
+        "the composer did not take the command:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "restored fixture bytes", Duration::from_secs(3)),
+        "the restored window did not open:\n{}",
+        plain(&harness.text())
+    );
+    assert!(
+        plain(&harness.text()).contains("Archived tool output"),
+        "the window did not name itself:\n{}",
+        plain(&harness.text())
+    );
+
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
+fn recall_reports_a_handle_the_archive_cannot_resolve() {
+    let mut harness = Harness::spawn_engine("recall-missing");
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
+        "the home list did not render:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\x1b[B");
+    harness.write(b"\r");
+    assert!(wait_for_plain(
+        &harness,
+        "elided by context management",
+        Duration::from_secs(3)
+    ));
+
+    harness.write(b"/recall call_missing");
+    assert!(
+        wait_for_plain(&harness, "call_missing", Duration::from_secs(3)),
+        "the composer did not take the command:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
+    // An empty window is a failure notice, never a blank card that reads like
+    // "nothing was archived".
+    assert!(
+        wait_for_plain(&harness, "recall failed", Duration::from_secs(3)),
+        "an unknown handle did not report failure:\n{}",
+        plain(&harness.text())
+    );
+
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+#[test]
 fn a_literal_launcher_prefix_reaches_the_child_without_shell_parsing() {
     let mut harness = Harness::spawn_with("launch-prefix", false, true, false, false, true, &[]);
     assert!(
