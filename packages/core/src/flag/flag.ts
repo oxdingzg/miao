@@ -111,8 +111,17 @@ export const Flag = {
   get MIAO_EXPERIMENTAL_CODE_MODE() {
     return enabledByExperimental("MIAO_EXPERIMENTAL_CODE_MODE")
   },
+  // Tool disclosure is the default: schemas beyond the advertised budget ride
+  // behind `tool_search` instead of being paid for on every turn. Set
+  // MIAO_TOOL_DISCLOSURE=0 (or the legacy experimental name) to advertise the
+  // full catalog again.
+  get MIAO_TOOL_DISCLOSURE() {
+    const value = process.env["MIAO_TOOL_DISCLOSURE"] ?? process.env["MIAO_EXPERIMENTAL_TOOL_DISCLOSURE"]
+    if (value === undefined) return true
+    return truthy("MIAO_TOOL_DISCLOSURE") || truthy("MIAO_EXPERIMENTAL_TOOL_DISCLOSURE")
+  },
   get MIAO_EXPERIMENTAL_TOOL_DISCLOSURE() {
-    return enabledByExperimental("MIAO_EXPERIMENTAL_TOOL_DISCLOSURE")
+    return this.MIAO_TOOL_DISCLOSURE
   },
   get MIAO_RESPONSES_WS() {
     // Pooled Responses WebSockets for the ChatGPT/Codex backend are the default

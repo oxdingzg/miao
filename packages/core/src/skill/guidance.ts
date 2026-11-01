@@ -13,6 +13,18 @@ const Summary = Schema.Struct({
 })
 type Summary = typeof Summary.Type
 
+/**
+ * One line per skill, description clipped to its first sentence. The index is
+ * a trigger list, not documentation: the full text arrives with the skill body
+ * when `load_skill` runs, so paying for whole paragraphs on every turn buys
+ * nothing but prefill.
+ */
+const summary = (description: string) => {
+  const line = description.replace(/\s+/g, " ").trim()
+  const sentence = line.split(/(?<=[.!?。！？])\s/)[0] ?? line
+  return sentence.length > 160 ? `${sentence.slice(0, 157)}...` : sentence
+}
+
 const render = (skills: ReadonlyArray<Summary>) =>
   [
     "Skills provide specialized instructions and workflows for specific tasks.",
@@ -21,12 +33,7 @@ const render = (skills: ReadonlyArray<Summary>) =>
       ? ["No skills are currently available."]
       : [
           "<available_skills>",
-          ...skills.flatMap((skill) => [
-            "  <skill>",
-            `    <name>${skill.name}</name>`,
-            `    <description>${skill.description}</description>`,
-            "  </skill>",
-          ]),
+          ...skills.map((skill) => `- ${skill.name}: ${summary(skill.description)}`),
           "</available_skills>",
         ]),
   ].join("\n")

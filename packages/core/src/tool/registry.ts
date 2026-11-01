@@ -34,6 +34,23 @@ export type ExecuteInput = {
   readonly call: ToolCall
 }
 
+/** Tools that stay advertised regardless of the disclosure budget. */
+const RESIDENT_CORE: ReadonlyArray<string> = [
+  "bash",
+  "read",
+  "write",
+  "edit",
+  "apply_patch",
+  "glob",
+  "grep",
+  "task",
+  "todowrite",
+  "skill",
+]
+
+/** Advertised schema budget for disclosure (roughly 4k tokens). */
+const DISCLOSURE_BUDGET_BYTES = 16_000
+
 export type MaterializeOptions = {
   /** Collapse the tool set behind one `execute` tool with a budgeted Code Mode catalog. */
   readonly codeMode?: boolean
@@ -41,6 +58,8 @@ export type MaterializeOptions = {
   readonly disclosure?: boolean
   /** Tool names disclosure must keep advertised. */
   readonly alwaysLoad?: ReadonlyArray<string>
+  /** Bytes of tool schema disclosure may advertise before deferring the rest. */
+  readonly advertisedBytes?: number
   /** Overlay session-scoped registrations owned by this Session on top of location and application scopes. */
   readonly sessionID?: SessionSchema.ID
   /** Tool names hidden from the model. Filtering happens before ordering so the prefix stays stable. */
@@ -325,27 +344,31 @@ const registryLayer = Layer.effect(
         // so a call by name settles exactly like an advertised one. It and
         // Code Mode are alternative strategies; Code Mode wins when both on.
         if (!options?.codeMode && options?.disclosure === true && definitions.length > 0) {
-          // Remote definitions above this advertised budget (roughly 10k
-          // tokens) defer behind `tool_search`. Once the budget is exhausted
-          // every later external tool defers too, keeping the cut stable for
-          // a given registration set.
-          const disclosureBudget = 40_000
-          let externalBytes = 0
-          const resident: ToolDefinition[] = []
-          const deferred: ToolDefinition[] = []
+          // Disclosure keeps the advertised set inside a byte budget instead of
+          // paying for every schema on every turn. Essential coding tools stay
+          // resident by name; the rest are admitted in registration order until
+          // the budget is spent, then defer behind `tool_search`. Deferred
+          // tools remain registered, so a call by name settles exactly like an
+          // advertised one: deferral changes what the model is told, never what
+          // it can call.
+          const budget = options?.advertisedBytes ?? DISCLOSURE_BUDGET_BYTES
+          const pinned = new Set<string>([...RESIDENT_CORE, ...(options?.alwaysLoad ?? [])])
+          const residentNames = new Set<string>()
+          // Pinned tools never consume the budget: pinning means "advertise
+          // this whatever it costs", so a large pinned schema cannot starve
+          // the small tools that would otherwise fit beside it.
+          let spent = 0
+          const size = (item: ToolDefinition) => JSON.stringify(item).length
+          for (const item of definitions) if (pinned.has(item.name)) residentNames.add(item.name)
           for (const item of definitions) {
-            if (item.metadata?.external !== true || options?.alwaysLoad?.includes(item.name) === true) {
-              resident.push(item)
-              continue
-            }
-            const size = JSON.stringify(item).length
-            if (externalBytes + size > disclosureBudget) {
-              deferred.push(item)
-              continue
-            }
-            externalBytes += size
-            resident.push(item)
+            if (residentNames.has(item.name)) continue
+            const bytes = size(item)
+            if (spent + bytes > budget) continue
+            residentNames.add(item.name)
+            spent += bytes
           }
+          const resident = definitions.filter((item) => residentNames.has(item.name))
+          const deferred = definitions.filter((item) => !residentNames.has(item.name))
           if (deferred.length > 0) {
             const search = ToolSearch.make({ deferred })
             if (!whollyDisabled(permissions(search, ToolSearch.TOOL_SEARCH_TOOL), rules)) {

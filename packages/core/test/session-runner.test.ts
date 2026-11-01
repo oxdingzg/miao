@@ -1921,7 +1921,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("a successful tool_search resets the miss streak", () =>
+  it.effect("a successful tool_search advertises the deferred catalog again", () =>
     Effect.gen(function* () {
       const previous = process.env.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE
       yield* Effect.addFinalizer(() =>
@@ -1969,11 +1969,13 @@ describe("SessionRunnerLLM", () => {
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "find the missing tool" }), resume: false })
       yield* session.resume(sessionID)
 
-      // miss, hit, miss, miss: the hit restarts the streak, so the catalog
-      // survives the third request and is only dropped for the fifth.
-      expect(advertised.slice(0, 4).every((names) => names.includes("tool_search"))).toBe(true)
-      expect(advertised[4]).toContain("huge_external")
-      expect(advertised[4]).not.toContain("tool_search")
+      // A provider call can only target an advertised tool, so a search hit
+      // must advertise the catalog from the next request on: the schema the
+      // model just read would otherwise be uncallable.
+      expect(advertised[0]).toContain("tool_search")
+      expect(advertised[1]).toContain("tool_search")
+      expect(advertised[2]).toContain("huge_external")
+      expect(advertised[2]).not.toContain("tool_search")
     }),
   )
 

@@ -772,7 +772,7 @@ const layer = Layer.effect(
         : yield* tools.materialize(agent.info?.permissions, {
             codeMode: Flag.MIAO_EXPERIMENTAL_CODE_MODE,
             disclosure:
-              (settings.disclosure ?? Flag.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE) &&
+              (settings.disclosure ?? Flag.MIAO_TOOL_DISCLOSURE) &&
               !disclosureEscalated.has(session.id),
             alwaysLoad: settings.alwaysLoad,
             sessionID: session.id,
@@ -1091,6 +1091,16 @@ const layer = Layer.effect(
                     const missed =
                       output.type === "error" ||
                       (output.type === "text" && typeof output.value === "string" && output.value.startsWith("No deferred tool"))
+                    // A provider call can only target an advertised tool, so a
+                    // search hit must be followed by advertising the catalog —
+                    // otherwise the model sees a schema it cannot call.
+                    if (!missed) {
+                      disclosureEscalated.add(session.id)
+                      yield* Effect.logInfo("session.disclosure-admitted", {
+                        sessionID: session.id,
+                        reason: "Deferred tool requested; advertising the full catalog from the next step.",
+                      })
+                    }
                     const misses = missed ? (disclosureMisses.get(session.id) ?? 0) + 1 : 0
                     disclosureMisses.set(session.id, misses)
                     if (misses >= MAX_DISCLOSURE_MISSES) {
