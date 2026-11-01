@@ -33,15 +33,19 @@ here only so one table answers VAL-03's "startup" line.
 
 ## What is not measured, and why
 
-**reviewing changes.** The panel opens on `<leader>g` — the rendered frame in the
-test log shows the `workspace changes` title — but its body stays empty under the
-scripted engine, and the test therefore fails rather than reporting a fake
-number. Ruled out while trying: the workspace not being a repository (a `git
-init` plus commit in the fixture left it empty), and a pending approval holding
-the panel (removing `MIAO_TUI_FAKE_APPROVAL` changed nothing). `decode()` in
-`workspace_changes.rs` accepts the fixture's payload shape (`repository: true`
-plus a three-file list). The next step is to find where the request or its
-response is lost; until then this row stays empty.
+**reviewing changes.** The panel opens on `<leader>g` — the rendered frame shows
+the `workspace changes` title — but its body stays empty, so the test fails
+rather than reporting a fake number. The failure is not in the request path,
+which was traced before filing it as #2218: the fixture logs that it received
+`vcs_status` and answered with `repository: true` plus three files, and
+instrumentation in `app.rs` shows the dialog receiving them
+(`ok files=3 gen=1`, `dialog gen=1`). The data arrives and the panel still draws
+empty, and a keypress that forces a repaint does not change it. Ruled out on the
+way: the workspace not being a repository (`git init` plus commit only changed
+the header from `no git` to `main`), a pending approval suppressing the panel,
+the payload shape (`decode_parses_branch_and_files` builds the same one), and a
+generation mismatch. The remaining suspects are the drawing path and which
+widget owns the box; this row stays empty until #2218 is fixed.
 
 **mistakes and rework.** Not observable from a script for any of the six tasks: a
 mistyped query, a wrong pane, or an overshoot is exactly what a scripted keystroke
