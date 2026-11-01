@@ -1574,16 +1574,29 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
     let row_offset = cursor_line.saturating_sub(input_area.height.saturating_sub(1) as usize);
     let cell_offset = cursor_cell.saturating_sub(input_area.width.saturating_sub(1) as usize);
     let text_color = if shell { accent } else { palette.text };
+    // The selection is painted in the accent on the composer's own background,
+    // so the text stays readable while the covered cells read as chosen.
+    let selection_style = Style::new().fg(palette.background).bg(accent);
+    let selection_cells = composer.editor.selection_cells();
     let lines = composer
         .editor
         .lines()
+        .enumerate()
         .skip(row_offset)
         .take(input_area.height as usize)
-        .map(|line| {
-            Line::from(Span::styled(
-                clip_cells(&line, cell_offset, input_area.width),
+        .map(|(index, line)| {
+            let selection = selection_cells
+                .iter()
+                .find(|(line_index, _, _)| *line_index == index)
+                .map(|(_, start, end)| (*start, *end));
+            composer_line(
+                &line,
+                cell_offset,
+                input_area.width,
+                selection,
                 Style::new().fg(text_color),
-            ))
+                selection_style,
+            )
         })
         .collect::<Vec<_>>();
     frame.render_widget(Paragraph::new(lines), input_area);
@@ -1658,6 +1671,62 @@ fn fit(text: &str, width: usize) -> String {
     }
     let room = width.saturating_sub(1) as u16;
     format!("{}…", clip_cells(&single, 0, room))
+}
+
+/// One composer line as spans, with the selected cells carrying the highlight.
+/// Clipping and scrolling happen on display cells, exactly as they do for the
+/// cursor, so a selection over CJK text covers the width the terminal shows and
+/// the horizontal offset stays consistent with the caret.
+fn composer_line(
+    line: &str,
+    offset: usize,
+    width: u16,
+    selection: Option<(usize, usize)>,
+    text: ratatui::style::Style,
+    highlighted: ratatui::style::Style,
+) -> ratatui::text::Line<'static> {
+    let limit = width as usize;
+    let mut spans: Vec<ratatui::text::Span<'static>> = Vec::new();
+    let mut current = String::new();
+    let mut current_highlighted = false;
+    let mut cell = 0usize;
+    for c in line.chars() {
+        let cells = UnicodeWidthChar::width(c).unwrap_or(0);
+        if cell < offset {
+            cell += cells;
+            continue;
+        }
+        if cell + cells > offset + limit {
+            break;
+        }
+        let highlighted_cell = selection.is_some_and(|(start, end)| cell >= start && cell < end);
+        if highlighted_cell != current_highlighted && !current.is_empty() {
+            let style = if current_highlighted {
+                highlighted
+            } else {
+                text
+            };
+            spans.push(ratatui::text::Span::styled(
+                std::mem::take(&mut current),
+                style,
+            ));
+        }
+        current_highlighted = highlighted_cell;
+        current.push(c);
+        cell += cells;
+    }
+    if !current.is_empty() {
+        let style = if current_highlighted {
+            highlighted
+        } else {
+            text
+        };
+        spans.push(ratatui::text::Span::styled(current, style));
+    }
+    if spans.is_empty() {
+        spans.push(ratatui::text::Span::styled(String::new(), text));
+    }
+    ratatui::text::Line::from(spans)
 }
 
 fn clip_cells(line: &str, offset: usize, width: u16) -> String {
@@ -3111,6 +3180,34 @@ mod tests {
             home.placeholder(),
             "no sessions yet · tab to type a prompt · n for an empty session"
         );
+    }
+
+    /// The renderer marks exactly the selected cells, and clipping still works
+    /// with wide characters and a horizontal offset.
+    #[test]
+    fn the_composer_line_highlights_only_the_selected_cells() {
+        let text = Style::new().fg(ratatui::style::Color::Reset);
+        let highlighted = Style::new().bg(ratatui::style::Color::Indexed(4));
+        let line = composer_line("ab cd", 0, 10, Some((1, 3)), text, highlighted);
+        let spans = line
+            .spans
+            .iter()
+            .map(|span| (span.content.to_string(), span.style))
+            .collect::<Vec<_>>();
+        assert_eq!(spans.len(), 3, "before, selected, after: {spans:?}");
+        assert_eq!(spans[0], ("a".to_string(), text));
+        assert_eq!(spans[1].0, "b ");
+        assert_eq!(spans[1].1, highlighted);
+        assert_eq!(spans[2], ("cd".to_string(), text));
+
+        // Two CJK characters are four cells: the selection covers both, and an
+        // offset of one cell drops the first character entirely.
+        let line = composer_line("你好世界", 0, 20, Some((0, 4)), text, highlighted);
+        assert_eq!(line.spans.len(), 2);
+        assert_eq!(line.spans[0].content.to_string(), "你好");
+        let line = composer_line("你好世界", 2, 20, None, text, highlighted);
+        assert_eq!(line.spans.len(), 1);
+        assert_eq!(line.spans[0].content.to_string(), "好世界");
     }
 
     #[test]

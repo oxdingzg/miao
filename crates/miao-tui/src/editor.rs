@@ -71,6 +71,9 @@ pub struct Editor {
     redo: Vec<(String, usize)>,
     /// The kind of the newest editing step, for coalescing runs.
     group: Option<EditKind>,
+    /// Where a selection started. The cursor is the moving end, so the
+    /// selection is the range between them; `None` means no selection.
+    anchor: Option<usize>,
 }
 
 impl Editor {
@@ -86,6 +89,103 @@ impl Editor {
         self.cursor
     }
 
+    /// The selected byte range, ordered, when the selection covers text.
+    pub fn selection(&self) -> Option<(usize, usize)> {
+        let anchor = self.anchor?;
+        let (start, end) = if anchor <= self.cursor {
+            (anchor, self.cursor)
+        } else {
+            (self.cursor, anchor)
+        };
+        (start < end).then_some((start, end))
+    }
+
+    /// The selected text, when there is a selection.
+    pub fn selected_text(&self) -> Option<&str> {
+        self.selection()
+            .map(|(start, end)| &self.buffer[start..end])
+    }
+
+    /// Whether a selection is active. The anchor and the cursor can sit on the
+    /// same byte after an arrow walked back onto it, and that is still "in
+    /// selection mode" even though the range is empty.
+    pub fn selecting(&self) -> bool {
+        self.anchor.is_some()
+    }
+
+    /// Drop the selection without touching the text, leaving the cursor where
+    /// it is.
+    pub fn clear_selection(&mut self) {
+        self.anchor = None;
+    }
+
+    /// Select the whole draft.
+    pub fn select_all(&mut self) {
+        if self.buffer.is_empty() {
+            return;
+        }
+        self.anchor = Some(0);
+        self.cursor = self.buffer.len();
+        self.goal = None;
+    }
+
+    /// Run a motion with the selection extended: the anchor stays where the
+    /// selection started and the cursor moves, which is what `shift+arrow`
+    /// means. A motion that does not move keeps the anchor as it was.
+    pub fn extending<T>(&mut self, motion: impl FnOnce(&mut Self) -> T) -> T {
+        let start = self.anchor.unwrap_or(self.cursor);
+        let moved = motion(self);
+        self.anchor = Some(start);
+        moved
+    }
+
+    /// Remove the selected text, if any, and put the cursor at its start. The
+    /// caller records the undo step first, so a replacement undoes in one go.
+    fn delete_selection(&mut self) -> bool {
+        let Some((start, end)) = self.selection() else {
+            // A selection collapsed to the cursor still has to be dropped.
+            self.anchor = None;
+            return false;
+        };
+        self.buffer.replace_range(start..end, "");
+        self.cursor = start;
+        self.anchor = None;
+        self.goal = None;
+        true
+    }
+
+    /// The selected display cells per logical line, as
+    /// `(line index, first cell, one past the last cell)`. The renderer needs
+    /// cells rather than bytes so a selection over CJK text covers the width the
+    /// terminal actually shows.
+    pub fn selection_cells(&self) -> Vec<(usize, usize, usize)> {
+        let Some((start, end)) = self.selection() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        let mut offset = 0usize;
+        for (index, line) in self.buffer.split('\n').enumerate() {
+            let line_start = offset;
+            let line_end = line_start + line.len();
+            offset = line_end + 1;
+            let from = start.max(line_start);
+            let to = end.min(line_end);
+            if from >= to {
+                continue;
+            }
+            let first = line[..from - line_start]
+                .chars()
+                .map(cell_width)
+                .sum::<usize>();
+            let width = line[from - line_start..to - line_start]
+                .chars()
+                .map(cell_width)
+                .sum::<usize>();
+            out.push((index, first, first + width));
+        }
+        out
+    }
+
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }
@@ -98,6 +198,7 @@ impl Editor {
         self.buffer = text.to_string();
         self.cursor = self.buffer.len();
         self.goal = None;
+        self.anchor = None;
         // A programmatic replacement (history recall, a stash, a restored
         // draft) is not an editing step: undoing back into a previous
         // session's prompt would be a surprise, not a convenience.
@@ -170,6 +271,7 @@ impl Editor {
     pub fn take(&mut self) -> String {
         self.cursor = 0;
         self.goal = None;
+        self.anchor = None;
         self.forget_history();
         std::mem::take(&mut self.buffer)
     }
@@ -185,17 +287,31 @@ impl Editor {
         self.buffer.clear();
         self.cursor = 0;
         self.goal = None;
+        self.anchor = None;
     }
 
     pub fn insert_char(&mut self, c: char) {
-        self.record(EditKind::Insert);
+        // Typing over a selection replaces it, and the pair has to undo in one
+        // step: record before the deletion so undo restores the selected text.
+        if self.selection().is_some() {
+            self.record(EditKind::Replace);
+            self.delete_selection();
+        } else {
+            self.record(EditKind::Insert);
+        }
         self.buffer.insert(self.cursor, c);
         self.cursor += c.len_utf8();
         self.goal = None;
     }
 
     pub fn insert_str(&mut self, text: &str) {
-        self.record(EditKind::Insert);
+        // A paste over a selection replaces it, in one undo step.
+        if self.selection().is_some() {
+            self.record(EditKind::Replace);
+            self.delete_selection();
+        } else {
+            self.record(EditKind::Insert);
+        }
         self.buffer.insert_str(self.cursor, text);
         self.cursor += text.len();
         self.goal = None;
@@ -204,12 +320,19 @@ impl Editor {
     /// Replace `start..end` with `text`; used by completion and history.
     pub fn replace(&mut self, start: usize, end: usize, text: &str) {
         self.record(EditKind::Replace);
+        self.anchor = None;
         self.buffer.replace_range(start..end, text);
         self.cursor = start + text.len();
         self.goal = None;
     }
 
     pub fn backspace(&mut self) -> bool {
+        if self.selection().is_some() {
+            self.record(EditKind::Delete);
+            self.delete_selection();
+            return true;
+        }
+        self.anchor = None;
         if self.cursor == 0 {
             return false;
         }
@@ -222,6 +345,12 @@ impl Editor {
     }
 
     pub fn delete_forward(&mut self) -> bool {
+        if self.selection().is_some() {
+            self.record(EditKind::Delete);
+            self.delete_selection();
+            return true;
+        }
+        self.anchor = None;
         if self.cursor == self.buffer.len() {
             return false;
         }
@@ -233,6 +362,12 @@ impl Editor {
     }
 
     pub fn delete_word_backward(&mut self) -> bool {
+        if self.selection().is_some() {
+            self.record(EditKind::Delete);
+            self.delete_selection();
+            return true;
+        }
+        self.anchor = None;
         let start = self.word_start(self.cursor);
         if start == self.cursor {
             return false;
@@ -245,6 +380,12 @@ impl Editor {
     }
 
     pub fn delete_word_forward(&mut self) -> bool {
+        if self.selection().is_some() {
+            self.record(EditKind::Delete);
+            self.delete_selection();
+            return true;
+        }
+        self.anchor = None;
         let end = self.word_end(self.cursor);
         if end == self.cursor {
             return false;
@@ -256,6 +397,12 @@ impl Editor {
     }
 
     pub fn delete_to_line_start(&mut self) -> bool {
+        if self.selection().is_some() {
+            self.record(EditKind::Delete);
+            self.delete_selection();
+            return true;
+        }
+        self.anchor = None;
         let start = self.line_start(self.cursor);
         if start == self.cursor {
             return false;
@@ -268,6 +415,12 @@ impl Editor {
     }
 
     pub fn delete_to_line_end(&mut self) -> bool {
+        if self.selection().is_some() {
+            self.record(EditKind::Delete);
+            self.delete_selection();
+            return true;
+        }
+        self.anchor = None;
         let end = self.line_end(self.cursor);
         if end == self.cursor {
             return false;
@@ -411,9 +564,11 @@ impl Editor {
     }
 
     /// Any cursor motion ends the current typing run: typing, moving, then
-    /// typing again are two undo steps rather than one.
+    /// typing again are two undo steps rather than one. It also drops the
+    /// selection, because a plain motion is what ends one.
     fn end_run(&mut self) {
         self.group = None;
+        self.anchor = None;
     }
 
     fn motion_goal(&mut self) -> usize {
@@ -644,6 +799,33 @@ impl Composer {
     fn handle_edit_key(&mut self, key: KeyEvent, keys: &Keymap) -> Action {
         let action = keys.input_action(&key);
         match action {
+            // Selection is `shift` on the motion the action already has: the
+            // anchor stays where the selection started and the cursor moves.
+            Some(keybinds::Action::InputSelectLeft) => {
+                self.editor.extending(|editor| editor.move_left());
+            }
+            Some(keybinds::Action::InputSelectRight) => {
+                self.editor.extending(|editor| editor.move_right());
+            }
+            Some(keybinds::Action::InputSelectUp) => {
+                self.editor.extending(|editor| editor.move_up());
+            }
+            Some(keybinds::Action::InputSelectDown) => {
+                self.editor.extending(|editor| editor.move_down());
+            }
+            Some(keybinds::Action::InputSelectLineHome) => {
+                self.editor.extending(|editor| editor.move_line_start());
+            }
+            Some(keybinds::Action::InputSelectLineEnd) => {
+                self.editor.extending(|editor| editor.move_line_end());
+            }
+            Some(keybinds::Action::InputSelectWordBackward) => {
+                self.editor.extending(|editor| editor.move_word_backward());
+            }
+            Some(keybinds::Action::InputSelectWordForward) => {
+                self.editor.extending(|editor| editor.move_word_forward());
+            }
+            Some(keybinds::Action::InputSelectAll) => self.editor.select_all(),
             Some(keybinds::Action::InputUndo) => {
                 self.editor.undo();
             }
@@ -1141,6 +1323,88 @@ mod tests {
         editor.set_text("recalled from history");
         assert!(!editor.undo(), "the recalled text is the baseline");
         assert_eq!(editor.text(), "recalled from history");
+    }
+
+    /// `shift` motions extend from where the selection started, and a plain
+    /// motion ends it, which is what every editor does.
+    #[test]
+    fn shift_motions_extend_a_selection_and_plain_motions_end_it() {
+        let mut editor = Editor::new();
+        editor.insert_str("hello world");
+        editor.move_word_backward();
+        editor.extending(|editor| editor.move_left());
+        assert_eq!(editor.selected_text(), Some(" "), "the anchor held");
+        editor.extending(|editor| editor.move_word_backward());
+        assert_eq!(editor.selected_text(), Some("hello "));
+        editor.move_right();
+        assert!(!editor.selecting(), "a plain motion ends the selection");
+        assert_eq!(editor.selected_text(), None);
+    }
+
+    /// Typing over a selection replaces it, and one undo brings the text back.
+    #[test]
+    fn typing_replaces_the_selection_in_one_step() {
+        let mut editor = Editor::new();
+        editor.insert_str("hello world");
+        editor.select_all();
+        editor.insert_char('x');
+        assert_eq!(editor.text(), "x");
+        assert!(editor.undo());
+        assert_eq!(editor.text(), "hello world", "one undo restores it all");
+    }
+
+    /// A paste over a selection replaces it too, rather than inserting beside it.
+    #[test]
+    fn pasting_replaces_the_selection() {
+        let mut editor = Editor::new();
+        editor.insert_str("old text");
+        editor.select_all();
+        editor.insert_str("new");
+        assert_eq!(editor.text(), "new");
+    }
+
+    /// `backspace` and `delete` remove the selected run, not one more character.
+    #[test]
+    fn deletion_takes_the_selection_first() {
+        let mut editor = Editor::new();
+        editor.insert_str("keep DROP keep");
+        // Park the cursor just before the run, then extend over it.
+        for _ in 0..5 {
+            editor.move_left();
+        }
+        for _ in 0..5 {
+            editor.extending(|editor| editor.move_left());
+        }
+        assert_eq!(editor.selected_text(), Some(" DROP"));
+        assert!(editor.backspace());
+        // Only the selected run went: the trailing " keep" is still there.
+        assert_eq!(editor.text(), "keep keep");
+
+        let mut editor = Editor::new();
+        editor.insert_str("aDROPa");
+        for _ in 0..5 {
+            editor.extending(|editor| editor.move_left());
+        }
+        assert_eq!(editor.selected_text(), Some("DROPa"));
+        assert!(editor.delete_forward());
+        assert_eq!(editor.text(), "a");
+    }
+
+    /// The renderer needs cells, not bytes: a selection over CJK text covers the
+    /// width the terminal shows, on every line it touches.
+    #[test]
+    fn selection_cells_are_measured_in_display_columns() {
+        let mut editor = Editor::new();
+        editor.insert_str("ab\n你好\ncd");
+        editor.select_all();
+        let cells = editor.selection_cells();
+        assert_eq!(cells, vec![(0, 0, 2), (1, 0, 4), (2, 0, 2)]);
+        // From the end, up then line-start covers the CJK line and the last
+        // one, and the double-width characters keep their two cells each.
+        editor.set_text("ab\n你好\ncd");
+        editor.extending(|editor| editor.move_up());
+        editor.extending(|editor| editor.move_line_start());
+        assert_eq!(editor.selection_cells(), vec![(1, 0, 4), (2, 0, 2)]);
     }
 
     /// A multi-line or wrapped draft needs more display rows than it has
