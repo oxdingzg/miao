@@ -102,6 +102,17 @@ failures: `ts/refactor#5` (left the discount duplicated) and
   resolve a few percent.
 - Human intervention is not measured here; that is VAL-03 and needs an operator
   record, not a benchmark.
+- **Subagent spend is not in these numbers.** A cell that delegates through the
+  `task` tool would report the parent's money only: a delegated Session is
+  forked inside the engine (`runtime.rs`, id `<parent>/sub-<uuid>`) and its run
+  publishes on the engine's own stream, so the CLI stream carries the
+  announcement and never the work (#2236). None of the ten families delegates,
+  so these figures are unaffected — but the harness now marks such a cell
+  `delegated` rather than printing a total that looks complete.
+- **Compaction spend cannot be attributed either.** `run --format json` emits
+  only `error`, `reasoning`, `step_finish`, `step_start`, `text` and `tool_use`;
+  no compaction event exists in that vocabulary, so even a family that forced a
+  compaction could not separate its cost (#1909).
 - The engine used by the `rust` arm was built from `071eed588d` while the CLI
   ran from `808cc110e`. The two commits differ only in script, test and doc
   files — no Rust source differs — and both shas are recorded in `manifest.json`
