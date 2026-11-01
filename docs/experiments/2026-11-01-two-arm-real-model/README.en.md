@@ -1,5 +1,10 @@
 # Two-arm real-model comparison: TypeScript against the native engine
 
+> **Superseded:** the aggregate below did not survive five repeats per cell;
+> see [`2026-11-01-two-arm-five-repeats`](../2026-11-01-two-arm-five-repeats/README.en.md),
+> which reverses the direction. Do not cite the totals here.
+
+
 ## Scope and provenance
 
 - Baseline: `58118fc1dc` on `main`. Both arms ran from that commit.
