@@ -1385,6 +1385,27 @@ impl App {
         if let Some(ttft) = usage.ttft_avg_ms {
             rows.push(row("ttft", &format!("avg {ttft} ms")));
         }
+        // Each recent turn on its own line: an average cannot show which turn
+        // was slow, and COST-04 asks for the timings in one reviewable place.
+        for timing in &usage.turn_timings {
+            let turn = timing
+                .turn_ms
+                .map(|ms| format!("{:.1}s", ms as f64 / 1000.0))
+                .unwrap_or_else(|| "no turn time".to_string());
+            let ttft = timing
+                .ttft_ms
+                .map(|ms| format!(" · ttft {:.1}s", ms as f64 / 1000.0))
+                .unwrap_or_default();
+            let model = timing
+                .model
+                .as_deref()
+                .map(|model| format!(" · {model}"))
+                .unwrap_or_default();
+            rows.push(row(
+                &format!("turn {}", timing.step),
+                &format!("{turn}{ttft}{model}"),
+            ));
+        }
         if !usage.lineage.is_empty() {
             rows.push(row("lineage", &usage.lineage.join(", ")));
         }
