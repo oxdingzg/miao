@@ -24,6 +24,13 @@ export const { use: useKV, provider: KVProvider } = createSimpleContext({
         setStore(x)
       })
       .catch((error) => {
+        // A fresh machine has no kv.json yet, and a test that has not written
+        // one hits the same path. That is an empty state, not a fault: throwing
+        // here turned every run without a pre-existing state dir red.
+        if ((error as { code?: string } | undefined)?.code === "ENOENT") {
+          setStore({})
+          return
+        }
         console.error("Failed to read KV state", { error })
       })
       .finally(() => {
