@@ -2874,6 +2874,58 @@ mod tests {
     }
 
     #[test]
+    fn the_command_palette_narrows_as_the_operator_types() {
+        // UX-05: discovery is only useful if search works. The palette opens
+        // with every command and filters as the operator types, and Enter runs
+        // the row it landed on.
+        let mut app = app();
+        app.handle(key(KeyCode::Char('p'), KeyModifiers::CONTROL));
+        let all = app
+            .dialog
+            .as_ref()
+            .and_then(Dialog::palette)
+            .expect("palette")
+            .visible
+            .len();
+        assert!(all > 5, "the palette starts with every command: {all}");
+
+        for character in "theme".chars() {
+            app.handle(key(KeyCode::Char(character), KeyModifiers::NONE));
+        }
+        let palette = app
+            .dialog
+            .as_ref()
+            .and_then(Dialog::palette)
+            .expect("palette");
+        assert!(
+            palette.visible.len() < all,
+            "typing narrows the list: {} of {all}",
+            palette.visible.len()
+        );
+        let labels = palette
+            .visible
+            .iter()
+            .map(|index| palette.rows[*index].label.as_str())
+            .collect::<Vec<_>>();
+        assert!(
+            labels
+                .iter()
+                .all(|label| label.to_lowercase().contains("theme")),
+            "only theme commands remain: {labels:?}"
+        );
+        assert!(
+            labels.contains(&"Select a theme"),
+            "the theme command is reachable: {labels:?}"
+        );
+
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(
+            matches!(app.dialog, Some(Dialog::Theme(_))),
+            "Enter runs the command the search landed on"
+        );
+    }
+
+    #[test]
     fn an_idle_screen_waits_for_its_next_label_change() {
         // Two hours old: the sidebar reads "2h ago" and must sleep for the rest
         // of that hour rather than wake every minute.
