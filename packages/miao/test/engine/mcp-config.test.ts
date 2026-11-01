@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
-import { existsSync, statSync } from "node:fs"
 import { Schema } from "effect"
 import { ConfigMCP } from "@miao/schema/config/mcp"
 import { prepareMcpConfig } from "@/engine/mcp-config"
@@ -46,21 +45,17 @@ test("shared local MCP snapshots preserve environment, skip disabled peers and a
     policyFile,
   })
   if (!snapshot) throw new Error("authorized local config must produce a snapshot")
-  try {
-    expect(await Bun.file(snapshot.file).json()).toEqual([
-      {
-        name: "fixture",
-        argv: ["node", "peer.js"],
-        env: { FIXTURE_KEY: "fixture-value" },
-        call_meta: { tenant: "{env:MCP_TENANT}" },
-      },
-    ])
-    expect(path.relative(tmp.path, snapshot.file).startsWith("..")).toBe(true)
-    if (process.platform !== "win32") expect(statSync(snapshot.file).mode & 0o777).toBe(0o600)
-  } finally {
-    snapshot.dispose()
-  }
-  expect(existsSync(path.dirname(snapshot.file))).toBe(false)
+  expect(JSON.parse(snapshot.servers)).toEqual([
+    {
+      name: "fixture",
+      argv: ["node", "peer.js"],
+      env: { FIXTURE_KEY: "fixture-value" },
+      call_meta: { tenant: "{env:MCP_TENANT}" },
+    },
+  ])
+  // The manifest travels inline, so nothing is written to a temporary
+  // directory that a crash would leave behind.
+  expect(Object.keys(snapshot).sort()).toEqual(["environment", "servers"])
 })
 
 test("unsupported shared MCP transport or identity settings are not silently discarded", async () => {
@@ -105,20 +100,14 @@ test("shared HTTP MCP snapshots preserve trusted URL and headers", async () => {
     }),
   })
   if (!snapshot) throw new Error("authorized HTTP config must produce a snapshot")
-  try {
-    expect(await Bun.file(snapshot.file).json()).toEqual([
-      {
-        name: "remote",
-        url: "https://example.invalid/mcp",
-        headers: { Authorization: "Bearer fixture" },
-        call_meta: { tenant: "{env:MCP_TENANT}" },
-      },
-    ])
-    if (process.platform !== "win32") expect(statSync(snapshot.file).mode & 0o777).toBe(0o600)
-  } finally {
-    snapshot.dispose()
-  }
-  expect(existsSync(snapshot.file)).toBe(false)
+  expect(JSON.parse(snapshot.servers)).toEqual([
+    {
+      name: "remote",
+      url: "https://example.invalid/mcp",
+      headers: { Authorization: "Bearer fixture" },
+      call_meta: { tenant: "{env:MCP_TENANT}" },
+    },
+  ])
 })
 
 test("shared cwd and per-field startup/request timeout overrides reach native MCP", async () => {
@@ -140,20 +129,16 @@ test("shared cwd and per-field startup/request timeout overrides reach native MC
     }),
   })
   if (!snapshot) throw new Error("authorized config must produce a snapshot")
-  try {
-    expect(await Bun.file(snapshot.file).json()).toEqual([
-      {
-        name: "local",
-        argv: ["node", "peer.js"],
-        env: {},
-        cwd: path.join(tmp.path, "nested"),
-        timeout: { startup: 5000, request: 250 },
-      },
-      { name: "remote", url: "https://example.invalid/mcp", headers: {}, timeout: { startup: 1000, request: 9000 } },
-    ])
-  } finally {
-    snapshot.dispose()
-  }
+  expect(JSON.parse(snapshot.servers)).toEqual([
+    {
+      name: "local",
+      argv: ["node", "peer.js"],
+      env: {},
+      cwd: path.join(tmp.path, "nested"),
+      timeout: { startup: 5000, request: 250 },
+    },
+    { name: "remote", url: "https://example.invalid/mcp", headers: {}, timeout: { startup: 1000, request: 9000 } },
+  ])
 })
 
 test("authorized call metadata forwards only referenced environment identities to a real child", async () => {
@@ -194,9 +179,10 @@ test("authorized call metadata forwards only referenced environment identities t
     },
   )
   if (!snapshot) throw new Error("authorized config must produce a snapshot")
-  try {
+  {
     expect(snapshot.environment).toEqual({ MCP_IDENTITY_FIXTURE: "selected-identity" })
-    expect(await Bun.file(snapshot.file).text()).not.toContain("selected-identity")
+    // The identity template travels as a template, not as the resolved value.
+    expect(snapshot.servers).not.toContain("selected-identity")
     const script = path.join(tmp.path, "environment.ts")
     await Bun.write(
       script,
@@ -213,7 +199,5 @@ test("authorized call metadata forwards only referenced environment identities t
     expect(engineEnvironment({ ...snapshot.environment, MCP_IDENTITY_FIXTURE: "explicit" }).MCP_IDENTITY_FIXTURE).toBe(
       "explicit",
     )
-  } finally {
-    snapshot.dispose()
   }
 })

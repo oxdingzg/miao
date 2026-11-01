@@ -1,9 +1,14 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import os from "node:os"
+import { readFileSync } from "node:fs"
 import path from "node:path"
 import type { EngineOptions } from "./client"
 
-/** Materialize trusted global servers for one native owner, never project config. */
+/**
+ * Hand trusted global servers to one native owner, never project config.
+ *
+ * The servers travel as inline JSON through the child's environment: there is
+ * no temporary file to keep outside the model-writable workspace, to chmod, or
+ * to clean up after a crash.
+ */
 export function prepareMcpConfig(options: EngineOptions, inherited: Record<string, string | undefined> = process.env) {
   if (options.mcpConfigFile || !options.mcpSettings?.servers) return
   // Without an explicit operator policy the engine derives the product policy
@@ -75,14 +80,5 @@ export function prepareMcpConfig(options: EngineOptions, inherited: Record<strin
     ),
   )
 
-  const directory = mkdtempSync(path.join(os.tmpdir(), "miao-native-mcp-"))
-  const file = path.join(directory, "mcp.json")
-  const dispose = () => rmSync(directory, { recursive: true, force: true })
-  try {
-    writeFileSync(file, JSON.stringify(servers), { encoding: "utf8", mode: 0o600, flag: "wx" })
-    return { file, dispose, environment }
-  } catch (error) {
-    dispose()
-    throw error
-  }
+  return { servers: JSON.stringify(servers), environment }
 }

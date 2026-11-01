@@ -108,8 +108,7 @@ it.live("native MCP and SDK consumers share rotating OAuth authority without cop
     expect(changed.mcpAuthorityRevisions?.[name]).not.toBe(prepared.mcpAuthorityRevisions?.[name])
     const snapshot = prepareMcpConfig({ ...options, ...prepared })
     if (!snapshot) throw new Error("native OAuth attachment missing")
-    yield* Effect.addFinalizer(() => Effect.sync(snapshot.dispose))
-    const manifest = yield* Effect.promise(() => Bun.file(snapshot.file).text())
+    const manifest = snapshot.servers
     expect(manifest).not.toContain("private-refresh")
     expect(manifest).not.toContain("private-access")
     expect(manifest).not.toContain("client_id")
@@ -128,8 +127,7 @@ it.live("native MCP and SDK consumers share rotating OAuth authority without cop
       const client = EngineClient.start({
         ...options,
         mcpSettings: undefined,
-        mcpConfigFile: snapshot.file,
-        env: { ANTHROPIC_API_KEY: "fixture" },
+        env: { ANTHROPIC_API_KEY: "fixture", MIAO_ENGINE_MCP_SERVERS: snapshot.servers },
       })
       yield* Effect.addFinalizer(() => Effect.promise(() => client.close()))
       yield* Effect.promise(() =>
@@ -145,8 +143,7 @@ it.live("native MCP and SDK consumers share rotating OAuth authority without cop
         binary: process.env.MIAO_LEGACY_ENGINE_BIN,
         db: path.join(tmp.path, "legacy.db"),
         mcpSettings: undefined,
-        mcpConfigFile: snapshot.file,
-        env: { ANTHROPIC_API_KEY: "fixture" },
+        env: { ANTHROPIC_API_KEY: "fixture", MIAO_ENGINE_MCP_SERVERS: snapshot.servers },
       })
       yield* Effect.addFinalizer(() => Effect.promise(() => legacy.close()))
       const rejected = yield* Effect.promise(() =>

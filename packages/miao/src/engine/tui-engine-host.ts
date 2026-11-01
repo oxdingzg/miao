@@ -281,9 +281,11 @@ const preparePlan = Effect.fn("Engine.tuiEnginePlan")(function* (
       // The engine performs a Session move through the existing export-move;
       // the host names the product database it must detach from.
       MIAO_PRODUCT_DATABASE: Database.path(),
+      // The servers travel inline, exactly as `EngineClient` hands them over,
+      // so this host writes no temporary manifest either.
+      ...(manifest ? { MIAO_ENGINE_MCP_SERVERS: manifest.servers } : {}),
     },
-    argv: [options.binary, ...engineArgs({ ...options, mcpConfigFile: manifest?.file ?? options.mcpConfigFile })],
-    dispose: manifest?.dispose,
+    argv: [options.binary, ...engineArgs(options)],
   } satisfies TuiEnginePlan
 })
 
