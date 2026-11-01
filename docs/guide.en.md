@@ -289,17 +289,18 @@ polluted; edits and commands follow the configured permission rules.
 
 ```bash
 miao db path              # database path
-miao db stats             # per-table/event usage (find bloat)
-miao db vacuum            # checkpoint + VACUUM to reclaim free pages
-miao db backfill          # project legacy V1 session messages into the V2 schema (idempotent)
-miao db compact           # after backfill: drop the retired message/part tables and their events
+miao db stats             # file size, free pages and row count per table
+miao db vacuum            # dry run: reports what a VACUUM would reclaim
+miao db vacuum --apply    # reclaim the free pages
 miao export <sessionID> --format jsonl
 MIAO_CONFIG=/path/miao.jsonc miao
 ```
 
 Logs live in `~/.local/share/miao/log/`. In databases written before V2, bloat comes mainly from
-legacy per-delta events; use `miao db stats` to monitor, `miao db compact` to retire the old tables,
-and `vacuum` to reclaim free pages.
+legacy per-delta events; use `miao db stats` to monitor and `miao db vacuum --apply` to reclaim free
+pages. There is no `backfill` or `compact` command: `compact` in the Rust engine is a context
+checkpoint carrying a summary, not table retirement, and the design for the rest lives in
+[session storage](../specs/storage/session-storage-hardening.md).
 
 ## 9. Development
 

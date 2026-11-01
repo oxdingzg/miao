@@ -268,15 +268,14 @@ V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或
 
 ```bash
 miao db path              # 数据库路径
-miao db stats             # 表/事件占用（定位膨胀）
-miao db vacuum            # checkpoint + VACUUM 回收空闲页
-miao db backfill          # 把旧 V1 会话消息转成 V2 结构（幂等）
-miao db compact           # backfill 后：删除已退役的 message/part 表及其事件
+miao db stats             # 文件体积、空闲页与每表行数
+miao db vacuum            # 默认 dry-run：只报告 VACUUM 能回收多少
+miao db vacuum --apply    # 真正回收空闲页
 miao export <sessionID> --format jsonl   # 导出会话
 MIAO_CONFIG=/path/miao.jsonc miao        # 指定配置
 ```
 
-日志位于 `~/.local/share/miao/log/`。V2 之前的数据库膨胀主要来自遗留的逐 delta 事件；`miao db stats` 可监控，`miao db compact` 可退役旧表，`vacuum` 可回收空闲页。
+日志位于 `~/.local/share/miao/log/`。V2 之前的数据库膨胀主要来自遗留的逐 delta 事件；`miao db stats` 可监控，`miao db vacuum --apply` 可回收空闲页。尚无可用的 `backfill`/`compact` 命令：Rust 引擎里的 `compact` 是带摘要的上下文检查点，不是表退役，相关设计见 [会话存储设计](../specs/storage/session-storage-hardening.md)。
 
 ## 9. 开发
 
