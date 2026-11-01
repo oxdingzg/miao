@@ -44,7 +44,7 @@ newer record is the one to read.
 | `2026-11-01-inp07.md` | `b2e113d838` | INP-07 |
 | `2026-11-01-ux05.md` | `9c64321659` | UX-05 |
 | `2026-11-01-job04.md` | `a592266307` | JOB-04 |
-| `2026-11-01-perf04.md` | `30b6dc1f5f` | PERF-04 (and a re-verification of every command the earlier records cite) |
+| `2026-11-01-perf04.md` | `2cc8d13342` | PERF-04 (and a re-verification of every command the earlier records cite) |
 | `2026-11-01-inp05.md` | `bc4dc86fcc` | INP-05 |
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
