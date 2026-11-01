@@ -4820,6 +4820,39 @@ mod tests {
         assert!(app.quit);
     }
 
+    /// `shift` on the composer's own motions selects, and backspace removes
+    /// exactly the selection rather than one more character.
+    #[test]
+    fn shift_arrows_select_text_in_the_composer() {
+        let mut app = session_app();
+        for c in "abc".chars() {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        app.handle(key(KeyCode::Left, KeyModifiers::SHIFT));
+        app.handle(key(KeyCode::Left, KeyModifiers::SHIFT));
+        assert_eq!(app.shell.composer.editor.selected_text(), Some("bc"));
+        app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(app.shell.composer.editor.text(), "a");
+        assert!(
+            !app.shell.composer.editor.selecting(),
+            "the selection is gone"
+        );
+    }
+
+    /// A plain motion ends the selection without touching the text.
+    #[test]
+    fn a_plain_motion_ends_the_selection() {
+        let mut app = session_app();
+        for c in "abc".chars() {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        app.handle(key(KeyCode::Left, KeyModifiers::SHIFT));
+        assert!(app.shell.composer.editor.selecting());
+        app.handle(key(KeyCode::Left, KeyModifiers::NONE));
+        assert!(!app.shell.composer.editor.selecting());
+        assert_eq!(app.shell.composer.editor.text(), "abc", "the text is kept");
+    }
+
     /// The composer's undo uses `ctrl+-`, the chord the TypeScript composer
     /// binds, so it never has to compete with the page's `ctrl+z` suspend.
     #[test]
