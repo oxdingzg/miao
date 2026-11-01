@@ -58,5 +58,6 @@ export const migrations = (
     import("./migration/20261029011500_native_permission_projection"),
     import("./migration/20261029033715_imported_permission_replica"),
     import("./migration/20261029053309_legacy_permission_handoff"),
+    import("./migration/20261101090000_usage_attribution"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]
