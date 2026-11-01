@@ -147,23 +147,6 @@ async fn approvals_so_far(store: &Store) -> usize {
         .count()
 }
 
-async fn wait_count(store: &Store, kind: &str, minimum: usize) -> usize {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    loop {
-        let current = store
-            .events("s", 0, 500)
-            .await
-            .unwrap()
-            .iter()
-            .filter(|e| e.kind == kind)
-            .count();
-        if current >= minimum || std::time::Instant::now() >= deadline {
-            return current;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    }
-}
-
 async fn wait_for_dispatch(store: &Store, minimum: usize) -> bool {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
@@ -185,7 +168,7 @@ async fn wait_for_dispatch(store: &Store, minimum: usize) -> bool {
     }
 }
 
-fn read_call(index: usize) -> Input {
+fn read_call(_index: usize) -> Input {
     Input {
         agent_references: Default::default(),
         command: None,
@@ -347,28 +330,6 @@ async fn the_deny_script_asks_again_on_the_next_identical_call() {
     assert_eq!(approvals_so_far(&store).await, 2);
     assert_eq!(dispatches_so_far(&store).await, 0);
     runtime.shutdown().await;
-}
-
-/// Waits until the second run settles and confirms no new approval was
-/// requested in the window (the auto-denied repeat path).
-async fn wait_for_dispatch_absent(store: &Store) -> bool {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    loop {
-        let events = store.events("s", 0, 500).await.unwrap();
-        let finished = events.iter().filter(|e| e.kind == "run.finished").count() >= 2;
-        let asked = events
-            .iter()
-            .filter(|e| e.kind == "approval.requested")
-            .count()
-            >= 2;
-        if finished && !asked {
-            return true;
-        }
-        if asked || std::time::Instant::now() >= deadline {
-            return false;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    }
 }
 
 async fn approval_at(store: &Store, minimum: usize) -> Approval {
