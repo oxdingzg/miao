@@ -244,6 +244,8 @@ export const SessionTurnUsageTable = sqliteTable(
     model_id: text().notNull(),
     variant: text(),
     finish: text().notNull(),
+    role: text().notNull().default("main"),
+    price_source: text(),
     cost: real().notNull(),
     tokens_input: integer().notNull(),
     tokens_output: integer().notNull(),
