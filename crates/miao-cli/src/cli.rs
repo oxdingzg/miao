@@ -112,7 +112,7 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
     let workspace = workspace.unwrap_or(std::env::current_dir().map_err(|error| error.to_string())?);
     // The TUI refuses to start without an engine database; every other
     // subcommand defaults one beside the workspace, so do the same here.
-    let db = db.or_else(|| Some(workspace.join(".miao-run.db")));
+    let db = db.or_else(|| Some(default_db(&workspace)));
     Ok(miao_tui::Launch {
         workspace,
         db,
@@ -598,8 +598,8 @@ fn session_import(rest: &[String]) -> Result<(), String> {
         .map_err(|_| "set MIAO_PRODUCT_DATABASE (the host's product database)".to_string())?;
 
     let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let db = db.unwrap_or_else(|| workspace.join(".miao-run.db"));
-    let config_dir = std::env::var_os("MIAO_CONFIG_DIR").map(PathBuf::from);
+    let db = db.unwrap_or_else(|| default_db(&workspace));
+    let config_dir = product_config_dir(None);
     let argv = engine_argv(&db, &workspace, &model, config_dir.as_deref());
     let import_id = format!("imp_{}", uuid::Uuid::new_v4());
     let session_id_for_record = parsed
@@ -681,7 +681,7 @@ fn parsed_session_location(bundle: &[u8]) -> String {
 fn stats_via_engine(db: PathBuf, session: String) -> Result<(), String> {
     let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let model = std::env::var("MIAO_ENGINE_MODEL").unwrap_or_else(|_| "unavailable/model".into());
-    let config_dir = std::env::var_os("MIAO_CONFIG_DIR").map(PathBuf::from);
+    let config_dir = product_config_dir(None);
     let argv = engine_argv(&db, &workspace, &model, config_dir.as_deref());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -781,9 +781,9 @@ fn session_engine_call(rest: &[String], method: &str) -> Result<(), String> {
         return Err(format!("miao session {method} needs a session id"));
     }
     let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let db = db.unwrap_or_else(|| workspace.join(".miao-run.db"));
+    let db = db.unwrap_or_else(|| default_db(&workspace));
     let model = std::env::var("MIAO_ENGINE_MODEL").unwrap_or_else(|_| "unavailable/model".into());
-    let config_dir = std::env::var_os("MIAO_CONFIG_DIR").map(PathBuf::from);
+    let config_dir = product_config_dir(None);
     let argv = engine_argv(&db, &workspace, &model, config_dir.as_deref());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -1099,6 +1099,31 @@ fn mcp_servers(config_dir: Option<&std::path::Path>) -> Result<Vec<serde_json::V
     Ok(Vec::new())
 }
 
+/// Where the product keeps its configuration. Resolving this in one place
+/// keeps every subcommand deriving the same routes from the same files.
+fn product_config_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
+    explicit
+        .or_else(|| std::env::var_os("MIAO_CONFIG_DIR").map(PathBuf::from))
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao")))
+}
+
+/// The engine database a workspace uses when none was named.
+///
+/// It must live outside the workspace: a process-enabled runtime refuses a
+/// database the model itself could write. One file per workspace keeps
+/// sessions from different directories apart without opting into a shared
+/// store.
+fn default_db(workspace: &std::path::Path) -> PathBuf {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    workspace.display().to_string().hash(&mut hasher);
+    let base = std::env::var_os("HOME")
+        .map(|home| PathBuf::from(home).join(".local/share/miao/engine"))
+        .unwrap_or_else(std::env::temp_dir);
+    base.join(format!("{:x}.db", hasher.finish()))
+}
+
 /// Hand the derived routes to the TUI through the variables its own argument
 /// builder already reads. Without this the default entry point has no model
 /// catalogue and cannot resolve a credential.
@@ -1110,7 +1135,7 @@ fn prepare_tui_engine(launch: &miao_tui::Launch) {
     // A TUI started without --config-dir still needs the product's providers:
     // resolve the same directory the product would use.
     let config_dir = launch.config_dir.clone().or_else(|| {
-        std::env::var_os("MIAO_CONFIG_DIR").map(PathBuf::from).or_else(|| {
+        product_config_dir(None).or_else(|| {
             std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao"))
         })
     });
@@ -1436,11 +1461,11 @@ fn acp_serve(rest: &[String]) -> Result<(), String> {
         }
     }
     let workspace = workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    let db = db.unwrap_or_else(|| workspace.join(".miao-run.db"));
+    let db = db.unwrap_or_else(|| default_db(&workspace));
     let model = model
         .or_else(|| std::env::var("MIAO_ENGINE_MODEL").ok())
         .unwrap_or_else(|| "unavailable/model".into());
-    let config_dir = config_dir.or_else(|| std::env::var_os("MIAO_CONFIG_DIR").map(PathBuf::from));
+    let config_dir = config_dir.or_else(|| product_config_dir(None));
     let mut argv = engine_argv(&db, &workspace, &model, config_dir.as_deref());
     if let Some(instructions) = assemble_instructions(&workspace, config_dir.as_deref()) {
         let path = agent_manifest(&instructions)?;
@@ -1520,7 +1545,7 @@ fn debug(rest: &[String]) -> Result<(), String> {
             println!("miao      {}", env!("CARGO_PKG_VERSION"));
             println!("engine    protocol {} schema {}", miao_engine::PROTOCOL, miao_engine::store::SCHEMA_VERSION);
             let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            println!("database  {}", workspace.join(".miao-run.db").display());
+            println!("database  {}", default_db(&workspace).display());
             println!("config    {}", config.as_ref().map(|dir| dir.display().to_string()).unwrap_or_else(|| "unset".into()));
             let plugins = plugin_entries(config.as_deref()).unwrap_or_default();
             println!("plugins   {} configured", plugins.len());
@@ -1568,7 +1593,7 @@ fn db_path(rest: &[String]) -> Result<(), String> {
         }
     }
     let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    println!("{}", db.unwrap_or_else(|| workspace.join(".miao-run.db")).display());
+    println!("{}", db.unwrap_or_else(|| default_db(&workspace)).display());
     Ok(())
 }
 
@@ -1580,7 +1605,7 @@ fn providers() -> Result<(), String> {
         Ok(()) => {}
         Err(message) => println!("routes    none ({message})"),
     }
-    match plugin_entries(std::env::var_os("MIAO_CONFIG_DIR").map(PathBuf::from).as_deref()) {
+    match plugin_entries(product_config_dir(None).as_deref()) {
         Ok(entries) if !entries.is_empty() => println!("plugins   {} configured", entries.len()),
         _ => println!("plugins   none"),
     }
@@ -1658,7 +1683,7 @@ fn doctor(rest: &[String]) -> Result<(), String> {
         }
     }
     let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let db = db.unwrap_or_else(|| workspace.join(".miao-run.db"));
+    let db = db.unwrap_or_else(|| default_db(&workspace));
     println!("engine    protocol {} schema {}", miao_engine::PROTOCOL, miao_engine::store::SCHEMA_VERSION);
     println!("database  {}", db.display());
     match std::fs::metadata(&db) {
@@ -1708,7 +1733,7 @@ fn stats(rest: &[String]) -> Result<(), String> {
         }
     }
     let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let db = db.unwrap_or_else(|| workspace.join(".miao-run.db"));
+    let db = db.unwrap_or_else(|| default_db(&workspace));
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -1921,7 +1946,7 @@ fn export_session(rest: &[String]) -> Result<(), String> {
     }
     let session = session.ok_or("usage: miao export SESSION [--db PATH] [--after N]")?;
     let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let db = db.unwrap_or_else(|| workspace.join(".miao-run.db"));
+    let db = db.unwrap_or_else(|| default_db(&workspace));
     let cursor = miao_engine::export::committed_events(&db, &session, after, std::io::stdout().lock())
         .map_err(|error| error.to_string())?;
     eprintln!("miao export: {cursor} event(s) written");
@@ -1979,7 +2004,7 @@ fn list_sessions(rest: &[String]) -> Result<(), String> {
         }
     }
     let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let db = db.unwrap_or_else(|| workspace.join(".miao-run.db"));
+    let db = db.unwrap_or_else(|| default_db(&workspace));
     // Listing sessions needs the store, not a model: opening it directly keeps
     // the command usable on a machine with no credential configured.
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -2041,7 +2066,7 @@ fn serve_forever(rest: &[String]) -> Result<(), String> {
     let workspace = workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let db = db.unwrap_or_else(|| workspace.join(".miao-serve.db"));
     let model = model.or_else(|| std::env::var("MIAO_ENGINE_MODEL").ok()).unwrap_or_else(|| "unavailable/model".into());
-    let config_dir = std::env::var_os("MIAO_CONFIG_DIR").map(PathBuf::from);
+    let config_dir = product_config_dir(None);
     let mut argv = engine_argv(&db, &workspace, &model, config_dir.as_deref());
     if let Some(skills) = assemble_skills(&workspace, config_dir.as_deref()) {
         argv.push("--skills-config".into());
@@ -2193,6 +2218,16 @@ fn engine_argv_with(
         if let Ok(routes) = model_routes(config_dir, model) {
             if !routes.is_empty() {
                 if let Some(primary) = routes.iter().find(|route| route["primary"] == true) {
+                    // A placeholder model name matches no route, and the engine
+                    // compares the primary route's identity against the base
+                    // provider's: name the route's own model instead.
+                    if !routes.iter().any(|route| route["id"].as_str() == Some(model)) {
+                        if let Some(id) = primary["id"].as_str() {
+                            if let Some(position) = argv.iter().position(|arg| arg == "--model") {
+                                argv[position + 1] = id.to_string();
+                            }
+                        }
+                    }
                     for (key, flag) in [("provider", "--provider"), ("endpoint", "--endpoint")] {
                         if let Some(value) = primary[key].as_str() {
                             if !value.is_empty() {
@@ -2702,6 +2737,13 @@ async fn run_prompt(argv: Vec<String>, prompt: String, target: Target, db: PathB
                 let _ = client.approve(&session, response).await;
                 continue;
             }
+            // A failed provider turn produced no answer; waiting for the
+            // deadline would hide the reason.
+            if kind.contains("failed") || kind.contains("failure") {
+                owner.shutdown().await;
+                let detail = event.data.get("message").and_then(|value| value.as_str()).unwrap_or(&kind);
+                return Err(format!("the turn failed: {detail}"));
+            }
             if kind.contains("question.requested") {
                 owner.shutdown().await;
                 return Err(format!(
@@ -2824,8 +2866,8 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
             }
             let prompt = prompt.ok_or("miao run needs a prompt");
             let workspace = workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-            let db = db.unwrap_or_else(|| workspace.join(".miao-run.db"));
-            let config_dir = config_dir.or_else(|| std::env::var_os("MIAO_CONFIG_DIR").map(PathBuf::from));
+            let db = db.unwrap_or_else(|| default_db(&workspace));
+            let config_dir = config_dir.or_else(|| product_config_dir(None));
             let model = model
                 .or_else(|| std::env::var("MIAO_ENGINE_MODEL").ok())
                 .unwrap_or_else(|| "unavailable/model".into());
