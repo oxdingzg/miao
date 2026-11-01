@@ -39,8 +39,11 @@ pub enum ProviderError {
     Auth(#[from] crate::credential::Error),
     #[error("credential type is incompatible with the selected authentication profile")]
     AuthProfile,
-    #[error("provider HTTP {0}")]
-    Http(u16),
+    /// A provider status code plus the provider's own words about it: the
+    /// bounded body excerpt and `Retry-After` when the response carried them.
+    /// A bare code cannot tell a rate limit from an upstream fault.
+    #[error("provider HTTP {0}{1}")]
+    Http(u16, String),
     #[error("invalid provider stream: {0}")]
     Stream(String),
     #[error("provider request rejected: {0}")]
@@ -59,7 +62,7 @@ impl ProviderError {
     pub(crate) fn can_fallback(&self) -> bool {
         matches!(
             self,
-            Self::Transport(_) | Self::Http(429 | 500 | 502 | 503 | 504 | 529)
+            Self::Transport(_) | Self::Http(429 | 500 | 502 | 503 | 504 | 529, _)
         )
     }
     pub(crate) fn continuation(&self) -> Option<(&Reply, usize)> {
@@ -97,7 +100,7 @@ impl ProviderError {
             Self::Transport(_) | Self::ResponseTransport | Self::ContinuableTransport { .. } => {
                 true
             }
-            Self::Http(status) => matches!(status, 429 | 500 | 502 | 503 | 504 | 529),
+            Self::Http(status, _) => matches!(status, 429 | 500 | 502 | 503 | 504 | 529),
             _ => false,
         }
     }
@@ -107,7 +110,7 @@ impl ProviderError {
     pub(crate) fn input_rejected(&self) -> bool {
         match self {
             Self::Routed { source, .. } => source.input_rejected(),
-            Self::Http(status) => matches!(status, 400 | 404 | 413 | 422),
+            Self::Http(status, _) => matches!(status, 400 | 404 | 413 | 422),
             _ => false,
         }
     }
@@ -427,7 +430,7 @@ mod route_header_tests {
                     ),
                 )
                 .await;
-                assert!(matches!(result, Err(ProviderError::Http(422))));
+                assert!(matches!(result, Err(ProviderError::Http(422, _))));
             }
             let (progress, _received) = mpsc::channel(16);
             assert!(matches!(
@@ -994,6 +997,32 @@ async fn send_all(progress: &mpsc::Sender<Value>, notices: &[Value]) -> Result<(
 
 /// The provider's error body is the only diagnostic for an opaque HTTP status.
 /// Keep it bounded, and never let a slow or endless body block the failure.
+/// The provider's own words about a failed response, on one line and bounded:
+/// ` · retry-after: 12s · {"error":…}`. A bare status code cannot tell a rate
+/// limit from an upstream fault, which is the first question an operator asks.
+fn http_failure_detail(status: u16, pause: Option<Duration>, body: Option<&str>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if matches!(status, 429 | 500 | 502 | 503 | 504 | 529) {
+        if let Some(pause) = pause {
+            parts.push(format!("retry-after: {}s", pause.as_secs()));
+        }
+    }
+    if let Some(body) = body {
+        let single = body.split_whitespace().collect::<Vec<_>>().join(" ");
+        let mut clipped: String = single.chars().take(240).collect();
+        if single.chars().count() > 240 {
+            clipped.push('…');
+        }
+        if !clipped.is_empty() {
+            parts.push(clipped);
+        }
+    }
+    match parts.is_empty() {
+        true => String::new(),
+        false => format!(" · {}", parts.join(" · ")),
+    }
+}
+
 async fn failure_detail(response: &mut reqwest::Response) -> Option<String> {
     let mut detail = Vec::new();
     while detail.len() < 1024 {
@@ -1097,6 +1126,7 @@ pub(crate) async fn request_with_retry(
                     .then(|| retry_after(response.headers()))
                     .flatten();
                 let detail = failure_detail(&mut response).await;
+                let explained = http_failure_detail(status, requested, detail.as_deref());
                 crate::runtime_profile::result(
                     request_seq,
                     Some(status),
@@ -1113,7 +1143,7 @@ pub(crate) async fn request_with_retry(
                     detail.as_deref(),
                 );
                 last_failure_detail = detail;
-                ProviderError::Http(status)
+                ProviderError::Http(status, explained)
             }
             Err(error) => {
                 // `transport_reason` keeps the request URL out, so the cause is
@@ -1128,23 +1158,23 @@ pub(crate) async fn request_with_retry(
                 error
             }
         };
-        let transient_image_parse = matches!(error, ProviderError::Http(400))
+        let transient_image_parse = matches!(error, ProviderError::Http(400, _))
             && last_failure_detail
                 .as_deref()
                 .is_some_and(image_parse_transient);
         let retryable = matches!(
             error,
-            ProviderError::Transport(_) | ProviderError::Http(429 | 500 | 502 | 503 | 504 | 529)
+            ProviderError::Transport(_) | ProviderError::Http(429 | 500 | 502 | 503 | 504 | 529, _)
         ) || transient_image_parse;
         // Carry the reason so a client can show why the attempt was retried.
         // The status code is the HTTP one when there was one.
         let (reason, status) = match &error {
-            ProviderError::Http(status) => (error.to_string(), Some(*status)),
+            ProviderError::Http(status, _) => (error.to_string(), Some(*status)),
             other => (other.to_string(), None),
         };
         // The window starts at the first failure, so a slow first attempt is
         // charged to the watchdogs rather than to the retries that follow.
-        if retryable || matches!(error, ProviderError::Http(400)) {
+        if retryable || matches!(error, ProviderError::Http(400, _)) {
             scope.budget.note_failure(&reason);
             scope.budget.arm();
         }
@@ -1154,7 +1184,7 @@ pub(crate) async fn request_with_retry(
             // hiccup in one. Grant exactly one immediate replay so that class
             // recovers on its own; a real defect still fails, one request
             // later. Mirrors the TS runner's `selfHealable`.
-            if matches!(error, ProviderError::Http(400)) && !self_healed {
+            if matches!(error, ProviderError::Http(400, _)) && !self_healed {
                 self_healed = true;
                 announce_retry(
                     progress,
@@ -1513,7 +1543,7 @@ mod retry_tests {
         }])
         .await;
         let (outcome, _) = drive(&endpoint, Duration::from_secs(10)).await;
-        assert!(matches!(outcome, Err(ProviderError::Http(400))));
+        assert!(matches!(outcome, Err(ProviderError::Http(400, _))));
         assert_eq!(
             state.lock().unwrap().1,
             2,
@@ -1539,7 +1569,7 @@ mod retry_tests {
                 message.contains("last attempt: provider HTTP 503"),
                 "the spent window lost the rejection that spent it: {message}"
             ),
-            Err(ProviderError::Http(503)) => {}
+            Err(ProviderError::Http(503, _)) => {}
             other => panic!("unexpected outcome: {other:?}"),
         }
         for (attempt, delay) in delays(&notices).into_iter().enumerate() {
@@ -2157,7 +2187,7 @@ mod image_parse_retry_tests {
             &CancellationToken::new(),
         )
         .await;
-        assert!(matches!(result, Err(ProviderError::Http(400))));
+        assert!(matches!(result, Err(ProviderError::Http(400, _))));
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
     }
 }

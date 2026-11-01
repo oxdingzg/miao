@@ -339,7 +339,7 @@ async fn all_native_adapters_apply_variant_body_and_headers_without_replacing_au
                 CancellationToken::new(),
             )
             .await;
-        assert!(matches!(result, Err(ProviderError::Http(422))));
+        assert!(matches!(result, Err(ProviderError::Http(422, _))));
         let (headers, body) = requests.recv().await.unwrap();
         assert_eq!(headers["x-variant-mode"], "high");
         for (key, value) in options.body {

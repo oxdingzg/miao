@@ -276,7 +276,10 @@ pub(crate) async fn try_stream<P: Parser>(
                 Ok(Err(tokio_tungstenite::tungstenite::Error::Http(response)))
                     if matches!(response.status().as_u16(), 401 | 403 | 429) =>
                 {
-                    return Err(ProviderError::Http(response.status().as_u16()))
+                    return Err(ProviderError::Http(
+                        response.status().as_u16(),
+                        String::new(),
+                    ))
                 }
                 _ => return Ok(None),
             }

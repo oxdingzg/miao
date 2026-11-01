@@ -122,7 +122,7 @@ async fn bedrock_mantle_routes_send_the_wire_the_plugin_selects() {
                 .unwrap()
                 .stream(request(), progress, CancellationToken::new())
                 .await,
-            Err(ProviderError::Http(422))
+            Err(ProviderError::Http(422, _))
         ));
         let (uri, headers, body) = seen.recv().await.unwrap();
         assert_eq!(uri, path);
@@ -186,7 +186,7 @@ async fn azure_chat_wire_matches_the_product_route() {
             .unwrap()
             .stream(request(), progress, CancellationToken::new())
             .await,
-        Err(ProviderError::Http(422))
+        Err(ProviderError::Http(422, _))
     ));
     let (uri, headers, body) = seen.recv().await.unwrap();
     assert_eq!(uri, "/openai/v1/chat/completions?api-version=v1");
@@ -246,7 +246,7 @@ async fn vertex_anthropic_wire_matches_the_product_route() {
             .unwrap()
             .stream(request(), progress, CancellationToken::new())
             .await,
-        Err(ProviderError::Http(422))
+        Err(ProviderError::Http(422, _))
     ));
     let (uri, headers, body) = seen.recv().await.unwrap();
     assert_eq!(
@@ -305,7 +305,7 @@ async fn azure_responses_wire_matches_the_product_route() {
             .unwrap()
             .stream(request(), progress, CancellationToken::new())
             .await,
-        Err(ProviderError::Http(422))
+        Err(ProviderError::Http(422, _))
     ));
     let (uri, headers, body) = seen.recv().await.unwrap();
     assert_eq!(uri, "/openai/v1/responses?api-version=v1");
@@ -363,7 +363,7 @@ async fn vertex_gemini_wire_matches_the_product_route() {
             .unwrap()
             .stream(request(), progress, CancellationToken::new())
             .await,
-        Err(ProviderError::Http(422))
+        Err(ProviderError::Http(422, _))
     ));
     let (uri, headers, body) = seen.recv().await.unwrap();
     assert_eq!(
