@@ -73,6 +73,8 @@ pub enum AppEvent {
     },
     /// The host's remote-control devices, served by the engine.
     Devices(serde_json::Value),
+    /// Background jobs of the open Session, as `(job_id, state)` newest first.
+    Jobs(Vec<(String, String)>),
     /// The open Session moved to another workspace.
     SessionMoved,
     /// What a revert at one boundary would change, for the confirm dialog.

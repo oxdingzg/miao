@@ -114,6 +114,13 @@ pub enum Request {
     },
     /// The host's remote-control devices, served by the engine (TUI-10).
     Devices,
+    Jobs {
+        session_id: String,
+    },
+    CancelJob {
+        session_id: String,
+        job_id: String,
+    },
     /// Move the open Session to another workspace directory (TUI-09).
     MoveSession {
         session_id: String,
@@ -306,6 +313,22 @@ impl Handle {
 
     pub fn devices(&self) {
         let _ = self.tx.send(Request::Devices);
+    }
+
+    /// List the open Session's background jobs, newest first.
+    pub fn jobs(&self, session_id: &str) {
+        let _ = self.tx.send(Request::Jobs {
+            session_id: session_id.into(),
+        });
+    }
+
+    /// Stop one background job, then ask for the list again so the dialog shows
+    /// the state the engine actually reached.
+    pub fn cancel_job(&self, session_id: &str, job_id: &str) {
+        let _ = self.tx.send(Request::CancelJob {
+            session_id: session_id.into(),
+            job_id: job_id.into(),
+        });
     }
 
     pub fn host_call(&self, op: &str, params: Value) {
@@ -848,6 +871,24 @@ async fn run(
                         }
                     }
                 }
+                Request::Jobs { session_id } => refresh_jobs(client, &bus, &session_id).await,
+                Request::CancelJob {
+                    session_id,
+                    job_id,
+                } => {
+                    let result = client
+                        .request(
+                            "cancel_job",
+                            json!({ "session_id": session_id, "job_id": job_id }),
+                        )
+                        .await;
+                    match result {
+                        Ok(_) => refresh_jobs(client, &bus, &session_id).await,
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("stop failed: {error}")))
+                        }
+                    }
+                }
                 Request::Devices => {
                     let result = client.request("devices", json!({})).await;
                     match result {
@@ -1209,6 +1250,33 @@ async fn recall_archived(client: &EngineClient, bus: &Bus, session: &str, handle
             .unwrap_or(false),
         next_offset: window.get("next_offset").and_then(Value::as_u64),
     });
+}
+
+/// Ask the engine for the Session's background jobs and hand the rows to the
+/// dialog. Newest first, as the engine answers.
+async fn refresh_jobs(client: &EngineClient, bus: &Bus, session_id: &str) {
+    match client
+        .request("jobs", json!({ "session_id": session_id }))
+        .await
+    {
+        Ok(value) => {
+            let rows = value
+                .as_array()
+                .map(|rows| {
+                    rows.iter()
+                        .filter_map(|row| {
+                            let id = row.get("job_id")?.as_str()?;
+                            let state =
+                                row.get("state").and_then(Value::as_str).unwrap_or_default();
+                            Some((id.to_string(), state.to_string()))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            bus.send(AppEvent::Jobs(rows));
+        }
+        Err(error) => bus.send(AppEvent::ActionFailed(format!("jobs failed: {error}"))),
+    }
 }
 
 async fn refresh_sessions(client: &EngineClient, bus: &Bus) {
