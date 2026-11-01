@@ -683,6 +683,10 @@ impl App {
                 if let Some(Dialog::WorkspaceChanges(dialog)) = self.dialog.as_mut() {
                     if dialog.generation == generation {
                         dialog.loaded(result);
+                        // The box is sized from the change set, so the layout taken while the
+                        // reply was in flight is the wrong height for it. Without a redraw the
+                        // header lands in that smaller rect and the rows below it never paint (#2240).
+                        self.redraw_requested = true;
                     }
                 }
             }
