@@ -164,26 +164,30 @@ impl Harness {
                 continue;
             }
             match chars.peek() {
-                // A control sequence: `[` starts CSI, `]` starts an OSC title.
                 Some('[') => {
                     chars.next();
+                    // A control sequence runs to its final byte, the first one in
+                    // `@..=~`; everything before it is a parameter (`?1049`,
+                    // `38;2;...`, `15;42`, ...).
                     let mut params = String::new();
-                    while matches!(chars.peek(), Some(next) if next.is_ascii_digit() || *next == ';')
-                    {
-                        params.push(chars.next().expect("digit"));
-                    }
-                    if let Some(final_byte) = chars.next() {
-                        if final_byte == 'H' || final_byte == 'f' {
-                            let mut parts = params.split(';');
-                            let at = |value: Option<&str>| {
-                                value
-                                    .and_then(|value| value.parse::<usize>().ok())
-                                    .unwrap_or(1)
-                                    .saturating_sub(1)
-                            };
-                            row = at(parts.next());
-                            column = at(parts.next());
+                    let mut final_byte = None;
+                    for next in chars.by_ref() {
+                        if ('@'..='~').contains(&next) {
+                            final_byte = Some(next);
+                            break;
                         }
+                        params.push(next);
+                    }
+                    if matches!(final_byte, Some('H') | Some('f')) {
+                        let mut parts = params.split(';');
+                        let at = |value: Option<&str>| {
+                            value
+                                .and_then(|value| value.parse::<usize>().ok())
+                                .unwrap_or(1)
+                                .saturating_sub(1)
+                        };
+                        row = at(parts.next());
+                        column = at(parts.next());
                     }
                 }
                 Some(']') => {
@@ -258,13 +262,13 @@ fn reaching_the_change_list_costs_two_keys() {
     assert!(
         harness.wait_for("Project A", Duration::from_secs(30)),
         "the home list did not render:\n{}",
-        harness.text()
+        harness.screen()
     );
     harness.write(b"\r");
     assert!(
         harness.wait_for("hello from the fixture", Duration::from_secs(30)),
         "the session did not open:\n{}",
-        harness.text()
+        harness.screen()
     );
     let started = Instant::now();
     // One write for the whole chord, the way every other PTY test sends a
@@ -277,7 +281,7 @@ fn reaching_the_change_list_costs_two_keys() {
     assert!(
         opened,
         "the change list never rendered:\n{}",
-        harness.text()
+        harness.screen()
     );
     println!("VAL-03 review-changes: 2 keys/{elapsed_ms} ms");
     harness.shutdown();
