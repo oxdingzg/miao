@@ -1,5 +1,4 @@
 import { isDefaultTitle } from "./session"
-import { Locale } from "./locale"
 import type { SessionStatus } from "@miao/schema/view-models"
 
 const segments = new Intl.Segmenter(undefined, { granularity: "grapheme" })
@@ -26,20 +25,18 @@ export function tabTitle(input: { title: string; prompt?: string }) {
 }
 
 /**
- * The terminal title for a Session, carrying a liveness marker only while a
- * turn runs. A frozen elapsed timer cannot tell a hung session from a finished
- * one, so the marker's clock advances only during an active turn: a title that
- * keeps counting is the one signal that survives a tab switch and proves the
- * session is progressing rather than stalled. An idle Session reads as its
- * plain title — the "ready for input" state — so the presence or absence of
- * `⏳` distinguishes working from done at a glance.
+ * The terminal title for a Session: a marker while a turn runs, its plain title
+ * when idle.
+ *
+ * The marker is deliberately static. A tab is read by glancing at it, and a
+ * title that rewrites itself every second ("working 2m 31s · …") pushes the
+ * Session's name out of the part of the tab anyone can actually read, while the
+ * elapsed time it carried is already on screen in the composer footer. Presence
+ * or absence of `⏳` still tells a working Session from an idle one at a glance.
  */
-export function sessionTitle(input: { title: string; prompt?: string; status?: SessionStatus; now: number }) {
+export function sessionTitle(input: { title: string; prompt?: string; status?: SessionStatus }) {
   const base = tabTitle({ title: input.title, prompt: input.prompt })
   const status = input.status
   if (status?.type !== "busy" && status?.type !== "retry") return base
-  const label = status.type === "retry" ? "retrying" : "working"
-  const since = status.type === "busy" ? status.since : undefined
-  if (since === undefined) return `⏳ ${label} · ${base}`
-  return `⏳ ${label} ${Locale.duration(Math.max(0, input.now - since))} · ${base}`
+  return status.type === "retry" ? `⏳ retrying · ${base}` : `⏳ working · ${base}`
 }

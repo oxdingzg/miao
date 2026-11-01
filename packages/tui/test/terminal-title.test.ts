@@ -37,27 +37,18 @@ test("truncates by grapheme without splitting emoji or combining characters", ()
 })
 
 test("an idle Session reads as its plain title so done and ready are one glance", () => {
-  const now = 1_000_000
-  expect(sessionTitle({ title: "检查miao", status: { type: "idle" }, now })).toBe("检查miao")
-  expect(sessionTitle({ title: "检查miao", status: undefined, now })).toBe("检查miao")
+  expect(sessionTitle({ title: "检查miao", status: { type: "idle" } })).toBe("检查miao")
+  expect(sessionTitle({ title: "检查miao", status: undefined })).toBe("检查miao")
 })
 
-test("a running turn marks the title with an advancing clock, not a frozen one", () => {
-  const since = 1_000_000
-  expect(sessionTitle({ title: "检查miao", status: { type: "busy", since }, now: since + 125_000 })).toBe(
-    "⏳ working 2m 5s · 检查miao",
-  )
-  // The same turn one second later must advance: a clock that never moves
-  // cannot be told apart from a hung session by a reader glancing at a tab.
-  expect(sessionTitle({ title: "检查miao", status: { type: "busy", since }, now: since + 126_000 })).toBe(
-    "⏳ working 2m 6s · 检查miao",
-  )
-})
-
-test("a busy turn with no phase start marks itself without a bogus clock", () => {
-  expect(sessionTitle({ title: "检查miao", status: { type: "busy" }, now: 1_000_000 })).toBe(
+test("a running turn marks the title without a clock that rewrites the tab", () => {
+  // The elapsed time lives in the composer footer. A tab is read by glancing at
+  // it, so the title keeps the Session name and a static marker instead of
+  // spending the visible space on a number that changes every second.
+  expect(sessionTitle({ title: "检查miao", status: { type: "busy", since: 1_000_000 } })).toBe(
     "⏳ working · 检查miao",
   )
+  expect(sessionTitle({ title: "检查miao", status: { type: "busy" } })).toBe("⏳ working · 检查miao")
 })
 
 test("a retry names itself instead of a generic working", () => {
@@ -65,7 +56,6 @@ test("a retry names itself instead of a generic working", () => {
     sessionTitle({
       title: "检查miao",
       status: { type: "retry", attempt: 2, message: "provider refused", next: 1 },
-      now: 1_000_000,
     }),
   ).toBe("⏳ retrying · 检查miao")
 })
