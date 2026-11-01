@@ -11,6 +11,47 @@ import { SessionTable, SessionToolUsageTable, SessionTurnUsageTable } from "./sq
 
 type DB = Database.Interface["db"]
 
+export type RoleBreakdown = {
+  role: "main" | "subagent" | "auxiliary"
+  turns: number
+  cost: number
+  tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+}
+
+/** Per-role aggregation of the session's settled turns (COST-01). */
+export const roleBreakdown = Effect.fn("SessionUsageStore.roleBreakdown")(function* (
+  db: DB,
+  sessionID: SessionSchema.ID,
+) {
+  const rows = yield* db
+    .select({
+      role: SessionTurnUsageTable.role,
+      turns: sql<number>`count(*)`,
+      cost: sql<number>`coalesce(sum(${SessionTurnUsageTable.cost}), 0)`,
+      input: sql<number>`coalesce(sum(${SessionTurnUsageTable.tokens_input}), 0)`,
+      output: sql<number>`coalesce(sum(${SessionTurnUsageTable.tokens_output}), 0)`,
+      reasoning: sql<number>`coalesce(sum(${SessionTurnUsageTable.tokens_reasoning}), 0)`,
+      cacheRead: sql<number>`coalesce(sum(${SessionTurnUsageTable.tokens_cache_read}), 0)`,
+      cacheWrite: sql<number>`coalesce(sum(${SessionTurnUsageTable.tokens_cache_write}), 0)`,
+    })
+    .from(SessionTurnUsageTable)
+    .where(eq(SessionTurnUsageTable.session_id, sessionID))
+    .groupBy(SessionTurnUsageTable.role)
+    .all()
+    .pipe(Effect.orDie)
+  return rows.map((row) => ({
+    role: (row.role as RoleBreakdown["role"]) ?? "main",
+    turns: Number(row.turns),
+    cost: Number(row.cost),
+    tokens: {
+      input: Number(row.input),
+      output: Number(row.output),
+      reasoning: Number(row.reasoning),
+      cache: { read: Number(row.cacheRead), write: Number(row.cacheWrite) },
+    },
+  })) as RoleBreakdown[]
+})
+
 export type Usage = Pick<SessionEvent.Step.Ended["data"], "cost" | "tokens">
 
 export const history = Effect.fn("SessionUsageStore.history")(function* (
@@ -138,6 +179,16 @@ export const projectStepEnded = Effect.fn("SessionUsageStore.projectStepEnded")(
 ) {
   const model = event.data.model ?? (yield* resolveModel(db, event.data.sessionID))
   if (!model) return false
+  // The session's parent link attributes the turn: subagent sessions carry
+  // their parent's id, the main session has none. The catalog rates priced
+  // the turn, so the source is the catalog by construction.
+  const parent = yield* db
+    .select({ parentID: SessionTable.parent_id })
+    .from(SessionTable)
+    .where(eq(SessionTable.id, event.data.sessionID))
+    .get()
+    .pipe(Effect.orDie)
+  const role = parent?.parentID ? "subagent" : "main"
   const inserted = yield* db
     .insert(SessionTurnUsageTable)
     .values({
@@ -148,6 +199,8 @@ export const projectStepEnded = Effect.fn("SessionUsageStore.projectStepEnded")(
       model_id: model.id,
       variant: model.variant,
       finish: event.data.finish,
+      role,
+      price_source: "catalog",
       cost: event.data.cost,
       tokens_input: event.data.tokens.input,
       tokens_output: event.data.tokens.output,
