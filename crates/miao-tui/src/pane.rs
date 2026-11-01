@@ -1503,6 +1503,20 @@ impl Pane for SidebarPane {
                     )));
                     // A retry is billed work: saying "1 turn" while three
                     // attempts were made hides where the money went.
+                    // A subagent bills on its own Session, so a parent screen
+                    // that only shows its own tokens understates the cost.
+                    if usage.subagent_sessions > 0 {
+                        lines.push(Line::from(Span::styled(
+                            format!(
+                                "subagents {}  ·  {} turn{}  ·  in {}",
+                                usage.subagent_sessions,
+                                usage.subagent_turns,
+                                if usage.subagent_turns == 1 { "" } else { "s" },
+                                usage.subagent_input_tokens,
+                            ),
+                            Style::new().fg(palette.text_muted),
+                        )));
+                    }
                     if usage.replayed_turns > 0 || usage.failed_attempts > 0 {
                         lines.push(Line::from(Span::styled(
                             format!(
