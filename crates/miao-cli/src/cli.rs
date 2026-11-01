@@ -1107,7 +1107,14 @@ fn prepare_tui_engine(launch: &miao_tui::Launch) {
         return;
     }
     let model = launch.model.clone().unwrap_or_default();
-    let Ok(routes) = model_routes(launch.config_dir.as_deref(), &model) else { return };
+    // A TUI started without --config-dir still needs the product's providers:
+    // resolve the same directory the product would use.
+    let config_dir = launch.config_dir.clone().or_else(|| {
+        std::env::var_os("MIAO_CONFIG_DIR").map(PathBuf::from).or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao"))
+        })
+    });
+    let Ok(routes) = model_routes(config_dir.as_deref(), &model) else { return };
     let Some(primary) = routes.iter().find(|route| route["primary"] == true) else { return };
     for (key, variable) in [("provider", "MIAO_ENGINE_PROVIDER"), ("endpoint", "MIAO_ENGINE_ENDPOINT")] {
         if let Some(value) = primary[key].as_str() {
