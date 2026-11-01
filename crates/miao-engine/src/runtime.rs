@@ -4142,15 +4142,22 @@ command: None,
                             json!({"run_id":run,"reason":reason}),
                         )
                         .await?;
-                    inner.store.inject(
-                        session,
-                        &format!("loop-paused-{run}"),
-                        match reason {
-                            "budget" => "Task paused: reached the provider turn limit. Send a message to continue.",
-                            _ => "Task paused: autonomous continuation did not update task progress. Review the remaining work and send a message to continue.",
-                        },
-                        "engine",
-                    ).await?;
+                    // Say what happened, that nothing is running now, and what
+                    // the operator can do. A pause that only says "send a
+                    // message" reads like the Session is still waiting on them.
+                    let pause = match reason {
+                        "budget" => format!(
+                            "Task paused: the provider turn limit ({} turns) is used up, so autonomous continuation stopped. Nothing is running now and it does not resume on its own — send a message to continue with a fresh allowance.",
+                            allowance.unwrap_or(0)
+                        ),
+                        _ => format!(
+                            "Task paused: the todo list did not change across {goal_stalls} continuation turns, so another continuation would repeat the same work. Nothing is running now and it does not resume on its own — update the todo list, or send a message with the next step."
+                        ),
+                    };
+                    inner
+                        .store
+                        .inject(session, &format!("loop-paused-{run}"), &pause, "engine")
+                        .await?;
                 } else {
                     goal_iterations += 1;
                     let input_id = format!("goal:{run}:{goal_iterations}");
@@ -4345,9 +4352,9 @@ command: None,
             if budget_exhausted {
                 let note = match budget {
                     Some(budget) => format!(
-                        "Task paused: the prompt token budget ({budget} tokens) is exhausted. Send a message to continue with a fresh budget."
+                        "Task paused: the prompt token budget ({budget} tokens) is exhausted. Nothing is running now and it does not resume on its own — send a message to continue with a fresh budget."
                     ),
-                    None => "Task paused: the prompt token budget is exhausted. Send a message to continue with a fresh budget.".to_owned(),
+                    None => "Task paused: the prompt token budget is exhausted. Nothing is running now and it does not resume on its own — send a message to continue with a fresh budget.".to_owned(),
                 };
                 inner
                     .store
