@@ -889,6 +889,30 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.tag",
+        Effect.fn(function* (ctx) {
+          const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          // A tag lives in the engine's Session record, which is what the Rust
+          // TUI lists. A Session that does not run there cannot answer, and a
+          // silently dropped tag would be worse than a refusal.
+          if (!native || !placement)
+            return yield* new ConflictError({
+              message: "Tagging requires a Session running on the native engine",
+            })
+          yield* native.tag({
+            ...placement,
+            sessionID: ctx.params.sessionID,
+            tag: ctx.payload.tag,
+          })
+          yield* events.publish(SessionEvent.Info.Updated, {
+            sessionID: ctx.params.sessionID,
+            timestamp: yield* DateTime.now,
+            tag: ctx.payload.tag,
+          })
+        }),
+      )
+      .handle(
         "session.archive",
         Effect.fn(function* (ctx) {
           const native = yield* Effect.serviceOption(NativeEngine.Service)

@@ -1352,6 +1352,13 @@ export type SessionsRenameInput = {
 
 export type SessionsRenameOutput = void
 
+export type SessionsTagInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly tag: { readonly tag: string }["tag"]
+}
+
+export type SessionsTagOutput = void
+
 export type SessionsArchiveInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly archived: { readonly archived: boolean }["archived"]
@@ -1828,6 +1835,7 @@ export type SessionsHistoryOutput = {
           readonly timestamp: number
           readonly sessionID: string
           readonly title?: string
+          readonly tag?: string
           readonly archived?: boolean
           readonly pinned?: boolean
         }
@@ -2600,6 +2608,7 @@ export type SessionsEventsOutput =
         readonly timestamp: number
         readonly sessionID: string
         readonly title?: string
+        readonly tag?: string
         readonly archived?: boolean
         readonly pinned?: boolean
       }
@@ -5638,6 +5647,7 @@ export type EventsDurableOutput =
         readonly timestamp: number
         readonly sessionID: string
         readonly title?: string
+        readonly tag?: string
         readonly archived?: boolean
         readonly pinned?: boolean
       }
@@ -5652,6 +5662,7 @@ export type EventsDurableOutput =
         readonly timestamp: number
         readonly sessionID: string
         readonly title?: string
+        readonly tag?: string
         readonly archived?: boolean
         readonly pinned?: boolean
       }

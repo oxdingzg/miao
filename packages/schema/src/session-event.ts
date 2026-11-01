@@ -699,6 +699,7 @@ export namespace Info {
     schema: {
       ...Base,
       title: Schema.String.pipe(optional),
+      tag: Schema.String.pipe(optional),
       archived: Schema.Boolean.pipe(optional),
       pinned: Schema.Boolean.pipe(optional),
     },

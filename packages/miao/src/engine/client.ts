@@ -651,6 +651,10 @@ export class EngineClient {
     return this.request("history", { session_id: session, selected })
   }
 
+  tag(session: string, tag: string) {
+    return this.request("tag", { session_id: session, tag })
+  }
+
   /**
    * Restore one archived tool output by the handle its elision marker named, or
    * search immutable Session messages. The engine validates the two modes: a

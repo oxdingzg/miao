@@ -176,6 +176,10 @@ function handle(request: {
     process.exit(0)
   }
   if (method === "cancel") cancelled(params)
+  if (method === "tag") {
+    send({ id, result: { accepted: true, tag: params.tag } })
+    return
+  }
   if (method === "recall") {
     // One handle resolves to a window; anything else is the engine's "archive
     // cannot resolve this handle" answer, which the product must surface as a

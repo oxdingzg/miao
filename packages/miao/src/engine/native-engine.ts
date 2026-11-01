@@ -1147,6 +1147,8 @@ export const fromOwners = (
           })
         }),
       ),
+    tag: (input) =>
+      read<unknown>(input, (connection) => connection.client.tag(input.sessionID, input.tag)).pipe(Effect.asVoid),
     title: (input) =>
       (preparation.title?.(input) ?? Effect.succeed(undefined)).pipe(Effect.catch(() => Effect.succeed(undefined))),
     events: (input) =>
