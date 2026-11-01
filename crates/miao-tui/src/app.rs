@@ -1975,7 +1975,7 @@ impl App {
             }
             // Space reveals the next page of history, the way a pager does:
             // the list opens at ten rows and grows while the operator asks.
-            (KeyCode::Char(' '), KeyModifiers::NONE) => self.home.more(),
+            (KeyCode::Char(' '), KeyModifiers::NONE) => self.home.page(),
             (KeyCode::Char('n'), KeyModifiers::NONE) => {
                 if let Some(engine) = self.engine.as_ref() {
                     engine.new_session();
