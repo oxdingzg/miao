@@ -9,9 +9,9 @@ import {
   type ToolContent,
 } from "@miao/llm"
 import { fileURLToPath } from "url"
-import { SessionMessage } from "../message"
-import type { FileAttachment } from "../prompt"
-import { Token } from "../../util/token"
+import { SessionMessage } from "./message"
+import type { FileAttachment } from "./prompt"
+import { Token } from "../util/token"
 
 // Render-time bounds for the checkpoint's two halves. The summary is written
 // under a 2,048-token output budget and the retained recent context under
