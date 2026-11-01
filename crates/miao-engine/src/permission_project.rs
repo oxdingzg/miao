@@ -64,7 +64,7 @@ impl Authority {
         std::thread::spawn(move || {
             let opened = (|| {
                 let mut connection = Connection::open(path)?;
-                connection.busy_timeout(std::time::Duration::from_secs(2))?;
+                connection.busy_timeout(std::time::Duration::from_secs(10))?;
                 initialize(&mut connection)?;
                 Ok::<_, Error>(connection)
             })();
