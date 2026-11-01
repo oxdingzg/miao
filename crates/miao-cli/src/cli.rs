@@ -1838,6 +1838,126 @@ fn db_path(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// The database a maintenance command is aimed at: `--db` if it was given, the
+/// same default `db path` prints otherwise.
+fn db_argument(rest: &[String]) -> Result<PathBuf, String> {
+    let mut db: Option<PathBuf> = None;
+    let mut index = 0;
+    while index < rest.len() {
+        match rest[index].as_str() {
+            "--db" => {
+                db = rest.get(index + 1).map(PathBuf::from);
+                index += 2;
+            }
+            _ => index += 1,
+        }
+    }
+    let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    Ok(db.unwrap_or_else(|| default_db(&workspace)))
+}
+
+/// A read-only connection: a report must not be able to change the file, so the
+/// command cannot write even by mistake.
+fn db_read_only(path: &std::path::Path) -> Result<rusqlite::Connection, String> {
+    if !path.exists() {
+        return Err(format!("no database at {}", path.display()));
+    }
+    rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| error.to_string())
+}
+
+fn human_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KiB", "MiB", "GiB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit + 1 < UNITS.len() {
+        value /= 1024.0;
+        unit += 1;
+    }
+    match unit {
+        0 => format!("{bytes} B"),
+        _ => format!("{value:.1} {}", UNITS[unit]),
+    }
+}
+
+/// What a maintenance command reports before it does anything: the file it is
+/// aimed at, how much the pages take, what is already free, and what the tables
+/// hold. Reported rather than acted on, so the operator can see the target and
+/// the impact first — the rule DATA-03 asks for.
+fn db_report(
+    connection: &rusqlite::Connection,
+    path: &std::path::Path,
+) -> rusqlite::Result<Vec<String>> {
+    let bytes = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
+    let page_size: i64 = connection.query_row("PRAGMA page_size", [], |row| row.get(0))?;
+    let page_count: i64 = connection.query_row("PRAGMA page_count", [], |row| row.get(0))?;
+    let free: i64 = connection.query_row("PRAGMA freelist_count", [], |row| row.get(0))?;
+    let mut lines = vec![
+        format!("database · {}", path.display()),
+        format!("file · {bytes} bytes ({})", human_bytes(bytes)),
+        format!("pages · {page_count} × {page_size} bytes"),
+        format!(
+            "reclaimable · {} free pages ({} bytes)",
+            free,
+            human_bytes((free * page_size).max(0) as u64)
+        ),
+    ];
+    let tables = {
+        let mut statement = connection.prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' \
+             AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for table in tables {
+        // Names come from the schema, not from the operator, and are quoted so a
+        // name with a space still counts instead of failing the report.
+        let count: i64 = connection.query_row(
+            &format!("SELECT count(*) FROM \"{}\"", table.replace('"', "\"\"")),
+            [],
+            |row| row.get(0),
+        )?;
+        lines.push(format!("table · {table} · {count} rows"));
+    }
+    Ok(lines)
+}
+
+fn db_stats(rest: &[String]) -> Result<(), String> {
+    let path = db_argument(rest)?;
+    let connection = db_read_only(&path)?;
+    for line in db_report(&connection, &path).map_err(|error| error.to_string())? {
+        println!("{line}");
+    }
+    Ok(())
+}
+
+/// Reclaim the free pages, but only when the operator asked for it in words:
+/// a dry run reports the same view and states that nothing was written.
+fn db_vacuum(rest: &[String]) -> Result<(), String> {
+    let path = db_argument(rest)?;
+    let apply = rest.iter().any(|argument| argument == "--apply");
+    let connection = db_read_only(&path)?;
+    for line in db_report(&connection, &path).map_err(|error| error.to_string())? {
+        println!("{line}");
+    }
+    drop(connection);
+    if !apply {
+        println!(
+            "dry run · nothing was written; pass --apply to vacuum {}",
+            path.display()
+        );
+        return Ok(());
+    }
+    let connection = rusqlite::Connection::open(&path).map_err(|error| error.to_string())?;
+    connection
+        .execute_batch("VACUUM")
+        .map_err(|error| error.to_string())?;
+    let bytes = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+    println!("vacuumed · {} · now {}", path.display(), human_bytes(bytes));
+    Ok(())
+}
+
 /// One view of what a turn could use: routes first (what can be called), then
 /// credentials (what can authenticate). Both are optional sources, so a missing
 /// one is reported rather than treated as an empty success.
@@ -3480,8 +3600,22 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                         std::process::ExitCode::from(1)
                     }
                 },
+                Some("stats") => match db_stats(&rest[1..]) {
+                    Ok(()) => std::process::ExitCode::SUCCESS,
+                    Err(message) => {
+                        eprintln!("miao db stats: {message}");
+                        std::process::ExitCode::from(1)
+                    }
+                },
+                Some("vacuum") => match db_vacuum(&rest[1..]) {
+                    Ok(()) => std::process::ExitCode::SUCCESS,
+                    Err(message) => {
+                        eprintln!("miao db vacuum: {message}");
+                        std::process::ExitCode::from(1)
+                    }
+                },
                 _ => {
-                    eprintln!("usage: miao db path [--db PATH]");
+                    eprintln!("usage: miao db [path|stats|vacuum] [--db PATH] [--apply]");
                     std::process::ExitCode::from(2)
                 }
             }
@@ -3692,10 +3826,54 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        lsp_servers, mcp_servers, model_routes, parsed_session_location, plugin_entries,
-        strip_comments,
+        db_report, db_vacuum, lsp_servers, mcp_servers, model_routes, parsed_session_location,
+        plugin_entries, strip_comments,
     };
     use std::io::Write;
+
+    #[test]
+    fn the_database_report_names_the_target_before_anything_is_written() {
+        // DATA-03: a maintenance command has to show the database it is aimed at
+        // and the impact it would have, and it may only touch real data under an
+        // explicit authorisation. The report is read-only; vacuum is a dry run
+        // until `--apply`.
+        let dir = std::env::temp_dir().join(format!("miao-db-report-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("workspace dir");
+        let path = dir.join("engine.db");
+        let connection = rusqlite::Connection::open(&path).expect("create database");
+        connection
+            .execute_batch(
+                "CREATE TABLE session (id TEXT); \
+                 INSERT INTO session VALUES ('a'), ('b');",
+            )
+            .expect("seed");
+
+        let lines = db_report(&connection, &path).expect("report");
+        let text = lines.join("\n");
+        assert!(
+            text.contains(&format!("database · {}", path.display())),
+            "the target has to be named: {text}"
+        );
+        assert!(text.contains("table · session · 2 rows"), "{text}");
+        assert!(text.contains("pages · "), "{text}");
+        assert!(text.contains("reclaimable · "), "{text}");
+        drop(connection);
+
+        let before = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+        db_vacuum(&["--db".into(), path.display().to_string()]).expect("dry run");
+        let after = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+        assert_eq!(before, after, "a dry run must not write");
+
+        db_vacuum(&["--db".into(), path.display().to_string(), "--apply".into()]).expect("vacuum");
+        let connection = rusqlite::Connection::open(&path).expect("reopen");
+        let rows: i64 = connection
+            .query_row("SELECT count(*) FROM session", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(rows, 2, "vacuum keeps every row");
+        drop(connection);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// Write a throwaway config directory and hand back its path.
     fn config_dir(tag: &str, body: &str) -> std::path::PathBuf {
