@@ -1,0 +1,19 @@
+{
+  "recorded_at": "2026-11-01",
+  "epic": ["VAL-01", "VAL-02"],
+  "suite": { "path": "script/engine-benchmark.ts", "sha256": "6b0c8116f2675791a0cebd5a53d257566d6f510c7c9a89298b74979a42a9501f", "families": 10 },
+  "run_commit": "808cc1108ed49d61b8f828a8b4dacf650c28bddc",
+  "cli": { "entry": "packages/miao/src/index.ts", "resolved_from": "detached worktree at run_commit", "version": "0.3.24" },
+  "engine": {
+    "path": "~/.local/share/miao/bench-engine-071e/miao-engine",
+    "sha256": "0f3bc53ddd65740d3ffd7e828cc166cf35744c2bdc15c91fa1af7b280a8cbe6a",
+    "built_from": "071eed588d87ad375e8c67c239ea8961e0179712",
+    "built_on": "macOS arm64 build host, cargo build --release",
+    "version": "miao-engine 0.3.24",
+    "note": "the run commit differs from the engine commit only in script, test and doc files; crates are unchanged"
+  },
+  "model": "deepseek/deepseek-flash",
+  "repeats_per_cell": 10,
+  "budget_usd_per_task": 0.01,
+  "runtime": { "bun": "1.3.14", "platform": "darwin-arm64" }
+}

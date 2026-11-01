@@ -1,0 +1,17 @@
+{
+  "model": "deepseek/deepseek-flash",
+  "task": "refactor",
+  "engine": "ts",
+  "attempt": 5,
+  "ok": false,
+  "turns": 10,
+  "input": 158169,
+  "cacheRead": 155008,
+  "output": 1349,
+  "billedIn": 313177,
+  "cost": 0.0017485739999999997,
+  "costUnknown": 0,
+  "seconds": 45.18,
+  "resumed": false,
+  "verifyError": "discount check failed"
+}

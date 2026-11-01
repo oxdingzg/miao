@@ -1,0 +1,16 @@
+{
+  "model": "deepseek/deepseek-flash",
+  "task": "impossible",
+  "engine": "ts",
+  "attempt": 5,
+  "ok": true,
+  "turns": 5,
+  "input": 90652,
+  "cacheRead": 86272,
+  "output": 4583,
+  "billedIn": 176924,
+  "cost": 0.003665616,
+  "costUnknown": 0,
+  "seconds": 40.089,
+  "resumed": false
+}

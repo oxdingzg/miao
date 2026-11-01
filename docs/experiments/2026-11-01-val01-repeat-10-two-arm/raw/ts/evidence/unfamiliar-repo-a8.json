@@ -1,0 +1,17 @@
+{
+  "model": "deepseek/deepseek-flash",
+  "task": "unfamiliar-repo",
+  "engine": "ts",
+  "attempt": 8,
+  "ok": false,
+  "turns": 10,
+  "input": 161098,
+  "cacheRead": 158080,
+  "output": 2745,
+  "billedIn": 319178,
+  "cost": 0.00257394,
+  "costUnknown": 0,
+  "seconds": 36.495,
+  "resumed": false,
+  "verifyError": "bun test v1.3.14 (0d9b296a)\n\n\nsrc/ledger.test.ts:\n\n# Unhandled error between tests\n-------------------------------\n11 |   expect(render(entries)).toBe(\"coffee: 3.50\n                                    ^\nerror: Unterminated string literal\n    at /private/var/folders/3w/ll17256n7q9b7g7bt0qr9hqr0000gp/T/.tmpFJA2wS/bench-unfamiliar-repo-ts-chUwM5/src/ledger.test.ts:11:32\n-------------------------------\n\n\n 0 pass\n 1 fail\n 1 error\nRan 1 test across 1 file. [15.00ms]\n"
+}

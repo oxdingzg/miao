@@ -1,0 +1,16 @@
+{
+  "model": "deepseek/deepseek-flash",
+  "task": "long-session",
+  "engine": "rust",
+  "attempt": 1,
+  "ok": true,
+  "turns": 9,
+  "input": 139307,
+  "cacheRead": 137216,
+  "output": 974,
+  "billedIn": 276523,
+  "cost": 0.0013096980000000002,
+  "costUnknown": 0,
+  "seconds": 106.211,
+  "resumed": false
+}

@@ -1,0 +1,16 @@
+{
+  "model": "deepseek/deepseek-flash",
+  "task": "unfamiliar-repo",
+  "engine": "ts",
+  "attempt": 3,
+  "ok": true,
+  "turns": 7,
+  "input": 107890,
+  "cacheRead": 105856,
+  "output": 636,
+  "billedIn": 213746,
+  "cost": 0.001004268,
+  "costUnknown": 0,
+  "seconds": 15.99,
+  "resumed": false
+}

@@ -1,0 +1,16 @@
+{
+  "model": "deepseek/deepseek-flash",
+  "task": "refactor",
+  "engine": "rust",
+  "attempt": 9,
+  "ok": true,
+  "turns": 7,
+  "input": 109842,
+  "cacheRead": 108032,
+  "output": 854,
+  "billedIn": 217874,
+  "cost": 0.001107996,
+  "costUnknown": 0,
+  "seconds": 30.235,
+  "resumed": false
+}
