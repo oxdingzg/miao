@@ -182,6 +182,11 @@ impl Host {
                 .rename(&session_id, &title)
                 .await
                 .map(|_| json!({ "accepted": true, "title": title })),
+            Command::Tag { session_id, tag } => runtime
+                .store()
+                .tag(&session_id, &tag)
+                .await
+                .map(|_| json!({ "accepted": true, "tag": tag })),
             Command::Cancel { session_id } => runtime
                 .cancel(&session_id)
                 .await
