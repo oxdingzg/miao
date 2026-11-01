@@ -20,19 +20,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # Hosted macOS bills at 10x and had no available slot, but the
-          # self-hosted runner also had PATH/cache issues. Skip pull requests
-          # and run on push to main + nightly, where a red mark means the
-          # merge itself broke macOS.
-          - os: macos-14
-            runner: [self-hosted, macOS, ARM64]
-            skip_pr: true
-          - os: ubuntu-latest
-            runner: ubuntu-latest
-            skip_pr: false
+        # macOS legs run on push to main and the nightly schedule: the
+        # self-hosted runner is unreliable on pull requests, and a reusable
+        # workflow's job-level `if` cannot read the matrix context, so the
+        # choice has to live in the matrix itself.
+        include: ${{ github.event_name == 'pull_request' && fromJSON('[{"os":"ubuntu-latest","runner":"ubuntu-latest"}]') || fromJSON('[{"os":"macos-14","runner":["self-hosted","macOS","ARM64"]},{"os":"ubuntu-latest","runner":"ubuntu-latest"}]') }}
     runs-on: ${{ matrix.runner }}
-    if: matrix.skip_pr != true || github.event_name != 'pull_request'
     # The self-hosted macOS runner has no warm cargo cache for this crate, so
     # the first build of a run plus the PTY smoke suite passes the old 30
     # minutes and the job was killed at 30m20s.

@@ -40,34 +40,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # The macOS leg runs on the owner's self-hosted arm64 runner: hosted
-          # macOS minutes bill at 10x, so one full engine run spends more than
-          # the account's entire monthly allowance. It stays one job: a single
-          # self-hosted runner runs one job at a time, so sharding there would
-          # only queue the shards behind each other.
-          - os: macos-arm64
-            runner: [self-hosted, macOS, ARM64]
-            shard: 1
-            shards: 1
-          # The ubuntu leg is the longest single job of a full CI run, so its
-          # 176 test targets are split across four parallel jobs.
-          - os: ubuntu-24.04
-            runner: ubuntu-24.04
-            shard: 1
-            shards: 4
-          - os: ubuntu-24.04
-            runner: ubuntu-24.04
-            shard: 2
-            shards: 4
-          - os: ubuntu-24.04
-            runner: ubuntu-24.04
-            shard: 3
-            shards: 4
-          - os: ubuntu-24.04
-            runner: ubuntu-24.04
-            shard: 4
-            shards: 4
+        # macOS legs run on push to main and the nightly schedule: the
+        # self-hosted runner is unreliable on pull requests, and a reusable
+        # workflow's job-level `if` cannot read the matrix context, so the
+        # choice has to live in the matrix itself.
+        include: ${{ github.event_name == 'pull_request' && fromJSON('[{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":1,"shards":4},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":2,"shards":4},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":3,"shards":4},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":4,"shards":4}]') || fromJSON('[{"os":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"shard":1,"shards":1},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":1,"shards":4},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":2,"shards":4},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":3,"shards":4},{"os":"ubuntu-24.04","runner":"ubuntu-24.04","shard":4,"shards":4}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     defaults:
