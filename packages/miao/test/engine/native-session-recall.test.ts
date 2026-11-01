@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
+import { discoveredEngine } from "../../src/engine/discovery"
 import { engineFake } from "../fixture/engine-binary"
 import { tmpdir } from "../fixture/fixture"
 
@@ -89,7 +90,12 @@ test("a native Session restores an archived tool output by handle, and refuses o
   }
 }, 90_000)
 
-test("a Session outside the native engine says why it cannot answer", async () => {
+// Which placement a plain `serve` picks depends on whether this machine has an
+// engine the product can discover, and macOS resolves that outside `$HOME`, so
+// the fixture cannot isolate it. Say so instead of failing on those machines.
+const discoverable = discoveredEngine()
+
+test.skipIf(discoverable !== undefined)("a Session outside the native engine says why it cannot answer", async () => {
   await using tmp = await tmpdir()
   const { child, url } = await serve({
     MIAO_DB: path.join(tmp.path, "miao.db"),
