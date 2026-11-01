@@ -3,7 +3,7 @@ export * as SessionSideQuestion from "./side-question"
 import { LLM, LLMEvent, Message, SystemPart, type LLMError, type LLMRequest, type Model } from "@miao/llm"
 import { Effect, Stream } from "effect"
 import { SessionMessage } from "@miao/schema/session-message"
-import { toLLMMessages } from "./runner/to-llm-message"
+import { toLLMMessages } from "./to-llm-message"
 
 // A side question answers from what the conversation already holds; it never
 // acts and never enters the transcript. The recent-window bound keeps it cheap
