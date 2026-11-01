@@ -403,9 +403,15 @@ impl App {
                 // No title row: the terminal tab already names the workspace,
                 // and the list header carries the Session count. The row it
                 // used to take goes back to the list.
+                // The landing composer is the same one a Session shows, so it
+                // grows with the draft here too: a multi-line prompt typed
+                // before any Session exists has to stay readable.
                 let [body, composer_area] = ratatui::layout::Layout::vertical([
                     ratatui::layout::Constraint::Min(1),
-                    ratatui::layout::Constraint::Length(3),
+                    ratatui::layout::Constraint::Length(crate::pane::composer_height(
+                        &self.shell.composer,
+                        frame.area().width,
+                    )),
                 ])
                 .areas(frame.area());
                 crate::pane::render_home_composer(

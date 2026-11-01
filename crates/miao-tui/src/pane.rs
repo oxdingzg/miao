@@ -234,7 +234,7 @@ impl Shell {
             Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(panel_height),
-            Constraint::Length(composer_height(&self.composer)),
+            Constraint::Length(composer_height(&self.composer, frame.area().width)),
             Constraint::Length(1),
         ])
         .areas(frame.area());
@@ -1439,8 +1439,16 @@ const COMPOSER_COMPLETION_ROWS: usize = 6;
 /// Display cells the `!` shell marker occupies left of the input.
 const SHELL_GUTTER: u16 = 2;
 
-fn composer_height(composer: &Composer) -> u16 {
-    let input = composer.editor.line_count().clamp(1, COMPOSER_INPUT_ROWS);
+/// The composer's height in rows, widened to the draft: a prompt that wraps or
+/// has several lines is shown whole up to [`COMPOSER_INPUT_ROWS`], so an
+/// operator can read what they are about to send instead of only the line the
+/// cursor happens to sit on.
+pub fn composer_height(composer: &Composer, width: u16) -> u16 {
+    let usable = width.saturating_sub(2).max(1) as usize;
+    let input = composer
+        .editor
+        .display_rows(usable)
+        .clamp(1, COMPOSER_INPUT_ROWS);
     let completion = composer
         .completion
         .items

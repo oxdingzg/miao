@@ -373,6 +373,22 @@ impl Editor {
     }
 
     /// Line index (zero-based) and display column of the cursor, in cells.
+    /// How many display rows the draft needs inside `width` cells. A long line
+    /// wraps, and every logical line takes at least one row, so the composer can
+    /// size itself to show the whole prompt instead of the cursor's line.
+    pub fn display_rows(&self, width: usize) -> usize {
+        if width == 0 {
+            return self.line_count();
+        }
+        self.buffer
+            .split('\n')
+            .map(|line| {
+                let cells: usize = line.chars().map(cell_width).sum();
+                cells.div_ceil(width).max(1)
+            })
+            .sum()
+    }
+
     pub fn cursor_position(&self) -> (usize, usize) {
         let start = self.line_start(self.cursor);
         let line = self.buffer[..start].matches('\n').count();
@@ -1125,6 +1141,22 @@ mod tests {
         editor.set_text("recalled from history");
         assert!(!editor.undo(), "the recalled text is the baseline");
         assert_eq!(editor.text(), "recalled from history");
+    }
+
+    /// A multi-line or wrapped draft needs more display rows than it has
+    /// logical lines, which is what lets the composer show the whole prompt.
+    #[test]
+    fn display_rows_counts_logical_lines_and_wrapping() {
+        let mut editor = Editor::new();
+        assert_eq!(editor.display_rows(20), 1, "an empty draft is one row");
+        editor.insert_str("first\nsecond");
+        assert_eq!(editor.display_rows(20), 2);
+        editor.set_text("x");
+        assert_eq!(editor.display_rows(20), 1);
+        // Ten CJK characters are twenty cells, so they fill a twenty-cell row
+        // and spill onto a second one.
+        editor.set_text("你好世界你好世界你好世界你好世界你好世界");
+        assert_eq!(editor.display_rows(20), 2, "wide text wraps by cells");
     }
 
     /// CJK and emoji are edited by grapheme, not by byte: undo takes back the
