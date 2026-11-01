@@ -592,6 +592,10 @@ pub enum Command {
     /// in place. The reply names what changed, what kept its connection, and
     /// what this build cannot reload yet.
     ConfigReload,
+    /// Re-derive and return the normalized document the engine reads from the
+    /// same ordered sources it was started with. Read-only: a host that wants
+    /// to compare its own reader has no other way to ask.
+    ConfigNormalized,
     Fork {
         session_id: String,
         target_session_id: String,
