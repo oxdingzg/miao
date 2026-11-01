@@ -552,6 +552,9 @@ const runCell = async (
     cell.seconds = (Date.now() - started) / 1000
     if (interrupted) cell.resumed = true
     cell.verifyError = await task.verify(workspace)
+    // A session that never reached the provider cannot pass a gate by leaving
+    // the workspace untouched: that is a broken run, not a correct refusal.
+    if (cell.turns === 0) cell.verifyError ??= "the session produced no provider step"
     cell.ok = cell.verifyError === undefined
   } finally {
     await rm(workspace, { recursive: true, force: true })
