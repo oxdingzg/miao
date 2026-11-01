@@ -135,7 +135,7 @@ impl Harness {
                 }
                 Some(']') => {
                     // OSC ends at BEL or ST.
-                    while let Some(next) = chars.next() {
+                    for next in chars.by_ref() {
                         if next == '\x07' {
                             break;
                         }
