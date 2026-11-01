@@ -525,6 +525,23 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         .annotateMerge(OpenApi.annotations({ identifier: "v2.session.rename", summary: "Rename session" })),
     )
     .add(
+      HttpApiEndpoint.post("session.tag", "/api/session/:sessionID/tag", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ tag: Schema.String }),
+        success: HttpApiSchema.NoContent,
+        error: [SessionNotFoundError, ConflictError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.tag",
+            summary: "Tag session",
+            description:
+              "Set the operator's own label on a Session, or clear it with an empty string. A tag is the operator's index into their own sessions, not a model input.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.archive", "/api/session/:sessionID/archive", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ archived: Schema.Boolean }),

@@ -79,6 +79,8 @@ import type {
   SessionsTodoOutput,
   SessionsRenameInput,
   SessionsRenameOutput,
+  SessionsTagInput,
+  SessionsTagOutput,
   SessionsArchiveInput,
   SessionsArchiveOutput,
   SessionsPinInput,
@@ -918,6 +920,18 @@ export function make(options: ClientOptions) {
             body: { title: input["title"] },
             successStatus: 204,
             declaredStatuses: [404, 400, 410, 409, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      tag: (input: SessionsTagInput, requestOptions?: RequestOptions) =>
+        request<SessionsTagOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/tag`,
+            body: { tag: input["tag"] },
+            successStatus: 204,
+            declaredStatuses: [404, 409, 400, 410, 401],
             empty: true,
           },
           requestOptions,
