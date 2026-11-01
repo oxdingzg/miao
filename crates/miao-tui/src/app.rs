@@ -398,6 +398,12 @@ impl App {
         // The status counts elapsed time, so it is recomputed per frame rather
         // than only when the projection changes.
         self.update_status();
+        // A leader that is still waiting paints its menu, so the chords are
+        // discoverable instead of memorised. Both screens carry it: the landing
+        // footer and the Session's status row.
+        let leader_hint = self.armed_leader_hint();
+        self.home.set_leader_hint(leader_hint.clone());
+        self.shell.set_leader_hint(leader_hint);
         match self.screen {
             Screen::Home => {
                 // No title row: the terminal tab already names the workspace,
@@ -427,6 +433,12 @@ impl App {
         if let Some(dialog) = self.dialog.as_ref() {
             render_dialog(frame, frame.area(), dialog, self.shell.theme());
         }
+    }
+
+    /// The armed leader's menu, while it still waits for its chord.
+    fn armed_leader_hint(&self) -> Option<String> {
+        let since = self.leader_since?;
+        (self.leader && since.elapsed() <= self.leader_timeout).then(|| self.keys.leader_hint())
     }
 
     pub fn handle(&mut self, event: AppEvent) {
@@ -4097,6 +4109,46 @@ mod tests {
         // A slot past the end opens nothing instead of opening the last row.
         app.handle(key(KeyCode::Char('9'), KeyModifiers::NONE));
         assert!(requests.try_recv().is_err());
+    }
+
+    #[test]
+    fn arming_the_leader_paints_what_it_can_reach() {
+        // UX-05: the chord keys were invisible until the operator memorised
+        // them. Arming the leader now paints the menu it waits on.
+        let mut app = home_with(vec![summary("ses_a", 100)]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 16)).expect("terminal");
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+        let before = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(!before.contains("app exit"), "{before}");
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+        let armed = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(armed.contains("ctrl+x ·"), "{armed}");
+        assert!(armed.contains("app exit"), "{armed}");
+        // The row is finite, so the tail of a long menu is clipped rather than
+        // wrapped over the list; the keymap test holds the whole line.
+        assert!(!armed.contains("tab list"), "{armed}");
+        // The chord still runs: the menu is a hint, not a mode.
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Char('n'), KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::NewSession)
+        ));
     }
 
     #[test]
