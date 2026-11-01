@@ -38,6 +38,15 @@ parser.add_argument("--mode", choices=("cold", "warm"), default="cold")
 parser.add_argument("--ready-text", action="append", default=None)
 parser.add_argument("--focus-key", default=None)
 parser.add_argument("--timeout", type=float, default=30.0)
+parser.add_argument(
+    "--env",
+    action="append",
+    default=None,
+    metavar="KEY=VALUE",
+    help="Extra environment for the measured process; repeat as needed. The "
+    "harness otherwise passes a fixed fixture environment, so a run that needs "
+    "a live engine passes its storage and route manifest this way.",
+)
 args = parser.parse_args()
 
 if args.repeat <= 0:
@@ -66,6 +75,11 @@ def one_run(home: Path, db: Path) -> dict:
         "MIAO_PURE": "1", "MIAO_DISABLE_PROJECT_CONFIG": "1",
         "MIAO_DISABLE_AUTOUPDATE": "1", "MIAO_DISABLE_MODELS_FETCH": "1", "MIAO_MONITOR": "0",
     })
+    for item in args.env or []:
+        key, _, value = item.partition("=")
+        if not key or not _:
+            parser.error(f"--env expects KEY=VALUE, got {item!r}")
+        env[key] = value
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 35, 120, 0, 0))
     def become_session_leader() -> None:
@@ -82,6 +96,7 @@ def one_run(home: Path, db: Path) -> dict:
     os.close(slave)
     painted = None
     ready = None
+    degraded = None
 
     def pump(seconds: float) -> bool:
         end = time.monotonic() + seconds
@@ -105,6 +120,7 @@ def one_run(home: Path, db: Path) -> dict:
         text = "\n".join(screen.display)
         if painted is None and all(mark in text for mark in ready_text):
             painted = time.monotonic_ns()
+            degraded = "engine_closed" in text
             if args.focus_key is not None:
                 os.write(master, b"\t" if args.focus_key == "tab" else args.focus_key.encode())
                 pump(0.2)
@@ -119,6 +135,9 @@ def one_run(home: Path, db: Path) -> dict:
     return {
         "paintedMs": None if painted is None else (painted - started) / 1e6,
         "readyMs": None if ready is None else (ready - started) / 1e6,
+        # A TUI that painted but lost its engine still accepts typing, so the
+        # timing alone cannot say whether the run was healthy.
+        "engineClosed": degraded,
     }
 
 
