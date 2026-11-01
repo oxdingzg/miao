@@ -320,7 +320,9 @@ impl TitlePane {
 impl Pane for TitlePane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
-        let style = Style::new().fg(palette.primary).bg(palette.surface).bold();
+        // The header names the build, it does not shout: one muted line, with
+        // colour reserved for the state that needs the operator (`status_alert`).
+        let style = Style::new().fg(palette.text_muted).bg(palette.background);
         let mut spans = vec![Span::styled(format!("{} ", self.label), style)];
         if let Some(status) = &self.status {
             let color = match self.status_alert {
@@ -329,7 +331,7 @@ impl Pane for TitlePane {
             };
             spans.push(Span::styled(
                 format!("· {status} "),
-                Style::new().fg(color).bg(palette.surface),
+                Style::new().fg(color).bg(palette.background),
             ));
         }
         frame.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -915,18 +917,32 @@ impl Home {
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
-        let block = Block::bordered()
-            .title(Span::styled(
-                if self.query.is_empty() {
-                    format!(" sessions · {} ", self.rows.len())
-                } else {
-                    format!(" sessions · filter \"{}\" · esc clear ", self.query)
-                },
+        // No frame: the list reads as text on the background, the way miao's
+        // TypeScript UI and the agent CLIs it follows do. One dim line names
+        // the screen; the selected row carries the only accent.
+        let header = match self.query.is_empty() {
+            true => format!("sessions · {}", self.rows.len()),
+            false => format!("sessions · filter \"{}\" · esc clear", self.query),
+        };
+        let header_area = Rect {
+            height: 1.min(area.height),
+            ..area
+        };
+        let list_area = Rect {
+            y: area.y + header_area.height,
+            height: area.height.saturating_sub(header_area.height),
+            x: area.x + 1,
+            width: area.width.saturating_sub(2),
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                header,
                 Style::new().fg(palette.text_muted),
-            ))
-            .border_style(Style::new().fg(palette.border_active))
-            .style(Style::new().bg(palette.surface));
-        let inner = block.inner(area);
+            )))
+            .style(Style::new().bg(palette.background)),
+            header_area,
+        );
+        let inner = list_area;
         // A wide terminal does not buy a wider row: past this measure the list
         // keeps one readable column and centers it, so a title and its age sit
         // the same distance apart on every screen.
@@ -962,15 +978,15 @@ impl Home {
             )));
             frame.render_widget(
                 Paragraph::new(lines)
-                    .style(Style::new().fg(palette.text_muted))
-                    .block(block)
+                    .style(Style::new().fg(palette.text_muted).bg(palette.background))
                     .wrap(Wrap { trim: false }),
-                area,
+                list_area,
             );
             return;
         }
         // Group by recency, the way comparable session pickers do: a flat wall
         // of titles stops being scannable once a project has weeks of history.
+        let inner_width = inner.width as usize;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|duration| duration.as_millis() as u64)
@@ -1075,7 +1091,6 @@ impl Home {
             height: 1,
             ..inner
         };
-        frame.render_widget(block, area);
         let notice_skip = notice_lines.len() - notice_take;
         let all: Vec<Line> = notice_lines
             .into_iter()
@@ -1084,7 +1099,7 @@ impl Home {
             .collect();
         frame.render_widget(
             Paragraph::new(all)
-                .style(Style::new().bg(palette.surface))
+                .style(Style::new().bg(palette.background))
                 .wrap(Wrap { trim: false }),
             body_area,
         );
@@ -1318,7 +1333,7 @@ fn render_status(frame: &mut Frame, area: Rect, status: &StatusStrip, theme: &Th
     if let Some(model) = &status.model {
         spans.push(Span::styled(
             format!(" {model} "),
-            Style::new().fg(palette.primary).bg(palette.surface),
+            Style::new().fg(palette.text_muted).bg(palette.surface),
         ));
     }
     if let Some(usage) = &status.usage {
@@ -1427,14 +1442,21 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
         true => format!(" {name} "),
         false => format!(" {name} · {} ", parts.join(" · ")),
     };
+    // The composer is a hairline, not a frame: the only thing that changes
+    // colour is the phase beside the name, so "working" still stands out while
+    // the box itself stays quiet.
+    let title_style = match shell {
+        true => Style::new().fg(palette.warning),
+        false => Style::new().fg(palette.text_muted),
+    };
     let accent = if shell {
         palette.warning
     } else {
         palette.primary
     };
     let block = Block::bordered()
-        .title(Span::styled(title, Style::new().fg(accent)))
-        .border_style(Style::new().fg(palette.border))
+        .title(Span::styled(title, title_style))
+        .border_style(Style::new().fg(palette.text_muted))
         .style(Style::new().bg(palette.background));
     let inner = block.inner(area);
     frame.render_widget(block, area);
