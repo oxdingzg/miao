@@ -136,6 +136,57 @@ fn descriptors(pid: u32) -> Option<usize> {
     Some(text.lines().filter(|line| line.starts_with('n')).count())
 }
 
+/// The process itself plus its direct children. The TUI spawns the engine when
+/// embedding is off, and that child is the part of the tree a single-process
+/// sample would miss.
+fn tree(pid: u32) -> Vec<u32> {
+    let mut pids = vec![pid];
+    if let Ok(output) = Command::new("pgrep")
+        .args(["-P", &pid.to_string()])
+        .output()
+    {
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            if let Ok(child) = line.trim().parse::<u32>() {
+                pids.push(child);
+            }
+        }
+    }
+    pids
+}
+
+/// Sum of the measured window across every process in the tree.
+fn measure_tree(harness: &Harness, label: &str, window: Duration) -> (usize, u128, u64, u64) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !harness.ready() {
+        assert!(
+            Instant::now() < deadline,
+            "the fixture did not become ready; the measurement would describe a start-up, not a run"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::thread::sleep(Duration::from_secs(2));
+    let pids = tree(harness.pid);
+    let before = pids.iter().map(|pid| sample(*pid).0).sum::<u128>();
+    std::thread::sleep(window);
+    let pids = tree(harness.pid);
+    let mut cpu_ms = 0;
+    let mut rss_kb = 0;
+    let mut fds = 0;
+    for pid in &pids {
+        let (cpu, rss) = sample(*pid);
+        cpu_ms += cpu;
+        rss_kb += rss;
+        fds += descriptors(*pid).unwrap_or(0) as u64;
+    }
+    let cpu_ms = cpu_ms.saturating_sub(before);
+    println!(
+        "PERF-04 {label}: processes={} cpu_ms={cpu_ms} over {}ms, rss_kb_total={rss_kb}, fds_total={fds}",
+        pids.len(),
+        window.as_millis()
+    );
+    (pids.len(), cpu_ms, rss_kb, fds)
+}
+
 /// `ps` prints `M:SS.ss` on macOS and `HH:MM:SS` on Linux; reading the parts
 /// from the left with a base of sixty handles both.
 fn cpu_millis(spec: &str) -> u128 {
@@ -217,4 +268,27 @@ fn a_streaming_tui_reports_its_cpu_and_memory() {
             "a streaming TUI held {fds} open file descriptors"
         );
     }
+}
+
+#[test]
+fn a_spawned_engine_appears_in_the_process_tree() {
+    // PERF-04 asks for the whole process tree; the embedded default is one
+    // process, so this measures the shape that actually has one: the TUI with
+    // the engine it spawned.
+    let harness = Harness::spawn_with("spawned", &[("MIAO_TUI_EMBEDDED", "0")], None);
+    let (processes, cpu_ms, rss_kb, fds) =
+        measure_tree(&harness, "spawned-engine", Duration::from_secs(3));
+    assert!(
+        processes >= 2,
+        "the spawned engine is missing from the tree: {processes} process(es)"
+    );
+    assert!(
+        cpu_ms < 3_000,
+        "the tree used {cpu_ms} ms of CPU in three seconds while idle"
+    );
+    assert!(
+        rss_kb > 0 && rss_kb < 512 * 1024,
+        "the tree held {rss_kb} kB of memory"
+    );
+    assert!(fds > 0 && fds < 2048, "the tree held {fds} descriptors");
 }
