@@ -14,6 +14,7 @@ library suite at this tree is `cargo test --lib -- --test-threads=1` →
 | criterion | command | observed |
 | --- | --- | --- |
 | a row can be selected with the pointer | `cargo test --lib -- a_click` | 2 passed: `pane::tests::a_click_names_the_row_that_was_painted_on_that_line` walks a real frame and requires every anchor to hold the label painted on that line, including after the window scrolls; `app::tests::a_click_on_the_list_selects_the_row_it_landed_on` clicks the second row of a frame, then proves `j` continues from there and the footer switched to `tab prompt` |
+| a row can be opened with the pointer | `cargo test --lib -- second_click` | 1 passed: `app::tests::a_second_click_on_the_same_row_opens_the_session` clicks a row (selection only), clicks it again inside the window (`Request::Open` for that Session), and then clicks two different rows, which opens nothing (`#2261`) |
 | paging and the ends of the list are one keystroke away | `cargo test --lib -- screenful` and `-- home_and_end` | 1 + 1 passed: one screenful is one viewport (eighteen rows on a twenty-row frame since #2234 removed the border), `space`/`PageDown` move 18 → 36 and stop at the last row, `PageUp` walks back 39 → 21 → 3 → 0, and `Home`/`End` jump to either end |
 | the wheel, focus and cursor stay configurable | `cargo test --lib -- config` | passes: `scroll_speed`, `scroll_acceleration`, `mouse` and `cursor` are read from `tui.json`; `config::tests::mouse_and_cursor_come_from_the_same_files` pins that the two files agree |
 
@@ -50,9 +51,8 @@ Today
 
 ## Still unaccepted
 
-- UX-02: a double-click is not distinguished from a single click, and the
-  pointer cannot drag a selection inside the list (the transcript already
-  supports drag-to-copy).
+- UX-02: the pointer cannot drag a selection inside the list (the transcript
+  already supports drag-to-copy).
 - UX-03: no screen-reader path exists; the TUI paints cells and nothing has been
   designed for spoken output.
 - UX-05: the which-key menu lists every leader chord on one row, so a very long
