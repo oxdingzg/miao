@@ -150,10 +150,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         // `json` prints the normalized document the engine actually reads, so a
         // host can compare its own reader against it instead of trusting that
         // the two implementations agree.
-        let normalized = args.get(1).map(String::as_str) == Some("json");
-        let rest: &[String] = match normalized {
-            true => &args[2..],
-            false => &args[1..],
+        let verb = args.get(1).map(String::as_str);
+        let normalized = verb == Some("json");
+        // Both verbs are followed by the same flags; `explain` keeps working as
+        // it did, and a bare flag still parses for older callers.
+        let rest: &[String] = match verb {
+            Some("json") | Some("explain") => &args[2..],
+            _ => &args[1..],
         };
         let sources =
             match rest {
