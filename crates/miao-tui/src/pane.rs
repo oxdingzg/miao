@@ -694,10 +694,6 @@ fn selection_text(rendered: &[Vec<String>], inner: Rect, a: Position, b: Positio
     lines.join("\n")
 }
 
-/// Rows the home list shows before the operator asks for more: a long history
-/// is scannable at ten, and the rest is one keypress away.
-const HOME_PAGE: usize = 10;
-
 /// The widest column the session list uses. A wider terminal does not make a
 /// wider row more readable: stretched across one, a title and its age sit a
 /// screen apart and the eye has no edge to follow down the list. Past this
@@ -707,8 +703,6 @@ const SESSION_COLUMN: u16 = 96;
 pub struct Home {
     pub rows: Vec<SessionSummary>,
     pub selected: usize,
-    /// How many matching rows the list currently reveals.
-    limit: usize,
     /// How many rows one viewport shows. Measured by the renderer, so the first
     /// screen comes up full instead of opening at a fixed ten rows in a tall
     /// terminal and asking for `space` before it has shown anything.
@@ -744,7 +738,6 @@ impl Home {
         Self {
             rows: Vec::new(),
             selected: 0,
-            limit: HOME_PAGE,
             capacity: 0,
             anchors: Vec::new(),
             query: String::new(),
@@ -805,24 +798,22 @@ impl Home {
 
     /// The rows the list shows right now, in list order. Pinning and filtering
     /// both change this view, so every caller reads it instead of `rows`.
-    /// Reveal one more page of history.
-    pub fn more(&mut self) {
-        self.limit = self.page().saturating_add(self.capacity.max(HOME_PAGE));
+    /// Move the selection one screenful, the way the space bar pages a pager.
+    ///
+    /// The list used to reveal `limit` rows and hide the rest behind `space`,
+    /// which stopped doing anything visible once the first page became a whole
+    /// viewport: the rows being revealed were already off the top of the same
+    /// window. History is now simply reachable by moving, and `space` moves a
+    /// screenful instead of promising rows the frame cannot show.
+    pub fn page(&mut self) {
+        let step = self.capacity.max(1) as i32;
+        self.move_cursor(step);
     }
 
-    /// Matching rows the list is not showing yet.
-    fn hidden(&self) -> usize {
-        self.matched().len().saturating_sub(self.page())
-    }
-
-    /// Rows the list reveals: at least one viewport, plus one more page for
-    /// every time the operator asked for the folded history.
-    fn page(&self) -> usize {
-        self.limit.max(self.capacity)
-    }
-
+    /// Every matching row. The renderer paints the window, so the list itself
+    /// does not need a second notion of how much history is "revealed".
     fn visible(&self) -> Vec<&SessionSummary> {
-        self.matched().into_iter().take(self.page()).collect()
+        self.matched()
     }
 
     fn matched(&self) -> Vec<&SessionSummary> {
@@ -1157,10 +1148,7 @@ impl Home {
                 .wrap(Wrap { trim: false }),
             body_area,
         );
-        // The hint names how much history is still folded away, so the extra
-        // rows are discoverable without reading the help.
-        let hidden = self.hidden();
-        let hint = home_hint(self.list_focus, hidden);
+        let hint = home_hint(self.list_focus);
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 hint,
@@ -1175,14 +1163,9 @@ impl Home {
 /// the keyboard, so the line names that place instead of promising one
 /// direction: the prompt owns the landing screen, and a fixed `tab prompt`
 /// would point at the keyboard it already has.
-fn home_hint(list_focus: bool, hidden: usize) -> String {
+fn home_hint(list_focus: bool) -> String {
     let tab = if list_focus { "tab prompt" } else { "tab list" };
-    match hidden {
-        0 => format!(" / filter · p pin · {tab} · n new · 1-9 open · ? help"),
-        hidden => {
-            format!(" / filter · p pin · {tab} · n new · 1-9 open · ? help · space more ({hidden})")
-        }
-    }
+    format!(" / filter · p pin · {tab} · n new · 1-9 open · space page · ? help")
 }
 
 /// The section a Session belongs to in the home list. Days are bucketed on the
@@ -3104,10 +3087,11 @@ mod tests {
         // The prompt owns the landing screen, so a fixed `tab prompt` pointed at
         // the keyboard it already had. `Tab` swaps sides, so the hint follows
         // whoever is waiting for it.
-        assert!(home_hint(false, 0).contains("tab list"));
-        assert!(home_hint(true, 0).contains("tab prompt"));
-        // The folded-history count keeps its place at the end of the row.
-        assert!(home_hint(false, 12).ends_with("space more (12)"));
+        assert!(home_hint(false).contains("tab list"));
+        assert!(home_hint(true).contains("tab prompt"));
+        // `space` pages the list, so the hint says what it does rather than
+        // counting rows the window could not show anyway.
+        assert!(home_hint(false).contains("space page"));
     }
 
     #[test]
@@ -3305,29 +3289,29 @@ mod tests {
     }
 
     #[test]
-    fn a_tall_terminal_fills_its_first_page_from_the_viewport() {
-        // Opening at a fixed ten rows in a tall terminal asked for `space`
-        // before the screen was full. The first page is one viewport, and each
-        // `space` adds one more viewport of folded history.
+    fn a_screenful_is_a_screenful_and_space_pages_it() {
+        // The page used to be a fixed ten rows with the rest folded behind
+        // `space`, which stopped doing anything visible once the first page
+        // became a whole viewport: the rows it revealed were already past the
+        // bottom of the same window.
         let mut home = Home::new(home_theme());
         home.set_rows(
             (0..40)
                 .map(|index| home_row(&format!("ses_{index}"), &format!("title {index}"), None))
                 .collect(),
         );
-        assert_eq!(
-            home.visible_len(),
-            HOME_PAGE,
-            "nothing has measured a viewport yet"
-        );
+        // Every match is reachable before a frame has measured anything.
+        assert_eq!(home.visible_len(), 40);
         drawn(&mut home, 80, 20);
-        // Twenty rows: one of header, one of key hints, so the list gets
-        // eighteen. The frame that used to cost two more is gone.
-        assert_eq!(home.visible_len(), 18);
-        assert_eq!(home.hidden(), 22);
-        home.more();
-        assert_eq!(home.visible_len(), 36);
-        assert_eq!(home.hidden(), 4);
+        // Twenty rows: one of header and one of key hints, so one screenful
+        // is eighteen rows.
+        home.page();
+        assert_eq!(home.selected, 18);
+        home.page();
+        assert_eq!(home.selected, 36);
+        // Paging past the end stops on the last row instead of wrapping.
+        home.page();
+        assert_eq!(home.selected, 39);
     }
 
     #[test]
@@ -3340,12 +3324,8 @@ mod tests {
                 .map(|index| home_row(&format!("ses_{index}"), &format!("title {index}"), None))
                 .collect(),
         );
-        // The first frame measures the viewport; `space` reveals the history the
-        // selection needs to scroll through.
+        // The first frame measures the viewport the selection scrolls inside.
         drawn(&mut home, 80, 12);
-        home.more();
-        home.more();
-        home.more();
         home.select(30);
         let lines = drawn(&mut home, 80, 12);
         let mut named = 0usize;
