@@ -1866,13 +1866,18 @@ impl Pane for SidebarPane {
                         )));
                     }
                     lines.push(Line::from(Span::styled(
-                        format!("in {}  ·  out {}", usage.input_tokens, usage.output_tokens),
+                        format!(
+                            "in {}  ·  out {}",
+                            crate::status::compact_tokens(usage.input_tokens),
+                            crate::status::compact_tokens(usage.output_tokens)
+                        ),
                         Style::new().fg(palette.text_muted),
                     )));
                     lines.push(Line::from(Span::styled(
                         format!(
                             "cache {}  ·  turns {}",
-                            usage.cache_read_tokens, usage.turns
+                            crate::status::compact_tokens(usage.cache_read_tokens),
+                            usage.turns
                         ),
                         Style::new().fg(palette.text_muted),
                     )));
@@ -1887,7 +1892,7 @@ impl Pane for SidebarPane {
                                 usage.subagent_sessions,
                                 usage.subagent_turns,
                                 if usage.subagent_turns == 1 { "" } else { "s" },
-                                usage.subagent_input_tokens,
+                                crate::status::compact_tokens(usage.subagent_input_tokens),
                             ),
                             Style::new().fg(palette.text_muted),
                         )));
@@ -1919,8 +1924,8 @@ impl Pane for SidebarPane {
                                 "auxiliary {} call{}  ·  in {}  ·  out {}",
                                 usage.auxiliary_calls,
                                 if usage.auxiliary_calls == 1 { "" } else { "s" },
-                                usage.auxiliary_input_tokens,
-                                usage.auxiliary_output_tokens,
+                                crate::status::compact_tokens(usage.auxiliary_input_tokens),
+                                crate::status::compact_tokens(usage.auxiliary_output_tokens),
                             ),
                             Style::new().fg(palette.text_muted),
                         )));

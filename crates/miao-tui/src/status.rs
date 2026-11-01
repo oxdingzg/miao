@@ -4,6 +4,16 @@
 
 use serde_json::Value;
 
+/// Token counts as the TypeScript sidebar writes them: `1.4k`, `1.4m`. Raw
+/// digits stop being readable at a glance once a Session passes a few thousand.
+pub fn compact_tokens(tokens: u64) -> String {
+    match tokens {
+        0..=999 => tokens.to_string(),
+        1_000..=999_999 => format!("{:.1}k", tokens as f64 / 1_000.0),
+        _ => format!("{:.1}m", tokens as f64 / 1_000_000.0),
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UsageSummary {
     pub turns: u64,
