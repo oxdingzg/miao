@@ -1117,10 +1117,17 @@ fn local_utc_offset_ms() -> i64 {
 }
 
 fn relative_time(updated_at_ms: u64) -> String {
-    let now = std::time::SystemTime::now()
+    relative_time_at(updated_at_ms, now_ms())
+}
+
+pub fn now_ms() -> u64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(updated_at_ms);
+        .unwrap_or(0)
+}
+
+fn relative_time_at(updated_at_ms: u64, now: u64) -> String {
     let delta_ms = now.saturating_sub(updated_at_ms);
     let minutes = delta_ms / 60_000;
     match minutes {
@@ -1135,6 +1142,29 @@ fn relative_time(updated_at_ms: u64) -> String {
             }
         }
     }
+}
+
+/// How long a painted relative timestamp stays true. A label with minute
+/// resolution only changes on the next minute, one reading in hours only on the
+/// next hour, and so on; sleeping exactly that long is what keeps an idle TUI
+/// from repainting 60 times an hour to redraw text that cannot have changed.
+pub fn next_relative_change(updated_at_ms: u64, now: u64) -> std::time::Duration {
+    let delta_ms = now.saturating_sub(updated_at_ms);
+    let minutes = delta_ms / 60_000;
+    let until_ms = match minutes {
+        // "just now" becomes "1m ago" when the age reaches a minute.
+        0 => 60_000,
+        1..=59 => (minutes + 1) * 60_000,
+        _ => {
+            let hours = minutes / 60;
+            match hours {
+                // "Nh ago" changes when the hour rolls over.
+                1..=23 => (hours + 1) * 3_600_000,
+                _ => (hours / 24 + 1) * 86_400_000,
+            }
+        }
+    };
+    std::time::Duration::from_millis(until_ms.saturating_sub(delta_ms))
 }
 
 /// The streamed answer, rendered like the assistant entry it will become: the
@@ -2520,6 +2550,37 @@ mod tests {
         assert!(
             text.contains("wire the parser"),
             "the checklist is still shown: {text}"
+        );
+    }
+
+    #[test]
+    fn a_relative_timestamp_only_repaints_when_its_label_would_change() {
+        // PERF-04: an idle TUI must not wake once a minute to redraw text that
+        // cannot have changed. The wait is the distance to the next boundary.
+        let now = 1_000_000_000u64;
+        assert_eq!(
+            next_relative_change(now, now),
+            std::time::Duration::from_secs(60),
+            "\"just now\" becomes \"1m ago\" at the minute"
+        );
+        assert_eq!(
+            next_relative_change(now - 10_000, now),
+            std::time::Duration::from_secs(50)
+        );
+        assert_eq!(
+            next_relative_change(now - 330_000, now),
+            std::time::Duration::from_secs(30),
+            "5m30s becomes 6m ago in thirty seconds"
+        );
+        assert_eq!(
+            next_relative_change(now - 90 * 60_000, now),
+            std::time::Duration::from_secs(30 * 60),
+            "\"1h ago\" waits for the next hour, not the next minute"
+        );
+        assert_eq!(
+            next_relative_change(now - 3 * 86_400_000, now),
+            std::time::Duration::from_secs(86_400),
+            "a day-old label waits for the next day"
         );
     }
 

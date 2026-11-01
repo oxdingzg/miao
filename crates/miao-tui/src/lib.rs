@@ -154,15 +154,26 @@ async fn drive(
             return Ok(());
         }
         // An active run's status counts elapsed time and reports an engine that
-        // stopped answering, so it repaints every second. An idle Session changes
-        // only by the minute in relative timestamps, and input and engine events
-        // repaint immediately. Do not replay clock ticks after an editor.
-        let repaint = match app.busy() {
-            true => Duration::from_secs(1),
-            false => Duration::from_secs(60),
+        // stopped answering, so it repaints every second. An idle screen only
+        // changes when a relative timestamp would: "2h ago" stays true for
+        // another hour, and a screen with no timestamps does not change at all.
+        // Waking on that boundary instead of a fixed minute keeps an idle TUI
+        // from repainting sixty times an hour to redraw identical text. Input and
+        // engine events repaint immediately; clock ticks are never replayed after
+        // an editor.
+        let after = match app.busy() {
+            true => Some(Duration::from_secs(1)),
+            false => app.next_repaint(),
+        };
+        let repaint = async {
+            match after {
+                Some(after) => tokio::time::sleep(after).await,
+                None => std::future::pending().await,
+            }
         };
         tokio::select! {
             _ = termination.next() => return Ok(()),
+            _ = repaint => {}
             event = events.recv() => match event {
                 Some(app_event) => {
                     if matches!(&app_event, AppEvent::Focus(true) | AppEvent::Resize { .. }) {
@@ -210,7 +221,6 @@ async fn drive(
                 }
                 None => return Ok(()),
             },
-            _ = tokio::time::sleep(repaint) => {}
         }
     }
 }
