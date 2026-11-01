@@ -59,6 +59,12 @@ jobs:
       # Four matches a hosted runner's core count, so Linux is unaffected; on
       # macOS it bounds each of the three runners sharing a 16 GB host.
       CARGO_BUILD_JOBS: "4"
+      # Debug info is most of an engine test binary. One build host produced
+      # 70 GB of `target/debug/deps` for the crate's 181 test targets with the
+      # default profile, which is far more than a hosted runner has free.
+      # Line tables keep failure backtraces readable for a fraction of that.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     defaults:
       run:
         shell: bash
@@ -67,16 +73,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      # The self-hosted macOS runner shares one volume with every cached build
-      # tree. A full volume surfaces as unrelated link errors, or as a killed
-      # test process reported as SIGTERM. Fail with the actual reason instead.
-      - name: Require free disk (self-hosted runner)
-        if: matrix.os == 'macos-14'
+      # A full volume is the failure both legs keep reporting, and it surfaces
+      # as something unrelated: on the self-hosted macOS runner as link errors
+      # or a SIGTERM-killed test process, on the hosted Ubuntu runner as
+      # `rustc-LLVM ERROR: IO failure on output stream: No space left on
+      # device` halfway through compiling a shard. The hosted image also ships
+      # toolchains this crate never uses, which is the cheapest space to get
+      # back. Reclaim that, then refuse to start when what is left cannot hold
+      # a shard, so a disk problem names itself instead of looking like a
+      # broken merge.
+      - name: Reclaim unused runner disk (hosted runner)
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h "$RUNNER_TEMP"
+
+      - name: Require free disk
         run: |
           free=$(df -m "$RUNNER_TEMP" | awk 'NR==2 {print $4}')
           echo "free disk under $RUNNER_TEMP: ${free}MB"
-          if [ "${free:-0}" -lt 8000 ]; then
-            echo "::error::runner has ${free}MB free but needs 8000MB; prune ~/builds before rerunning"
+          if [ "${free:-0}" -lt 12000 ]; then
+            echo "::error::runner has ${free}MB free but an engine shard needs 12000MB; prune unused build trees before rerunning"
             exit 1
           fi
 
