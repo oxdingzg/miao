@@ -263,3 +263,30 @@ for (const name of explainCases) {
     expect(derived).toEqual(expected)
   })
 }
+
+// The two readers agreeing on a fixture corpus still leaves a gap: nothing
+// compared them at runtime. The engine can now print the document it actually
+// reads (`config json`), so this compares the binary's answer with the document
+// this reader produces for the same case.
+const engineBinary = process.env.MIAO_ENGINE_BIN
+for (const name of configCases) {
+  const caseDirectory = path.join(root, name)
+  if (fs.existsSync(path.join(caseDirectory, "sources.json"))) continue
+  if (!fs.existsSync(path.join(caseDirectory, "global"))) continue
+  test.skipIf(!engineBinary)(`the engine prints the same normalized document for ${name}`, async () => {
+    const child = Bun.spawn(
+      [engineBinary!, "config", "json", "--config-dir", path.join(caseDirectory, "global")],
+      { stdout: "pipe", stderr: "pipe" },
+    )
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ])
+    expect(stderr).toBe("")
+    expect(code).toBe(0)
+    const printed = JSON.parse(stdout)
+    const expected = JSON.parse(fs.readFileSync(path.join(caseDirectory, "expected-config.json"), "utf8"))
+    expect(printed).toEqual(expected)
+  })
+}
