@@ -696,11 +696,21 @@ fn selection_text(rendered: &[Vec<String>], inner: Rect, a: Position, b: Positio
 /// is scannable at ten, and the rest is one keypress away.
 const HOME_PAGE: usize = 10;
 
+/// The widest column the session list uses. A wider terminal does not make a
+/// wider row more readable: stretched across one, a title and its age sit a
+/// screen apart and the eye has no edge to follow down the list. Past this
+/// measure the column keeps its width and centers instead.
+const SESSION_COLUMN: u16 = 96;
+
 pub struct Home {
     pub rows: Vec<SessionSummary>,
     pub selected: usize,
     /// How many matching rows the list currently reveals.
     limit: usize,
+    /// How many rows one viewport shows. Measured by the renderer, so the first
+    /// screen comes up full instead of opening at a fixed ten rows in a tall
+    /// terminal and asking for `space` before it has shown anything.
+    capacity: usize,
     /// Case-insensitive substring the list is narrowed to. Empty shows
     /// everything, so filtering is a mode of the same list rather than a
     /// second screen whose selection has to be kept in step.
@@ -725,6 +735,7 @@ impl Home {
             rows: Vec::new(),
             selected: 0,
             limit: HOME_PAGE,
+            capacity: 0,
             query: String::new(),
             filtering: false,
             notice: None,
@@ -779,16 +790,22 @@ impl Home {
     /// both change this view, so every caller reads it instead of `rows`.
     /// Reveal one more page of history.
     pub fn more(&mut self) {
-        self.limit = self.limit.saturating_add(HOME_PAGE);
+        self.limit = self.page().saturating_add(self.capacity.max(HOME_PAGE));
     }
 
     /// Matching rows the list is not showing yet.
     fn hidden(&self) -> usize {
-        self.matched().len().saturating_sub(self.limit)
+        self.matched().len().saturating_sub(self.page())
+    }
+
+    /// Rows the list reveals: at least one viewport, plus one more page for
+    /// every time the operator asked for the folded history.
+    fn page(&self) -> usize {
+        self.limit.max(self.capacity)
     }
 
     fn visible(&self) -> Vec<&SessionSummary> {
-        self.matched().into_iter().take(self.limit).collect()
+        self.matched().into_iter().take(self.page()).collect()
     }
 
     fn matched(&self) -> Vec<&SessionSummary> {
@@ -896,7 +913,7 @@ impl Home {
             .collect()
     }
 
-    pub fn render(&self, frame: &mut Frame, area: Rect) {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
         let block = Block::bordered()
             .title(Span::styled(
@@ -909,6 +926,26 @@ impl Home {
             ))
             .border_style(Style::new().fg(palette.border_active))
             .style(Style::new().bg(palette.surface));
+        let inner = block.inner(area);
+        // A wide terminal does not buy a wider row: past this measure the list
+        // keeps one readable column and centers it, so a title and its age sit
+        // the same distance apart on every screen.
+        let column = inner.width.min(SESSION_COLUMN);
+        let gutter = " ".repeat(inner.width.saturating_sub(column) as usize / 2);
+        let mut notice_lines: Vec<Line<'static>> = self.warning_lines();
+        if let Some(notice) = &self.notice {
+            notice_lines.push(Line::from(Span::styled(
+                notice.clone(),
+                Style::new().fg(palette.error),
+            )));
+            notice_lines.push(Line::default());
+        }
+        // The hint owns the bottom row and notices take the top ones, so what
+        // is left over is what one viewport can actually show.
+        self.capacity = inner
+            .height
+            .saturating_sub(1)
+            .saturating_sub(notice_lines.len() as u16) as usize;
         let visible = self.visible();
         if visible.is_empty() {
             let mut lines = self.warning_lines();
@@ -932,18 +969,8 @@ impl Home {
             );
             return;
         }
-        let mut notice_lines: Vec<Line<'static>> = self.warning_lines();
-        if let Some(notice) = &self.notice {
-            notice_lines.push(Line::from(Span::styled(
-                notice.clone(),
-                Style::new().fg(palette.error),
-            )));
-            notice_lines.push(Line::default());
-        }
         // Group by recency, the way comparable session pickers do: a flat wall
         // of titles stops being scannable once a project has weeks of history.
-        let inner = block.inner(area);
-        let inner_width = inner.width as usize;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|duration| duration.as_millis() as u64)
@@ -962,7 +989,7 @@ impl Home {
                     body.push(Line::default());
                 }
                 body.push(Line::from(Span::styled(
-                    group.to_string(),
+                    format!("{gutter}{group}"),
                     Style::new()
                         .fg(palette.text_muted)
                         .add_modifier(Modifier::BOLD),
@@ -973,6 +1000,8 @@ impl Home {
             if selected {
                 selected_line = notice_lines.len() + body.len();
             }
+            // The selection paints the whole row, so it reads as a band across
+            // the column instead of a highlight under a single word.
             let style = if selected {
                 Style::new()
                     .fg(palette.primary)
@@ -980,6 +1009,10 @@ impl Home {
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::new().fg(palette.text)
+            };
+            let meta_style = match selected {
+                true => Style::new().fg(palette.text_muted).bg(palette.element),
+                false => Style::new().fg(palette.text_muted),
             };
             let marker = if selected { "▸ " } else { "  " };
             let mut meta = row.updated_at_ms.map(relative_time).unwrap_or_default();
@@ -992,30 +1025,28 @@ impl Home {
             }
             // Fit the title so the right edge keeps holding the age: at a
             // mixed-width font the character count and the cell count differ.
-            let fitted = match inner_width.checked_sub(meta.len() + 3) {
-                Some(room) => format!("{marker}{}", fit(row.label(), room)),
-                None => String::new(),
-            };
-            let pad =
-                inner_width.saturating_sub(UnicodeWidthStr::width(fitted.as_str()) + meta.len());
+            let measure = column as usize;
+            let room = measure.saturating_sub(UnicodeWidthStr::width(meta.as_str()) + 3);
+            let title = fit(row.label(), room);
+            let pad = measure.saturating_sub(
+                UnicodeWidthStr::width(marker)
+                    + UnicodeWidthStr::width(title.as_str())
+                    + UnicodeWidthStr::width(meta.as_str()),
+            );
             body.push(Line::from(vec![
-                Span::styled(fitted, style),
-                Span::styled(
-                    format!("{}{}", " ".repeat(pad), meta),
-                    Style::new().fg(palette.text_muted),
-                ),
+                Span::styled(format!("{gutter}{marker}{title}"), style),
+                Span::styled(format!("{}{meta}", " ".repeat(pad)), meta_style),
             ]));
-            // The preview answers "which conversation was this?" without
-            // opening it. One muted line under the row keeps the main line
-            // scannable; the engine already bounded the text.
-            if let Some(preview) = row.preview.as_deref() {
-                if selected {
-                    selected_tail += 1;
-                }
-                // A preview is a hint, not the conversation: one clipped line
-                // keeps the list scannable, and the engine already bounded it.
+            // The preview answers "which conversation was this?" for the row
+            // the cursor is on. Under every row it turned the list into a wall
+            // of prose that pushed the titles off the screen; one muted line
+            // under the selection keeps every other row to a single line, and
+            // the engine already bounded the text.
+            if let Some(preview) = row.preview.as_deref().filter(|_| selected) {
+                selected_tail += 1;
+                let room = measure.saturating_sub(4);
                 body.push(Line::from(Span::styled(
-                    format!("    {}", fit(preview, inner_width.saturating_sub(4))),
+                    format!("{gutter}    {}", fit(preview, room)),
                     Style::new().fg(palette.text_muted),
                 )));
             }
@@ -3070,6 +3101,130 @@ mod tests {
             .collect::<String>();
         assert!(visible.contains("itwasthestubconfig"), "{visible}");
         assert!(visible.contains("loginfix"), "{visible}");
+    }
+
+    fn home_theme() -> Theme {
+        Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        }
+    }
+
+    fn home_row(id: &str, title: &str, preview: Option<&str>) -> SessionSummary {
+        SessionSummary {
+            id: id.to_string(),
+            title: Some(title.to_string()),
+            parent_id: None,
+            // Eight hours back keeps every row inside "Today" however long the
+            // test machine has been up.
+            updated_at_ms: Some(now_ms().saturating_sub(8 * 3_600_000)),
+            archived_at_ms: None,
+            pinned_at_ms: None,
+            directory: None,
+            model: None,
+            credential_id: None,
+            preview: preview.map(str::to_string),
+        }
+    }
+
+    /// One entry per display row, one entry per cell. A row here is a grid
+    /// rather than a `String`, because a border cell is three bytes wide in the
+    /// buffer and one column wide on screen.
+    fn drawn(home: &mut Home, width: u16, height: u16) -> Vec<Vec<String>> {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
+                .expect("terminal");
+        terminal
+            .draw(|frame| home.render(frame, frame.area()))
+            .expect("draw");
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(width as usize)
+            .map(|row| row.iter().map(|cell| cell.symbol().to_string()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn a_wide_home_keeps_the_list_in_one_centered_column() {
+        // A row stretched across a wide terminal separates a title from its age
+        // by a screen. The column keeps its measure and centers, so the age
+        // holds one edge and the eye has one path down the list.
+        let mut home = Home::new(home_theme());
+        home.set_rows(vec![
+            home_row("ses_a", "login fix", None),
+            home_row("ses_b", "offset fix", None),
+        ]);
+        let lines = drawn(&mut home, 200, 12);
+        let gutter = ((200 - 2 - SESSION_COLUMN) / 2) as usize;
+        assert!(gutter > 0, "the frame is wider than the column");
+        // The list body stops one row short of the border: the bottom row is a
+        // full-width key hint, not a list row.
+        for line in &lines[1..lines.len() - 2] {
+            assert!(
+                line[1..1 + gutter]
+                    .iter()
+                    .all(|cell| cell.trim().is_empty()),
+                "the left margin stays empty: {line:?}"
+            );
+            assert!(
+                line[1 + gutter + SESSION_COLUMN as usize..line.len() - 1]
+                    .iter()
+                    .all(|cell| cell.trim().is_empty()),
+                "the right margin stays empty: {line:?}"
+            );
+        }
+        // An age ends on the column's right edge, not on the terminal's.
+        let age_end = 1 + gutter + SESSION_COLUMN as usize - 1;
+        for line in &lines[2..4] {
+            assert_eq!(line[age_end], "o", "{line:?}");
+        }
+    }
+
+    #[test]
+    fn only_the_selected_session_shows_its_preview() {
+        // A preview under every row turned the list into a wall of prose. One
+        // muted line under the cursor answers the same question for the row the
+        // operator is actually reading.
+        let mut home = Home::new(home_theme());
+        home.set_rows(vec![
+            home_row("ses_a", "login fix", Some("it was the stub config")),
+            home_row("ses_b", "offset fix", Some("the clock skipped hours")),
+        ]);
+        let visible = drawn(&mut home, 80, 12)
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(visible.contains("it was the stub config"), "{visible}");
+        assert!(!visible.contains("the clock skipped hours"), "{visible}");
+    }
+
+    #[test]
+    fn a_tall_terminal_fills_its_first_page_from_the_viewport() {
+        // Opening at a fixed ten rows in a tall terminal asked for `space`
+        // before the screen was full. The first page is one viewport, and each
+        // `space` adds one more viewport of folded history.
+        let mut home = Home::new(home_theme());
+        home.set_rows(
+            (0..40)
+                .map(|index| home_row(&format!("ses_{index}"), &format!("title {index}"), None))
+                .collect(),
+        );
+        assert_eq!(
+            home.visible_len(),
+            HOME_PAGE,
+            "nothing has measured a viewport yet"
+        );
+        drawn(&mut home, 80, 20);
+        // Twenty rows of frame: two of border and one of key hints, so the list
+        // gets seventeen.
+        assert_eq!(home.visible_len(), 17);
+        assert_eq!(home.hidden(), 23);
+        home.more();
+        assert_eq!(home.visible_len(), 34);
+        assert_eq!(home.hidden(), 6);
     }
 
     #[test]
