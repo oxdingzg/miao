@@ -264,7 +264,12 @@ async fn the_always_allow_script_projects_a_saved_rule_and_stops_asking() {
             .unwrap(),
     )
     .unwrap();
-    let mut fields: Vec<&str> = grant.as_object().unwrap().keys().map(String::as_str).collect();
+    let mut fields: Vec<&str> = grant
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
     fields.sort();
     assert_eq!(
         fields,
@@ -306,7 +311,10 @@ async fn a_persistent_grant_stops_covering_calls_once_the_agent_identity_changes
     assert!(wait_for_dispatch(&store, 1).await);
     finished(&store).await;
     runtime
-        .set_agent("s", serde_json::from_value(json!({"name":"other"})).unwrap())
+        .set_agent(
+            "s",
+            serde_json::from_value(json!({"name":"other"})).unwrap(),
+        )
         .await
         .unwrap();
     runtime.admit(read_call(1), true).await.unwrap();
