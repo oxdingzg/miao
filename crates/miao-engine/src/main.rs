@@ -147,12 +147,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(if result.is_ok() { 0 } else { 1 });
     }
     if args.first().map(String::as_str) == Some("config") {
+        // `json` prints the normalized document the engine actually reads, so a
+        // host can compare its own reader against it instead of trusting that
+        // the two implementations agree.
+        let verb = args.get(1).map(String::as_str);
+        let normalized = verb == Some("json");
+        // Both verbs are followed by the same flags; `explain` keeps working as
+        // it did, and a bare flag still parses for older callers.
+        let rest: &[String] = match verb {
+            Some("json") | Some("explain") => &args[2..],
+            _ => &args[1..],
+        };
         let sources =
-            match &args[1..] {
-                [command, flag, directory] if command == "explain" && flag == "--config-dir" => {
+            match rest {
+                [flag, directory] if flag == "--config-dir" => {
                     vec![miao_engine::config_derive::Source::Dir(directory.into())]
                 }
-                [command, flag, plan] if command == "explain" && flag == "--config-sources" => {
+                [flag, plan] if flag == "--config-sources" => {
                     let plan = if plan == "-" {
                         use std::io::Read;
                         let mut input = Vec::new();
@@ -169,14 +180,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     miao_engine::config_derive::plan(&plan)?
                 }
-                _ => return Err(
+                _ => return Err(if normalized {
+                    "Usage: miao-engine config json --config-dir PATH | --config-sources JSON|-"
+                } else {
                     "Usage: miao-engine config explain --config-dir PATH | --config-sources JSON|-"
-                        .into(),
-                ),
+                }
+                .into()),
             };
-        let report =
-            tokio::task::spawn_blocking(move || miao_engine::config_explain::report(&sources))
-                .await??;
+        let report = tokio::task::spawn_blocking(move || match normalized {
+            true => miao_engine::config_derive::normalized_from_sources(&sources),
+            false => miao_engine::config_explain::report(&sources),
+        })
+        .await??;
         let output = serde_json::to_vec(&report)?;
         if output.len() > 8 * 1024 * 1024 {
             return Err("config explanation exceeds 8 MiB".into());

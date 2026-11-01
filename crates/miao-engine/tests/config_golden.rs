@@ -266,3 +266,45 @@ fn explained_provenance_matches_every_golden_case() {
         );
     }
 }
+
+/// The engine can print the normalized document at runtime, so a host can
+/// compare its own reader against the one that runs instead of trusting the
+/// fixture corpus alone. This pins the command to the same corpus.
+#[test]
+fn the_config_json_command_prints_the_normalized_document() {
+    let cases = golden_cases("expected-config.json");
+    assert!(!cases.is_empty(), "the corpus lost its normalized cases");
+    for case in cases {
+        // Only directory cases: a `sources.json` case needs the ordered plan,
+        // which this command also accepts, but the plan is the host's job.
+        if case.join("sources.json").exists() {
+            continue;
+        }
+        let directory = case.join("global");
+        if !directory.is_dir() {
+            continue;
+        }
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+            .args(["config", "json", "--config-dir"])
+            .arg(&directory)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{} failed: {}",
+            case.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let printed: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let expected: Value = serde_json::from_str(
+            &std::fs::read_to_string(case.join("expected-config.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            printed,
+            expected,
+            "{} differs from its golden document",
+            case.display()
+        );
+    }
+}
