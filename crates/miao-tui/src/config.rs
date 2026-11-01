@@ -45,6 +45,9 @@ pub struct Config {
     /// in a burst. The TypeScript host uses a trackpad model; here a burst is a
     /// run of notches inside the same short window.
     pub scroll_acceleration: bool,
+    /// How long an armed leader waits for its chord key, in milliseconds. The
+    /// TypeScript host calls this `leader_timeout` and defaults it to 2000.
+    pub leader_timeout_ms: u64,
     /// `None` leaves the terminal's own cursor shape alone.
     pub cursor: Option<Cursor>,
     /// `keybinds` entries, flattened to action name → strokes. `None` means the
@@ -59,6 +62,7 @@ impl Default for Config {
             mouse: true,
             scroll_speed: 3.0,
             scroll_acceleration: false,
+            leader_timeout_ms: 2000,
             cursor: None,
             keybinds: BTreeMap::new(),
         }
@@ -199,6 +203,15 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
     }
     if let Some(acceleration) = field("scroll_acceleration") {
         merge_scroll_acceleration(acceleration, path, config, warnings);
+    }
+    if let Some(timeout) = field("leader_timeout") {
+        match timeout.as_u64() {
+            Some(timeout) if timeout > 0 => config.leader_timeout_ms = timeout,
+            _ => warnings.push(format!(
+                "tui config {}: leader_timeout must be a positive number of milliseconds, ignoring",
+                path.display()
+            )),
+        }
     }
     if let Some(keybinds) = field("keybinds") {
         merge_keybinds(keybinds, path, config, warnings);
@@ -517,6 +530,28 @@ mod tests {
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(config.scroll_speed, 6.0);
         assert!(!config.scroll_acceleration);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn leader_timeout_comes_from_the_typescript_key() {
+        // INP-07: the host's `leader_timeout` (milliseconds, default 2000) has
+        // to reach the keymap, or a chord window is whatever the code assumes.
+        let dir = temp_dir("leader");
+        let (config, warnings) = merge_at(r#"{"leader_timeout": 500}"#, &dir);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(config.leader_timeout_ms, 500);
+
+        for bad in ["0", "-1", "\"soon\""] {
+            let (config, warnings) = merge_at(&format!(r#"{{"leader_timeout": {bad}}}"#), &dir);
+            assert_eq!(config.leader_timeout_ms, 2000, "{bad}");
+            assert!(
+                warnings
+                    .iter()
+                    .any(|warning| warning.contains("leader_timeout")),
+                "{bad}: {warnings:?}"
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
