@@ -45,7 +45,8 @@ Usage:
   miao memory           summarise the workspace knowledge store
   miao db path          print the engine database path this directory resolves to
   miao completion SHELL print a completion script (bash or zsh)
-  miao debug paths|info|mcp|lsp read-only diagnostics
+  miao debug paths|info|mcp|lsp|routes
+                        read-only diagnostics
   miao web              serve and print the address to open
   miao attach URL       probe a running miao server
   miao remote           show this machine's pairing state
@@ -1094,6 +1095,147 @@ fn mcp_servers(config_dir: Option<&std::path::Path>) -> Result<Vec<serde_json::V
     Ok(Vec::new())
 }
 
+/// Derive the engine's model-route manifest from the product configuration.
+///
+/// The engine's catalogue only ever comes from `--model-routes-config`, so
+/// without this a TUI model picker has nothing to list. Each route names its
+/// own credential source, which is what makes switching between providers
+/// actually authenticate.
+fn model_routes(
+    config_dir: Option<&std::path::Path>,
+    requested: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    let Some(dir) = config_dir else { return Ok(Vec::new()) };
+    let mut parsed: Option<serde_json::Value> = None;
+    for name in ["miao.jsonc", "miao.json"] {
+        let path = dir.join(name);
+        if !path.is_file() {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        parsed = Some(
+            serde_json::from_str(&strip_comments(&text))
+                .map_err(|error| format!("{}: {error}", path.display()))?,
+        );
+        break;
+    }
+    let Some(parsed) = parsed else { return Ok(Vec::new()) };
+    let Some(providers) = parsed.get("providers").and_then(|value| value.as_object()) else {
+        return Ok(Vec::new());
+    };
+    let default_model = parsed.get("model").and_then(|value| value.as_str()).unwrap_or("");
+    let credential_db = std::env::var("MIAO_ENGINE_CREDENTIAL_DB").unwrap_or_else(|_| {
+        std::env::var_os("HOME")
+            .map(|home| {
+                std::path::PathBuf::from(home)
+                    .join(".local/share/miao/miao.db")
+                    .display()
+                    .to_string()
+            })
+            .unwrap_or_default()
+    });
+    // Which stored credential belongs to an integration, so a route can name it.
+    let credential_id = |integration: &str| -> Option<String> {
+        let connection = rusqlite::Connection::open_with_flags(
+            &credential_db,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .ok()?;
+        connection
+            .query_row(
+                "SELECT id FROM credential WHERE integration_id=?1 AND label='default' LIMIT 1",
+                rusqlite::params![integration],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+    };
+    let mut routes = Vec::new();
+    for (provider_id, provider) in providers {
+        let api = provider.get("api").cloned().unwrap_or(serde_json::Value::Null);
+        // Some providers carry the URL per model instead of on the provider.
+        let provider_url = api.get("url").and_then(|value| value.as_str()).unwrap_or("");
+        let package = format!(
+            "{}{}",
+            api.get("package").and_then(|value| value.as_str()).unwrap_or(""),
+            api.get("type").and_then(|value| value.as_str()).unwrap_or("")
+        );
+        // The engine posts to the endpoint verbatim, so an OpenAI-compatible
+        // base URL needs its completions path appended here.
+        let protocol = if package.contains("anthropic") {
+            "anthropic"
+        } else if package.contains("google") || package.contains("gemini") {
+            "gemini"
+        } else {
+            "openai-chat"
+        };
+        let credential = match credential_id(provider_id) {
+            Some(id) => serde_json::json!({
+                "type": "database",
+                "path": credential_db,
+                "id": id,
+                "integration": provider_id,
+            }),
+            None => serde_json::json!({
+                "type": "environment",
+                "key": format!("{}_API_KEY", provider_id.to_uppercase().replace('-', "_")),
+            }),
+        };
+        if let Some(models) = provider.get("models").and_then(|value| value.as_object()) {
+            for (model_id, model) in models {
+                // A provider may carry its URL per model; fall back to the
+                // provider-level one. The engine posts to the endpoint verbatim,
+                // so an OpenAI-compatible base URL needs the completions path.
+                let model_url = model
+                    .get("api")
+                    .and_then(|value| value.get("url"))
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
+                let base_url = if model_url.is_empty() { provider_url } else { model_url };
+                let endpoint = match protocol {
+                    "openai-chat" if !base_url.is_empty() && !base_url.ends_with("/chat/completions") => {
+                        format!("{}/chat/completions", base_url.trim_end_matches('/'))
+                    }
+                    _ => base_url.to_string(),
+                };
+                // A route without an endpoint cannot be called, and one bad
+                // entry makes the whole manifest fail to load: skip it instead.
+                if endpoint.is_empty() {
+                    continue;
+                }
+                let mut route = serde_json::json!({
+                    "id": model_id,
+                    "provider": protocol,
+                    "model": model_id,
+                    "endpoint": endpoint,
+                    "credential": credential,
+                    "primary": model_id == default_model,
+                });
+                if let Some(limit) = model.get("limit") {
+                    route["limit"] = limit.clone();
+                }
+                if let Some(modalities) = model
+                    .get("capabilities")
+                    .and_then(|value| value.get("input"))
+                    .and_then(|value| value.as_array())
+                {
+                    route["input_modalities"] = serde_json::Value::Array(modalities.clone());
+                }
+                routes.push(route);
+            }
+        }
+    }
+    // Exactly one route must be primary: the model actually being asked for,
+    // falling back to the first usable route when the name is not configured.
+    if !routes.is_empty() && !routes.iter().any(|route| route["primary"] == true) {
+        let index = routes
+            .iter()
+            .position(|route| route["id"].as_str() == Some(requested))
+            .unwrap_or(0);
+        routes[index]["primary"] = serde_json::json!(true);
+    }
+    Ok(routes)
+}
+
 /// Map the product's `lsp` section onto the engine's `lsp::Config` array: the
 /// engine discovers servers from this manifest, so without it the `lsp_*` tools
 /// have nothing to talk to.
@@ -1212,6 +1354,18 @@ fn debug(rest: &[String]) -> Result<(), String> {
             println!("config    {}", config.as_ref().map(|dir| dir.display().to_string()).unwrap_or_else(|| "unset".into()));
             let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             println!("workspace {}", workspace.display());
+            Ok(())
+        }
+        Some("routes") => {
+            let config = std::env::var_os("MIAO_CONFIG_DIR")
+                .map(PathBuf::from)
+                .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao")));
+            let routes = model_routes(config.as_deref(), "")?;
+            if routes.is_empty() {
+                println!("no model routes configured");
+            } else {
+                println!("{}", serde_json::to_string(&routes).unwrap_or_default());
+            }
             Ok(())
         }
         Some("lsp") => {
@@ -1907,6 +2061,12 @@ fn engine_argv_with(
         argv.push("--config-dir".into());
         argv.push(dir.display().to_string());
     }
+    // Deriving the manifest is verified by `debug routes`, but the engine still
+    // rejects a derived primary route ("invalid default model route"), so the
+    // argv injection stays off until that shape is understood. Leaving it on
+    // would break every run.
+    let _ = &model_routes;
+    let derived_routes = false;
     if let Ok(servers) = lsp_servers(config_dir) {
         if !servers.is_empty() {
             if let Ok(encoded) = serde_json::to_string(&servers) {
@@ -1931,6 +2091,16 @@ fn engine_argv_with(
         ("MIAO_ENGINE_CREDENTIAL_INTEGRATION", "--credential-integration"),
         ("MIAO_ENGINE_MODEL_ROUTES_CONFIG", "--model-routes-config"),
     ] {
+        // A derived manifest names a credential per route; passing the single
+        // credential pair as well makes the engine demand an id it does not need.
+        if derived_routes
+            && matches!(
+                variable,
+                "MIAO_ENGINE_CREDENTIAL_DB" | "MIAO_ENGINE_CREDENTIAL_ID" | "MIAO_ENGINE_CREDENTIAL_INTEGRATION"
+            )
+        {
+            continue;
+        }
         if let Some(value) = env(variable) {
             argv.push(flag.into());
             argv.push(value);
