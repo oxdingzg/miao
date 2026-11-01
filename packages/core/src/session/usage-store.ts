@@ -138,6 +138,16 @@ export const projectStepEnded = Effect.fn("SessionUsageStore.projectStepEnded")(
 ) {
   const model = event.data.model ?? (yield* resolveModel(db, event.data.sessionID))
   if (!model) return false
+  // The session's parent link attributes the turn: subagent sessions carry
+  // their parent's id, the main session has none. The catalog rates priced
+  // the turn, so the source is the catalog by construction.
+  const parent = yield* db
+    .select({ parentID: SessionTable.parent_id })
+    .from(SessionTable)
+    .where(eq(SessionTable.id, event.data.sessionID))
+    .get()
+    .pipe(Effect.orDie)
+  const role = parent?.parentID ? "subagent" : "main"
   const inserted = yield* db
     .insert(SessionTurnUsageTable)
     .values({
@@ -148,6 +158,8 @@ export const projectStepEnded = Effect.fn("SessionUsageStore.projectStepEnded")(
       model_id: model.id,
       variant: model.variant,
       finish: event.data.finish,
+      role,
+      price_source: "catalog",
       cost: event.data.cost,
       tokens_input: event.data.tokens.input,
       tokens_output: event.data.tokens.output,
