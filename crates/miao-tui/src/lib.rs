@@ -20,6 +20,7 @@ pub mod markdown;
 pub mod pane;
 pub mod platform;
 pub mod saved_permissions;
+pub mod scroll;
 pub mod session;
 pub mod state;
 pub mod status;
@@ -81,6 +82,7 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         !std::env::var("MIAO_DISABLE_TERMINAL_TITLE")
             .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true")),
     );
+    app.configure_scroll(config.scroll_speed, config.scroll_acceleration);
     let preferences = terminal::Preferences {
         mouse: config.mouse,
         cursor: config.cursor,

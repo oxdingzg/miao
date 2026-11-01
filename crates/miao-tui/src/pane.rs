@@ -71,6 +71,13 @@ impl Shell {
         self.transcript.set_draft(text, reasoning);
     }
 
+    /// Where the transcript is scrolled to, in rows from the oldest one. A test
+    /// asserts a wheel step exactly instead of inferring it from `following`.
+    #[cfg(test)]
+    pub fn transcript_scroll(&self) -> u16 {
+        self.transcript.scroll
+    }
+
     #[cfg(test)]
     pub fn draft(&mut self) -> &[Line<'static>] {
         // A frame would refresh the throttled draft; a test reads it directly.
@@ -415,11 +422,17 @@ impl TranscriptPane {
     /// the viewport scrolls; the logical lines are a fallback before the first
     /// frame.
     fn max_scroll(&self) -> u16 {
-        let rows = self.body.len() + self.draft_rows.len();
-        match rows {
-            0 => self.lines.len().saturating_sub(1) as u16,
-            rows => rows.saturating_sub(1) as u16,
-        }
+        let rows = match self.body.len() + self.draft_rows.len() {
+            0 => self.lines.len(),
+            rows => rows,
+        };
+        // `render` parks the tail at `rows - viewport`, so that is the largest
+        // offset a scroll may reach. Clamping at `rows - 1` used to leave a
+        // wheel scrolling back towards the newest turn short of the tail, and
+        // `follow` then stayed off until the operator overscrolled. Before the
+        // first frame the viewport is unknown and the logical lines are the
+        // fallback.
+        rows.saturating_sub(self.area.height as usize) as u16
     }
 
     fn refresh_draft(&mut self, force: bool) {
