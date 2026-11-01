@@ -3,7 +3,7 @@ export * as Config from "./config"
 import { makeLocationNode } from "./effect/app-node"
 import path from "path"
 import { type ParseError, parse } from "jsonc-parser"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema, SchemaIssue } from "effect"
 import { FSUtil } from "./fs-util"
 import { Flag } from "./flag/flag"
 import { Global } from "./global"
@@ -133,8 +133,18 @@ const layer = Layer.effect(
               message: errors.map((error) => `${error.error} at offset ${error.offset}`).join("; "),
             }),
           )
-        const invalid = (error: { message: string }) =>
-          new ConfigErrorV1.InvalidError({ path: origin, message: error.message })
+        // A schema-invalid document names the file, the failing key paths, and
+        // the value's problem, so the operator can fix the value instead of
+        // guessing which key a lone message is about.
+        const invalid = (error: Schema.SchemaError) =>
+          new ConfigErrorV1.InvalidError({
+            path: origin,
+            message: error.message,
+            issues: SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues.map((issue) => ({
+              message: issue.message,
+              path: (issue.path ?? []).map(String),
+            })),
+          })
         const info = yield* ConfigMigrateV1.isV1(input)
           ? Effect.mapError(
               Effect.flatMap(Schema.decodeUnknownEffect(ConfigV1.Info, decodeOptions)(input), (v1) =>
