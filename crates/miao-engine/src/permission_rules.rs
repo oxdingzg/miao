@@ -220,7 +220,18 @@ mod tests {
                 .unwrap();
         for case in fixture["cases"].as_array().unwrap() {
             let request: Request = serde_json::from_value(case["request"].clone()).unwrap();
-            let outcome = evaluate(&request).unwrap();
+            let mut outcome = evaluate(&request).unwrap();
+            // A case that names a mode pins what the product does with an ask
+            // once the agent runs in `auto`; the corpus stores the settled
+            // effect, so the same transform the host applies has to run here.
+            if case["mode"].as_str() == Some("auto") && outcome.effect == Decision::Ask {
+                let settled = request.resources.first().is_some_and(|command| {
+                    crate::agent_classifier::bash(command) == crate::agent_classifier::Verdict::Safe
+                });
+                if settled {
+                    outcome.effect = Decision::Allow;
+                }
+            }
             assert_eq!(
                 serde_json::to_value(outcome.effect).unwrap(),
                 case["expected"]["effect"],
