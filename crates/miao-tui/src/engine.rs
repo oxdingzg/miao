@@ -590,6 +590,7 @@ fn args(
         ("MIAO_ENGINE_PROVIDER", "--provider"),
         ("MIAO_ENGINE_ENDPOINT", "--endpoint"),
         ("MIAO_ENGINE_POLICY", "--policy"),
+        ("MIAO_ENGINE_AGENT_CONFIG", "--agent-config"),
         ("MIAO_ENGINE_CREDENTIAL_DB", "--credential-db"),
         ("MIAO_ENGINE_CREDENTIAL_ID", "--credential-id"),
         (
@@ -1290,6 +1291,15 @@ async fn run(
                         // it describe something that just happened.
                         if let Some((kind, id)) = attention_event(&event) {
                             bus.send(AppEvent::Attention { kind, id });
+                        }
+                        // The attention path is filtered by the snapshot cursor,
+                        // so an approval that predates it would surface nowhere.
+                        // Refreshing on the event itself keeps the panel honest.
+                        if matches!(
+                            event.kind.as_str(),
+                            "approval.requested" | "approval.resolved" | "question.requested"
+                        ) {
+                            dirty.get_or_insert_with(Instant::now);
                         }
                         // Retries and tool calls are durable, so the live status
                         // reads them from the journal rather than the ephemeral

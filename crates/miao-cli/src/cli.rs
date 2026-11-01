@@ -1197,6 +1197,22 @@ fn prepare_tui_engine(launch: &miao_tui::Launch) {
             }
         }
     }
+    // The TUI passes no agent manifest, so the engine keeps its `ask` default
+    // and every tool call blocks on an approval the UI then has to surface.
+    // Hand over the same auto-settling manifest `run` uses.
+    if std::env::var_os("MIAO_ENGINE_AGENT_CONFIG").is_none() {
+        let instructions = assemble_instructions(&launch.workspace, config_dir.as_deref())
+            .unwrap_or_default();
+        let manifest = serde_json::json!({
+            "name": "miao",
+            "instructions": instructions,
+            "permission_mode": "auto",
+        });
+        let path = std::env::temp_dir().join(format!("miao-tui-agent-{}.json", std::process::id()));
+        if std::fs::write(&path, manifest.to_string()).is_ok() {
+            std::env::set_var("MIAO_ENGINE_AGENT_CONFIG", path);
+        }
+    }
     if let Ok(encoded) = serde_json::to_string(&routes) {
         if encoded.len() <= 65536 {
             let path = std::env::temp_dir().join(format!("miao-tui-routes-{}.json", std::process::id()));
