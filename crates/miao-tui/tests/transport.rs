@@ -106,10 +106,9 @@ async fn a_respawned_connection_replays_every_subscription_from_its_last_cursor(
         // The fake exits without answering, so this call settles closed.
         assert!(client.request("exit", json!({})).await.is_err());
     }
-    assert!(matches!(
-        next(&mut events).await,
-        TransportEvent::Failure(_)
-    ));
+    // The fake engine exits cleanly, which is a restart rather than a fault:
+    // the connection reports it so the UI can keep the Session open.
+    assert!(matches!(next(&mut events).await, TransportEvent::Restart));
 
     let client = connection.connect().await.expect("reconnect");
     let after = loop {
