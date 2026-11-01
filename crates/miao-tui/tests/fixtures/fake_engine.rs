@@ -125,6 +125,26 @@ fn main() {
                 send(&mut out, json!({"method":"event","params":finished}));
                 next += 1;
             }
+            // A small, complete change set so the review surface can be driven.
+            "vcs_status" if sessions => {
+                send(
+                    &mut out,
+                    json!({"id":id,"result":{
+                        "repository":true,
+                        "branch":"main",
+                        "detached":false,
+                        "ahead":1,
+                        "behind":0,
+                        "truncated":false,
+                        "file_count":3,
+                        "files":[
+                            {"path":"src/parser.rs","kind":"modified"},
+                            {"path":"src/main.rs","kind":"modified"},
+                            {"path":"docs/notes.md","kind":"added"}
+                        ]
+                    }}),
+                );
+            }
             "subscribe" => {
                 let after = frame["params"]["after"].as_u64().unwrap_or(0);
                 session_id = frame["params"]["session_id"]

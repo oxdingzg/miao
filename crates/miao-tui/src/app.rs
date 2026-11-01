@@ -748,6 +748,10 @@ impl App {
             Some(keybinds::Action::SkillList) => self.open_skills(),
             Some(keybinds::Action::DeviceList) => self.open_devices(),
             Some(keybinds::Action::WorkspaceList) => self.open_workspaces(),
+            // Reviewing the working tree had no direct key: it was reachable
+            // only through the command list or a slash command whose completion
+            // swallows the first Enter.
+            Some(keybinds::Action::WorkspaceChanges) => self.run_builtin(Builtin::WorkspaceChanges),
             Some(keybinds::Action::WorkspaceCreate) => self.create_workspace(),
             Some(keybinds::Action::MessageView) => self.open_message(),
             Some(keybinds::Action::ToolOutputToggle) => {
@@ -3829,6 +3833,20 @@ mod tests {
         assert_eq!(app.shell.composer.editor.text(), "second prompt");
         app.handle(key(KeyCode::Down, KeyModifiers::NONE));
         assert!(app.shell.composer.editor.is_empty());
+    }
+
+    #[test]
+    fn the_leader_chord_opens_the_workspace_changes_view() {
+        // Reviewing the working tree had no direct key: it was reachable only
+        // through the command list or a slash command with a completion step.
+        // One leader chord now opens it.
+        let mut app = engine_session_app();
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
+        app.handle(key(KeyCode::Char('g'), KeyModifiers::NONE));
+        assert!(
+            matches!(app.dialog, Some(Dialog::WorkspaceChanges(_))),
+            "the chord did not open the changes view"
+        );
     }
 
     #[test]
