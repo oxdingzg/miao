@@ -57,7 +57,20 @@ bun docs/experiments/2026-10-28-ts-runner-retirement/generate.cjs
 | `materialize-files.ts` | `core/src/session.ts`                                                               | **已迁出**至 `session/materialize-files.ts`；`runner/` 兼容壳已删除      |
 | `index.ts`             | Session 公共错误类型、execution 接口、local runner                                  | 在独立 PR 解开类型/服务耦合，再删除 TS 执行接口                         |
 | `provider-headers.ts`  | `session/native-title.ts`（runner 外）                                              | **已迁出**至 `packages/core/src/session/provider-headers.ts`；runner 改为从该处导入 |
-| 其余 runner 文件       | 主要由 `llm.ts` 与 runner 内部消费                                                  | 以清单及删除时的新依赖检查为准，随 TS loop 分批退役                     |
+| 其余 runner 文件       | **逐文件实测见下表**（原先概括为「主要由 `llm.ts` 与 runner 内部消费」，经复核不成立） | 以实测消费者为准，随 TS loop 分批退役                                   |
+
+实测方法（基线 `4d887a1337`）：对每个 runner 文件统计 `packages/` 与 `apps/` 下、runner 目录之外的导入者。结果：
+
+| 模块                | runner 外的消费者                                        | 性质     |
+| ------------------- | -------------------------------------------------------- | -------- |
+| `llm.ts`            | `core/src/location-services.ts`、3 个测试                 | **生产** |
+| `to-llm-message.ts` | `core/src/session/side-question.ts`、1 个测试             | **生产** |
+| `index.ts`          | `core/src/session/execution/local.ts`、3 个测试           | **生产** |
+| `max-steps.ts`      | 无                                                       | —        |
+| 其余 7 个模块       | 仅测试（`first-byte-guard`、`metrics`、`model-io`、`output-guard`、`provider-retry`、`publish-llm-event`、`tool-input-guard`） | 仅测试 |
+
+结论：runner 目录之外真正的**生产**耦合只有三处（`location-services`、`side-question`、`execution/local`），
+其余模块的消费者都是测试。退役顺序应按这三处推进，而不是按「runner 内部消费」的概括判断。
 
 注：本表上一版把 `provider-headers.ts` 归入「其余 runner 文件」，与事实不符——它当时已有
 runner 外的消费者（`session/native-title.ts`）。这也是为什么该行单独列出：清单本身需要
