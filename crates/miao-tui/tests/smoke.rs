@@ -730,6 +730,9 @@ fn an_approval_is_answered_from_the_panel() {
         "the status line did not name the blocking approval"
     );
     harness.write(b"1");
+    // VAL-03's approval task: one key decides, and the number worth having is how
+    // long the decision takes to reach the engine.
+    let decided = Instant::now();
     let log = harness.dir.join("admit.log");
     let start = Instant::now();
     let mut recorded = String::new();
@@ -743,6 +746,12 @@ fn an_approval_is_answered_from_the_panel() {
     assert!(
         recorded.contains("\"decision\":\"allow\""),
         "approve never reached the engine: {recorded}"
+    );
+    let decision_ms = decided.elapsed().as_millis();
+    println!("VAL-03 approval-decision: {decision_ms} ms from the key");
+    assert!(
+        decision_ms < 2_000,
+        "the decision took {decision_ms} ms to reach the engine"
     );
     assert!(
         recorded.contains("run-1/call_1"),
