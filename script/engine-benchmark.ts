@@ -581,6 +581,8 @@ const models = parse
   .concat(parse.string("--model") ? [parse.string("--model")!] : [])
   .filter(Boolean)
 const repeat = parse.number("--repeat", 1)
+/// Per-task budget in dollars for "tasks within budget"; 0 leaves it unset.
+const budget = parse.number("--budget", 0)
 const storage = parse.string("--storage") ?? path.join(os.tmpdir(), "miao-bench-storage")
 const out = parse.string("--out")
 const data = parse.string("--data")
@@ -813,6 +815,40 @@ for (const model of activeModels) {
         ).toFixed(0)} |`,
       )
     }
+  }
+}
+lines.push("")
+lines.push("## Totals (all attempts)")
+lines.push("")
+lines.push(
+  `Success rate counts every attempt, so a retried task also contributes its failed samples. \`$ per verified success\` divides the priced cost of passing attempts by the number of passing attempts; one passing attempt without provider-reported cost makes the figure \`unknown\` instead of cheap. \`tasks within budget\` counts, per task, whether its cheapest priced passing attempt fits ${budget > 0 ? `\`--budget $${budget}\`` : "the budget (none set)"}.`,
+)
+lines.push("")
+lines.push("| model | engine | attempts | passed | success rate | total $ | $ per verified success | tasks within budget |")
+lines.push("|---|---|---|---|---|---|---|---|")
+for (const model of activeModels) {
+  for (const engine of engines) {
+    const rows = attempts.filter((row) => row.model === model && row.engine === engine)
+    if (rows.length === 0) continue
+    const passed = rows.filter((row) => row.ok)
+    const total =
+      rows.every((row) => row.costUnknown === 0) ? `$${rows.reduce((sum, row) => sum + row.cost, 0).toFixed(4)}` : "unknown"
+    const pricedPassed = passed.filter((row) => row.costUnknown === 0)
+    const perSuccess =
+      passed.length === 0
+        ? "—"
+        : pricedPassed.length === passed.length
+          ? `$${(pricedPassed.reduce((sum, row) => sum + row.cost, 0) / passed.length).toFixed(4)}`
+          : "unknown"
+    const within = tasks.filter((task) => {
+      const cheapest = passed
+        .filter((row) => row.task === task.id && row.costUnknown === 0)
+        .map((row) => row.cost)
+      return cheapest.length > 0 && Math.min(...cheapest) <= budget
+    }).length
+    lines.push(
+      `| ${model} | ${engine} | ${rows.length} | ${passed.length} | ${passed.length}/${rows.length} (${((passed.length / rows.length) * 100).toFixed(0)}%) | ${total} | ${perSuccess} | ${budget > 0 ? `${within}/${tasks.length}` : "—"} |`,
+    )
   }
 }
 lines.push("")
