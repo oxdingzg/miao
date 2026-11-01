@@ -23,7 +23,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 /// Catalog reads that a timeout must not take the whole transport down with:
 /// their durable outcome needs no inspection before a retry. A timed-out
 /// mutation retires the transport, exactly like the TS host client.
-const READ_ONLY_METHODS: [&str; 7] = [
+const READ_ONLY_METHODS: [&str; 8] = [
     "snapshot",
     "sessions",
     "history",
@@ -31,6 +31,7 @@ const READ_ONLY_METHODS: [&str; 7] = [
     "usage",
     "timer_sessions",
     "permission_pattern_list",
+    "recall",
 ];
 
 /// One durable committed event, in the vocabulary of the engine's `event`

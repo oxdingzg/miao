@@ -34,12 +34,13 @@ pub enum Builtin {
     Redraw,
     Suspend,
     TerminalTitle,
+    Recall,
     Help,
     Quit,
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 21] = [
+    pub const ALL: [Builtin; 22] = [
         Builtin::Models,
         Builtin::Permissions,
         Builtin::WorkspaceChanges,
@@ -59,6 +60,7 @@ impl Builtin {
         Builtin::Redraw,
         Builtin::Suspend,
         Builtin::TerminalTitle,
+        Builtin::Recall,
         Builtin::Help,
         Builtin::Quit,
     ];
@@ -85,6 +87,7 @@ impl Builtin {
             Builtin::Redraw => "redraw",
             Builtin::Suspend => "suspend",
             Builtin::TerminalTitle => "terminal-title",
+            Builtin::Recall => "recall",
             Builtin::Help => "help",
             Builtin::Quit => "quit",
         }
@@ -121,6 +124,7 @@ impl Builtin {
             Builtin::Redraw => "Redraw terminal",
             Builtin::Suspend => "Suspend to shell",
             Builtin::TerminalTitle => "Toggle terminal title",
+            Builtin::Recall => "Restore an archived tool output by handle",
             Builtin::Help => "Keys and commands",
             Builtin::Quit => "Quit miao",
         }
@@ -154,6 +158,7 @@ impl Builtin {
                 }
             }
             Builtin::TerminalTitle => "",
+            Builtin::Recall => "",
             Builtin::Help => "",
             Builtin::Quit => "<leader>q",
         }
@@ -641,6 +646,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp dir");
         dir
+    }
+
+    #[test]
+    fn recall_is_a_builtin_an_operator_can_find() {
+        // `/recall` restores an archived tool output; it has to be discoverable
+        // in the palette and answer its own name, like every other builtin.
+        assert_eq!(Builtin::from_name("recall"), Some(Builtin::Recall));
+        assert!(Builtin::ALL.contains(&Builtin::Recall));
+        assert_eq!(
+            Builtin::Recall.label(),
+            "Restore an archived tool output by handle"
+        );
+        assert_eq!(
+            split("/recall call_abc"),
+            Some(("recall".into(), "call_abc".into()))
+        );
     }
 
     #[test]

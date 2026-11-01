@@ -185,6 +185,35 @@ fn main() {
                     });
                 }
             }
+            "recall" => {
+                let handle = frame["params"]["tool_use_id"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+                log_action(&frame["params"], method);
+                // `call_elided` is the handle the renderer fixture's elision
+                // marker names; anything else gets the engine's "cannot resolve
+                // this handle" window, which the TUI must report as a failure.
+                if handle == "call_elided" {
+                    send(
+                        &mut out,
+                        json!({"id":id,"result":{
+                            "tool_use_id":handle,"message_seq":4,"is_error":false,
+                            "offset":0,"text":"restored fixture bytes","total_bytes":22,
+                            "truncated":false
+                        }}),
+                    );
+                } else {
+                    send(
+                        &mut out,
+                        json!({"id":id,"result":{
+                            "tool_use_id":handle,"message_seq":null,"text":null,
+                            "scanned_messages":0,"exhausted":true,
+                            "next_before_message_seq":null
+                        }}),
+                    );
+                }
+            }
             "ping" => {
                 send(&mut out, json!({"id":id,"result":{"ok":true}}));
                 if subscribed {
@@ -248,7 +277,8 @@ fn main() {
                                 {"type":"text","text":"## Fixture Notes\n\n- **bold** and `code`\n\n| name | value |\n| --- | --- |\n| a | 1 |"},
                                 {"type":"tool_use","id":"call_1","name":"read_file","input":{"path":"src/lib.rs"}}
                             ],"identity":{"agent":"build","provider":{"model":"fake/model"}},"checkpoint":null,"recorded_at_ms":null},
-                            {"seq":3,"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"{\"text\":\"one\\ntwo\",\"sha256\":\"0\"}","is_error":false}],"checkpoint":null,"recorded_at_ms":null}
+                            {"seq":3,"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"{\"text\":\"one\\ntwo\",\"sha256\":\"0\"}","is_error":false}],"checkpoint":null,"recorded_at_ms":null},
+                            {"seq":4,"role":"assistant","content":[{"type":"text","text":"elided by context management · recall {\"tool_use_id\":\"call_elided\"}"}],"identity":{"agent":"build","provider":{"model":"fake/model"}},"checkpoint":null,"recorded_at_ms":null}
                         ])
                     } else {
                         json!([

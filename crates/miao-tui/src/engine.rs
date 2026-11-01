@@ -44,6 +44,11 @@ pub enum Request {
         id: String,
     },
     RefreshSessions,
+    /// Restore one archived tool output by the handle its marker named.
+    Recall {
+        session_id: String,
+        handle: String,
+    },
     Open(String),
     Refresh,
     /// Admit one prompt with its inline media attachments into a Session and
@@ -195,6 +200,13 @@ impl Handle {
     }
     pub fn refresh_sessions(&self) {
         let _ = self.tx.send(Request::RefreshSessions);
+    }
+
+    pub fn recall(&self, session_id: &str, handle: &str) {
+        let _ = self.tx.send(Request::Recall {
+            session_id: session_id.to_string(),
+            handle: handle.to_string(),
+        });
     }
 
     pub fn open(&self, session_id: &str) {
@@ -605,6 +617,10 @@ async fn run(
                 };
                 match request {
                 Request::RefreshSessions => refresh_sessions(client, &bus).await,
+                Request::Recall {
+                    session_id,
+                    handle,
+                } => recall_archived(client, &bus, &session_id, &handle).await,
                 Request::Refresh => {
                     dirty = None;
                     if let Some(state) = open.as_mut() {
@@ -1154,6 +1170,45 @@ fn config_notice(report: &Value) -> Option<String> {
         return None;
     }
     Some(format!("configuration reloaded: {}", names.join(", ")))
+}
+
+/// Fetch one archived tool output the context manager elided from a request.
+/// The engine answers with an empty window when it cannot resolve the handle;
+/// that is reported as a failure, never as empty text.
+async fn recall_archived(client: &EngineClient, bus: &Bus, session: &str, handle: &str) {
+    let window = match client
+        .request(
+            "recall",
+            json!({ "session_id": session, "tool_use_id": handle }),
+        )
+        .await
+    {
+        Ok(window) => window,
+        Err(error) => {
+            bus.send(AppEvent::RecallFailed(error.to_string()));
+            return;
+        }
+    };
+    let text = window.get("text").and_then(Value::as_str);
+    let Some(text) = text else {
+        bus.send(AppEvent::RecallFailed(format!(
+            "no archived output named {handle} in this Session"
+        )));
+        return;
+    };
+    bus.send(AppEvent::Recalled {
+        handle: handle.to_string(),
+        text: text.to_string(),
+        total_bytes: window
+            .get("total_bytes")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        truncated: window
+            .get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        next_offset: window.get("next_offset").and_then(Value::as_u64),
+    });
 }
 
 async fn refresh_sessions(client: &EngineClient, bus: &Bus) {
