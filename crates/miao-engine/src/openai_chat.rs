@@ -634,9 +634,12 @@ impl Parser for ChatState {
     }
     fn finish(self) -> Result<Reply, ProviderError> {
         if !self.done {
-            return Err(ProviderError::Stream(
-                "Chat stream ended before DONE".into(),
-            ));
+            // A gateway or proxy that closes the response without `[DONE]` has
+            // still streamed real content; the operator already saw it. Fail
+            // the turn only when nothing arrived, and otherwise continue from
+            // the partial the way a mid-stream read error does — a hard error
+            // here discarded a whole turn over a missing trailer.
+            return Err(self.interrupted());
         }
         let needs_tools = !self.calls.is_empty();
         // A `length` stop means the provider truncated the reply. Partial tool
@@ -727,5 +730,35 @@ impl Parser for ChatState {
             usage: crate::usage::chat(&self.usage),
             needs_tools,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::{Frame, Parser};
+
+    #[test]
+    fn a_stream_that_ends_without_done_continues_from_what_arrived() {
+        let mut state = ChatState::default();
+        state
+            .frame(&Frame::Json(serde_json::json!({
+                "choices": [{"delta": {"content": "partial answer"}}]
+            })))
+            .expect("a content delta");
+        match state.finish() {
+            Err(ProviderError::ContinuableTransport { partial, .. }) => {
+                assert_eq!(partial.content[0]["text"], "partial answer");
+            }
+            other => panic!("expected a continuable transport, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_stream_that_ends_without_any_content_still_fails() {
+        assert!(matches!(
+            ChatState::default().finish(),
+            Err(ProviderError::ResponseTransport)
+        ));
     }
 }

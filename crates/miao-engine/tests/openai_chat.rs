@@ -229,12 +229,33 @@ async fn tool_call_text_for_another_function_is_not_borrowed() {
 }
 
 #[tokio::test]
-async fn truncation_refusal_and_invalid_shapes_never_complete_or_retry() {
+async fn a_stream_cut_before_done_continues_from_what_arrived() {
+    // A gateway that closes the response without `[DONE]` has still streamed
+    // the reply; the turn continues from that partial instead of being lost.
+    let body = frames(
+        vec![chunk(json!({"content":"partial"}), json!("stop"))],
+        false,
+    );
+    let (url, mut requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let result = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await;
+    match result {
+        Err(ProviderError::ContinuableTransport { partial, .. }) => {
+            assert_eq!(partial.content[0]["text"], "partial");
+        }
+        other => panic!("expected a continuable partial, got {other:?}"),
+    }
+    server.await.unwrap();
+    assert!(requests.recv().await.is_some());
+    assert!(requests.recv().await.is_none());
+}
+
+#[tokio::test]
+async fn refusal_and_invalid_shapes_never_complete_or_retry() {
     let bodies = [
-        frames(
-            vec![chunk(json!({"content":"partial"}), json!("stop"))],
-            false,
-        ),
         frames(vec![chunk(json!({"refusal":"no"}), json!("stop"))], true),
         frames(
             vec![chunk(
