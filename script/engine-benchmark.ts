@@ -418,6 +418,8 @@ test("reads every record", () => {
 type Cell = {
   turns: number
   cost: number
+  /** Steps whose provider reported no cost: their money figure is unknown. */
+  costUnknown?: number
   input: number
   output: number
   reasoning: number
@@ -458,7 +460,8 @@ const harvest = (line: string, into: Cell) => {
   if (event.type !== "step_finish" || typeof event.part !== "object" || event.part === null) return
   const part = event.part as Assistant
   into.turns += 1
-  into.cost += part.cost ?? 0
+  if (typeof part.cost === "number") into.cost += part.cost
+  else into.costUnknown = (into.costUnknown ?? 0) + 1
   into.input += part.tokens?.input ?? 0
   into.output += part.tokens?.output ?? 0
   into.reasoning += part.tokens?.reasoning ?? 0
@@ -603,6 +606,7 @@ type Attempt = {
   output: number
   billedIn: number
   cost: number
+  costUnknown: number
   seconds: number
   resumed: boolean
   verifyError?: string
@@ -631,6 +635,7 @@ const persist = async () => {
     cached_input: rows.reduce((sum, row) => sum + row.cacheRead, 0),
     output: rows.reduce((sum, row) => sum + row.output, 0),
     cost: Number(rows.reduce((sum, row) => sum + row.cost, 0).toFixed(5)),
+    unknown_cost_steps: rows.reduce((sum, row) => sum + row.costUnknown, 0),
     p50_ms: Math.round(
       percentile(
         rows.map((row) => row.seconds * 1000),
@@ -644,7 +649,9 @@ const persist = async () => {
       ),
     ),
   })
-  const csv = ["model,scope,engine,task,runs,passed,attempts,billed_input,cached_input,output,cost,p50_ms,p95_ms"]
+  const csv = [
+    "model,scope,engine,task,runs,passed,attempts,billed_input,cached_input,output,cost,unknown_cost_steps,p50_ms,p95_ms",
+  ]
   for (const model of activeModels) {
     for (const engine of engines) {
       const cells = attempts.filter((row) => row.model === model && row.engine === engine)
@@ -666,6 +673,7 @@ const persist = async () => {
             cached_input: row.cacheRead,
             output: row.output,
             cost: Number(row.cost.toFixed(5)),
+            ...(row.costUnknown === 0 ? {} : { cost_unknown_steps: row.costUnknown }),
             ...(row.verifyError === undefined ? {} : { verifyError: row.verifyError }),
           })),
           null,
@@ -715,6 +723,7 @@ for (const model of activeModels) {
           output: cell.output,
           billedIn: billedInput(cell),
           cost: cell.cost,
+          costUnknown: cell.costUnknown ?? 0,
           seconds: cell.seconds,
           resumed: cell.resumed ?? false,
           verifyError: cell.verifyError,
@@ -731,11 +740,16 @@ for (const model of activeModels) {
   }
 }
 
+// A step whose provider reported no cost leaves the cell's money unknown.
+// Printing `$0.0000` there would read as "free", which is the one thing the
+// cost report must never claim.
+const money = (cell: Cell) => (cell.costUnknown ? "$unknown" : `$${cell.cost.toFixed(4)}`)
+
 const fmt = (cell: Cell | undefined) => {
   if (cell === undefined) return "—"
   const mark = cell.ok ? "" : " · FAILED"
   const resumed = cell.resumed ? " · resumed" : ""
-  return `${cell.turns}t · ${billedInput(cell)}b-in (${cell.input}in/${cell.cacheRead}cached)/${cell.output}out · $${cell.cost.toFixed(4)} · ${cell.seconds.toFixed(0)}s${mark}${resumed}`
+  return `${cell.turns}t · ${billedInput(cell)}b-in (${cell.input}in/${cell.cacheRead}cached)/${cell.output}out · ${money(cell)} · ${cell.seconds.toFixed(0)}s${mark}${resumed}`
 }
 
 const lines: string[] = []
@@ -765,6 +779,11 @@ for (const model of activeModels) {
 }
 lines.push("Verification gates each cell: a FAILED mark means the session did not satisfy the task (for")
 lines.push("`impossible`, a FAILED mark means the session faked the outcome by editing the guarded file).")
+const unpriced = attempts.filter((row) => row.costUnknown > 0).length
+if (unpriced > 0)
+  lines.push(
+    `${unpriced} of ${attempts.length} attempts had at least one provider step without a reported cost; their money figures read \`unknown\` rather than zero, so the $ columns stay incomplete on purpose.`,
+  )
 lines.push("")
 lines.push("## Per-cell aggregate (all attempts)")
 lines.push("")
@@ -776,6 +795,8 @@ for (const model of activeModels) {
       const rows = attempts.filter((row) => row.model === model && row.task === task.id && row.engine === engine)
       if (rows.length === 0) continue
       const passed = rows.filter((row) => row.ok).length
+      const priced = rows.filter((row) => row.costUnknown === 0)
+      const price = (p: number) => (priced.length === rows.length ? percentile(priced.map((row) => row.cost), p).toFixed(4) : "unknown")
       lines.push(
         `| ${model} | ${task.id} | ${engine} | ${rows.length} | ${passed} | ${percentile(
           rows.map((row) => row.billedIn),
@@ -783,13 +804,7 @@ for (const model of activeModels) {
         )} | ${percentile(
           rows.map((row) => row.billedIn),
           95,
-        )} | ${percentile(
-          rows.map((row) => row.cost),
-          50,
-        ).toFixed(4)} | ${percentile(
-          rows.map((row) => row.cost),
-          95,
-        ).toFixed(4)} | ${percentile(
+        )} | ${price(50)} | ${price(95)} | ${percentile(
           rows.map((row) => row.seconds),
           50,
         ).toFixed(0)} | ${percentile(
