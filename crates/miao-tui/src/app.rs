@@ -2396,15 +2396,38 @@ impl App {
                 false => None,
             };
         // Which model answers, and what the Session has cost so far. A pin on
-        // the Session wins over the engine default.
+        // the Session wins, then the model the newest assistant message ran on,
+        // labelled with the catalog's protocol so the strip names the provider
+        // as well as the model. The engine's `unavailable/model` is a sentinel
+        // for "no route resolved", not a model name: painting it in the strip
+        // reads as a fault, and the notice beside it already carries the fix.
+        let answering = self.shell.transcript().and_then(|transcript| {
+            transcript
+                .entries
+                .iter()
+                .rev()
+                .find_map(|entry| match entry {
+                    crate::session::Entry::Assistant { model, .. } => model.clone(),
+                    _ => None,
+                })
+        });
+        let labelled = answering.as_deref().and_then(|model| {
+            self.models
+                .iter()
+                .find(|info| info.model == model)
+                .map(ModelInfo::label)
+        });
         self.shell.status.model = self
             .session
             .as_ref()
             .and_then(|session| session.model.clone())
+            .or(labelled)
+            .or(answering)
             .or_else(|| {
                 self.settings
                     .as_ref()
                     .map(|settings| settings.model.clone())
+                    .filter(|model| model != engine::UNROUTED_MODEL)
             });
         self.shell.status.usage =
             self.usage
@@ -3422,6 +3445,73 @@ mod tests {
         app.update_status();
         assert_eq!(app.shell.title.status(), Some("needs an answer"));
         assert_eq!(app.shell.composer.phase.as_deref(), Some("needs an answer"));
+    }
+
+    #[test]
+    fn the_status_names_the_model_that_answered_with_its_protocol() {
+        // miao can start without a model, and then the engine's settings hold
+        // the `unavailable/model` sentinel. The Session knows what answered, and
+        // the catalog knows which protocol that model speaks, so the strip can
+        // name both instead of a placeholder.
+        let mut app = session_app();
+        app.set_settings(engine::Settings {
+            spawn: crate::transport::EngineSpawn {
+                program: PathBuf::from("/bin/true"),
+                args: Vec::new(),
+                env: Vec::new(),
+            },
+            model: engine::UNROUTED_MODEL.to_string(),
+            embedded: true,
+        });
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript {
+                entries: vec![crate::session::Entry::Assistant {
+                    agent: Some("build".into()),
+                    model: Some("glm-5.3-flash".into()),
+                    parts: vec![crate::session::Part::Text("answer".into())],
+                }],
+                ..Transcript::default()
+            }),
+            state: SessionState::default(),
+        });
+        app.update_status();
+        assert_eq!(app.shell.status.model.as_deref(), Some("glm-5.3-flash"));
+
+        app.models = vec![ModelInfo {
+            protocol: "openai-chat".into(),
+            model: "glm-5.3-flash".into(),
+            route_id: None,
+            variant: None,
+        }];
+        app.update_status();
+        assert_eq!(
+            app.shell.status.model.as_deref(),
+            Some("glm-5.3-flash · openai-chat"),
+            "the strip names the provider as well, like a Session pin does"
+        );
+        assert_ne!(
+            app.shell.status.model.as_deref(),
+            Some(engine::UNROUTED_MODEL)
+        );
+    }
+
+    #[test]
+    fn an_unresolved_model_is_not_painted_as_a_name() {
+        // Nothing has answered and the settings only hold the sentinel, so the
+        // strip says nothing; the notice beside it carries the fix.
+        let mut app = session_app();
+        app.set_settings(engine::Settings {
+            spawn: crate::transport::EngineSpawn {
+                program: PathBuf::from("/bin/true"),
+                args: Vec::new(),
+                env: Vec::new(),
+            },
+            model: engine::UNROUTED_MODEL.to_string(),
+            embedded: true,
+        });
+        app.update_status();
+        assert_eq!(app.shell.status.model, None);
     }
 
     #[test]
