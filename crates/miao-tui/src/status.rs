@@ -18,6 +18,14 @@ pub struct UsageSummary {
     pub ttft_avg_ms: Option<u64>,
     /// `model · protocol ×turns` for each model that served a turn.
     pub lineage: Vec<String>,
+    /// Every attempt the provider client made, including the retries.
+    pub attempts: u64,
+    /// Attempts that failed: a 4xx/5xx status, or no status at all because the
+    /// transport died.
+    pub failed_attempts: u64,
+    /// Turns the runner replayed after a transport failure. Retried work is
+    /// billed work, so it is reported rather than folded into the turn count.
+    pub replayed_turns: u64,
 }
 
 impl UsageSummary {
@@ -45,6 +53,9 @@ impl UsageSummary {
                         .collect()
                 })
                 .unwrap_or_default(),
+            attempts: u64_at(value, &["retries", "attempts"]).unwrap_or(0),
+            failed_attempts: u64_at(value, &["retries", "failedAttempts"]).unwrap_or(0),
+            replayed_turns: u64_at(value, &["retries", "replayedTurns"]).unwrap_or(0),
         }
     }
 }
@@ -71,6 +82,7 @@ mod tests {
             "tools": {"calls": 5, "failures": 1},
             "ttftMs": {"count": 3, "avg": 812, "min": 400, "max": 1200},
             "lineage": [{"protocol": "chat", "model": "glm-5", "turns": 3}],
+            "retries": {"attempts": 5, "failedAttempts": 2, "replayedTurns": 1, "details": []},
         }));
         assert_eq!(usage.turns, 3);
         assert_eq!(usage.partial_turns, 1);
@@ -79,6 +91,18 @@ mod tests {
         assert_eq!(usage.tool_calls, 5);
         assert_eq!(usage.ttft_avg_ms, Some(812));
         assert_eq!(usage.lineage, vec!["glm-5 · chat ×3"]);
+        // Retried work is billed work, so the report surfaces it beside tokens.
+        assert_eq!(usage.attempts, 5);
+        assert_eq!(usage.failed_attempts, 2);
+        assert_eq!(usage.replayed_turns, 1);
+    }
+
+    #[test]
+    fn a_report_without_retries_reads_as_no_retries() {
+        let usage = UsageSummary::from_value(&json!({"turns": 1, "retries": null}));
+        assert_eq!(usage.attempts, 0);
+        assert_eq!(usage.failed_attempts, 0);
+        assert_eq!(usage.replayed_turns, 0);
     }
 
     #[test]

@@ -1501,6 +1501,21 @@ impl Pane for SidebarPane {
                         ),
                         Style::new().fg(palette.text_muted),
                     )));
+                    // A retry is billed work: saying "1 turn" while three
+                    // attempts were made hides where the money went.
+                    if usage.replayed_turns > 0 || usage.failed_attempts > 0 {
+                        lines.push(Line::from(Span::styled(
+                            format!(
+                                "retried {}  ·  {} failed attempt{}  ·  {} attempt{}",
+                                usage.replayed_turns,
+                                usage.failed_attempts,
+                                if usage.failed_attempts == 1 { "" } else { "s" },
+                                usage.attempts,
+                                if usage.attempts == 1 { "" } else { "s" },
+                            ),
+                            Style::new().fg(palette.warning),
+                        )));
+                    }
                 }
             }
             lines.push(Line::default());
