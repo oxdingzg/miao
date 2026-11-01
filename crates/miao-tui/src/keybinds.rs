@@ -242,10 +242,14 @@ const DEFAULTS: &[(Action, &str)] = &[
     (Action::Stash, "<leader>p"),
     (Action::StashDraft, "<leader>P"),
     (Action::InputClear, "ctrl+c"),
-    // The same chords the TypeScript composer uses: ctrl+z stays the page's
-    // suspend, so undo cannot take it.
-    (Action::InputUndo, "ctrl+-,super+z"),
-    (Action::InputRedo, "ctrl+.,super+shift+z"),
+    // Undo and redo stay off `ctrl+z`, which is the page's suspend. The
+    // TypeScript composer binds `ctrl+-`/`super+z`, but a terminal sends
+    // `ctrl+-` as 0x1f and this parser reports that as `ctrl+7` (and `ctrl+.`
+    // never arrives outside the kitty protocol), so the working chord here is
+    // `alt+z`/`alt+.`; the documented spellings stay bound for terminals that
+    // do deliver them.
+    (Action::InputUndo, "alt+z,super+z,ctrl+-,ctrl+_,ctrl+7"),
+    (Action::InputRedo, "alt+.,super+shift+z,ctrl+."),
     (Action::InputSubmit, "return"),
     (
         Action::InputNewline,
