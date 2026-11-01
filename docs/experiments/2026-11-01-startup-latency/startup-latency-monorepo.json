@@ -1,0 +1,1 @@
+{"scenario":"monorepo","samples":5,"first_frame":{"p50_ms":10,"p95_ms":6901,"max_ms":6901},"ready_to_type":{"p50_ms":21,"p95_ms":6906,"max_ms":6906},"ready_to_submit":{"p50_ms":10,"p95_ms":10,"max_ms":10},"gate":{"warm_ready_to_type_p95_ms":500},"workspace":"miao monorepo (crates/ + packages/ + apps/)"}
