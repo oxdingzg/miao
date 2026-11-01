@@ -88,7 +88,7 @@ import { SessionTitleSettlement } from "../title-settlement"
 import { LegacyNotMigratedError } from "../error"
 import { type RunError, Service } from "./index"
 import { SessionModel } from "../model"
-import { SessionRunnerProviderHeaders } from "./provider-headers"
+import { SessionProviderHeaders } from "../provider-headers"
 import { SessionRunnerProviderRetry } from "./provider-retry"
 import { SessionOutputGuard } from "./output-guard"
 import { SessionToolInputGuard } from "./tool-input-guard"
@@ -822,7 +822,7 @@ const layer = Layer.effect(
       const request = LLM.request({
         model,
         http: {
-          headers: SessionRunnerProviderHeaders.forTurn({
+          headers: SessionProviderHeaders.forTurn({
             providerID: model.provider,
             sessionID: session.id,
             parentID: session.parentID,

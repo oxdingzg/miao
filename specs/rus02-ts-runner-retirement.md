@@ -56,7 +56,12 @@ bun docs/experiments/2026-10-28-ts-runner-retirement/generate.cjs
 | `cost.ts`              | `miao/src/engine/bridge.ts`、`server/src/native-session.ts`                         | 原生费用投影仍需要计算，可先独立迁出                                    |
 | `materialize-files.ts` | `core/src/session.ts`                                                               | 保留历史 blob/附件物化，或提供已验收替代后迁出                          |
 | `index.ts`             | Session 公共错误类型、execution 接口、local runner                                  | 在独立 PR 解开类型/服务耦合，再删除 TS 执行接口                         |
+| `provider-headers.ts`  | `session/native-title.ts`（runner 外）                                              | **已迁出**至 `packages/core/src/session/provider-headers.ts`；runner 改为从该处导入 |
 | 其余 runner 文件       | 主要由 `llm.ts` 与 runner 内部消费                                                  | 以清单及删除时的新依赖检查为准，随 TS loop 分批退役                     |
+
+注：本表上一版把 `provider-headers.ts` 归入「其余 runner 文件」，与事实不符——它当时已有
+runner 外的消费者（`session/native-title.ts`）。这也是为什么该行单独列出：清单本身需要
+按代码复核，不能只按目录推断。
 
 ## 6. 分 PR 顺序与删除门槛
 

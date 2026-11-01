@@ -1,8 +1,8 @@
-export * as SessionRunnerProviderHeaders from "./provider-headers"
+export * as SessionProviderHeaders from "./provider-headers"
 
 import type { Message, ToolContent } from "@miao/llm"
-import { ProviderV2 } from "../../provider"
-import { Hash } from "../../util/hash"
+import { ProviderV2 } from "../provider"
+import { Hash } from "../util/hash"
 
 /**
  * Per-turn headers that depend on the Session and the outgoing messages.
