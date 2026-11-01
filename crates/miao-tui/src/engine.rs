@@ -49,6 +49,11 @@ pub enum Request {
         session_id: String,
         handle: String,
     },
+    /// Set the operator's label on a Session; an empty tag clears it.
+    Tag {
+        session_id: String,
+        tag: String,
+    },
     Open(String),
     Refresh,
     /// Admit one prompt with its inline media attachments into a Session and
@@ -200,6 +205,13 @@ impl Handle {
     }
     pub fn refresh_sessions(&self) {
         let _ = self.tx.send(Request::RefreshSessions);
+    }
+
+    pub fn tag(&self, session_id: &str, tag: &str) {
+        let _ = self.tx.send(Request::Tag {
+            session_id: session_id.to_string(),
+            tag: tag.to_string(),
+        });
     }
 
     pub fn recall(&self, session_id: &str, handle: &str) {
@@ -621,6 +633,18 @@ async fn run(
                     session_id,
                     handle,
                 } => recall_archived(client, &bus, &session_id, &handle).await,
+                Request::Tag { session_id, tag } => {
+                    match client
+                        .request("tag", json!({ "session_id": session_id, "tag": tag }))
+                        .await
+                    {
+                        // The list renders the catalog, so re-read it rather than
+                        // patching one row: the tag has to come from the same
+                        // place every other row field comes from.
+                        Ok(_) => refresh_sessions(client, &bus).await,
+                        Err(error) => bus.send(AppEvent::TagFailed(error.to_string())),
+                    }
+                }
                 Request::Refresh => {
                     dirty = None;
                     if let Some(state) = open.as_mut() {

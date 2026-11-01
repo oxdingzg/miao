@@ -35,6 +35,9 @@ pub enum AppEvent {
     },
     /// A restore that did not produce a window; shown as a notice.
     RecallFailed(String),
+    /// A tag the engine refused; shown as a notice so the operator does not
+    /// believe the label was stored.
+    TagFailed(String),
     /// The external editor exited; `Ok(None)` means it saved an empty file.
     EditorFinished(Result<Option<String>, String>),
     Resize {

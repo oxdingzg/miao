@@ -434,6 +434,7 @@ impl App {
                 }));
             }
             AppEvent::RecallFailed(message) => self.notice(&format!("recall failed: {message}")),
+            AppEvent::TagFailed(message) => self.notice(&format!("tag failed: {message}")),
             AppEvent::Clipboard(content) => {
                 self.clipboard_busy = false;
                 match content {
@@ -803,6 +804,10 @@ impl App {
             Builtin::Recall => {
                 self.notice("/recall <tool_use_id> restores an archived tool output")
             }
+            Builtin::Tag => match self.session.as_ref() {
+                Some(session) => self.open_dialog(Dialog::tag(&session.id, "")),
+                None => self.notice("open a Session to tag it"),
+            },
             Builtin::Redraw => self.redraw_requested = true,
             Builtin::Suspend => {
                 #[cfg(unix)]
@@ -1053,6 +1058,16 @@ impl App {
             DialogAction::Remove(id) => {
                 let title = self.title_of(&id);
                 self.open_dialog(Dialog::confirm_remove(&id, &title));
+            }
+            DialogAction::Submit(value) if matches!(self.dialog, Some(Dialog::Tag(_))) => {
+                let Some(Dialog::Tag(tag)) = self.dialog.take() else {
+                    return;
+                };
+                // An empty label clears the tag, the way an empty title is what
+                // rename already accepts.
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.tag(&tag.session_id, &value);
+                }
             }
             DialogAction::Submit(title) => {
                 let Some(Dialog::Rename(rename)) = self.dialog.take() else {
@@ -2240,6 +2255,17 @@ impl App {
         // template is rendered and admitted with its command reference; any
         // other slash text is a plain prompt, like the TS composer.
         if let Some((name, arguments)) = commands::split(&text) {
+            if Builtin::from_name(&name) == Some(Builtin::Tag) {
+                // An argument sets the label straight away; a bare /tag opens
+                // the dialog, which is also how an operator clears it.
+                let label = arguments.trim();
+                if label.is_empty() {
+                    self.open_dialog(Dialog::tag(&session_id, ""));
+                } else {
+                    engine.tag(&session_id, label);
+                }
+                return;
+            }
             if Builtin::from_name(&name) == Some(Builtin::Recall) {
                 let handle = arguments.trim();
                 if handle.is_empty() {
