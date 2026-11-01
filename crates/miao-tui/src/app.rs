@@ -22,7 +22,7 @@ use crate::platform::{clipboard, editor, zed};
 use crate::scroll::Scroll;
 use crate::session::{Entry, Part, SessionState, SessionSummary};
 use crate::state::{self, StashEntry};
-use crate::status::UsageSummary;
+use crate::status::{compact_tokens, UsageSummary};
 use crate::theme::{self, Theme};
 use crate::tool;
 
@@ -2709,13 +2709,6 @@ fn db_argument(args: &[String]) -> String {
 
 /// Token counts as the status strip shows them: exact under a thousand,
 /// one decimal above, so a long Session does not widen the row.
-fn compact_tokens(tokens: u64) -> String {
-    match tokens {
-        0..=999 => tokens.to_string(),
-        1_000..=999_999 => format!("{:.1}k", tokens as f64 / 1_000.0),
-        _ => format!("{:.1}m", tokens as f64 / 1_000_000.0),
-    }
-}
 
 fn first_line(text: &str) -> String {
     let line = text.lines().next().unwrap_or("").trim();

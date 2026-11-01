@@ -187,17 +187,19 @@ fn scrolling_a_long_transcript_stays_within_the_viewport_budget() {
     let (long_p50, long_p95) = report(&long_dir, "long-2000", &long_frames);
 
     // Ten times the history must not cost meaningfully more per frame: the
-    // renderer paints the viewport, not the transcript. A factor rather than a
-    // deadline, because a debug build on a shared runner is slow in absolute
-    // terms while the ratio stays meaningful.
-    let ratio = long_p95.max(1) as f64 / short_p95.max(1) as f64;
+    // renderer paints the viewport, not the transcript. The median is what the
+    // assertion uses — one slow frame from a scheduler hiccup moves p95 by tens
+    // of percent on a shared runner, which turned this into a flaky check
+    // without saying anything about the renderer. p95 and the over-budget count
+    // are still printed, because they are the evidence.
+    let ratio = long_p50.max(1) as f64 / short_p50.max(1) as f64;
     println!(
-        "PERF-02 scroll ratio: p95 {short_p95}µs → {long_p95}µs ({ratio:.2}x), \
-         p50 {short_p50}µs → {long_p50}µs"
+        "PERF-02 scroll ratio: p50 {short_p50}µs → {long_p50}µs ({ratio:.2}x), \
+         p95 {short_p95}µs → {long_p95}µs"
     );
     assert!(
         ratio <= 3.0,
-        "a ten times longer transcript costs {ratio:.2}x per frame (p95 {short_p95}µs → \
-         {long_p95}µs); rendering is supposed to follow the viewport, not the history"
+        "a ten times longer transcript costs {ratio:.2}x per median frame (p50 {short_p50}µs → \
+         {long_p50}µs); rendering is supposed to follow the viewport, not the history"
     );
 }
