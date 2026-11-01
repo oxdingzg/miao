@@ -20,10 +20,51 @@ pub struct Palette {
     pub border_active: Color,
 }
 
+impl Palette {
+    /// The same palette with every colour dropped. `NO_COLOR` and a dumb
+    /// terminal both land here, and meaning has to keep coming from glyphs and
+    /// words, because nothing else is left.
+    pub fn monochrome(self) -> Self {
+        Self {
+            primary: Color::Reset,
+            secondary: Color::Reset,
+            accent: Color::Reset,
+            error: Color::Reset,
+            warning: Color::Reset,
+            success: Color::Reset,
+            text: Color::Reset,
+            text_muted: Color::Reset,
+            background: Color::Reset,
+            surface: Color::Reset,
+            element: Color::Reset,
+            border: Color::Reset,
+            border_active: Color::Reset,
+        }
+    }
+}
+
+/// Whether the environment asks for no colour. `NO_COLOR` follows
+/// <https://no-color.org>: any non-empty value wins, whatever the theme says.
+/// `TERM=dumb` cannot render colour or cursor movement at all.
+pub fn colorless(no_color: Option<&str>, term: Option<&str>) -> bool {
+    no_color.is_some_and(|value| !value.is_empty())
+        || term.is_some_and(|term| term.eq_ignore_ascii_case("dumb"))
+}
+
 #[derive(Debug, Clone)]
 pub struct Theme {
     pub name: String,
     pub palette: Palette,
+}
+
+impl Theme {
+    /// Drop every colour while keeping the theme's name and layout.
+    pub fn monochrome(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            palette: self.palette.monochrome(),
+        }
+    }
 }
 
 pub struct Loaded {
@@ -732,7 +773,17 @@ pub fn builtin(name: &str) -> Option<Palette> {
 }
 
 pub fn load(workspace: &Path) -> Loaded {
-    load_at(workspace, crate::config::global_dir().as_deref())
+    let mut loaded = load_at(workspace, crate::config::global_dir().as_deref());
+    // Read the environment here rather than in `load_at`, so the parser stays a
+    // pure function of the files a test hands it.
+    let colorless = colorless(
+        std::env::var("NO_COLOR").ok().as_deref(),
+        std::env::var("TERM").ok().as_deref(),
+    );
+    if colorless {
+        loaded.theme = loaded.theme.monochrome();
+    }
+    loaded
 }
 
 pub(crate) fn load_at(workspace: &Path, global: Option<&Path>) -> Loaded {
@@ -1141,6 +1192,52 @@ const fn rgb(hex: &str) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_environment_without_colour_is_recognised() {
+        // UX-03: a terminal that cannot show colour still has to be usable, so
+        // the request has to be honoured rather than prettified away.
+        assert!(colorless(Some("1"), None));
+        assert!(
+            colorless(Some("anything"), None),
+            "NO_COLOR only needs a value"
+        );
+        assert!(colorless(None, Some("dumb")));
+        assert!(colorless(None, Some("DUMB")), "TERM is case insensitive");
+        assert!(
+            !colorless(Some(""), None),
+            "an empty NO_COLOR means the operator did not ask"
+        );
+        assert!(!colorless(None, None), "no request, no change");
+        assert!(!colorless(None, Some("xterm-256color")));
+    }
+
+    #[test]
+    fn the_monochrome_palette_drops_every_colour_and_keeps_the_name() {
+        let theme = Theme {
+            name: "custom".into(),
+            palette: builtin(DEFAULT_THEME).expect("theme"),
+        };
+        let plain = theme.monochrome();
+        assert_eq!(plain.name, "custom");
+        for colour in [
+            plain.palette.primary,
+            plain.palette.secondary,
+            plain.palette.accent,
+            plain.palette.error,
+            plain.palette.warning,
+            plain.palette.success,
+            plain.palette.text,
+            plain.palette.text_muted,
+            plain.palette.background,
+            plain.palette.surface,
+            plain.palette.element,
+            plain.palette.border,
+            plain.palette.border_active,
+        ] {
+            assert_eq!(colour, Color::Reset);
+        }
+    }
 
     #[test]
     fn jsonc_commas_need_a_preceding_value() {
