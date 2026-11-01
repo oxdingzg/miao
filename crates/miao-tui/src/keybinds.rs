@@ -242,7 +242,9 @@ const DEFAULTS: &[(Action, &str)] = &[
     (Action::Stash, "<leader>p"),
     (Action::StashDraft, "<leader>P"),
     (Action::InputClear, "ctrl+c"),
-    (Action::InputUndo, "ctrl+z"),
+    // ctrl+z stays the terminal's suspend, as the TypeScript host binds it;
+    // undo takes readline's ctrl+_ so the two cannot swallow each other.
+    (Action::InputUndo, "ctrl+_"),
     // ctrl+shift+z is what a terminal sends for shift+ctrl+z; ctrl+y is
     // the other convention people reach for, so both redo.
     (Action::InputRedo, "ctrl+shift+z,ctrl+y"),
@@ -784,7 +786,6 @@ mod tests {
             // Redo inside the composer, or copy the last message outside it.
             ("ctrl+y", vec!["input_redo", "messages_copy"]),
             // Undo inside the composer, or suspend the process outside it.
-            ("ctrl+z", vec!["input_undo", "terminal_suspend"]),
             // Walk prompt history, or move inside a multi-line draft.
             ("down", vec!["history_next", "input_move_down"]),
             ("up", vec!["history_previous", "input_move_up"]),

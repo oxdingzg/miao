@@ -22,7 +22,7 @@ use crate::platform::{clipboard, editor, zed};
 use crate::scroll::Scroll;
 use crate::session::{Entry, Part, SessionState, SessionSummary};
 use crate::state::{self, StashEntry};
-use crate::status::UsageSummary;
+use crate::status::{compact_tokens, UsageSummary};
 use crate::theme::{self, Theme};
 use crate::tool;
 
@@ -726,9 +726,10 @@ impl App {
         }
         // The composer owns `ctrl+z` while it has a step to take back; with
         // nothing to undo the stroke keeps its page meaning and suspends.
-        if self.keys.matches(keybinds::Action::TerminalSuspend, &key)
-            && !self.shell.composer.can_undo()
-        {
+        // The composer's undo lives on `ctrl+_`, so `ctrl+z` is the terminal's
+        // suspend again and must not be vetoed by editing history: stopping the
+        // process is what a shell user expects that stroke to do.
+        if self.keys.matches(keybinds::Action::TerminalSuspend, &key) {
             self.leader = false;
             self.run_builtin(Builtin::Suspend);
             return;
@@ -2689,16 +2690,6 @@ fn db_argument(args: &[String]) -> String {
         .and_then(|index| args.get(index + 1))
         .cloned()
         .unwrap_or_else(|| "(none)".to_string())
-}
-
-/// Token counts as the status strip shows them: exact under a thousand,
-/// one decimal above, so a long Session does not widen the row.
-fn compact_tokens(tokens: u64) -> String {
-    match tokens {
-        0..=999 => tokens.to_string(),
-        1_000..=999_999 => format!("{:.1}k", tokens as f64 / 1_000.0),
-        _ => format!("{:.1}m", tokens as f64 / 1_000_000.0),
-    }
 }
 
 fn first_line(text: &str) -> String {
@@ -4807,7 +4798,7 @@ mod tests {
         assert_eq!(app.shell.composer.editor.text(), "", "the draft is cleared");
         assert!(!app.quit, "the app keeps running with a cleared draft");
         // The clear is an editing step, so the same draft comes back on undo.
-        app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
+        app.handle(key(KeyCode::Char('_'), KeyModifiers::CONTROL));
         assert_eq!(app.shell.composer.editor.text(), "draft");
     }
 
@@ -4819,18 +4810,20 @@ mod tests {
         assert!(app.quit);
     }
 
+    /// Undo is readline's `ctrl+_`, so it cannot swallow the terminal's
+    /// `ctrl+z`, which stays the suspend it is in every shell.
     #[test]
-    fn ctrl_z_undoes_the_draft_instead_of_suspending() {
+    fn ctrl_underscore_undoes_the_draft_and_does_not_suspend() {
         let mut app = session_app();
         for c in "draft".chars() {
             app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
         }
         assert_eq!(app.shell.composer.editor.text(), "draft");
-        app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
+        app.handle(key(KeyCode::Char('_'), KeyModifiers::CONTROL));
         assert_eq!(
             app.shell.composer.editor.text(),
             "",
-            "the run came back off"
+            "the typing came back off"
         );
         assert!(
             !app.suspend_requested,
@@ -4838,13 +4831,21 @@ mod tests {
         );
     }
 
-    /// With nothing to undo the stroke keeps its page meaning: the process
-    /// still suspends, which is what a terminal operator expects.
+    /// A draft no longer keeps `ctrl+z` from the page: stopping the process is
+    /// what that stroke does in a shell, history or not.
     #[test]
-    fn ctrl_z_still_suspends_with_nothing_to_undo() {
+    fn ctrl_z_suspends_even_with_a_draft_to_undo() {
         let mut app = session_app();
+        for c in "draft".chars() {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
         app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
-        assert!(app.suspend_requested, "an empty draft leaves suspend alone");
+        assert!(app.suspend_requested, "the process stops");
+        assert_eq!(
+            app.shell.composer.editor.text(),
+            "draft",
+            "suspending leaves the draft alone"
+        );
     }
 
     /// Redo re-applies the undone run, and the copy stroke stays out of the way
@@ -4855,7 +4856,7 @@ mod tests {
         for c in "abc".chars() {
             app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
         }
-        app.handle(key(KeyCode::Char('z'), KeyModifiers::CONTROL));
+        app.handle(key(KeyCode::Char('_'), KeyModifiers::CONTROL));
         assert_eq!(app.shell.composer.editor.text(), "");
         app.handle(key(KeyCode::Char('y'), KeyModifiers::CONTROL));
         assert_eq!(
