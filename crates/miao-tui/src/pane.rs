@@ -1814,6 +1814,13 @@ pub fn render_dialog(frame: &mut Frame, area: Rect, dialog: &Dialog, theme: &The
         saved.render(frame, inner, theme);
         return;
     }
+    // The changes dialog renders its own body: the generic list, palette and
+    // input accessors below do not describe a change set, so without this arm
+    // the box is drawn with a title and an empty body.
+    if let Dialog::WorkspaceChanges(changes) = dialog {
+        changes.render(frame, inner, theme);
+        return;
+    }
     if let Dialog::Message(text) = dialog {
         let lines = text
             .lines
