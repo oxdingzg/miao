@@ -2585,6 +2585,66 @@ mod tests {
     }
 
     #[test]
+    fn the_decision_panels_fit_forty_columns() {
+        // UX-03: approval and questions are decision surfaces. At 40 columns
+        // the operator still has to see what is being asked and what the keys
+        // do, not a clipped fragment of it.
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let approval = crate::session::ApprovalView {
+            request_id: "run-1/call_1".into(),
+            tool: "bash".into(),
+            resource: "cargo test".into(),
+            input: serde_json::json!({ "command": "cargo test" }),
+            input_hash: "a".repeat(64),
+            policy_revision: "rev-1".into(),
+            matcher: None,
+            expires_at_ms: None,
+        };
+        for width in [40u16, 80, 120] {
+            let mut panel = Panel::approval(approval.clone());
+            let text = rendered_at(&mut panel, width, &theme);
+            assert!(
+                text.contains("bash"),
+                "the tool is named at {width}: {text}"
+            );
+            assert!(
+                text.contains("allow once"),
+                "the keys are readable at {width}: {text}"
+            );
+
+            let mut panel = Panel::question(question(false));
+            let text = rendered_at(&mut panel, width, &theme);
+            assert!(
+                text.contains("Which files?"),
+                "the question is readable at {width}: {text}"
+            );
+            assert!(
+                text.contains("src"),
+                "the options are readable at {width}: {text}"
+            );
+        }
+    }
+
+    /// Paint one panel at `width` columns and return everything it drew.
+    fn rendered_at(panel: &mut Panel, width: u16, theme: &Theme) -> String {
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 12))
+            .expect("terminal");
+        terminal
+            .draw(|frame| panel.render(frame, frame.area(), theme))
+            .expect("draw");
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    #[test]
     fn the_composer_shows_its_text_from_forty_to_one_hundred_twenty_columns() {
         // UX-03: approval, questions, diffs and input all have to work at 40
         // columns, not just at the wide default.
