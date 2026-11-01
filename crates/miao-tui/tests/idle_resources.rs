@@ -192,6 +192,14 @@ fn measure_tree(harness: &Harness, label: &str, window: Duration) -> (usize, u12
         std::thread::sleep(Duration::from_millis(20));
     }
     std::thread::sleep(Duration::from_secs(2));
+    // The engine child appears a moment after the fixture publishes readiness,
+    // and a single sample can catch the window before it does. Waiting for it is
+    // what makes `processes >= 2` an assertion about the product rather than
+    // about timing.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while tree(harness.pid).len() < 2 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
     let pids = tree(harness.pid);
     let before = pids.iter().map(|pid| sample(*pid).0).sum::<u128>();
     std::thread::sleep(window);
