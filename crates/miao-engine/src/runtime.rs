@@ -2535,6 +2535,9 @@ async fn execute(
     let mut goal_iterations = 0;
     let mut goal_stalls = 0;
     let mut goal_signature = None;
+    // When the todo list first stopped changing, so a pause can say how long the
+    // loop actually waited instead of only that it gave up.
+    let mut goal_stalled_since: Option<std::time::Instant> = None;
     // A Session forked by `task` is a leaf: its lineage is fixed before the
     // run starts, so one lookup answers every turn.
     let delegated = is_delegated_child(inner, session).await?;
@@ -4124,6 +4127,10 @@ command: None,
                 } else {
                     0
                 };
+                goal_stalled_since = match goal_stalls {
+                    0 => None,
+                    _ => goal_stalled_since.or_else(|| Some(std::time::Instant::now())),
+                };
                 goal_signature = Some(signature);
                 let reason = if allowance == Some(0) {
                     Some("budget")
@@ -4145,13 +4152,20 @@ command: None,
                     // Say what happened, that nothing is running now, and what
                     // the operator can do. A pause that only says "send a
                     // message" reads like the Session is still waiting on them.
+                    // Say what the loop was waiting on, for how long, and what
+                    // happens now. A pause that only reports "no progress" reads
+                    // like a background failure the operator has to diagnose.
+                    let waited = goal_stalled_since
+                        .map(|since| since.elapsed().as_secs())
+                        .unwrap_or(0);
                     let pause = match reason {
                         "budget" => format!(
-                            "Task paused: the provider turn limit ({} turns) is used up, so autonomous continuation stopped. Nothing is running now and it does not resume on its own. Send a message to continue with a fresh allowance.",
-                            allowance.unwrap_or(0)
+                            "Task paused: the provider turn limit ({} turns) is used up after {} continuation turns. Nothing is running now and it will not resume on its own. Send a message to continue with a fresh allowance.",
+                            allowance.unwrap_or(0),
+                            goal_iterations
                         ),
                         _ => format!(
-                            "Task paused: the todo list did not change across {goal_stalls} continuation turns, so another continuation would repeat the same work. Nothing is running now and it does not resume on its own. Update the todo list, then send a message with the next step."
+                            "Task paused: the todo list stayed unchanged for {goal_stalls} continuation turns over {waited}s, so the loop stopped waiting for it to move: another continuation would repeat the same work. Nothing is running now and it will not resume on its own. Add or update a todo, then send a message with the next step."
                         ),
                     };
                     inner
