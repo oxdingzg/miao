@@ -1348,7 +1348,10 @@ fn job_detail(value: &Value) -> String {
     let Some(job) = value.as_object() else {
         return "not found in this Session".into();
     };
-    let state = job.get("state").and_then(Value::as_str).unwrap_or("unknown");
+    let state = job
+        .get("state")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
     match job.get("result") {
         Some(Value::Null) | None => format!("{state} · no result yet"),
         Some(result) => {
