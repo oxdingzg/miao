@@ -1130,11 +1130,32 @@ fn agent_manifest_for(
             .and_then(|value| value.as_str())
             .unwrap_or("")
             .to_string();
-        let manifest = serde_json::json!({
+        let mut manifest = serde_json::json!({
             "name": name,
             "instructions": instructions,
             "permission_mode": "auto",
         });
+        // The product states permissions as {action, resource, effect}; the
+        // engine wants {tool, path, decision}. Same three facts, renamed.
+        if let Some(rules) = entry.get("permissions").and_then(|value| value.as_array()) {
+            let mapped: Vec<serde_json::Value> = rules
+                .iter()
+                .filter_map(|rule| {
+                    let tool = rule.get("action")?.as_str()?;
+                    Some(serde_json::json!({
+                        "tool": tool,
+                        "path": rule.get("resource").and_then(|value| value.as_str()).unwrap_or("*"),
+                        "decision": rule.get("effect").and_then(|value| value.as_str()).unwrap_or("deny"),
+                    }))
+                })
+                .collect();
+            if !mapped.is_empty() {
+                manifest["permissions"] = serde_json::Value::Array(mapped);
+            }
+        }
+        if let Some(mode) = entry.get("permission_mode").and_then(|value| value.as_str()) {
+            manifest["permission_mode"] = serde_json::json!(mode);
+        }
         return Ok(Some((model, manifest)));
     }
     Ok(None)
