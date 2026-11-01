@@ -1324,8 +1324,12 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
     // Shell mode says so in the title and on the input: a `!` line goes to the
     // host shell, not the model, and Esc leaves it.
     let shell = composer.mode() == Mode::Shell;
+    // INP-06: the rule that decides whether shell output reaches the model has
+    // to be visible rather than implied. A `!` line runs on the host, records in
+    // this Session (so the next turn's context contains it) and starts no turn
+    // of its own.
     let name = if shell {
-        "shell · esc exit"
+        "shell · runs locally · output stays in this Session · esc exit"
     } else {
         "composer"
     };
