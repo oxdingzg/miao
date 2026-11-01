@@ -2475,6 +2475,23 @@ export type SessionsHistoryOutput = {
   readonly hasMore: boolean
 }
 
+export type SessionsRecallInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly toolUseID: { readonly toolUseID: string; readonly offset?: number | undefined }["toolUseID"]
+  readonly offset?: { readonly toolUseID: string; readonly offset?: number | undefined }["offset"]
+}
+
+export type SessionsRecallOutput = {
+  readonly toolUseID: string
+  readonly messageSeq: number
+  readonly isError: boolean
+  readonly offset: number
+  readonly text: string
+  readonly totalBytes: number
+  readonly truncated: boolean
+  readonly nextOffset?: number | undefined
+}
+
 export type SessionsEventsInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly after?: { readonly after?: number | undefined }["after"]

@@ -103,6 +103,8 @@ import type {
   SessionsChildrenOutput,
   SessionsHistoryInput,
   SessionsHistoryOutput,
+  SessionsRecallInput,
+  SessionsRecallOutput,
   SessionsEventsInput,
   SessionsEventsOutput,
   SessionsExecutionInput,
@@ -1060,6 +1062,18 @@ export function make(options: ClientOptions) {
             query: { limit: input["limit"], after: input["after"] },
             successStatus: 200,
             declaredStatuses: [404, 400, 410, 409, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      recall: (input: SessionsRecallInput, requestOptions?: RequestOptions) =>
+        request<SessionsRecallOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/recall`,
+            query: { toolUseID: input["toolUseID"], offset: input["offset"] },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 410, 401],
             empty: false,
           },
           requestOptions,

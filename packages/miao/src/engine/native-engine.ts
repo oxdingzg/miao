@@ -1123,6 +1123,40 @@ export const fromOwners = (
           request: (method, params) => connection.client.request(method, params),
         }),
       ),
+    recall: (input) =>
+      read<unknown>(input, (connection) =>
+        connection.client.recall(input.sessionID, { toolUseID: input.toolUseID, offset: input.offset }),
+      ).pipe(
+        Effect.flatMap((value) => {
+          // The engine answers with an empty window when the archive cannot
+          // resolve the handle; a product caller must not read that as "no
+          // content" and silently show an empty card.
+          const window = value as {
+            tool_use_id?: string
+            message_seq?: number | null
+            is_error?: boolean
+            offset?: number
+            text?: string | null
+            total_bytes?: number
+            truncated?: boolean
+            next_offset?: number | null
+          }
+          if (typeof window.text !== "string" || typeof window.message_seq !== "number")
+            return Effect.fail(
+              new ConflictError({ message: `No archived output named ${input.toolUseID} in this Session` }),
+            )
+          return Effect.succeed({
+            toolUseID: window.tool_use_id ?? input.toolUseID,
+            messageSeq: window.message_seq,
+            isError: window.is_error === true,
+            offset: window.offset ?? 0,
+            text: window.text,
+            totalBytes: window.total_bytes ?? window.text.length,
+            truncated: window.truncated === true,
+            ...(typeof window.next_offset === "number" ? { nextOffset: window.next_offset } : {}),
+          })
+        }),
+      ),
     title: (input) =>
       (preparation.title?.(input) ?? Effect.succeed(undefined)).pipe(Effect.catch(() => Effect.succeed(undefined))),
     events: (input) =>
