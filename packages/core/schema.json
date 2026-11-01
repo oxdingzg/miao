@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "5202f46d-d117-433f-8188-f3ab943090dd",
+  "id": "8fddc117-3f47-43be-8073-8b87035e349a",
   "prevIds": [
-    "68be3934-6677-44fc-be18-d5b3b4897a82"
+    "5202f46d-d117-433f-8188-f3ab943090dd"
   ],
   "ddl": [
     {
@@ -2267,6 +2267,26 @@
       "default": null,
       "generated": null,
       "name": "finish",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'main'",
+      "generated": null,
+      "name": "role",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "price_source",
       "entityType": "columns",
       "table": "session_turn_usage"
     },

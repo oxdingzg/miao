@@ -360,6 +360,8 @@ export default {
           \`model_id\` text NOT NULL,
           \`variant\` text,
           \`finish\` text NOT NULL,
+          \`role\` text DEFAULT 'main' NOT NULL,
+          \`price_source\` text,
           \`cost\` real NOT NULL,
           \`tokens_input\` integer NOT NULL,
           \`tokens_output\` integer NOT NULL,
