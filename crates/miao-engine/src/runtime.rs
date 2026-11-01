@@ -116,6 +116,11 @@ struct Inner {
     /// Task-specific verification command run before a run may finish.
     verification: Mutex<Option<String>>,
     breaker: Mutex<context_trigger::Breaker>,
+    /// Windows the endpoint itself stated when it refused a request. A Session
+    /// whose model is not the engine's default has no configured window, so the
+    /// first refusal is the only place its real ceiling appears; learning it
+    /// here is what lets the next request be planned instead of refused.
+    learned_window: Mutex<std::collections::BTreeMap<String, u64>>,
     /// Sessions whose next provider request carries the post-compaction
     /// restore budget note. Process-local and request-scoped, like the host
     /// runner's `turns` map.
@@ -142,6 +147,50 @@ enum Command {
 }
 
 impl Inner {
+    /// Remember the window the endpoint itself stated when it refused a request.
+    /// Keyed by the serving model, because one engine serves every Session in a
+    /// Location and they do not all use the engine's default model.
+    async fn learn_window(&self, model: Option<&str>, window: u64) {
+        if window == 0 {
+            return;
+        }
+        let mut learned = self.learned_window.lock().await;
+        let key = model.unwrap_or("*").to_owned();
+        let entry = learned.entry(key).or_insert(window);
+        // A later refusal naming a smaller window is the one that matters: the
+        // endpoint has told us this history does not fit.
+        *entry = (*entry).min(window);
+    }
+
+    /// The learned window for a model, falling back to the model-agnostic entry.
+    async fn learned_window_for(&self, model: Option<&str>) -> Option<u64> {
+        let learned = self.learned_window.lock().await;
+        model
+            .and_then(|model| learned.get(model).copied())
+            .or_else(|| learned.get("*").copied())
+    }
+
+    /// Automatic-compaction limits for a Session the product never described.
+    /// The engine is one process per Location, so `--context-limits` carries the
+    /// default model's window; a Session on any other model used to run with no
+    /// trigger at all until the endpoint refused it. Once the endpoint states its
+    /// window, that window is a usable budget with the same formula the product
+    /// uses for the default model.
+    async fn learned_limits(&self, model: Option<&str>) -> Option<ContextLimits> {
+        let window = self.learned_window_for(model).await?;
+        Some(ContextLimits {
+            window,
+            ratio: 0.9,
+            // Mirrors the product's headroom: pruning protection, the summary
+            // reserve, and the default slack.
+            headroom: 40_000 + 2_048 + 20_000,
+            per_pass: 8,
+            prune_chars: None,
+            prune_total_chars: None,
+            protect_turns: 2,
+        })
+    }
+
     /// The base policy a turn starts from. Callers hold the returned `Arc` for
     /// the whole turn; a reload replaces the cell, never the policy in place.
     fn policy(&self) -> Arc<Policy> {
@@ -396,6 +445,7 @@ impl Runtime {
                 config_generation: Mutex::new(1),
                 verification: Mutex::new(None),
                 breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
+                learned_window: Mutex::new(std::collections::BTreeMap::new()),
                 restore_pending: Mutex::new(std::collections::HashSet::new()),
             }),
         };
@@ -2516,6 +2566,11 @@ async fn execute(
     let mut reset_allowance = true;
     let mut input_corrections = 0;
     let mut transport_continuations = 0;
+    // Context refusals recovered inside this drain. The window is learned from the
+    // refusal itself, so one retry re-assembles a bounded request; a second one
+    // means the history cannot be bounded (a single message larger than the window)
+    // and the failure has to surface instead of looping.
+    let mut overflow_recoveries = 0;
     // Consecutive provider turns that produced neither text nor tool calls.
     let mut empty_completions = 0;
     // Consecutive failed completion checks for the configured verification.
@@ -2823,6 +2878,55 @@ async fn execute(
                         "kind": "context.pruned", "payloads": stats.payloads, "characters": saved,
                         "unit": "utf8_bytes", "before_bytes": stats.before_bytes,
                         "after_bytes": stats.after_bytes, "saved_bytes": saved,
+                    }));
+                }
+            }
+        }
+        // The last-resort bound. Compaction above is the planned shrink and needs a
+        // summarizer the endpoint will answer; when that is unavailable — no
+        // configured window for this Session's model, or a summarizer the provider
+        // keeps refusing — the history grows past the window and every request is
+        // refused, so the Session can no longer be continued at all. Bounding one
+        // request keeps the newest work and the operator's prompt; the durable
+        // transcript is untouched, exactly as with tool-output pruning.
+        //
+        // It only fires on evidence that the request does not fit: the provider's
+        // own count for the previous request plus what was appended since, or — when
+        // no count exists yet — a window the endpoint stated when it refused this
+        // history. Guessing from a local estimate alone would shorten Sessions that
+        // are nowhere near their window, since the estimate deliberately over-counts.
+        let known = match &*inner.context.lock().await {
+            Some(limits) if limits.window > 0 => Some((limits.window, false)),
+            _ => inner
+                .learned_window_for(binding.as_ref().map(|binding| binding.model.as_str()))
+                .await
+                .map(|window| (window, true)),
+        };
+        if let Some((window, refused_before)) = known {
+            let over = match inner.store.context_anchor(session).await? {
+                Some((counted, through)) => {
+                    let (_, pending_chars) = inner.store.pending_context(session, through).await?;
+                    counted.saturating_add(crate::context_trigger::estimate_tokens(
+                        pending_chars as usize,
+                    )) > window
+                }
+                None => refused_before,
+            };
+            if over {
+                let stats = crate::context_trigger::trim_history_to_fit(&mut history, window);
+                if stats.messages > 0 {
+                    let saved = stats.before_bytes.saturating_sub(stats.after_bytes);
+                    inner.store.record_fenced(session, "context.trimmed", json!({
+                        "run_id": run, "step": step, "context_epoch": context_epoch,
+                        "reason": "request_window", "window": window,
+                        "messages": stats.messages,
+                        "before_bytes": stats.before_bytes, "after_bytes": stats.after_bytes,
+                        "saved_bytes": saved,
+                    }), lease).await?;
+                    let _ = inner.progress.send(json!({
+                        "session_id": session, "run_id": run, "step": step,
+                        "kind": "context.trimmed", "messages": stats.messages,
+                        "window": window, "saved_bytes": saved,
                     }));
                 }
             }
@@ -3233,16 +3337,68 @@ command: None,
                 // one bad attachment. Quarantine what this run promoted so the
                 // next prompt starts from the last good history; the transcript
                 // keeps the message visible next to the failure record.
+                let message = match detail.as_ref().and_then(provider_error_text) {
+                    Some(text) => format!("{error}: {text}"),
+                    None => error.to_string(),
+                };
+                // The endpoint's own context refusal is neither a bad input nor an
+                // availability problem: the selected history no longer fits the
+                // window the endpoint publishes. Quarantining the promoted input
+                // kept that history and failed every later continue the same way,
+                // which is how a Session stops being continuable. Learn the window
+                // it named, ask for a compaction pass, and report the refusal under
+                // a name the host recognises so it can compact and re-admit.
+                if crate::context_overflow::is_context_overflow(&message) {
+                    let limit = crate::context_overflow::overflow_limit(&message);
+                    let model = binding.as_ref().map(|binding| binding.model.as_str());
+                    if let Some(limit) = limit {
+                        inner.learn_window(model, limit).await;
+                    }
+                    let learned = inner.learned_window_for(model).await;
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "provider.overflow",
+                            json!({"run_id":run,"step":step,"limit":limit,"learned":learned}),
+                        )
+                        .await?;
+                    // The turn boundary cannot close on a refused request, so the
+                    // request stays durable for the next drain to honour.
+                    let _ = inner
+                        .store
+                        .request_compaction(session, crate::protocol::CompactScope::default())
+                        .await;
+                    // Retry the same step in this drain: the window is known now,
+                    // so the next assembly bounds the request. The prompt is the
+                    // operator's own and stays committed; this only tells the model
+                    // why the history it sees may be shorter than it remembers.
+                    if overflow_recoveries < 1 {
+                        overflow_recoveries += 1;
+                        let input_id = format!("overflow:{run}:{overflow_recoveries}");
+                        inner
+                            .store
+                            .admit(crate::protocol::Input {
+                                agent_references: Default::default(),
+                                command: None,
+                                session_id: session.into(),
+                                input_id: input_id.clone(),
+                                prompt: "The previous request was refused because it exceeded the model's context window. Continue the same task from the history above: older turns may have been trimmed to fit, and every tool result already recorded remains committed. Do not repeat completed work.".into(),
+                                delivery: crate::protocol::Delivery::Steer,
+                            })
+                            .await?;
+                        internal_inputs.insert(input_id);
+                        step += 1;
+                        continue;
+                    }
+                    return Err(Error::Invalid(format!("context overflow: {message}")));
+                }
                 if step == 0 && !produced && error.input_rejected() {
                     inner
                         .store
                         .quarantine_failed_input(session, history_base, &error.to_string())
                         .await?;
                 }
-                let message = match detail.as_ref().and_then(provider_error_text) {
-                    Some(text) => format!("{error}: {text}"),
-                    None => error.to_string(),
-                };
                 if error.unavailable() {
                     // Say how many replays actually happened: a first attempt
                     // that failed on its own was never retried, and claiming
@@ -3948,7 +4104,20 @@ command: None,
         } else {
             None
         };
-        let limits = inner.context.lock().await.clone().or_else(|| {
+        // A window the endpoint stated when it refused this history is a usable
+        // budget. The engine is one process per Location, so `--context-limits`
+        // carries the default model's window; a Session on any other model used to
+        // run with no trigger at all until the endpoint refused it.
+        let configured = inner.context.lock().await.clone();
+        let learned = match &configured {
+            Some(_) => None,
+            None => {
+                inner
+                    .learned_limits(binding.as_ref().map(|binding| binding.model.as_str()))
+                    .await
+            }
+        };
+        let limits = configured.or(learned).or_else(|| {
             requested
                 .is_some()
                 .then(crate::context_trigger::ContextLimits::operator_requested)

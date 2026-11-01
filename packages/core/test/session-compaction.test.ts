@@ -306,6 +306,26 @@ test("compaction pins the latest goal into the retained context", async () => {
   expect(recents[0]).toContain("Ship the release")
 })
 
+// A model that publishes no window still has to be recoverable: the refusal
+// already proved the history does not fit, and the staged path bounds each
+// summarizer request by SUMMARY_INPUT_TOKENS. Requiring a declared window made
+// this the same dead end as having no compaction trigger at all.
+test("overflow recovery works for a model that declares no window", async () => {
+  const bare = OpenAIChat.route.model({ id: "bare" })
+  const { compaction, requests } = overflowHarness()
+  const input = {
+    sessionID: SessionSchema.ID.make("ses_no_window"),
+    entries: overflowEntries(),
+    model: bare,
+    request: LLM.request({ model: bare, messages: [] }),
+  } as never
+
+  expect(await Effect.runPromise(compaction.compactAfterOverflow(input, { allowSummaryOnly: true }))).toBe(true)
+  expect(requests.length).toBeGreaterThan(0)
+  // Proactive compaction still needs a window to decide against.
+  expect((await Effect.runPromise(compaction.compact(input))).result).toBe("skipped")
+})
+
 const customHarness = (config: unknown, attempt: Stream.Stream<never, never>) => {
   const requests: LLMRequest[] = []
   const compaction = SessionCompaction.make({

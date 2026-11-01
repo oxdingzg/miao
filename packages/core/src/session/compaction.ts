@@ -444,10 +444,12 @@ export const make = (dependencies: Dependencies) => {
     return { input: counted, source: "counted" as const }
   })
 
-  // Consecutive proactive-compaction failures per Session. A provider that keeps
-  // refusing the summary must not cost a summary attempt on every drain; the
-  // breaker trips until a compaction succeeds or a manual one resets it.
-  const failures = new Map<string, number>()
+  // Consecutive proactive-compaction failures per Session, with the request size
+  // the last one failed at. A provider that keeps refusing the summary must not
+  // cost a summary attempt on every drain, but the trip must not outlive the size
+  // that failed: a Session whose history keeps growing past it needs one more
+  // attempt, or the breaker itself is what stops the Session from compacting.
+  const failures = new Map<string, { count: number; at: number }>()
   // One summarization attempt. Returns the text only when the stream completed
   // cleanly and produced a non-empty summary, so an empty or refused response
   // can never replace the conversation.
@@ -602,7 +604,13 @@ export const make = (dependencies: Dependencies) => {
     options?: { readonly allowSummaryOnly?: boolean },
   ): Effect.fn.Return<Attempt> {
     const context = input.model.route.defaults.limits?.context
-    if (context === undefined || context <= 0) return summaryAttempt.skipped()
+    // Proactive compaction needs a declared window to decide against. Recovery
+    // does not: the refusal already proved the history does not fit, and every
+    // summarizer request this path builds is bounded by SUMMARY_INPUT_TOKENS.
+    // Requiring a declared window here left a Session on a model that publishes
+    // none with no way out of the refusal, which is the same dead end as having
+    // no compaction trigger at all.
+    if ((context === undefined || context <= 0) && !options?.allowSummaryOnly) return summaryAttempt.skipped()
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
     const selected = select(input.entries, config.tokens)
     const previousSummary = input.entries.find((entry) => entry.message.type === "compaction")?.message
@@ -624,7 +632,7 @@ export const make = (dependencies: Dependencies) => {
     })
     const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
     const systemTokens = Token.measureValue(input.request.system, recoveryTokens)
-    const ceiling = Math.min(SUMMARY_INPUT_TOKENS, context)
+    const ceiling = Math.min(SUMMARY_INPUT_TOKENS, context ?? SUMMARY_INPUT_TOKENS)
     const requestFor = (model: Model, prompt: string) =>
       LLM.request({
         model,
@@ -809,7 +817,13 @@ export const make = (dependencies: Dependencies) => {
       observed: input.observedTokens ?? 0,
     })
     const key = input.sessionID
-    if ((failures.get(key) ?? 0) >= MAX_COMPACTION_FAILURES) return false
+    // A tripped breaker is not permanent. It stays tripped only while the request
+    // is no larger than the one that already failed: replaying that attempt would
+    // fail the same way, but a materially larger history is a different attempt,
+    // and leaving it refused is how a Session grows to the provider's hard ceiling
+    // where every request is rejected and it can no longer be continued.
+    const failure = failures.get(key)
+    if (failure && failure.count >= MAX_COMPACTION_FAILURES && size.input * 10 < failure.at * 11) return false
     const attempt = yield* compact({ ...input, tokens: size.input })
     if (attempt.result === "compacted") {
       failures.delete(key)
@@ -818,7 +832,7 @@ export const make = (dependencies: Dependencies) => {
     // A strategy that never reached the model says nothing about the summarizer,
     // so only a real attempt counts against the breaker: counting a prompt that
     // did not fit is what used to stop compaction silently after three of them.
-    if (attempt.result === "failed") failures.set(key, (failures.get(key) ?? 0) + 1)
+    if (attempt.result === "failed") failures.set(key, { count: (failure?.count ?? 0) + 1, at: size.input })
     return false
   })
 
