@@ -39,6 +39,11 @@ pub enum Screen {
 /// frames is a real gap rather than scheduler jitter.
 const LIVE_SILENCE: Duration = Duration::from_secs(15);
 
+/// How close two clicks on the same landing row have to be to count as one
+/// double click. The window is generous enough for a slow hand and short
+/// enough that selecting two rows in turn never opens either of them.
+const DOUBLE_CLICK: Duration = Duration::from_millis(400);
+
 /// Where the engine last said an active run was. Ephemeral: a client that
 /// attaches mid-turn learns the run from the snapshot and the rest from the next
 /// frame, so nothing here is persisted.
@@ -174,6 +179,10 @@ pub struct App {
     /// When the leader was armed, so a stale one expires instead of eating a
     /// keystroke minutes later.
     leader_since: Option<Instant>,
+    /// The row and moment of the last click on the landing list, so a
+    /// second click on the same row is a double click rather than two
+    /// selections.
+    last_click: Option<(usize, Instant)>,
     /// How long an armed leader waits for its chord key.
     leader_timeout: Duration,
     keys: Keymap,
@@ -272,6 +281,7 @@ impl App {
             workspace_changes_generation: 0,
             leader: false,
             leader_since: None,
+            last_click: None,
             leader_timeout: Duration::from_millis(2000),
             keys,
             workspace,
@@ -839,6 +849,22 @@ impl App {
                 // The footer names the side the next `Tab` reaches, so a click
                 // that hands the list the keyboard moves the hint with it.
                 self.home.set_list_focus(true);
+                // A second click on the same row is the pointer's Enter: it
+                // opens the Session the first click selected. Any other click
+                // starts the pair again, so a stray click never opens anything.
+                let repeated = self
+                    .last_click
+                    .is_some_and(|(row, at)| row == index && at.elapsed() <= DOUBLE_CLICK);
+                self.last_click = match repeated {
+                    true => None,
+                    false => Some((index, Instant::now())),
+                };
+                if repeated {
+                    let selected = self.home.current().map(|row| row.id.clone());
+                    if let (Some(id), Some(engine)) = (selected, self.engine.as_ref()) {
+                        engine.open(&id);
+                    }
+                }
             }
             return;
         }
@@ -4180,6 +4206,44 @@ mod tests {
             app.home.current().map(|row| row.id.as_str()),
             Some("ses_first")
         );
+    }
+
+    #[test]
+    fn a_second_click_on_the_same_row_opens_the_session() {
+        // The pointer's Enter: one click selects and shows what the row is, a
+        // second click on that row opens it. A click on another row in between
+        // starts the pair again, so nothing opens by accident.
+        let mut app = app();
+        app.handle(AppEvent::Sessions(vec![
+            summary("ses_first", 300),
+            summary("ses_second", 200),
+        ]));
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).expect("terminal");
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+        let click = |row: u16| {
+            AppEvent::Mouse(MouseEvent::new(
+                MouseEventKind::Down(MouseButton::Left),
+                4,
+                row,
+                KeyModifiers::NONE,
+            ))
+        };
+        // First click: selection only.
+        app.handle(click(3));
+        assert!(requests.try_recv().is_err(), "one click must not open");
+        // Second click on the same row opens it.
+        app.handle(click(3));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Open(id)) if id == "ses_second"
+        ));
+        // A click on a different row starts over instead of opening.
+        app.handle(click(4));
+        app.handle(click(2));
+        assert!(requests.try_recv().is_err(), "different rows must not open");
     }
 
     #[test]
