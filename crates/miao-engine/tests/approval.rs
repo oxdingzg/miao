@@ -251,21 +251,85 @@ async fn the_always_allow_script_projects_a_saved_rule_and_stops_asking() {
     finished(&store).await;
     assert_eq!(approvals_so_far(&store).await, 1);
     assert_eq!(dispatches_so_far(&store).await, 2);
-    // PARITY-DBG: the durable grant's stored revision vs what the second
-    // run's evaluation captured - the scoping mismatch shows up here.
+    // The durable scope authorizes authority, never a run: a per-run or
+    // per-call field here would make every grant unusable after its own run.
     let connection = rusqlite::Connection::open(store.path()).unwrap();
-    let grant = connection
-        .query_row(
-            "SELECT scope FROM engine_permission_grant LIMIT 1",
-            [],
-            |row| row.get::<_, String>(0),
+    let grant: Value = serde_json::from_str(
+        &connection
+            .query_row(
+                "SELECT scope FROM engine_permission_grant LIMIT 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    let mut fields: Vec<&str> = grant.as_object().unwrap().keys().map(String::as_str).collect();
+    fields.sort();
+    assert_eq!(
+        fields,
+        [
+            "authority_revision",
+            "input_hash",
+            "resource",
+            "targets",
+            "tool",
+            "workspace"
+        ]
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_persistent_grant_stops_covering_calls_once_the_agent_identity_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("file"), "contents").unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Reader),
+        Tools::new(dir.path()).await.unwrap(),
+        ask_reads(),
+    )
+    .await
+    .unwrap();
+    runtime.admit(read_call(0), true).await.unwrap();
+    let binding = approval(&store).await;
+    runtime
+        .approve_persistent(
+            &runtime.controller(),
+            "s",
+            response(&binding, Decision::Allow),
         )
-        .unwrap_or_default();
-    let revision = serde_json::from_str::<Value>(&grant)
-        .ok()
-        .and_then(|scope| scope["authority_revision"].as_str().map(str::to_owned))
-        .unwrap_or_default();
-    eprintln!("PARITY-DBG grant revision={revision}");
+        .await
+        .unwrap();
+    assert!(wait_for_dispatch(&store, 1).await);
+    finished(&store).await;
+    runtime
+        .set_agent("s", serde_json::from_value(json!({"name":"other"})).unwrap())
+        .await
+        .unwrap();
+    runtime.admit(read_call(1), true).await.unwrap();
+    // The grant was written under the previous agent's authority revision, so
+    // the identical call must ask again instead of reusing it.
+    let binding = approval_at(&store, 2).await;
+    assert_eq!(approvals_so_far(&store).await, 2);
+    assert!(store
+        .events("s", 0, 200)
+        .await
+        .unwrap()
+        .iter()
+        .all(|event| event.kind != "permission.grant.used"));
+    runtime
+        .approve(
+            &runtime.controller(),
+            "s",
+            response(&binding, Decision::Allow),
+        )
+        .await
+        .unwrap();
+    assert!(wait_for_dispatch(&store, 2).await);
+    finished(&store).await;
     runtime.shutdown().await;
 }
 
