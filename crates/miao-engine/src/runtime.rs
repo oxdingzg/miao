@@ -146,6 +146,38 @@ enum Command {
     Approve(Response, bool, oneshot::Sender<Result<(), Error>>),
 }
 
+/// The automatic-compaction budget for one window: the same shape the product
+/// derives for its default model, so a Session whose window came from its own
+/// route, or from an endpoint that stated it, plans the way the product would.
+fn window_limits(window: u64) -> ContextLimits {
+    ContextLimits {
+        window,
+        ratio: 0.9,
+        // Mirrors the product's headroom: pruning protection, the summary
+        // reserve, and the default slack.
+        headroom: 40_000 + 2_048 + 20_000,
+        per_pass: 8,
+        prune_chars: None,
+        prune_total_chars: None,
+        protect_turns: 2,
+    }
+}
+
+/// Which window a Session plans against, most specific first: an operator's
+/// explicit override, the product's declaration for the Session's own model,
+/// then a window an endpoint stated when it refused the history. The
+/// process-wide value leads because only an operator sets it; a declaration for
+/// one model must never be promoted into the process-wide one.
+fn resolve_limits(
+    configured: Option<ContextLimits>,
+    declared: Option<u64>,
+    learned: Option<ContextLimits>,
+) -> Option<ContextLimits> {
+    configured
+        .or_else(|| declared.map(window_limits))
+        .or(learned)
+}
+
 impl Inner {
     /// Remember the window the endpoint itself stated when it refused a request.
     /// Keyed by the serving model, because one engine serves every Session in a
@@ -177,18 +209,7 @@ impl Inner {
     /// window, that window is a usable budget with the same formula the product
     /// uses for the default model.
     async fn learned_limits(&self, model: Option<&str>) -> Option<ContextLimits> {
-        let window = self.learned_window_for(model).await?;
-        Some(ContextLimits {
-            window,
-            ratio: 0.9,
-            // Mirrors the product's headroom: pruning protection, the summary
-            // reserve, and the default slack.
-            headroom: 40_000 + 2_048 + 20_000,
-            per_pass: 8,
-            prune_chars: None,
-            prune_total_chars: None,
-            protect_turns: 2,
-        })
+        Some(window_limits(self.learned_window_for(model).await?))
     }
 
     /// The base policy a turn starts from. Callers hold the returned `Arc` for
@@ -4104,20 +4125,22 @@ command: None,
         } else {
             None
         };
-        // A window the endpoint stated when it refused this history is a usable
-        // budget. The engine is one process per Location, so `--context-limits`
-        // carries the default model's window; a Session on any other model used to
-        // run with no trigger at all until the endpoint refused it.
+        // Which window this Session plans against, most specific first: the
+        // operator's explicit `engine.context_limits`, the window the product
+        // declares for the Session's own model, then one the endpoint stated when
+        // it refused this history. `--context-limits` alone cannot carry the last
+        // two: the engine is one process per Location, so it describes the default
+        // model, and a Session on any other model used to run with no trigger at
+        // all until the endpoint refused it.
         let configured = inner.context.lock().await.clone();
-        let learned = match &configured {
-            Some(_) => None,
-            None => {
-                inner
-                    .learned_limits(binding.as_ref().map(|binding| binding.model.as_str()))
-                    .await
-            }
-        };
-        let limits = configured.or(learned).or_else(|| {
+        let model = binding.as_ref().map(|binding| binding.model.as_str());
+        let declared = inner
+            .route_limits
+            .lock()
+            .await
+            .context_limit_for(model.unwrap_or_default());
+        let learned = inner.learned_limits(model).await;
+        let limits = resolve_limits(configured, declared, learned).or_else(|| {
             requested
                 .is_some()
                 .then(crate::context_trigger::ContextLimits::operator_requested)
@@ -6925,4 +6948,46 @@ fn validate_agent(inner: &Inner, agent: &crate::session_agent::AgentManifest) ->
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod window_tests {
+    use super::*;
+
+    fn window(of: u64) -> ContextLimits {
+        window_limits(of)
+    }
+
+    #[test]
+    fn an_operator_override_beats_every_other_window() {
+        let resolved = resolve_limits(Some(window(200_000)), Some(1_000_000), Some(window(90_000)));
+        assert_eq!(resolved.map(|limits| limits.window), Some(200_000));
+    }
+
+    #[test]
+    fn a_sessions_own_declaration_beats_a_learned_window() {
+        let resolved = resolve_limits(None, Some(1_000_000), Some(window(90_000)));
+        assert_eq!(resolved.map(|limits| limits.window), Some(1_000_000));
+    }
+
+    #[test]
+    fn a_learned_window_is_the_last_resort() {
+        assert_eq!(
+            resolve_limits(None, None, Some(window(90_000))).map(|limits| limits.window),
+            Some(90_000)
+        );
+        assert_eq!(
+            resolve_limits(None, None, None).map(|limits| limits.window),
+            None
+        );
+    }
+
+    #[test]
+    fn a_window_plans_the_way_the_product_plans_the_default_model() {
+        let limits = window(1_000_000);
+        assert_eq!(limits.window, 1_000_000);
+        assert_eq!(limits.headroom, 40_000 + 2_048 + 20_000);
+        assert_eq!(limits.per_pass, 8);
+        assert_eq!(limits.protect_turns, 2);
+    }
 }

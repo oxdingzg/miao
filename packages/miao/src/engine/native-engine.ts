@@ -189,18 +189,13 @@ export const nativeEngineOptions = (
     ? path.resolve(environment.MIAO_ENGINE_LSP_CONFIG)
     : merged.lspConfigFile
   merged.contextLimits = limits ? JSON.parse(limits) : merged.contextLimits
-  // A custom provider is invisible to the catalog, so automatic compaction had
-  // no window at all and the Session grew until the provider refused the turn.
-  // The operator's own declaration is the fallback: the same ratio and headroom
-  // the catalog path derives, only the window comes from their config.
-  if (merged.contextLimits === undefined && settings?.modelLimit?.context) {
-    merged.contextLimits = {
-      window: settings.modelLimit.context,
-      ratio: 0.9,
-      headroom: 40_000 + 2_048 + 20_000,
-      perPass: 8,
-    }
-  }
+  // `--context-limits` carries an operator override for the whole engine
+  // process, which serves every Session in a Location. The configured model's
+  // catalog limit must not be promoted into it: that window belongs to one
+  // model, and applying it to the process made Sessions on other models plan
+  // against a window that was not theirs. Every route the product writes
+  // already declares its own `limit.context`, which the engine reads per
+  // Session.
   return {
     binary: merged.binary,
     model: merged.model,
@@ -243,10 +238,6 @@ export const nativeEngineOptions = (
 export type EngineSettings = Omit<EngineOptions, "db" | "workspace"> & {
   /** Root of the product-side native databases; presence opts new Sessions in. */
   storage?: string
-  /** `providers.<id>.models.<model>.limit` for the configured model, when the
-   * operator declared one. The catalog does not know custom providers, so this
-   * is the only window automatic compaction can honor for them. */
-  modelLimit?: { readonly context?: number; readonly output?: number }
 }
 
 export const engineSettings = async (globalConfig: string): Promise<EngineSettings | undefined> => {
@@ -279,22 +270,7 @@ export const engineSettings = async (globalConfig: string): Promise<EngineSettin
   }
   const mergedInfo = Option.getOrUndefined(Config.decodeDocument(Config.merge(documents)))
   const mcpSettings = mergedInfo?.mcp
-  const configured = settings?.model ?? ""
-  const [providerID, ...rest] = configured.includes("/") ? configured.split("/") : ["", configured]
-  const declared =
-    mergedInfo?.providers?.[providerID]?.models?.[rest.join("/")] ??
-    mergedInfo?.providers?.[providerID]?.models?.[configured]
-  const modelLimit =
-    declared?.limit && typeof declared.limit.context === "number"
-      ? {
-          context: declared.limit.context,
-          ...(typeof declared.limit.output === "number" ? { output: declared.limit.output } : {}),
-        }
-      : undefined
-  const base = settings ?? { binary: "", model: "" }
-  return mcpSettings || modelLimit
-    ? { ...base, ...(mcpSettings ? { mcpSettings } : {}), ...(modelLimit ? { modelLimit } : {}) }
-    : settings
+  return mcpSettings ? { ...(settings ?? { binary: "", model: "" }), mcpSettings } : settings
 }
 
 /**
