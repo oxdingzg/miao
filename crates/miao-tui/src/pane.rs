@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
@@ -16,7 +16,7 @@ use crate::theme::Theme;
 use crate::{markdown, tool};
 
 const SIDEBAR_MIN_WIDTH: u16 = 100;
-const SIDEBAR_WIDTH: u16 = 24;
+const SIDEBAR_WIDTH: u16 = 40;
 
 pub trait Pane {
     fn render(&mut self, frame: &mut Frame, area: Rect);
@@ -1662,8 +1662,14 @@ pub struct SidebarPane {
 impl Pane for SidebarPane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
-        // The sidebar is a column of sections, not a framed panel: the frame
-        // ate two columns per side for a label the sections already carry.
+        // A single hairline, the way the TypeScript layout separates this column
+        // from the transcript: no frame around it, but the edge is visible.
+        let outer = area;
+        let edge = Block::new()
+            .borders(Borders::LEFT)
+            .border_style(Style::new().fg(palette.text_muted));
+        let area = edge.inner(outer);
+        frame.render_widget(edge, outer);
         let mut lines = match &self.session {
             None => vec![Line::from(Span::styled(
                 "no Session selected",
@@ -1674,7 +1680,6 @@ impl Pane for SidebarPane {
                     session.label().to_string(),
                     Style::new().fg(palette.text).add_modifier(Modifier::BOLD),
                 )),
-                Line::default(),
                 Line::from(Span::styled(
                     session.directory.clone().unwrap_or_default(),
                     Style::new().fg(palette.text_muted),
@@ -1693,10 +1698,8 @@ impl Pane for SidebarPane {
             // beside the transcript so cost and throughput stay glanceable.
             lines.push(Line::default());
             lines.push(Line::from(Span::styled(
-                "context",
-                Style::new()
-                    .fg(palette.primary)
-                    .add_modifier(Modifier::BOLD),
+                "▾ Context",
+                Style::new().fg(palette.text_muted),
             )));
             match &self.usage {
                 None => lines.push(Line::from(Span::styled(
@@ -1801,11 +1804,16 @@ impl Pane for SidebarPane {
             }
             lines.push(Line::default());
             if let Some(goal) = &self.goal {
+                // The status word is the one thing here that can need the
+                // operator, so it keeps colour only when it does.
+                let goal_style = match goal.status.as_str() {
+                    "blocked" => Style::new().fg(palette.warning),
+                    "done" => Style::new().fg(palette.success),
+                    _ => Style::new().fg(palette.text_muted),
+                };
                 lines.push(Line::from(Span::styled(
-                    format!("goal · {}", goal.status),
-                    Style::new()
-                        .fg(palette.primary)
-                        .add_modifier(Modifier::BOLD),
+                    format!("▾ Goal · {}", goal.status),
+                    goal_style,
                 )));
                 let width = area.width.saturating_sub(3);
                 lines.push(Line::from(Span::styled(
@@ -1828,16 +1836,9 @@ impl Pane for SidebarPane {
                 .iter()
                 .filter(|todo| todo.status == "completed")
                 .count();
-            let open = self
-                .todos
-                .iter()
-                .filter(|todo| todo.status != "completed" && todo.status != "cancelled")
-                .count();
             lines.push(Line::from(Span::styled(
-                format!("todo {}  ·  {} open", done, open),
-                Style::new()
-                    .fg(palette.primary)
-                    .add_modifier(Modifier::BOLD),
+                format!("▾ Todo {done}/{}", self.todos.len()),
+                Style::new().fg(palette.text_muted),
             )));
             if self.todos.is_empty() {
                 lines.push(Line::from(Span::styled(
@@ -2644,10 +2645,10 @@ mod tests {
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();
-        let goal = text.find("goal · active").expect("goal header");
+        let goal = text.find("▾ Goal · active").expect("goal header");
         let objective = text.find("ship the offset reporting").expect("objective");
         let budget = text.find("budget · two hours").expect("budget");
-        let todos = text.find("todo 1").expect("todo header");
+        let todos = text.find("▾ Todo 1/1").expect("todo header");
         assert!(goal < objective && objective < budget, "{text}");
         assert!(
             budget < todos,
