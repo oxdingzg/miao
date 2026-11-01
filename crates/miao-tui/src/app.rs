@@ -659,7 +659,7 @@ impl App {
                 }
             }
             AppEvent::ActionFailed(message) => {
-                self.shell.composer.notice = Some(message);
+                self.shell.composer.notice = Some(with_remedy(&message));
             }
             AppEvent::Notice(message) => self.notice(&message),
             AppEvent::PromptFailed {
@@ -690,6 +690,10 @@ impl App {
                 self.shell.composer.notice = Some(message);
             }
             AppEvent::EngineFailure(message) => {
+                // A start failure leaves the operator looking at one line with
+                // no way forward; the failures this TUI can actually explain
+                // carry the next step with them.
+                let message = with_remedy(&message);
                 self.home.set_notice(Some(message.clone()));
                 self.shell.set_message(&message);
             }
@@ -2606,6 +2610,50 @@ fn first_line(text: &str) -> String {
     label
 }
 
+/// A next step for a failure the operator can act on. The engine's own message
+/// names what broke; this says what to try next, and stays silent rather than
+/// guessing when the failure is unfamiliar — advice that does not fit costs the
+/// operator a detour.
+fn remedy(message: &str) -> Option<&'static str> {
+    let message = message.to_lowercase();
+    let rules = [
+        ("miao_engine_db", "pass --db <path> or set MIAO_ENGINE_DB"),
+        (
+            "no model routes",
+            "start the product with `miao`, or set MIAO_ENGINE_MODEL_ROUTES_CONFIG",
+        ),
+        (
+            "api key",
+            "set ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY",
+        ),
+        (
+            "miao-engine",
+            "install the engine beside the TUI, or set MIAO_ENGINE_BIN",
+        ),
+        (
+            "permission denied",
+            "check the engine's --mode and the workspace permissions",
+        ),
+        (
+            "timed out",
+            "retry; a stalled engine shows as `no engine signal` in the status line",
+        ),
+    ];
+    rules
+        .iter()
+        .find(|(needle, _)| message.contains(needle))
+        .map(|(_, advice)| *advice)
+}
+
+/// The message with its next step appended, when there is one and it is not
+/// already part of the message.
+fn with_remedy(message: &str) -> String {
+    match remedy(message) {
+        Some(advice) if !message.contains(advice) => format!("{message} — {advice}"),
+        _ => message.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2771,6 +2819,57 @@ mod tests {
         assert!(
             app.dialog.is_none(),
             "a chord whose window passed must not open the theme dialog"
+        );
+    }
+
+    #[test]
+    fn a_failure_the_operator_can_fix_carries_its_next_step() {
+        // UX-05: a raw engine message names the breakage but not the way out.
+        let cases = [
+            (
+                "pass --db <engine.db> or set MIAO_ENGINE_DB",
+                "MIAO_ENGINE_DB",
+            ),
+            ("no model routes", "MIAO_ENGINE_MODEL_ROUTES_CONFIG"),
+            ("missing api key for the provider", "ANTHROPIC_API_KEY"),
+            (
+                "cannot start /usr/local/bin/miao-engine: not found",
+                "MIAO_ENGINE_BIN",
+            ),
+            ("permission denied opening the workspace", "--mode"),
+            ("engine timed out after 30s", "no engine signal"),
+        ];
+        for (message, expected) in cases {
+            let advice = remedy(message).unwrap_or_default();
+            assert!(
+                advice.contains(expected),
+                "{message} should suggest {expected}, got {advice:?}"
+            );
+        }
+
+        // An unfamiliar failure stays as it is: invented advice sends the
+        // operator down the wrong path.
+        assert_eq!(remedy("something the TUI never saw"), None);
+        assert_eq!(
+            with_remedy("something the TUI never saw"),
+            "something the TUI never saw"
+        );
+        // A message that already names its own fix is not repeated.
+        let already = "pass --db <path> or set MIAO_ENGINE_DB";
+        assert_eq!(with_remedy(already), already);
+    }
+
+    #[test]
+    fn a_start_failure_shows_the_next_step_in_the_ui() {
+        let mut app = app();
+        app.handle(AppEvent::EngineFailure(
+            "pass --db <engine.db> or set MIAO_ENGINE_DB".into(),
+        ));
+        let notice = app.home.notice().expect("notice");
+        assert!(notice.contains("MIAO_ENGINE_DB"), "{notice}");
+        assert!(
+            notice.contains("pass --db"),
+            "the message keeps the engine's own words: {notice}"
         );
     }
 
