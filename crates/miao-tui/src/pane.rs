@@ -2096,10 +2096,11 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
         height: 1,
         ..area
     };
-    // Plain lists carry a type-ahead filter, and a Session list arms the same
-    // filter through `/`; either way the line shows what has been typed so the
-    // reviewer can see why rows disappeared.
-    let filtered = list.kind == ListKind::Plain || list.search;
+    // A filterable list carries a type-ahead row, and a Session list arms the
+    // same filter through `/`; either way the line shows what has been typed so
+    // the reviewer can see why rows disappeared. The dialog decides, so the
+    // keyboard and the paint cannot disagree about whether typing filters.
+    let filtered = list.shows_filter();
     let filter_area = filtered.then_some(Rect { height: 1, ..area });
     let list_area = Rect {
         y: area.y + if filtered { 1 } else { 0 },

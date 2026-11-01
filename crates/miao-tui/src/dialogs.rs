@@ -201,10 +201,18 @@ impl ListDialog {
         }
     }
 
-    /// Plain lists (models, accounts, themes) type-ahead filter; list kinds
-    /// with their own letter commands keep their keyboard.
+    /// Plain lists (models, accounts, themes) type-ahead filter, and so does a
+    /// read-only list: `help` is long enough that scrolling for a name is worse
+    /// than typing it. List kinds with their own letter commands keep their
+    /// keyboard.
     fn filterable(&self) -> bool {
-        self.kind == ListKind::Plain
+        matches!(self.kind, ListKind::Plain | ListKind::ReadOnly)
+    }
+
+    /// Whether the painted list carries a filter row: a filterable list always
+    /// does, and a Sessions list does while `/` has armed its search.
+    pub fn shows_filter(&self) -> bool {
+        self.filterable() || self.search
     }
 
     pub(crate) fn refilter(&mut self) {
@@ -736,7 +744,7 @@ impl Dialog {
             "help",
             rows,
             ListKind::ReadOnly,
-            "esc close",
+            "type to filter · esc close",
         ))
     }
 
@@ -1342,6 +1350,56 @@ mod tests {
             18,
             "a long change set still stays bounded"
         );
+    }
+
+    #[test]
+    fn typing_narrows_the_help_list_and_enter_still_closes() {
+        // UX-05: help is the place discovery happens, and it is long. Typing the
+        // name being looked for has to narrow it instead of scrolling.
+        let rows = vec![
+            Row {
+                id: "session_new".into(),
+                label: "session_new".into(),
+                detail: "ctrl+x n".into(),
+            },
+            Row {
+                id: "theme_list".into(),
+                label: "theme_list".into(),
+                detail: "ctrl+x t".into(),
+            },
+            Row {
+                id: "job_list".into(),
+                label: "job_list".into(),
+                detail: "ctrl+x j".into(),
+            },
+        ];
+        let mut dialog = Dialog::help(rows);
+        let Some(Dialog::Help(list)) = Some(&mut dialog) else {
+            panic!("help dialog");
+        };
+        assert_eq!(list.visible.len(), 3);
+        assert!(list.shows_filter(), "help carries a filter row");
+        for character in "them".chars() {
+            handle_list_key(list, key(KeyCode::Char(character)));
+        }
+        assert_eq!(list.visible.len(), 1, "only the theme row is left");
+        assert_eq!(
+            list.visible
+                .first()
+                .and_then(|index| list.rows.get(*index))
+                .map(|row| row.label.as_str()),
+            Some("theme_list")
+        );
+        // Read-only means Enter closes and runs nothing, filtered or not.
+        assert!(matches!(
+            handle_list_key(list, key(KeyCode::Enter)),
+            Action::Close
+        ));
+        // Backspacing back to empty shows the whole table again.
+        for _ in 0..4 {
+            handle_list_key(list, key(KeyCode::Backspace));
+        }
+        assert_eq!(list.visible.len(), 3);
     }
 
     #[test]
