@@ -2223,6 +2223,9 @@ fn engine_argv_with(
                     // provider's: name the route's own model instead.
                     if !routes.iter().any(|route| route["id"].as_str() == Some(model)) {
                         if let Some(id) = primary["id"].as_str() {
+                            // Say which model a defaulted turn will use: a silent
+                            // default here reads as "it hung" when that route is slow.
+                            eprintln!("miao: no model chosen; using {id}");
                             if let Some(position) = argv.iter().position(|arg| arg == "--model") {
                                 argv[position + 1] = id.to_string();
                             }
