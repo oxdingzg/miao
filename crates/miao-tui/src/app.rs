@@ -2994,6 +2994,51 @@ mod tests {
     }
 
     #[test]
+    fn a_reversible_action_does_not_ask_first() {
+        // UX-05: archiving is undone by archiving again, so a confirmation
+        // would only be a second keystroke between the operator and the work.
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.catalog = vec![summary("ses_a", 10)];
+        app.dialog = Some(Dialog::sessions(&app.catalog));
+        app.dialog_action(DialogAction::ToggleArchive("ses_a".into()));
+        assert!(
+            app.dialog.is_none(),
+            "archiving goes straight through instead of opening a confirm"
+        );
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Archive { session_id, archived })
+                if session_id == "ses_a" && archived
+        ));
+    }
+
+    #[test]
+    fn a_destructive_action_asks_with_the_blast_radius_in_hand() {
+        // The same menu, the opposite rule: removing a Session destroys what it
+        // owns, so it asks, and the prompt says so.
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.catalog = vec![summary("ses_a", 10)];
+        app.dialog = Some(Dialog::sessions(&app.catalog));
+        app.dialog_action(DialogAction::Remove("ses_a".into()));
+        let Some(Dialog::Confirm(confirm)) = app.dialog.as_ref() else {
+            panic!("removing asks first");
+        };
+        assert!(
+            confirm.message.contains("cannot be undone"),
+            "{}",
+            confirm.message
+        );
+        assert!(
+            requests.try_recv().is_err(),
+            "nothing is destroyed until the dialog is confirmed"
+        );
+    }
+
+    #[test]
     fn pin_toggles_the_engine_owned_pin() {
         let mut app = app();
         let (handle, mut requests) = engine::Handle::recording();

@@ -1486,6 +1486,35 @@ mod tests {
     }
 
     #[test]
+    fn a_confirmation_states_the_blast_radius_it_asks_about() {
+        // UX-05: a destructive prompt has to say what it destroys and whether
+        // the operator can walk it back, so "yes" is an informed answer.
+        let remove = Dialog::confirm_remove("ses_a", "login fix");
+        let Dialog::Confirm(confirm) = &remove else {
+            panic!("removing a Session asks first");
+        };
+        assert!(confirm.message.contains("login fix"), "{}", confirm.message);
+        assert!(
+            confirm.message.contains("cannot be undone"),
+            "the prompt says the deletion is permanent: {}",
+            confirm.message
+        );
+        assert!(!confirm.confirmed, "the safe answer starts focused");
+
+        let plan = crate::session::RevertPlan::default();
+        let revert = Dialog::confirm_revert(4, &plan);
+        let Dialog::Confirm(confirm) = &revert else {
+            panic!("a revert asks first");
+        };
+        assert_eq!(
+            confirm.message,
+            plan.summary(),
+            "the prompt is the engine's own plan, not a generic warning"
+        );
+        assert!(!confirm.confirmed);
+    }
+
+    #[test]
     fn a_jobs_row_names_the_job_and_x_stops_it() {
         // A Session with no jobs says so, and `x` on a row names that job so the
         // caller stops the one the operator is looking at.
