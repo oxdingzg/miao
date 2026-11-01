@@ -73,6 +73,36 @@ impl Provider for ToolThenInvalid {
     }
 }
 
+/// Refuses the first call the way an endpoint does when the assembled history no
+/// longer fits the window it publishes, then answers `ok`. This is the shape that
+/// used to brick a Session: the refusal was read as a bad input, so the promoted
+/// prompt was quarantined and every later continue re-sent the same oversized
+/// request.
+struct OverflowThenOk {
+    calls: AtomicUsize,
+}
+
+#[async_trait]
+impl Provider for OverflowThenOk {
+    async fn stream(
+        &self,
+        _: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            return Err(ProviderError::Rejected(
+                "This model's maximum context length is 1048576 tokens. However, you requested 1140636 tokens (1140636 in the messages, 0 in the completion). Please reduce the length of the messages or completion.".into(),
+            ));
+        }
+        Ok(Reply {
+            content: json!([{"type": "text", "text": "ok"}]),
+            usage: json!({}),
+            needs_tools: false,
+        })
+    }
+}
+
 async fn harness(provider: Arc<impl Provider + 'static>) -> (Runtime, Store) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
@@ -247,4 +277,45 @@ async fn mid_run_failures_keep_committed_history() {
     assert!(events
         .iter()
         .any(|event| event.kind == "run.finished" && event.data["reason"] == "completed"));
+}
+
+/// A context refusal is the history, not the input. The engine learns the window
+/// the endpoint stated, keeps the operator's prompt, and retries the same step with
+/// a bounded request — so the turn recovers inside the same drain instead of
+/// failing and replaying the same oversized request on every continue.
+#[tokio::test]
+async fn a_context_overflow_is_learned_and_recovered_in_the_same_drain() {
+    let provider = Arc::new(OverflowThenOk {
+        calls: AtomicUsize::new(0),
+    });
+    let (runtime, store) = harness(provider.clone()).await;
+    admit(&runtime, "one", "继续").await;
+    let events = wait_for_runs(&store, 1).await;
+    assert!(events
+        .iter()
+        .any(|event| event.kind == "provider.overflow" && event.data["limit"] == json!(1_048_576u64)));
+    // Nothing is quarantined: the message was never the problem.
+    assert!(!rejected_message(&events));
+    // The refusal does not end the turn: the same drain retries and completes, so
+    // the operator does not have to send another prompt to escape it.
+    assert!(events
+        .iter()
+        .any(|event| event.kind == "run.finished" && event.data["reason"] == "completed"));
+    assert!(!events.iter().any(|event| event.kind == "stop_failure"));
+    // The refusal, the bounded retry, and the summary the overflow asked for.
+    assert!(provider.calls.load(Ordering::SeqCst) >= 2);
+    assert!(
+        events.iter().any(|event| event.kind == "history.compacted"),
+        "the refused history is compacted instead of being replayed"
+    );
+    // The transcript keeps the operator's prompt even though the checkpoint the
+    // recovery asked for folded it into the summary.
+    assert!(store
+        .history("s")
+        .await
+        .unwrap()
+        .iter()
+        .any(|message| serde_json::to_string(&message.content)
+            .unwrap()
+            .contains("继续")));
 }

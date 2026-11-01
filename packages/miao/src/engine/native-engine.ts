@@ -10,6 +10,7 @@ import { SessionCreate } from "@miao/core/session-create"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { Model } from "@miao/schema/model"
+import { isContextOverflow } from "@miao/llm"
 import { AmbientContext } from "./ambient-context"
 import { ProductHooks } from "./product-hooks"
 import { PluginHooks } from "./plugin-hooks"
@@ -120,11 +121,24 @@ import { readTranscript } from "./transcript"
  * engine now sends such a turn without the note instead of refusing it, but the
  * engine is installed separately: a newer product can still reach one that
  * emits this refusal, so it stays recognised.
+ *
+ * The endpoint's own refusal belongs here too. An engine without a configured
+ * context window sends whatever the history holds, so the first sign that a
+ * request no longer fits is the provider answering `maximum context length is
+ * 1048576 tokens ... you requested 1140636`. That message is not one of ours,
+ * and treating it as an ordinary invalid request left the Session replaying the
+ * same oversized request on every continue: `overflows` is the only thing that
+ * closes the turn and compacts, so an unrecognised overflow is terminal.
  */
-const OVERFLOW = ["selected history exceeds budget", "selected input including Session state exceeds budget"]
+const OVERFLOW = [
+  "selected history exceeds budget",
+  "selected input including Session state exceeds budget",
+  "context overflow",
+]
 
 export const overflows = (error: unknown) =>
-  error instanceof Error && OVERFLOW.some((message) => error.message.includes(message))
+  error instanceof Error &&
+  (OVERFLOW.some((message) => error.message.includes(message)) || isContextOverflow(error.message))
 
 export const nativeEngineOptions = (
   environment: Record<string, string | undefined> = process.env,

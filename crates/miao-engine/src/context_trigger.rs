@@ -212,10 +212,6 @@ where
     // the operator asked, and everything newer stays in the prefix verbatim.
     let boundary = through.unwrap_or(boundary);
     let channel = |kind: &str| json!({"session_id": session, "run_id": run, "kind": kind});
-    if !breaker.allows() {
-        notify(channel("compaction.skipped"));
-        return Ok(false);
-    }
     // Gate ①: the anchor is the newest usage report's normalized context plus
     // the message it counted. Only the messages appended after that report are
     // still uncounted, and for those gate ② prefers the provider's own count
@@ -237,6 +233,15 @@ where
         None => return Ok(false),
     };
     if !forced && !budget.should_compact(Some(context), pending_tokens) {
+        return Ok(false);
+    }
+    // Gate ⑤ runs after the size is known: a tripped breaker may open a
+    // half-open attempt once the history has grown past the size that failed.
+    // Checking it before the anchor made the trip permanent for the rest of the
+    // Session, so a summarizer that failed once could never compact again and the
+    // history grew until the endpoint refused every request.
+    if !breaker.allows_at(context.saturating_add(pending_tokens)) {
+        notify(channel("compaction.skipped"));
         return Ok(false);
     }
     // The summary covers the warm prefix the next turn would re-send, which is
@@ -302,7 +307,7 @@ where
             // bounded, and a timeout degrades like any other summary failure.
             match tokio::time::timeout(SUMMARY_TIMEOUT, summarize(instruction)).await {
                 Err(_) => {
-                    breaker.rejected();
+                    breaker.rejected(context.saturating_add(pending_tokens));
                     notify(json!({
                         "session_id": session, "run_id": run,
                         "kind": "compaction.failed", "reason": "summary timeout",
@@ -333,7 +338,7 @@ where
                             (trimmed.len() < body.len()).then_some(trimmed)
                         });
                     let Some(trimmed) = retry else {
-                        breaker.rejected();
+                        breaker.rejected(context.saturating_add(pending_tokens));
                         notify(json!({
                             "session_id": session, "run_id": run,
                             "kind": "compaction.failed", "reason": reason,
@@ -353,7 +358,7 @@ where
                             }));
                         }
                         _ => {
-                            breaker.rejected();
+                            breaker.rejected(context.saturating_add(pending_tokens));
                             notify(json!({
                                 "session_id": session, "run_id": run,
                                 "kind": "compaction.failed", "reason": reason,
@@ -382,7 +387,7 @@ where
             Ok(true)
         }
         Err(error) => {
-            breaker.rejected();
+            breaker.rejected(context.saturating_add(pending_tokens));
             notify(json!({
                 "session_id": session, "run_id": run,
                 "kind": "compaction.failed", "reason": error.to_string(),
@@ -555,13 +560,18 @@ fn bounded_to(text: &str, max: usize) -> String {
 }
 
 /// Gate 5: the compaction circuit breaker. After `threshold` consecutive
-/// rejected attempts the breaker trips and the trigger stays off until an
-/// explicit `compact` resets it, so a persistently failing summarizer cannot
-/// spin the engine. An operator's explicit compact is also the reset.
+/// rejected attempts the breaker trips so a persistently failing summarizer
+/// cannot spin the engine. It is not permanent: a Session whose history keeps
+/// growing past the size that already failed gets one more attempt (half-open),
+/// because a breaker that stays tripped while the context grows only guarantees
+/// that the history reaches the endpoint's hard ceiling, where every request is
+/// refused and the Session can no longer be continued at all.
 #[derive(Debug, Clone)]
 pub struct Breaker {
     threshold: u8,
     failures: u8,
+    /// Context tokens that were being compacted when an attempt last failed.
+    tripped_at: Option<u64>,
 }
 
 impl Breaker {
@@ -569,11 +579,14 @@ impl Breaker {
         Self {
             threshold,
             failures: 0,
+            tripped_at: None,
         }
     }
 
-    /// A rejected compaction attempt. Reaching the threshold trips the breaker.
-    pub fn rejected(&mut self) {
+    /// A rejected compaction attempt. Reaching the threshold trips the breaker,
+    /// remembering how large the history was so a later, larger one can retry.
+    pub fn rejected(&mut self, context: u64) {
+        self.tripped_at = Some(context);
         if self.failures < u8::MAX {
             self.failures = self.failures.saturating_add(1);
         }
@@ -583,11 +596,30 @@ impl Breaker {
     /// breaker.
     pub fn reset(&mut self) {
         self.failures = 0;
+        self.tripped_at = None;
     }
 
     /// Whether compaction may be attempted.
     pub fn allows(&self) -> bool {
         self.failures < self.threshold
+    }
+
+    /// Whether compaction may be attempted at this context size. A tripped
+    /// breaker opens one half-open attempt once the history has grown at least a
+    /// tenth past the size that failed: the same request would fail again, but a
+    /// materially larger one is a different attempt, and leaving it refused is
+    /// how a Session reaches the endpoint's ceiling.
+    pub fn allows_at(&mut self, context: u64) -> bool {
+        if self.allows() {
+            return true;
+        }
+        match self.tripped_at {
+            Some(tripped) if context.saturating_mul(10) >= tripped.saturating_mul(11) => {
+                self.failures = self.threshold.saturating_sub(1);
+                true
+            }
+            _ => false,
+        }
     }
 }
 
@@ -648,6 +680,75 @@ pub struct PruneStats {
     pub messages: usize,
     pub before_bytes: usize,
     pub after_bytes: usize,
+}
+
+/// What one hard trim dropped from the outgoing request.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct TrimStats {
+    pub messages: usize,
+    pub before_bytes: usize,
+    pub after_bytes: usize,
+}
+
+/// Whether the message carries a tool result, which is only valid directly after
+/// the assistant message that called the tool.
+fn carries_tool_result(message: &Message) -> bool {
+    message
+        .content
+        .as_array()
+        .is_some_and(|blocks| blocks.iter().any(|block| block["type"] == "tool_result"))
+}
+
+/// The last-resort bound on an assembled request.
+///
+/// Compaction is the planned way to shrink a Session, but it needs a summarizer
+/// the endpoint will answer. When that is unavailable — no configured window, a
+/// summarizer the provider keeps refusing — the history grows past the window and
+/// every request is refused, which is how a Session stops being continuable.
+/// Dropping the oldest turns keeps the newest work and the operator's prompt, so
+/// the next request is served instead of refused. The durable transcript is
+/// untouched: this bounds one request, exactly like tool-output pruning does.
+///
+/// The estimate over-counts on purpose (two bytes per token). This only runs when
+/// the request is already at the window, so trimming a little early is safe and
+/// under-counting is not: the sessions that reach it are usually CJK-heavy, where
+/// a three-bytes-per-token estimate is off by a factor of three.
+pub fn trim_history_to_fit(messages: &mut Vec<Message>, budget: u64) -> TrimStats {
+    let mut stats = TrimStats::default();
+    let sizes = messages
+        .iter()
+        .map(|message| serde_json::to_vec(message).map(|bytes| bytes.len()).unwrap_or(0))
+        .collect::<Vec<_>>();
+    let mut total = sizes.iter().sum::<usize>();
+    stats.before_bytes = total;
+    let over = |total: usize| (total as u64).div_ceil(2) > budget;
+    let mut dropped = 0;
+    // The trailing message is the operator's prompt: without it the request has
+    // nothing to do, so it is never dropped.
+    while dropped + 1 < messages.len() && over(total) {
+        let mut cut = dropped + 1;
+        // A request has to start on a user turn: a leading assistant message, or a
+        // tool result whose call was just dropped, is not a valid prefix. The cut
+        // continues to the next clean user message instead of emitting one.
+        while cut < messages.len()
+            && (messages[cut].role != "user" || carries_tool_result(&messages[cut]))
+        {
+            cut += 1;
+        }
+        if cut >= messages.len() {
+            break;
+        }
+        for size in &sizes[dropped..cut] {
+            total = total.saturating_sub(*size);
+        }
+        dropped = cut;
+    }
+    if dropped > 0 {
+        messages.drain(..dropped);
+        stats.messages = dropped;
+    }
+    stats.after_bytes = total;
+    stats
 }
 
 pub fn prune_history_with_stats(
@@ -931,6 +1032,82 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn text_message(role: &str, body: &str) -> Message {
+        Message {
+            role: role.into(),
+            content: json!([{"type": "text", "text": body}]),
+            checkpoint: None,
+            recorded_at_ms: None,
+        }
+    }
+
+    fn tool_result_message(id: &str, body: &str) -> Message {
+        Message {
+            role: "user".into(),
+            content: json!([{"type": "tool_result", "tool_use_id": id, "content": body}]),
+            checkpoint: None,
+            recorded_at_ms: None,
+        }
+    }
+
+    // The guard exists so a request the endpoint already refused is never sent
+    // again unchanged: it keeps the operator's prompt and the newest work.
+    #[test]
+    fn trimming_keeps_the_prompt_and_drops_oldest_turns() {
+        let mut messages = vec![
+            text_message("user", &"old question ".repeat(200)),
+            text_message("assistant", &"old answer ".repeat(200)),
+            text_message("user", "newest question"),
+        ];
+        let stats = trim_history_to_fit(&mut messages, 200);
+        assert_eq!(stats.messages, 2);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].content[0]["text"], "newest question");
+        assert!(stats.after_bytes < stats.before_bytes);
+    }
+
+    #[test]
+    fn trimming_never_leaves_an_orphan_tool_result() {
+        let mut messages = vec![
+            text_message("user", "ask"),
+            text_message("assistant", &"call ".repeat(400)),
+            tool_result_message("call_1", &"output ".repeat(400)),
+            text_message("assistant", &"more ".repeat(400)),
+            text_message("user", "continue"),
+        ];
+        let stats = trim_history_to_fit(&mut messages, 400);
+        assert!(stats.messages > 0);
+        assert!(!carries_tool_result(&messages[0]));
+        assert_eq!(messages.last().unwrap().content[0]["text"], "continue");
+    }
+
+    // A request must start on a clean user turn: a leading assistant message, or a
+    // tool result whose call was dropped, is rejected by the wire format.
+    #[test]
+    fn trimming_starts_the_request_on_a_clean_user_turn() {
+        let mut messages = vec![
+            text_message("user", &"ask ".repeat(300)),
+            text_message("assistant", &"answer ".repeat(300)),
+            tool_result_message("call_9", &"output ".repeat(300)),
+            text_message("user", &"next ask ".repeat(300)),
+            text_message("assistant", &"next answer ".repeat(300)),
+            text_message("user", "continue"),
+        ];
+        let stats = trim_history_to_fit(&mut messages, 300);
+        assert!(stats.messages > 0);
+        assert_eq!(messages[0].role, "user");
+        assert!(!carries_tool_result(&messages[0]));
+        assert_eq!(messages.last().unwrap().content[0]["text"], "continue");
+    }
+
+    #[test]
+    fn trimming_leaves_a_fitting_request_alone() {
+        let mut messages = vec![text_message("user", "small"), text_message("assistant", "ok")];
+        let stats = trim_history_to_fit(&mut messages, 10_000);
+        assert_eq!(stats.messages, 0);
+        assert_eq!(messages.len(), 2);
+    }
+
     #[test]
     fn prune_elides_oversized_tool_output_and_protects_recent_turns() {
         let mut messages = vec![
@@ -1102,15 +1279,38 @@ mod tests {
     fn breaker_trips_after_the_threshold_and_resets_explicitly() {
         let mut breaker = Breaker::new(3);
         assert!(breaker.allows());
-        breaker.rejected();
-        breaker.rejected();
+        breaker.rejected(100_000);
+        breaker.rejected(100_000);
         assert!(breaker.allows());
-        breaker.rejected();
+        breaker.rejected(100_000);
         assert!(!breaker.allows());
-        breaker.rejected();
+        breaker.rejected(100_000);
         assert!(!breaker.allows());
         breaker.reset();
         assert!(breaker.allows());
+    }
+
+    // A summarizer that failed once must not disable compaction for the rest of
+    // the Session: the history keeps growing, and a permanently tripped breaker
+    // only guarantees that it reaches the endpoint's hard ceiling, where every
+    // request is refused and the Session cannot be continued.
+    #[test]
+    fn a_tripped_breaker_opens_one_attempt_once_the_history_grows() {
+        let mut breaker = Breaker::new(3);
+        for _ in 0..3 {
+            breaker.rejected(1_000_000);
+        }
+        assert!(!breaker.allows());
+        // The same size would fail the same way, so the trip still holds.
+        assert!(!breaker.allows_at(1_000_000));
+        assert!(!breaker.allows_at(1_050_000));
+        // A tenth larger is a different attempt, and it opens exactly one.
+        assert!(breaker.allows_at(1_100_000));
+        assert!(breaker.allows());
+        breaker.rejected(1_100_000);
+        breaker.rejected(1_100_000);
+        breaker.rejected(1_100_000);
+        assert!(!breaker.allows_at(1_100_000));
     }
 
     #[test]

@@ -12,6 +12,7 @@ pub mod config_explain;
 pub mod config_scope;
 pub mod config_v1;
 pub mod context;
+pub mod context_overflow;
 pub mod context_trigger;
 mod copilot;
 pub mod credential;

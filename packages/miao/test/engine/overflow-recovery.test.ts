@@ -14,6 +14,24 @@ test("both overflow refusals reach the compaction recovery", () => {
   expect(overflows("selected history exceeds budget")).toBe(false)
 })
 
+// The endpoint's own refusal is the only overflow signal an engine without a
+// configured context window ever produces. A Session that reaches it replayed
+// the same 1.14M-token request on every continue because the host did not
+// recognise the wording, so the provider's message must reach the same recovery.
+test("the endpoint's own context refusal reaches the compaction recovery", () => {
+  expect(
+    overflows(
+      new Error(
+        "invalid request: provider HTTP 400: Upstream request failed: [invalid_request_error] This model's maximum context length is 1048576 tokens. However, you requested 1140636 tokens (1140636 in the messages, 0 in the completion). Please reduce the length of the messages or completion. (request_id: a20ae8ae-d33f-46c3-b1dc-fa95e34d9470)",
+      ),
+    ),
+  ).toBe(true)
+  expect(overflows(new Error("invalid request: context overflow: the request no longer fits"))).toBe(true)
+  // Rate limits and quota refusals share the transport but not the remedy.
+  expect(overflows(new Error("invalid request: provider HTTP 429: rate limit exceeded"))).toBe(false)
+  expect(overflows(new Error("invalid request: provider HTTP 400: malformed tool schema"))).toBe(false)
+})
+
 // The engine no longer refuses an oversized input over its Session-state note:
 // it sends the turn without the note. The host keeps matching the old refusal
 // because the engine is installed separately, so a newer product can still be
