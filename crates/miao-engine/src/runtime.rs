@@ -1161,6 +1161,34 @@ impl Runtime {
     /// The context section swaps each host file's content through `Tools`, so
     /// a turn already reading its instructions or hooks finishes on the
     /// snapshot it took and the next one sees the edit.
+    /// The normalized document behind this process's config sources. It is
+    /// re-derived from the same plan the engine was started with, so a host
+    /// comparing its own reader sees exactly what Session execution sees.
+    pub async fn normalized_config(&self) -> Result<Value, Error> {
+        let origin = self
+            .inner
+            .policy_origin
+            .lock()
+            .await
+            .clone()
+            .map(|(origin, _)| origin);
+        let sources = match origin {
+            Some(crate::config_derive::PolicyOrigin::Sources(plan)) => plan,
+            Some(crate::config_derive::PolicyOrigin::Directory(directory)) => {
+                vec![crate::config_derive::Source::Dir(directory)]
+            }
+            // A materialized policy file or an entry default carries no ordered
+            // sources to normalize; saying so beats returning an empty object.
+            _ => {
+                return Err(Error::Invalid(
+                    "this engine was started without ordered config sources".into(),
+                ))
+            }
+        };
+        crate::config_derive::normalized_from_sources(&sources)
+            .map_err(|error| Error::Invalid(format!("config normalization failed: {error}")))
+    }
+
     pub async fn reload_config(&self) -> Result<Value, Error> {
         let mut unsupported = vec!["tools"];
         // The LSP registry only exists when startup found at least one server;
