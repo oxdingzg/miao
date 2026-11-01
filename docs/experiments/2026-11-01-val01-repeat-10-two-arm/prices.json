@@ -1,0 +1,12 @@
+{
+  "model": "deepseek/deepseek-flash",
+  "catalog_name": "DeepSeek V4.1 Flash 1017",
+  "provider": "deepseek (openai-compatible, https://api.deepseek.com)",
+  "rates_per_million_tokens": {
+    "input": 0.15,
+    "output": 0.6,
+    "cache_read": 0.003,
+    "cache_write": 0
+  },
+  "source": "catalog list prices reported by `miao models deepseek --verbose` on 2026-11-01"
+}

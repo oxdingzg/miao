@@ -1,0 +1,16 @@
+{
+  "model": "deepseek/deepseek-flash",
+  "task": "multifile",
+  "engine": "rust",
+  "attempt": 4,
+  "ok": true,
+  "turns": 6,
+  "input": 99902,
+  "cacheRead": 96512,
+  "output": 1747,
+  "billedIn": 196414,
+  "cost": 0.001846236,
+  "costUnknown": 0,
+  "seconds": 25.662,
+  "resumed": false
+}

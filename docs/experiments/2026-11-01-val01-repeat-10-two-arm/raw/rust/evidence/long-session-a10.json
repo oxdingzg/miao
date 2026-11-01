@@ -1,0 +1,17 @@
+{
+  "model": "deepseek/deepseek-flash",
+  "task": "long-session",
+  "engine": "rust",
+  "attempt": 10,
+  "ok": false,
+  "turns": 4,
+  "input": 60194,
+  "cacheRead": 59136,
+  "output": 414,
+  "billedIn": 119330,
+  "cost": 0.0005845080000000001,
+  "costUnknown": 0,
+  "seconds": 32.028,
+  "resumed": false,
+  "verifyError": "bun test v1.3.14 (0d9b296a)\n\nNo tests found!\n\nTests need \".test\", \"_test_\", \".spec\" or \"_spec_\" in the filename (ex: \"MyApp.test.ts\")\n\nLearn more about bun test: https://bun.com/docs/cli/test\n"
+}
