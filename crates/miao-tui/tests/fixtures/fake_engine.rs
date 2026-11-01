@@ -110,6 +110,21 @@ fn main() {
                 send(&mut out, json!({"id":id,"result":{"removed":true}}));
             }
 
+            // A prompt is admitted and the turn then fails: the recovery path
+            // is "send it again", which the harness measures in keystrokes.
+            "admit" if sessions => {
+                log_action(&frame["params"], method);
+                send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+                let run = format!("run-fail-{}", next);
+                let mut started = event(&session_id, next, "run.started");
+                started["data"] = json!({"run_id": run});
+                send(&mut out, json!({"method":"event","params":started}));
+                next += 1;
+                let mut finished = event(&session_id, next, "run.finished");
+                finished["data"] = json!({"run_id": run, "reason": "failed"});
+                send(&mut out, json!({"method":"event","params":finished}));
+                next += 1;
+            }
             "subscribe" => {
                 let after = frame["params"]["after"].as_u64().unwrap_or(0);
                 session_id = frame["params"]["session_id"]
