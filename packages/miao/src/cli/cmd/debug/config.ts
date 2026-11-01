@@ -32,14 +32,39 @@ export const ConfigCommand = effectCmd({
   command: "config",
   describe: "show resolved configuration",
   builder: (yargs) =>
-    yargs.option("sources", {
-      type: "boolean",
-      description: "Show each value's source file, scope and override order",
-    }),
+    yargs
+      .option("sources", {
+        type: "boolean",
+        description: "Show each value's source file, scope and override order",
+      })
+      .option("engine", {
+        type: "boolean",
+        description: "Also print the normalized document the native engine reads, for comparison",
+      }),
   handler: (args) =>
     Effect.gen(function* () {
       const config = yield* Config.Service
       const entries = yield* config.entries()
+      if (args.engine) {
+        // Two readers serve one document: this one, and the engine. Printing the
+        // engine's answer for the same sources makes a divergence visible on a
+        // real configuration instead of only in the fixture corpus.
+        const plan = config.sources ? JSON.stringify(yield* config.sources()) : undefined
+        if (!plan) return yield* fail("config sources are unavailable")
+        const binary = process.env.MIAO_ENGINE_BIN ?? "miao-engine"
+        const child = Bun.spawn([binary, "config", "json", "--config-sources", plan], {
+          stdout: "pipe",
+          stderr: "pipe",
+        })
+        const [stdout, stderr, code] = yield* Effect.promise(() =>
+          Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]),
+        )
+        if (code !== 0) return yield* fail(`the engine refused the config: ${stderr.trim() || code}`)
+        // The engine prints what it reads, secrets included; redact before it
+        // reaches a terminal or a paste.
+        process.stdout.write(JSON.stringify(redactConfig(JSON.parse(stdout)), null, 2) + EOL)
+        return
+      }
       if (!args.sources) {
         process.stdout.write(JSON.stringify(redactConfig(Config.merge(entries)), null, 2) + EOL)
         return
