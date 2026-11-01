@@ -713,6 +713,11 @@ pub struct Home {
     /// screen comes up full instead of opening at a fixed ten rows in a tall
     /// terminal and asking for `space` before it has shown anything.
     capacity: usize,
+    /// Where the last painted frame put each Session: its absolute screen row
+    /// and its index in the visible list. A click names the row it landed on
+    /// instead of the list re-deriving the viewport and the scroll offset from
+    /// the pointer, which would drift as soon as either changed.
+    anchors: Vec<(u16, usize)>,
     /// Case-insensitive substring the list is narrowed to. Empty shows
     /// everything, so filtering is a mode of the same list rather than a
     /// second screen whose selection has to be kept in step.
@@ -741,6 +746,7 @@ impl Home {
             selected: 0,
             limit: HOME_PAGE,
             capacity: 0,
+            anchors: Vec::new(),
             query: String::new(),
             filtering: false,
             list_focus: false,
@@ -904,6 +910,22 @@ impl Home {
         self.visible().into_iter().nth(index)
     }
 
+    /// Select a row by its index in the visible list, the way a click does.
+    pub fn select(&mut self, index: usize) {
+        self.selected = index.min(self.visible_len().saturating_sub(1));
+    }
+
+    /// The visible row painted on this screen row, if any. The landing list is
+    /// the one place a pointer has something to name, so the answer comes from
+    /// the frame that is on screen rather than from a second copy of the
+    /// viewport arithmetic.
+    pub fn row_at(&self, y: u16) -> Option<usize> {
+        self.anchors
+            .iter()
+            .find(|(line, _)| *line == y)
+            .map(|(_, row)| *row)
+    }
+
     pub fn current(&self) -> Option<&SessionSummary> {
         self.visible().into_iter().nth(self.selected)
     }
@@ -926,6 +948,9 @@ impl Home {
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
+        // A frame that paints no Session must not leave the last frame's
+        // anchors behind to answer a click.
+        self.anchors.clear();
         // No frame: the list reads as text on the background, the way miao's
         // TypeScript UI and the agent CLIs it follows do. One dim line names
         // the screen; the selected row carries the only accent.
@@ -1000,6 +1025,9 @@ impl Home {
             .map(|duration| duration.as_millis() as u64)
             .unwrap_or(0);
         let mut body: Vec<Line<'static>> = Vec::new();
+        // What each body line holds, so a click can be answered from where the
+        // row was actually painted.
+        let mut lines_to_row: Vec<Option<usize>> = Vec::new();
         let mut selected_line = 0usize;
         let mut selected_tail = 0usize;
         let mut bucket: Option<&'static str> = None;
@@ -1011,6 +1039,7 @@ impl Home {
             if bucket != Some(group) {
                 if !body.is_empty() {
                     body.push(Line::default());
+                    lines_to_row.push(None);
                 }
                 body.push(Line::from(Span::styled(
                     format!("{gutter}{group}"),
@@ -1018,6 +1047,7 @@ impl Home {
                         .fg(palette.text_muted)
                         .add_modifier(Modifier::BOLD),
                 )));
+                lines_to_row.push(None);
                 bucket = Some(group);
             }
             let selected = index == self.selected;
@@ -1061,6 +1091,7 @@ impl Home {
                 Span::styled(format!("{gutter}{marker}{title}"), style),
                 Span::styled(format!("{}{meta}", " ".repeat(pad)), meta_style),
             ]));
+            lines_to_row.push(Some(index));
             // The preview answers "which conversation was this?" for the row
             // the cursor is on. Under every row it turned the list into a wall
             // of prose that pushed the titles off the screen; one muted line
@@ -1073,6 +1104,7 @@ impl Home {
                     format!("{gutter}    {}", fit(preview, room)),
                     Style::new().fg(palette.text_muted),
                 )));
+                lines_to_row.push(None);
             }
         }
         // Key hints belong at the bottom edge, where every comparable CLI puts
@@ -1099,6 +1131,20 @@ impl Home {
             height: 1,
             ..inner
         };
+        // The painted body starts under the notices and skips the lines the
+        // window scrolled past. Recording the result here keeps the pointer and
+        // the painter from disagreeing about where a row is.
+        for (line, row) in lines_to_row.iter().enumerate().skip(offset) {
+            let Some(row) = row else {
+                continue;
+            };
+            let painted = line - offset;
+            if painted >= list_height {
+                break;
+            }
+            self.anchors
+                .push((body_area.y + notice_take as u16 + painted as u16, *row));
+        }
         let notice_skip = notice_lines.len() - notice_take;
         let all: Vec<Line> = notice_lines
             .into_iter()
@@ -3282,6 +3328,43 @@ mod tests {
         home.more();
         assert_eq!(home.visible_len(), 36);
         assert_eq!(home.hidden(), 4);
+    }
+
+    #[test]
+    fn a_click_names_the_row_that_was_painted_on_that_line() {
+        // The anchor is read back from the frame, so it cannot drift from what
+        // the operator sees — including after the window has scrolled.
+        let mut home = Home::new(home_theme());
+        home.set_rows(
+            (0..40)
+                .map(|index| home_row(&format!("ses_{index}"), &format!("title {index}"), None))
+                .collect(),
+        );
+        // The first frame measures the viewport; `space` reveals the history the
+        // selection needs to scroll through.
+        drawn(&mut home, 80, 12);
+        home.more();
+        home.more();
+        home.more();
+        home.select(30);
+        let lines = drawn(&mut home, 80, 12);
+        let mut named = 0usize;
+        for (y, line) in lines.iter().enumerate() {
+            let Some(index) = home.row_at(y as u16) else {
+                continue;
+            };
+            named += 1;
+            let label = home.slot(index).expect("anchored row").label().to_string();
+            assert!(
+                line.join("").contains(&label),
+                "the anchor at {y} must hold {label}: {line:?}"
+            );
+        }
+        assert!(named > 1, "every painted row is anchored: {named}");
+        // The chrome belongs to no row: the header names the screen and the key
+        // hint owns the last line of the frame.
+        assert_eq!(home.row_at(0), None, "the header line names no Session");
+        assert_eq!(home.row_at(11), None, "the hint owns the last line");
     }
 
     #[test]
