@@ -4076,6 +4076,52 @@ impl Store {
                     }
                 }
             }
+            // A subagent runs as its own child Session, so its cost is recorded
+            // where it was spent. Roll the children up here, or "what did this
+            // Session cost" silently omits every delegated turn.
+            let children: Vec<String> = {
+                let mut stmt = conn.prepare(
+                    "WITH RECURSIVE kids(id) AS (\
+                        SELECT session_id FROM engine_lineage WHERE parent_session_id=?1 \
+                        UNION ALL \
+                        SELECT l.session_id FROM engine_lineage l JOIN kids k ON l.parent_session_id=k.id\
+                     ) SELECT id FROM kids",
+                )?;
+                let mut rows = stmt.query(params![session])?;
+                let mut ids = Vec::new();
+                while let Some(row) = rows.next()? {
+                    ids.push(row.get::<_, String>(0)?);
+                }
+                ids
+            };
+            let mut subagent_tokens =
+                json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"nonCached":0});
+            let mut subagent_turns = 0u64;
+            for child in &children {
+                let mut stmt = conn.prepare(
+                    "SELECT data FROM engine_event WHERE session_id=?1 AND kind='usage' ORDER BY seq",
+                )?;
+                let mut rows = stmt.query(params![child])?;
+                while let Some(row) = rows.next()? {
+                    let data: Value = serde_json::from_str(&row.get::<_, String>(0)?)?;
+                    if data["partial"] == true {
+                        continue;
+                    }
+                    subagent_turns += 1;
+                    for (field, key) in [
+                        ("inputTokens", "input"),
+                        ("outputTokens", "output"),
+                        ("cacheReadInputTokens", "cacheRead"),
+                        ("cacheWriteInputTokens", "cacheWrite"),
+                        ("nonCachedInputTokens", "nonCached"),
+                    ] {
+                        if let Some(value) = data["usage"][field].as_u64() {
+                            subagent_tokens[key] =
+                                json!(subagent_tokens[key].as_u64().unwrap_or(0) + value);
+                        }
+                    }
+                }
+            }
             let lineage = per_identity
                 .into_iter()
                 .map(|((protocol, model), served)| json!({"protocol":protocol,"model":model,"turns":served}))
@@ -4109,6 +4155,11 @@ impl Store {
                         && tokens["input"].as_u64().unwrap_or(0) > 0 {
                         Some(tokens["cacheRead"].as_f64().unwrap_or(0.0) / tokens["input"].as_f64().unwrap_or(1.0))
                     } else { None },
+                },
+                "subagents": {
+                    "sessions": children.len(),
+                    "turns": subagent_turns,
+                    "tokens": subagent_tokens,
                 },
                 "retries": {
                     "attempts": attempts,
