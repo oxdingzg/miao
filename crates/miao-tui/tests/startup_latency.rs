@@ -217,6 +217,36 @@ fn report(scenario: &str, samples: &[Sample]) -> String {
     )
 }
 
+/// PERF-03's remaining case: a real monorepo workspace. The scripted engine
+/// still answers, so this measures the TUI's own readiness cost on a large
+/// tree — config and theme discovery, the workspace scan, and the first paint —
+/// which a temp fixture directory cannot show.
+///
+/// Set `MIAO_PERF_WORKSPACE` to the tree to measure. Unset, the case skips, so
+/// an ordinary `cargo test` does not depend on a checkout layout.
+#[test]
+fn startup_on_a_monorepo_is_reported() {
+    let Ok(workspace) = std::env::var("MIAO_PERF_WORKSPACE") else {
+        eprintln!("PERF-03 monorepo: skipped (set MIAO_PERF_WORKSPACE to a tree)");
+        return;
+    };
+    let workspace = PathBuf::from(workspace);
+    assert!(workspace.is_dir(), "MIAO_PERF_WORKSPACE is not a directory");
+    let samples = measure(workspace, false, REPEATS);
+    let body = report("monorepo", &samples);
+    let root = std::env::temp_dir().join("miao-startup-latency");
+    std::fs::create_dir_all(&root).expect("report dir");
+    std::fs::write(root.join("startup-latency-monorepo.json"), &body)
+        .expect("write monorepo report");
+    println!("PERF-03 monorepo: {body}");
+    assert!(
+        samples
+            .iter()
+            .all(|sample| sample.ready_to_type_ms < 20_000),
+        "the monorepo run never became usable: {body}"
+    );
+}
+
 #[test]
 fn startup_phases_are_reported_cold_and_warm() {
     let root = std::env::temp_dir().join("miao-startup-latency");

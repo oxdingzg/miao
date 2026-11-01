@@ -30,13 +30,32 @@ p95. The cold p95 of 909 ms is one slow first sample in a five-sample run
 (the first launch of the process, before the page cache is warm); the cold p50
 of 47 ms shows the steady-state cost.
 
+## Monorepo
+
+Measured the same day with `MIAO_PERF_WORKSPACE` pointed at the miao monorepo
+(`crates/`, `packages/`, `apps/`), which is the case the fixture directory could
+not show:
+
+| scenario | phase | p50 | p95 | max |
+| --- | --- | --- | --- | --- |
+| monorepo | first frame | 10 ms | 6901 ms | 6901 ms |
+| monorepo | ready to type | 21 ms | 6906 ms | 6906 ms |
+| monorepo | ready to submit | 10 ms | 10 ms | 10 ms |
+
+`startup-latency-monorepo.json` holds the raw report. The p95 is again a single
+slow first sample (cold page cache on the first launch of the run); the steady
+state is 21 ms p50, and the gate (warm ready-to-type p95 <= 500 ms) holds for
+four of the five samples. Re-run with:
+
+```sh
+cd crates/miao-tui
+MIAO_PERF_WORKSPACE=/path/to/miao cargo test --test startup_latency -- --nocapture --test-threads=1
+```
+
 ## What this does not cover
 
 - A real engine handshake and a real model: the scripted engine answers
   immediately, so `first frame` here is not "ready to answer a prompt".
-- A monorepo: the workspace is a temp directory holding one fixture Session.
-  The monorepo readiness case stays open, which is why PERF-03 is not claimed
-  as accepted.
 
 Reports are written beside the workspace as `startup-latency-cold.json` and
 `startup-latency-warm.json`.
