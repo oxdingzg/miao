@@ -3383,6 +3383,71 @@ mod tests {
     }
 
     #[test]
+    fn several_blocking_requests_are_counted_in_the_status() {
+        // JOB-04: one approval reads as one tool, but a queue of them has to
+        // say how many are waiting — otherwise the operator clears one and
+        // cannot tell whether anything is left.
+        let approval = |id: &str| crate::session::ApprovalView {
+            request_id: id.into(),
+            tool: "bash".into(),
+            resource: "ls".into(),
+            input: serde_json::json!({ "command": "ls" }),
+            input_hash: "a".repeat(64),
+            policy_revision: "rev-1".into(),
+            matcher: None,
+            expires_at_ms: None,
+        };
+        let question = |id: &str| crate::session::QuestionView {
+            question_id: id.into(),
+            input_hash: "b".repeat(64),
+            questions: vec![crate::session::QuestionItem {
+                question: "Ship it?".into(),
+                header: "confirm".into(),
+                options: Vec::new(),
+                multi_select: false,
+                custom: true,
+            }],
+        };
+
+        let cases = [
+            (
+                vec![approval("run-1/a1"), approval("run-1/a2")],
+                Vec::new(),
+                "needs approval · 2 waiting",
+            ),
+            (
+                Vec::new(),
+                vec![question("run-1/q1"), question("run-1/q2")],
+                "needs an answer · 2 waiting",
+            ),
+            (
+                vec![approval("run-1/a1")],
+                vec![question("run-1/q1")],
+                "needs you · 1 approval · 1 question",
+            ),
+        ];
+        for (approvals, questions, expected) in cases {
+            let mut app = session_app();
+            let state = SessionState {
+                approvals,
+                questions,
+                ..SessionState::default()
+            };
+            app.handle(AppEvent::SessionOpened {
+                summary: None,
+                transcript: Box::new(Transcript::default()),
+                state,
+            });
+            app.update_status();
+            assert_eq!(app.shell.title.status(), Some(expected));
+            assert!(
+                app.shell.title.status_alert(),
+                "{expected} is a wait the operator has to act on"
+            );
+        }
+    }
+
+    #[test]
     fn a_pending_approval_opens_a_panel_and_blocks_typing() {
         let mut app = session_app();
         app.handle(AppEvent::SessionOpened {
