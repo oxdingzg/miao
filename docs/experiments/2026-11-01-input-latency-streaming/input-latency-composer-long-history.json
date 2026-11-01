@@ -1,0 +1,1 @@
+{"scenario":"composer-long-history","samples":36,"p50_ms":1,"p95_ms":2,"p99_ms":3,"max_ms":3,"gate_p95_ms":50,"gate_p99_ms":100}

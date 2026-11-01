@@ -59,6 +59,12 @@ fn main() {
     let sessions = std::env::var_os("MIAO_TUI_FAKE_SESSIONS").is_some();
     // A long catalog makes "walk the list" measurable against "search it": the
     // existing smoke tests keep the two-session default.
+    // A long transcript makes "type in a huge Session" measurable instead of
+    // assumed; the smoke tests keep the two-message default.
+    let history: usize = std::env::var("MIAO_TUI_FAKE_HISTORY")
+        .ok()
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(0);
     let catalog: usize = std::env::var("MIAO_TUI_FAKE_SESSION_COUNT")
         .ok()
         .and_then(|count| count.parse().ok())
@@ -185,6 +191,13 @@ fn main() {
                     });
                 }
             }
+            "tag" => {
+                log_action(&frame["params"], method);
+                send(
+                    &mut out,
+                    json!({"id":id,"result":{"accepted":true,"tag":frame["params"]["tag"]}}),
+                );
+            }
             "recall" => {
                 let handle = frame["params"]["tool_use_id"]
                     .as_str()
@@ -270,7 +283,16 @@ fn main() {
                     // ses_b is the renderer fixture: markdown structure plus a
                     // completed tool call, so the smoke test can assert what a
                     // person sees rather than the transport bytes.
-                    snapshot["messages"] = if target == "ses_b" {
+                    snapshot["messages"] = if history > 0 {
+                        // Every turn is one user line and one assistant line, so
+                        // `history` messages means `history / 2` turns.
+                        let mut messages = Vec::with_capacity(history);
+                        for index in 0..history / 2 {
+                            messages.push(json!({"seq": index * 2 + 1, "role": "user", "content": format!("line {} of the long Session", index + 1), "checkpoint": null, "recorded_at_ms": null}));
+                            messages.push(json!({"seq": index * 2 + 2, "role": "assistant", "content": [{"type": "text", "text": format!("answer {}", index + 1)}], "identity": {"agent": "build", "provider": {"model": "fake/model"}}, "checkpoint": null, "recorded_at_ms": null}));
+                        }
+                        json!(messages)
+                    } else if target == "ses_b" {
                         json!([
                             {"seq":1,"role":"user","content":"show the renderer","checkpoint":null,"recorded_at_ms":null},
                             {"seq":2,"role":"assistant","content":[
