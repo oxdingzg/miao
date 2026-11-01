@@ -59,6 +59,18 @@ fn main() {
     let sessions = std::env::var_os("MIAO_TUI_FAKE_SESSIONS").is_some();
     // A long catalog makes "walk the list" measurable against "search it": the
     // existing smoke tests keep the two-session default.
+    // A long transcript makes "type in a huge Session" measurable instead of
+    // assumed; the smoke tests keep the two-message default.
+    // One oversized message, so typing is measured while the renderer holds a
+    // block far larger than a screen.
+    let large_output: usize = std::env::var("MIAO_TUI_FAKE_LARGE_OUTPUT")
+        .ok()
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(0);
+    let history: usize = std::env::var("MIAO_TUI_FAKE_HISTORY")
+        .ok()
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(0);
     let catalog: usize = std::env::var("MIAO_TUI_FAKE_SESSION_COUNT")
         .ok()
         .and_then(|count| count.parse().ok())
@@ -277,7 +289,22 @@ fn main() {
                     // ses_b is the renderer fixture: markdown structure plus a
                     // completed tool call, so the smoke test can assert what a
                     // person sees rather than the transport bytes.
-                    snapshot["messages"] = if target == "ses_b" {
+                    snapshot["messages"] = if large_output > 0 {
+                        let body = "x".repeat(large_output);
+                        json!([
+                            {"seq":1,"role":"user","content":"dump the whole log","checkpoint":null,"recorded_at_ms":null},
+                            {"seq":2,"role":"assistant","content":[{"type":"text","text":body}],"identity":{"agent":"build","provider":{"model":"fake/model"}},"checkpoint":null,"recorded_at_ms":null}
+                        ])
+                    } else if history > 0 {
+                        // Every turn is one user line and one assistant line, so
+                        // `history` messages means `history / 2` turns.
+                        let mut messages = Vec::with_capacity(history);
+                        for index in 0..history / 2 {
+                            messages.push(json!({"seq": index * 2 + 1, "role": "user", "content": format!("line {} of the long Session", index + 1), "checkpoint": null, "recorded_at_ms": null}));
+                            messages.push(json!({"seq": index * 2 + 2, "role": "assistant", "content": [{"type": "text", "text": format!("answer {}", index + 1)}], "identity": {"agent": "build", "provider": {"model": "fake/model"}}, "checkpoint": null, "recorded_at_ms": null}));
+                        }
+                        json!(messages)
+                    } else if target == "ses_b" {
                         json!([
                             {"seq":1,"role":"user","content":"show the renderer","checkpoint":null,"recorded_at_ms":null},
                             {"seq":2,"role":"assistant","content":[
