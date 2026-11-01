@@ -13,6 +13,7 @@ const kernel = () =>
   dlopen("kernel32.dll", {
     GetStdHandle: { args: ["i32"], returns: "ptr" },
     GetConsoleMode: { args: ["ptr", "ptr"], returns: "i32" },
+    GetConsoleScreenBufferInfo: { args: ["ptr", "ptr"], returns: "i32" },
     SetConsoleMode: { args: ["ptr", "u32"], returns: "i32" },
     FlushConsoleInputBuffer: { args: ["ptr"], returns: "i32" },
   })
@@ -62,6 +63,37 @@ export function win32EnableVirtualTerminal(): boolean {
 export function vtSupported(): boolean {
   if (vtState === undefined) win32EnableVirtualTerminal()
   return vtState ?? false
+}
+
+// CONSOLE_SCREEN_BUFFER_INFO: COORD dwSize, COORD dwCursorPosition, WORD
+// wAttributes, SMALL_RECT srWindow, COORD dwMaximumWindowSize. Both COORD and
+// SMALL_RECT members are 2-byte SHORTs, so the window rect starts at byte 10.
+const CONSOLE_SCREEN_BUFFER_INFO_BYTES = 22
+
+/**
+ * The console window's size in cells. The window rect, not the screen buffer,
+ * is what the renderer paints into: a buffer taller than its window would
+ * otherwise report rows that are never visible.
+ *
+ * Returns `undefined` when there is no console to measure (output redirected,
+ * or a host that never attached one).
+ */
+export function win32ConsoleSize(): { columns: number; rows: number } | undefined {
+  if (process.platform !== "win32") return
+  if (!load()) return
+
+  const handle = k32!.symbols.GetStdHandle(STD_OUTPUT_HANDLE)
+  const buffer = new Uint8Array(CONSOLE_SCREEN_BUFFER_INFO_BYTES)
+  if (k32!.symbols.GetConsoleScreenBufferInfo(handle, ptr(buffer)) === 0) return
+
+  const info = new DataView(buffer.buffer)
+  const left = info.getInt16(10, true)
+  const top = info.getInt16(12, true)
+  const right = info.getInt16(14, true)
+  const bottom = info.getInt16(16, true)
+  if (right < left || bottom < top) return
+
+  return { columns: right - left + 1, rows: bottom - top + 1 }
 }
 
 /**

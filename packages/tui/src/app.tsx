@@ -115,6 +115,7 @@ import { createTuiAttention } from "./attention"
 import * as TuiAudio from "./audio"
 import {
   vtSupported,
+  win32ConsoleSize,
   win32DisableProcessedInput,
   win32EnableVirtualTerminal,
   win32FlushInputBuffer,
@@ -1398,36 +1399,69 @@ function App(props: {
 // That reads as smeared text and stray single characters that survive until
 // something forces a full repaint. Node reports console size changes on stdout,
 // so settle there the same way instead of leaving Windows unguarded.
+//
+// A window that comes back from the background is the other way to lose that
+// agreement. Windows Terminal/ConPTY may rewrite rows and drop the private modes
+// it had set while nothing was drawn, so on focus the size is re-read and the
+// next frame repaints every cell instead of only the cells the renderer thinks
+// changed.
 function settleResizes(renderer: Awaited<ReturnType<typeof createCliRenderer>>) {
+  // Only the renderer driving the real terminal can be settled from it.
+  if (renderer.stdin !== process.stdin) return () => {}
+
   const timers = new Set<ReturnType<typeof setTimeout>>()
+  const readSize = () => {
+    const consoleSize = process.platform === "win32" ? win32ConsoleSize() : undefined
+    if (consoleSize) return [consoleSize.columns, consoleSize.rows]
+    return process.stdout.getWindowSize?.() ?? [process.stdout.columns, process.stdout.rows]
+  }
   const check = () => {
-    const [width, height] = process.stdout.getWindowSize?.() ?? [process.stdout.columns, process.stdout.rows]
+    const [width, height] = readSize()
     if (!width || !height) return
     if (width === renderer.terminalWidth && height === renderer.terminalHeight) return
     renderer.resize(width, height)
   }
-  const onResize = () => {
-    for (const delay of [60, 250]) {
-      const timer = setTimeout(() => {
-        timers.delete(timer)
-        check()
-      }, delay)
-      timers.add(timer)
-    }
+  const settle = (delay: number) => {
+    const timer = setTimeout(() => {
+      timers.delete(timer)
+      check()
+    }, delay)
+    timers.add(timer)
   }
+  const onResize = () => {
+    for (const delay of [60, 250]) settle(delay)
+  }
+  const onFocus = () => {
+    for (const delay of [0, 250]) settle(delay)
+    forceFullRepaint(renderer)
+  }
+  renderer.on("focus", onFocus)
   // Windows delivers the console size change on stdout rather than as a signal,
   // and only a real console has a size to settle.
   if (process.platform === "win32") {
-    if (!process.stdout.isTTY) return () => {}
+    if (!process.stdout.isTTY) return () => renderer.off("focus", onFocus)
     process.stdout.on("resize", onResize)
     return () => {
+      renderer.off("focus", onFocus)
       process.stdout.off("resize", onResize)
       for (const timer of timers) clearTimeout(timer)
     }
   }
   process.on("SIGWINCH", onResize)
   return () => {
+    renderer.off("focus", onFocus)
     process.off("SIGWINCH", onResize)
     for (const timer of timers) clearTimeout(timer)
   }
+}
+
+// The renderer only re-emits cells whose buffer changed. After the terminal has
+// restored a different screen than the renderer last committed, an incremental
+// frame keeps that damage forever. opentui keeps a one-shot full-repaint latch
+// for exactly this, but 0.5.12 sets it only from its own suspend/resume path and
+// keeps it private, so request it for the next frame here.
+function forceFullRepaint(renderer: Awaited<ReturnType<typeof createCliRenderer>>) {
+  const target = renderer as unknown as { forceFullRepaintRequested: boolean }
+  target.forceFullRepaintRequested = true
+  renderer.requestRender()
 }
