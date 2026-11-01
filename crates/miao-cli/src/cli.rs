@@ -109,8 +109,12 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
             other => return Err(format!("unknown option {other}")),
         }
     }
+    let workspace = workspace.unwrap_or(std::env::current_dir().map_err(|error| error.to_string())?);
+    // The TUI refuses to start without an engine database; every other
+    // subcommand defaults one beside the workspace, so do the same here.
+    let db = db.or_else(|| Some(workspace.join(".miao-run.db")));
     Ok(miao_tui::Launch {
-        workspace: workspace.unwrap_or(std::env::current_dir().map_err(|error| error.to_string())?),
+        workspace,
         db,
         model,
         config_dir,
