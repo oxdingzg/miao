@@ -178,6 +178,33 @@ fn resolve_limits(
         .or(learned)
 }
 
+/// The request budget a known window leaves: the window minus the room this step
+/// needs for its own content, the pruning protection, and the summary reserve.
+/// Trimming to the raw window leaves the shortened request at exactly the
+/// ceiling the endpoint already refused.
+fn request_budget(window: u64, headroom: u64) -> u64 {
+    window.saturating_sub(headroom).max(1)
+}
+
+/// Whether the assembled request has to be bounded, and to what budget.
+///
+/// A refusal of this exact history is evidence in itself: the endpoint has said
+/// the request does not fit, so the absence of a provider count for a previous
+/// request must not leave it unbounded. That absence is the normal case for a
+/// Session whose recent requests were all refused, which is how one grows to the
+/// hard ceiling and can never shed size again. A provider count that still reads
+/// under the window is not proof it fits either: the count is the provider's, but
+/// what is added to it is a local estimate over the turns appended since.
+fn bound_budget(
+    window: u64,
+    headroom: u64,
+    refused_before: bool,
+    counted: Option<u64>,
+) -> Option<u64> {
+    let over = refused_before || counted.is_some_and(|counted| counted > window);
+    over.then(|| request_budget(window, headroom))
+}
+
 impl Inner {
     /// Remember the window the endpoint itself stated when it refused a request.
     /// Keyed by the serving model, because one engine serves every Session in a
@@ -2945,39 +2972,55 @@ async fn execute(
         // history. Guessing from a local estimate alone would shorten Sessions that
         // are nowhere near their window, since the estimate deliberately over-counts.
         let known = match &*inner.context.lock().await {
-            Some(limits) if limits.window > 0 => Some((limits.window, false)),
+            Some(limits) if limits.window > 0 => Some((limits.window, limits.headroom, false)),
             _ => inner
                 .learned_window_for(binding.as_ref().map(|binding| binding.model.as_str()))
                 .await
-                .map(|window| (window, true)),
+                .map(|window| (window, window_limits(window).headroom, true)),
         };
-        if let Some((window, refused_before)) = known {
-            let over = match inner.store.context_anchor(session).await? {
-                Some((counted, through)) => {
-                    let (_, pending_chars) = inner.store.pending_context(session, through).await?;
-                    counted.saturating_add(crate::context_trigger::estimate_tokens(
-                        pending_chars as usize,
-                    )) > window
-                }
-                None => refused_before,
-            };
-            if over {
-                let stats = crate::context_trigger::trim_history_to_fit(&mut history, window);
-                if stats.messages > 0 {
-                    let saved = stats.before_bytes.saturating_sub(stats.after_bytes);
-                    inner.store.record_fenced(session, "context.trimmed", json!({
-                        "run_id": run, "step": step, "context_epoch": context_epoch,
-                        "reason": "request_window", "window": window,
-                        "messages": stats.messages,
-                        "before_bytes": stats.before_bytes, "after_bytes": stats.after_bytes,
-                        "saved_bytes": saved,
-                    }), lease).await?;
-                    let _ = inner.progress.send(json!({
-                        "session_id": session, "run_id": run, "step": step,
-                        "kind": "context.trimmed", "messages": stats.messages,
-                        "window": window, "saved_bytes": saved,
-                    }));
-                }
+        let budget = match known {
+            Some((window, headroom, refused_before)) => {
+                let counted = match inner.store.context_anchor(session).await? {
+                    Some((counted, through)) => {
+                        let (_, pending_chars) =
+                            inner.store.pending_context(session, through).await?;
+                        Some(
+                            counted.saturating_add(crate::context_trigger::estimate_tokens(
+                                pending_chars as usize,
+                            )),
+                        )
+                    }
+                    None => None,
+                };
+                bound_budget(window, headroom, refused_before, counted)
+                    .map(|budget| (window, budget))
+            }
+            None => None,
+        };
+        if let Some((window, budget)) = budget {
+            let stats = crate::context_trigger::trim_history_to_fit(&mut history, budget);
+            if stats.messages > 0 {
+                let saved = stats.before_bytes.saturating_sub(stats.after_bytes);
+                inner
+                    .store
+                    .record_fenced(
+                        session,
+                        "context.trimmed",
+                        json!({
+                            "run_id": run, "step": step, "context_epoch": context_epoch,
+                            "reason": "request_window", "window": window, "budget": budget,
+                            "messages": stats.messages,
+                            "before_bytes": stats.before_bytes, "after_bytes": stats.after_bytes,
+                            "saved_bytes": saved,
+                        }),
+                        lease,
+                    )
+                    .await?;
+                let _ = inner.progress.send(json!({
+                    "session_id": session, "run_id": run, "step": step,
+                    "kind": "context.trimmed", "messages": stats.messages,
+                    "window": window, "budget": budget, "saved_bytes": saved,
+                }));
             }
         }
         let started = inner
@@ -7017,5 +7060,32 @@ mod window_tests {
         assert_eq!(limits.headroom, 40_000 + 2_048 + 20_000);
         assert_eq!(limits.per_pass, 8);
         assert_eq!(limits.protect_turns, 2);
+    }
+
+    #[test]
+    fn a_refusal_bounds_the_request_even_when_the_count_says_it_fits() {
+        // The endpoint refused this history, and the only count available is a
+        // local estimate that reads under the window. That must still bound:
+        // nothing else can shrink a Session whose recent requests were all refused.
+        let budget = bound_budget(1_048_576, 62_048, true, Some(1_046_000));
+        assert_eq!(budget, Some(1_048_576 - 62_048));
+    }
+
+    #[test]
+    fn a_count_over_the_window_bounds_the_request_without_a_refusal() {
+        let budget = bound_budget(1_000_000, 20_000, false, Some(1_000_001));
+        assert_eq!(budget, Some(980_000));
+    }
+
+    #[test]
+    fn a_request_that_fits_and_was_never_refused_is_left_alone() {
+        assert_eq!(bound_budget(1_000_000, 20_000, false, Some(500_000)), None);
+        assert_eq!(bound_budget(1_000_000, 20_000, false, None), None);
+    }
+
+    #[test]
+    fn a_trimmed_request_lands_below_the_window_that_refused_it() {
+        assert!(request_budget(1_048_576, 62_048) < 1_048_576);
+        assert_eq!(request_budget(1_000, 5_000), 1);
     }
 }
