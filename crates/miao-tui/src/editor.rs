@@ -174,11 +174,17 @@ impl Editor {
         std::mem::take(&mut self.buffer)
     }
 
+    /// Empty the draft as an editing step, so `ctrl+z` brings back a prompt
+    /// that was cleared by accident. Submitting goes through [`Self::take`],
+    /// which forgets the history instead.
     pub fn clear(&mut self) {
+        if self.buffer.is_empty() {
+            return;
+        }
+        self.record(EditKind::Delete);
         self.buffer.clear();
         self.cursor = 0;
         self.goal = None;
-        self.forget_history();
     }
 
     pub fn insert_char(&mut self, c: char) {
@@ -1096,6 +1102,18 @@ mod tests {
         assert_eq!(editor.text(), "abc", "only the deletion came back");
         assert!(editor.undo());
         assert_eq!(editor.text(), "", "then the typing run");
+    }
+
+    /// Clearing the draft is an editing step too: `ctrl+c` on a long prompt
+    /// has to be something `ctrl+z` can take back.
+    #[test]
+    fn clearing_the_draft_is_undoable() {
+        let mut editor = Editor::new();
+        editor.insert_str("a prompt worth keeping");
+        editor.clear();
+        assert_eq!(editor.text(), "");
+        assert!(editor.undo());
+        assert_eq!(editor.text(), "a prompt worth keeping");
     }
 
     /// A recalled prompt (history, stash, a restored draft) is not an editing
