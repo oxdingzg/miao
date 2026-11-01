@@ -2585,6 +2585,101 @@ mod tests {
     }
 
     #[test]
+    fn the_composer_shows_its_text_from_forty_to_one_hundred_twenty_columns() {
+        // UX-03: approval, questions, diffs and input all have to work at 40
+        // columns, not just at the wide default.
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let mut composer = Composer::new(Path::new("."));
+        composer.paste("fix the parser at forty columns");
+        for width in [40u16, 80, 120] {
+            let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 8))
+                .expect("terminal");
+            terminal
+                .draw(|frame| render_composer(frame, frame.area(), &composer, &theme))
+                .expect("draw");
+            let text = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(
+                text.contains("fix the parser"),
+                "the prompt is still readable at {width} columns: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn state_survives_without_colour() {
+        // UX-03: with every colour dropped, the glyph is what still says what
+        // happened. A monochrome theme must not turn a checklist into one
+        // undifferentiated column of text.
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME)
+            .expect("theme")
+            .monochrome();
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        // The sidebar only paints its sections for an open Session.
+        shell.set_session(Some(&SessionSummary {
+            id: "ses_a".into(),
+            title: Some("offset fix".into()),
+            parent_id: None,
+            updated_at_ms: Some(10),
+            archived_at_ms: None,
+            pinned_at_ms: None,
+            directory: Some("/work/miao".into()),
+            model: None,
+            credential_id: None,
+            preview: None,
+        }));
+        shell.set_todos(&[
+            crate::session::TodoView {
+                content: "wire the parser".into(),
+                status: "completed".into(),
+            },
+            crate::session::TodoView {
+                content: "measure the window".into(),
+                status: "in_progress".into(),
+            },
+        ]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 20)).expect("terminal");
+        terminal
+            .draw(|frame| {
+                let sidebar = shell.sidebar.as_mut().expect("sidebar");
+                sidebar.render(frame, frame.area());
+            })
+            .expect("draw");
+        let cells = &terminal.backend().buffer().content;
+        assert!(
+            cells
+                .iter()
+                .all(|cell| cell.fg == ratatui::style::Color::Reset),
+            "no colour is painted when the palette has none"
+        );
+        let text = cells.iter().map(|cell| cell.symbol()).collect::<String>();
+        assert!(
+            text.contains('✓'),
+            "a finished item still reads as done: {text}"
+        );
+        assert!(
+            text.contains('▸'),
+            "the running item still reads as running: {text}"
+        );
+        assert!(text.contains("wire the parser") && text.contains("measure the window"));
+    }
+
+    #[test]
     fn an_alerting_status_is_painted_in_the_warning_color() {
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let mut shell = Shell::new(
