@@ -2978,7 +2978,7 @@ async fn execute(
                 .await
                 .map(|window| (window, window_limits(window).headroom, true)),
         };
-        let budget = match known {
+        let bound = match known {
             Some((window, headroom, refused_before)) => {
                 let counted = match inner.store.context_anchor(session).await? {
                     Some((counted, through)) => {
@@ -2997,8 +2997,8 @@ async fn execute(
             }
             None => None,
         };
-        if let Some((window, budget)) = budget {
-            let stats = crate::context_trigger::trim_history_to_fit(&mut history, budget);
+        if let Some((window, target)) = bound {
+            let stats = crate::context_trigger::trim_history_to_fit(&mut history, target);
             if stats.messages > 0 {
                 let saved = stats.before_bytes.saturating_sub(stats.after_bytes);
                 inner
@@ -3008,7 +3008,7 @@ async fn execute(
                         "context.trimmed",
                         json!({
                             "run_id": run, "step": step, "context_epoch": context_epoch,
-                            "reason": "request_window", "window": window, "budget": budget,
+                            "reason": "request_window", "window": window, "budget": target,
                             "messages": stats.messages,
                             "before_bytes": stats.before_bytes, "after_bytes": stats.after_bytes,
                             "saved_bytes": saved,
@@ -3019,7 +3019,7 @@ async fn execute(
                 let _ = inner.progress.send(json!({
                     "session_id": session, "run_id": run, "step": step,
                     "kind": "context.trimmed", "messages": stats.messages,
-                    "window": window, "budget": budget, "saved_bytes": saved,
+                    "window": window, "budget": target, "saved_bytes": saved,
                 }));
             }
         }
