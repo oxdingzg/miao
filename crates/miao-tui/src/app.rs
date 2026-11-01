@@ -8,7 +8,9 @@ use ratatui::Frame;
 use serde_json::Value;
 
 use crate::commands::{self, Builtin};
-use crate::dialogs::{AccountInfo, Action as DialogAction, ConfirmKind, Dialog, ModelInfo, Row};
+use crate::dialogs::{
+    AccountInfo, Action as DialogAction, ConfirmKind, Dialog, ModelInfo, Row, TextDialog,
+};
 use crate::editor::{Action, Mode};
 use crate::engine;
 use crate::event::{AppEvent, Bus};
@@ -406,6 +408,32 @@ impl App {
             AppEvent::Mouse(mouse) => self.handle_mouse(mouse),
             AppEvent::Attention { kind, id } => self.announce(kind, id),
             AppEvent::Provider(frame) => self.provider(frame),
+            AppEvent::Recalled {
+                handle,
+                text,
+                total_bytes,
+                truncated,
+                next_offset,
+            } => {
+                let mut lines = vec![format!(
+                    "{handle} · {total_bytes} bytes restored from the archive"
+                )];
+                lines.extend(text.lines().map(str::to_string));
+                if truncated {
+                    lines.push(match next_offset {
+                        Some(offset) => format!(
+                            "truncated; continue with /recall --offset-style request at {offset}"
+                        ),
+                        None => "truncated".to_string(),
+                    });
+                }
+                self.open_dialog(Dialog::Message(TextDialog {
+                    title: "Archived tool output",
+                    lines,
+                    scroll: 0,
+                }));
+            }
+            AppEvent::RecallFailed(message) => self.notice(&format!("recall failed: {message}")),
             AppEvent::Clipboard(content) => {
                 self.clipboard_busy = false;
                 match content {
@@ -772,6 +800,9 @@ impl App {
 
     fn run_builtin(&mut self, builtin: Builtin) {
         match builtin {
+            Builtin::Recall => {
+                self.notice("/recall <tool_use_id> restores an archived tool output")
+            }
             Builtin::Redraw => self.redraw_requested = true,
             Builtin::Suspend => {
                 #[cfg(unix)]
@@ -2209,6 +2240,17 @@ impl App {
         // template is rendered and admitted with its command reference; any
         // other slash text is a plain prompt, like the TS composer.
         if let Some((name, arguments)) = commands::split(&text) {
+            if Builtin::from_name(&name) == Some(Builtin::Recall) {
+                let handle = arguments.trim();
+                if handle.is_empty() {
+                    self.shell.composer.restore_with(&text, attachments);
+                    self.shell.composer.notice =
+                        Some("/recall needs the tool_use_id its elision marker named".to_string());
+                    return;
+                }
+                engine.recall(&session_id, handle);
+                return;
+            }
             if let Some(builtin) = Builtin::from_name(&name) {
                 self.run_builtin(builtin);
                 return;

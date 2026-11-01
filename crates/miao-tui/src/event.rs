@@ -25,6 +25,16 @@ pub enum AppEvent {
     },
     /// A clipboard read that ran off the UI thread.
     Clipboard(Option<clipboard::Content>),
+    /// One archived tool output an operator asked to restore with `/recall`.
+    Recalled {
+        handle: String,
+        text: String,
+        total_bytes: u64,
+        truncated: bool,
+        next_offset: Option<u64>,
+    },
+    /// A restore that did not produce a window; shown as a notice.
+    RecallFailed(String),
     /// The external editor exited; `Ok(None)` means it saved an empty file.
     EditorFinished(Result<Option<String>, String>),
     Resize {
