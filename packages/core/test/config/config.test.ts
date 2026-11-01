@@ -830,6 +830,38 @@ describe("Config", () => {
     ),
   )
 
+  it.live("names the failing key path for a schema-invalid config value", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          // `model` is a string in the schema, so a number is a value error the
+          // operator has to be able to locate by key, not by guessing from a
+          // bare message.
+          yield* Effect.promise(() =>
+            fs.writeFile(path.join(tmp.path, "miao.json"), JSON.stringify({ model: 123 })),
+          )
+          const exit = yield* Effect.exit(
+            Effect.gen(function* () {
+              const config = yield* Config.Service
+              return yield* config.entries()
+            }).pipe(Effect.provide(testLayer(tmp.path))),
+          )
+          expect(Exit.isFailure(exit)).toBe(true)
+          if (Exit.isFailure(exit)) {
+            const rendered = JSON.stringify(exit.cause)
+            expect(rendered).toContain("ConfigInvalidError")
+            expect(rendered).toContain("miao.json")
+            // The key path, not just the file name.
+            expect(rendered).toContain("model")
+          }
+        }),
+      ),
+    ),
+  )
+
   it.live("loads policy statements in reverse config order", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
