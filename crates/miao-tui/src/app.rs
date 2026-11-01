@@ -774,7 +774,9 @@ impl App {
     }
 
     /// The wheel moves through the open dialog, the Session list, or the
-    /// transcript. Buttons are ignored: text selection stays with the terminal.
+    /// transcript. Apart from naming a landing row, buttons stay out of the
+    /// way: text selection belongs to the terminal.
+    ///
     fn handle_mouse(&mut self, mouse: MouseEvent) {
         // A drag over the transcript copies what it covered, like the
         // TypeScript UI: cells, not logical lines, because the transcript is
@@ -800,6 +802,20 @@ impl App {
                 }
                 _ => {}
             }
+        }
+        // A click on the landing list names the row it landed on, and the list
+        // keeps the keyboard afterwards so `j`/`k` and the numbered slots
+        // continue from there. It selects rather than opens: opening a Session
+        // is the decision Enter already makes.
+        if self.dialog.is_none()
+            && self.screen == Screen::Home
+            && mouse.kind == MouseEventKind::Down(MouseButton::Left)
+        {
+            if let Some(index) = self.home.row_at(mouse.row) {
+                self.home.select(index);
+                self.home_list_focus = true;
+            }
+            return;
         }
         let delta = match mouse.kind {
             MouseEventKind::ScrollUp => -1,
@@ -4061,6 +4077,41 @@ mod tests {
         // A slot past the end opens nothing instead of opening the last row.
         app.handle(key(KeyCode::Char('9'), KeyModifiers::NONE));
         assert!(requests.try_recv().is_err());
+    }
+
+    #[test]
+    fn a_click_on_the_list_selects_the_row_it_landed_on() {
+        // UX-02: the wheel already moves the cursor, so a click that lands on a
+        // row must not be a no-op. It selects rather than opens — opening is
+        // the decision Enter already makes — and the list keeps the keyboard
+        // afterwards, so `j`/`k` continue from the row the pointer named.
+        let mut app = app();
+        app.handle(AppEvent::Sessions(vec![
+            summary("ses_first", 300),
+            summary("ses_second", 200),
+            summary("ses_third", 100),
+        ]));
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).expect("terminal");
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+        // Below the border and the "Today" header the rows are painted on
+        // y = 2, 3, 4; the prompt had the keyboard until this click.
+        app.handle(AppEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Down(MouseButton::Left),
+            4,
+            3,
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(
+            app.home.current().map(|row| row.id.as_str()),
+            Some("ses_second")
+        );
+        app.handle(key(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(
+            app.home.current().map(|row| row.id.as_str()),
+            Some("ses_third"),
+            "the list owns the keyboard after a click"
+        );
     }
 
     fn home_with_named(rows: &[(&str, &str, Option<&str>)]) -> App {
