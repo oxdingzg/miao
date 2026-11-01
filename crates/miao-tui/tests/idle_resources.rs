@@ -102,6 +102,27 @@ fn sample(pid: u32) -> (u128, u64) {
     (cpu_millis(time), rss.unwrap_or(0))
 }
 
+/// Open file descriptors for one process. Linux exposes them as a directory;
+/// macOS needs `lsof`, which is why the two paths differ rather than the count
+/// being inferred from memory or handles.
+fn descriptors(pid: u32) -> Option<usize> {
+    let proc_dir = format!("/proc/{pid}/fd");
+    if let Ok(entries) = std::fs::read_dir(&proc_dir) {
+        return Some(entries.filter_map(Result::ok).count());
+    }
+    let output = Command::new("lsof")
+        .args(["-p", &pid.to_string(), "-Fn"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    // `-Fn` prints one `n<path>` line per open descriptor; the process and
+    // file-name lines carry other letters.
+    let text = String::from_utf8_lossy(&output.stdout);
+    Some(text.lines().filter(|line| line.starts_with('n')).count())
+}
+
 /// `ps` prints `M:SS.ss` on macOS and `HH:MM:SS` on Linux; reading the parts
 /// from the left with a base of sixty handles both.
 fn cpu_millis(spec: &str) -> u128 {
@@ -129,7 +150,11 @@ fn an_idle_tui_reports_its_cpu_and_memory() {
     std::thread::sleep(Duration::from_secs(3));
     let (after, rss_kb) = sample(harness.pid);
     let cpu_ms = after.saturating_sub(before);
-    println!("PERF-04 idle: cpu_ms={cpu_ms} over 3000ms, rss_kb={rss_kb}");
+    let fds = descriptors(harness.pid);
+    println!(
+        "PERF-04 idle: cpu_ms={cpu_ms} over 3000ms, rss_kb={rss_kb}, fds={}",
+        fds.map_or_else(|| "unavailable".to_string(), |count| count.to_string())
+    );
     assert!(
         cpu_ms < 3_000,
         "an idle TUI used {cpu_ms} ms of CPU in three seconds, which is a busy loop rather than an idle wait"
@@ -138,4 +163,13 @@ fn an_idle_tui_reports_its_cpu_and_memory() {
         rss_kb > 0 && rss_kb < 512 * 1024,
         "an idle TUI held {rss_kb} kB of memory"
     );
+    // A leak shows up here long before it shows up in RSS. The bound is loose
+    // enough for a busy runner and tight enough that a descriptor leak per
+    // frame would fail within a short window.
+    if let Some(fds) = fds {
+        assert!(
+            fds > 0 && fds < 1024,
+            "an idle TUI held {fds} open file descriptors"
+        );
+    }
 }
