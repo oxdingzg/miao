@@ -311,7 +311,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let configured = miao_engine::cli::configure(&args)
         .await
         .map_err(|error| format!("engine configuration failed: {error}"))?;
-    let miao_engine::cli::Configured { runtime, mut options, acp, plugin_hooks } = configured;
+    let miao_engine::cli::Configured {
+        runtime,
+        mut options,
+        acp,
+        plugin_hooks,
+    } = configured;
     if acp {
         let result = miao_engine::acp::serve(runtime.clone()).await;
         runtime.shutdown().await;
