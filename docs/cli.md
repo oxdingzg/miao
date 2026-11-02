@@ -47,7 +47,7 @@ inventory is updated when a command lands or retires.
 | `report` | `report` | `report TO TEXT` | rust | |
 | `pr` | `pr <number>` | `pr [NUMBER]` | rust | |
 | `upgrade` | `upgrade [target]` | `upgrade` | rust | |
-| `uninstall` | `uninstall` | — | rust-todo | removes install artifacts |
+| `uninstall` | `uninstall` | `uninstall` | rust | dry-run default; #2356 |
 | `web` | `web` | `web` | rust | |
 | `completion` | — | `completion SHELL` | rust | Rust-side addition |
 | `hub` / `hubctl` | — | `hub` / `hubctl OP` | rust | Rust-side addition |
@@ -58,6 +58,23 @@ inventory is updated when a command lands or retires.
 | `generate` | `generate` | — | ts-only | config scaffolding |
 | `runtime` / `runtime-access` | `runtime <action>` | — | ts-only | hidden; host-side plumbing |
 
+## Management commands (CLI-06)
+
+| command | TS | Rust | disposition |
+|---|---|---|---|
+| `auth` | `auth login/logout [provider]` | `auth login/logout/list` | rust |
+| `config` | `debug config` | — | rust-todo; `miao-engine config explain` already carries the resolution, the CLI surface forwards to it |
+| `models` | `models [provider]` | `models` | rust |
+| `agent` | `agent` | `agent list` | rust |
+| `mcp` | `mcp` | — | rust-todo; the connection-management surface (EXT-03's home) |
+| `skill` | `debug skill` | — | ts-only; the skill catalogue is a TS plugin-layer surface (CAT-04) |
+| `db` | `db ...` | `db path/stats/vacuum/retention` | rust; see the table below |
+| `doctor` | `doctor` | `doctor` | rust; engine-side WAL/FK/transfer matrix included |
+| `remote` | `remote` | `remote` | rust |
+| `runtime` | `runtime <action>` | — | ts-only; host-side plumbing |
+| `install` | — | — | n/a; the curl installer, not a CLI command |
+| `upgrade` | `upgrade [target]` | `upgrade` | rust |
+
 ## `db` subcommands
 
 | subcommand | TS | Rust | disposition |
@@ -65,7 +82,7 @@ inventory is updated when a command lands or retires.
 | `path` | yes | yes | rust; Rust prints engine ledger + product database |
 | `stats` | yes | yes | rust |
 | `vacuum` | yes | yes | rust; dry run unless `--apply` |
-| `retention` | yes (plan only) | yes (plan only) | rust; snapshot-then-truncate awaits the per-kind reader audit (DATA-04) |
+| `retention` | yes (plan only) | yes (plan; engine-side snapshot-then-truncate) | rust; the CLI reports, `miao-engine retention --apply` truncates (DATA-04) |
 | `backfill` | yes | — | product-db |
 | `compact` | yes | — | product-db |
 | `restore` | yes | — | product-db |
