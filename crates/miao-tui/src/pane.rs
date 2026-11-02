@@ -4371,6 +4371,11 @@ mod tests {
         ]);
         let lines = drawn(&mut home, 200, 12);
         let mut titled = 0;
+        let gutter = ((200 - 2 - SESSION_COLUMN) / 2) as usize;
+        // The first body line is the action row.
+        assert!(gutter > 0, "the frame is wider than the column");
+        // The list body stops one row short of the border: the bottom row is a
+        // full-width key hint, not a list row.
         for line in &lines[1..lines.len() - 2] {
             let text: String = line.iter().map(|cell| cell.as_str()).collect();
             if text.contains("login fix") || text.contains("offset fix") {
@@ -4427,7 +4432,7 @@ mod tests {
                 .collect(),
         );
         // Every match is reachable before a frame has measured anything.
-        assert_eq!(home.visible_len(), 40);
+        assert_eq!(home.visible_len(), 41);
         drawn(&mut home, 80, 20);
         // Twenty rows: one of header and one of key hints, so one screenful
         // is eighteen rows.
