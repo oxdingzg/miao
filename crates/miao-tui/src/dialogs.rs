@@ -1040,7 +1040,7 @@ impl Dialog {
             // line and the border. A one-row list (`models` on a single-model
             // engine) used to lose its only row to those chrome rows and paint
             // an empty picker, and an empty list still shows "nothing to show".
-            let rows = list.rows.len().min(14).max(1) as u16;
+            let rows = list.rows.len().clamp(1, 14) as u16;
             let filter = u16::from(list.shows_filter());
             return rows + 3 + filter;
         }

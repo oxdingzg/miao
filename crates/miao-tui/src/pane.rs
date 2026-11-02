@@ -626,7 +626,7 @@ impl Pane for TranscriptPane {
                 if !first.is_empty() {
                     let width = (content.width as usize).saturating_sub(2);
                     visible[0] = Line::from(Span::styled(
-                        format!("❯ {}", fit(&first, width.saturating_sub(2))),
+                        format!("❯ {}", fit(first, width.saturating_sub(2))),
                         Style::new().fg(palette.primary),
                     ))
                     .style(Style::new().bg(palette.element));
