@@ -916,7 +916,9 @@ impl Home {
         self.selected = selected_id
             .and_then(|id| self.visible().iter().position(|row| row.id == id))
             .map(|index| index + offset)
-            .unwrap_or(0)
+            // Default to the first Session, past the action row: a reload that
+            // loses the previous selection lands on a Session, not the action.
+            .unwrap_or(offset.min(visible.saturating_sub(1)))
             .min(visible.saturating_sub(1));
     }
 
