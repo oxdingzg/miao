@@ -3832,9 +3832,19 @@ command: None,
                                     None => Err(ToolError::Interrupted),
                                 },
                                 "session_state" => Ok(inner.store.state(session).await?),
-                                "list_sessions" => list_peer_sessions(inner, session, &prepared).await,
-                                "send_message" => send_peer_message(inner, session, &prepared).await,
-                                "read_session_context" => {
+                                // The host owns these names when it registers them:
+                                // its implementation carries its own permission
+                                // surface and its own receipt, so the built-in
+                                // only answers where no host tool exists.
+                                "list_sessions" if !inner.tools.is_product("list_sessions") => {
+                                    list_peer_sessions(inner, session, &prepared).await
+                                }
+                                "send_message" if !inner.tools.is_product("send_message") => {
+                                    send_peer_message(inner, session, &prepared).await
+                                }
+                                "read_session_context"
+                                    if !inner.tools.is_product("read_session_context") =>
+                                {
                                     read_peer_context(inner, session, &prepared).await
                                 }
                                 "knowledge"=>inner.tools.execute_knowledge(prepared,&policy,session,cancel.child_token()).await,
