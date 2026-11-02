@@ -1,11 +1,11 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
-use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
 
@@ -317,7 +317,13 @@ impl Shell {
 
     pub fn render(&mut self, frame: &mut Frame) {
         let panel_height = self.panel.as_ref().map_or(0, Panel::height);
-        let [title_area, body_area, panel_area, composer_area, status_area] = Layout::vertical([
+        let [
+            title_area,
+            body_area,
+            panel_area,
+            composer_area,
+            status_area,
+        ] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(panel_height),
@@ -1486,10 +1492,22 @@ fn draft_lines(text: &str, reasoning: &str, theme: &Theme) -> Vec<Line<'static>>
     let palette = theme.palette;
     let mut lines = Vec::new();
     if !reasoning.is_empty() {
-        lines.push(Line::from(Span::styled(
-            format!("▸ thinking · {} chars", reasoning.chars().count()),
-            Style::new().fg(palette.text_muted),
-        )));
+        // Before the first answer token the thinking is the show: stream it
+        // verbatim, muted, so it reads as it arrives. Once text starts, fold
+        // it into a summary line and give the answer the screen.
+        if text.is_empty() {
+            for line in reasoning.lines() {
+                lines.push(Line::from(Span::styled(
+                    format!("  {line}"),
+                    Style::new().fg(palette.text_muted),
+                )));
+            }
+        } else {
+            lines.push(Line::from(Span::styled(
+                format!("▸ thinking · {} chars", reasoning.chars().count()),
+                Style::new().fg(palette.text_muted),
+            )));
+        }
     }
     if !text.is_empty() {
         lines.extend(markdown::lines(text, theme));
@@ -3478,9 +3496,11 @@ mod tests {
             shell.transcript.draft.is_empty(),
             "a delta must not re-parse the whole draft"
         );
-        assert!(wrapped_text(shell.draft())
-            .join("")
-            .contains("streamed words"));
+        assert!(
+            wrapped_text(shell.draft())
+                .join("")
+                .contains("streamed words")
+        );
     }
 
     #[test]
@@ -3522,6 +3542,46 @@ mod tests {
         // A projection, or a run that ends, clears it in one assignment.
         shell.set_draft("", "");
         assert!(shell.draft().is_empty());
+    }
+
+    #[test]
+    fn the_draft_streams_the_thinking_verbatim_before_any_answer() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        shell.set_draft("", "reading the diff\nthen the tests");
+        let draft = shell
+            .draft()
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(draft, "  reading the diff\n  then the tests");
+        // The first answer token folds the thinking back into a summary.
+        shell.set_draft("partial", "reading the diff\nthen the tests");
+        let draft = shell
+            .draft()
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(draft.starts_with("▸ thinking · "));
+        assert!(draft.contains("partial"));
     }
 
     #[test]
