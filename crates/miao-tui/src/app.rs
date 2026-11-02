@@ -3821,7 +3821,8 @@ mod tests {
         ]));
         // j/k move the list, so the list has to own the keyboard first.
         app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
-        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_b"));
+        // The action row is at index 0; j moves to the first Session.
+        assert_eq!(app.home.current().map(|row| row.id.as_str()), None);
         app.handle(key(KeyCode::Char('j'), KeyModifiers::NONE));
         assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
         app.handle(key(KeyCode::Char('j'), KeyModifiers::NONE));
