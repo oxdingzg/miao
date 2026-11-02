@@ -108,7 +108,6 @@ async fn running_in_workspace(
             input_schema: json!({"type":"object","properties":{},"additionalProperties":false}),
         }],
         Bridge::new(send),
-        None,
     );
     runtime
         .admit(

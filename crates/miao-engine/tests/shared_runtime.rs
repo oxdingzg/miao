@@ -354,7 +354,6 @@ async fn shared_host_once_always_revoke_cancel_and_ui_projection_follow_the_real
             input_schema: json!({"type":"object"}),
         }],
         Bridge::new(send),
-        None,
     );
     let source = host_call(&runtime, &mut receive, "host").await;
     let controller = runtime.controller();
@@ -532,7 +531,6 @@ async fn two_real_runtimes_share_always_and_tool_completion_cancels_unanswered_a
             input_schema: json!({"type":"object"}),
         }],
         Bridge::new(send),
-        None,
     );
     let (send, mut second_wire) = mpsc::channel(16);
     second.with_product_tools(
@@ -542,7 +540,6 @@ async fn two_real_runtimes_share_always_and_tool_completion_cancels_unanswered_a
             input_schema: json!({"type":"object"}),
         }],
         Bridge::new(send),
-        None,
     );
     let first_source = host_call(&first, &mut first_wire, "first").await;
     let second_source = host_call(&second, &mut second_wire, "second").await;
@@ -814,7 +811,7 @@ async fn request_notifications_and_replaced_bridges_are_supervised_without_host_
         input_schema: json!({"type":"object"}),
     };
     let (send, mut receive) = mpsc::channel(16);
-    runtime.with_product_tools(vec![definition.clone()], Bridge::new(send), None);
+    runtime.with_product_tools(vec![definition.clone()], Bridge::new(send));
     let source = host_call(&runtime, &mut receive, "supervised").await;
     let controller = runtime.controller();
     let pending = runtime
@@ -856,7 +853,7 @@ async fn request_notifications_and_replaced_bridges_are_supervised_without_host_
         .unwrap();
     assert_eq!(pending.state, State::Pending);
     let (send, _replacement) = mpsc::channel(16);
-    runtime.with_product_tools(vec![definition], Bridge::new(send), None);
+    runtime.with_product_tools(vec![definition], Bridge::new(send));
     let resolved = permission_resolution(&store, "supervised", &pending.id).await;
     assert_eq!(resolved["state"], "cancelled");
     assert!(runtime
