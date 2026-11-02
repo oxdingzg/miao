@@ -112,6 +112,7 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
     let mut continue_last = false;
     let mut prompt: Option<String> = None;
     let mut fork = false;
+    let mut agent: Option<String> = None;
     let mut auto = false;
     let mut args = args.peekable();
     while let Some(arg) = args.next() {
@@ -133,6 +134,10 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
             "--session" => session = Some(value("--session")?),
             "--continue" => continue_last = true,
             "--prompt" => prompt = Some(value("--prompt")?),
+            // The engine resolves the merged configuration's `agents` entry
+            // into the default manifest, so the Session starts under that
+            // agent the way the product host starts one.
+            "--agent" => agent = Some(value("--agent")?),
             // Three spellings the TypeScript entry carried for the same thing:
             // a launch-wide permission relaxation. They map onto the engine's
             // classifier-guarded auto mode, which still honours operator deny
@@ -144,8 +149,7 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
             // implement them yet. Refusing with the reason beats a different
             // Session than the one asked for, and names the still-available
             // escape hatch (CLI-01's "clear error before the terminal exists").
-            "--mini" | "--agent" | "--replay" | "--no-replay" | "--replay-limit"
-            | "--demo" => {
+            "--mini" | "--replay" | "--no-replay" | "--replay-limit" | "--demo" => {
                 return Err(format!(
                     "the Rust TUI does not implement {name}; drop it, or run the legacy TypeScript TUI with `miao --tui legacy`"
                 ))
@@ -172,6 +176,7 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
         continue_last,
         prompt,
         fork,
+        agent,
         auto,
     })
 }
@@ -5216,7 +5221,6 @@ mod tests {
         // different session (CLI-01). A supported option keeps parsing.
         for option in [
             "--mini",
-            "--agent",
             "--replay",
             "--no-replay",
             "--replay-limit",
@@ -5240,6 +5244,27 @@ mod tests {
                 .map(str::to_string)
         )
         .is_ok());
+    }
+
+    #[test]
+    fn the_agent_option_names_the_configuration_agent() {
+        // `--agent <name>` rides to the engine as `--agent-name`, which
+        // resolves the merged configuration's `agents` entry into the default
+        // manifest — the standalone counterpart of the product host's
+        // prepared agent. Both spellings of the value land in Launch.agent.
+        for argv in [vec!["--agent", "reviewer"], vec!["--agent=reviewer"]] {
+            let mut args = vec!["--db".to_string(), "/tmp/x.db".to_string()];
+            args.extend(argv.iter().map(|argument| argument.to_string()));
+            let launch = launch(args.into_iter()).expect("--agent parses");
+            assert_eq!(launch.agent.as_deref(), Some("reviewer"));
+        }
+        let error = launch(
+            ["--db", "/tmp/x.db", "--agent"]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect_err("--agent without a value is refused");
+        assert!(error.contains("--agent"), "{error}");
     }
 
     #[test]

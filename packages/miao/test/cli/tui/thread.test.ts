@@ -122,11 +122,6 @@ describe("tui thread", () => {
     // `replay: false` means --no-replay, which the Rust TUI also lacks.
     const unsupported = [
       { mini: true },
-      { fork: true },
-      { agent: "build" },
-      { auto: true },
-      { yolo: true },
-      { "dangerously-skip-permissions": true },
       { replay: true },
       { replay: false },
       { noReplay: true },
@@ -136,6 +131,17 @@ describe("tui thread", () => {
 
     for (const args of unsupported) expect(unsupportedByRustTui(args)).toBeDefined()
     expect(unsupportedByRustTui({})).toBeUndefined()
+    // The Rust TUI grew --agent, --fork, and the auto spellings; they pass
+    // the guard now that the binary parses them.
+    for (const args of [
+      { agent: "build" },
+      { fork: true },
+      { auto: true },
+      { yolo: true },
+      { "dangerously-skip-permissions": true },
+    ]) {
+      expect(unsupportedByRustTui(args)).toBeUndefined()
+    }
   })
 
   cliIt.live("rejects mini-only options without --mini", ({ opencode }) =>
