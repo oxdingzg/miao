@@ -8,7 +8,7 @@ import { Effect, Option } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { NativeEngine } from "../native-engine"
-import { ConflictError, PermissionNotFoundError } from "@miao/protocol/errors"
+import { ConflictError, PermissionNotFoundError, SessionNotFoundError } from "@miao/protocol/errors"
 import { booted, response } from "../location"
 
 function missingRequest(id: PermissionV2.ID) {
@@ -46,6 +46,42 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
         }),
       )
       .handle(
+        "session.permission.create",
+        Effect.fn(function* (ctx) {
+          const placement = yield* SessionEnginePlacement.find(database.db, ctx.params.sessionID)
+          if (placement?.engine === "rust")
+            return yield* new ConflictError({
+              resource: ctx.params.sessionID,
+              message: "Native permission requests require an active engine-owned tool invocation",
+            })
+          yield* booted
+          const permission = yield* PermissionV2.Service
+          return {
+            data: yield* permission
+              .ask({
+                id: ctx.payload.id,
+                sessionID: ctx.params.sessionID,
+                action: ctx.payload.action,
+                resources: ctx.payload.resources,
+                save: ctx.payload.save,
+                metadata: ctx.payload.metadata,
+                source: ctx.payload.source,
+                agent: ctx.payload.agent,
+              })
+              .pipe(
+                Effect.catchTag(
+                  "Session.NotFoundError",
+                  (error) =>
+                    new SessionNotFoundError({
+                      sessionID: error.sessionID,
+                      message: `Session not found: ${error.sessionID}`,
+                    }),
+                ),
+              ),
+          }
+        }),
+      )
+      .handle(
         "session.permission.list",
         Effect.fn(function* (ctx) {
           const native = yield* Effect.serviceOption(NativeEngine.Service)
@@ -58,6 +94,25 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
           }
           const permission = yield* PermissionV2.Service
           return { data: yield* permission.forSession(ctx.params.sessionID) }
+        }),
+      )
+      .handle(
+        "session.permission.get",
+        Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            const permission = yield* PermissionV2.Service
+            const host = yield* permission.get(ctx.params.requestID)
+            if (host?.sessionID === ctx.params.sessionID) return { data: host }
+            const pending = yield* native.value.permissions({ sessionID: ctx.params.sessionID, ...placement })
+            const request = pending.find((request) => request.id === ctx.params.requestID)
+            if (!request) return yield* missingRequest(ctx.params.requestID)
+            return { data: request }
+          }
+          const request = yield* (yield* PermissionV2.Service).get(ctx.params.requestID)
+          if (!request || request.sessionID !== ctx.params.sessionID) return yield* missingRequest(ctx.params.requestID)
+          return { data: request }
         }),
       )
       .handle(

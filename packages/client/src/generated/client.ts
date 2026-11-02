@@ -151,8 +151,12 @@ import type {
   PermissionsListSavedOutput,
   PermissionsRemoveSavedInput,
   PermissionsRemoveSavedOutput,
+  PermissionsCreateInput,
+  PermissionsCreateOutput,
   PermissionsListInput,
   PermissionsListOutput,
+  PermissionsGetInput,
+  PermissionsGetOutput,
   PermissionsReplyInput,
   PermissionsReplyOutput,
   FilesContentInput,
@@ -1359,11 +1363,42 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      create: (input: PermissionsCreateInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: PermissionsCreateOutput }>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/permission`,
+            body: {
+              id: input["id"],
+              action: input["action"],
+              resources: input["resources"],
+              save: input["save"],
+              metadata: input["metadata"],
+              source: input["source"],
+              agent: input["agent"],
+            },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 410, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
       list: (input: PermissionsListInput, requestOptions?: RequestOptions) =>
         request<{ readonly data: PermissionsListOutput }>(
           {
             method: "GET",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/permission`,
+            successStatus: 200,
+            declaredStatuses: [404, 400, 410, 409, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      get: (input: PermissionsGetInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: PermissionsGetOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/permission/${encodeURIComponent(input.requestID)}`,
             successStatus: 200,
             declaredStatuses: [404, 400, 410, 409, 401],
             empty: false,

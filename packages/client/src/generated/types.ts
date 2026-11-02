@@ -4181,6 +4181,91 @@ export type PermissionsRemoveSavedInput = { readonly id: { readonly id: string }
 
 export type PermissionsRemoveSavedOutput = void
 
+export type PermissionsCreateInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly id?: {
+    readonly id?: string | null
+    readonly action: string
+    readonly resources: ReadonlyArray<string>
+    readonly save?: ReadonlyArray<string>
+    readonly metadata?: { readonly [x: string]: JsonValue }
+    readonly source?:
+      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
+      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
+    readonly agent?: string | null
+  }["id"]
+  readonly action: {
+    readonly id?: string | null
+    readonly action: string
+    readonly resources: ReadonlyArray<string>
+    readonly save?: ReadonlyArray<string>
+    readonly metadata?: { readonly [x: string]: JsonValue }
+    readonly source?:
+      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
+      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
+    readonly agent?: string | null
+  }["action"]
+  readonly resources: {
+    readonly id?: string | null
+    readonly action: string
+    readonly resources: ReadonlyArray<string>
+    readonly save?: ReadonlyArray<string>
+    readonly metadata?: { readonly [x: string]: JsonValue }
+    readonly source?:
+      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
+      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
+    readonly agent?: string | null
+  }["resources"]
+  readonly save?: {
+    readonly id?: string | null
+    readonly action: string
+    readonly resources: ReadonlyArray<string>
+    readonly save?: ReadonlyArray<string>
+    readonly metadata?: { readonly [x: string]: JsonValue }
+    readonly source?:
+      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
+      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
+    readonly agent?: string | null
+  }["save"]
+  readonly metadata?: {
+    readonly id?: string | null
+    readonly action: string
+    readonly resources: ReadonlyArray<string>
+    readonly save?: ReadonlyArray<string>
+    readonly metadata?: { readonly [x: string]: JsonValue }
+    readonly source?:
+      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
+      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
+    readonly agent?: string | null
+  }["metadata"]
+  readonly source?: {
+    readonly id?: string | null
+    readonly action: string
+    readonly resources: ReadonlyArray<string>
+    readonly save?: ReadonlyArray<string>
+    readonly metadata?: { readonly [x: string]: JsonValue }
+    readonly source?:
+      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
+      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
+    readonly agent?: string | null
+  }["source"]
+  readonly agent?: {
+    readonly id?: string | null
+    readonly action: string
+    readonly resources: ReadonlyArray<string>
+    readonly save?: ReadonlyArray<string>
+    readonly metadata?: { readonly [x: string]: JsonValue }
+    readonly source?:
+      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
+      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
+    readonly agent?: string | null
+  }["agent"]
+}
+
+export type PermissionsCreateOutput = {
+  readonly data: { readonly id: string; readonly effect: "allow" | "deny" | "ask" }
+}["data"]
+
 export type PermissionsListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type PermissionsListOutput = {
@@ -4195,6 +4280,25 @@ export type PermissionsListOutput = {
       | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
       | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
   }>
+}["data"]
+
+export type PermissionsGetInput = {
+  readonly sessionID: { readonly sessionID: string; readonly requestID: string }["sessionID"]
+  readonly requestID: { readonly sessionID: string; readonly requestID: string }["requestID"]
+}
+
+export type PermissionsGetOutput = {
+  readonly data: {
+    readonly id: string
+    readonly sessionID: string
+    readonly action: string
+    readonly resources: ReadonlyArray<string>
+    readonly save?: ReadonlyArray<string>
+    readonly metadata?: { readonly [x: string]: JsonValue }
+    readonly source?:
+      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
+      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
+  }
 }["data"]
 
 export type PermissionsReplyInput = {
