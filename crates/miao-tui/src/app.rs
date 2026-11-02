@@ -175,6 +175,9 @@ pub struct App {
     /// agent CLI behaves: the first thing typed is the first prompt. `Tab`
     /// moves focus to the home list (filter, numbered slots, pin) and back.
     home_list_focus: bool,
+    /// Sessions this client has already named, so a snapshot arriving before the
+    /// rename lands does not name them again.
+    named_sessions: std::collections::HashSet<String>,
     dialog: Option<Dialog>,
     permission_generation: u64,
     workspace_changes_generation: u64,
@@ -284,6 +287,7 @@ impl App {
             state: SessionState::default(),
             quit: false,
             home_list_focus: false,
+            named_sessions: std::collections::HashSet::new(),
             dialog: None,
             permission_generation: 0,
             workspace_changes_generation: 0,
@@ -635,6 +639,29 @@ impl App {
                     }
                 }
                 self.state = state;
+                // The product creates a Session with a placeholder title and
+                // leaves the real name to the host's title model. The rust-only
+                // TUI is the host on this path and has no title model, so it
+                // names the Session from the first prompt it can see — once, and
+                // only while the title is still a placeholder.
+                if let Some(session) = self.session.as_ref() {
+                    if placeholder_title(session.label())
+                        && !self.named_sessions.contains(&session.id)
+                    {
+                        let first = transcript.entries.iter().find_map(|entry| match entry {
+                            Entry::User { text, .. } if !text.trim().is_empty() => {
+                                Some(text.as_str())
+                            }
+                            _ => None,
+                        });
+                        if let (Some(text), Some(engine)) = (first, self.engine.as_ref()) {
+                            if let Some(title) = title_from_prompt(text) {
+                                engine.rename(&session.id, &title);
+                                self.named_sessions.insert(session.id.clone());
+                            }
+                        }
+                    }
+                }
                 // A live phase only ever describes the run it was announced for.
                 if self.live.as_ref().is_some_and(|live| {
                     self.state.active_run.as_deref() != Some(live.run_id.as_str())
@@ -2846,6 +2873,32 @@ fn with_remedy(message: &str) -> String {
         Some(advice) if !message.contains(advice) => format!("{message} — {advice}"),
         _ => message.to_string(),
     }
+}
+
+/// Titles a client creates a Session with, before anything names it.
+fn placeholder_title(title: &str) -> bool {
+    matches!(title, "" | "untitled" | "New session" | "run")
+}
+
+/// How many characters of the first prompt name the Session: enough to tell two
+/// conversations apart, short enough for a sidebar.
+const TITLE_CHARS: usize = 60;
+
+/// A one-line Session name taken from the first prompt.
+fn title_from_prompt(prompt: &str) -> Option<String> {
+    let line = prompt
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())?;
+    let single = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    if single.is_empty() {
+        return None;
+    }
+    let mut title = single.chars().take(TITLE_CHARS).collect::<String>();
+    if single.chars().count() > TITLE_CHARS {
+        title.push('…');
+    }
+    Some(title)
 }
 
 #[cfg(test)]
@@ -5247,6 +5300,83 @@ mod tests {
 
     /// An open Session whose transcript holds two user turns, with a handle
     /// that records what the UI asks the engine to do.
+    /// The rust-only TUI is the host on this path and has no title model, so it
+    /// names a new Session from the first prompt — once, and only while the
+    /// title is still the placeholder the product created it with.
+    #[test]
+    fn opening_a_placeholder_session_names_it_from_the_first_prompt() {
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        let mut named = summary("ses_a", 10);
+        named.title = Some("New session".into());
+        let transcript = || {
+            Box::new(Transcript {
+                entries: vec![Entry::User {
+                    text: "fix  the parser".into(),
+                    seq: 3,
+                }],
+                ..Transcript::default()
+            })
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(named.clone()),
+            transcript: transcript(),
+            state: SessionState::default(),
+        });
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Rename { session_id, title })
+                if session_id == "ses_a" && title == "fix the parser"
+        ));
+        // A snapshot arriving before the rename lands must not name it again.
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(named),
+            transcript: transcript(),
+            state: SessionState::default(),
+        });
+        assert!(requests.try_recv().is_err(), "named twice");
+    }
+
+    /// A Session the product already named keeps its title.
+    #[test]
+    fn an_already_named_session_is_left_alone() {
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        let mut named = summary("ses_a", 10);
+        named.title = Some("auth refactor".into());
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(named),
+            transcript: Box::new(Transcript {
+                entries: vec![Entry::User {
+                    text: "something else".into(),
+                    seq: 3,
+                }],
+                ..Transcript::default()
+            }),
+            state: SessionState::default(),
+        });
+        assert!(requests.try_recv().is_err(), "renamed an operator's title");
+    }
+
+    #[test]
+    fn only_the_creation_titles_count_as_placeholders() {
+        for placeholder in ["", "untitled", "New session", "run"] {
+            assert!(placeholder_title(placeholder), "{placeholder:?}");
+        }
+        assert!(!placeholder_title("auth refactor"));
+        assert!(!placeholder_title("run the tests, then report"));
+        assert_eq!(
+            title_from_prompt("  ship   the  fix\nand then rest").as_deref(),
+            Some("ship the fix")
+        );
+        assert_eq!(title_from_prompt("   "), None);
+        let long = title_from_prompt(&"a".repeat(100)).expect("title");
+        assert_eq!(long.chars().count(), 61);
+        assert!(long.ends_with('…'));
+    }
+
     fn revert_session_app() -> (App, tokio::sync::mpsc::UnboundedReceiver<engine::Request>) {
         let mut app = session_app();
         app.handle(AppEvent::SessionOpened {
