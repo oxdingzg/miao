@@ -11,5 +11,6 @@
   "sandbox": true,
   "rules": [],
   "approval_timeout_ms": 60000,
-  "max_provider_turns": null
+  "max_provider_turns": null,
+  "auto": false
 }
