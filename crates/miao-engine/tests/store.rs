@@ -870,7 +870,8 @@ async fn opening_a_store_indexes_the_event_kind_so_recovery_does_not_scan_the_ta
         .collect::<Result<_, _>>()
         .unwrap();
     assert!(
-        plan.iter().any(|detail| detail.contains("engine_event_kind")),
+        plan.iter()
+            .any(|detail| detail.contains("engine_event_kind")),
         "the recovery query must seek the kind index instead of scanning the table: {plan:?}"
     );
 }
