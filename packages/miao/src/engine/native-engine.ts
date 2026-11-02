@@ -899,6 +899,18 @@ export const fromOwners = (
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
         connection.client.request("usage", { session_id: input.sessionID }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
+    children: (input) =>
+      read<readonly Readonly<Record<string, unknown>>[]>(input, (connection) =>
+        connection.client.request("session_children", { session_id: input.sessionID }),
+      ).pipe(
+        Effect.map((value) =>
+          Array.isArray(value)
+            ? value.filter(
+                (entry): entry is Readonly<Record<string, unknown>> => typeof entry === "object" && entry !== null,
+              )
+            : [],
+        ),
+      ),
     transcript: (input) =>
       read(input, (connection) =>
         readTranscript({

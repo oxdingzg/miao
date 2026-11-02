@@ -611,6 +611,7 @@ export type SessionsListOutput = {
         readonly ttftMs?: number
         readonly lastTurnAt: number
       }>
+      readonly delegated?: number
     }
     readonly tokens: {
       readonly input: number
@@ -720,6 +721,7 @@ export type SessionsCreateOutput = {
         readonly ttftMs?: number
         readonly lastTurnAt: number
       }>
+      readonly delegated?: number
     }
     readonly tokens: {
       readonly input: number
@@ -805,6 +807,7 @@ export type SessionsGetOutput = {
         readonly ttftMs?: number
         readonly lastTurnAt: number
       }>
+      readonly delegated?: number
     }
     readonly tokens: {
       readonly input: number
@@ -1460,6 +1463,7 @@ export type SessionsForkOutput = {
         readonly ttftMs?: number
         readonly lastTurnAt: number
       }>
+      readonly delegated?: number
     }
     readonly tokens: {
       readonly input: number
@@ -1692,6 +1696,7 @@ export type SessionsChildrenOutput = {
         readonly ttftMs?: number
         readonly lastTurnAt: number
       }>
+      readonly delegated?: number
     }
     readonly tokens: {
       readonly input: number
@@ -1789,6 +1794,7 @@ export type SessionsHistoryOutput = {
                 readonly ttftMs?: number
                 readonly lastTurnAt: number
               }>
+              readonly delegated?: number
             }
             readonly tokens: {
               readonly input: number
@@ -2562,6 +2568,7 @@ export type SessionsEventsOutput =
               readonly ttftMs?: number
               readonly lastTurnAt: number
             }>
+            readonly delegated?: number
           }
           readonly tokens: {
             readonly input: number
@@ -4595,6 +4602,7 @@ export type EventsDurableOutput =
               readonly ttftMs?: number
               readonly lastTurnAt: number
             }>
+            readonly delegated?: number
           }
         }
       }
@@ -4695,6 +4703,7 @@ export type EventsDurableOutput =
               readonly ttftMs?: number
               readonly lastTurnAt: number
             }>
+            readonly delegated?: number
           }
         }
       }
@@ -4795,6 +4804,7 @@ export type EventsDurableOutput =
               readonly ttftMs?: number
               readonly lastTurnAt: number
             }>
+            readonly delegated?: number
           }
         }
       }
@@ -5509,6 +5519,7 @@ export type EventsDurableOutput =
               readonly ttftMs?: number
               readonly lastTurnAt: number
             }>
+            readonly delegated?: number
           }
           readonly tokens: {
             readonly input: number
@@ -5601,6 +5612,7 @@ export type EventsDurableOutput =
               readonly ttftMs?: number
               readonly lastTurnAt: number
             }>
+            readonly delegated?: number
           }
           readonly tokens: {
             readonly input: number

@@ -64,6 +64,11 @@ export const Usage = Schema.Struct({
       lastTurnAt: DateTimeUtcFromMillis,
     }),
   ),
+  /**
+   * Money spent by Sessions this one delegated to, priced the same way as its
+   * own turns. Absent when the Session has no children (#2236).
+   */
+  delegated: Schema.Finite.pipe(optional),
 }).annotate({ identifier: "SessionV2.Usage" })
 
 /**

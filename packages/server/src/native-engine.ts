@@ -254,6 +254,12 @@ export interface Interface {
     storage: AbsolutePath
     location: Location.Ref
   }) => Effect.Effect<Readonly<Record<string, unknown>>, ConflictError>
+  /** Sessions forked from or delegated to by this one (AGT-01). */
+  readonly children: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) => Effect.Effect<readonly Readonly<Record<string, unknown>>[], ConflictError>
   /** Captured, read-only product transcript from native storage. */
   readonly transcript: (input: {
     sessionID: SessionID
