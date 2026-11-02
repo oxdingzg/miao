@@ -787,12 +787,7 @@ impl Composer {
                     // Enter submits it instead of spending a keystroke
                     // accepting a completion that changes nothing. `/quit`
                     // quit on the first Enter, the way the TS composer does.
-                    if self
-                        .completion
-                        .items
-                        .iter()
-                        .any(|item| *item == self.completion.query)
-                    {
+                    if self.completion.items.contains(&self.completion.query) {
                         false
                     } else {
                         self.accept_completion();
