@@ -164,6 +164,9 @@ export function nativeSessionUsage(input: {
   const calls = count(tools["calls"])
   const failures = count(tools["failures"])
   if (detail.length === 0 && calls === 0) return undefined
+  let auxiliaryTurns = 0
+  let auxiliaryCost = 0
+  const auxiliaryTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
   const groups = new Map<
     string,
     {
@@ -191,6 +194,7 @@ export function nativeSessionUsage(input: {
       cacheWriteInputTokens?: number
     }
     const model = typeof entry["model"] === "string" ? entry["model"] : ""
+    const isAuxiliary = entry["kind"] === "auxiliary"
     if (model === "") {
       unknownPriceObservations += 1
       continue
@@ -215,7 +219,17 @@ export function nativeSessionUsage(input: {
       lastTurnMs: 0,
     }
     group.turns += 1
+    if (isAuxiliary) {
+      auxiliaryTurns += 1
+      auxiliaryCost += recorded !== undefined ? recorded : SessionCost.ofTurn(costs, billed)
+      auxiliaryTokens.input += count(billed.inputTokens)
+      auxiliaryTokens.output += count(billed.outputTokens)
+      auxiliaryTokens.reasoning += count(billed.reasoningTokens)
+      auxiliaryTokens.cache.read += count(billed.cacheReadInputTokens)
+      auxiliaryTokens.cache.write += count(billed.cacheWriteInputTokens)
+    }
     if (recorded !== undefined) {
+
       group.cost += recorded
     } else {
       group.cost += SessionCost.ofTurn(costs, billed)
@@ -264,6 +278,7 @@ export function nativeSessionUsage(input: {
       : {}),
     turns: count(input.report["turns"]),
     tools: { calls, failures },
+    auxiliary: { turns: auxiliaryTurns, cost: auxiliaryCost, tokens: auxiliaryTokens },
     models: [...groups.values()]
       .map((group) => ({
         providerID: group.providerID,
