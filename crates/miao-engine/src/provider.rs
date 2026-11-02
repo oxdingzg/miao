@@ -16,6 +16,17 @@ use std::{
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+/// The transport an SDK package name stands for, shared by the route plan
+/// and the agent manifest resolution.
+pub(crate) fn transport_for_package(package: &str) -> Option<&'static str> {
+    match package {
+        "@ai-sdk/anthropic" => Some("anthropic"),
+        "@ai-sdk/google" | "@ai-sdk/google-vertex" => Some("gemini"),
+        "@ai-sdk/openai" | "@ai-sdk/openai-compatible" => Some("openai-chat"),
+        _ => None,
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
     #[error("interrupted")]
