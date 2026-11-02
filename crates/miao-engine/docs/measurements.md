@@ -85,13 +85,19 @@ Sessions) with the Rust TUI started directly — no host process, no shim.
 | `adopt_wakeups` (one query) | 2.63 s | 16 ms |
 | `adopt_crons` (one query) | ~2.6 s | 6 ms |
 | engine `serve` ready | 13.2–14.8 s | 7–9 ms warm, 336 ms cold |
-| home list (`session_catalog`, 170 rows) | 4–5 s (one snapshot per Session) | 0.26 s warm |
+| home list (`session_catalog`, 170 rows) | 4–5 s (one snapshot per Session, then 3.2 s) | 42 ms warm |
 | open a 40-message Session | — | 0.41 s warm, 2.9 s cold |
 
-The two startup scans were full table scans: `engine_event` carried only its
-`(session_id, seq)` primary key, so asking for one `kind` read every row, and
-`runtime.rs` asked twice. `engine_event(kind)` plus a single-transaction
-`session_catalog` is what moved the first four rows.
+Two shapes were slow, both because `engine_event` carried only its
+`(session_id, seq)` primary key. Startup recovery asked for one `kind` at a time
+and read every row — `runtime.rs` asked twice — so `engine_event(kind)` moved
+the first three rows. `session_catalog` then asked each Session for its newest
+`session.model.selected` and `session.account.selected`, which walked that
+Session's journal backwards to the match: 942 ms and 2222 ms for 170 Sessions,
+and the whole 3.2 s home-list wait. `engine_event(session_id, kind, seq)` answers
+both in 18–20 ms, so the catalog itself is no longer the cost of showing the
+list; the one-time index build costs 5.5 s on 324k events, and appends stay
+inside noise (≈6 µs each with the index, ≈9 µs without).
 
 Method: the TUI probe writes the engine's argv to a PTY, then timestamps the
 first byte of output and the first frame that renders the home list, so a
