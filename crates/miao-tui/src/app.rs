@@ -1345,8 +1345,17 @@ impl App {
                     self.apply_theme(&name);
                 }
             }
-            Some(Dialog::Models(_)) => {
-                let Some(binding) = self.models.get(index).map(ModelInfo::binding) else {
+            Some(Dialog::Models(list)) => {
+                // The chosen row's id is its position in the catalog; a
+                // provider header never reaches here because the cursor
+                // skips headers, so an unparseable id is simply ignored.
+                let binding = list
+                    .rows
+                    .get(index)
+                    .and_then(|row| row.id.parse::<usize>().ok())
+                    .and_then(|position| self.models.get(position))
+                    .map(ModelInfo::binding);
+                let Some(binding) = binding else {
                     return;
                 };
                 let Some(session_id) = self.session_id() else {
@@ -4008,6 +4017,7 @@ mod tests {
             model: "glm-5.3-flash".into(),
             route_id: None,
             variant: None,
+            provider: None,
         }];
         app.update_status();
         assert_eq!(

@@ -2476,6 +2476,16 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
             .map(|(position, row_index)| {
                 let row = &list.rows[*row_index];
                 let index = position;
+                // A provider header reads as a section label: muted weight, no
+                // marker, and no selection band (the cursor never rests on it).
+                if row.is_header() {
+                    return Line::from(Span::styled(
+                        row.label.clone(),
+                        Style::new()
+                            .fg(palette.secondary)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
                 // A read-only list has nothing to select, so it draws no
                 // marker and keeps every row in the same weight.
                 let read_only = list.kind == ListKind::ReadOnly;
