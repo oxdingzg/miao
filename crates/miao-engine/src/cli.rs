@@ -19,7 +19,6 @@ pub struct Configured {
     pub runtime: crate::runtime::Runtime,
     pub options: HashMap<String, String>,
     pub acp: bool,
-    pub plugin_hooks: Option<crate::product::Marker>,
 }
 
 /// Where the product keeps credentials when the operator names no source. The
@@ -186,7 +185,6 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             "--lsp-diagnostics",
             "--context-limits",
             "--hooks-config",
-            "--plugin-hooks",
             "--context-config",
             "--workspace-instructions",
             "--skills-config",
@@ -621,38 +619,6 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             Err(error) => eprintln!("miao-engine extension worker unavailable: {error}; built-in tools remain available"),
         }
     }
-    let mut plugin_hooks = None;
-    if let Some(path) = options.get("--plugin-hooks") {
-        if !options.contains_key("--product-tools") {
-            return Err("plugin hooks require the product tool bridge".into());
-        }
-        let path = tokio::fs::canonicalize(path).await?;
-        if path.starts_with(std::path::Path::new(tools.location())) {
-            return Err("Plugin hooks host config must be outside model-writable workspace".into());
-        }
-        let bytes = tokio::fs::read(&path).await?;
-        if bytes.len() > 65536 {
-            return Err("Plugin hooks config exceeds 64 KiB".into());
-        }
-        plugin_hooks = Some(
-            serde_json::from_slice::<miao_engine::product::Marker>(&bytes)
-                .map_err(|_| "invalid plugin hooks host config")?,
-        );
-    } else if let Some(raw) = std::env::var_os("MIAO_ENGINE_PLUGIN_HOOKS") {
-        // A host that knows which hook families are registered hands the marker
-        // over inline; an explicit `--plugin-hooks` file still wins.
-        if !options.contains_key("--product-tools") {
-            return Err("plugin hooks require the product tool bridge".into());
-        }
-        let bytes = raw.to_string_lossy();
-        if bytes.len() > 65536 {
-            return Err("Plugin hooks config exceeds 64 KiB".into());
-        }
-        plugin_hooks = Some(
-            serde_json::from_str::<miao_engine::product::Marker>(&bytes)
-                .map_err(|_| "invalid inline plugin hooks host config")?,
-        );
-    }
     let mut mcp_origin = None;
     if let Some(raw) = std::env::var_os("MIAO_ENGINE_MCP_SERVERS") {
         // A host that already holds the server list hands it over inline: no
@@ -875,7 +841,6 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
         runtime,
         options,
         acp,
-        plugin_hooks,
     })
 }
 

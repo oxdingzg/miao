@@ -19,10 +19,10 @@ does not claim ACP or the existing miao HttpApi is compatible.
 
 ### Reverse-call cancellation
 
-Host reverse calls use `product_tool` or `hook_tool` with a `bridge_id` and
+Host reverse calls use `product_tool` with a `bridge_id` and
 `params.session_id`. Cancelling the Session removes its pending reply slots and
-emits the corresponding `product_tool.cancel` or `hook_tool.cancel` notification
-with the same `bridge_id` and `params: {session_id, bridge_id}`. The host should
+emits the corresponding `product_tool.cancel` notification with the same
+`bridge_id` and `params: {session_id, bridge_id}`. The host should
 interrupt only the matching Session's active callback, release scoped resources,
 and suppress late replies. Unknown notices are safe to ignore. Connection loss
 or client close must also release host callbacks. A host that ignores a notice

@@ -613,19 +613,16 @@ impl Runtime {
     }
 
     /// Register host-provided product tools and the reverse bridge used to
-    /// execute them, plus the plugin hook marker naming the families the host
-    /// resolves in-process. Call once at startup, before any run.
+    /// execute them. Call once at startup, before any run.
     pub fn with_product_tools(
         &self,
         tools: Vec<crate::protocol::ToolDefinition>,
         bridge: crate::product::Bridge,
-        plugin_hooks: Option<crate::product::Marker>,
     ) {
         self.inner.tools.with_product_tools(tools.clone());
         let mut state = self.inner.product.write().unwrap();
         state.tools = tools;
         state.bridge = Some(bridge);
-        state.marker = plugin_hooks;
     }
 
     /// Bind the host's path spelling to this Runtime's actual Location. This
@@ -3092,11 +3089,7 @@ async fn execute(
             // same decision: there is no surface to review.
             Vec::new()
         } else {
-            tokio::select! {
-                biased;
-                _ = cancel.cancelled() => return Ok(()),
-                reviewed = dispatch_plugin_definitions(inner, session, run, tools) => reviewed?,
-            }
+            tools
         };
         // Wrap-up guidance rides the request after the durable history as an
         // assistant note, matching the TS runner's message shape.
@@ -3681,22 +3674,7 @@ command: None,
                     // here and settlement, so the notice covers whichever of
                     // them the turn is actually blocked on.
                     let _waiting = WaitNotice::start(&inner.progress, session, run, step, id, name);
-                    let mut block_input = block["input"].clone();
-                    let plugin_before = tokio::select! {
-                        biased;
-                        _ = cancel.cancelled() => return Ok(()),
-                        verdict = dispatch_plugin_before(
-                            inner,
-                            session,
-                            run,
-                            id,
-                            effective_name,
-                            &mut block_input,
-                        ) => verdict?,
-                    };
-                    if let Some(reason) = plugin_before {
-                        (json!({"error":reason}), true)
-                    } else {
+                    let block_input = block["input"].clone();
                         let recorded_read = match &inner.tool_replay {
                             Some(replay) => replay.read_receipt(name, &block_input).await?,
                             None => None,
@@ -4065,30 +4043,7 @@ command: None,
                                 }
                             }
                         }
-                    }
-                };
-                let (output, is_error) = if plugin_marked(inner, "after") {
-                    let mut output = output;
-                    let mut is_error = is_error;
-                    if let Some(reason) = tokio::select! {
-                        biased;
-                        _ = cancel.cancelled() => return Ok(()),
-                        verdict = dispatch_plugin_after(
-                            inner,
-                            session,
-                            run,
-                            id,
-                            effective_name,
-                            &block["input"],
-                            &mut output,
-                        ) => verdict?,
-                    } {
-                        output = json!({"error":reason});
-                        is_error = true;
-                    }
-                    (output, is_error)
-                } else {
-                    (output, is_error)
+                    
                 };
                 let polling_terminal = name == "terminal_read"
                     && !is_error
@@ -5180,264 +5135,6 @@ async fn ask_question(
             continue;
         }
         tokio::select! {_=cancel.cancelled()=>return Ok(None),_=tokio::time::sleep(std::time::Duration::from_millis(25))=>{}}
-    }
-}
-
-/// Whether the host resolves the plugin hook family `kind`. A marker without a
-/// bridge cannot dispatch and fails closed at the call site.
-fn plugin_marked(inner: &Inner, kind: &str) -> bool {
-    inner
-        .product
-        .read()
-        .unwrap()
-        .marker
-        .as_ref()
-        .is_some_and(|marker| marker.marked(kind))
-}
-
-/// One reverse hook dispatch: identifies the journaled outcome of a
-/// `hook_tool` exchange for a single tool call.
-struct HookTool<'a> {
-    inner: &'a Inner,
-    session: &'a str,
-    run: &'a str,
-    call: &'a str,
-    kind: &'a str,
-    tool: &'a str,
-}
-
-impl HookTool<'_> {
-    async fn record(
-        &self,
-        outcome: &str,
-        reason: Option<&str>,
-        started: std::time::Instant,
-    ) -> Result<(), Error> {
-        self.inner
-            .store
-            .record(
-                self.session,
-                "hook_tool.completed",
-                json!({
-                    "run_id": self.run,
-                    "call_id": self.call,
-                    "kind": self.kind,
-                    "tool": self.tool,
-                    "outcome": outcome,
-                    "reason": reason.unwrap_or("ok"),
-                    "duration_ms": started.elapsed().as_millis() as u64,
-                }),
-            )
-            .await
-            .map(|_| ())
-    }
-}
-
-/// Reverse-dispatch the plugin `tool.definition` family over the assembled
-/// agent surface. A `deny` verdict drops the tool; a `definition` verdict
-/// replaces it. A failed dispatch keeps the tool, matching the TypeScript
-/// runner's rule that one failing plugin cannot break a provider turn.
-async fn dispatch_plugin_definitions(
-    inner: &Inner,
-    session: &str,
-    run: &str,
-    tools: Vec<crate::protocol::ToolDefinition>,
-) -> Result<Vec<crate::protocol::ToolDefinition>, Error> {
-    if !plugin_marked(inner, "definition") {
-        return Ok(tools);
-    }
-    let bridge = inner.product.read().unwrap().bridge.clone();
-    let Some(bridge) = bridge else {
-        return Ok(tools);
-    };
-    let mut surfaced = Vec::with_capacity(tools.len());
-    for tool in tools {
-        let started = std::time::Instant::now();
-        let hook = HookTool {
-            inner,
-            session,
-            run,
-            call: "",
-            kind: "definition",
-            tool: &tool.name,
-        };
-        let payload = serde_json::to_value(&tool)
-            .map(|value| json!({"definition": value}))
-            .unwrap_or_else(|_| json!({}));
-        match bridge
-            .call_hook(session, "definition", &tool.name, "", payload)
-            .await
-        {
-            Ok(reply) => {
-                if let Some(reason) = reply.get("deny").and_then(Value::as_str) {
-                    hook.record("denied", Some(reason), started).await?;
-                    continue;
-                }
-                hook.record("completed", None, started).await?;
-                let mut reviewed = tool;
-                if let Some(transformed) = reply.get("definition") {
-                    if let Ok(parsed) = serde_json::from_value::<crate::protocol::ToolDefinition>(
-                        transformed.clone(),
-                    ) {
-                        reviewed = parsed;
-                    }
-                }
-                surfaced.push(reviewed);
-            }
-            Err(error) => {
-                hook.record("failed", Some(&error.to_string()), started)
-                    .await?;
-                surfaced.push(tool);
-            }
-        }
-    }
-    Ok(surfaced)
-}
-
-/// Reverse-dispatch the plugin `tool.execute.before` family. `None` allows the
-/// call (the input possibly transformed in place); `Some(reason)` denies it,
-/// either by host verdict or because the dispatch failed closed.
-async fn dispatch_plugin_before(
-    inner: &Inner,
-    session: &str,
-    run: &str,
-    call: &str,
-    tool: &str,
-    input: &mut Value,
-) -> Result<Option<String>, Error> {
-    if !plugin_marked(inner, "before") {
-        return Ok(None);
-    }
-    let started = std::time::Instant::now();
-    let bridge = inner.product.read().unwrap().bridge.clone();
-    let dispatched = match bridge {
-        Some(bridge) => {
-            bridge
-                .call_hook(
-                    session,
-                    "before",
-                    tool,
-                    call,
-                    json!({"args": input.clone()}),
-                )
-                .await
-        }
-        None => Err(crate::tools::ToolError::External(
-            "hook bridge missing".into(),
-        )),
-    };
-    match dispatched {
-        Ok(reply) => {
-            let verdict = reply.get("deny").and_then(Value::as_str).map(String::from);
-            if verdict.is_none() {
-                if let Some(transformed) = reply.get("args") {
-                    *input = transformed.clone();
-                }
-            }
-            HookTool {
-                inner,
-                session,
-                run,
-                call,
-                kind: "before",
-                tool,
-            }
-            .record(
-                if verdict.is_some() { "denied" } else { "ok" },
-                verdict.as_deref(),
-                started,
-            )
-            .await?;
-            Ok(verdict)
-        }
-        Err(error) => {
-            let reason = format!("tool.execute.before hook unavailable: {error}");
-            HookTool {
-                inner,
-                session,
-                run,
-                call,
-                kind: "before",
-                tool,
-            }
-            .record("error", Some(&reason), started)
-            .await?;
-            Ok(Some(reason))
-        }
-    }
-}
-
-/// Reverse-dispatch the plugin `tool.execute.after` family against a settled
-/// output. `Some(reason)` turns the result into a tool error; `None` keeps it,
-/// possibly replaced in place by the host verdict.
-async fn dispatch_plugin_after(
-    inner: &Inner,
-    session: &str,
-    run: &str,
-    call: &str,
-    tool: &str,
-    args: &Value,
-    output: &mut Value,
-) -> Result<Option<String>, Error> {
-    if !plugin_marked(inner, "after") {
-        return Ok(None);
-    }
-    let started = std::time::Instant::now();
-    let bridge = inner.product.read().unwrap().bridge.clone();
-    let dispatched = match bridge {
-        Some(bridge) => {
-            bridge
-                .call_hook(
-                    session,
-                    "after",
-                    tool,
-                    call,
-                    json!({"args": args.clone(), "output": output.clone()}),
-                )
-                .await
-        }
-        None => Err(crate::tools::ToolError::External(
-            "hook bridge missing".into(),
-        )),
-    };
-    match dispatched {
-        Ok(reply) => {
-            let verdict = reply.get("deny").and_then(Value::as_str).map(String::from);
-            if verdict.is_none() {
-                if let Some(replaced) = reply.get("output") {
-                    *output = replaced.clone();
-                }
-            }
-            HookTool {
-                inner,
-                session,
-                run,
-                call,
-                kind: "after",
-                tool,
-            }
-            .record(
-                if verdict.is_some() { "denied" } else { "ok" },
-                verdict.as_deref(),
-                started,
-            )
-            .await?;
-            Ok(verdict)
-        }
-        Err(error) => {
-            let reason = format!("tool.execute.after hook unavailable: {error}");
-            HookTool {
-                inner,
-                session,
-                run,
-                call,
-                kind: "after",
-                tool,
-            }
-            .record("error", Some(&reason), started)
-            .await?;
-            Ok(Some(reason))
-        }
     }
 }
 
@@ -6827,8 +6524,6 @@ async fn execute_read_batch(
 ) -> Result<HashMap<String, (Value, bool)>, Error> {
     if cancel.is_cancelled()
         || !inner.tools.hooks().is_empty()
-        || plugin_marked(inner, "before")
-        || plugin_marked(inner, "after")
         || inner.tool_replay.is_some()
     {
         return Ok(HashMap::new());

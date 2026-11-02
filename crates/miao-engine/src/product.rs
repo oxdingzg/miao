@@ -12,30 +12,6 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::protocol::ToolDefinition;
 
-/// Which plugin hook families the host resolves in-process. The marker only
-/// advertises presence; the callbacks themselves never cross the boundary.
-#[derive(Deserialize, Clone, Copy)]
-#[serde(deny_unknown_fields)]
-pub struct Marker {
-    #[serde(default)]
-    pub before: bool,
-    #[serde(default)]
-    pub after: bool,
-    #[serde(default)]
-    pub definition: bool,
-}
-
-impl Marker {
-    pub fn marked(&self, kind: &str) -> bool {
-        match kind {
-            "before" => self.before,
-            "after" => self.after,
-            "definition" => self.definition,
-            _ => false,
-        }
-    }
-}
-
 /// The calling tool-call identity a product-tool dispatch carries, so the host
 /// can name a real permission source (`message_seq` + `call_id`) instead of a
 /// standing-policy guess. `message_seq` is the assistant message's durable seq;
@@ -69,7 +45,6 @@ pub(crate) struct Pending {
 pub struct State {
     pub tools: Vec<ToolDefinition>,
     pub bridge: Option<Bridge>,
-    pub marker: Option<Marker>,
     pub host_context: Option<HostContext>,
 }
 impl State {
@@ -162,32 +137,6 @@ impl Bridge {
 
     /// Send a reverse hook dispatch and wait for the host's verdict. The
     /// payload carries `args` (and the settled `output` for the after family).
-    pub async fn call_hook(
-        &self,
-        session: &str,
-        kind: &str,
-        tool: &str,
-        call: &str,
-        payload: Value,
-    ) -> Result<Value, crate::tools::ToolError> {
-        let mut params =
-            json!({"session_id": session, "kind": kind, "tool": tool, "call_id": call});
-        if let (Some(object), Some(extra)) = (params.as_object_mut(), payload.as_object()) {
-            for (key, value) in extra {
-                object.insert(key.clone(), value.clone());
-            }
-        }
-        self.settle(
-            session,
-            "hook_tool",
-            params,
-            "hook bridge",
-            "tool hook",
-            None,
-        )
-        .await
-    }
-
     async fn settle(
         &self,
         session: &str,
