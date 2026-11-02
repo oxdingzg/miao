@@ -207,7 +207,7 @@ impl Shell {
                         .join("\n\n");
                     (!text.trim().is_empty()).then_some(text)
                 }
-                Entry::User { .. } | Entry::Error { .. } => None,
+                Entry::User { .. } | Entry::Error { .. } | Entry::Context { .. } => None,
             })?;
         Some(reply)
     }
@@ -1502,6 +1502,26 @@ fn transcript_lines(
                         Span::styled("❯ ", Style::new().fg(palette.primary)),
                         Span::styled(line.to_string(), Style::new().fg(palette.text)),
                     ]));
+                }
+                lines.push(Line::default());
+            }
+            Entry::Context { source, text } => {
+                // Injected context is a history fact, not something the operator
+                // said. Painting it behind `❯` claimed it as input and put words
+                // in their mouth; a quiet labelled block keeps the facts
+                // readable without changing who said what.
+                lines.push(Line::from(vec![
+                    Span::styled("⋯ ", Style::new().fg(palette.border)),
+                    Span::styled(
+                        format!("context · {source}"),
+                        Style::new().fg(palette.text_muted),
+                    ),
+                ]));
+                for line in text.lines() {
+                    lines.push(Line::from(Span::styled(
+                        format!("  {line}"),
+                        Style::new().fg(palette.text_muted),
+                    )));
                 }
                 lines.push(Line::default());
             }
@@ -3250,6 +3270,32 @@ mod tests {
         assert!(painted.contains("! approve or deny"), "{painted}");
         assert!(!painted.contains("! ctrl+c"), "{painted}");
         assert!(painted.contains("ctrl+c to interrupt"), "{painted}");
+    }
+
+    /// Context the engine injected is a history note. Painting it behind the
+    /// prompt marker claimed the operator typed words they never wrote.
+    #[test]
+    fn injected_context_renders_as_a_note_not_a_prompt() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let transcript = Transcript {
+            entries: vec![Entry::Context {
+                source: "engine".into(),
+                text: "Task paused: no todo moved.".into(),
+            }],
+            ..Transcript::default()
+        };
+        let painted = wrapped_text(&transcript_lines(&transcript, &theme, false, None)).join("\n");
+        assert!(painted.contains("context · engine"), "{painted}");
+        assert!(painted.contains("Task paused: no todo moved."), "{painted}");
+        assert!(
+            !painted.contains('❯'),
+            "injected context is not a prompt: {painted}"
+        );
+        assert!(!painted.contains("<injected-context"), "{painted}");
     }
 
     fn wrapped_text(rows: &[Line<'static>]) -> Vec<String> {

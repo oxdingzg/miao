@@ -490,6 +490,16 @@ pub enum Entry {
         model: Option<String>,
         parts: Vec<Part>,
     },
+    /// Context an engine injected into the Session's history: compaction
+    /// notes, a paused autonomous loop, a reminder. It reaches the provider as
+    /// a user message (`session_synthetic` wraps it so the model can attribute
+    /// it), but the operator never typed it, so the transcript must not paint
+    /// it behind a prompt marker.
+    Context {
+        /// Which producer injected it, e.g. `engine`.
+        source: String,
+        text: String,
+    },
     /// A drain that ended in failure. A failed turn commits no assistant
     /// message, so the snapshot cannot project this: it comes from the
     /// `stop_failure` event and is carried across refreshes like `displays`.
@@ -567,7 +577,10 @@ impl Transcript {
             });
         if let Some(text) = text.filter(|text| !text.is_empty()) {
             let seq = message.get("seq").and_then(Value::as_u64).unwrap_or(0);
-            self.entries.push(Entry::User { text, seq });
+            match Self::injected_context(&text) {
+                Some((source, body)) => self.entries.push(Entry::Context { source, text: body }),
+                None => self.entries.push(Entry::User { text, seq }),
+            }
         }
         for block in blocks {
             if block.get("type").and_then(Value::as_str) != Some("tool_result") {
@@ -587,6 +600,19 @@ impl Transcript {
                 .unwrap_or(false);
             self.attach_result(id, output, failed);
         }
+    }
+
+    /// Split the wrapper `session_synthetic` writes for the provider.
+    ///
+    /// The engine stores injected context as an ordinary user message so the
+    /// model sees it with its attribution, which leaves this as the one place
+    /// that can tell it apart from something the operator typed.
+    fn injected_context(text: &str) -> Option<(String, String)> {
+        let rest = text.strip_prefix("<injected-context source=")?;
+        let (source, rest) = rest.split_once('>')?;
+        let body = rest.strip_suffix("</injected-context>")?;
+        let source = serde_json::from_str::<String>(source).ok()?;
+        Some((source, body.trim_matches('\n').to_string()))
     }
 
     fn attach_result(&mut self, id: &str, output: String, failed: bool) {
@@ -1081,6 +1107,41 @@ mod tests {
             Some(&Entry::Error {
                 message: "provider unavailable".into()
             })
+        );
+    }
+
+    /// Context the engine injected reaches the provider as a user message, so
+    /// the projection has to tell it apart from a prompt the operator typed.
+    #[test]
+    fn engine_context_is_a_note_not_an_operator_prompt() {
+        let transcript = Transcript::from_snapshot(&json!({
+            "session_id": "ses_a",
+            "messages": [
+                {
+                    "seq": 4,
+                    "role": "user",
+                    "content": [{
+                        "type": "text",
+                        "text": "<injected-context source=\"engine\">\nTask paused: no todo moved.\n</injected-context>"
+                    }]
+                },
+                { "seq": 6, "role": "user", "content": "carry on" }
+            ]
+        }));
+        assert_eq!(
+            transcript.entries[0],
+            Entry::Context {
+                source: "engine".into(),
+                text: "Task paused: no todo moved.".into()
+            }
+        );
+        // A prompt that merely mentions the wrapper is still a prompt.
+        assert_eq!(
+            transcript.entries[1],
+            Entry::User {
+                text: "carry on".into(),
+                seq: 6
+            }
         );
     }
 
