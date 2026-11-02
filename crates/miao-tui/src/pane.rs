@@ -16,6 +16,12 @@ use crate::theme::Theme;
 use crate::{markdown, tool};
 
 const SIDEBAR_MIN_WIDTH: u16 = 100;
+
+/// The widest measure the transcript wraps at. Prose reads worse the wider it
+/// gets — at 200 columns a paragraph has no return sweep and the eye loses its
+/// place — so past this the text keeps its measure and centres in the body, the
+/// same rule the session list follows.
+const TRANSCRIPT_COLUMN: u16 = 100;
 const SIDEBAR_WIDTH: u16 = 40;
 
 pub trait Pane {
@@ -489,16 +495,24 @@ impl Pane for TranscriptPane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
         self.refresh_draft(false);
-        let resized = area.width != self.width;
+        // Wrap at the measure, not at the window: a wide terminal should give
+        // the text margins, not longer lines.
+        let width = area.width.min(TRANSCRIPT_COLUMN);
+        let content = Rect {
+            x: area.x + area.width.saturating_sub(width) / 2,
+            width,
+            ..area
+        };
+        let resized = content.width != self.width;
         if resized || self.body_version != self.body_built {
-            self.body = wrap_lines(&self.lines, area.width);
+            self.body = wrap_lines(&self.lines, content.width);
             self.body_built = self.body_version;
         }
         if resized || self.draft_version != self.draft_rows_built {
-            self.draft_rows = wrap_lines(&self.draft, area.width);
+            self.draft_rows = wrap_lines(&self.draft, content.width);
             self.draft_rows_built = self.draft_version;
         }
-        self.width = area.width;
+        self.width = content.width;
         let viewport = area.height as usize;
         let rows = self.body.len() + self.draft_rows.len();
         if self.follow {
@@ -516,14 +530,14 @@ impl Pane for TranscriptPane {
         // the transcript only steals columns from the text.
         frame.render_widget(
             Paragraph::new(visible).style(Style::new().fg(palette.text).bg(palette.background)),
-            area,
+            content,
         );
-        self.area = area;
+        self.area = content;
         // Only a drag reads the cells back, so an idle frame does not copy the
         // viewport into strings.
         if self.selection.is_some() {
-            self.snapshot(frame, area);
-            self.paint_selection(frame, area);
+            self.snapshot(frame, content);
+            self.paint_selection(frame, content);
         }
     }
 }
@@ -3260,6 +3274,52 @@ mod tests {
         assert_eq!(
             Shell::new(Path::new("."), shell.theme().clone()).last_response(),
             None
+        );
+    }
+
+    #[test]
+    fn a_wide_frame_keeps_the_transcript_at_a_readable_measure() {
+        // A 200-column terminal should give the prose margins rather than
+        // 200-column lines: the same rule the session list follows.
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let mut shell = Shell::new(Path::new("."), theme);
+        shell.set_transcript(&Transcript {
+            entries: vec![Entry::User {
+                text: "a sentence long enough to need the whole measure of the column".into(),
+                seq: 1,
+            }],
+            ..Transcript::default()
+        });
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(200, 10)).expect("terminal");
+        terminal
+            .draw(|frame| shell.transcript.render(frame, frame.area()))
+            .expect("draw");
+        let buffer = terminal.backend().buffer();
+        let gutter = (200 - TRANSCRIPT_COLUMN as usize) / 2;
+        for (index, cell) in buffer.content.iter().enumerate() {
+            let x = index % 200;
+            let inside = x >= gutter && x < gutter + TRANSCRIPT_COLUMN as usize;
+            if !inside {
+                assert_eq!(
+                    cell.symbol(),
+                    " ",
+                    "text outside the measure at column {x}: {:?}",
+                    cell.symbol()
+                );
+            }
+        }
+        let painted = buffer
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(
+            painted.contains("a sentence long enough"),
+            "the text is still painted: {painted}"
         );
     }
 
