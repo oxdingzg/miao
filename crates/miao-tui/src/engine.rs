@@ -536,6 +536,7 @@ pub fn settings(
     model: Option<String>,
     config_dir: Option<PathBuf>,
     auto_approve: bool,
+    agent: Option<&str>,
 ) -> Result<Settings, String> {
     let db = db
         .or_else(|| std::env::var_os("MIAO_ENGINE_DB").map(PathBuf::from))
@@ -559,6 +560,7 @@ pub fn settings(
                 &model,
                 config_dir.as_deref(),
                 auto_approve,
+                agent,
                 |name| std::env::var(name).ok(),
             ),
             std::env::var("MIAO_ENGINE_LAUNCH_PREFIX").ok().as_deref(),
@@ -611,6 +613,7 @@ fn args(
     model: &str,
     config_dir: Option<&Path>,
     auto_approve: bool,
+    agent: Option<&str>,
     env: impl Fn(&str) -> Option<String>,
 ) -> Vec<String> {
     let mut args = vec![
@@ -632,6 +635,12 @@ fn args(
     // launch-wide classifier approval.
     if auto_approve {
         args.push("--auto-approve".into());
+    }
+    // `--agent <name>`: the engine resolves the merged configuration's
+    // `agents` entry into the default manifest, so the Session starts under
+    // that agent the way the product host starts one.
+    if let Some(agent) = agent {
+        push(&mut args, "--agent-name", agent.to_string());
     }
     // Every name in this table is accepted by `miao-engine serve`; a flag the
     // engine does not know would end the child process at startup.
@@ -1942,6 +1951,7 @@ mod tests {
             "openai/gpt-5",
             Some(Path::new("/config")),
             false,
+            None,
             environment(&[]),
         );
         assert_eq!(
@@ -1958,6 +1968,32 @@ mod tests {
                 "/config",
             ]
         );
+    }
+
+    #[test]
+    fn the_agent_option_rides_to_the_engine_as_agent_name() {
+        let argv = args(
+            Path::new("/data/miao.db"),
+            Path::new("/work"),
+            "openai/gpt-5",
+            None,
+            false,
+            Some("reviewer"),
+            environment(&[]),
+        );
+        assert!(argv.contains(&"--agent-name".to_string()));
+        let position = argv.iter().position(|arg| arg == "--agent-name").unwrap();
+        assert_eq!(argv[position + 1], "reviewer");
+        let without = args(
+            Path::new("/data/miao.db"),
+            Path::new("/work"),
+            "openai/gpt-5",
+            None,
+            false,
+            None,
+            environment(&[]),
+        );
+        assert!(!without.contains(&"--agent-name".to_string()));
     }
 
     #[test]
@@ -1992,6 +2028,7 @@ mod tests {
             "openai/gpt-5",
             None,
             false,
+            None,
             environment(&[
                 ("MIAO_ENGINE_CREDENTIAL_DB", "/data/miao.db"),
                 ("MIAO_ENGINE_CREDENTIAL_ID", "cred_1"),
@@ -2025,6 +2062,7 @@ mod tests {
             "m",
             None,
             false,
+            None,
             environment(&[]),
         );
         assert_eq!(args.len(), 7);
