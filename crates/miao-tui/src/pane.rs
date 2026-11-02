@@ -1806,19 +1806,18 @@ fn render_composer_in(
         ));
         title.push(Span::styled(" ", Style::new()));
     }
-    // The box answers "am I holding a draft?" with its border: the quiet rule
-    // when empty, the brand colour once the operator has written something, and
-    // the shell warning in shell mode. The panel's own surface keeps it readable
-    // as one input rather than a frame drawn on the page.
-    let border = match (shell, composer.editor.is_empty()) {
-        (true, _) => palette.warning,
-        (false, true) => palette.border,
-        (false, false) => palette.primary,
+    // The box keeps one border colour in normal mode and the shell warning when
+    // a `!` line is active: the composer is where typing latency lives, and a
+    // border that changes with the draft makes every keystroke repaint the whole
+    // band for decoration.
+    let border = match shell {
+        true => palette.warning,
+        false => palette.border,
     };
     let block = Block::bordered()
         .title(Line::from(title))
         .border_style(Style::new().fg(border))
-        .style(Style::new().bg(palette.surface));
+        .style(Style::new().bg(palette.background));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if inner.width == 0 || inner.height == 0 {
@@ -4097,15 +4096,6 @@ mod tests {
         terminal.backend().buffer().content.clone()
     }
 
-    fn composer_border(theme: &Theme, composer: &Composer) -> ratatui::style::Color {
-        let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 3)).expect("terminal");
-        terminal
-            .draw(|frame| render_home_composer(frame, frame.area(), composer, theme))
-            .expect("draw");
-        terminal.backend().buffer().content[0].fg
-    }
-
     /// The screen keeps one accent: the count in the header. Rows are text and
     /// stay neutral, which is what separates a readable list from the flat grey
     /// wall it used to be.
@@ -4139,17 +4129,6 @@ mod tests {
                 .any(|cell| cell.symbol() == "o" && cell.fg == theme.palette.text),
             "an unselected row title keeps the body colour"
         );
-    }
-
-    /// The composer answers "am I holding a draft?" without the operator
-    /// reading the draft: quiet rule when empty, brand colour once it is armed.
-    #[test]
-    fn the_composer_border_says_whether_it_holds_a_draft() {
-        let theme = home_theme();
-        let mut composer = Composer::new(Path::new("."));
-        assert_eq!(composer_border(&theme, &composer), theme.palette.border);
-        composer.editor.insert_str("a draft");
-        assert_eq!(composer_border(&theme, &composer), theme.palette.primary);
     }
 
     #[test]
