@@ -88,7 +88,11 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         mouse: config.mouse,
         cursor: config.cursor,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    // Multi-thread, not current_thread: the UI loop parks on the render
+    // thread, and engine tasks (configure, catalog, streaming pumps) must not
+    // depend on that loop yielding. A parked current_thread executor starved
+    // those tasks and the landing screen spun on its loader for minutes.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
     let termination = {
