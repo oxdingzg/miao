@@ -578,9 +578,12 @@ fn args(
         db.display().to_string(),
         "--workspace".into(),
         workspace.display().to_string(),
-        "--model".into(),
-        model.to_string(),
     ];
+    // The placeholder means no model was chosen: naming it would route nowhere,
+    // so the engine reads the configured model instead.
+    if model != UNROUTED_MODEL {
+        push(&mut args, "--model", model.to_string());
+    }
     if let Some(dir) = config_dir {
         push(&mut args, "--config-dir", dir.display().to_string());
     }

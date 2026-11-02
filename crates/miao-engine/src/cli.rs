@@ -63,6 +63,42 @@ fn stored_credential(
     }
 }
 
+/// The configuration sources this start reads, when it names any.
+fn config_sources(
+    options: &HashMap<String, String>,
+) -> Result<Option<Vec<miao_engine::config_derive::Source>>, Box<dyn std::error::Error + Send + Sync>>
+{
+    let sources = match options.get("--config-sources") {
+        Some(plan) => miao_engine::config_derive::plan(plan)?,
+        None => match options.get("--config-dir") {
+            Some(directory) => vec![miao_engine::config_derive::Source::Dir(
+                std::path::PathBuf::from(directory),
+            )],
+            None => return Ok(None),
+        },
+    };
+    Ok(Some(sources))
+}
+
+/// The model the configuration asks for, used when this start names none: a
+/// single binary is started from the operator's configuration, not from a host
+/// that hands it a model name.
+fn configured_model(
+    options: &HashMap<String, String>,
+) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+    let Some(sources) = config_sources(options)? else {
+        return Ok(None);
+    };
+    let documents = miao_engine::config_derive::load(&sources)?;
+    Ok(documents.iter().rev().find_map(|document| {
+        document
+            .value
+            .get("model")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+    }))
+}
+
 /// The transport and endpoint a provider declares in configuration, used when a
 /// start names only its model. `--provider` and `--endpoint` still win over it,
 /// and an unknown package stays unresolved rather than guessing a protocol.
@@ -77,14 +113,8 @@ async fn configured_route(
     if options.contains_key("--provider") && options.contains_key("--endpoint") {
         return Ok(None);
     }
-    let sources = match options.get("--config-sources") {
-        Some(plan) => miao_engine::config_derive::plan(plan)?,
-        None => match options.get("--config-dir") {
-            Some(directory) => vec![miao_engine::config_derive::Source::Dir(
-                std::path::PathBuf::from(directory),
-            )],
-            None => return Ok(None),
-        },
+    let Some(sources) = config_sources(options)? else {
+        return Ok(None);
     };
     let documents = miao_engine::config_derive::load(&sources)?;
     let api = documents.iter().rev().find_map(|document| {
@@ -196,7 +226,10 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     let workspace = options
         .get("--workspace")
         .ok_or("--workspace is required")?;
-    let model = options.get("--model").ok_or("--model is required")?;
+    let model = match options.get("--model") {
+        Some(model) => model.clone(),
+        None => configured_model(&options)?.ok_or("--model is required")?,
+    };
     // A `provider/model` value also names the host-side provider, which is what a
     // credential is stored under: `volcengine/deepseek-v4-1` bills the volcengine
     // credential even though the transport underneath is OpenAI-compatible.
