@@ -177,7 +177,7 @@ fn measure_scenario(
                 chord_time = until(&harness, &needle, started);
             }
         }
-        samples.push(chord_time);
+        samples.push(chord_time.map(|elapsed| elapsed.as_millis()));
         let _ = harness.child.kill();
         drop(harness.pty);
         let _ = harness.reader.join();
