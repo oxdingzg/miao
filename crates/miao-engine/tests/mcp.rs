@@ -1384,7 +1384,7 @@ mod disclosure {
         let flip = registry
             .definitions()
             .iter()
-            .find(|def| def.name.ends_with("flip"))
+            .find(|def| def.name.starts_with("mcp_fixture_flip"))
             .map(|def| def.name.clone())
             .unwrap_or_else(|| panic!("flip missing from the catalogue; got {names:?}"));
         registry
