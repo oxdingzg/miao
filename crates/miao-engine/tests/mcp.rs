@@ -1347,11 +1347,9 @@ mod disclosure {
             }
         });
         let (read, write) = tokio::io::split(client);
-        let registry = Registry::connect_io("fixture".into(), read, write)
-            .await
-            .unwrap();
+        let registry = Arc::new(Registry::connect_io("fixture".into(), read, write).await.unwrap());
         registry.start_watchers();
-        (Arc::new(registry), generation, task)
+        (registry, generation, task)
     }
 
     /// The full disclosed text — names, descriptions, schemas — as one
@@ -1359,8 +1357,9 @@ mod disclosure {
     /// hash of exactly this shape after the agent/policy filters, so surface
     /// equality here is digest stability by construction.
     fn surface(registry: &Registry, allowlist: &[&str]) -> Vec<(String, String, Value)> {
+        let allowlist: Vec<String> = allowlist.iter().map(|name| name.to_string()).collect();
         registry
-            .disclosed(Disclosure::Threshold(32), allowlist)
+            .disclosed(Disclosure::Threshold(32), &allowlist)
             .into_iter()
             .map(|def| {
                 (
