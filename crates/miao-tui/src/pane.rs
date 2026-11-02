@@ -1025,20 +1025,23 @@ impl Home {
             x: area.x + 1,
             width: area.width.saturating_sub(2),
         };
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                header,
-                Style::new().fg(palette.text_muted),
-            )))
-            .style(Style::new().bg(palette.background)),
-            header_area,
-        );
         let inner = list_area;
         // A wide terminal does not buy a wider row: past this measure the list
         // keeps one readable column and centers it, so a title and its age sit
         // the same distance apart on every screen.
         let column = inner.width.min(SESSION_COLUMN);
         let gutter = " ".repeat(inner.width.saturating_sub(column) as usize / 2);
+        // The header names the screen the rows belong to, so it starts on the
+        // column the rows start on instead of at the window's edge.
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                // The rows start one cell in, so the header does too.
+                format!(" {gutter}{header}"),
+                Style::new().fg(palette.text_muted),
+            )))
+            .style(Style::new().bg(palette.background)),
+            header_area,
+        );
         let mut notice_lines: Vec<Line<'static>> = self.warning_lines();
         if let Some(notice) = &self.notice {
             notice_lines.push(Line::from(Span::styled(
@@ -3698,6 +3701,33 @@ mod tests {
             .chunks(width as usize)
             .map(|row| row.iter().map(|cell| cell.symbol().to_string()).collect())
             .collect()
+    }
+
+    #[test]
+    fn the_header_starts_on_the_column_the_rows_start_on() {
+        // The list is centred, so a header pinned to the window's edge names a
+        // screen the rows are not on.
+        let mut home = Home::new(home_theme());
+        home.set_rows(vec![home_row("ses_a", "login fix", None)]);
+        let lines = drawn(&mut home, 200, 12);
+        let gutter = (198 - SESSION_COLUMN as usize) / 2;
+        let header = lines
+            .iter()
+            .find(|line| {
+                line.iter()
+                    .map(|cell| cell.as_str())
+                    .collect::<String>()
+                    .contains("sessions · ")
+            })
+            .expect("the header is painted");
+        // Column 0 is outside the block; the text starts one cell in, on the gutter.
+        assert_eq!(header[1 + gutter], "s", "the header starts on the column");
+        assert!(
+            header[1..1 + gutter]
+                .iter()
+                .all(|cell| cell.trim().is_empty()),
+            "and nothing is painted before it: {header:?}"
+        );
     }
 
     #[test]
