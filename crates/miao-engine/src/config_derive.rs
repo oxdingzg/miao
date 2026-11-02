@@ -1345,6 +1345,7 @@ mod tests {
                 "rules": [],
                 "approval_timeout_ms": 60_000,
                 "max_provider_turns": null,
+                "auto": false,
             })
         );
     }

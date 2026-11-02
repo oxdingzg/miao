@@ -203,6 +203,8 @@ pub struct Tools {
     edit_recovery: bool,
     lsp_diagnostics: bool,
     compact_disclosure: bool,
+    mcp_disclosure: crate::mcp::Disclosure,
+    mcp_disclosure_allowlist: std::collections::BTreeSet<String>,
 }
 
 #[derive(Default)]
@@ -286,6 +288,8 @@ impl Tools {
             edit_recovery: true,
             lsp_diagnostics: true,
             compact_disclosure: false,
+            mcp_disclosure: crate::mcp::Disclosure::default(),
+            mcp_disclosure_allowlist: std::collections::BTreeSet::new(),
             product_tools: Arc::new(StdRwLock::new(Vec::new())),
         })
     }
@@ -618,6 +622,22 @@ impl Tools {
 
     pub fn with_compact_disclosure(mut self, enabled: bool) -> Self {
         self.compact_disclosure = enabled;
+        self
+    }
+
+    /// Selects how oversized MCP catalogues present to the model. The default
+    /// folds servers past 32 tools into the discovery pair; `Off` restores the
+    /// exact pre-disclosure surface.
+    pub fn with_mcp_disclosure(
+        mut self,
+        disclosure: crate::mcp::Disclosure,
+        allowlist: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.mcp_disclosure = disclosure;
+        self.mcp_disclosure_allowlist = allowlist
+            .into_iter()
+            .map(Into::into)
+            .collect::<std::collections::BTreeSet<_>>();
         self
     }
 
@@ -2101,9 +2121,10 @@ impl Tools {
     }
 
     fn extension_definitions(&self) -> Vec<ToolDefinition> {
+        let allowlist: Vec<String> = self.mcp_disclosure_allowlist.iter().cloned().collect();
         self.mcp
             .iter()
-            .flat_map(|registry| registry.definitions())
+            .flat_map(|registry| registry.disclosed(self.mcp_disclosure, &allowlist))
             .chain(
                 self.worker
                     .iter()
