@@ -54,6 +54,27 @@ pub struct Snapshot {
     pub rules: Vec<Record>,
 }
 
+/// Retry work that SQLite refused because another owner held the database.
+///
+/// Only `SQLITE_BUSY` is retried: it names contention that clears on its own,
+/// while every other failure is a fact about the database and is returned as it
+/// came. The wait grows with the attempt so two owners do not keep colliding.
+fn retry_busy<T>(mut work: impl FnMut() -> Result<T, Error>) -> Result<T, Error> {
+    const ATTEMPTS: u32 = 5;
+    let mut attempt = 1;
+    loop {
+        match work() {
+            Err(Error::Storage(rusqlite::Error::SqliteFailure(code, _)))
+                if code.code == rusqlite::ErrorCode::DatabaseBusy && attempt < ATTEMPTS =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(20 * u64::from(attempt)));
+                attempt += 1;
+            }
+            other => return other,
+        }
+    }
+}
+
 impl Authority {
     /// Multiple connections/processes may share this dedicated database. It
     /// contains no Sessions, execution ownership, or exact invocation grants.
@@ -62,12 +83,17 @@ impl Authority {
         let (work, mut receive) = mpsc::channel::<Work>(64);
         let (ready, started) = oneshot::channel();
         std::thread::spawn(move || {
-            let opened = (|| {
-                let mut connection = Connection::open(path)?;
+            // Two owners may open the same database at once. `busy_timeout`
+            // covers waiting for a lock, but switching a fresh file to WAL and
+            // laying down the schema take an exclusive lock that SQLite can
+            // refuse outright, so a bounded retry closes the window the timeout
+            // cannot. Without it a simultaneous open failed with SQLITE_BUSY.
+            let opened = retry_busy(|| {
+                let mut connection = Connection::open(&path)?;
                 connection.busy_timeout(std::time::Duration::from_secs(10))?;
                 initialize(&mut connection)?;
                 Ok::<_, Error>(connection)
-            })();
+            });
             match opened {
                 Ok(mut connection) => {
                     if ready.send(Ok(())).is_err() {
