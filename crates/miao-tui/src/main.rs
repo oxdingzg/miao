@@ -124,7 +124,18 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Invocation, String> {
             continue_last,
             prompt,
         }),
-        None => Invocation::Help,
+        // A single binary is started in a directory, so the working directory is
+        // the workspace unless one is named; `-h` still asks for help.
+        None => Invocation::Run(Options {
+            workspace: std::env::current_dir()
+                .map_err(|error| format!("cannot read the working directory: {error}"))?,
+            db,
+            model,
+            config_dir,
+            session,
+            continue_last,
+            prompt,
+        }),
     })
 }
 
