@@ -1018,7 +1018,9 @@ impl Home {
     pub fn stop_filter(&mut self) {
         self.filtering = false;
         self.query.clear();
-        self.selected = 0;
+        // The action row reappears when the query is empty, so the cursor
+        // moves past it to the first Session.
+        self.selected = usize::from(self.show_new_session());
     }
 
     /// Narrow the list one character at a time; the selection goes back to the
@@ -1042,7 +1044,7 @@ impl Home {
             return false;
         }
         self.query.clear();
-        self.selected = 0;
+        self.selected = usize::from(self.show_new_session());
         true
     }
 
