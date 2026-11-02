@@ -148,6 +148,13 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     // routing; when the provider is given explicitly (the acp mode always
     // does), the transport wants the bare model id, mirroring serve-mode
     // route resolution.
+    // A `provider/model` value also names the host-side provider, which is what a
+    // credential is stored under: `volcengine/deepseek-v4-1` bills the volcengine
+    // credential even though the transport underneath is OpenAI-compatible.
+    let model_provider = model
+        .split_once('/')
+        .map(|(prefix, _)| prefix.to_owned())
+        .filter(|prefix| !prefix.is_empty());
     let model: String = match model.split_once('/') {
         Some((prefix, bare)) if prefix == provider_name => bare.to_owned(),
         _ => model.to_owned(),
@@ -172,6 +179,11 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     let integration = options
         .get("--credential-integration")
         .cloned()
+        .or_else(|| {
+            model_provider
+                .clone()
+                .filter(|prefix| prefix != provider_name)
+        })
         .unwrap_or_else(|| match provider_name {
             "anthropic" => "anthropic".into(),
             "amazon-bedrock" => "amazon-bedrock".into(),
