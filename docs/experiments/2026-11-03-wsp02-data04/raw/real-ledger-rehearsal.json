@@ -1,0 +1,1 @@
+{"ledger":"read-only copy of the 1.24 GB production ledger (97d3daa9…)","event_rows_over_64kib_mb":116,"string_threshold_coverage_pct":91,"gc_dry_run":{"live_references":0,"orphans":0},"largest_kinds_over_64k":{"input.promoted_mb":53,"input.admitted_mb":44,"usage_mb":6,"message.committed_mb":5,"tool.completed_mb":5}}

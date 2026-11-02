@@ -9,6 +9,7 @@ pub mod approval;
 pub mod bedrock;
 mod bedrock_input;
 mod bedrock_stream;
+pub mod blob;
 mod cache_affinity;
 pub mod children;
 pub mod cli;

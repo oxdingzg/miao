@@ -1,0 +1,1 @@
+{"turns":10,"ledger_bytes_after_each_turn":[494216,535416,576616,617816,659016,700216,741416,782616,823816,865016],"ledger_bytes_final":865016,"inline_would_be_bytes":2129920,"blob_files":11,"unique_documents":11,"note":"ten 128KB copies of one ruleset collapse to one file; ten 80KB distinct results externalise individually"}

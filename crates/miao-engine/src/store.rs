@@ -2240,7 +2240,8 @@ impl Store {
         self.call(move |conn| {
             let mut stmt = conn.prepare("SELECT seq,kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND seq>?2 ORDER BY seq LIMIT ?3")?;
             let rows = stmt.query_map(params![session,after,limit.min(1000)], |r| Ok((r.get::<_,u64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<u64>>(3)?)))?;
-            rows.map(|row| { let (seq,kind,data,recorded_at_ms) = row?; Ok(Event { session_id:session.clone(),seq,kind,data:serde_json::from_str(&data)?,recorded_at_ms }) }).collect()
+            let root = conn.path().map(|path| crate::blob::root_for(std::path::Path::new(path)));
+            rows.map(|row| { let (seq,kind,data,recorded_at_ms) = row?; let mut data=serde_json::from_str::<Value>(&data)?; if let Some(root)=&root { crate::blob::rehydrate(&mut data, root); } Ok(Event { session_id:session.clone(),seq,kind,data,recorded_at_ms }) }).collect()
         }).await
     }
 
@@ -2258,9 +2259,16 @@ impl Store {
                 params![session, kind],
                 |row| Ok((row.get::<_, u64>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<u64>>(2)?)),
             ).optional()?;
-            row.map(|(seq, data, recorded_at_ms)| Ok(Event {
-                session_id: session, seq, kind, data: serde_json::from_str(&data)?, recorded_at_ms,
-            })).transpose()
+            let root = conn.path().map(|path| crate::blob::root_for(std::path::Path::new(path)));
+            row.map(|(seq, data, recorded_at_ms)| {
+                let mut data = serde_json::from_str::<Value>(&data)?;
+                if let Some(root) = &root {
+                    crate::blob::rehydrate(&mut data, root);
+                }
+                Ok(Event {
+                    session_id: session, seq, kind, data, recorded_at_ms,
+                })
+            }).transpose()
         }).await
     }
 
@@ -3674,9 +3682,20 @@ pub(crate) fn append_at(
     tx: &Transaction<'_>,
     session: &str,
     kind: &str,
-    data: Value,
+    mut data: Value,
     recorded_at_ms: Option<u64>,
 ) -> Result<Event, Error> {
+    // Oversized values move to blob files before the row is written, so the
+    // ledger never grows because one turn carried a document (DATA-04). The
+    // blob directory is derived from the connection's own ledger path, which
+    // keeps every append call site unchanged.
+    let mut blob_root = None;
+    if let Some(path) = tx.path() {
+        let root = crate::blob::root_for(std::path::Path::new(path));
+        crate::blob::externalize(&mut data, &root)
+            .map_err(|error| Error::Invalid(format!("blob write failed: {error}")))?;
+        blob_root = Some(root);
+    }
     let seq: u64 = tx.query_row(
         "UPDATE engine_session SET next_seq=next_seq+1 WHERE id=?1 RETURNING next_seq",
         [session],
@@ -3692,6 +3711,12 @@ pub(crate) fn append_at(
             recorded_at_ms
         ],
     )?;
+    // The row keeps the references; the returned Event rehydrates, because it
+    // feeds in-process broadcasts and callers that read the payload directly.
+    // Only storage sees the reference form.
+    if let Some(root) = blob_root {
+        crate::blob::rehydrate(&mut data, &root);
+    }
     Ok(Event {
         session_id: session.into(),
         seq,

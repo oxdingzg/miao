@@ -41,13 +41,23 @@ pub fn committed_events(
         let time = if has_time { "recorded_at_ms" } else { "NULL" };
         let mut stmt=tx.prepare(&format!("SELECT seq,kind,data,{time} FROM engine_event WHERE session_id=?1 AND seq>?2 AND seq<=?3 ORDER BY seq"))?;
         let mut rows = stmt.query(params![session, after, high])?;
+        let blob_root = tx
+            .path()
+            .map(|path| crate::blob::root_for(std::path::Path::new(path)));
         while let Some(row) = rows.next()? {
+            // An export carries whole payloads: anything the ledger holds by
+            // blob reference is rehydrated here, so the transferred file is
+            // self-contained and the importer never needs this directory.
+            let mut data: serde_json::Value = serde_json::from_str(&row.get::<_, String>(2)?)?;
+            if let Some(root) = &blob_root {
+                crate::blob::rehydrate(&mut data, root);
+            }
             let event = Event {
                 session_id: session.into(),
                 seq: row.get(0)?,
                 kind: row.get(1)?,
                 recorded_at_ms: row.get(3)?,
-                data: serde_json::from_str(&row.get::<_, String>(2)?)?,
+                data,
             };
             serde_json::to_writer(&mut output, &event)?;
             output.write_all(b"\n")?;

@@ -1,0 +1,4 @@
+{"scenario_small":{"changed_entries":3,"whole_path":{"chord_to_rendered":{"p50_ms":3,"p95_ms":3,"max_ms":3},"samples":10,"never_rendered":0}}}
+{"scenario_large":{"changed_entries":3300,"whole_path":{"chord_to_rendered":{"p50_ms":6,"p95_ms":9,"max_ms":9},"samples":10,"never_rendered":0},"answer_bytes":150809}}
+{"decode_only":{"note":"decode microseconds for one scaled answer","answer_bytes":150809,"p50_us":1034,"p95_us":16041}}
+{"render_only":{"note":"per-frame paint microseconds, TestBackend 120x40","files_3":{"p50_us":48,"p95_us":100},"files_5000":{"p50_us":826,"p95_us":5163}}}
