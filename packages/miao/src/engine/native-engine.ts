@@ -13,7 +13,6 @@ import { Model } from "@miao/schema/model"
 import { isContextOverflow } from "@miao/llm"
 import { AmbientContext } from "./ambient-context"
 import { ProductHooks } from "./product-hooks"
-import { PluginHooks } from "./plugin-hooks"
 import { ProductFormatter } from "./product-formatter"
 import { ProductPermission } from "./product-permission"
 import { ProductRoutes } from "./product-routes"
@@ -1282,7 +1281,6 @@ const layer = Layer.effect(
               ? Effect.fail(new EngineError("engine_owner_closed", "product tool router is not ready"))
               : ownerRouter.get(input),
         }).pipe(Effect.provide(locations.get(location)))
-        const pluginHooks = yield* PluginHooks.prepare({ ...configuration, ...productTools }, { store: sessions })
         return {
           options: {
             ...routes,
@@ -1293,7 +1291,6 @@ const layer = Layer.effect(
             ...hooks,
             ...formatter,
             ...productTools,
-            ...pluginHooks,
           },
           refresh: context.refresh,
           refreshPermissions: permission.refresh,
