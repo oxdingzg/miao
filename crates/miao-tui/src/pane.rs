@@ -22,6 +22,13 @@ const SIDEBAR_MIN_WIDTH: u16 = 100;
 /// place — so past this the text keeps its measure and centres in the body, the
 /// same rule the session list follows.
 const TRANSCRIPT_COLUMN: u16 = 100;
+
+/// The width the input is painted at on a Session screen: the same measure as
+/// the prose it answers, so the caret sits under the text rather than in a
+/// stripe of its own across a wide terminal.
+fn composer_column(width: u16) -> u16 {
+    width.min(TRANSCRIPT_COLUMN)
+}
 const SIDEBAR_WIDTH: u16 = 40;
 
 pub trait Pane {
@@ -248,7 +255,10 @@ impl Shell {
             Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(panel_height),
-            Constraint::Length(composer_height(&self.composer, frame.area().width)),
+            Constraint::Length(composer_height(
+                &self.composer,
+                composer_column(frame.area().width),
+            )),
             Constraint::Length(1),
         ])
         .areas(frame.area());
@@ -1580,11 +1590,30 @@ pub fn composer_height(composer: &Composer, width: u16) -> u16 {
 /// The home screen shows the same composer as a Session, so a prompt can be
 /// typed before any Session exists.
 pub fn render_home_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
-    render_composer(frame, area, composer, theme)
+    // The landing screen keeps the full width: its composer sits in a fixed
+    // three-row band, and narrowing it would wrap a draft into a band that
+    // cannot grow.
+    render_composer_in(frame, area, composer, theme, area.width)
 }
 
 fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
+    render_composer_in(frame, area, composer, theme, composer_column(area.width))
+}
+
+fn render_composer_in(
+    frame: &mut Frame,
+    area: Rect,
+    composer: &Composer,
+    theme: &Theme,
+    column: u16,
+) {
     let palette = theme.palette;
+    let column = column.min(area.width);
+    let area = Rect {
+        x: area.x + area.width.saturating_sub(column) / 2,
+        width: column,
+        ..area
+    };
     // The queue count rides the same title line as a transient notice so the
     // composer answers "is my prompt waiting?" without a second row.
     let queued = (composer.queued > 0).then(|| {
@@ -3275,6 +3304,48 @@ mod tests {
             Shell::new(Path::new("."), shell.theme().clone()).last_response(),
             None
         );
+    }
+
+    #[test]
+    fn a_wide_frame_paints_the_input_in_the_same_column_as_the_prose() {
+        // The caret should sit under the text it answers, not in a stripe across
+        // a 200-column terminal.
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let mut shell = Shell::new(Path::new("."), theme);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(200, 20)).expect("terminal");
+        terminal.draw(|frame| shell.render(frame)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let rows = buffer.content.chunks(200).collect::<Vec<_>>();
+        let top = rows
+            .iter()
+            .position(|row| {
+                row.iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>()
+                    .contains("composer")
+            })
+            .expect("the composer is painted");
+        let gutter = (200 - TRANSCRIPT_COLUMN as usize) / 2;
+        let symbols = rows[top]
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<Vec<_>>();
+        assert_eq!(symbols[gutter], "┌", "the box starts on the column");
+        assert_eq!(
+            symbols[gutter + TRANSCRIPT_COLUMN as usize - 1],
+            "┐",
+            "and ends on it"
+        );
+        for (x, symbol) in symbols.iter().enumerate() {
+            let inside = x >= gutter && x < gutter + TRANSCRIPT_COLUMN as usize;
+            if !inside {
+                assert_eq!(symbol, &" ", "the input does not reach column {x}");
+            }
+        }
     }
 
     #[test]
