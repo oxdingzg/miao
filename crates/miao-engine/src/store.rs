@@ -3972,6 +3972,99 @@ impl Store {
         .await
     }
 
+    /// Child Sessions of `session`, from the lineage edge a fork records.
+    pub async fn child_sessions(&self, session: &str) -> Result<Vec<String>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let mut stmt =
+                conn.prepare("SELECT session_id FROM engine_lineage WHERE parent_session_id=?1")?;
+            let mut rows = stmt.query(params![session])?;
+            let mut children = Vec::new();
+            while let Some(row) = rows.next()? {
+                children.push(row.get::<_, String>(0)?);
+            }
+            Ok(children)
+        })
+        .await
+    }
+
+    /// Money for a Session and everything it delegated to.
+    ///
+    /// `costs` maps a model id to that route's tiered `cost` array. Each recorded
+    /// entry is priced at the rates of the model that actually served it, so a
+    /// delegated turn on a cheaper route is not charged at the parent's rates.
+    /// An entry whose model declares no base rate counts in `unpriced` instead of
+    /// being priced at zero.
+    pub async fn accounts(&self, session: &str, costs: &Value) -> Result<Value, Error> {
+        let (primary, auxiliary, unpriced) = self.priced_entries(session, costs).await?;
+        let mut delegated = 0.0f64;
+        let mut unpriced = unpriced;
+        let mut pending = self.child_sessions(session).await?;
+        // A fork tree is bounded by the subagent depth limit, but the walk keeps
+        // its own guard so a malformed edge cannot spin.
+        let mut seen = std::collections::BTreeSet::new();
+        while let Some(child) = pending.pop() {
+            if !seen.insert(child.clone()) {
+                continue;
+            }
+            if seen.len() > 256 {
+                break;
+            }
+            let (child_primary, child_auxiliary, child_unpriced) =
+                self.priced_entries(&child, costs).await?;
+            delegated += child_primary + child_auxiliary;
+            unpriced += child_unpriced;
+            pending.extend(self.child_sessions(&child).await?);
+        }
+        Ok(json!({
+            "primary":primary,
+            "auxiliary":auxiliary,
+            "delegated":delegated,
+            "total":primary + auxiliary + delegated,
+            "unpriced":unpriced,
+        }))
+    }
+
+    /// Priced provider turns and auxiliary attempts recorded for one Session.
+    async fn priced_entries(
+        &self,
+        session: &str,
+        costs: &Value,
+    ) -> Result<(f64, f64, u64), Error> {
+        let report = self.usage_report(session).await?;
+        let empty: Vec<Value> = Vec::new();
+        let mut unpriced = 0u64;
+        let mut priced = |entry: &Value| -> f64 {
+            let Some(model) = entry["model"].as_str() else {
+                unpriced += 1;
+                return 0.0;
+            };
+            match costs.get(model).and_then(|rates| crate::pricing::turn(rates, &entry["usage"])) {
+                Some(value) => value,
+                None => {
+                    unpriced += 1;
+                    0.0
+                }
+            }
+        };
+        let primary = report["providerDetail"]
+            .as_array()
+            .unwrap_or(&empty)
+            .iter()
+            // Auxiliary attempts also land in `providerDetail`; they are counted
+            // once, under `auxiliary`, so they are skipped here.
+            .filter(|entry| entry["kind"].as_str() != Some("auxiliary"))
+            .map(&mut priced)
+            .sum();
+        let auxiliary = report["auxiliary"]["turnsDetail"]
+            .as_array()
+            .unwrap_or(&empty)
+            .iter()
+            .map(&mut priced)
+            .sum();
+        Ok((primary, auxiliary, unpriced))
+    }
+
     pub async fn usage_report(&self, session: &str) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {

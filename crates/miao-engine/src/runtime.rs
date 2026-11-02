@@ -1212,6 +1212,28 @@ impl Runtime {
     /// The normalized document behind this process's config sources. It is
     /// re-derived from the same plan the engine was started with, so a host
     /// comparing its own reader sees exactly what Session execution sees.
+    /// The Session's usage report plus `accounts`: money for its own provider
+    /// turns, its auxiliary calls and every Session it delegated to, each entry
+    /// priced at the rates of the model that served it (#2236).
+    pub async fn usage_accounts(&self, session: &str) -> Result<Value, Error> {
+        let mut report = self.inner.store.usage_report(session).await?;
+        let config = self.normalized_config().await?;
+        let mut costs = serde_json::Map::new();
+        if let Some(models) = config.get("models").and_then(Value::as_object) {
+            for (id, model) in models {
+                if let Some(cost) = model.get("cost") {
+                    costs.insert(id.clone(), cost.clone());
+                }
+            }
+        }
+        report["accounts"] = self
+            .inner
+            .store
+            .accounts(session, &Value::Object(costs))
+            .await?;
+        Ok(report)
+    }
+
     pub async fn normalized_config(&self) -> Result<Value, Error> {
         let origin = self
             .inner
