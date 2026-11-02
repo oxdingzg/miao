@@ -1,5 +1,6 @@
 {
   "mode": "workspace",
+  "auto": false,
   "allow_process": true,
   "allow_background": true,
   "allow_subagents": true,
