@@ -4597,8 +4597,7 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                         }
                     }
                     let result = (|| -> Result<(), String> {
-                        let (Some(id), Some(directory)) =
-                            (positional.first(), positional.get(1))
+                        let (Some(id), Some(directory)) = (positional.first(), positional.get(1))
                         else {
                             return Err(
                                 "usage: miao session move ID DIRECTORY [--apply] [--copy-changes]"
@@ -5517,8 +5516,7 @@ mod tests {
         std::fs::write(source.join("notes.txt"), "untracked").expect("untracked");
         let target = seeded_repository(&dir, "dest-app");
 
-        let carried =
-            carry_uncommitted_changes(&source, &target).expect("the carry succeeds");
+        let carried = carry_uncommitted_changes(&source, &target).expect("the carry succeeds");
         assert!(carried > 0, "the patch is non-empty: {carried}");
         assert_eq!(
             std::fs::read_to_string(target.join("README.md")).expect("target readme"),
