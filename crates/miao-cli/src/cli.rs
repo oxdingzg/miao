@@ -8,6 +8,23 @@ use miao_tui::transport::Connection;
 use std::path::PathBuf;
 use std::time::Duration;
 
+/// The release build injects the product version from the root package.json;
+/// a source build falls back to the crate's own version. This binary is the
+/// product, so it must report the product version rather than the placeholder
+/// its own manifest carries.
+const VERSION: &str = match option_env!("MIAO_CLI_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
+/// What an installer asks for before it trusts the artifact: it keeps each
+/// build in a directory named after this identity, so the answer also proves
+/// which binary is on disk.
+const BUILD_ID: &str = match option_env!("MIAO_CLI_BUILD_ID") {
+    Some(id) => id,
+    None => "00000000-0000-0000-0000-000000000000",
+};
+
 const USAGE: &str = "\
 miao — single binary (native)
 
@@ -67,6 +84,7 @@ Usage:
   miao acp              serve Agent Client Protocol over stdio
   miao run [options] PROMPT
                         run one prompt headlessly and print the answer
+  miao --build-id       print the identity an installer keeps this build under
   miao --version        print the version
   miao --help           print this help
 
@@ -341,7 +359,7 @@ fn pr(rest: &[String]) -> Result<(), String> {
 
 /// Version and how this build upgrades. A locally built binary has no feed.
 fn upgrade() -> Result<(), String> {
-    println!("version   {}", env!("CARGO_PKG_VERSION"));
+    println!("version   {VERSION}");
     match std::env::var("MIAO_UPGRADE_FEED") {
         Ok(feed) => println!("feed      {feed} (run the installer for that feed to upgrade)"),
         Err(_) => println!("feed      none configured; reinstall the build to upgrade"),
@@ -2109,7 +2127,7 @@ fn debug(rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("info") => {
-            println!("miao      {}", env!("CARGO_PKG_VERSION"));
+            println!("miao      {VERSION}");
             println!(
                 "engine    protocol {} schema {}",
                 miao_engine::PROTOCOL,
@@ -4353,7 +4371,11 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
             }
         },
         Some("--version" | "-v") => {
-            println!("miao {}", env!("CARGO_PKG_VERSION"));
+            println!("miao {VERSION}");
+            std::process::ExitCode::SUCCESS
+        }
+        Some("--build-id") => {
+            println!("{BUILD_ID}");
             std::process::ExitCode::SUCCESS
         }
         Some("--help" | "-h") | None => {
@@ -4915,5 +4937,33 @@ mod tests {
             text.contains("retention plan · 2 event(s) across 1 session(s) · "),
             "{text}"
         );
+    }
+}
+
+#[cfg(test)]
+mod identity {
+    /// An install decides where to keep the binary from this identity and
+    /// refuses anything that is not the UUID shape it wrote, so a build that
+    /// emitted nothing would be uninstallable.
+    #[test]
+    fn the_build_id_is_the_uuid_shape_an_installer_requires() {
+        let id = super::BUILD_ID;
+        assert_eq!(id.len(), 36, "{id}");
+        assert!(
+            id.chars().all(|c| c.is_ascii_hexdigit() || c == '-'),
+            "{id}"
+        );
+        assert_ne!(id, "00000000-0000-0000-0000-000000000000");
+    }
+
+    /// The root package.json is the single source of the product version; the
+    /// crate's own manifest only carries a placeholder.
+    #[test]
+    fn the_binary_reports_the_root_package_version() {
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../package.json");
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(root).expect("root package.json"))
+                .expect("valid root package.json");
+        assert_eq!(super::VERSION, manifest["version"].as_str().unwrap());
     }
 }
