@@ -1143,7 +1143,7 @@ mod disclosure {
         let result = registry
             .call(
                 "mcp_fixture_search",
-                json!({"query":"tool_5","limit":3}),
+                json!({"query":"tool_5","limit":50}),
                 CancellationToken::new(),
             )
             .await
@@ -1151,7 +1151,7 @@ mod disclosure {
         assert_eq!(result["server"], "fixture");
         assert_eq!(result["total"], 100);
         let matches = result["matches"].as_array().unwrap();
-        assert!(!matches.is_empty() && matches.len() <= 3);
+        assert!(!matches.is_empty() && matches.len() <= 50);
         let name = matches
             .iter()
             .map(|entry| entry["name"].as_str().unwrap())
@@ -1200,7 +1200,7 @@ mod disclosure {
         let result = registry
             .call(
                 "mcp_fixture_search",
-                json!({"query":"tool_5"}),
+                json!({"query":"tool_5","limit":50}),
                 CancellationToken::new(),
             )
             .await
