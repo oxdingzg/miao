@@ -685,17 +685,7 @@ type Endpoint11_0Input = { readonly location?: Endpoint11_0Request["query"]["loc
 const Endpoint11_0 = (raw: RawClient["server.provider"]) => (input?: Endpoint11_0Input) =>
   raw["provider.list"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
 
-type Endpoint11_1Request = Parameters<RawClient["server.provider"]["provider.get"]>[0]
-type Endpoint11_1Input = {
-  readonly providerID: Endpoint11_1Request["params"]["providerID"]
-  readonly location?: Endpoint11_1Request["query"]["location"]
-}
-const Endpoint11_1 = (raw: RawClient["server.provider"]) => (input: Endpoint11_1Input) =>
-  raw["provider.get"]({ params: { providerID: input["providerID"] }, query: { location: input["location"] } }).pipe(
-    Effect.mapError(mapClientError),
-  )
-
-const adaptGroup11 = (raw: RawClient["server.provider"]) => ({ list: Endpoint11_0(raw), get: Endpoint11_1(raw) })
+const adaptGroup11 = (raw: RawClient["server.provider"]) => ({ list: Endpoint11_0(raw) })
 
 type Endpoint12_0Request = Parameters<RawClient["server.integration"]["integration.list"]>[0]
 type Endpoint12_0Input = { readonly location?: Endpoint12_0Request["query"]["location"] }
@@ -766,17 +756,6 @@ const Endpoint12_5 = (raw: RawClient["server.integration"]) => (input: Endpoint1
     payload: { code: input["code"] },
   }).pipe(Effect.mapError(mapClientError))
 
-type Endpoint12_6Request = Parameters<RawClient["server.integration"]["integration.attempt.cancel"]>[0]
-type Endpoint12_6Input = {
-  readonly attemptID: Endpoint12_6Request["params"]["attemptID"]
-  readonly location?: Endpoint12_6Request["query"]["location"]
-}
-const Endpoint12_6 = (raw: RawClient["server.integration"]) => (input: Endpoint12_6Input) =>
-  raw["integration.attempt.cancel"]({
-    params: { attemptID: input["attemptID"] },
-    query: { location: input["location"] },
-  }).pipe(Effect.mapError(mapClientError))
-
 const adaptGroup12 = (raw: RawClient["server.integration"]) => ({
   list: Endpoint12_0(raw),
   get: Endpoint12_1(raw),
@@ -784,7 +763,6 @@ const adaptGroup12 = (raw: RawClient["server.integration"]) => ({
   connectOauth: Endpoint12_3(raw),
   attemptStatus: Endpoint12_4(raw),
   attemptComplete: Endpoint12_5(raw),
-  attemptCancel: Endpoint12_6(raw),
 })
 
 type Endpoint13_0Request = Parameters<RawClient["server.credential"]["credential.list"]>[0]

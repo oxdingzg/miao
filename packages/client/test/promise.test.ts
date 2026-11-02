@@ -43,7 +43,6 @@ test("exposes every standard HTTP API group", () => {
     "connectOauth",
     "attemptStatus",
     "attemptComplete",
-    "attemptCancel",
   ])
   expect(Object.keys(client.files)).toEqual(["content", "list", "find"])
   expect(Object.keys(client.ptys)).toEqual(["shells", "list", "create", "get", "update", "remove", "connectToken"])

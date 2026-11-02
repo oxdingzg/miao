@@ -56,7 +56,6 @@ export const endpointNames = {
   "integration.connect.oauth": "connectOauth",
   "integration.attempt.status": "attemptStatus",
   "integration.attempt.complete": "attemptComplete",
-  "integration.attempt.cancel": "attemptCancel",
   "permission.request.list": "listRequests",
   "permission.saved.list": "listSaved",
   "permission.saved.remove": "removeSaved",

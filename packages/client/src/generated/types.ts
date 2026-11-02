@@ -83,14 +83,6 @@ export type MessageNotFoundError = {
 export const isMessageNotFoundError = (value: unknown): value is MessageNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "MessageNotFoundError"
 
-export type ProviderNotFoundError = {
-  readonly _tag: "ProviderNotFoundError"
-  readonly providerID: string
-  readonly message: string
-}
-export const isProviderNotFoundError = (value: unknown): value is ProviderNotFoundError =>
-  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ProviderNotFoundError"
-
 export type PermissionNotFoundError = {
   readonly _tag: "PermissionNotFoundError"
   readonly requestID: string
@@ -3877,39 +3869,6 @@ export type ProvidersListOutput = {
   }>
 }
 
-export type ProvidersGetInput = {
-  readonly providerID: { readonly providerID: string }["providerID"]
-  readonly location?: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-  }["location"]
-}
-
-export type ProvidersGetOutput = {
-  readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
-  }
-  readonly data: {
-    readonly id: string
-    readonly integrationID?: string
-    readonly name: string
-    readonly disabled?: boolean
-    readonly api:
-      | {
-          readonly type: "aisdk"
-          readonly package: string
-          readonly url?: string
-          readonly settings?: { readonly [x: string]: JsonValue }
-        }
-      | { readonly type: "native"; readonly url?: string; readonly settings: { readonly [x: string]: JsonValue } }
-    readonly request: {
-      readonly headers: { readonly [x: string]: string }
-      readonly body: { readonly [x: string]: JsonValue }
-    }
-  }
-}
-
 export type IntegrationsListInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
@@ -4118,15 +4077,6 @@ export type IntegrationsAttemptCompleteInput = {
 }
 
 export type IntegrationsAttemptCompleteOutput = void
-
-export type IntegrationsAttemptCancelInput = {
-  readonly attemptID: { readonly attemptID: string }["attemptID"]
-  readonly location?: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-  }["location"]
-}
-
-export type IntegrationsAttemptCancelOutput = void
 
 export type CredentialsListInput = {
   readonly location?: {

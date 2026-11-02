@@ -139,7 +139,6 @@ describe("PublicApi OpenAPI v2 errors", () => {
       ["post", "/api/integration/{integrationID}/connect/oauth"],
       ["get", "/api/integration/attempt/{attemptID}"],
       ["post", "/api/integration/attempt/{attemptID}/complete"],
-      ["delete", "/api/integration/attempt/{attemptID}"],
       ["delete", "/api/credential/{credentialID}"],
       ["patch", "/api/credential/{credentialID}"],
     ] as const) {
@@ -193,12 +192,6 @@ describe("PublicApi OpenAPI v2 errors", () => {
       "ServiceUnavailableError",
     )
     expect(componentName(responseRef(spec.paths["/api/model"]?.get?.responses?.["503"]) ?? "")).toBe(
-      "ServiceUnavailableError",
-    )
-    expect(componentName(responseRef(spec.paths["/api/provider/{providerID}"]?.get?.responses?.["404"]) ?? "")).toBe(
-      "ProviderNotFoundError",
-    )
-    expect(componentName(responseRef(spec.paths["/api/provider/{providerID}"]?.get?.responses?.["503"]) ?? "")).toBe(
       "ServiceUnavailableError",
     )
   })

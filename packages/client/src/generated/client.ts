@@ -125,8 +125,6 @@ import type {
   ModelsDefaultOutput,
   ProvidersListInput,
   ProvidersListOutput,
-  ProvidersGetInput,
-  ProvidersGetOutput,
   IntegrationsListInput,
   IntegrationsListOutput,
   IntegrationsGetInput,
@@ -139,8 +137,6 @@ import type {
   IntegrationsAttemptStatusOutput,
   IntegrationsAttemptCompleteInput,
   IntegrationsAttemptCompleteOutput,
-  IntegrationsAttemptCancelInput,
-  IntegrationsAttemptCancelOutput,
   CredentialsListInput,
   CredentialsListOutput,
   CredentialsUpdateInput,
@@ -1202,18 +1198,6 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
-      get: (input: ProvidersGetInput, requestOptions?: RequestOptions) =>
-        request<ProvidersGetOutput>(
-          {
-            method: "GET",
-            path: `/api/provider/${encodeURIComponent(input.providerID)}`,
-            query: { location: input["location"] },
-            successStatus: 200,
-            declaredStatuses: [404, 503, 401, 400],
-            empty: false,
-          },
-          requestOptions,
-        ),
     },
     integrations: {
       list: (input?: IntegrationsListInput, requestOptions?: RequestOptions) =>
@@ -1287,18 +1271,6 @@ export function make(options: ClientOptions) {
             body: { code: input["code"] },
             successStatus: 204,
             declaredStatuses: [400, 401],
-            empty: true,
-          },
-          requestOptions,
-        ),
-      attemptCancel: (input: IntegrationsAttemptCancelInput, requestOptions?: RequestOptions) =>
-        request<IntegrationsAttemptCancelOutput>(
-          {
-            method: "DELETE",
-            path: `/api/integration/attempt/${encodeURIComponent(input.attemptID)}`,
-            query: { location: input["location"] },
-            successStatus: 204,
-            declaredStatuses: [401, 400],
             empty: true,
           },
           requestOptions,

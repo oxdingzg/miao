@@ -113,21 +113,6 @@ export const IntegrationGroup = HttpApiGroup.make("server.integration")
         }),
       ),
   )
-  .add(
-    HttpApiEndpoint.delete("integration.attempt.cancel", "/api/integration/attempt/:attemptID", {
-      params: { attemptID: Integration.AttemptID },
-      query: LocationQuery,
-      success: HttpApiSchema.NoContent,
-    })
-      .annotateMerge(locationQueryOpenApi)
-      .annotateMerge(
-        OpenApi.annotations({
-          identifier: "v2.integration.attempt.cancel",
-          summary: "Cancel OAuth connection",
-          description: "Cancel an OAuth attempt and release its resources.",
-        }),
-      ),
-  )
   .annotateMerge(
     OpenApi.annotations({ title: "integrations", description: "Integration discovery and authentication routes." }),
   )
