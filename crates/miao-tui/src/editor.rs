@@ -993,14 +993,29 @@ impl Composer {
     /// Replace a bracketed paste with its normalized text. Multi-line pastes
     /// stay inline until the summary part lands with the transcript slices.
     pub fn paste(&mut self, text: &str) {
-        self.editor.insert_str(&normalize_paste(text));
+        match read_local_attachment(&self.workspace, text) {
+            Some(LocalAttachment::Text(content)) => {
+                self.editor.insert_str(&normalize_paste(&content));
+            }
+            Some(LocalAttachment::Binary { mime, data, name }) => {
+                self.attach_binary(&mime, &data, &name);
+            }
+            None => self.editor.insert_str(&normalize_paste(text)),
+        }
         self.refresh_completion();
     }
 
     /// Show an image as `[Image N] ` and keep its bytes for the next prompt.
     /// Returns the new attachment count.
     pub fn attach_image(&mut self, mime: &str, data: &str) -> usize {
-        let count = self
+        self.attach_binary(mime, data, "")
+    }
+
+    /// Attach bytes under a marker the operator can see: an image counts as
+    /// `[Image N]`, anything else (a PDF) carries its file name, because the
+    /// engine sends it as a file part rather than a picture.
+    pub fn attach_binary(&mut self, mime: &str, data: &str, name: &str) -> usize {
+        let images = self
             .attachments
             .iter()
             .filter(|attachment| {
@@ -1009,12 +1024,18 @@ impl Composer {
                     .and_then(Value::as_str)
                     .is_some_and(|mime| mime.starts_with("image/"))
             })
-            .count()
-            + 1;
-        self.editor.insert_str(&format!("[Image {count}] "));
+            .count();
+        let marker = if mime.starts_with("image/") {
+            format!("[Image {}] ", images + 1)
+        } else if name.is_empty() {
+            "[File] ".to_string()
+        } else {
+            format!("[File {name}] ")
+        };
+        self.editor.insert_str(&marker);
         self.attachments.push(json!({ "mime": mime, "data": data }));
         self.refresh_completion();
-        count
+        images + 1
     }
 
     /// Discard text and its pending attachments together: an attachment whose
@@ -1133,6 +1154,77 @@ impl Editor {
         let query = token.strip_prefix('@')?;
         Some((start, query.to_string(), CompletionKind::File))
     }
+}
+
+/// A pasted path that names a file this composer can carry: text it inlines,
+/// binary it attaches. `None` means "not one of those", so the path stays text.
+enum LocalAttachment {
+    Text(String),
+    Binary {
+        mime: String,
+        data: String,
+        name: String,
+    },
+}
+
+/// The mime a pasted path carries, from the same table the TypeScript composer
+/// uses. An extension that is not in it is left as plain text rather than
+/// attached as an opaque blob.
+fn attachment_mime(path: &Path) -> Option<&'static str> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    Some(match extension.as_str() {
+        "avif" => "image/avif",
+        "gif" => "image/gif",
+        "jpeg" | "jpg" => "image/jpeg",
+        "pdf" => "application/pdf",
+        "png" => "image/png",
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        _ => return None,
+    })
+}
+
+/// How large a pasted file may be before it is not worth attaching. A prompt is
+/// a message, not a transfer channel.
+const ATTACHMENT_LIMIT: u64 = 20 * 1024 * 1024;
+
+fn read_local_attachment(workspace: &Path, text: &str) -> Option<LocalAttachment> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed.contains('\n') || trimmed.len() > 4096 {
+        return None;
+    }
+    let path = Path::new(trimmed);
+    let resolved = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        workspace.join(path)
+    };
+    let mime = attachment_mime(&resolved)?;
+    let meta = std::fs::metadata(&resolved).ok()?;
+    if !meta.is_file() || meta.len() > ATTACHMENT_LIMIT {
+        return None;
+    }
+    let name = resolved
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| trimmed.to_string());
+    if mime == "image/svg+xml" {
+        // An SVG is text an author can edit, so it goes in as content rather
+        // than as an opaque attachment.
+        return std::fs::read_to_string(&resolved)
+            .ok()
+            .map(LocalAttachment::Text);
+    }
+    let bytes = std::fs::read(&resolved).ok()?;
+    let data = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    };
+    Some(LocalAttachment::Binary {
+        mime: mime.to_string(),
+        data,
+        name,
+    })
 }
 
 /// Bracketed paste reaches us with either line ending; ConPTY sends CR-only.
@@ -1323,6 +1415,78 @@ mod tests {
         editor.set_text("recalled from history");
         assert!(!editor.undo(), "the recalled text is the baseline");
         assert_eq!(editor.text(), "recalled from history");
+    }
+
+    /// A pasted path that names an image becomes an attachment the engine can
+    /// send, instead of a line of text naming a file the model cannot see.
+    #[test]
+    fn pasting_an_image_path_attaches_it() {
+        let dir = std::env::temp_dir().join(format!("miao-paste-image-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("shot.png");
+        std::fs::write(&path, [0x89u8, b'P', b'N', b'G']).expect("write png");
+        let mut composer = composer(&dir);
+        composer.paste(&path.display().to_string());
+        assert_eq!(composer.editor.text(), "[Image 1] ");
+        assert_eq!(composer.attachments.len(), 1);
+        let attachment = &composer.attachments[0];
+        assert_eq!(attachment["mime"], "image/png");
+        let decoded = {
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD
+                .decode(attachment["data"].as_str().expect("data"))
+                .expect("base64")
+        };
+        assert_eq!(decoded, vec![0x89, b'P', b'N', b'G']);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// An SVG is text: it goes into the prompt as content, not as a binary blob.
+    #[test]
+    fn pasting_an_svg_inlines_its_text() {
+        let dir = std::env::temp_dir().join(format!("miao-paste-svg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        std::fs::write(dir.join("icon.svg"), "<svg></svg>").expect("write svg");
+        let mut composer = composer(&dir);
+        // A relative path resolves against the workspace, which is what the
+        // operator sees in the composer.
+        composer.paste("icon.svg");
+        assert_eq!(composer.editor.text(), "<svg></svg>");
+        assert!(composer.attachments.is_empty(), "an SVG is not attached");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A PDF carries its file name, because the engine sends it as a file part
+    /// rather than a picture.
+    #[test]
+    fn pasting_a_pdf_names_the_attachment() {
+        let dir = std::env::temp_dir().join(format!("miao-paste-pdf-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        std::fs::write(dir.join("plan.pdf"), b"%PDF-1.4").expect("write pdf");
+        let mut composer = composer(&dir);
+        composer.paste("plan.pdf");
+        assert_eq!(composer.editor.text(), "[File plan.pdf] ");
+        assert_eq!(composer.attachments.len(), 1);
+        assert_eq!(composer.attachments[0]["mime"], "application/pdf");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Anything else stays text: a path to a source file is a reference the
+    /// model can read with a tool, not a payload to upload.
+    #[test]
+    fn pasting_an_unknown_file_keeps_the_path() {
+        let dir = std::env::temp_dir().join(format!("miao-paste-unknown-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        std::fs::write(dir.join("main.rs"), "fn main() {}").expect("write rs");
+        let mut composer = composer(&dir);
+        composer.paste("src/main.rs");
+        assert_eq!(composer.editor.text(), "src/main.rs");
+        assert!(composer.attachments.is_empty());
+        // A multi-line paste is never a path, so it is inserted as text.
+        composer.clear();
+        composer.paste("one\ntwo");
+        assert_eq!(composer.editor.text(), "one\ntwo");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// `shift` motions extend from where the selection started, and a plain
