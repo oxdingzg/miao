@@ -203,13 +203,20 @@ pub async fn config_routes_manifest(
         }
     }
     let normalized = miao_engine::config_derive::normalized_from_sources(&sources)?;
-    let providers = match normalized.get("providers").and_then(serde_json::Value::as_object) {
+    let providers = match normalized
+        .get("providers")
+        .and_then(serde_json::Value::as_object)
+    {
         Some(map) if !map.is_empty() => map,
         _ => return Ok(None),
     };
     let mut entries = Vec::new();
     for (provider_id, provider) in providers {
-        if provider.get("disabled").and_then(serde_json::Value::as_bool) == Some(true) {
+        if provider
+            .get("disabled")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        {
             continue;
         }
         let Some(stored) = credentials
@@ -218,7 +225,10 @@ pub async fn config_routes_manifest(
         else {
             continue;
         };
-        let models = match provider.get("models").and_then(serde_json::Value::as_object) {
+        let models = match provider
+            .get("models")
+            .and_then(serde_json::Value::as_object)
+        {
             Some(map) => map,
             None => continue,
         };
@@ -266,15 +276,17 @@ pub async fn config_routes_manifest(
                 .unwrap_or_default();
             for (index, credential) in stored.iter().enumerate() {
                 let primary = index == 0
-                    && default_model.as_deref().is_some_and(|default| {
-                        default == model_ref.as_str()
-                    });
+                    && default_model
+                        .as_deref()
+                        .is_some_and(|default| default == model_ref.as_str());
                 let id = if index == 0 {
                     model_ref.clone()
                 } else {
                     use sha2::Digest;
                     let digest = sha2::Sha256::digest(serde_json::to_vec(&serde_json::json!([
-                        provider_id, model_id, credential.id,
+                        provider_id,
+                        model_id,
+                        credential.id,
                     ]))?);
                     let mut hex = String::with_capacity(digest.len() * 2);
                     for byte in digest {
@@ -350,7 +362,10 @@ pub async fn config_routes_manifest(
             let Some(api) = provider.get("api").and_then(serde_json::Value::as_str) else {
                 continue;
             };
-            let models = match provider.get("models").and_then(serde_json::Value::as_object) {
+            let models = match provider
+                .get("models")
+                .and_then(serde_json::Value::as_object)
+            {
                 Some(map) => map,
                 None => continue,
             };
@@ -379,14 +394,19 @@ pub async fn config_routes_manifest(
                     .unwrap_or_default();
                 for (index, credential) in stored.iter().enumerate() {
                     let primary = index == 0
-                        && default_model.as_deref().is_some_and(|default| default == model_ref);
+                        && default_model
+                            .as_deref()
+                            .is_some_and(|default| default == model_ref);
                     let id = if index == 0 {
                         model_ref.clone()
                     } else {
                         use sha2::Digest;
-                        let digest = sha2::Sha256::digest(serde_json::to_vec(&serde_json::json!([
-                            provider_id, model_id, credential.id,
-                        ]))?);
+                        let digest =
+                            sha2::Sha256::digest(serde_json::to_vec(&serde_json::json!([
+                                provider_id,
+                                model_id,
+                                credential.id,
+                            ]))?);
                         let mut hex = String::with_capacity(digest.len() * 2);
                         for byte in digest {
                             hex.push_str(&format!("{byte:02x}"));
@@ -421,7 +441,8 @@ pub async fn config_routes_manifest(
                         .and_then(|limit| limit.get("output"))
                         .and_then(serde_json::Value::as_u64);
                     if context.is_some() || output.is_some() {
-                        entry["limit"] = serde_json::json!({ "context": context, "output": output });
+                        entry["limit"] =
+                            serde_json::json!({ "context": context, "output": output });
                     }
                     if !input.is_empty() {
                         entry["input_modalities"] = serde_json::json!(input);
@@ -904,9 +925,18 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     // An operator who names a route, a transport, or a credential source has
     // said exactly what this start serves; the generated manifest is for the
     // standalone start that only names configuration.
-    let operator_named_route = ["--model-routes-config", "--provider", "--endpoint", "--credential-db", "--auth-file", "--credential-id", "--credential-integration", "--credential-socket"]
-        .iter()
-        .any(|flag| options.contains_key(*flag));
+    let operator_named_route = [
+        "--model-routes-config",
+        "--provider",
+        "--endpoint",
+        "--credential-db",
+        "--auth-file",
+        "--credential-id",
+        "--credential-integration",
+        "--credential-socket",
+    ]
+    .iter()
+    .any(|flag| options.contains_key(*flag));
     let provider = if let Some(path) = options.get("--model-routes-config") {
         let path = tokio::fs::canonicalize(path).await?;
         let workspace = std::path::PathBuf::from(tools.location());
