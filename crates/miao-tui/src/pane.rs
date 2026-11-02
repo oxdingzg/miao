@@ -431,9 +431,11 @@ impl TitlePane {
 impl Pane for TitlePane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
-        // The header names the build, it does not shout: one muted line, with
-        // colour reserved for the state that needs the operator (`status_alert`).
-        let style = Style::new().fg(palette.text_muted).bg(palette.background);
+        // The header names what this screen is: the workspace and branch carry
+        // the body colour so the eye has an anchor at the top, while the status
+        // stays quiet and colour is reserved for the state that needs the
+        // operator (`status_alert`).
+        let style = Style::new().fg(palette.text).bg(palette.background);
         let mut spans = vec![Span::styled(format!("{} ", self.label), style)];
         if let Some(status) = &self.status {
             let color = match self.status_alert {
