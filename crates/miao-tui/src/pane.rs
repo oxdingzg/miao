@@ -1445,15 +1445,17 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme, expanded: bool) -> V
     lines
 }
 
+/// Cap a single line of prose to `COMPACT_CELLS` display cells. Counting
+/// characters let a CJK line twice the width through and the widget then clipped
+/// it mid-word.
 fn compact(text: &str) -> String {
     let single = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if single.chars().count() <= 80 {
-        return single;
-    }
-    let mut cut = single.chars().take(77).collect::<String>();
-    cut.push('…');
-    cut
+    fit(&single, COMPACT_CELLS)
 }
+
+/// How much of a compacted line survives. Enough for a sentence, short of a
+/// paragraph.
+const COMPACT_CELLS: usize = 80;
 
 /// What the open Session runs on and has cost so far. The row stays empty
 /// until a Session is open, so the home list keeps its full height.
@@ -1853,6 +1855,9 @@ impl Pane for SidebarPane {
             .border_style(Style::new().fg(palette.text_muted));
         let area = edge.inner(outer);
         frame.render_widget(edge, outer);
+        // The column never wraps, so a title or path longer than it is cut with
+        // an ellipsis instead of pushing the rest of the column down.
+        let text_width = area.width as usize;
         let mut lines = match &self.session {
             None => vec![Line::from(Span::styled(
                 "no Session selected",
@@ -1860,11 +1865,11 @@ impl Pane for SidebarPane {
             ))],
             Some(session) => vec![
                 Line::from(Span::styled(
-                    session.label().to_string(),
+                    fit(session.label(), text_width),
                     Style::new().fg(palette.text).add_modifier(Modifier::BOLD),
                 )),
                 Line::from(Span::styled(
-                    session.directory.clone().unwrap_or_default(),
+                    fit(&session.directory.clone().unwrap_or_default(), text_width),
                     Style::new().fg(palette.text_muted),
                 )),
                 Line::from(Span::styled(
@@ -2043,24 +2048,20 @@ impl Pane for SidebarPane {
                     "waiting" | "blocked" => ("· ", Style::new().fg(palette.warning)),
                     _ => ("· ", Style::new().fg(palette.text_muted)),
                 };
-                let mut text = todo.content.clone();
-                if text.chars().count() > width.saturating_sub(2) {
-                    text = text
-                        .chars()
-                        .take(width.saturating_sub(3))
-                        .collect::<String>()
-                        + "…";
-                }
+                // The glyph takes two cells, so the text gets the rest of the
+                // row measured the way the terminal draws it.
+                let text = fit(&todo.content, width.saturating_sub(2));
                 lines.push(Line::from(vec![
                     Span::styled(glyph, style),
                     Span::styled(text, Style::new().fg(palette.text)),
                 ]));
             }
         }
+        // No wrapping: a long title or todo would otherwise split into several
+        // rows, pushing the rest of the column off the screen and reading as one
+        // character per line for CJK.
         frame.render_widget(
-            Paragraph::new(lines)
-                .style(Style::new().bg(palette.background))
-                .wrap(Wrap { trim: false }),
+            Paragraph::new(lines).style(Style::new().bg(palette.background)),
             area,
         );
     }
@@ -3524,6 +3525,67 @@ mod tests {
             .collect::<String>();
         assert!(visible.contains("itwasthestubconfig"), "{visible}");
         assert!(visible.contains("loginfix"), "{visible}");
+    }
+
+    /// A long CJK title and a long CJK todo each stay on one row. Counting
+    /// characters instead of cells let both through at twice the column's
+    /// width, and the wrapping widget then broke them one character per line.
+    #[test]
+    fn a_long_cjk_sidebar_stays_on_one_row_per_line() {
+        let mut sidebar = SidebarPane {
+            theme: home_theme(),
+            session: None,
+            usage: None,
+            goal: None,
+            todos: Vec::new(),
+        };
+        let mut summary = home_row("ses_s", &"很长的会话标题".repeat(8), None);
+        summary.directory = Some("/very/long/path\n".repeat(4));
+        sidebar.session = Some(summary);
+        sidebar.todos = vec![crate::session::TodoView {
+            content: "很长的待办事项".repeat(8),
+            status: "in_progress".into(),
+        }];
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(30, 24)).expect("terminal");
+        terminal
+            .draw(|frame| sidebar.render(frame, frame.area()))
+            .expect("draw");
+        let rows = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(30)
+            .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let header = rows
+            .iter()
+            .position(|row| row.contains("Todo"))
+            .expect("todo header");
+        // The column's left border survives trimming, so a padding row still
+        // reads as "│    "; only a row with content counts.
+        let below = rows[header + 1..]
+            .iter()
+            .filter(|row| {
+                !row.trim_matches(|c: char| c == '│' || c.is_whitespace())
+                    .is_empty()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(below.len(), 1, "one row per todo: {rows:#?}");
+        assert!(
+            below[0].contains('…'),
+            "the todo is truncated: {:?}",
+            below[0]
+        );
+        let title = rows
+            .iter()
+            .position(|row| row.contains('很'))
+            .expect("title row");
+        assert!(
+            rows[title].contains('…'),
+            "the title is truncated: {:?}",
+            rows[title]
+        );
     }
 
     fn home_theme() -> Theme {
