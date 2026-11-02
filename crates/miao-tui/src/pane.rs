@@ -122,22 +122,26 @@ impl Shell {
         }
         self.toggle_chord = chord;
         if let Some(last) = &self.last {
-            self.transcript.set_lines(transcript_lines(
+            let projected = transcript_lines(
                 last,
                 &self.transcript.theme,
                 self.transcript.expanded,
                 self.toggle_chord.as_deref(),
-            ));
+            );
+            self.transcript.set_lines(projected.lines);
+            self.transcript.user_anchors = projected.anchors;
         }
     }
 
     pub fn set_transcript(&mut self, transcript: &Transcript) {
-        self.transcript.set_lines(transcript_lines(
+        let projected = transcript_lines(
             transcript,
             &self.transcript.theme,
             self.transcript.expanded,
             self.toggle_chord.as_deref(),
-        ));
+        );
+        self.transcript.set_lines(projected.lines);
+        self.transcript.user_anchors = projected.anchors;
         let max = self.transcript.max_scroll();
         self.transcript.scroll = self.transcript.scroll.min(max);
         self.last = Some(transcript.clone());
@@ -206,12 +210,14 @@ impl Shell {
             sidebar.theme = theme.clone();
         }
         if let Some(last) = &self.last {
-            self.transcript.set_lines(transcript_lines(
+            let projected = transcript_lines(
                 last,
                 &theme,
                 self.transcript.expanded,
                 self.toggle_chord.as_deref(),
-            ));
+            );
+            self.transcript.set_lines(projected.lines);
+            self.transcript.user_anchors = projected.anchors;
         }
     }
 
@@ -227,6 +233,7 @@ impl Shell {
             message.to_string(),
             Style::new().fg(palette.error),
         ))]);
+        self.transcript.user_anchors = Vec::new();
         self.transcript.scroll = 0;
         self.transcript.follow = false;
         self.last = None;
@@ -237,12 +244,14 @@ impl Shell {
     pub fn toggle_tool_expansion(&mut self) -> bool {
         self.transcript.expanded = !self.transcript.expanded;
         if let Some(last) = &self.last {
-            self.transcript.set_lines(transcript_lines(
+            let projected = transcript_lines(
                 last,
                 &self.transcript.theme,
                 self.transcript.expanded,
                 self.toggle_chord.as_deref(),
-            ));
+            );
+            self.transcript.set_lines(projected.lines);
+            self.transcript.user_anchors = projected.anchors;
         }
         self.transcript.expanded
     }
@@ -317,8 +326,10 @@ impl Shell {
 
     pub fn render(&mut self, frame: &mut Frame) {
         let panel_height = self.panel.as_ref().map_or(0, Panel::height);
-        let [title_area, body_area, panel_area, composer_area, status_area] = Layout::vertical([
-            Constraint::Length(1),
+        // No title row: the workspace, branch and version fold into the status
+        // strip at the bottom, so the whole screen above the composer is
+        // content. The terminal tab already names the workspace too.
+        let [body_area, panel_area, composer_area, status_area] = Layout::vertical([
             Constraint::Min(1),
             Constraint::Length(panel_height),
             Constraint::Length(composer_height(
@@ -328,7 +339,6 @@ impl Shell {
             Constraint::Length(1),
         ])
         .areas(frame.area());
-        self.title.render(frame, group_columns(title_area));
         let (transcript_area, sidebar_area) = body_columns(body_area);
         self.transcript.render(frame, transcript_area);
         if let (Some(sidebar), Some(sidebar_area)) = (self.sidebar.as_mut(), sidebar_area) {
@@ -467,6 +477,9 @@ pub struct TranscriptPane {
     /// Follow the tail while new projections arrive. Any manual scroll clears
     /// it, so reading history is not interrupted by committed events.
     follow: bool,
+    /// Row-flow position of each operator prompt and its first line, so a
+    /// scrolled-back viewport names the question its top row belongs to.
+    user_anchors: Vec<(usize, String)>,
     /// Tool results render at their folded budget unless this is on.
     expanded: bool,
     /// The transcript's inner area from the last frame, in screen coordinates.
@@ -504,6 +517,7 @@ impl TranscriptPane {
             draft_rows_built: 0,
             scroll: 0,
             follow: true,
+            user_anchors: Vec::new(),
             expanded: false,
             area: Rect::default(),
             selection: None,
@@ -594,13 +608,31 @@ impl Pane for TranscriptPane {
             self.scroll = rows.saturating_sub(viewport) as u16;
         }
         let start = (self.scroll as usize).min(rows.saturating_sub(1));
-        let visible = (start..rows)
+        let mut visible = (start..rows)
             .take(viewport)
             .map(|row| match row < self.body.len() {
                 true => self.body[row].clone(),
                 false => self.draft_rows[row - self.body.len()].clone(),
             })
             .collect::<Vec<_>>();
+        // Scrolling back loses the question a view belongs to: the viewport's
+        // first row names the nearest prompt at or above it, painted over that
+        // row the way a sticky header is. The prompt's own first row needs no
+        // reminder, so the marker starts one row past it.
+        if !self.follow && start < self.body.len() {
+            if let Some((_, prompt)) = self.user_anchors.iter().rev().find(|(row, _)| *row < start)
+            {
+                let first = prompt.lines().next().unwrap_or_default();
+                if !first.is_empty() {
+                    let width = (content.width as usize).saturating_sub(2);
+                    visible[0] = Line::from(Span::styled(
+                        format!("❯ {}", fit(first, width.saturating_sub(2))),
+                        Style::new().fg(palette.primary),
+                    ))
+                    .style(Style::new().bg(palette.element));
+                }
+            }
+        }
         // Borderless, like the TypeScript layout this mirrors: a frame around
         // the transcript only steals columns from the text.
         frame.render_widget(
@@ -855,7 +887,9 @@ impl Home {
             anchors: Vec::new(),
             query: String::new(),
             filtering: false,
-            list_focus: false,
+            // The list owns the landing keyboard first; the hint names the
+            // side the next Tab reaches.
+            list_focus: true,
             leader_hint: None,
             notice: None,
             warning: None,
@@ -909,9 +943,13 @@ impl Home {
         let selected_id = self.current().map(|row| row.id.clone());
         self.rows = rows;
         let visible = self.visible_len();
+        let offset = usize::from(self.show_new_session());
         self.selected = selected_id
             .and_then(|id| self.visible().iter().position(|row| row.id == id))
-            .unwrap_or(0)
+            .map(|index| index + offset)
+            // Default to the first Session, past the action row: a reload that
+            // loses the previous selection lands on a Session, not the action.
+            .unwrap_or(offset.min(visible.saturating_sub(1)))
             .min(visible.saturating_sub(1));
     }
 
@@ -968,8 +1006,27 @@ impl Home {
             .collect()
     }
 
+    /// Whether the list leads with the "new session" action.
+    ///
+    /// A filter narrows Sessions, so the action steps aside while a query is
+    /// typed: nothing about a search should be able to open a new Session.
+    fn show_new_session(&self) -> bool {
+        self.query.is_empty()
+    }
+
+    /// `index` in the list's display space: 0 is the action row, Sessions follow.
+    fn session_at(&self, index: usize) -> Option<&SessionSummary> {
+        let offset = usize::from(self.show_new_session());
+        self.visible().into_iter().nth(index.checked_sub(offset)?)
+    }
+
+    /// True when the cursor sits on the action row rather than on a Session.
+    pub fn is_new_session(&self) -> bool {
+        self.show_new_session() && self.selected == 0
+    }
+
     fn visible_len(&self) -> usize {
-        self.visible().len()
+        self.visible().len() + usize::from(self.show_new_session())
     }
 
     pub fn query(&self) -> &str {
@@ -992,7 +1049,9 @@ impl Home {
     pub fn stop_filter(&mut self) {
         self.filtering = false;
         self.query.clear();
-        self.selected = 0;
+        // The action row reappears when the query is empty, so the cursor
+        // moves past it to the first Session.
+        self.selected = usize::from(self.show_new_session());
     }
 
     /// Narrow the list one character at a time; the selection goes back to the
@@ -1016,7 +1075,7 @@ impl Home {
             return false;
         }
         self.query.clear();
-        self.selected = 0;
+        self.selected = usize::from(self.show_new_session());
         true
     }
 
@@ -1053,7 +1112,7 @@ impl Home {
     }
 
     pub fn current(&self) -> Option<&SessionSummary> {
-        self.visible().into_iter().nth(self.selected)
+        self.session_at(self.selected)
     }
 
     fn warning_lines(&self) -> Vec<Line<'static>> {
@@ -1146,7 +1205,11 @@ impl Home {
             .saturating_sub(1)
             .saturating_sub(notice_lines.len() as u16) as usize;
         let visible = self.visible();
-        if visible.is_empty() {
+        // The action row leads an empty list only when the frame has nothing
+        // more urgent to say: a startup refusal reads as wrapped text, the way
+        // it did before the action row existed, and an action under it would
+        // sit on an engine that is not there to answer.
+        if visible.is_empty() && !(self.show_new_session() && self.notice.is_none()) {
             let mut lines = self.warning_lines();
             let message = self.notice.clone().unwrap_or_else(|| {
                 if self.rows.is_empty() {
@@ -1180,7 +1243,35 @@ impl Home {
         let mut selected_line = 0usize;
         let mut selected_tail = 0usize;
         let mut bucket: Option<&'static str> = None;
+        // The landing list opens on the action, not on the newest Session: a
+        // launch that resumes yesterday's conversation is not what "start" means.
+        let offset = usize::from(self.show_new_session());
+        if offset == 1 {
+            let selected = self.selected == 0;
+            let style = match selected {
+                true => Style::new()
+                    .fg(palette.primary)
+                    .bg(palette.element)
+                    .add_modifier(Modifier::BOLD),
+                false => Style::new().fg(palette.secondary),
+            };
+            // The action reads as a list row: same marker column as the
+            // Sessions under it. An indentation gutter once printed its width
+            // as digits ("48 ＋ new session"), so the row never looked
+            // selectable.
+            body.push(Line::from(Span::styled(
+                format!("{}＋ new session", if selected { "▸ " } else { "  " }),
+                style,
+            )));
+            lines_to_row.push(Some(0));
+            if selected {
+                selected_line = notice_lines.len() + body.len() - 1;
+            }
+        }
         for (index, row) in visible.iter().enumerate() {
+            // Every painted row answers with its display index, so a click and
+            // the action share one numbering.
+            let index = index + offset;
             let group = match row.updated_at_ms {
                 Some(updated) => session_group(now, updated),
                 None => "Earlier",
@@ -1514,12 +1605,17 @@ fn transcript_lines(
     theme: &Theme,
     expanded: bool,
     toggle: Option<&str>,
-) -> Vec<Line<'static>> {
+) -> Projected {
     let palette = theme.palette;
     let mut lines = Vec::new();
+    let mut anchors: Vec<(usize, String)> = Vec::new();
     for entry in &transcript.entries {
         match entry {
             Entry::User { text, .. } => {
+                anchors.push((
+                    lines.len(),
+                    text.lines().next().unwrap_or_default().to_string(),
+                ));
                 for line in text.lines() {
                     lines.push(Line::from(vec![
                         Span::styled("❯ ", Style::new().fg(palette.primary)),
@@ -1602,7 +1698,16 @@ fn transcript_lines(
             Style::new().fg(palette.text_muted),
         )));
     }
-    lines
+    Projected { lines, anchors }
+}
+
+/// The transcript's painted lines plus where each operator prompt starts in
+/// that row flow, so a scrolled-back viewport can name the question its top
+/// row belongs to.
+pub(crate) struct Projected {
+    lines: Vec<Line<'static>>,
+    /// `(first row of the prompt, its first line of text)`, in flow order.
+    anchors: Vec<(usize, String)>,
 }
 
 /// Cap a single line of prose to `COMPACT_CELLS` display cells. Counting
@@ -2419,6 +2524,16 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
             .map(|(position, row_index)| {
                 let row = &list.rows[*row_index];
                 let index = position;
+                // A provider header reads as a section label: muted weight, no
+                // marker, and no selection band (the cursor never rests on it).
+                if row.is_header() {
+                    return Line::from(Span::styled(
+                        row.label.clone(),
+                        Style::new()
+                            .fg(palette.secondary)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
                 // A read-only list has nothing to select, so it draws no
                 // marker and keeps every row in the same weight.
                 let read_only = list.kind == ListKind::ReadOnly;
@@ -3002,6 +3117,83 @@ fn panel_lines(panel: &Panel, theme: &Theme) -> Vec<Line<'static>> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_scrolled_back_viewport_names_the_question_it_belongs_to() {
+        let workspace = std::path::Path::new("/tmp/pane-test");
+        let mut shell = Shell::new(workspace, home_theme());
+        let transcript = Transcript {
+            entries: vec![
+                Entry::User {
+                    text: "first question about the parser".into(),
+                    seq: 1,
+                },
+                Entry::Assistant {
+                    agent: None,
+                    model: None,
+                    parts: vec![Part::Text("answer one. ".repeat(20).trim_end().into())],
+                },
+                Entry::User {
+                    text: "second question".into(),
+                    seq: 2,
+                },
+                Entry::Assistant {
+                    agent: None,
+                    model: None,
+                    parts: vec![Part::Text("answer two. ".repeat(20).trim_end().into())],
+                },
+            ],
+            ..Transcript::default()
+        };
+        shell.set_transcript(&transcript);
+        // Scroll back a few rows from the tail: the viewport now sits inside
+        // the second turn, whose question is off-screen above it.
+        shell.scroll_transcript(-8);
+        assert!(!shell.following(), "a manual scroll reads history");
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 12)).expect("terminal");
+        terminal
+            .draw(|frame| shell.transcript.render(frame, frame.area()))
+            .expect("draw");
+        let rows: Vec<String> = (0..12)
+            .map(|y| {
+                (0..60)
+                    .map(|x| {
+                        terminal
+                            .backend()
+                            .buffer()
+                            .cell(ratatui::prelude::Position::new(x, y))
+                            .map(|cell| cell.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect();
+        let top = rows[0].trim_end().to_string();
+        assert!(
+            top.starts_with('❯') && top.contains("first question"),
+            "the sticky header names the owning prompt: {top:?}"
+        );
+        // At the tail the transcript follows again, and the marker is gone.
+        shell.follow_transcript();
+        terminal
+            .draw(|frame| shell.transcript.render(frame, frame.area()))
+            .expect("draw");
+        let top = (0..60)
+            .map(|x| {
+                terminal
+                    .backend()
+                    .buffer()
+                    .cell(ratatui::prelude::Position::new(x, 0))
+                    .map(|cell| cell.symbol().to_string())
+                    .unwrap_or_default()
+            })
+            .collect::<String>();
+        assert!(
+            !top.contains("first question"),
+            "a following viewport shows no marker: {top:?}"
+        );
+    }
     use super::*;
     use crate::session::{Choice, QuestionItem};
 
@@ -3425,7 +3617,8 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let painted = wrapped_text(&transcript_lines(&transcript, &theme, false, None)).join("\n");
+        let painted =
+            wrapped_text(&transcript_lines(&transcript, &theme, false, None).lines).join("\n");
         assert!(painted.contains("context · engine"), "{painted}");
         assert!(painted.contains("Task paused: no todo moved."), "{painted}");
         assert!(
@@ -3589,7 +3782,7 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let lines = transcript_lines(&transcript, &theme, false, None);
+        let lines = transcript_lines(&transcript, &theme, false, None).lines;
         assert_eq!(lines[0].to_string(), "✗ provider unavailable");
         assert_eq!(lines[0].spans[0].style.fg, Some(theme.palette.error));
     }
@@ -3996,7 +4189,9 @@ mod tests {
             .flatten()
             .collect::<Vec<_>>()
             .join("");
-        assert!(plain.contains("tab list"), "{plain}");
+        // The list owns the landing keyboard by default, so the hint names
+        // its keys and where Tab hands the keys next.
+        assert!(plain.contains("tab prompt"), "{plain}");
         home.set_leader_hint(Some("ctrl+x · q app exit · n session new".into()));
         let armed = drawn(&mut home, 80, 12)
             .into_iter()
@@ -4069,7 +4264,7 @@ mod tests {
         });
         home.set_notice(Some("engine engine_closed: miao-engine exited (exit code: 1): miao engine-shim: could not prepare the product engine plan: Native TUI requires default-agent capture support".into()));
         let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).expect("terminal");
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 20)).expect("terminal");
         terminal
             .draw(|frame| home.render(frame, frame.area()))
             .expect("draw");
@@ -4375,6 +4570,8 @@ mod tests {
         ]);
         let lines = drawn(&mut home, 200, 12);
         let mut titled = 0;
+        // The list body stops one row short of the border: the bottom row is a
+        // full-width key hint, not a list row.
         for line in &lines[1..lines.len() - 2] {
             let text: String = line.iter().map(|cell| cell.as_str()).collect();
             if text.contains("login fix") || text.contains("offset fix") {
@@ -4431,27 +4628,31 @@ mod tests {
                 .collect(),
         );
         // Every match is reachable before a frame has measured anything.
-        assert_eq!(home.visible_len(), 40);
+        assert_eq!(home.visible_len(), 41);
         drawn(&mut home, 80, 20);
         // Twenty rows: one of header and one of key hints, so one screenful
         // is eighteen rows.
+        // Start paging from the action row so the offset doesn't shift every
+        // expected value by one.
+        home.select_first();
         home.page();
         assert_eq!(home.selected, 18);
         home.page();
         assert_eq!(home.selected, 36);
-        // Paging past the end stops on the last row instead of wrapping.
+        // Paging past the end stops on the last row instead of wrapping: the
+        // last Session sits at display index 40, past the action row.
         home.page();
-        assert_eq!(home.selected, 39);
+        assert_eq!(home.selected, 40);
         // And back, one screenful at a time, to the start.
         home.page_back();
-        assert_eq!(home.selected, 21);
+        assert_eq!(home.selected, 22);
         home.page_back();
-        assert_eq!(home.selected, 3);
+        assert_eq!(home.selected, 4);
         home.page_back();
         assert_eq!(home.selected, 0);
         // The ends are one keystroke away from anywhere.
         home.select_last();
-        assert_eq!(home.selected, 39);
+        assert_eq!(home.selected, 40);
         home.select_first();
         assert_eq!(home.selected, 0);
     }
@@ -4468,15 +4669,20 @@ mod tests {
         );
         // The first frame measures the viewport the selection scrolls inside.
         drawn(&mut home, 80, 12);
-        home.select(30);
+        home.select(31);
         let lines = drawn(&mut home, 80, 12);
         let mut named = 0usize;
         for (y, line) in lines.iter().enumerate() {
             let Some(index) = home.row_at(y as u16) else {
                 continue;
             };
+            // Anchors carry display indexes, and the action row anchors as 0
+            // without painting a Session label under it.
+            let Some(session) = home.session_at(index) else {
+                continue;
+            };
             named += 1;
-            let label = home.slot(index).expect("anchored row").label().to_string();
+            let label = session.label().to_string();
             assert!(
                 line.join("").contains(&label),
                 "the anchor at {y} must hold {label}: {line:?}"

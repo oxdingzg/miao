@@ -2487,7 +2487,17 @@ async fn drain(
             .await?;
     }
     record_promotions(&inner, &session, &run, &promoted, &lease).await?;
-    let result = execute(&session, &run, &inner, cancel.clone(), &lease, history_base).await;
+    let mut tool_dispatched = false;
+    let result = execute(
+        &session,
+        &run,
+        &inner,
+        cancel.clone(),
+        &lease,
+        history_base,
+        &mut tool_dispatched,
+    )
+    .await;
     let reason = if cancel.is_cancelled() {
         "interrupted"
     } else if result.is_ok() {
@@ -2630,6 +2640,7 @@ async fn execute(
     cancel: CancellationToken,
     lease: &SessionLease,
     history_base: u64,
+    tool_dispatched: &mut bool,
 ) -> Result<(), Error> {
     let mut step = 0;
     let mut allowance = inner.policy().max_provider_turns();
@@ -3990,6 +4001,9 @@ command: None,
                                     }
                                 }
                                 _ => {
+                                    if prepared.access() != crate::permission::Access::Read {
+                                        *tool_dispatched = true;
+                                    }
                                     let progress =
                                         if prepared.access() == crate::permission::Access::Execute {
                                             let (tx, mut rx) = mpsc::channel::<Value>(16);
@@ -4355,7 +4369,16 @@ command: None,
             if loop_allowed && !crate::state::runnable_state(&state)?.is_empty() {
                 let signature = serde_json::to_string(&state["todos"]["value"]["todos"])?;
                 goal_stalls = if goal_signature.as_ref() == Some(&signature) {
-                    goal_stalls + 1
+                    // Tool calls are real work: a model that ran bash, read a
+                    // file, or dispatched any tool between text-only replies is
+                    // not stalled. Resetting here lets a model that alternates
+                    // "run tests → report status → run tests" keep going
+                    // without tripping the no-progress guard.
+                    if *tool_dispatched {
+                        0
+                    } else {
+                        goal_stalls + 1
+                    }
                 } else {
                     0
                 };

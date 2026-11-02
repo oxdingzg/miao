@@ -783,8 +783,16 @@ impl Composer {
                     return self.submit();
                 }
                 KeyCode::Tab | KeyCode::Enter => {
-                    self.accept_completion();
-                    true
+                    // A query that already names its item exactly is finished:
+                    // Enter submits it instead of spending a keystroke
+                    // accepting a completion that changes nothing. `/quit`
+                    // quit on the first Enter, the way the TS composer does.
+                    if self.completion.items.contains(&self.completion.query) {
+                        false
+                    } else {
+                        self.accept_completion();
+                        true
+                    }
                 }
                 KeyCode::Esc => {
                     self.completion = Completion::default();

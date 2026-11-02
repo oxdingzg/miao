@@ -120,6 +120,7 @@ type Shared = Arc<Mutex<Option<EngineFailure>>>;
 type EventTx = mpsc::UnboundedSender<TransportEvent>;
 pub type EventRx = mpsc::UnboundedReceiver<TransportEvent>;
 
+/// A client whose cursors outlive it, so a respawn can replay from them.
 pub struct EngineClient {
     child: Option<Arc<Mutex<Child>>>,
     outbound: mpsc::UnboundedSender<Value>,
