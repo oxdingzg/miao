@@ -80,7 +80,9 @@ pub fn plan(connection: &Connection) -> rusqlite::Result<Vec<String>> {
     })?;
     for row in rows {
         let (session, events, bytes) = row?;
-        lines.push(format!("session {session} · {events} event(s) · {bytes} bytes prunable"));
+        lines.push(format!(
+            "session {session} · {events} event(s) · {bytes} bytes prunable"
+        ));
     }
     if lines.is_empty() {
         lines.push("nothing prunable: no session has a compaction baseline yet".into());
@@ -146,17 +148,14 @@ pub fn truncate(
                 "SELECT seq, kind, data, {time} FROM engine_event
                  WHERE session_id=?1 AND seq<=?2 ORDER BY seq"
             ))?;
-            let listed = statement.query_map(
-                rusqlite::params![session, through],
-                |row| {
-                    Ok((
-                        row.get::<_, u64>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, Option<i64>>(3)?,
-                    ))
-                },
-            )?;
+            let listed = statement.query_map(rusqlite::params![session, through], |row| {
+                Ok((
+                    row.get::<_, u64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
+            })?;
             let mut deletable = Vec::new();
             let mut kept = 0u64;
             for row in listed {
@@ -183,8 +182,9 @@ pub fn truncate(
                     session_id: session.clone(),
                     seq: row.0,
                     kind: row.1.clone(),
-                    data: serde_json::from_str(&row.2)
-                        .map_err(|error| Error::Invalid(format!("snapshot decode failed: {error}")))?,
+                    data: serde_json::from_str(&row.2).map_err(|error| {
+                        Error::Invalid(format!("snapshot decode failed: {error}"))
+                    })?,
                     recorded_at_ms: row.3.map(|value| value.max(0) as u64),
                 };
                 serde_json::to_writer(std::io::BufWriter::new(&mut file).by_ref(), &event)
@@ -277,14 +277,22 @@ mod tests {
 
         let summary = truncate(&mut connection, Some("s"), 1_000).expect("truncate");
         assert_eq!(summary.cuts.len(), 1, "{:?}", summary.cuts);
-        assert_eq!(summary.cuts[0].removed, 2, "provider.started and seq<=4 message.committed");
-        assert!(summary.kept_by_kind >= 2, "input.admitted and cron.scheduled protected");
+        assert_eq!(
+            summary.cuts[0].removed, 2,
+            "provider.started and seq<=4 message.committed"
+        );
+        assert!(
+            summary.kept_by_kind >= 2,
+            "input.admitted and cron.scheduled protected"
+        );
 
         let counts: String = {
             let mut statement = connection
                 .prepare("SELECT kind FROM engine_event WHERE session_id='s' ORDER BY seq")
                 .expect("prepare");
-            let rows = statement.query_map([], |row| row.get::<_, String>(0)).expect("map");
+            let rows = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("map");
             rows.collect::<rusqlite::Result<Vec<_>>>()
                 .expect("rows")
                 .join(",")
@@ -292,8 +300,7 @@ mod tests {
         // The seq-5 message.committed sits past the baseline (4) and stays;
         // only the flow events at or before it go.
         assert_eq!(
-            counts,
-            "input.admitted,cron.scheduled,message.committed,question.requested",
+            counts, "input.admitted,cron.scheduled,message.committed,question.requested",
             "{counts}"
         );
     }
@@ -322,7 +329,7 @@ mod tests {
             .filter_map(Result::ok)
             .find(|entry| entry.file_name().to_string_lossy().contains(".retention-"))
             .expect("snapshot file exists");
-            let text = std::fs::read_to_string(snapshot.path()).expect("snapshot");
+        let text = std::fs::read_to_string(snapshot.path()).expect("snapshot");
         assert!(text.contains("\"kind\":\"provider.started\""), "{text}");
         assert!(text.contains("\"kind\":\"message.committed\""), "{text}");
 
