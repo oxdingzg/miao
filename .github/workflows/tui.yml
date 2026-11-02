@@ -65,12 +65,12 @@ jobs:
         run: cargo fmt --check
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Test
         # The smoke suite drives real PTYs; run its files one test at a time so
         # concurrent PTY fixtures cannot race each other into false failures.
-        run: cargo test -- --test-threads=1
+        run: cargo test --locked -- --test-threads=1
 
   tui-windows:
     name: tui (windows)
@@ -100,9 +100,9 @@ jobs:
           workspaces: crates/miao-tui
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Test
         # The smoke suite drives real PTYs; run its files one test at a time so
         # concurrent PTY fixtures cannot race each other into false failures.
-        run: cargo test -- --test-threads=1
+        run: cargo test --locked -- --test-threads=1
