@@ -1101,14 +1101,18 @@ mod disclosure {
 
     use miao_engine::mcp::Registry;
 
-    async fn folded() -> (Arc<Registry>, tokio::task::JoinHandle<()>) {
-        let (registry, _calls, task) = peer("catalog:100").await;
-        (registry, task)
+    async fn folded() -> (
+        Arc<Registry>,
+        Arc<std::sync::atomic::AtomicUsize>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let (registry, calls, task) = peer("catalog:100").await;
+        (registry, calls, task)
     }
 
     #[tokio::test]
     async fn a_large_catalogue_folds_to_the_discovery_pair() {
-        let (registry, task) = folded().await;
+        let (registry, _calls, task) = folded().await;
         let disclosed = registry.disclosed(Disclosure::Threshold(32), &[]);
         assert_eq!(
             disclosed
