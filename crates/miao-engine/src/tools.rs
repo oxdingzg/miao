@@ -2121,11 +2121,7 @@ impl Tools {
     }
 
     fn extension_definitions(&self) -> Vec<ToolDefinition> {
-        let allowlist: Vec<&str> = self
-            .mcp_disclosure_allowlist
-            .iter()
-            .map(String::as_str)
-            .collect();
+        let allowlist: Vec<String> = self.mcp_disclosure_allowlist.iter().cloned().collect();
         self.mcp
             .iter()
             .flat_map(|registry| registry.disclosed(self.mcp_disclosure, &allowlist))
