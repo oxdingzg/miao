@@ -1376,12 +1376,17 @@ mod disclosure {
     }
 
     async fn flip_and_settle(registry: &Registry) {
+        let names: Vec<String> = registry
+            .definitions()
+            .iter()
+            .map(|def| def.name.clone())
+            .collect();
         let flip = registry
             .definitions()
             .iter()
             .find(|def| def.name.ends_with("flip"))
             .map(|def| def.name.clone())
-            .expect("the flip tool is in the catalogue");
+            .unwrap_or_else(|| panic!("flip missing from the catalogue; got {names:?}"));
         registry
             .call(&flip, json!({}), CancellationToken::new())
             .await
