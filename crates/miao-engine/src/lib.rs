@@ -60,6 +60,7 @@ pub mod permission_saved;
 pub mod permission_source;
 pub mod permission_source_control;
 mod persona;
+pub mod placement;
 pub mod process;
 pub mod protocol;
 pub mod provider;
