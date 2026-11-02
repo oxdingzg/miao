@@ -1271,9 +1271,8 @@ fn tree_migrate_sessions(root: &str, from: &std::path::Path, to: &std::path::Pat
         if !db.is_file() {
             continue;
         }
-        let mut connection = rusqlite::Connection::open(&db).map_err(|error| error.to_string())?;
-        moved += connection
-            .execute(
+        let connection = rusqlite::Connection::open(&db).map_err(|error| error.to_string())?;
+        moved += connection            .execute(
                 "UPDATE engine_location SET root = ?2 WHERE root = ?1 OR root LIKE ?1 || '/%'",
                 rusqlite::params![from.display().to_string(), to.display().to_string()],
             )
@@ -4689,7 +4688,7 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        anchored_sessions, db_file_bytes, db_report, db_vacuum, default_db,
+        anchored_sessions, db_file_bytes, db_read_only, db_report, db_vacuum, default_db,
         git_worktree_main_checkout, launch, lsp_servers, mcp_servers, model_routes,
         parsed_session_location, plugin_entries, project_copy_apply, project_copy_plan,
         retention_plan, strip_comments, tree_bytes, uninstall_targets, worktree_remove_apply,
