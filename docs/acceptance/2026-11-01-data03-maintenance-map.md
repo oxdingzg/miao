@@ -48,11 +48,12 @@ its statements do not hold for the Rust engine:
    reason that action is still absent rather than merely unwired.
 2. **“`miao db retention` reports prunable rows — **Done** — report-only”** is a
    statement about the TypeScript host. There is no such command in this tree.
-3. **`auto_vacuum = INCREMENTAL` for new databases** (migration plan, step 1) is
-   not set anywhere: `grep -rn auto_vacuum --include=*.rs crates` returns nothing.
-   The Rust engine creates databases without it, so free pages accumulate and
-   `db vacuum` stays a manual step. Setting it is a behaviour change for
-   databases created from now on, and is not in this record.
+3. **`auto_vacuum = INCREMENTAL` for new databases** (migration plan, step 1) was
+   not set anywhere. **Since fixed:** a database created from scratch now sets
+   the pragma before its first table, so free pages are handed back as the file
+   shrinks; a database that already exists keeps its own setting, because
+   changing it needs a full VACUUM and that is the operator's call. Covered by
+   `crates/miao-engine/tests/auto_vacuum.rs`.
 
 ## What each remaining slice needs
 
@@ -61,7 +62,7 @@ its statements do not hold for the Rust engine:
 | `compact`, `restore` | **no slice is wanted.** `compact` would re-create Session authority in the CLI; `restore` has no database-side implementation to wire. Both rows are corrected above rather than carried as pending work. | — |
 | `retention` | define “prunable” against the Rust schema, then the report-only form the spec asks for | design |
 | `backfill`, `externalize`, `gc` | the blob store and the projection move are prerequisites named by the spec | design, and the spec steps that precede them |
-| `auto_vacuum` | set `PRAGMA auto_vacuum=INCREMENTAL` before the first table is created | a decision, because it changes new databases only |
+| `auto_vacuum` | **done**: set before the first table of a new database; an existing database keeps its setting | — |
 
 ## Correction after review
 
