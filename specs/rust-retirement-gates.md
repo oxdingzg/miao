@@ -143,9 +143,9 @@ Windows 验收通过。构建与重型检查使用项目配置的构建机，机
 
 `MIAO_ENGINE_BIN=… bun test test/engine/worker-load-diagnostics.test.ts` → 4 pass / 0 fail。因此本条不再列为缺口。
 
-仍未取得：**linux-arm64** 的原生验证——当前可用的构建机没有 arm64 Linux 主机，`docker run --platform linux/arm64` 在 x86_64 主机上因缺 binfmt/QEMU 直接 `exec format error`；
+**linux-arm64 不再靠手工补**：本机没有 arm64 Linux 主机，`docker run --platform linux/arm64` 在 x86_64 主机上也因缺 binfmt/QEMU 直接 `exec format error`。因此把冒烟移进**发布工作流自己构建产物的那条腿**（#2331）：每条 cli 腿都在目标架构的 runner 上构建并按 `runner.os`/`runner.arch` 启动自己刚产出的文件，五个平台按构造覆盖，验证的正是要发布的那个文件。
 
-要彻底覆盖而不是逐台手工验证，应当让**发布工作流在自己构建产物的那条腿上**加一步 `--version` 冒烟：每条 cli 腿都在目标架构的 runner 上构建，这样五个平台按构造被覆盖，且验证的是真正要发布的那个文件。这是需要单独验证的管线改动，本轮未做。
+仍未取得：darwin-x64 的**原生** Intel 运行（当前只有 Rosetta 翻译层结果）。
 
 ## G6 证据：本地产物清点与不兼容引擎拒绝（2026-11-01）
 
