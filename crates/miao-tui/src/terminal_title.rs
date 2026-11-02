@@ -2,6 +2,14 @@
 use std::io::{self, Write};
 
 use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
+
+/// Cells a title may occupy.
+///
+/// A tab strip shows a fraction of the window's width, so a sentence there
+/// crowds out the other tabs. The prompt itself stays readable in the
+/// transcript; the tab only needs enough to recognise the Session.
+const TITLE_CELLS: usize = 24;
 
 pub fn sanitize(input: &str) -> String {
     let title = input
@@ -12,10 +20,30 @@ pub fn sanitize(input: &str) -> String {
     if title.is_empty() {
         return "miao".into();
     }
-    if title.graphemes(true).take(41).count() > 40 {
-        return format!("{}…", title.graphemes(true).take(37).collect::<String>());
+    fit(&title, TITLE_CELLS)
+}
+
+/// Cut to `cells` display cells, ellipsis included.
+///
+/// Cells, not characters: a CJK title spends two cells per character, so a
+/// character count let a Chinese title run to twice the width of an English one
+/// and still called it short.
+fn fit(text: &str, cells: usize) -> String {
+    if UnicodeWidthStr::width(text) <= cells {
+        return text.to_string();
     }
-    title
+    let mut out = String::new();
+    let mut used = 0;
+    for grapheme in text.graphemes(true) {
+        let width = UnicodeWidthStr::width(grapheme);
+        if used + width > cells.saturating_sub(1) {
+            break;
+        }
+        out.push_str(grapheme);
+        used += width;
+    }
+    out.push('…');
+    out
 }
 
 pub fn tab(title: Option<&str>, prompt: Option<&str>) -> String {
@@ -104,13 +132,28 @@ mod tests {
     }
 
     #[test]
-    fn long_titles_keep_whole_graphemes() {
+    fn a_long_title_is_cut_to_what_a_tab_strip_shows() {
         let glyph = "👩🏽‍💻";
-        assert_eq!(sanitize(&glyph.repeat(40)), glyph.repeat(40));
-        assert_eq!(
-            sanitize(&glyph.repeat(41)),
-            format!("{}…", glyph.repeat(37))
+        let title = sanitize(&glyph.repeat(40));
+        assert!(
+            unicode_width::UnicodeWidthStr::width(title.as_str()) <= 24,
+            "{title:?} is wider than a tab"
         );
+        assert!(title.ends_with('…'), "{title:?}");
+        // Whole graphemes: half a joined emoji is not a title.
+        assert!(title.trim_end_matches('…').chars().count() > 0);
+    }
+
+    /// A CJK title spends two cells per character, so a character count let it
+    /// run twice as wide as an English title of the same length.
+    #[test]
+    fn a_wide_title_counts_cells_not_characters() {
+        let title = sanitize("首页与会话页列几何统一和边界撑满的问题");
+        assert!(
+            unicode_width::UnicodeWidthStr::width(title.as_str()) <= 24,
+            "{title:?} is wider than a tab"
+        );
+        assert!(title.ends_with('…'), "{title:?}");
     }
 
     #[test]
