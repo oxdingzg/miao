@@ -490,6 +490,13 @@ pub fn unrouted_notice(args: &[String], model: &str, supplied_by_shim: bool) -> 
     if supplied_by_shim || model != UNROUTED_MODEL {
         return None;
     }
+    // An argv without `--model` asks the engine for the configured model, so the
+    // placeholder in the TUI says nothing about what will run: telling the
+    // operator to "start the product with miao" would be wrong advice, and the
+    // landing screen painted it in red on every native start.
+    if !args.iter().any(|arg| arg == "--model") {
+        return None;
+    }
     if args.iter().any(|arg| arg == "--model-routes-config") {
         return Some("no model selected: choose one with /model".to_string());
     }
@@ -1810,6 +1817,10 @@ mod tests {
         // The product's shim replaces the engine's model with the default route,
         // so the placeholder in argv says nothing about this Session.
         assert_eq!(unrouted_notice(&bare, UNROUTED_MODEL, true), None);
+        // A native start omits `--model` and lets the engine read the configured
+        // one, so there is nothing unrouted to complain about.
+        let native = vec!["serve".to_string(), "--db".to_string(), "db".to_string()];
+        assert_eq!(unrouted_notice(&native, UNROUTED_MODEL, false), None);
         // A manifest makes the picker usable; the Session just has no model yet.
         let mut routed = bare.clone();
         routed.extend([

@@ -837,7 +837,6 @@ fn selection_text(rendered: &[Vec<String>], inner: Rect, a: Position, b: Positio
 /// wider row more readable: stretched across one, a title and its age sit a
 /// screen apart and the eye has no edge to follow down the list. Past this
 /// measure the column keeps its width and centers instead.
-const SESSION_COLUMN: u16 = 96;
 
 pub struct Home {
     pub rows: Vec<SessionSummary>,
@@ -1120,11 +1119,12 @@ impl Home {
             width: area.width.saturating_sub(2),
         };
         let inner = list_area;
-        // A wide terminal does not buy a wider row: past this measure the list
-        // keeps one readable column and centers it, so a title and its age sit
-        // the same distance apart on every screen.
-        let column = inner.width.min(SESSION_COLUMN);
-        let gutter = " ".repeat(inner.width.saturating_sub(column) as usize / 2);
+        // The list uses the transcript's column: same left edge, same measure.
+        // Its own centred measure made the body jump sideways when an operator
+        // opened a Session, which is the difference the two screens showed.
+        let (prose, _) = body_columns(area);
+        let column = prose.width.min(inner.width);
+        let gutter = " ".repeat(prose.x.saturating_sub(inner.x) as usize);
         // The header names the screen the rows belong to, so it starts on the
         // column the rows start on instead of at the window's edge.
         // The rows start one cell in, so the header does too. The label stays
@@ -1751,10 +1751,10 @@ pub fn composer_height(composer: &Composer, width: u16) -> u16 {
 /// The home screen shows the same composer as a Session, so a prompt can be
 /// typed before any Session exists.
 pub fn render_home_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
-    // The landing screen keeps the full width: its composer sits in a fixed
-    // three-row band, and narrowing it would wrap a draft into a band that
-    // cannot grow.
-    render_composer_in(frame, area, composer, theme, area.width)
+    // The landing composer is the Session composer, in the Session's column: the
+    // band grows with the draft on both screens, so a fixed full width here was
+    // never needed and made the input change shape between screens.
+    render_composer(frame, body_columns(area).0, composer, theme)
 }
 
 fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
@@ -4206,7 +4206,8 @@ mod tests {
         let mut home = Home::new(home_theme());
         home.set_rows(vec![home_row("ses_a", "login fix", None)]);
         let lines = drawn(&mut home, 200, 12);
-        let gutter = (198 - SESSION_COLUMN as usize) / 2;
+        let (prose, _) = body_columns(ratatui::layout::Rect::new(0, 0, 200, 12));
+        let gutter = prose.x as usize - 1;
         let header = lines
             .iter()
             .find(|line| {
@@ -4227,17 +4228,19 @@ mod tests {
     }
 
     #[test]
-    fn a_wide_home_keeps_the_list_in_one_centered_column() {
+    fn a_wide_home_keeps_the_list_in_the_transcripts_column() {
         // A row stretched across a wide terminal separates a title from its age
-        // by a screen. The column keeps its measure and centers, so the age
-        // holds one edge and the eye has one path down the list.
+        // by a screen. The column keeps its measure, and it is the transcript's
+        // column, so opening a Session does not move the body sideways.
         let mut home = Home::new(home_theme());
         home.set_rows(vec![
             home_row("ses_a", "login fix", None),
             home_row("ses_b", "offset fix", None),
         ]);
+        let (prose, _) = body_columns(ratatui::layout::Rect::new(0, 0, 200, 12));
         let lines = drawn(&mut home, 200, 12);
-        let gutter = ((200 - 2 - SESSION_COLUMN) / 2) as usize;
+        let column = prose.width as usize;
+        let gutter = prose.x as usize - 1;
         assert!(gutter > 0, "the frame is wider than the column");
         // The list body stops one row short of the border: the bottom row is a
         // full-width key hint, not a list row.
@@ -4249,14 +4252,14 @@ mod tests {
                 "the left margin stays empty: {line:?}"
             );
             assert!(
-                line[1 + gutter + SESSION_COLUMN as usize..line.len() - 1]
+                line[1 + gutter + column..line.len() - 1]
                     .iter()
                     .all(|cell| cell.trim().is_empty()),
                 "the right margin stays empty: {line:?}"
             );
         }
         // An age ends on the column's right edge, not on the terminal's.
-        let age_end = 1 + gutter + SESSION_COLUMN as usize - 1;
+        let age_end = 1 + gutter + column - 1;
         for line in &lines[2..4] {
             assert_eq!(line[age_end], "o", "{line:?}");
         }
