@@ -122,22 +122,26 @@ impl Shell {
         }
         self.toggle_chord = chord;
         if let Some(last) = &self.last {
-            self.transcript.set_lines(transcript_lines(
+            let projected = transcript_lines(
                 last,
                 &self.transcript.theme,
                 self.transcript.expanded,
                 self.toggle_chord.as_deref(),
-            ));
+            );
+            self.transcript.set_lines(projected.lines);
+            self.transcript.user_anchors = projected.anchors;
         }
     }
 
     pub fn set_transcript(&mut self, transcript: &Transcript) {
-        self.transcript.set_lines(transcript_lines(
+        let projected = transcript_lines(
             transcript,
             &self.transcript.theme,
             self.transcript.expanded,
             self.toggle_chord.as_deref(),
-        ));
+        );
+        self.transcript.set_lines(projected.lines);
+        self.transcript.user_anchors = projected.anchors;
         let max = self.transcript.max_scroll();
         self.transcript.scroll = self.transcript.scroll.min(max);
         self.last = Some(transcript.clone());
@@ -206,12 +210,14 @@ impl Shell {
             sidebar.theme = theme.clone();
         }
         if let Some(last) = &self.last {
-            self.transcript.set_lines(transcript_lines(
+            let projected = transcript_lines(
                 last,
                 &theme,
                 self.transcript.expanded,
                 self.toggle_chord.as_deref(),
-            ));
+            );
+            self.transcript.set_lines(projected.lines);
+            self.transcript.user_anchors = projected.anchors;
         }
     }
 
@@ -227,6 +233,7 @@ impl Shell {
             message.to_string(),
             Style::new().fg(palette.error),
         ))]);
+        self.transcript.user_anchors = Vec::new();
         self.transcript.scroll = 0;
         self.transcript.follow = false;
         self.last = None;
@@ -237,12 +244,14 @@ impl Shell {
     pub fn toggle_tool_expansion(&mut self) -> bool {
         self.transcript.expanded = !self.transcript.expanded;
         if let Some(last) = &self.last {
-            self.transcript.set_lines(transcript_lines(
+            let projected = transcript_lines(
                 last,
                 &self.transcript.theme,
                 self.transcript.expanded,
                 self.toggle_chord.as_deref(),
-            ));
+            );
+            self.transcript.set_lines(projected.lines);
+            self.transcript.user_anchors = projected.anchors;
         }
         self.transcript.expanded
     }
@@ -468,6 +477,9 @@ pub struct TranscriptPane {
     /// Follow the tail while new projections arrive. Any manual scroll clears
     /// it, so reading history is not interrupted by committed events.
     follow: bool,
+    /// Row-flow position of each operator prompt and its first line, so a
+    /// scrolled-back viewport names the question its top row belongs to.
+    user_anchors: Vec<(usize, String)>,
     /// Tool results render at their folded budget unless this is on.
     expanded: bool,
     /// The transcript's inner area from the last frame, in screen coordinates.
@@ -505,6 +517,7 @@ impl TranscriptPane {
             draft_rows_built: 0,
             scroll: 0,
             follow: true,
+            user_anchors: Vec::new(),
             expanded: false,
             area: Rect::default(),
             selection: None,
@@ -595,13 +608,35 @@ impl Pane for TranscriptPane {
             self.scroll = rows.saturating_sub(viewport) as u16;
         }
         let start = (self.scroll as usize).min(rows.saturating_sub(1));
-        let visible = (start..rows)
+        let mut visible = (start..rows)
             .take(viewport)
             .map(|row| match row < self.body.len() {
                 true => self.body[row].clone(),
                 false => self.draft_rows[row - self.body.len()].clone(),
             })
             .collect::<Vec<_>>();
+        // Scrolling back loses the question a view belongs to: the viewport's
+        // first row names the nearest prompt at or above it, painted over that
+        // row the way a sticky header is. The prompt's own first row needs no
+        // reminder, so the marker starts one row past it.
+        if !self.follow && start < self.body.len() {
+            if let Some((_, prompt)) = self
+                .user_anchors
+                .iter()
+                .rev()
+                .find(|(row, _)| *row < start)
+            {
+                let first = prompt.lines().next().unwrap_or_default();
+                if !first.is_empty() {
+                    let width = (content.width as usize).saturating_sub(2);
+                    visible[0] = Line::from(Span::styled(
+                        format!("❯ {}", fit(&first, width.saturating_sub(2))),
+                        Style::new().fg(palette.primary),
+                    ))
+                    .style(Style::new().bg(palette.element));
+                }
+            }
+        }
         // Borderless, like the TypeScript layout this mirrors: a frame around
         // the transcript only steals columns from the text.
         frame.render_widget(
@@ -1561,12 +1596,17 @@ fn transcript_lines(
     theme: &Theme,
     expanded: bool,
     toggle: Option<&str>,
-) -> Vec<Line<'static>> {
+) -> Projected {
     let palette = theme.palette;
     let mut lines = Vec::new();
+    let mut anchors: Vec<(usize, String)> = Vec::new();
     for entry in &transcript.entries {
         match entry {
             Entry::User { text, .. } => {
+                anchors.push((
+                    lines.len(),
+                    text.lines().next().unwrap_or_default().to_string(),
+                ));
                 for line in text.lines() {
                     lines.push(Line::from(vec![
                         Span::styled("❯ ", Style::new().fg(palette.primary)),
@@ -1649,7 +1689,16 @@ fn transcript_lines(
             Style::new().fg(palette.text_muted),
         )));
     }
-    lines
+    Projected { lines, anchors }
+}
+
+/// The transcript's painted lines plus where each operator prompt starts in
+/// that row flow, so a scrolled-back viewport can name the question its top
+/// row belongs to.
+pub(crate) struct Projected {
+    lines: Vec<Line<'static>>,
+    /// `(first row of the prompt, its first line of text)`, in flow order.
+    anchors: Vec<(usize, String)>,
 }
 
 /// Cap a single line of prose to `COMPACT_CELLS` display cells. Counting
@@ -3059,6 +3108,83 @@ fn panel_lines(panel: &Panel, theme: &Theme) -> Vec<Line<'static>> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_scrolled_back_viewport_names_the_question_it_belongs_to() {
+        let workspace = std::path::Path::new("/tmp/pane-test");
+        let mut shell = Shell::new(workspace, home_theme());
+        let transcript = Transcript {
+            entries: vec![
+                Entry::User {
+                    text: "first question about the parser".into(),
+                    seq: 1,
+                },
+                Entry::Assistant {
+                    agent: None,
+                    model: None,
+                    parts: vec![Part::Text("answer one. ".repeat(20).trim_end().into())],
+                },
+                Entry::User {
+                    text: "second question".into(),
+                    seq: 2,
+                },
+                Entry::Assistant {
+                    agent: None,
+                    model: None,
+                    parts: vec![Part::Text("answer two. ".repeat(20).trim_end().into())],
+                },
+            ],
+            ..Transcript::default()
+        };
+        shell.set_transcript(&transcript);
+        // Scroll back a few rows from the tail: the viewport now sits inside
+        // the second turn, whose question is off-screen above it.
+        shell.scroll_transcript(-8);
+        assert!(!shell.following(), "a manual scroll reads history");
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 12)).expect("terminal");
+        terminal
+            .draw(|frame| shell.transcript.render(frame, frame.area()))
+            .expect("draw");
+        let rows: Vec<String> = (0..12)
+            .map(|y| {
+                (0..60)
+                    .map(|x| {
+                        terminal
+                            .backend()
+                            .buffer()
+                            .cell(ratatui::prelude::Position::new(x, y))
+                            .map(|cell| cell.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect();
+        let top = rows[0].trim_end().to_string();
+        assert!(
+            top.starts_with('❯') && top.contains("first question"),
+            "the sticky header names the owning prompt: {top:?}"
+        );
+        // At the tail the transcript follows again, and the marker is gone.
+        shell.follow_transcript();
+        terminal
+            .draw(|frame| shell.transcript.render(frame, frame.area()))
+            .expect("draw");
+        let top = (0..60)
+            .map(|x| {
+                terminal
+                    .backend()
+                    .buffer()
+                    .cell(ratatui::prelude::Position::new(x, 0))
+                    .map(|cell| cell.symbol().to_string())
+                    .unwrap_or_default()
+            })
+            .collect::<String>();
+        assert!(
+            !top.contains("first question"),
+            "a following viewport shows no marker: {top:?}"
+        );
+    }
     use super::*;
     use crate::session::{Choice, QuestionItem};
 
@@ -3482,7 +3608,7 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let painted = wrapped_text(&transcript_lines(&transcript, &theme, false, None)).join("\n");
+        let painted = wrapped_text(&transcript_lines(&transcript, &theme, false, None).lines).join("\n");
         assert!(painted.contains("context · engine"), "{painted}");
         assert!(painted.contains("Task paused: no todo moved."), "{painted}");
         assert!(
@@ -3606,7 +3732,7 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let lines = transcript_lines(&transcript, &theme, false, None);
+        let lines = transcript_lines(&transcript, &theme, false, None).lines;
         assert_eq!(lines[0].to_string(), "✗ provider unavailable");
         assert_eq!(lines[0].spans[0].style.fg, Some(theme.palette.error));
     }
