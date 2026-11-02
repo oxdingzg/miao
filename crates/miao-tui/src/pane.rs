@@ -355,7 +355,15 @@ impl Shell {
         if let Some(panel) = self.panel.as_ref() {
             panel.render(frame, panel_area, &self.transcript.theme);
         }
-        render_composer(frame, composer_area, &self.composer, &self.transcript.theme);
+        // The input belongs to the prose column, not to the window: centring it
+        // over the whole width put it ~20 columns right of the text it answers
+        // whenever the sidebar was on screen.
+        render_composer(
+            frame,
+            body_columns(composer_area).0,
+            &self.composer,
+            &self.transcript.theme,
+        );
         match &self.leader_hint {
             Some(menu) => frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
@@ -3617,7 +3625,15 @@ mod tests {
                     .contains("composer")
             })
             .expect("the composer is painted");
-        let gutter = (200 - TRANSCRIPT_COLUMN as usize) / 2;
+        // The composer shares the prose column, which the sidebar shifts left.
+        let (prose, sidebar) = body_columns(ratatui::layout::Rect::new(0, 0, 200, 20));
+        assert!(sidebar.is_some(), "this frame has a sidebar");
+        let gutter = prose.x as usize;
+        assert_eq!(
+            gutter,
+            (200 - (TRANSCRIPT_COLUMN + SIDEBAR_WIDTH + 1)) as usize / 2,
+            "the gutter is the prose column's, not the window's"
+        );
         let symbols = rows[top]
             .iter()
             .map(|cell| cell.symbol())
@@ -3634,6 +3650,48 @@ mod tests {
                 assert_eq!(symbol, &" ", "the input does not reach column {x}");
             }
         }
+    }
+
+    /// The composer must start on the same column as the text it answers. It
+    /// used to be centred over the window, so on any frame wide enough for the
+    /// sidebar the input sat ~20 columns to the right of the transcript.
+    #[test]
+    fn the_input_starts_on_the_transcripts_column() {
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let mut shell = Shell::new(Path::new("."), theme);
+        shell.set_transcript(&Transcript {
+            entries: vec![Entry::User {
+                text: "hello".into(),
+                seq: 1,
+            }],
+            ..Transcript::default()
+        });
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(200, 24)).expect("terminal");
+        terminal.draw(|frame| shell.render(frame)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let rows = buffer.content.chunks(200).collect::<Vec<_>>();
+        let column_of = |needle: &str| {
+            rows.iter()
+                .find(|row| {
+                    row.iter()
+                        .map(|cell| cell.symbol())
+                        .collect::<String>()
+                        .contains(needle)
+                })
+                .map(|row| {
+                    row.iter()
+                        .position(|cell| cell.symbol() != " ")
+                        .expect("a painted cell")
+                })
+                .expect("the row is painted")
+        };
+        let input = column_of("composer");
+        let prose = column_of("hello");
+        assert_eq!(input, prose, "the input shares the transcript's column");
     }
 
     #[test]
