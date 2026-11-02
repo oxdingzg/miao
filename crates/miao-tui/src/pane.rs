@@ -1853,28 +1853,40 @@ fn render_composer_in(
     // so the text stays readable while the covered cells read as chosen.
     let selection_style = Style::new().fg(palette.background).bg(accent);
     let selection_cells = composer.editor.selection_cells();
-    let lines = composer
-        .editor
-        .lines()
-        .enumerate()
-        .skip(row_offset)
-        .take(input_area.height as usize)
-        .map(|(index, line)| {
-            let selection = selection_cells
-                .iter()
-                .find(|(line_index, _, _)| *line_index == index)
-                .map(|(_, start, end)| (*start, *end));
-            composer_line(
-                &line,
-                cell_offset,
-                input_area.width,
-                selection,
-                Style::new().fg(text_color),
-                selection_style,
-            )
-        })
-        .collect::<Vec<_>>();
-    frame.render_widget(Paragraph::new(lines), input_area);
+    if composer.editor.is_empty() && composer.completion.items.is_empty() {
+        // An empty composer reads as a dead box; a quiet hint names what the
+        // two completions answer for. The caret stays where the typing goes.
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "type a prompt · / for commands · @ for files",
+                Style::new().fg(palette.text_muted),
+            )),
+            input_area,
+        );
+    } else {
+        let lines = composer
+            .editor
+            .lines()
+            .enumerate()
+            .skip(row_offset)
+            .take(input_area.height as usize)
+            .map(|(index, line)| {
+                let selection = selection_cells
+                    .iter()
+                    .find(|(line_index, _, _)| *line_index == index)
+                    .map(|(_, start, end)| (*start, *end));
+                composer_line(
+                    &line,
+                    cell_offset,
+                    input_area.width,
+                    selection,
+                    Style::new().fg(text_color),
+                    selection_style,
+                )
+            })
+            .collect::<Vec<_>>();
+        frame.render_widget(Paragraph::new(lines), input_area);
+    }
 
     let cursor_row = cursor_line - row_offset;
     let cursor_column = cursor_cell - cell_offset;
@@ -3333,6 +3345,42 @@ mod tests {
             "the model label paints: {painted}"
         );
         assert!(!painted.contains("nothing to show"), "{painted}");
+    }
+
+    /// An empty composer hints at what it accepts, the way the agent CLIs do;
+    /// a draft replaces the hint instead of stacking on it.
+    #[test]
+    fn an_empty_composer_hints_at_the_completions() {
+        let theme = home_theme();
+        let composer = crate::editor::Composer::new(Path::new("."));
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 6)).expect("terminal");
+        terminal
+            .draw(|frame| super::render_composer(frame, ratatui::layout::Rect::new(0, 0, 80, 6), &composer, &theme))
+            .expect("draw");
+        let painted = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol().to_string())
+            .collect::<String>();
+        assert!(painted.contains("type a prompt"), "{painted}");
+
+        let mut composer = crate::editor::Composer::new(Path::new("."));
+        composer.editor.insert_str("hello");
+        terminal
+            .draw(|frame| super::render_composer(frame, ratatui::layout::Rect::new(0, 0, 80, 6), &composer, &theme))
+            .expect("draw");
+        let painted = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol().to_string())
+            .collect::<String>();
+        assert!(painted.contains("hello"), "{painted}");
+        assert!(!painted.contains("type a prompt"), "{painted}");
     }
 
     /// Context the engine injected is a history note. Painting it behind the
