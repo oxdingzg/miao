@@ -109,44 +109,6 @@ impl Harness {
         String::from_utf8_lossy(&self.output.lock().expect("output lock")).into_owned()
     }
 
-    /// Only the alphanumeric cells: the composer redraws one character at a
-    /// time with a cursor motion in front of each, so the raw stream never
-    /// contains a typed line as a contiguous substring.
-    fn typed(&self) -> String {
-        let mut out = String::new();
-        let text = self.text();
-        let mut chars = text.chars();
-        while let Some(c) = chars.next() {
-            if c != '\x1b' {
-                if !c.is_control() {
-                    out.push(c);
-                }
-                continue;
-            }
-            // Skip the escape sequence: CSI runs until its final byte, and the
-            // digits inside a cursor move are not typed text.
-            match chars.next() {
-                Some('[') => {
-                    for next in chars.by_ref() {
-                        if ('@'..='~').contains(&next) {
-                            break;
-                        }
-                    }
-                }
-                Some(']') => {
-                    // OSC ends at BEL or ST.
-                    for next in chars.by_ref() {
-                        if next == '\x07' {
-                            break;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        out
-    }
-
     /// The screen, not the byte stream. A repaint writes cell runs separated by
     /// cursor motions, so the raw stream never carries a typed line contiguously
     /// — and because frames accumulate, "ends with" is not a stable test either.
