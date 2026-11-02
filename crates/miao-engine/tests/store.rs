@@ -875,3 +875,30 @@ async fn opening_a_store_indexes_the_event_kind_so_recovery_does_not_scan_the_ta
         "the recovery query must seek the kind index instead of scanning the table: {plan:?}"
     );
 }
+
+/// The per-Session selections are read as "newest event of this kind", one query
+/// per Session in the catalog. Without a covering index SQLite walks the whole
+/// Session's journal backwards to answer it, which cost seconds on a long ledger
+/// and is invisible when the pages happen to be cached.
+#[tokio::test]
+async fn the_selection_lookup_seeks_its_index_instead_of_walking_the_journal() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("engine.db");
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    Store::open(&path).await.unwrap().close().await.unwrap();
+    for kind in ["session.model.selected", "session.account.selected"] {
+        let plan: Vec<String> = connection
+            .prepare(&format!(
+                "EXPLAIN QUERY PLAN SELECT data FROM engine_event WHERE session_id='s' AND kind='{kind}' AND seq<=?1 ORDER BY seq DESC LIMIT 1"
+            ))
+            .unwrap()
+            .query_map([i64::MAX], |row| row.get(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            plan.iter().any(|detail| detail.contains("engine_event_selection")),
+            "{kind} must seek the selection index: {plan:?}"
+        );
+    }
+}
