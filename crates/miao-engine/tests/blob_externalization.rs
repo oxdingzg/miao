@@ -63,14 +63,13 @@ async fn an_oversized_payload_stays_out_of_the_ledger_and_reads_back_whole() {
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )
         .expect("raw connection");
-        let (row,): (String,) = connection
+        connection
             .query_row(
                 "SELECT data FROM engine_event WHERE session_id='ses_blob' AND kind='tool.completed'",
                 [],
-                |row| row.get(0),
+                |row| row.get::<_, String>(0),
             )
-            .expect("row");
-        row
+            .expect("row")
     };
     assert!(
         raw.len() < 200,
@@ -102,14 +101,11 @@ async fn an_oversized_payload_stays_out_of_the_ledger_and_reads_back_whole() {
     );
 
     // The returned Event from the write path is rehydrated too, because it
-    // feeds broadcasts the TUI renders.
+    // feeds broadcasts the TUI renders: a fresh `events` read of a second
+    // ledger proves the round trip holds at the store boundary.
     let (store, document) = ledger_with_document(dir.path().join("again"), "doc2").await;
-    let latest = store
-        .latest_event("ses_blob", "tool.completed")
-        .await
-        .expect("latest")
-        .expect("present");
-    assert_eq!(latest.data["result"], document);
+    let events = store.events("ses_blob", 0, 100).await.expect("events");
+    assert_eq!(events[0].data["result"], document);
 }
 
 #[tokio::test]
@@ -136,13 +132,13 @@ async fn gc_takes_orphans_after_truncation_and_never_touches_live_references() {
     assert_eq!(before.len(), 2, "two documents, two files");
 
     // Truncate the victim's rows the way retention does, then collect.
-    store
-        .call(move |conn| {
-            conn.execute("DELETE FROM engine_event WHERE session_id='ses_blob'", [])?;
-            Ok(())
-        })
-        .await
-        .expect("truncate");
+    {
+        let mut connection =
+            rusqlite::Connection::open(dir.path().join("engine.db")).expect("truncate connection");
+        connection
+            .execute("DELETE FROM engine_event WHERE session_id='ses_blob'", [])
+            .expect("truncate rows");
+    }
 
     let live_set = {
         let mut found = Vec::new();

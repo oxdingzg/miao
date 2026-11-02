@@ -90,7 +90,9 @@ fn build_repo(dir: &Path, changed: Option<(usize, usize, usize, usize, usize)>) 
             let to = format!("moved/file_{index}.txt");
             // A pure `git mv`: status pairs the records through rename
             // detection, and a content change on a thirteen-byte file would
-            // drop below the similarity bar and split into D+A.
+            // drop below the similarity bar and split into D+A. The target
+            // directory must exist first; git mv does not create it.
+            std::fs::create_dir_all(dir.join("moved")).expect("moved dir");
             git(dir, &["mv", &from, &to]);
         }
         // Deleted files start past the renamed band, so no two groups touch
