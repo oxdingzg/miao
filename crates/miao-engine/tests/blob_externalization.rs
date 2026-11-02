@@ -127,7 +127,14 @@ async fn an_oversized_payload_stays_out_of_the_ledger_and_reads_back_whole() {
     // ledger proves the round trip holds at the store boundary.
     let (store, document) = ledger_with_document(&dir.path().join("again"), "doc2").await;
     let events = store.events("ses_blob", 0, 100).await.expect("events");
-    assert_eq!(events[0].data["result"], document);
+    let committed = events
+        .iter()
+        .find(|event| event.kind == "tool.completed")
+        .expect("the committed event");
+    assert_eq!(
+        committed.data["result"], document,
+        "the write path's broadcast rehydrates like the read path"
+    );
 }
 
 #[tokio::test]
