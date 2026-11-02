@@ -4641,19 +4641,20 @@ mod tests {
         assert_eq!(home.selected, 18);
         home.page();
         assert_eq!(home.selected, 36);
-        // Paging past the end stops on the last row instead of wrapping.
+        // Paging past the end stops on the last row instead of wrapping: the
+        // last Session sits at display index 40, past the action row.
         home.page();
-        assert_eq!(home.selected, 39);
+        assert_eq!(home.selected, 40);
         // And back, one screenful at a time, to the start.
         home.page_back();
-        assert_eq!(home.selected, 21);
+        assert_eq!(home.selected, 22);
         home.page_back();
-        assert_eq!(home.selected, 3);
+        assert_eq!(home.selected, 4);
         home.page_back();
         assert_eq!(home.selected, 0);
         // The ends are one keystroke away from anywhere.
         home.select_last();
-        assert_eq!(home.selected, 39);
+        assert_eq!(home.selected, 40);
         home.select_first();
         assert_eq!(home.selected, 0);
     }
@@ -4677,8 +4678,13 @@ mod tests {
             let Some(index) = home.row_at(y as u16) else {
                 continue;
             };
+            // Anchors carry display indexes, and the action row anchors as 0
+            // without painting a Session label under it.
+            let Some(session) = home.session_at(index) else {
+                continue;
+            };
             named += 1;
-            let label = home.slot(index).expect("anchored row").label().to_string();
+            let label = session.label().to_string();
             assert!(
                 line.join("").contains(&label),
                 "the anchor at {y} must hold {label}: {line:?}"
