@@ -483,6 +483,15 @@ pub enum Command {
         session_id: String,
         target_directory: String,
     },
+    /// Copy a Session's committed history into a fresh Session so an operator
+    /// can resume the same work twice (`--fork` with `--session`/`--continue`).
+    /// The client names the target, the way it names an initialized Session;
+    /// the parent must be idle, and `None` copies history to its latest
+    /// committed message.
+    ForkSession {
+        session_id: String,
+        target_session_id: String,
+    },
     /// Workspaces the host prepared for this Location. The engine serves the
     /// host's list read-only, the same way it serves model routes and MCP: it
     /// never invents workspace authority of its own.

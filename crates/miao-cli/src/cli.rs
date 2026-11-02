@@ -93,6 +93,7 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
     let mut session: Option<String> = None;
     let mut continue_last = false;
     let mut prompt: Option<String> = None;
+    let mut fork = false;
     let mut auto = false;
     let mut args = args.peekable();
     while let Some(arg) = args.next() {
@@ -119,18 +120,25 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
             // classifier-guarded auto mode, which still honours operator deny
             // and ask rules.
             "--auto" | "--yolo" | "--dangerously-skip-permissions" => auto = true,
+            // The TypeScript entry documented `--fork` as resume-time only.
+            "--fork" => fork = true,
             // The legacy interface carried these; the Rust TUI does not
             // implement them yet. Refusing with the reason beats a different
             // Session than the one asked for, and names the still-available
             // escape hatch (CLI-01's "clear error before the terminal exists").
-            "--mini" | "--fork" | "--agent" | "--replay" | "--no-replay"
-            | "--replay-limit" | "--demo" => {
+            "--mini" | "--agent" | "--replay" | "--no-replay" | "--replay-limit"
+            | "--demo" => {
                 return Err(format!(
                     "the Rust TUI does not implement {name}; drop it, or run the legacy TypeScript TUI with `miao --tui legacy`"
                 ))
             }
             other => return Err(format!("unknown option {other}")),
         }
+    }
+    if fork && session.is_none() && !continue_last {
+        return Err(
+            "--fork copies a Session you are resuming; pair it with --session or --continue".into(),
+        );
     }
     let workspace =
         workspace.unwrap_or(std::env::current_dir().map_err(|error| error.to_string())?);
@@ -145,6 +153,7 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
         session,
         continue_last,
         prompt,
+        fork,
         auto,
     })
 }
@@ -5104,7 +5113,6 @@ mod tests {
         // different session (CLI-01). A supported option keeps parsing.
         for option in [
             "--mini",
-            "--fork",
             "--agent",
             "--replay",
             "--no-replay",
@@ -5150,6 +5158,44 @@ mod tests {
         }
         let plain = launch(["--db", "/tmp/x.db"].into_iter().map(str::to_string)).unwrap();
         assert!(!plain.auto);
+    }
+    #[test]
+    fn fork_requires_a_session_to_copy() {
+        // `--fork` alone has nothing to copy: the error names the pairing the
+        // TypeScript entry documented, before the terminal exists.
+        let error = launch(
+            [
+                "--db".to_string(),
+                "/tmp/x.db".to_string(),
+                "--fork".to_string(),
+            ]
+            .into_iter(),
+        )
+        .expect_err("--fork alone is refused");
+        assert!(error.contains("--session"), "{error}");
+        let paired = launch(
+            [
+                "--db".to_string(),
+                "/tmp/x.db".to_string(),
+                "--fork".to_string(),
+                "--session".to_string(),
+                "ses_x".to_string(),
+            ]
+            .into_iter(),
+        )
+        .expect("--fork with --session parses");
+        assert!(paired.fork);
+        let continued = launch(
+            [
+                "--db".to_string(),
+                "/tmp/x.db".to_string(),
+                "--fork".to_string(),
+                "--continue".to_string(),
+            ]
+            .into_iter(),
+        )
+        .expect("--fork with --continue parses");
+        assert!(continued.fork && continued.continue_last);
     }
 
     #[test]
