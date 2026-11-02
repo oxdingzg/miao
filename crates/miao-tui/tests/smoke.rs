@@ -260,18 +260,16 @@ impl Harness {
 
     /// Move the home list onto its second row.
     ///
-    /// The prompt owns the landing screen's keyboard, so the list has to be
-    /// given focus with Tab before it will move; and both rows have to be
-    /// painted first, because a Down that arrives before they exist is dropped.
-    /// Without either, the test opened the first Session and then waited for
-    /// text only the second one has.
+    /// The landing list owns the keyboard from the start, so the rows only
+    /// have to be painted first: a Down that arrives before they exist is
+    /// dropped, and without the wait the test opened the first Session and
+    /// then waited for text only the second one has.
     fn select_second_row(&mut self) {
         assert!(
             wait_for_plain(self, "Project B", Duration::from_secs(5)),
             "the second row never rendered:\n{}",
             plain(&self.text())
         );
-        self.write(b"\t");
         self.write(b"\x1b[B");
     }
 
