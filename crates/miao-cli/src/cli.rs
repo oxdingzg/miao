@@ -1851,7 +1851,7 @@ fn db_path(rest: &[String]) -> Result<(), String> {
         }
     }
     match db {
-        Some(path) => println!("{path}"),
+        Some(path) => println!("{}", path.display()),
         None => {
             let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             println!("{}", default_db(&workspace).display());
