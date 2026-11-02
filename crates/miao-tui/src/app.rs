@@ -289,7 +289,10 @@ impl App {
             session: None,
             state: SessionState::default(),
             quit: false,
-            home_list_focus: false,
+            // The list owns the keyboard first: the landing screen opens to
+            // pick a Session, so the arrows move the selection instead of
+            // walking the prompt's history. Tab hands the keys to the prompt.
+            home_list_focus: true,
             named_sessions: std::collections::HashSet::new(),
             dialog: None,
             permission_generation: 0,
@@ -3833,7 +3836,9 @@ mod tests {
     #[test]
     fn a_prompt_typed_on_home_starts_a_session_with_it() {
         let mut app = app();
-        // The prompt owns the keyboard on the landing screen.
+        // The list owns the landing keyboard; Tab hands the keys to the
+        // prompt, and what is typed there starts a Session.
+        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
         for character in "hello".chars() {
             app.handle(key(KeyCode::Char(character), KeyModifiers::NONE));
         }
@@ -3851,8 +3856,7 @@ mod tests {
             summary("ses_b", 30),
             summary("ses_a", 10),
         ]));
-        // j/k move the list, so the list has to own the keyboard first.
-        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
+        // The list owns the landing keyboard from the start.
         // `set_rows` defaults to the first Session past the action row.
         assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_b"));
         app.handle(key(KeyCode::Char('j'), KeyModifiers::NONE));
@@ -4574,9 +4578,8 @@ mod tests {
         // The home list is fed by `Sessions`; `Catalog` only fills the session
         // catalog and answers `--continue`.
         app.handle(AppEvent::Sessions(rows));
-        // List behaviour starts from the list: Tab hands it the keyboard, as a
-        // user would, because the prompt owns the landing screen.
-        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
+        // List behaviour starts from the list: it owns the landing keyboard
+        // from the start.
         app
     }
 
@@ -4760,11 +4763,8 @@ mod tests {
                 })
                 .collect(),
         ));
-        // List behaviour starts from the list: Tab hands it the keyboard, as a
-        // user would, because the prompt owns the landing screen. One `j`
-        // moves past the action row so tests interact with Sessions directly.
-        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
-        app.handle(key(KeyCode::Char('j'), KeyModifiers::NONE));
+        // List behaviour starts from the list, and `set_rows` lands past the
+        // action row, so tests interact with Sessions directly.
         app
     }
 
@@ -4899,7 +4899,6 @@ mod tests {
         // The list footer says `? help`, so `?` has to open it. A hint with no
         // key behind it teaches the operator that the footer cannot be trusted.
         let mut app = app();
-        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
         app.handle(key(KeyCode::Char('?'), KeyModifiers::SHIFT));
         assert!(
             matches!(app.dialog.as_ref(), Some(Dialog::Help(_))),
@@ -4912,7 +4911,6 @@ mod tests {
         // Filter mode claims printable keys before the keymap does, or a filter
         // could never contain the character its hint is written with.
         let mut app = app();
-        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
         app.handle(key(KeyCode::Char('/'), KeyModifiers::NONE));
         app.handle(key(KeyCode::Char('?'), KeyModifiers::SHIFT));
         assert!(app.dialog.is_none(), "the filter is still narrowing");
@@ -5400,6 +5398,7 @@ mod tests {
     fn ctrl_c_clears_a_landing_draft_instead_of_quitting() {
         let mut app = app();
         assert_eq!(app.screen, Screen::Home);
+        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
         for c in "draft".chars() {
             app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
         }
