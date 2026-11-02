@@ -2240,7 +2240,7 @@ impl Store {
         self.call(move |conn| {
             let mut stmt = conn.prepare("SELECT seq,kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND seq>?2 ORDER BY seq LIMIT ?3")?;
             let rows = stmt.query_map(params![session,after,limit.min(1000)], |r| Ok((r.get::<_,u64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<u64>>(3)?)))?;
-            let root = conn.path().map(crate::blob::root_for);
+            let root = conn.path().map(|path| crate::blob::root_for(std::path::Path::new(path)));
             rows.map(|row| { let (seq,kind,data,recorded_at_ms) = row?; let mut data=serde_json::from_str::<Value>(&data)?; if let Some(root)=&root { crate::blob::rehydrate(&mut data, root); } Ok(Event { session_id:session.clone(),seq,kind,data,recorded_at_ms }) }).collect()
         }).await
     }
@@ -2259,7 +2259,7 @@ impl Store {
                 params![session, kind],
                 |row| Ok((row.get::<_, u64>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<u64>>(2)?)),
             ).optional()?;
-            let root = conn.path().map(crate::blob::root_for);
+            let root = conn.path().map(|path| crate::blob::root_for(std::path::Path::new(path)));
             row.map(|(seq, data, recorded_at_ms)| {
                 let mut data = serde_json::from_str::<Value>(&data)?;
                 if let Some(root) = &root {
@@ -3691,7 +3691,7 @@ pub(crate) fn append_at(
     // keeps every append call site unchanged.
     let mut blob_root = None;
     if let Some(path) = tx.path() {
-        let root = crate::blob::root_for(path);
+        let root = crate::blob::root_for(std::path::Path::new(path));
         crate::blob::externalize(&mut data, &root)
             .map_err(|error| Error::Invalid(format!("blob write failed: {error}")))?;
         blob_root = Some(root);
