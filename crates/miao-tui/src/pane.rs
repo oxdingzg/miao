@@ -71,6 +71,19 @@ fn body_columns(area: Rect) -> (Rect, Option<Rect>) {
         }),
     )
 }
+
+/// The horizontal span the titled group occupies: from the prose column to the
+/// far side of the sidebar, so the header starts and ends where the body does
+/// instead of at the window's edges.
+fn group_columns(area: Rect) -> Rect {
+    let (prose, sidebar) = body_columns(area);
+    let right = sidebar.map_or(area.right(), |sidebar| sidebar.right());
+    Rect {
+        x: prose.x,
+        width: right.saturating_sub(prose.x),
+        ..area
+    }
+}
 const SIDEBAR_WIDTH: u16 = 40;
 
 pub trait Pane {
@@ -304,7 +317,7 @@ impl Shell {
             Constraint::Length(1),
         ])
         .areas(frame.area());
-        self.title.render(frame, title_area);
+        self.title.render(frame, group_columns(title_area));
         let (transcript_area, sidebar_area) = body_columns(body_area);
         self.transcript.render(frame, transcript_area);
         if let (Some(sidebar), Some(sidebar_area)) = (self.sidebar.as_mut(), sidebar_area) {
@@ -3353,6 +3366,24 @@ mod tests {
             Shell::new(Path::new("."), shell.theme().clone()).last_response(),
             None
         );
+    }
+
+    #[test]
+    fn the_title_starts_where_the_body_starts() {
+        // A header pinned to the window's edge names a body that begins thirty
+        // columns to its right.
+        let area = Rect::new(0, 0, 200, 20);
+        let span = group_columns(area);
+        let (prose, sidebar) = body_columns(area);
+        assert_eq!(span.x, prose.x, "it starts on the prose column");
+        assert_eq!(
+            span.right(),
+            sidebar.expect("wide enough").right(),
+            "and ends with the sidebar"
+        );
+        // On a narrow body there is no column to align with, so it keeps the width.
+        let narrow = group_columns(Rect::new(0, 0, 99, 20));
+        assert_eq!((narrow.x, narrow.width), (0, 99));
     }
 
     #[test]
