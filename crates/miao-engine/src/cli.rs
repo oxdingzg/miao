@@ -22,6 +22,47 @@ pub struct Configured {
     pub plugin_hooks: Option<crate::product::Marker>,
 }
 
+
+/// Where the product keeps credentials when the operator names no source. The
+/// single-binary start has no host to pass `--credential-db`, so the engine
+/// looks where the product installs write.
+fn stored_default() -> Option<std::path::PathBuf> {
+    let root = std::env::var_os("MIAO_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("XDG_DATA_HOME").map(|dir| std::path::PathBuf::from(dir).join("miao"))
+        })
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".local/share/miao"))
+        })?;
+    let path = root.join("miao.db");
+    path.is_file().then_some(path)
+}
+
+/// The one unexpired credential stored for `integration`. A credential that is
+/// expired is skipped rather than used: its owning broker has to refresh it
+/// first, and that refusal is the existing, named error.
+fn stored_credential(
+    path: &std::path::Path,
+    integration: &str,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let candidates: Vec<crate::credential::Metadata> = crate::credential::list_database(path)?
+        .into_iter()
+        .filter(|credential| credential.integration == integration && !credential.expired)
+        .collect();
+    match candidates.len() {
+        1 => Ok(candidates.into_iter().next().expect("one candidate").id),
+        0 => Err(format!(
+            "no unexpired credential is stored for {integration}; pass --credential-id or set an API key"
+        )
+        .into()),
+        _ => Err(format!(
+            "several unexpired credentials are stored for {integration}; pass --credential-id to choose one"
+        )
+        .into()),
+    }
+}
+
 pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Send + Sync>> {
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
@@ -131,16 +172,15 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     let integration = options
         .get("--credential-integration")
         .cloned()
-        .unwrap_or_else(|| {
-            if provider_name == "anthropic" {
-                "anthropic".into()
-            } else if provider_name == "amazon-bedrock" {
-                "amazon-bedrock".into()
-            } else if provider_name == "gemini" {
-                "google".into()
-            } else {
-                "openai".into()
-            }
+        .unwrap_or_else(|| match provider_name {
+            "anthropic" => "anthropic".into(),
+            "amazon-bedrock" => "amazon-bedrock".into(),
+            "gemini" => "google".into(),
+            "openai-chat" | "openai-responses" | "subscription-responses" => "openai".into(),
+            // The product names a third-party provider's integration after the
+            // provider itself (`provider.integrationID ?? provider.id`), which is
+            // where a route like volcengine stores its credential.
+            other => other.to_string(),
         });
     if options.contains_key("--credential-db") && options.contains_key("--auth-file") {
         return Err("select only one credential source".into());
@@ -163,12 +203,17 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             integration,
         }
     } else if let Some(path) = options.get("--credential-db") {
+        let path = tokio::fs::canonicalize(path).await?;
+        // Naming the database is enough: a host that does not choose between the
+        // credentials stored for this integration leaves it to the engine, which
+        // refuses to guess when two of them are live.
+        let id = match options.get("--credential-id") {
+            Some(id) => id.clone(),
+            None => stored_credential(&path, &integration)?,
+        };
         Source::Database {
-            path: tokio::fs::canonicalize(path).await?,
-            id: options
-                .get("--credential-id")
-                .ok_or("--credential-id is required")?
-                .clone(),
+            path,
+            id,
             integration,
         }
     } else if let Some(path) = options.get("--auth-file") {
@@ -180,8 +225,11 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             integration,
         }
     } else {
-        if options.contains_key("--credential-id")
-            || options.contains_key("--credential-integration")
+        // A selection without a source resolves against the store the product
+        // installation writes, which is what a single-binary start has.
+        if (options.contains_key("--credential-id")
+            || options.contains_key("--credential-integration"))
+            && stored_default().is_none()
         {
             return Err("credential selection requires a file, database, or socket source".into());
         }
@@ -214,10 +262,37 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             } else {
                 "OPENAI_API_KEY"
             };
-            Source::Static(Credential::key(
-                std::env::var(name)
-                    .map_err(|_| "API key or explicit credential source is required")?,
-            ))
+            // An exported key is the operator's own override, so it wins. Without
+            // one, a single-binary start reads the product store the installation
+            // writes, because it has no host to pass `--credential-db`.
+            match std::env::var(name) {
+                Ok(key) => Source::Static(Credential::key(key)),
+                Err(_) => {
+                    let stored = match stored_default() {
+                        Some(path) => {
+                            let path = tokio::fs::canonicalize(&path).await?;
+                            let id = match options.get("--credential-id") {
+                                Some(id) => Some(id.clone()),
+                                None => stored_credential(&path, &integration).ok(),
+                            };
+                            id.map(|id| (path, id))
+                        }
+                        None => None,
+                    };
+                    match stored {
+                        Some((path, id)) => Source::Database {
+                            path,
+                            id,
+                            integration,
+                        },
+                        None => {
+                            return Err(
+                                "API key or explicit credential source is required".into()
+                            )
+                        }
+                    }
+                }
+            }
         }
     };
     source.validate().await?;
