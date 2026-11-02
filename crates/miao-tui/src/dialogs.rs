@@ -484,7 +484,10 @@ impl Dialog {
         // separate runs, so a provider names itself once.
         let mut groups: Vec<(Option<String>, Vec<usize>)> = Vec::new();
         for (index, model) in models.iter().enumerate() {
-            match groups.iter_mut().find(|(provider, _)| *provider == model.provider) {
+            match groups
+                .iter_mut()
+                .find(|(provider, _)| *provider == model.provider)
+            {
                 Some((_, indices)) => indices.push(index),
                 None => groups.push((model.provider.clone(), vec![index])),
             }
@@ -1582,7 +1585,13 @@ mod tests {
         // headers interleave instead of one block of headers up front.
         assert_eq!(
             labels,
-            vec!["zhipu", "glm-5 · openai-chat", "flash · openai-chat", "mtty", "haiku · openai-chat"]
+            vec![
+                "zhipu",
+                "glm-5 · openai-chat",
+                "flash · openai-chat",
+                "mtty",
+                "haiku · openai-chat"
+            ]
         );
         assert!(list.rows[0].is_header());
         assert!(!list.rows[1].is_header());

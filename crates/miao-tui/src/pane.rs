@@ -620,11 +620,7 @@ impl Pane for TranscriptPane {
         // row the way a sticky header is. The prompt's own first row needs no
         // reminder, so the marker starts one row past it.
         if !self.follow && start < self.body.len() {
-            if let Some((_, prompt)) = self
-                .user_anchors
-                .iter()
-                .rev()
-                .find(|(row, _)| *row < start)
+            if let Some((_, prompt)) = self.user_anchors.iter().rev().find(|(row, _)| *row < start)
             {
                 let first = prompt.lines().next().unwrap_or_default();
                 if !first.is_empty() {
@@ -3608,7 +3604,8 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let painted = wrapped_text(&transcript_lines(&transcript, &theme, false, None).lines).join("\n");
+        let painted =
+            wrapped_text(&transcript_lines(&transcript, &theme, false, None).lines).join("\n");
         assert!(painted.contains("context · engine"), "{painted}");
         assert!(painted.contains("Task paused: no todo moved."), "{painted}");
         assert!(
