@@ -299,10 +299,9 @@ impl Dialog {
         match (&panel.view, &panel.notice) {
             (None, Some(notice)) => lines
                 .push(Line::from(notice.as_str()).style(Style::default().fg(theme.palette.error))),
-            (None, _) if panel.loading => lines.push(Line::from(format!(
-                "reading diff of {}…",
-                panel.path
-            ))),
+            (None, _) if panel.loading => {
+                lines.push(Line::from(format!("reading diff of {}…", panel.path)))
+            }
             (Some(view), notice) => {
                 lines.push(
                     Line::from(view.path.clone()).style(Style::default().fg(theme.palette.accent)),
@@ -353,9 +352,7 @@ impl Dialog {
                         .style(Style::default().fg(theme.palette.text_muted)),
                 );
             }
-            (None, None) => {
-                lines.push(Line::from(format!("reading diff of {}…", panel.path)))
-            }
+            (None, None) => lines.push(Line::from(format!("reading diff of {}…", panel.path))),
         }
         let paragraph = Paragraph::new(lines)
             .wrap(Wrap { trim: false })
@@ -525,7 +522,10 @@ mod tests {
         );
         assert_eq!(dialog.handle_key(key(KeyCode::Esc)), Action::None);
         assert!(!dialog.diff_open());
-        assert!(matches!(dialog.handle_key(key(KeyCode::Esc)), Action::Close));
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Esc)),
+            Action::Close
+        ));
     }
 
     #[test]
@@ -614,7 +614,11 @@ mod tests {
     #[test]
     fn the_diff_box_grows_with_its_patch_up_to_the_cap() {
         let mut dialog = loaded_dialog();
-        assert_eq!(dialog.view_rows(), dialog.body_rows(), "list mode unchanged");
+        assert_eq!(
+            dialog.view_rows(),
+            dialog.body_rows(),
+            "list mode unchanged"
+        );
         dialog.open_diff("src/lib.rs".into());
         assert_eq!(dialog.view_rows(), 6, "no patch yet: the minimum");
         dialog.diff_loaded(
