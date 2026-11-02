@@ -132,7 +132,7 @@ async fn configured_route(
     let Some(transport) = api
         .get("package")
         .and_then(serde_json::Value::as_str)
-        .and_then(transport_for_package)
+        .and_then(crate::provider::transport_for_package)
     else {
         return Ok(None);
     };
@@ -141,17 +141,6 @@ async fn configured_route(
         .and_then(serde_json::Value::as_str)
         .map(|url| endpoint_for(url, transport));
     Ok(Some((transport.to_string(), endpoint)))
-}
-
-/// The engine transport an aisdk package maps to. The single-model resolution
-/// and the generated routes manifest must agree, so they share one table.
-fn transport_for_package(package: &str) -> Option<&'static str> {
-    match package {
-        "@ai-sdk/anthropic" => Some("anthropic"),
-        "@ai-sdk/google" | "@ai-sdk/google-vertex" => Some("gemini"),
-        "@ai-sdk/openai" | "@ai-sdk/openai-compatible" => Some("openai-chat"),
-        _ => None,
-    }
 }
 
 /// The request URL for a transport over the configured base URL.
@@ -251,7 +240,7 @@ pub async fn config_routes_manifest(
             let Some(transport) = api
                 .and_then(|api| api.get("package"))
                 .and_then(serde_json::Value::as_str)
-                .and_then(transport_for_package)
+                .and_then(crate::provider::transport_for_package)
             else {
                 continue;
             };
@@ -355,7 +344,7 @@ pub async fn config_routes_manifest(
             let Some(transport) = provider
                 .get("npm")
                 .and_then(serde_json::Value::as_str)
-                .and_then(transport_for_package)
+                .and_then(crate::provider::transport_for_package)
             else {
                 continue;
             };
@@ -506,7 +495,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
         eprintln!(
-            "Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\n       miao-engine retention --db PATH [--session ID] [--apply]\n       miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]\n       miao-engine permission-source --db PATH --project ID --directory PATH\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required."
+            "Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH | --agent-name NAME] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\n       miao-engine retention --db PATH [--session ID] [--apply]\n       miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]\n       miao-engine permission-source --db PATH --project ID --directory PATH\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required."
         );
         std::process::exit(2);
     }
@@ -524,6 +513,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             "--provider",
             "--policy",
             "--agent-config",
+            "--agent-name",
             "--config-dir",
             "--config-sources",
             "--mode",
@@ -1191,6 +1181,33 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             Ok::<_, miao_engine::protocol::Error>(agent)
         })
         .transpose()?;
+    let default_agent = match (default_agent, options.get("--agent-name")) {
+        (Some(_), Some(_)) => {
+            return Err("--agent-config and --agent-name select the default agent twice".into());
+        }
+        (Some(agent), None) => Some(agent),
+        (None, Some(name)) => {
+            let Some(sources) = config_sources(&options)? else {
+                return Err(
+                    "--agent-name needs the configuration (--config-dir or --config-sources)"
+                        .into(),
+                );
+            };
+            let normalized = miao_engine::config_derive::normalized_from_sources(&sources)?;
+            let providers = normalized
+                .get("providers")
+                .and_then(serde_json::Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            let entry = normalized
+                .get("agents")
+                .and_then(|agents| agents.get(name))
+                .ok_or_else(|| format!("no agent named {name} in the merged configuration"))?;
+            let model = miao_engine::config_v1::agent_model_binding(entry, &providers)?;
+            Some(miao_engine::config_v1::agent_manifest(name, entry, model)?)
+        }
+        (None, None) => None,
+    };
     let runtime = match (
         options.get("--permission-root-db"),
         options.get("--permission-project"),

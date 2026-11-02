@@ -221,6 +221,105 @@ fn normalize_action(action: &str) -> &str {
     }
 }
 
+/// Resolve one entry of the merged `agents` map into a host-resolved
+/// manifest, the standalone counterpart of the product's `agentManifest()`
+/// translation (`packages/miao/src/engine/product-agent.ts`). `model` is
+/// resolved by the caller out of the provider table, because the binding's
+/// protocol derives from the provider's transport package rather than from
+/// the entry itself; an entry that pins no model passes `None` and the
+/// Session follows the operator's `--model`.
+pub fn agent_manifest(
+    name: &str,
+    entry: &Value,
+    model: Option<crate::session_model::Binding>,
+) -> Result<crate::session_agent::AgentManifest, String> {
+    let Some(map) = entry.as_object() else {
+        return Err(format!("agent {name} is not an object"));
+    };
+    if map.get("disabled").and_then(Value::as_bool) == Some(true) {
+        return Err(format!("agent {name} is disabled in configuration"));
+    }
+    let manifest = crate::session_agent::AgentManifest {
+        name: name.to_string(),
+        semantics: Some("product-agent-ordered-v1".into()),
+        instructions: map.get("system").and_then(Value::as_str).map(str::to_owned),
+        tools: None,
+        permissions: map
+            .get("permissions")
+            .cloned()
+            .map(serde_json::from_value::<Vec<crate::permission::Rule>>)
+            .transpose()
+            .map_err(|error| format!("agent {name}: invalid permissions: {error}"))?,
+        ordered_permissions: None,
+        permission_mode: map
+            .get("permission_mode")
+            .cloned()
+            .map(serde_json::from_value::<crate::session_agent::PermissionMode>)
+            .transpose()
+            .map_err(|error| format!("agent {name}: invalid permission_mode: {error}"))?,
+        model,
+        mode: None,
+        request: map
+            .get("request")
+            .cloned()
+            .map(serde_json::from_value::<crate::request_options::Options>)
+            .transpose()
+            .map_err(|error| format!("agent {name}: invalid request options: {error}"))?,
+        steps: map
+            .get("steps")
+            .and_then(Value::as_u64)
+            .and_then(|steps| u32::try_from(steps).ok()),
+        budget: map.get("budget").and_then(Value::as_u64),
+    };
+    manifest
+        .validate()
+        .map_err(|error| format!("agent {name}: {error}"))?;
+    Ok(manifest)
+}
+
+/// The provider-table half of `agent_manifest`: turn an entry's
+/// `provider/model` reference into a session binding by reading the
+/// transport package off the model's or the provider's `api`, the same
+/// derivation the route plan uses.
+pub fn agent_model_binding(
+    entry: &Value,
+    providers: &Map<String, Value>,
+) -> Result<Option<crate::session_model::Binding>, String> {
+    let Some(model_ref) = entry.get("model").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    let Some((provider_id, model_id)) = model_ref.split_once('/') else {
+        return Err(format!(
+            "agent model {model_ref:?} does not name a provider/model route"
+        ));
+    };
+    let Some(provider) = providers.get(provider_id) else {
+        return Err(format!(
+            "agent model {model_ref:?} names a provider missing from configuration"
+        ));
+    };
+    let api = provider
+        .get("models")
+        .and_then(|models| models.get(model_id))
+        .and_then(|model| model.get("api"))
+        .or_else(|| provider.get("api"))
+        .filter(|api| !api.is_null());
+    let transport = api
+        .and_then(|api| api.get("package"))
+        .and_then(Value::as_str)
+        .and_then(crate::provider::transport_for_package)
+        .ok_or_else(|| format!("agent model {model_ref:?} has no transport in configuration"))?;
+    Ok(Some(crate::session_model::Binding {
+        protocol: transport.to_string(),
+        model: model_id.to_string(),
+        route_id: None,
+        variant: entry
+            .get("variant")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+    }))
+}
+
 fn agents(map: &Map<String, Value>) -> Option<Value> {
     let mut entries = Vec::new();
     if let Some(Value::Object(agent)) = map.get("agent") {
@@ -1048,5 +1147,66 @@ mod tests {
             migrate(&json!({ "autoshare": true, "share": "manual" }))["share"],
             json!("manual")
         );
+    }
+
+    #[test]
+    fn an_agent_entry_translates_into_a_manifest() {
+        let entry = json!({
+            "system": "Review the diff.",
+            "steps": 12,
+            "budget": 4096u64,
+            "permission_mode": "auto",
+            "request": { "body": { "temperature": 0.2 } },
+            "permissions": [{ "tool": "read_file", "path": "*", "decision": "allow" }],
+        });
+        let manifest = agent_manifest("reviewer", &entry, None).expect("translates");
+        assert_eq!(manifest.name, "reviewer");
+        assert_eq!(manifest.instructions.as_deref(), Some("Review the diff."));
+        assert_eq!(manifest.steps, Some(12));
+        assert_eq!(manifest.budget, Some(4096));
+        assert!(manifest.permission_mode.is_some());
+        assert!(manifest.request.is_some());
+        assert_eq!(manifest.permissions.as_ref().map(Vec::len), Some(1));
+        assert!(manifest.model.is_none());
+    }
+
+    #[test]
+    fn a_disabled_or_non_object_agent_entry_is_named_in_the_error() {
+        let error = agent_manifest("gone", &json!({ "disabled": true }), None)
+            .expect_err("disabled is refused");
+        assert!(error.contains("gone"), "{error}");
+        assert!(error.contains("disabled"), "{error}");
+        let error =
+            agent_manifest("odd", &json!("a string"), None).expect_err("non-object is refused");
+        assert!(error.contains("odd"), "{error}");
+    }
+
+    #[test]
+    fn an_agent_model_reference_resolves_through_the_provider_table() {
+        let providers = json!({
+            "anthropic": {
+                "models": {
+                    "claude": { "api": { "package": "@ai-sdk/anthropic" } }
+                }
+            }
+        });
+        let entry = json!({ "model": "anthropic/claude", "variant": "thinking" });
+        let binding = agent_model_binding(&entry, providers.as_object().unwrap())
+            .expect("resolves")
+            .expect("the entry pins a model");
+        assert_eq!(binding.protocol, "anthropic");
+        assert_eq!(binding.model, "claude");
+        assert_eq!(binding.variant.as_deref(), Some("thinking"));
+
+        let missing = agent_model_binding(
+            &json!({ "model": "volcengine/deepseek" }),
+            providers.as_object().unwrap(),
+        )
+        .expect_err("an unknown provider is named in the error");
+        assert!(missing.contains("volcengine"), "{missing}");
+
+        let unpinned =
+            agent_model_binding(&json!({}), providers.as_object().unwrap()).expect("no model");
+        assert!(unpinned.is_none());
     }
 }

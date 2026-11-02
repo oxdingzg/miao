@@ -50,6 +50,7 @@ struct Options {
     prompt: Option<String>,
     auto: bool,
     fork: bool,
+    agent: Option<String>,
 }
 
 enum Invocation {
@@ -120,6 +121,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Invocation, String> {
     let mut prompt: Option<String> = None;
     let mut auto = false;
     let mut fork = false;
+    let mut agent: Option<String> = None;
     while let Some(arg) = args.next() {
         // Both `--flag value` and `--flag=value` are accepted; the CLI passes
         // the former, a person typing the command often uses the latter.
@@ -161,6 +163,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Invocation, String> {
                 }
                 fork = true;
             }
+            "--agent" => agent = Some(value("--agent")?),
             other => return Err(format!("unexpected argument \"{other}\"")),
         }
     }
@@ -175,6 +178,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Invocation, String> {
             prompt,
             auto,
             fork,
+            agent,
         }),
         // A single binary is started in a directory, so the working directory is
         // the workspace unless one is named; `-h` still asks for help.
@@ -189,6 +193,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Invocation, String> {
             prompt,
             auto,
             fork,
+            agent,
         }),
     })
 }
@@ -210,6 +215,7 @@ fn launch(options: Options) -> ExitCode {
         prompt: options.prompt,
         auto: options.auto,
         fork: options.fork,
+        agent: options.agent,
     }) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
