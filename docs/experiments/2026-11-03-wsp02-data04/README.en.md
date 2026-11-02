@@ -22,9 +22,9 @@ Engine layer, release, macmini (M4, macOS):
 
 | scenario      | engine p50/p95 ms | bare git p50/p95 ms | engine share p50 ms | answer bytes |
 | ------------- | ----------------- | ------------------- | ------------------- | ------------ |
-| status, 3350 entries | 60 / 70    | 53 / 70             | ~7                  | 298,648      |
-| status, 50 entries   | 32 / 37    | —                   | —                   | 4,821        |
-| diff, one file       | 33 / 48    | 33 / 36             | ~0                  | 226          |
+| status, 3350 entries | 55 / 63    | 50 / 53             | ~5                  | 317,653      |
+| status, 50 entries   | 39 / 53    | —                   | —                   | 4,821        |
+| diff, one file       | 28 / 33    | 24 / 30             | ~4                  | 226          |
 
 A patch three times the answer cap is refused immediately with the
 truncation fact (`an_oversized_diff_refuses_instead_of_stalling`) instead of
@@ -32,7 +32,7 @@ streaming the whole patch.
 
 Reading: the git primitive dominates the whole path; the engine's own share
 (parse plus JSON building) stays single-digit milliseconds at 3350 entries,
-and the answer rides one 291 KiB wire frame.
+and the answer rides one 310 KiB wire frame.
 
 TUI layer numbers and the disk curve live in `raw/`.
 

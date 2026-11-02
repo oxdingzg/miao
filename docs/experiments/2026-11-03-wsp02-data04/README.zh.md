@@ -25,7 +25,7 @@ Engine 层，release，macmini（M4，macOS）：
 （`an_oversized_diff_refuses_instead_of_stalling`），而不是流式吐出整个 patch。
 
 结论：git 原语占全链路的绝对大头；engine 自身份额（解析 + JSON 构建）在
-3350 条下保持个位数毫秒，答案以单个 291 KiB wire 帧传输。
+3350 条下保持个位数毫秒，答案以单个 310 KiB wire 帧传输。
 
 TUI 层数字与磁盘曲线在 `raw/`。
 

@@ -1,0 +1,4 @@
+{"scenario":"status_large","changed_entries":3350,"engine":{"first_ms":30,"p50_ms":55,"p95_ms":63,"max_ms":65},"bare_git":{"first_ms":27,"p50_ms":50,"p95_ms":53,"max_ms":55},"engine_share_p50_ms":5,"answer_bytes":317653}
+{"scenario":"status_small","changed_entries":50,"engine":{"first_ms":32,"p50_ms":39,"p95_ms":53,"max_ms":55},"answer_bytes":4821}
+{"scenario":"diff_one_file","engine":{"first_ms":14,"p50_ms":28,"p95_ms":33,"max_ms":39},"bare_git":{"first_ms":14,"p50_ms":24,"p95_ms":30,"max_ms":31},"engine_share_p50_ms":4,"answer_bytes":226}
+{"scenario":"diff_oversized_3x_cap","refusal":"truncation fact returned immediately","assert":"<10s wall, `truncated: true`, `diff: null`"}
