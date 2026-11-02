@@ -22,7 +22,7 @@ use portable_pty::{Child, CommandBuilder, PtySize};
 const SWITCHES: usize = 100;
 
 struct Harness {
-    _pty: Box<dyn portable_pty::MasterPty + Send>,
+    pty: Box<dyn portable_pty::MasterPty + Send>,
     child: Box<dyn Child + Send + Sync>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     output: Arc<Mutex<Vec<u8>>>,
@@ -82,7 +82,7 @@ impl Harness {
         });
         let pid = child.process_id().expect("the child has a pid");
         Self {
-            _pty: pair.master,
+            pty: pair.master,
             child,
             writer,
             output,
@@ -101,12 +101,22 @@ impl Harness {
         String::from_utf8_lossy(&self.output.lock().expect("output lock")).into_owned()
     }
 
-    /// Wait until the screen shows `needle`, appending from `marker` on so an
-    /// old occurrence cannot satisfy a later wait.
+    /// The screen, not the byte stream. A repaint writes cell runs separated by
+    /// cursor motions, so a line that is fully on screen is not contiguous in the
+    /// raw stream: which runs a frame repaints depends on what the previous frame
+    /// already drew, and a layout change shifts that split. Reconstructing the
+    /// terminal gives what a person actually sees.
+    fn screen(&self) -> String {
+        let size = self.pty.get_size().expect("pty size");
+        let mut parser = vt100::Parser::new(size.rows, size.cols, 0);
+        parser.process(&self.output.lock().expect("output lock"));
+        parser.screen().contents()
+    }
+
     fn wait_for(&self, needle: &str, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         loop {
-            if self.text().replace('\r', "").contains(needle) {
+            if self.screen().contains(needle) {
                 return true;
             }
             if Instant::now() >= deadline {
