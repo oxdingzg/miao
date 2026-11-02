@@ -109,6 +109,17 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
             "--session" => session = Some(value("--session")?),
             "--continue" => continue_last = true,
             "--prompt" => prompt = Some(value("--prompt")?),
+            // The legacy interface carried these; the Rust TUI does not
+            // implement them yet. Refusing with the reason beats a different
+            // Session than the one asked for, and names the still-available
+            // escape hatch (CLI-01's "clear error before the terminal exists").
+            "--mini" | "--fork" | "--agent" | "--auto" | "--yolo"
+            | "--dangerously-skip-permissions" | "--replay" | "--no-replay"
+            | "--replay-limit" | "--demo" => {
+                return Err(format!(
+                    "the Rust TUI does not implement {name}; drop it, or run the legacy TypeScript TUI with `miao --tui legacy`"
+                ))
+            }
             other => return Err(format!("unknown option {other}")),
         }
     }
@@ -4359,9 +4370,9 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        db_file_bytes, db_report, db_vacuum, default_db, lsp_servers, mcp_servers, model_routes,
-        parsed_session_location, plugin_entries, retention_plan, strip_comments, tree_bytes,
-        uninstall_targets, worktree_remove_plan,
+        db_file_bytes, db_report, db_vacuum, default_db, launch, lsp_servers, mcp_servers,
+        model_routes, parsed_session_location, plugin_entries, retention_plan, strip_comments,
+        tree_bytes, uninstall_targets, worktree_remove_plan,
     };
     use std::io::Write;
 
@@ -4655,6 +4666,43 @@ mod tests {
         std::fs::write(dir.join("miao.jsonc"), "{ \"model\": \"a/b\" }").expect("config");
         assert!(plugin_entries(Some(&dir)).expect("parses").is_empty());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn unsupported_tui_options_are_refused_by_name_before_the_terminal_exists() {
+        // The legacy interface carried these; the Rust TUI refuses them with
+        // the reason and the legacy escape hatch, never with a silently
+        // different session (CLI-01). A supported option keeps parsing.
+        for option in [
+            "--mini",
+            "--fork",
+            "--agent",
+            "--auto",
+            "--yolo",
+            "--dangerously-skip-permissions",
+            "--replay",
+            "--no-replay",
+            "--replay-limit",
+            "--demo",
+        ] {
+            let error = launch(
+                [
+                    "--db".to_string(),
+                    "/tmp/x.db".to_string(),
+                    option.to_string(),
+                ]
+                .into_iter(),
+            )
+            .expect_err(option);
+            assert!(error.contains(option), "{option}: {error}");
+            assert!(error.contains("--tui legacy"), "{option}: {error}");
+        }
+        assert!(launch(
+            ["--db", "/tmp/x.db", "--continue"]
+                .into_iter()
+                .map(str::to_string)
+        )
+        .is_ok());
     }
 
     #[test]
