@@ -2993,27 +2993,41 @@ fn doctor(rest: &[String]) -> Result<(), String> {
         miao_engine::store::SCHEMA_VERSION
     );
     println!("database  {}", db.display());
-    match std::fs::metadata(&db) {
-        Ok(metadata) => println!("size      {} bytes", metadata.len()),
+    // The database appears the first time a session runs. A fresh install has
+    // none, and a doctor that failed there would report a broken machine before
+    // the product has done anything; any other read error is a real fault.
+    let created = match std::fs::metadata(&db) {
+        Ok(metadata) => {
+            println!("size      {} bytes", metadata.len());
+            true
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            println!("database  not created yet");
+            false
+        }
         Err(error) => {
             println!("database  unreadable: {error}");
             return Err("the database cannot be opened".into());
         }
+    };
+    if created {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| error.to_string())?;
+        let sessions = runtime.block_on(async {
+            let store = miao_engine::store::Store::open(&db)
+                .await
+                .map_err(|error| format!("cannot open the store: {error}"))?;
+            store
+                .sessions()
+                .await
+                .map_err(|error| format!("cannot list sessions: {error}"))
+        })?;
+        println!("sessions  {}", sessions.len());
+    } else {
+        println!("sessions  0");
     }
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| error.to_string())?;
-    let sessions = runtime.block_on(async {
-        let store = miao_engine::store::Store::open(&db)
-            .await
-            .map_err(|error| format!("cannot open the store: {error}"))?;
-        store
-            .sessions()
-            .await
-            .map_err(|error| format!("cannot list sessions: {error}"))
-    })?;
-    println!("sessions  {}", sessions.len());
     let config_dir = std::env::var_os("MIAO_CONFIG_DIR")
         .map(PathBuf::from)
         .or_else(|| {
@@ -3838,17 +3852,37 @@ fn list_credentials() -> Result<(), String> {
 /// List the routes the engine would be given. The routes manifest is the same
 /// file the product passes as `--model-routes-config`, so this prints exactly
 /// what a turn can address rather than a separate opinion.
+///
+/// A bare install runs this with nothing paved, and the product is the one that
+/// normally derives the manifest and hands the path over. Deriving the same
+/// routes from the configuration keeps the answer identical instead of
+/// answering with the name of an internal variable.
 fn list_models() -> Result<(), String> {
-    let path = std::env::var("MIAO_ENGINE_MODEL_ROUTES_CONFIG").map_err(|_| {
-        "set MIAO_ENGINE_MODEL_ROUTES_CONFIG (the product passes it to the engine)".to_string()
-    })?;
-    let text = std::fs::read_to_string(&path).map_err(|error| format!("{path}: {error}"))?;
-    let manifest: serde_json::Value =
-        serde_json::from_str(&text).map_err(|error| format!("{path}: {error}"))?;
-    let mut ids = Vec::new();
-    collect_ids(&manifest, &mut ids);
+    let mut ids = match std::env::var("MIAO_ENGINE_MODEL_ROUTES_CONFIG") {
+        Ok(path) => {
+            let text =
+                std::fs::read_to_string(&path).map_err(|error| format!("{path}: {error}"))?;
+            let manifest: serde_json::Value =
+                serde_json::from_str(&text).map_err(|error| format!("{path}: {error}"))?;
+            let mut ids = Vec::new();
+            collect_ids(&manifest, &mut ids);
+            ids
+        }
+        Err(_) => model_routes(product_config_dir(None).as_deref(), "")?
+            .iter()
+            .filter_map(|route| route["id"].as_str().map(str::to_string))
+            .collect(),
+    };
     ids.sort();
     ids.dedup();
+    if ids.is_empty() {
+        let dir = product_config_dir(None)
+            .map(|dir| dir.display().to_string())
+            .unwrap_or_else(|| "no configuration directory".into());
+        return Err(format!(
+            "no model routes: no provider is configured in {dir}"
+        ));
+    }
     for id in ids {
         println!("{id}");
     }
