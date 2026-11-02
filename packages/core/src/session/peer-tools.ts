@@ -116,7 +116,26 @@ export const make = (input: Dependencies): Readonly<Record<string, AnyTool>> => 
             ...(work.objective === undefined ? {} : { objective: work.objective }),
             active: work.active,
           }
-        }),
+        }).pipe(
+          // One Session whose stored directory vanished makes `work` die inside
+          // Filesystem.realPath, and a defect is not a typed failure: without
+          // this, a single orphan row takes the whole listing down with it. Report
+          // that row from what the database still knows (#2281).
+          Effect.catchCause(() =>
+            Effect.succeed({
+              id: row.id,
+              slug: row.slug,
+              title: row.title,
+              ...(row.parent_id === null ? {} : { parentID: row.parent_id }),
+              lastActivity: row.lastActivity,
+              directory: row.directory,
+              execution: "unknown" as const,
+              task: "unknown" as const,
+              backgroundJobs: 0,
+              active: false,
+            }),
+          ),
+        ),
       )
       return (
         summaries
