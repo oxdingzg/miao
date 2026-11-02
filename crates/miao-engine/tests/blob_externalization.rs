@@ -102,17 +102,23 @@ async fn an_oversized_payload_stays_out_of_the_ledger_and_reads_back_whole() {
     let stored = std::fs::read(&files[0]).expect("blob file");
     assert_eq!(stored.len(), document.len());
 
-    // The read path rehydrates, so no consumer sees the reference.
+    // The read path rehydrates, so no consumer sees the reference. Admission
+    // events ride along; the committed one carries the document whole.
     let events = store.events("ses_blob", 0, 100).await.expect("events");
-    assert_eq!(events.len(), 1);
+    let committed = events
+        .iter()
+        .find(|event| event.kind == "tool.completed")
+        .expect("the committed event");
     assert_eq!(
-        events[0].data["result"], document,
+        committed.data["result"], document,
         "the read path hands back the original text"
     );
     assert!(
-        !serde_json::to_string(&events[0].data)
-            .expect("serialise")
-            .contains("\"blob\""),
+        events
+            .iter()
+            .all(|event| !serde_json::to_string(&event.data)
+                .expect("serialise")
+                .contains("\"blob\"")),
         "the reference never leaks through the read path"
     );
 
@@ -223,7 +229,7 @@ async fn the_disk_curve_is_reported_as_numbers() {
                 "tool.completed",
                 json!({
                     "call_id": format!("call_{turn}"),
-                    "result": big_document(&format!("result{turn}"), 32),
+                    "result": big_document(&format!("result{turn}"), 80),
                 }),
             )
             .await
@@ -244,20 +250,22 @@ async fn the_disk_curve_is_reported_as_numbers() {
         "turns": 10,
         "ledger_bytes_after_each_turn": samples,
         "ledger_bytes_final": samples.last().copied().unwrap_or(0),
-        "inline_would_be_bytes": 10 * (128 + 32) * 1024,
+        "inline_would_be_bytes": 10 * (128 + 80) * 1024,
         "blob_files": files.len(),
         "unique_documents": 11,
     });
     println!("DATA-04 disk curve: {body}");
 
     // The repeated ruleset costs one file: ten references, one document.
+    // Each result is 80 KiB — past the threshold, so it externalises too,
+    // and each is distinct.
     assert_eq!(
         files.len(),
         11,
         "ten distinct results plus one shared ruleset"
     );
     assert!(
-        samples.last().copied().unwrap_or(0) < 10 * 160 * 1024 / 2,
+        samples.last().copied().unwrap_or(0) < 10 * 208 * 1024 / 2,
         "the ledger stayed under half the inline size: {body}"
     );
 }
