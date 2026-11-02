@@ -175,6 +175,29 @@ fn main() {
                 }
                 subscribed = true;
                 next = durable.iter().map(seq).max().unwrap_or(0).max(after) + 1;
+                // `MIAO_TUI_FAKE_DELTA` floods the ephemeral channel the way a
+                // real provider does: one progress frame per token, which the
+                // TUI folds into the live draft. Committed events alone never
+                // exercise that path, so a typing-latency sample taken against
+                // them misses exactly the load an operator feels.
+                if let Ok(rate) = std::env::var("MIAO_TUI_FAKE_DELTA") {
+                    let period = rate.parse::<u64>().unwrap_or(2).max(1);
+                    let session = session_id.clone();
+                    std::thread::spawn(move || {
+                        let mut out = std::io::stdout();
+                        for tick in 0..2000 {
+                            send(
+                                &mut out,
+                                json!({"method":"progress","params":{
+                                    "session_id":session,"run_id":"run-stream","step":0,
+                                    "kind":"provider.delta","anchor_seq":2,
+                                    "data":{"delta":{"text":format!("token {tick} ")}}
+                                }}),
+                            );
+                            std::thread::sleep(Duration::from_millis(period));
+                        }
+                    });
+                }
                 if streaming && !stream_started {
                     stream_started = true;
                     let updates = stream_updates.clone();

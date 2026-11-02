@@ -40,22 +40,22 @@ impl Harness {
     /// sustained stream: one committed event every 10 ms for ten seconds, which
     /// is deliberately longer than any typing sample needs.
     fn spawn_engine_mode(label: &str, streaming: bool) -> Self {
-        Self::spawn_engine_full(label, streaming, None)
+        Self::spawn_engine_full(label, streaming, &[])
     }
 
     /// A Session with a long transcript, so typing is measured against a
     /// realistic history rather than two messages.
     fn spawn_engine_history(label: &str, messages: usize) -> Self {
-        Self::spawn_engine_full(label, false, Some(("MIAO_TUI_FAKE_HISTORY", messages)))
+        Self::spawn_engine_full(label, false, &[("MIAO_TUI_FAKE_HISTORY", messages)])
     }
 
     /// One message far larger than a screen, so typing is measured while the
     /// renderer holds it.
     fn spawn_engine_large_output(label: &str, bytes: usize) -> Self {
-        Self::spawn_engine_full(label, false, Some(("MIAO_TUI_FAKE_LARGE_OUTPUT", bytes)))
+        Self::spawn_engine_full(label, false, &[("MIAO_TUI_FAKE_LARGE_OUTPUT", bytes)])
     }
 
-    fn spawn_engine_full(label: &str, streaming: bool, knob: Option<(&str, usize)>) -> Self {
+    fn spawn_engine_full(label: &str, streaming: bool, knobs: &[(&str, usize)]) -> Self {
         let dir = std::env::temp_dir().join(format!("miao-input-latency-{label}"));
         std::fs::create_dir_all(&dir).expect("workspace dir");
         let pair = native_pty_system()
@@ -87,7 +87,7 @@ impl Harness {
         if streaming {
             cmd.env("MIAO_TUI_FAKE_STREAM", "1");
         }
-        if let Some((key, value)) = knob {
+        for (key, value) in knobs {
             cmd.env(key, value.to_string());
         }
         cmd.arg("--db");
@@ -533,4 +533,55 @@ fn typing_echo_latency_is_reported_while_the_turn_streams() {
         .args(["-f", "miao-tui-fake-engine"])
         .status();
     std::thread::sleep(Duration::from_millis(150));
+}
+
+/// The case an operator hits on a long Session: the transcript is large enough
+/// that a full re-fold costs real time, and the run keeps committing while they
+/// type. A TUI that repaints per delta lets the echo fall behind the stream.
+#[test]
+#[ignore = "20k-message fold: run explicitly with --ignored to sample echo latency"]
+fn typing_echo_latency_is_reported_while_a_long_session_streams() {
+    let mut harness = Harness::spawn_engine_full(
+        "streaming-long-typing",
+        true,
+        &[
+            ("MIAO_TUI_FAKE_HISTORY", 20000),
+            // One token every millisecond: closer to a real provider than the
+            // 100-commits-a-second fixture stream.
+            ("MIAO_TUI_FAKE_DELTA", 1),
+        ],
+    );
+    assert!(
+        wait_for_plain(&harness, "Project A", Duration::from_secs(30)),
+        "the home list did not render:\n{}",
+        harness.text()
+    );
+    harness.write(b"\r");
+    assert!(
+        // The viewport shows the newest rows, so the needle is the last turn.
+        // A 20k-message fold under a parallel test binary needs the room.
+        wait_for_plain(&harness, "answer 10000", Duration::from_secs(60)),
+        "the long transcript did not render:\n{}",
+        harness.text()
+    );
+    let keys: Vec<u8> = b"abcdefghijkl".to_vec();
+    let before = harness.output_len();
+    let samples = measure_echo(&mut harness, &keys, Duration::from_millis(1500));
+    assert!(
+        harness.output_len() > before,
+        "nothing streamed during the measurement"
+    );
+    write_report(&harness.dir, "composer-streaming-long", &samples);
+    let worst = samples
+        .iter()
+        .map(|sample| sample.latency_ms)
+        .max()
+        .unwrap_or(0);
+    harness.write(b"\x03");
+    let _ = harness.child.kill();
+    drop(harness.pty);
+    let _ = harness.reader.join();
+    // A loose bound: this machine is not pinned, but an echo that waits on a
+    // repaint queue shows up in the seconds, not the milliseconds.
+    assert!(worst < 2_000, "echo stalled behind the stream: {worst} ms");
 }
