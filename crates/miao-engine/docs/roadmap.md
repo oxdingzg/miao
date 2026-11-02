@@ -9,6 +9,24 @@ Status snapshot: **2026-10-12**; reviewed baseline: `c3baaa6d1` (including #589)
 > The B2 "product recovery UI remains open" note is closed: the recovery
 > dialog is wired (#974); real-client restart acceptance is the remaining leg.
 
+> Refresh 2026-11-02: read this snapshot as history, not as current status. What
+> has moved since the 2026-10-23 note, with the record that now carries it:
+>
+> - benefit evidence for the two placements is
+>   `docs/experiments/2026-11-01-val01-repeat-10-two-arm/` (ten families, ten
+>   repeats, recomputable from its own samples), not the tables below;
+> - the packaged artifact starts with no source tree and no external Bun/Node on
+>   darwin-arm64, linux-x64 and windows-x64 (`specs/rust-retirement-gates.md`, G5),
+>   and the release workflow now smokes the artifact each cli leg builds, so the
+>   remaining platforms are covered there rather than by hand;
+> - the retired-placement gate, its opened observation window and its per-gate
+>   evidence live in `specs/rust-retirement-gates.md`;
+> - **any row here not re-checked on or after this date is not a completion
+>   claim**, and a green CI for a commit does not turn it into one;
+> - `docs/evidence.md` says which record answers which question (implementation,
+>   real-client acceptance, benefit, release), so that does not have to be
+>   inferred from this table.
+
 ## 1. Objective and document responsibilities
 
 **Improve real-task completion quality while reducing token consumption, end-to-end latency, and human correction.**
