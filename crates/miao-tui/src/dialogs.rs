@@ -16,6 +16,9 @@ pub struct ModelInfo {
     pub model: String,
     pub route_id: Option<String>,
     pub variant: Option<String>,
+    /// The provider half of the catalog's model key (`volcengine/model`), so
+    /// the picker groups the list the way the product's does.
+    pub provider: Option<String>,
 }
 
 impl ModelInfo {
@@ -33,6 +36,11 @@ impl ModelInfo {
                         if protocol.is_empty() || model.is_empty() {
                             return Vec::new();
                         }
+                        let provider = entry
+                            .get("model_key")
+                            .and_then(Value::as_str)
+                            .and_then(|key| key.split_once('/'))
+                            .map(|(provider, _)| provider.to_string());
                         let route_id = entry
                             .get("route_id")
                             .and_then(Value::as_str)
@@ -48,13 +56,15 @@ impl ModelInfo {
                                     .collect::<Vec<_>>()
                             })
                             .unwrap_or_default();
+                        let single = Self {
+                            protocol: protocol.to_string(),
+                            model: model.to_string(),
+                            route_id: route_id.clone(),
+                            variant: None,
+                            provider: provider.clone(),
+                        };
                         if variants.is_empty() {
-                            return vec![Self {
-                                protocol: protocol.to_string(),
-                                model: model.to_string(),
-                                route_id,
-                                variant: None,
-                            }];
+                            return vec![single];
                         }
                         variants
                             .into_iter()
@@ -63,6 +73,7 @@ impl ModelInfo {
                                 model: model.to_string(),
                                 route_id: route_id.clone(),
                                 variant: Some(variant),
+                                provider: provider.clone(),
                             })
                             .collect()
                     })
@@ -145,6 +156,13 @@ pub struct Row {
     pub detail: String,
 }
 
+impl Row {
+    /// A provider header names a group and never takes the cursor.
+    pub fn is_header(&self) -> bool {
+        self.id.starts_with("group:")
+    }
+}
+
 pub struct ListDialog {
     pub title: &'static str,
     pub rows: Vec<Row>,
@@ -188,7 +206,7 @@ pub enum ListKind {
 impl ListDialog {
     pub fn new(title: &'static str, rows: Vec<Row>, kind: ListKind, hint: &'static str) -> Self {
         let visible = (0..rows.len()).collect();
-        Self {
+        let mut this = Self {
             title,
             rows,
             selected: 0,
@@ -198,7 +216,13 @@ impl ListDialog {
             visible,
             search: false,
             slots: Vec::new(),
+        };
+        // A leading header names a group and never takes the cursor, so the
+        // list opens on its first model.
+        if this.header_at(0) {
+            this.selected = this.skip_headers(0, 1);
         }
+        this
     }
 
     /// Plain lists (models, accounts, themes) type-ahead filter, and so does a
@@ -217,27 +241,72 @@ impl ListDialog {
 
     pub(crate) fn refilter(&mut self) {
         let needle = self.filter.text().to_lowercase();
-        self.visible = self
-            .rows
-            .iter()
-            .enumerate()
-            .filter(|(_, row)| {
-                needle.is_empty()
-                    || row.label.to_lowercase().contains(&needle)
-                    || row.detail.to_lowercase().contains(&needle)
-                    || row.id.to_lowercase().contains(&needle)
-            })
-            .map(|(index, _)| index)
-            .collect();
-        self.selected = 0;
+        // A provider header matches when any model under it matches, so a
+        // narrowed list keeps its grouping instead of orphaning the models it
+        // kept. Headers are held back until the first matching model of their
+        // group arrives; a model that does not match closes its group.
+        let matches_row = |row: &Row| {
+            needle.is_empty()
+                || row.label.to_lowercase().contains(&needle)
+                || row.detail.to_lowercase().contains(&needle)
+                || row.id.to_lowercase().contains(&needle)
+        };
+        let mut visible = Vec::new();
+        let mut held_headers: Vec<usize> = Vec::new();
+        for (index, row) in self.rows.iter().enumerate() {
+            if Self::is_header(row) {
+                if needle.is_empty() {
+                    visible.push(index);
+                } else {
+                    held_headers.push(index);
+                }
+            } else if matches_row(row) {
+                visible.append(&mut held_headers);
+                visible.push(index);
+            } else if !needle.is_empty() {
+                held_headers.clear();
+            }
+        }
+        self.visible = visible;
+        self.selected = if self.visible.is_empty() {
+            0
+        } else {
+            self.skip_headers(0, 1)
+        };
+    }
+
+    /// A header row names a provider group and never takes the cursor.
+    fn is_header(row: &Row) -> bool {
+        row.is_header()
+    }
+
+    fn header_at(&self, index: usize) -> bool {
+        self.visible
+            .get(index)
+            .and_then(|row_index| self.rows.get(*row_index))
+            .is_some_and(Self::is_header)
+    }
+
+    /// The nearest selectable position from `index`, walking in `delta`'s
+    /// direction when the row there is a header.
+    fn skip_headers(&self, mut index: usize, delta: i32) -> usize {
+        while self.header_at(index) {
+            let last = index == 0 && delta < 0;
+            let exhausted = index + 1 >= self.visible.len() && delta >= 0;
+            if last || exhausted {
+                break;
+            }
+            index = (index as i32 + delta.signum()) as usize;
+        }
+        index
     }
 
     pub(crate) fn move_cursor(&mut self, delta: i32) {
         if self.visible.is_empty() {
             return;
         }
-        let next = self.selected as i32 + delta;
-        self.selected = next.clamp(0, self.visible.len() as i32 - 1) as usize;
+        let next = (self.selected as i32 + delta).clamp(0, self.visible.len() as i32 - 1) as usize;
+        self.selected = self.skip_headers(next, delta);
     }
 
     fn current_id(&self) -> Option<String> {
@@ -405,27 +474,49 @@ pub struct TagDialog {
 
 impl Dialog {
     pub fn models(models: &[ModelInfo], current: Option<&str>) -> Self {
+        // The picker groups by provider the way the product's does: a muted
+        // header row names each provider and the models beneath it belong to
+        // it. Rows carry their position in `models` as their id, so the app
+        // can turn a chosen row back into a binding without assuming the
+        // dialog's indices match the catalog's.
+        let mut rows: Vec<Row> = Vec::new();
+        // A provider's models are merged even when the catalog lists them in
+        // separate runs, so a provider names itself once.
+        let mut groups: Vec<(Option<String>, Vec<usize>)> = Vec::new();
+        for (index, model) in models.iter().enumerate() {
+            match groups.iter_mut().find(|(provider, _)| *provider == model.provider) {
+                Some((_, indices)) => indices.push(index),
+                None => groups.push((model.provider.clone(), vec![index])),
+            }
+        }
+        for (provider, indices) in groups {
+            if let Some(provider) = provider {
+                rows.push(Row {
+                    id: format!("group:{provider}"),
+                    label: provider,
+                    detail: String::new(),
+                });
+            }
+            for index in indices {
+                let model = &models[index];
+                // The Session's own binding is marked so the list answers
+                // "which one am I on" without opening the footer.
+                let label = match current {
+                    Some(current) if current == model.label() => {
+                        format!("● {}", model.label())
+                    }
+                    _ => model.label(),
+                };
+                rows.push(Row {
+                    id: index.to_string(),
+                    label,
+                    detail: model.route_id.clone().unwrap_or_default(),
+                });
+            }
+        }
         Dialog::Models(ListDialog::new(
             "models",
-            models
-                .iter()
-                .enumerate()
-                .map(|(index, model)| {
-                    // The Session's own binding is marked so the list answers
-                    // "which one am I on" without opening the footer.
-                    let label = match current {
-                        Some(current) if current == model.label() => {
-                            format!("● {}", model.label())
-                        }
-                        _ => model.label(),
-                    };
-                    Row {
-                        id: index.to_string(),
-                        label,
-                        detail: model.route_id.clone().unwrap_or_default(),
-                    }
-                })
-                .collect(),
+            rows,
             ListKind::Plain,
             "type to filter · ↑↓ move · enter select · esc close",
         ))
@@ -1075,6 +1166,11 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
             if list.kind == ListKind::ReadOnly {
                 return Action::Close;
             }
+            // A header cannot be chosen: walking past it keeps the decision
+            // on a model even when the cursor was parked there.
+            if list.header_at(list.selected) {
+                list.move_cursor(1);
+            }
             let Some(row_index) = list.visible.get(list.selected).copied() else {
                 return Action::None;
             };
@@ -1467,6 +1563,67 @@ mod tests {
         let list = dialog.list().expect("list");
         let filter = u16::from(list.shows_filter());
         assert_eq!(dialog.height(), 1 + filter + 1 + 2);
+    }
+
+    fn grouped() -> Vec<ModelInfo> {
+        ModelInfo::catalog(&serde_json::json!([
+            {"protocol": "openai-chat", "model": "glm-5", "model_key": "zhipu/glm-5"},
+            {"protocol": "openai-chat", "model": "haiku", "model_key": "mtty/haiku"},
+            {"protocol": "openai-chat", "model": "flash", "model_key": "zhipu/flash"}
+        ]))
+    }
+
+    #[test]
+    fn the_picker_groups_models_under_provider_headers() {
+        let dialog = Dialog::models(&grouped(), None);
+        let list = dialog.list().expect("list");
+        let labels: Vec<&str> = list.rows.iter().map(|row| row.label.as_str()).collect();
+        // The catalog order keeps each provider's models together, so the
+        // headers interleave instead of one block of headers up front.
+        assert_eq!(
+            labels,
+            vec!["zhipu", "glm-5 · openai-chat", "flash · openai-chat", "mtty", "haiku · openai-chat"]
+        );
+        assert!(list.rows[0].is_header());
+        assert!(!list.rows[1].is_header());
+    }
+
+    #[test]
+    fn the_cursor_and_enter_never_rest_on_a_header() {
+        let mut dialog = Dialog::models(&grouped(), None);
+        // The list opens on the first model, past the zhipu header.
+        let list = dialog.list().expect("list");
+        assert_eq!(list.selected, 1);
+        // Down crosses the mtty header between flash and haiku.
+        dialog.handle_key(key(KeyCode::Down));
+        dialog.handle_key(key(KeyCode::Down));
+        let list = dialog.list().expect("list");
+        assert_eq!(list.selected, 4, "the header is skipped");
+        // Walking back crosses it the same way.
+        dialog.handle_key(key(KeyCode::Up));
+        let list = dialog.list().expect("list");
+        assert_eq!(list.selected, 2, "walking back skips the header too");
+        // Enter on the header's own position (its cursor neighbour) still
+        // decides a model, never the section label.
+        assert!(
+            matches!(dialog.handle_key(key(KeyCode::Enter)), Action::Chosen(index) if index == 2)
+        );
+    }
+
+    #[test]
+    fn a_filter_keeps_the_headers_of_the_models_it_keeps() {
+        let mut dialog = Dialog::models(&grouped(), None);
+        for c in "haiku".chars() {
+            dialog.handle_key(key(KeyCode::Char(c)));
+        }
+        let list = dialog.list().expect("list");
+        let visible: Vec<&str> = list
+            .visible
+            .iter()
+            .map(|index| list.rows[*index].label.as_str())
+            .collect();
+        assert_eq!(visible, vec!["mtty", "haiku · openai-chat"]);
+        assert_eq!(list.selected, 1, "the cursor sits on the model");
     }
 
     #[test]
