@@ -107,7 +107,19 @@ Windows 验收通过。构建与重型检查使用项目配置的构建机，机
 
 三个平台（darwin-arm64、linux-x64、windows-x64）都是同一结论：发布产物在没有源码树、没有外部 Bun/Node 的环境里可以启动。
 
-仍未取得：darwin-x64 与 linux-arm64 的同样验证，以及健康/损坏扩展混合下的 G5 回归。
+**darwin-x64** 用同一份发布产物在 macOS arm64 构建机上经 Rosetta 以 x86_64 执行（2026-11-02）：
+
+| 检查 | 做法 | 结果 |
+| --- | --- | --- |
+| 产物校验 | `miao-darwin-x64.zip` 与 `.sha256` | `e091d260…0381` 一致 |
+| 形态 | 解压后目录 | `./miao` 229,169,632 字节，`file` 报 `Mach-O 64-bit executable x86_64` |
+| 启动 | `env -i PATH=/usr/bin:/bin … arch -x86_64 ./miao --version` | 输出 `0.3.25` |
+
+这条只证明「x86_64 产物在 Rosetta 翻译层下可启动」，**不是**在真实 Intel Mac 上的原生运行；后者仍未取得。
+
+仍未取得：**linux-arm64** 的原生验证——当前可用的构建机没有 arm64 Linux 主机，`docker run --platform linux/arm64` 在 x86_64 主机上因缺 binfmt/QEMU 直接 `exec format error`；以及健康/损坏扩展混合下的 G5 回归。
+
+要彻底覆盖而不是逐台手工验证，应当让**发布工作流在自己构建产物的那条腿上**加一步 `--version` 冒烟：每条 cli 腿都在目标架构的 runner 上构建，这样五个平台按构造被覆盖，且验证的是真正要发布的那个文件。这是需要单独验证的管线改动，本轮未做。
 
 ## G6 证据：本地产物清点与不兼容引擎拒绝（2026-11-01）
 
