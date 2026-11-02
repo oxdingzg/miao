@@ -127,6 +127,44 @@ async fn a_respawned_connection_replays_every_subscription_from_its_last_cursor(
 }
 
 #[tokio::test]
+async fn an_unsubscribed_session_keeps_no_cursor_to_replay_from() {
+    let (mut connection, mut events) = Connection::start(fake(), TIMEOUT).expect("start");
+    {
+        let client = connection.connect().await.expect("connect");
+        client.subscribe("s", 0).await.expect("subscribe");
+        assert_eq!(durable_seqs(&mut events, 5).await, vec![1, 2, 3, 4, 5]);
+        client.unsubscribe("s").await.expect("unsubscribe");
+        assert!(
+            !client.cursors().contains_key("s"),
+            "a closed subscription must not keep a cursor"
+        );
+        // The fake exits without answering, so this call settles closed.
+        assert!(client.request("exit", json!({})).await.is_err());
+    }
+    assert!(matches!(next(&mut events).await, TransportEvent::Restart));
+
+    // The respawn replays the cursors the connection still holds. The closed one
+    // is gone, so the engine is never asked about that Session again.
+    let client = connection.connect().await.expect("reconnect");
+    assert!(client.cursors().is_empty());
+    client.request("ping", json!({})).await.expect("ping");
+    let replayed = tokio::time::timeout(Duration::from_millis(300), async {
+        loop {
+            match events.recv().await {
+                Some(TransportEvent::Event(event)) => break Some(event.seq),
+                Some(_) => {}
+                None => break None,
+            }
+        }
+    })
+    .await;
+    assert!(
+        !matches!(replayed, Ok(Some(_))),
+        "an unsubscribed Session must not be replayed after a respawn"
+    );
+}
+
+#[tokio::test]
 async fn a_reverse_tool_call_is_refused_instead_of_left_pending() {
     let (mut connection, mut events) = Connection::start(fake(), TIMEOUT).expect("start");
     let client = connection.connect().await.expect("connect");

@@ -319,7 +319,11 @@ impl EngineClient {
         .await
     }
 
+    /// End a durable subscription. The cursor leaves with it: a respawn replays
+    /// every cursor the connection still holds, so one left behind would
+    /// subscribe this client to a Session it already closed.
     pub async fn unsubscribe(&self, session_id: &str) -> Result<Value, TransportError> {
+        self.cursors.lock().expect("cursors").remove(session_id);
         self.request("unsubscribe", json!({ "session_id": session_id }))
             .await
     }

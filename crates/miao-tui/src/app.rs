@@ -2625,17 +2625,29 @@ impl App {
         self.shell.title.set_status(Some(status));
     }
 
-    /// `--continue` opens the Session the engine reports as most recently
-    /// updated. The catalog also carries archived Sessions, which "continue"
-    /// must not pick.
+    /// `--continue` opens the Session with the newest `updated_at_ms`. The list
+    /// sorts a pin ahead of recency, but a pin is a view preference rather than
+    /// an instruction to resume, and the catalog also carries archived
+    /// Sessions: neither may decide where `--continue` lands.
     fn continue_startup(&mut self) {
         if !self.startup.continue_last || self.screen != Screen::Home || self.dialog.is_some() {
             return;
         }
         self.startup.continue_last = false;
-        match self.catalog.iter().find(|row| row.archived_at_ms.is_none()) {
-            Some(row) => {
-                let id = row.id.clone();
+        // Ties fall to the smaller id, the order the catalog sorts with, so two
+        // launchers reading the same catalog continue the same Session.
+        let newest = self
+            .catalog
+            .iter()
+            .filter(|row| row.archived_at_ms.is_none())
+            .min_by(|a, b| {
+                b.updated_at_ms
+                    .cmp(&a.updated_at_ms)
+                    .then_with(|| a.id.cmp(&b.id))
+            })
+            .map(|row| row.id.clone());
+        match newest {
+            Some(id) => {
                 if let Some(engine) = self.engine.clone() {
                     engine.open(&id);
                 }
@@ -3332,6 +3344,32 @@ mod tests {
         assert!(matches!(
             requests.try_recv(),
             Ok(engine::Request::Open(id)) if id == "ses_new"
+        ));
+    }
+
+    #[test]
+    fn continue_ignores_a_pin_and_takes_the_newest_session() {
+        let mut app = app_with(Startup {
+            continue_last: true,
+            ..Startup::default()
+        });
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.start();
+        assert!(matches!(requests.try_recv(), Ok(engine::Request::Catalog)));
+        // The catalog sorts a pin first, so the pinned row leads even though the
+        // other Session was touched later. Continuing is about recency: a pin is
+        // a list preference, not an instruction to resume that Session.
+        app.handle(AppEvent::Catalog(vec![
+            SessionSummary {
+                pinned_at_ms: Some(10),
+                ..summary("ses_pinned", 100)
+            },
+            summary("ses_recent", 200),
+        ]));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Open(id)) if id == "ses_recent"
         ));
     }
 

@@ -357,7 +357,9 @@ fn main() {
                 send(&mut out, json!({"id":id,"result":snapshot}));
             }
             "events" if sessions => send(&mut out, json!({"id":id,"result":[]})),
-            "unsubscribe" if sessions => {
+            // `subscribe` is not gated on the catalog view either, so a test can
+            // open and close one subscription without a fake catalog.
+            "unsubscribe" => {
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
             }
             "sessions" if sessions => {
