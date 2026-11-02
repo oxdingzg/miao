@@ -43,7 +43,13 @@ const transcript: SessionMessage[] = [
 // stream then carries a permission ask and a question, and only after both have
 // been answered does the step settle and session.wait return.
 function server(
-  options: { failPrompt?: boolean; models?: { providerID: string; id: string }[]; transcript?: SessionMessage[] } = {},
+  options: {
+    failPrompt?: boolean
+    models?: { providerID: string; id: string }[]
+    transcript?: SessionMessage[]
+    /** What the Session record reports it cost; absent means nothing was billed. */
+    cost?: number
+  } = {},
 ) {
   const calls: string[] = []
   const replies: { path: string; body: unknown }[] = []
@@ -67,7 +73,15 @@ function server(
     }
     if (url.pathname === "/api/model" && options.models) return json({ location: { directory }, data: options.models })
     if (url.pathname === `/api/session/${sessionID}`)
-      return json({ data: { id: sessionID, agent: "build", title: "t", location: { directory } } })
+      return json({
+        data: {
+          id: sessionID,
+          agent: "build",
+          title: "t",
+          location: { directory },
+          ...(options.cost === undefined ? {} : { cost: options.cost }),
+        },
+      })
     if (url.pathname === `/api/session/${sessionID}/context`)
       return json({ data: admitted ? (options.transcript ?? transcript) : [] })
     if (url.pathname.endsWith("/model") || url.pathname.endsWith("/agent")) return new Response(null, { status: 204 })
@@ -207,6 +221,24 @@ describe("headless V2 run", () => {
     expect(out.events.map((event) => event.type)).toEqual(["step_start", "tool_use", "text", "step_finish"])
     expect(out.events[1].data.part).toMatchObject({ type: "tool", tool: "bash", state: { status: "completed" } })
     expect(out.printed).toEqual([])
+  })
+
+  test("reports what the run cost as one usage_total event", async () => {
+    const { client } = server({ cost: 0.25 })
+    const out = capture()
+    await runHeadless({ ...base, client, auto: true, ...out.output(true) })
+
+    const totals = out.events.filter((event) => event.type === "usage_total")
+    expect(totals.length).toBe(1)
+    expect(totals[0]!.data.part).toMatchObject({ cost: 0.25, delegated: 0, total: 0.25 })
+  })
+
+  test("stays silent when the Session records no cost", async () => {
+    const { client } = server()
+    const out = capture()
+    await runHeadless({ ...base, client, auto: true, ...out.output(true) })
+
+    expect(out.events.some((event) => event.type === "usage_total")).toBe(false)
   })
 
   test("returns the error when the prompt is refused", async () => {

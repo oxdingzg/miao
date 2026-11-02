@@ -115,11 +115,32 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
     // The session is idle: whatever text it produced is final even when the
     // stream never marked its message complete (an unknown finish does that).
     await mirror(true)
+    // What the run cost is a durable fact. Summing `step_finish` events cannot
+    // produce it: a delegated Session records its spend under its own id, so the
+    // total has to come from the Session record itself (#2236).
+    await emitUsageTotal()
     return errors.length > 0 ? errors.join("\n") : undefined
   } finally {
     process.off("SIGINT", interrupt)
     abort.abort()
     await watching
+  }
+
+  /**
+   * One `usage_total` event for the whole run: the Session's own cost plus what
+   * the Sessions it delegated to spent. Silent when the record carries no cost,
+   * so a run that never billed reports nothing rather than a zero total.
+   */
+  async function emitUsageTotal() {
+    const data = await client.sessions.get({ sessionID }).catch(() => undefined)
+    if (!data || typeof data.cost !== "number") return
+    // The delegated figure arrives with the server's roll-up (#2308); until a
+    // given deployment reports it, the run total is the Session's own cost.
+    const reported = (data.usage as { delegated?: unknown } | undefined)?.delegated
+    const delegated = typeof reported === "number" ? reported : 0
+    input.emit("usage_total", {
+      part: { sessionID, cost: data.cost, delegated, total: data.cost + delegated },
+    })
   }
 
   async function watch() {
