@@ -25,6 +25,62 @@ pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 // a destination before its host has switched the authoritative placement.
 pub const SCHEMA_VERSION: u32 = 25;
 
+/// How long a second engine waits for whoever holds the migration lock before
+/// giving up. The host times an engine request out at 60 s, so a wait that long
+/// only reports a timeout with no hint about the cause; this leaves room for a
+/// real migration on a large storage to finish and then names the holder.
+const MIGRATION_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(45);
+
+/// The engine that holds (or last held) the migration lock, written next to the
+/// storage so a waiting engine can name it. Diagnostic only: the kernel lock is
+/// the sole authority, and a stale file never blocks acquisition.
+fn record_owner(storage: &Path) {
+    let owner = json!({
+        "pid": std::process::id(),
+        "directory": std::env::current_dir().ok().map(|dir| dir.display().to_string()).unwrap_or_default(),
+    });
+    let _ = std::fs::write(
+        storage.with_extension("engine-owner.json"),
+        owner.to_string(),
+    );
+}
+
+fn owner_pid(storage: &Path) -> Option<u32> {
+    let text = std::fs::read_to_string(storage.with_extension("engine-owner.json")).ok()?;
+    serde_json::from_str::<Value>(&text).ok()?["pid"]
+        .as_u64()
+        .map(|pid| pid as u32)
+}
+
+/// Take the exclusive migration lock, waiting a bounded time for its holder.
+///
+/// This used to block indefinitely. Several engines can serve one Location -- the
+/// process that spawned each keeps its own until it exits -- so a new engine
+/// queued behind a stuck or long migration and the host reported "engine
+/// sessions request timed out after 60000 ms" without saying why. A bounded wait
+/// keeps the ordinary case (a live old owner finishing its schema work) working,
+/// and the timeout names the holder instead.
+fn acquire_migration_lock(lock: &std::fs::File, storage: &Path) -> Result<(), Error> {
+    let deadline = std::time::Instant::now() + MIGRATION_LOCK_WAIT;
+    loop {
+        match lock.try_lock_exclusive() {
+            Ok(()) => return Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                if std::time::Instant::now() >= deadline {
+                    let holder = owner_pid(storage)
+                        .map(|pid| format!("miao-engine (pid {pid})"))
+                        .unwrap_or_else(|| "another miao-engine".into());
+                    return Err(Error::Invalid(format!(
+                        "{holder} is still upgrading this storage; wait for it to exit, or close that window and retry"
+                    )));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
 /// Schema versions at or above this floor share the modern run/lease format:
 /// the pre-epoch repair landed at 23, and every later delta is additive
 /// (new tables, no format rewrites). A live older engine keeps reading and
@@ -252,7 +308,8 @@ impl Store {
                     .read(true)
                     .write(true)
                     .open(canonical.with_extension("engine-migrate-lock"))?;
-                migration.lock_exclusive()?;
+                record_owner(&canonical);
+                acquire_migration_lock(&migration, &canonical)?;
                 let conn = Connection::open(&canonical)?;
                 // Concurrent writers wait for SQLite's write lock instead of
                 // failing the statement with SQLITE_BUSY.
@@ -4638,5 +4695,22 @@ mod upgrade_ownership_tests {
         assert!(needs_exclusive_ownership(22, false));
         assert!(needs_exclusive_ownership(22, true));
         assert!(needs_exclusive_ownership(23, false));
+    }
+}
+
+#[cfg(test)]
+mod owner_tests {
+    use super::*;
+
+    #[test]
+    fn a_recorded_owner_can_be_named_and_a_missing_file_is_not_an_error() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let storage = directory.path().join("engine.db");
+        assert_eq!(owner_pid(&storage), None, "no owner record yet");
+        record_owner(&storage);
+        assert_eq!(owner_pid(&storage), Some(std::process::id()));
+        // Sidecar naming has to follow the storage file the way the migration
+        // lock does, or a waiting engine reads a file nobody wrote.
+        assert!(directory.path().join("engine.engine-owner.json").exists());
     }
 }
