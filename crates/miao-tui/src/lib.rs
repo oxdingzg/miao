@@ -181,6 +181,15 @@ async fn drive(
                         title.invalidate();
                     }
                     app.handle(app_event);
+                    // Coalesce before painting. A run that streams deltas puts
+                    // one event in this queue per token, and a keystroke lands
+                    // behind all of them: handling a single event per frame
+                    // spends the loop repainting the transcript while the echo
+                    // of what the operator typed waits in line. Draining here
+                    // means one paint per batch instead of one per token.
+                    while let Ok(queued) = events.try_recv() {
+                        app.handle(queued);
+                    }
                     if app.take_redraw_request() {
                         terminal::redraw(terminal)?;
                     }
