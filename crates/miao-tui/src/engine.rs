@@ -739,8 +739,10 @@ async fn run(
 ) {
     let mut open: Option<Opened> = None;
     let mut dirty: Option<Instant> = None;
+    crate::transport::wire_note("run", "startup refresh begin");
     if let Ok(client) = connection.connect().await {
         refresh_sessions(client, &bus).await;
+        crate::transport::wire_note("run", "startup refresh done");
     }
     loop {
         let deadline = dirty.map(|start| start + REFRESH_DELAY);
@@ -1585,18 +1587,35 @@ async fn refresh_sessions(client: &EngineClient, bus: &Bus) {
     // Session turned a startup with a hundred Sessions into a hundred request
     // round trips and a few thousand queries before the home list could paint,
     // which is exactly the slow first frame an operator notices.
-    let rows = match client.command("session_catalog").await {
-        Ok(Value::Array(rows)) => rows,
-        Ok(_) => {
-            bus.send(AppEvent::EngineFailure(
-                "engine answered session_catalog with a non-array".into(),
-            ));
-            return;
+    //
+    // The catalog is a pure read, so a request that times out under
+    // concurrent load is retried instead of leaving the landing screen on its
+    // spinner for good; a malformed answer is not retried.
+    let mut rows = None;
+    let mut last_error = None;
+    for attempt in 0..4 {
+        match client.command("session_catalog").await {
+            Ok(Value::Array(found)) => {
+                rows = Some(found);
+                break;
+            }
+            Ok(_) => {
+                last_error = Some("engine answered session_catalog with a non-array".to_string());
+                break;
+            }
+            Err(error) => {
+                last_error = Some(error.to_string());
+                if attempt + 1 < 4 {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+            }
         }
-        Err(error) => {
-            bus.send(AppEvent::EngineFailure(error.to_string()));
-            return;
-        }
+    }
+    let Some(rows) = rows else {
+        bus.send(AppEvent::EngineFailure(last_error.unwrap_or_else(|| {
+            "session catalog unavailable".to_string()
+        })));
+        return;
     };
     let rows = rows
         .iter()

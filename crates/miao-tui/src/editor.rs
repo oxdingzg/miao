@@ -772,6 +772,16 @@ impl Composer {
                     self.completion.move_cursor(1);
                     true
                 }
+                // Enter runs the highlighted command in one stroke, the way the
+                // TypeScript prompt does; a second Enter after the completion
+                // closed read as "the command needs two returns". Tab keeps
+                // plain completion for the operator who only wants the text.
+                KeyCode::Enter if self.completion.kind == CompletionKind::Command => {
+                    self.accept_completion();
+                    let trimmed = self.editor.text().trim_end().to_string();
+                    self.editor.set_text(&trimmed);
+                    return self.submit();
+                }
                 KeyCode::Tab | KeyCode::Enter => {
                     self.accept_completion();
                     true
@@ -1834,6 +1844,36 @@ mod tests {
         // A finished first word is no longer a command being completed.
         composer.refresh_completion();
         assert!(!composer.completion.active());
+    }
+
+    /// Enter with a highlighted command runs it in one stroke — the TypeScript
+    /// prompt never asked for a second Return after the list closed. Tab keeps
+    /// pure completion for an operator who only wants the text.
+    #[test]
+    fn enter_on_a_command_completion_submits_in_one_stroke() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-editor-{}-e", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let mut composer = composer(&dir);
+        let keys = Keymap::default();
+        composer.set_commands(vec!["status".into(), "theme".into()]);
+        composer.editor.insert_str("/theme");
+        composer.refresh_completion();
+        assert_eq!(composer.completion.items, vec!["theme".to_string()]);
+        let action = composer.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &keys);
+        let Action::Submit { text, .. } = action else {
+            panic!("a fully typed command submits on Enter");
+        };
+        assert_eq!(text, "/theme");
+        assert!(composer.editor.is_empty());
+
+        // Tab completes without submitting.
+        composer.set_commands(vec!["theme".into()]);
+        composer.editor.set_text("/th");
+        composer.refresh_completion();
+        assert!(composer.completion.active());
+        let action = composer.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &keys);
+        assert!(matches!(action, Action::None));
+        assert_eq!(composer.editor.text(), "/theme ");
     }
 
     #[test]
