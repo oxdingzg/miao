@@ -1279,7 +1279,8 @@ fn tree_migrate_sessions(
             continue;
         }
         let connection = rusqlite::Connection::open(&db).map_err(|error| error.to_string())?;
-        moved += connection            .execute(
+        moved += connection
+            .execute(
                 "UPDATE engine_location SET root = ?2 WHERE root = ?1 OR root LIKE ?1 || '/%'",
                 rusqlite::params![from.display().to_string(), to.display().to_string()],
             )
@@ -1291,7 +1292,10 @@ fn tree_migrate_sessions(
 /// The main working tree of the repository `root` belongs to: the first entry
 /// `worktree list --porcelain` reports, which git always puts first.
 fn git_worktree_main_checkout(root: &str) -> Result<PathBuf, String> {
-    let listed = git_in(std::path::Path::new(root), &["worktree", "list", "--porcelain"])?;
+    let listed = git_in(
+        std::path::Path::new(root),
+        &["worktree", "list", "--porcelain"],
+    )?;
     if !listed.status.success() {
         return Err(String::from_utf8_lossy(&listed.stderr).trim().to_string());
     }
@@ -1397,19 +1401,20 @@ fn project_copy(rest: &[String]) -> Result<(), String> {
         }
     }
     let (Some(source), Some(target_parent)) = (positional.first(), positional.get(1)) else {
-        return Err(
-            "usage: miao project copy SOURCE TARGET_PARENT [--name NAME] [--apply]".into(),
-        );
+        return Err("usage: miao project copy SOURCE TARGET_PARENT [--name NAME] [--apply]".into());
     };
-    if name.as_deref().is_some_and(|value| value.contains('/') || value.contains("..")) {
+    if name
+        .as_deref()
+        .is_some_and(|value| value.contains('/') || value.contains(".."))
+    {
         return Err("copy name must be a single path component".into());
     }
     let source = std::fs::canonicalize(source).map_err(|error| format!("source: {error}"))?;
     if !source.is_dir() {
         return Err(format!("source {} is not a directory", source.display()));
     }
-    let target_parent = std::fs::canonicalize(target_parent)
-        .map_err(|error| format!("target parent: {error}"))?;
+    let target_parent =
+        std::fs::canonicalize(target_parent).map_err(|error| format!("target parent: {error}"))?;
     if !target_parent.is_dir() {
         return Err(format!(
             "target parent {} is not a directory",
@@ -5190,7 +5195,15 @@ mod tests {
         for args in [
             vec!["init", "-q"],
             vec!["-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"],
-            vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed"],
+            vec![
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-qm",
+                "seed",
+            ],
         ] {
             assert!(
                 std::process::Command::new("git")
@@ -5314,7 +5327,10 @@ mod tests {
             0,
             "no half copy remains"
         );
-        assert!(git_status_is_clean(&source), "the source survives the failure");
+        assert!(
+            git_status_is_clean(&source),
+            "the source survives the failure"
+        );
 
         std::env::remove_var("MIAO_ENGINE_STORAGE");
         std::fs::remove_dir_all(&dir).ok();
@@ -5357,13 +5373,12 @@ mod tests {
         }
 
         // Without --force: refuse, and leave both the tree and the anchor.
-        let refused = worktree_remove_apply(
-            repo.display().to_string().as_str(),
-            name,
-            &path,
-            false,
+        let refused =
+            worktree_remove_apply(repo.display().to_string().as_str(), name, &path, false);
+        assert!(
+            refused.is_err(),
+            "anchored sessions refuse removal: {refused:?}"
         );
-        assert!(refused.is_err(), "anchored sessions refuse removal: {refused:?}");
         assert!(path.exists(), "the tree survived the refusal");
         assert_eq!(
             anchored_sessions(&ledger, &canonical).expect("count"),
@@ -5373,8 +5388,8 @@ mod tests {
 
         // With --force: the sessions migrate back to the main checkout first,
         // then the tree goes away.
-        let checkout = git_worktree_main_checkout(repo.display().to_string().as_str())
-            .expect("main checkout");
+        let checkout =
+            git_worktree_main_checkout(repo.display().to_string().as_str()).expect("main checkout");
         worktree_remove_apply(repo.display().to_string().as_str(), name, &path, true)
             .expect("forced removal");
         assert!(!path.exists(), "the tree is gone");
