@@ -810,6 +810,9 @@ fn selection_text(rendered: &[Vec<String>], inner: Rect, a: Position, b: Positio
     lines.join("\n")
 }
 
+/// The widest column the session list uses.
+const SESSION_COLUMN: u16 = 96;
+
 pub struct Home {
     pub rows: Vec<SessionSummary>,
     pub selected: usize,
@@ -1204,6 +1207,7 @@ impl Home {
         // The landing list opens on the action, not on the newest Session: a
         // launch that resumes yesterday's conversation is not what "start" means.
         let offset = usize::from(self.show_new_session());
+        let gutter = ((inner.width.saturating_sub(2).min(SESSION_COLUMN) as usize) / 2);
         if offset == 1 {
             let selected = self.selected == 0;
             let style = match selected {
