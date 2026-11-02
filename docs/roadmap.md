@@ -4,6 +4,16 @@ Status snapshot: **2026-10-18**, main head 54357739c0. The native (Rust) engine
 build-out has landed — see §0. Release v0.2.15 is the first to carry the entire
 native-engine stream (the latest prior published tag is v0.2.14).
 
+> **Refresh 2026-11-02.** The snapshot above is a historical reading: it is dated
+> 2026-10-18 and names v0.2.15, while the published release is now v0.3.25
+> (`2af2a57a85`). Read every row below as history unless it was re-checked on or
+> after this date, and treat a green CI for a commit as implementation evidence
+> only. Current records live elsewhere and are indexed in `docs/evidence.md`:
+> benefit evidence in `docs/experiments/2026-11-01-val01-repeat-10-two-arm/`,
+> interaction costs in `docs/experiments/2026-11-01-val03-mechanical-half/`, and
+> the retirement gate with its observation window in
+> `specs/rust-retirement-gates.md`.
+
 This is the single authoritative inventory of every open item in the V1→V2 rebuild. It replaces
 the earlier distributed trackers (the remaining-work checklist and handoff, the V2 todo list, the
 P7 route inventory, the app API migration checklist, and the publication/performance/storage
