@@ -169,6 +169,26 @@ pub struct Failure {
     pub error: String,
 }
 
+/// How much of a server's catalogue the model-facing surface shows. The wire
+/// always carries the full catalogue (the protocol has no on-demand schema
+/// mode); this selects what `Registry::disclosed` presents to the model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Disclosure {
+    /// Every tool is disclosed — the behaviour before progressive discovery.
+    Off,
+    /// Servers holding more than this many tools collapse to the discovery
+    /// pair; smaller ones keep the full disclosure, which costs nothing.
+    Threshold(usize),
+    /// Every server collapses to the discovery pair.
+    Always,
+}
+impl Default for Disclosure {
+    fn default() -> Self {
+        // Below a few dozen tools the search round-trip is pure loss.
+        Disclosure::Threshold(32)
+    }
+}
+
 /// Connections are explicitly trusted host services, not model-selected URLs
 /// or commands. Tool calls are separate External authority and remain gated.
 pub struct Registry {
@@ -606,6 +626,86 @@ impl Registry {
             .map(|tool| tool.definition.clone())
             .collect()
     }
+    /// The model-facing disclosure surface. Servers whose catalogue exceeds
+    /// the disclosure limit contribute only a discovery pair — `search` and
+    /// `detail` meta aliases — plus any allow-listed aliases; everything else
+    /// passes through whole. The catalogue itself is unchanged, so calls keep
+    /// resolving through the same alias, approval and validator path.
+    pub fn disclosed(&self, disclosure: Disclosure, allowlist: &[String]) -> Vec<ToolDefinition> {
+        let tools = self.tools.read().unwrap();
+        if disclosure == Disclosure::Off {
+            return tools.values().map(|tool| tool.definition.clone()).collect();
+        }
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        for tool in tools.values() {
+            *counts.entry(tool.server.name.as_str()).or_default() += 1;
+        }
+        let servers = self
+            .servers
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone();
+        let allowed: BTreeSet<&String> = allowlist.iter().collect();
+        let mut disclosed = Vec::new();
+        for server in &servers {
+            let count = counts.get(server.name.as_str()).copied().unwrap_or(0);
+            let fold = match disclosure {
+                Disclosure::Threshold(limit) => count > limit,
+                Disclosure::Always => count > 0,
+                Disclosure::Off => false,
+            };
+            let search = meta_search_name(&server.name);
+            let detail = meta_detail_name(&server.name);
+            // A native tool that hashes onto a meta alias must never be
+            // shadowed; that server keeps its full disclosure instead.
+            let collides = tools.keys().any(|key| *key == search || *key == detail);
+            if !fold || count == 0 || collides {
+                disclosed.extend(
+                    tools
+                        .values()
+                        .filter(|tool| tool.server.name == server.name)
+                        .map(|tool| tool.definition.clone()),
+                );
+                continue;
+            }
+            disclosed.push(search_definition(&server.name, count, &search));
+            disclosed.push(detail_definition(&server.name, &detail));
+            disclosed.extend(
+                tools
+                    .values()
+                    .filter(|tool| {
+                        tool.server.name == server.name && allowed.contains(&tool.definition.name)
+                    })
+                    .map(|tool| tool.definition.clone()),
+            );
+        }
+        disclosed
+    }
+    /// The discovery pair answers locally from the resident catalogue. Returns
+    /// `None` for any name that is not a meta alias, so every real tool keeps
+    /// its exact pre-disclosure call path.
+    fn discovery_answer(&self, name: &str, input: &Value) -> Option<Result<Value, ToolError>> {
+        let servers = self
+            .servers
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone();
+        let server = servers.iter().find(|server| {
+            meta_search_name(&server.name) == name || meta_detail_name(&server.name) == name
+        })?;
+        let tools = self.tools.read().unwrap();
+        let catalogue = || {
+            tools
+                .values()
+                .filter(|tool| tool.server.name == server.name)
+                .map(|tool| (tool, &tool.definition))
+                .collect::<Vec<_>>()
+        };
+        if meta_search_name(&server.name) == name {
+            return Some(discovery_search(&catalogue(), server, input));
+        }
+        Some(discovery_detail(&catalogue(), input))
+    }
     /// Re-list one server's catalog in place. The previous catalog survives a
     /// failed refresh; callers learn of success through the definitions change.
     pub async fn refresh(&self, name: &str) -> Result<(), Error> {
@@ -1004,6 +1104,12 @@ impl Registry {
         input: Value,
         cancel: CancellationToken,
     ) -> Result<Value, ToolError> {
+        // The discovery pair is a local catalogue view, not a remote call: it
+        // answers before validation so the meta aliases never fall through to
+        // "tool is not available", and real tools keep their exact path.
+        if let Some(answer) = self.discovery_answer(name, &input) {
+            return answer;
+        }
         self.validate(name, &input)?;
         let (server, native, operation) = {
             let tools = self.tools.read().unwrap();
@@ -1187,6 +1293,138 @@ fn alias(server: &str, tool: &str) -> String {
         slug,
         &suffix[..32]
     )
+}
+
+/// The deterministic slug a server's discovery aliases are built on, matching
+/// the lossy server spelling inside `alias`.
+fn server_slug(server: &str) -> String {
+    server
+        .chars()
+        .take(12)
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+fn meta_search_name(server: &str) -> String {
+    format!("mcp_{}_search", server_slug(server))
+}
+fn meta_detail_name(server: &str) -> String {
+    format!("mcp_{}_detail", server_slug(server))
+}
+fn search_definition(server: &str, count: usize, name: &str) -> ToolDefinition {
+    ToolDefinition {
+        name: name.to_string(),
+        description: format!(
+            "Search the {count}-tool catalogue of MCP server {server}; returns matching tool \
+             names with one-line descriptions. Fetch a schema with the matching detail tool \
+             before calling a tool you have not used yet."
+        ),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Case-insensitive substring to match against tool names and descriptions"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 8, "description": "Maximum matches to return"}
+            },
+            "required": ["query"],
+            "additionalProperties": false
+        }),
+    }
+}
+fn detail_definition(server: &str, name: &str) -> ToolDefinition {
+    ToolDefinition {
+        name: name.to_string(),
+        description: format!(
+            "Return the full input schema of one tool of MCP server {server}, by the name a \
+             search match reported."
+        ),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "tool": {"type": "string", "description": "Tool name as reported by search"}
+            },
+            "required": ["tool"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+fn discovery_search(
+    catalogue: &[(&Tool, &ToolDefinition)],
+    server: &Server,
+    input: &Value,
+) -> Result<Value, ToolError> {
+    let Some(query) = input.get("query").and_then(Value::as_str) else {
+        return Err(ToolError::InvalidInput);
+    };
+    if input
+        .get("limit")
+        .and_then(Value::as_u64)
+        .is_some_and(|limit| !(1..=50).contains(&limit))
+    {
+        return Err(ToolError::InvalidInput);
+    }
+    let limit = input
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(8)
+        .min(50) as usize;
+    let needle = query.to_lowercase();
+    let matches: Vec<Value> = catalogue
+        .iter()
+        .filter(|(_, definition)| {
+            definition.name.to_lowercase().contains(&needle)
+                || definition.description.to_lowercase().contains(&needle)
+        })
+        .take(limit)
+        .map(|(_, definition)| {
+            serde_json::json!({"name": definition.name, "description": definition.description})
+        })
+        .collect();
+    let payload =
+        serde_json::json!({"server": server.name, "total": catalogue.len(), "matches": matches});
+    discovery_budget(&payload)?;
+    Ok(payload)
+}
+
+fn discovery_detail(
+    catalogue: &[(&Tool, &ToolDefinition)],
+    input: &Value,
+) -> Result<Value, ToolError> {
+    let Some(name) = input.get("tool").and_then(Value::as_str) else {
+        return Err(ToolError::InvalidInput);
+    };
+    let Some((_, definition)) = catalogue
+        .iter()
+        .find(|(_, definition)| definition.name == name)
+    else {
+        return Err(ToolError::InvalidArgs(
+            "unknown tool for this server; run its search tool first".into(),
+        ));
+    };
+    let payload = serde_json::json!({
+        "name": definition.name,
+        "description": definition.description,
+        "input_schema": definition.input_schema,
+    });
+    discovery_budget(&payload)?;
+    Ok(payload)
+}
+
+fn discovery_budget(payload: &Value) -> Result<(), ToolError> {
+    let size = serde_json::to_vec(payload)
+        .map_err(|_| ToolError::InvalidInput)?
+        .len();
+    if size > 65536 {
+        return Err(ToolError::External(
+            "MCP discovery result exceeds output budget".into(),
+        ));
+    }
+    Ok(())
 }
 
 // Bound each newline-delimited wire frame before rmcp allocates its full line.
