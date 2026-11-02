@@ -1,6 +1,12 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::Path;
+// The identity machinery is compiled out of the test target, so its imports
+// must be too — `cargo clippy --all-targets -D warnings` runs the test target
+// and treats an import whose only user is cfg'd away as an error.
+#[cfg(not(test))]
+use std::collections::hash_map::DefaultHasher;
+#[cfg(not(test))]
+use std::hash::{Hash, Hasher};
+#[cfg(not(test))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Read the product version from this invocation's checkout, not a cached
