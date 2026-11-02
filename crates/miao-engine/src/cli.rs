@@ -129,24 +129,207 @@ async fn configured_route(
     let Some(api) = api else {
         return Ok(None);
     };
-    let transport = match api.get("package").and_then(serde_json::Value::as_str) {
-        Some("@ai-sdk/anthropic") => "anthropic",
-        Some("@ai-sdk/google" | "@ai-sdk/google-vertex") => "gemini",
-        Some("@ai-sdk/openai" | "@ai-sdk/openai-compatible") => "openai-chat",
-        _ => return Ok(None),
+    let Some(transport) = api
+        .get("package")
+        .and_then(serde_json::Value::as_str)
+        .and_then(transport_for_package)
+    else {
+        return Ok(None);
     };
     let endpoint = api
         .get("url")
         .and_then(serde_json::Value::as_str)
-        .map(|url| {
-            let base = url.trim_end_matches('/');
-            match transport {
-                "openai-chat" => format!("{base}/chat/completions"),
-                "anthropic" => format!("{base}/messages"),
-                _ => base.to_string(),
-            }
-        });
+        .map(|url| endpoint_for(url, transport));
     Ok(Some((transport.to_string(), endpoint)))
+}
+
+/// The engine transport an aisdk package maps to. The single-model resolution
+/// and the generated routes manifest must agree, so they share one table.
+fn transport_for_package(package: &str) -> Option<&'static str> {
+    match package {
+        "@ai-sdk/anthropic" => Some("anthropic"),
+        "@ai-sdk/google" | "@ai-sdk/google-vertex" => Some("gemini"),
+        "@ai-sdk/openai" | "@ai-sdk/openai-compatible" => Some("openai-chat"),
+        _ => None,
+    }
+}
+
+/// The request URL for a transport over the configured base URL.
+fn endpoint_for(url: &str, transport: &str) -> String {
+    let base = url.trim_end_matches('/');
+    match transport {
+        "openai-chat" => format!("{base}/chat/completions"),
+        "anthropic" => format!("{base}/messages"),
+        _ => base.to_string(),
+    }
+}
+
+/// The full model list the configuration names, as a generated routes
+/// manifest. A standalone start answers the model picker the way the product
+/// host answers: every provider entry that carries a transport and an
+/// unexpired stored credential contributes its models, and the configured
+/// default model's route is the primary. A provider or model without a
+/// usable transport or credential steps aside instead of failing the start.
+///
+/// The manifest lives in one temporary file so a `config_reload` re-reads
+/// exactly what startup served; the caller protects the path alongside the
+/// credential stores.
+pub async fn config_routes_manifest(
+    options: &HashMap<String, String>,
+    database: Option<&std::path::Path>,
+) -> Result<Option<std::path::PathBuf>, Box<dyn Error + Send + Sync>> {
+    let Some(database) = database else {
+        return Ok(None);
+    };
+    let Some(sources) = config_sources(options)? else {
+        return Ok(None);
+    };
+    // The default model ref names the primary route the same way the
+    // operator's `--model` does.
+    let default_model = options
+        .get("--model")
+        .cloned()
+        .or_else(|| configured_model(options).ok().flatten());
+    let mut credentials: std::collections::BTreeMap<String, Vec<crate::credential::Metadata>> =
+        std::collections::BTreeMap::new();
+    for entry in crate::credential::list_database(database)? {
+        if !entry.expired {
+            credentials
+                .entry(entry.integration.clone())
+                .or_default()
+                .push(entry);
+        }
+    }
+    let normalized = miao_engine::config_derive::normalized_from_sources(&sources)?;
+    let providers = match normalized.get("providers").and_then(serde_json::Value::as_object) {
+        Some(map) if !map.is_empty() => map,
+        _ => return Ok(None),
+    };
+    let mut entries = Vec::new();
+    for (provider_id, provider) in providers {
+        if provider.get("disabled").and_then(serde_json::Value::as_bool) == Some(true) {
+            continue;
+        }
+        let Some(stored) = credentials
+            .get(provider_id.as_str())
+            .filter(|list| !list.is_empty())
+        else {
+            continue;
+        };
+        let models = match provider.get("models").and_then(serde_json::Value::as_object) {
+            Some(map) => map,
+            None => continue,
+        };
+        let provider_api = provider.get("api").filter(|api| !api.is_null());
+        for (model_id, model) in models {
+            // Mirror the product's picker: a model without tool calling never
+            // reaches a coding Session.
+            let capabilities = model.get("capabilities");
+            if !capabilities
+                .and_then(|caps| caps.get("tools"))
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            let api = model
+                .get("api")
+                .filter(|api| !api.is_null())
+                .or(provider_api);
+            let Some(transport) = api
+                .and_then(|api| api.get("package"))
+                .and_then(serde_json::Value::as_str)
+                .and_then(transport_for_package)
+            else {
+                continue;
+            };
+            let url = api
+                .and_then(|api| api.get("url"))
+                .and_then(serde_json::Value::as_str);
+            // A base URL is what makes an openai-compatible entry routable;
+            // the default-endpoint transports can stand without one.
+            if url.is_none() && transport != "anthropic" {
+                continue;
+            }
+            let endpoint = url.map(|url| endpoint_for(url, transport));
+            let model_ref = format!("{provider_id}/{model_id}");
+            let input = capabilities
+                .and_then(|caps| caps.get("input"))
+                .and_then(serde_json::Value::as_array)
+                .map(|list| {
+                    list.iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            for (index, credential) in stored.iter().enumerate() {
+                let primary = index == 0
+                    && default_model.as_deref().is_some_and(|default| {
+                        default == model_ref.as_str()
+                    });
+                let id = if index == 0 {
+                    model_ref.clone()
+                } else {
+                    use sha2::Digest;
+                    let digest = sha2::Sha256::digest(serde_json::to_vec(&serde_json::json!([
+                        provider_id, model_id, credential.id,
+                    ]))?);
+                    let mut hex = String::with_capacity(digest.len() * 2);
+                    for byte in digest {
+                        hex.push_str(&format!("{byte:02x}"));
+                    }
+                    format!("account/{hex}")
+                };
+                let mut entry = serde_json::json!({
+                    "id": id,
+                    "provider": transport,
+                    "model": model_id,
+                    "credential": {
+                        "type": "database",
+                        "path": database.display().to_string(),
+                        "id": credential.id.clone(),
+                        "integration": provider_id,
+                    },
+                    "account": {
+                        "id": credential.id.clone(),
+                        "model_key": model_ref,
+                        "default": index == 0,
+                    },
+                });
+                if let Some(endpoint) = &endpoint {
+                    entry["endpoint"] = serde_json::Value::String(endpoint.clone());
+                }
+                if primary {
+                    entry["primary"] = serde_json::Value::Bool(true);
+                }
+                let limit = model.get("limit");
+                let context = limit
+                    .and_then(|limit| limit.get("context"))
+                    .and_then(serde_json::Value::as_u64);
+                let output = limit
+                    .and_then(|limit| limit.get("output"))
+                    .and_then(serde_json::Value::as_u64);
+                if context.is_some() || output.is_some() {
+                    entry["limit"] = serde_json::json!({ "context": context, "output": output });
+                }
+                if !input.is_empty() {
+                    entry["input_modalities"] = serde_json::json!(input);
+                }
+                entries.push(entry);
+            }
+        }
+    }
+    if entries.is_empty() {
+        return Ok(None);
+    }
+    let path = std::env::temp_dir().join(format!("miao-routes-{}.json", std::process::id()));
+    tokio::fs::write(&path, serde_json::to_vec(&entries)?).await?;
+    Ok(Some(path))
+}
+
+/// Test and diagnostic access to the generated manifest derivation.
+pub mod test_support {
+    pub use super::config_routes_manifest;
 }
 
 pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Send + Sync>> {
@@ -569,6 +752,12 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
         });
     let mut route_limits = miao_engine::model_routes::RouteLimits::default();
     let mut model_origin = None;
+    // An operator who names a route, a transport, or a credential source has
+    // said exactly what this start serves; the generated manifest is for the
+    // standalone start that only names configuration.
+    let operator_named_route = ["--model-routes-config", "--provider", "--endpoint", "--credential-db", "--auth-file", "--credential-id", "--credential-integration", "--credential-socket"]
+        .iter()
+        .any(|flag| options.contains_key(*flag));
     let provider = if let Some(path) = options.get("--model-routes-config") {
         let path = tokio::fs::canonicalize(path).await?;
         let workspace = std::path::PathBuf::from(tools.location());
@@ -589,6 +778,42 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             workspace,
         });
         provider
+    } else if !operator_named_route {
+        // The picker should answer with every configured model, the way the
+        // product host answers. A manifest that cannot be derived or loaded
+        // keeps the single configured provider: a degraded list beats a
+        // start that refuses.
+        match config_routes_manifest(&options, stored_default().as_deref()).await {
+            Ok(Some(path)) => {
+                let workspace = std::path::PathBuf::from(tools.location());
+                let base = provider.clone();
+                match miao_engine::model_routes::load(&path, &workspace, base.clone()).await {
+                    Ok((routed, limits)) => {
+                        tools = tools.with_protected_resource(&path);
+                        route_limits = limits;
+                        model_origin = Some(miao_engine::model_routes::Origin {
+                            base,
+                            path,
+                            workspace,
+                        });
+                        routed
+                    }
+                    Err(error) => {
+                        eprintln!(
+                            "miao-engine generated model routes unavailable: {error}; serving only the configured model"
+                        );
+                        provider
+                    }
+                }
+            }
+            Ok(None) => provider,
+            Err(error) => {
+                eprintln!(
+                    "miao-engine generated model routes unavailable: {error}; serving only the configured model"
+                );
+                provider
+            }
+        }
     } else {
         provider
     };
