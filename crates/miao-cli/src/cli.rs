@@ -4139,14 +4139,6 @@ async fn run_prompt(
             bridge.resolve(id, reply);
         }
         while let Ok(event) = events.try_recv() {
-            let label = match &event {
-                miao_tui::transport::TransportEvent::Event(e) => format!("event:{}", e.kind),
-                miao_tui::transport::TransportEvent::Progress(_) => "progress".into(),
-                miao_tui::transport::TransportEvent::Config(_) => "config".into(),
-                miao_tui::transport::TransportEvent::Resync(_) => "resync".into(),
-                miao_tui::transport::TransportEvent::Failure(_) => "failure".into(),
-                miao_tui::transport::TransportEvent::Restart => "restart".into(),
-            };
             let miao_tui::transport::TransportEvent::Event(event) = event else {
                 continue;
             };
