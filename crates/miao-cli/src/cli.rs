@@ -3843,6 +3843,31 @@ struct Target {
     format: String,
 }
 
+/// One NDJSON event line, the shape the TypeScript headless runner emits:
+/// `{"type": …, "timestamp": …, "sessionID": …, "part": …}`.
+fn event_line(kind: &str, session: &str, part: serde_json::Value) -> String {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0);
+    serde_json::json!({
+        "type": kind,
+        "timestamp": timestamp,
+        "sessionID": session,
+        "part": part,
+    })
+    .to_string()
+}
+
+/// Non-JSON formats print nothing here — the final answer still goes out as
+/// plain text when the turn settles.
+fn emit_event(format: &str, kind: &str, session: &str, part: serde_json::Value) {
+    if format != "json" {
+        return;
+    }
+    println!("{}", event_line(kind, session, part));
+}
+
 /// Product-tool definitions the host serves. These are the cross-session tools
 /// the engine calls back into the host for; without them a single binary has no
 /// way to reach other sessions or the operator.
@@ -4041,23 +4066,45 @@ async fn run_prompt(
         .await
         .map_err(|error| error.to_string())?;
     let deadline = std::time::Instant::now() + Duration::from_secs(180);
+    // A turn ends at its `stop` boundary, not at the first assistant text: an
+    // agentic answer interleaves tool calls with text, and leaving on the
+    // first line would hand a script a half answer. Text still streams out as
+    // it commits, so `--format json` consumers see each part the moment the
+    // engine journals it.
+    let mut printed = baseline;
+    let mut finished = false;
+    let mut saw_run = false;
+    let mut found: Vec<String> = Vec::new();
     loop {
         tokio::time::sleep(Duration::from_millis(500)).await;
         let snapshot = client
             .snapshot(&session)
             .await
             .map_err(|error| error.to_string())?;
-        let mut found = Vec::new();
+        found.clear();
         texts(&snapshot, &mut found);
-        // Wait for a turn that is newer than the baseline, not merely present.
-        if found.len() > baseline {
-            if target.format == "json" {
-                println!("{}", snapshot);
-            } else {
-                println!("{}", found.last().cloned().unwrap_or_default());
-            }
-            owner.shutdown().await;
-            return Ok(());
+        // The snapshot itself carries the run boundary:  is set
+        // while a turn is in flight and null again once it settles. A turn
+        // that settles between two polls still reads as finished, because the
+        // text it committed pushed  past the baseline.
+        let running = snapshot.get("active_run").is_some_and(|run| !run.is_null());
+        if running {
+            saw_run = true;
+        }
+        if !running && (saw_run || printed > baseline) {
+            finished = true;
+        }
+        while printed < found.len() {
+            emit_event(
+                &target.format,
+                "text",
+                &session,
+                serde_json::json!({ "type": "text", "text": found[printed] }),
+            );
+            printed += 1;
+        }
+        if finished {
+            break;
         }
         // A headless run cannot answer an operator question. Say so at once
         // instead of blocking until the deadline, and name the way out.
@@ -4125,8 +4172,20 @@ async fn run_prompt(
                     .data
                     .get("message")
                     .and_then(|value| value.as_str())
-                    .unwrap_or(&kind);
+                    .unwrap_or(&kind)
+                    .to_string();
+                emit_event(
+                    &target.format,
+                    "error",
+                    &session,
+                    serde_json::json!({ "type": "error", "message": detail }),
+                );
                 return Err(format!("the turn failed: {detail}"));
+            }
+            // A finished tool call is part of the answer a script may want as
+            // soon as it lands, so it streams like text does.
+            if kind == "tool.completed" {
+                emit_event(&target.format, "tool_use", &session, event.data.clone());
             }
             if kind.contains("question.requested") {
                 owner.shutdown().await;
@@ -4140,6 +4199,11 @@ async fn run_prompt(
             return Err("timed out waiting for the answer".into());
         }
     }
+    if target.format != "json" {
+        println!("{}", found.last().cloned().unwrap_or_default());
+    }
+    owner.shutdown().await;
+    Ok(())
 }
 
 pub fn run(args: Vec<String>) -> std::process::ExitCode {
@@ -4806,13 +4870,30 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 mod tests {
     use super::{
         anchored_sessions, carry_uncommitted_changes, db_file_bytes, db_read_only, db_report,
-        db_vacuum, default_db, git_worktree_main_checkout, launch, lsp_servers, mcp_servers,
-        model_routes, parsed_session_location, plugin_entries, project_copy_apply,
+        db_vacuum, default_db, event_line, git_worktree_main_checkout, launch, lsp_servers,
+        mcp_servers, model_routes, parsed_session_location, plugin_entries, project_copy_apply,
         project_copy_plan, retention_plan, strip_comments, tree_bytes, uninstall_targets,
         worktree_remove_apply, worktree_remove_plan,
     };
     use std::io::Write;
     use std::path::PathBuf;
+
+    #[test]
+    fn headless_event_lines_parse_and_carry_the_script_fields() {
+        // The shape a script consumes: one JSON object per line with the
+        // type, a timestamp, and the session it belongs to — the same fields
+        // the TypeScript headless runner emits.
+        let line = event_line(
+            "text",
+            "ses_x",
+            serde_json::json!({ "type": "text", "text": "answer" }),
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&line).expect("valid JSON line");
+        assert_eq!(parsed["type"], "text");
+        assert_eq!(parsed["sessionID"], "ses_x");
+        assert!(parsed["timestamp"].is_u64());
+        assert_eq!(parsed["part"]["text"], "answer");
+    }
 
     #[test]
     fn the_report_counts_the_write_ahead_log_and_the_shared_index() {
