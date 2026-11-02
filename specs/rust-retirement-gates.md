@@ -96,7 +96,18 @@ Windows 验收通过。构建与重型检查使用项目配置的构建机，机
 | 启动 | `env -i PATH=/usr/bin:/bin HOME=… ./miao --version` | 输出 `0.3.25` |
 | 动态依赖 | `ldd ./miao` | 仅 linux-vdso、libc、ld-linux、libpthread、libdl、libm |
 
-仍未取得：darwin-x64、linux-arm64、windows-x64 的同样验证，以及健康/损坏扩展混合下的 G5 回归。
+同一检查在 **Windows x64** 上再次复现（2026-11-02，Windows 10.0.22621 构建机，无 Bun/Node）：
+
+| 检查 | 做法 | 结果 |
+| --- | --- | --- |
+| 产物校验 | `miao-windows-x64.zip` 与 `.sha256` | `6f68f26c…4aad` 一致 |
+| 形态 | 解压后目录 | `miao.exe` 256,337,920 字节，另有 `models.json`、LICENSE/NOTICE |
+| 外部运行时 | `$env:PATH="C:\Windows\System32;C:\Windows"` 后探测 | 两者均 absent |
+| 启动 | 同一精简 PATH 下运行 `miao.exe --version` | 输出 `0.3.25` |
+
+三个平台（darwin-arm64、linux-x64、windows-x64）都是同一结论：发布产物在没有源码树、没有外部 Bun/Node 的环境里可以启动。
+
+仍未取得：darwin-x64 与 linux-arm64 的同样验证，以及健康/损坏扩展混合下的 G5 回归。
 
 ## G6 证据：本地产物清点与不兼容引擎拒绝（2026-11-01）
 
