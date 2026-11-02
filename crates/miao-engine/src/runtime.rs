@@ -3042,12 +3042,18 @@ async fn execute(
                 }));
             }
         }
+        // The disclosed tool surface as one hash. Recorded next to the policy
+        // revision so the cache rules read as observations, not assumptions:
+        // a policy bump that leaves this digest unchanged did not churn the
+        // prefix, and any surface change (catalogue growth on a small server,
+        // an allow-listed alias leaving) shows up here before the model sees it.
+        let disclosure_digest = crate::permission::digest(&serde_json::to_vec(&json!({"tools": agent_tools(&inner.tools, agent.as_ref(), &policy, delegated).iter().map(|tool| (&tool.name, &tool.input_schema)).collect::<Vec<_>>()})).expect("tool surface serializes"));
         let started = inner
             .store
             .record(
                 session,
                 "provider.started",
-                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":policy.revision(),"state_selection":state_selection,"identity":provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
+                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":policy.revision(),"disclosure_digest":disclosure_digest,"state_selection":state_selection,"identity":provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
             )
             .await?;
         // Durable history retains null plus the error marker for unavailable

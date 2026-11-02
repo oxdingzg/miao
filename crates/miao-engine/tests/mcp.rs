@@ -1121,7 +1121,8 @@ mod disclosure {
                 .collect::<Vec<_>>(),
             ["mcp_fixture_search", "mcp_fixture_detail"]
         );
-        assert!(disclosed[0].description.contains("100-tool"));
+        assert!(disclosed[0].description.contains("MCP server fixture"));
+        assert!(!disclosed[0].description.contains("-tool"));
         let again = registry.disclosed(Disclosure::Threshold(32), &[]);
         assert_eq!(
             again
@@ -1267,5 +1268,186 @@ mod disclosure {
         );
         registry.shutdown().await;
         task.await.unwrap();
+    }
+
+    /// A catalogue server whose `tools/list` answer is driven by a generation
+    /// counter: each step is `(tool_count, names to remove)`. Calling `flip`
+    /// bumps the generation and pushes `tools/list_changed`.
+    async fn scenario(
+        steps: &[(usize, &[&str])],
+    ) -> (
+        Arc<Registry>,
+        Arc<std::sync::atomic::AtomicUsize>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let steps: Arc<Vec<(usize, Vec<String>)>> = Arc::new(
+            steps
+                .iter()
+                .map(|(count, remove)| {
+                    (*count, remove.iter().map(|name| name.to_string()).collect())
+                })
+                .collect(),
+        );
+        let (client, server) = tokio::io::duplex(131072);
+        let (read, mut write) = tokio::io::split(server);
+        let generation = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = generation.clone();
+        let task = tokio::spawn(async move {
+            let mut lines = tokio::io::BufReader::new(read).lines();
+            while let Some(line) = lines.next_line().await.unwrap() {
+                let request: Value = serde_json::from_str(&line).unwrap();
+                let Some(id) = request.get("id") else {
+                    continue;
+                };
+                let result = match request["method"].as_str().unwrap() {
+                    "initialize" => {
+                        json!({"protocolVersion":request["params"]["protocolVersion"],"capabilities":{"tools":{}},"serverInfo":{"name":"fixture","version":"1"}})
+                    }
+                    "tools/list" => {
+                        let step = counter
+                            .load(std::sync::atomic::Ordering::SeqCst)
+                            .min(steps.len() - 1);
+                        let (count, remove) = &steps[step];
+                        let mut tools = vec![
+                            json!({"name":"flip","description":"bump the generation","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}),
+                        ];
+                        for i in 0..*count {
+                            let name = format!("tool_{i}");
+                            if !remove.iter().any(|removed| removed == &name) {
+                                tools.push(json!({"name":name,"description":format!("Fixture tool {i}"),"inputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}}));
+                            }
+                        }
+                        json!({"tools":tools})
+                    }
+                    "tools/call" => {
+                        if request["params"]["name"] == "flip" {
+                            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            write
+                                .write_all(
+                                    format!("{}\n", json!({"jsonrpc":"2.0","method":"notifications/tools/list_changed"}))
+                                        .as_bytes(),
+                                )
+                                .await
+                                .unwrap();
+                        }
+                        json!({"content":[{"type":"text","text":"flipped"}]})
+                    }
+                    other => panic!("unexpected MCP method {other}"),
+                };
+                write
+                    .write_all(
+                        format!("{}\n", json!({"jsonrpc":"2.0","id":id,"result":result}))
+                            .as_bytes(),
+                    )
+                    .await
+                    .unwrap();
+            }
+        });
+        let (read, write) = tokio::io::split(client);
+        let registry = Registry::connect_io("fixture".into(), read, write)
+            .await
+            .unwrap();
+        registry.start_watchers();
+        (Arc::new(registry), generation, task)
+    }
+
+    /// The full disclosed text — names, descriptions, schemas — as one
+    /// comparable surface. The digest recorded on `provider.started` is the
+    /// hash of exactly this shape after the agent/policy filters, so surface
+    /// equality here is digest stability by construction.
+    fn surface(registry: &Registry, allowlist: &[&str]) -> Vec<(String, String, Value)> {
+        registry
+            .disclosed(Disclosure::Threshold(32), allowlist)
+            .into_iter()
+            .map(|def| {
+                (
+                    def.name.clone(),
+                    def.description.clone(),
+                    def.input_schema.clone(),
+                )
+            })
+            .collect()
+    }
+
+    async fn flip_and_settle(registry: &Registry) {
+        registry
+            .call("mcp_fixture_flip", json!({}), CancellationToken::new())
+            .await
+            .unwrap();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        let before = registry.definitions().len();
+        loop {
+            if registry.definitions().len() != before || tokio::time::Instant::now() >= deadline {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn a_new_tool_on_a_folded_server_leaves_the_disclosed_surface_untouched() {
+        let (registry, _generation, task) = scenario(&[(100, &[]), (101, &[])]).await;
+        let before = surface(&registry, &[]);
+        flip_and_settle(&registry).await;
+        let after = surface(&registry, &[]);
+        assert_eq!(
+            before, after,
+            "growth behind the discovery pair must not churn the prefix"
+        );
+        registry.shutdown().await;
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn a_new_tool_on_a_small_server_grows_the_disclosed_surface() {
+        let (registry, _generation, task) = scenario(&[(10, &[]), (11, &[])]).await;
+        let before = surface(&registry, &[]);
+        flip_and_settle(&registry).await;
+        let after = surface(&registry, &[]);
+        assert_ne!(before, after, "small servers disclose growth directly");
+        registry.shutdown().await;
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn an_allowlisted_alias_leaving_changes_the_disclosed_surface() {
+        let (registry, _generation, task) = scenario(&[(100, &[]), (100, &["tool_5"])]).await;
+        let before = surface(&registry, &["tool_5"]);
+        assert_eq!(
+            before.len(),
+            3,
+            "discovery pair plus the allow-listed alias"
+        );
+        flip_and_settle(&registry).await;
+        let after = surface(&registry, &["tool_5"]);
+        assert_eq!(after.len(), 2);
+        assert_ne!(before, after);
+        registry.shutdown().await;
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn a_removed_unallowlisted_tool_leaves_the_surface_untouched() {
+        let (registry, _generation, task) = scenario(&[(100, &[]), (100, &["tool_99"])]).await;
+        let before = surface(&registry, &[]);
+        flip_and_settle(&registry).await;
+        let after = surface(&registry, &[]);
+        assert_eq!(before, after);
+        registry.shutdown().await;
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn a_refresh_that_replays_the_same_catalogue_keeps_the_surface() {
+        let (registry, _generation, task) = scenario(&[(100, &[]), (100, &[])]).await;
+        let before = surface(&registry, &[]);
+        flip_and_settle(&registry).await;
+        let after = surface(&registry, &[]);
+        assert_eq!(
+            before, after,
+            "a re-answered catalogue must re-derive the identical surface"
+        );
+        registry.shutdown().await;
+        task.abort();
     }
 }

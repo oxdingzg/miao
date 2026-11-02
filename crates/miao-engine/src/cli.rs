@@ -506,7 +506,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
         eprintln!(
-            "Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\n       miao-engine retention --db PATH [--session ID] [--apply]\n       miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]\n       miao-engine permission-source --db PATH --project ID --directory PATH\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required."
+            "Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--mcp-disclosure off|threshold|always [--mcp-disclosure-allowlist ALIAS,...]] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--mcp-disclosure off|threshold|always [--mcp-disclosure-allowlist ALIAS,...]] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\n       miao-engine retention --db PATH [--session ID] [--apply]\n       miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]\n       miao-engine permission-source --db PATH --project ID --directory PATH\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required."
         );
         std::process::exit(2);
     }
@@ -1050,6 +1050,31 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             Some("compact") => true,
             Some(_) => return Err("--tool-disclosure must be full or compact".into()),
         });
+    let mcp_disclosure = match options.get("--mcp-disclosure").map(String::as_str) {
+        None => crate::mcp::Disclosure::default(),
+        Some("off") => crate::mcp::Disclosure::Off,
+        Some("threshold") => crate::mcp::Disclosure::default(),
+        Some("always") => crate::mcp::Disclosure::Always,
+        Some(_) => return Err("--mcp-disclosure must be off, threshold or always".into()),
+    };
+    let mcp_disclosure_allowlist: Vec<String> = options
+        .get("--mcp-disclosure-allowlist")
+        .map(|list| {
+            list.split(',')
+                .map(str::trim)
+                .filter(|alias| !alias.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if mcp_disclosure != crate::mcp::Disclosure::Off && !mcp_disclosure_allowlist.is_empty() {
+        for alias in &mcp_disclosure_allowlist {
+            if alias.contains(char::is_whitespace) {
+                return Err("--mcp-disclosure-allowlist entries must be bare aliases".into());
+            }
+        }
+    }
+    tools = tools.with_mcp_disclosure(mcp_disclosure, mcp_disclosure_allowlist);
     if let Some(path) = options.get("--worker-config") {
         let path = tokio::fs::canonicalize(path).await?;
         if path.starts_with(std::path::Path::new(tools.location())) {

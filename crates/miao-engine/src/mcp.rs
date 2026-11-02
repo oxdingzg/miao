@@ -668,7 +668,7 @@ impl Registry {
                 );
                 continue;
             }
-            disclosed.push(search_definition(&server.name, count, &search));
+            disclosed.push(search_definition(&server.name, &search));
             disclosed.push(detail_definition(&server.name, &detail));
             disclosed.extend(
                 tools
@@ -1316,11 +1316,14 @@ fn meta_search_name(server: &str) -> String {
 fn meta_detail_name(server: &str) -> String {
     format!("mcp_{}_detail", server_slug(server))
 }
-fn search_definition(server: &str, count: usize, name: &str) -> ToolDefinition {
+fn search_definition(server: &str, name: &str) -> ToolDefinition {
     ToolDefinition {
         name: name.to_string(),
+        // No catalogue size in the text: a tool appearing on a folded server
+        // must not reword this description, or every search-definition change
+        // would churn the prompt-cache prefix the digest protects.
         description: format!(
-            "Search the {count}-tool catalogue of MCP server {server}; returns matching tool \
+            "Search the catalogue of MCP server {server}; returns matching tool \
              names with one-line descriptions. Fetch a schema with the matching detail tool \
              before calling a tool you have not used yet."
         ),
