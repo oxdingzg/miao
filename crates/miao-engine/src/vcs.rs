@@ -29,6 +29,78 @@ impl Store {
         };
         status(&root, MAX_STATUS_FILES).await
     }
+
+    /// The working-tree patch (staged content included) for one path, as it
+    /// differs from HEAD. An untracked file has no HEAD version and answers
+    /// `null` rather than an invented diff; a path outside the workspace is
+    /// refused, not silently resolved somewhere else.
+    pub async fn vcs_diff(&self, session: &str, path: &str) -> Result<Value, Error> {
+        let Some(root) = self.location(session).await? else {
+            return Err(Error::Invalid("Session does not exist".into()));
+        };
+        diff(&root, path, MAX_DIFF_CHARS).await
+    }
+}
+
+/// Most bytes one diff answer carries. A patch past this is refused with the
+/// truncation fact, not silently cut at an arbitrary line.
+pub const MAX_DIFF_CHARS: usize = 256_000;
+
+pub async fn diff(root: &str, path: &str, limit: usize) -> Result<Value, Error> {
+    // The path travels to git as an argument, not through a shell, but a
+    // leading `-` could still read as a flag. Refuse spellings that could be
+    // misread; a status answer lists the real names to copy.
+    if path.is_empty() || path.starts_with('-') || path.contains("..") {
+        return Err(Error::Invalid("path must be inside the workspace".into()));
+    }
+    let output = tokio::time::timeout(
+        GIT_TIMEOUT,
+        Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["diff", "HEAD", "--", path])
+            .stdin(Stdio::null())
+            .output(),
+    )
+    .await
+    .map_err(|_| Error::Invalid("git diff timed out".into()))?
+    .map_err(|error| Error::Invalid(format!("git diff could not run: {error}")))?;
+    if !output.status.success() {
+        let reason = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if reason.contains("not a git repository") {
+            return Ok(json!({"repository": false, "path": path}));
+        }
+        return Err(Error::Invalid(format!("git diff failed: {reason}")));
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let tracked = !text.trim().is_empty();
+    if !tracked {
+        // Empty from `diff HEAD` either means unchanged or untracked. Ask the
+        // status parser which: it already knows how untracked is spelled.
+        let state = status(root, MAX_STATUS_FILES).await?;
+        let untracked = state["files"]
+            .as_array()
+            .map(|files| {
+                files
+                    .iter()
+                    .any(|file| file["path"].as_str() == Some(path) && file["kind"] == "untracked")
+            })
+            .unwrap_or(false);
+        if untracked {
+            return Ok(json!({"path": path, "diff": Value::Null, "untracked": true}));
+        }
+    }
+    let chars = text.chars().count();
+    if chars > limit {
+        return Ok(json!({
+            "path": path,
+            "diff": Value::Null,
+            "truncated": true,
+            "chars": chars,
+            "limit": limit,
+        }));
+    }
+    Ok(json!({"path": path, "diff": text, "untracked": false}))
 }
 
 pub async fn status(root: &str, limit: usize) -> Result<Value, Error> {
@@ -291,5 +363,48 @@ mod tests {
         let initial = parse(b"# branch.head (initial)\0", 10);
         assert_eq!(initial["branch"], "(initial)");
         assert_eq!(initial["detached"], false);
+    }
+
+    #[test]
+    fn the_diff_answers_the_patch_the_null_for_untracked_and_the_refusal() {
+        // A real repository: the diff command has to read git's own output for
+        // the three answers that matter — changed, untracked, and a path that
+        // tries to escape.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let run = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .output()
+                .expect("git runs")
+        };
+        assert!(run(&["init", "-q", "-b", "main"]).status.success(), "git init");
+        std::fs::write(dir.path().join("tracked.txt"), "one\n").expect("write");
+        assert!(run(&["add", "."]).status.success());
+        assert!(run(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed"]).status.success());
+        std::fs::write(dir.path().join("tracked.txt"), "one\ntwo\n").expect("edit");
+        std::fs::write(dir.path().join("fresh.txt"), "new\n").expect("untracked");
+
+        let root = dir.path().display().to_string();
+        let changed =
+            tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime")
+                .block_on(async { diff(&root, "tracked.txt", MAX_DIFF_CHARS).await.expect("diff") });
+        assert!(changed["diff"].as_str().is_some_and(|patch| patch.contains("+two")), "{changed}");
+
+        let untracked =
+            tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime")
+                .block_on(async { diff(&root, "fresh.txt", MAX_DIFF_CHARS).await.expect("diff") });
+        assert_eq!(untracked["untracked"], true);
+        assert!(untracked["diff"].is_null(), "{untracked}");
+
+        let escape =
+            tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime")
+                .block_on(async { diff(&root, "-p", MAX_DIFF_CHARS).await });
+        assert!(escape.is_err(), "a flag-shaped path is refused");
+
+        let outside =
+            tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime")
+                .block_on(async { diff(&root, "../outside.txt", MAX_DIFF_CHARS).await });
+        assert!(outside.is_err(), "a `..` path is refused");
     }
 }

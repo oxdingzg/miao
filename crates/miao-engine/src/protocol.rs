@@ -467,6 +467,14 @@ pub enum Command {
     VcsStatus {
         session_id: String,
     },
+    /// Read-only patch for one changed file in the Session's workspace, as the
+    /// working tree (including staged content) differs from HEAD (WSP-02).
+    /// Untracked files have no HEAD version; the diff answers `null` for them
+    /// rather than inventing one.
+    VcsDiff {
+        session_id: String,
+        path: String,
+    },
     /// Move a drained Session's storage to another workspace directory. The
     /// transfer is the existing export-move: the host names its product
     /// database (as it names model routes and MCP), and the engine writes and
