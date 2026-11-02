@@ -22,7 +22,6 @@ pub struct Configured {
     pub plugin_hooks: Option<crate::product::Marker>,
 }
 
-
 /// Where the product keeps credentials when the operator names no source. The
 /// single-binary start has no host to pass `--credential-db`, so the engine
 /// looks where the product installs write.
@@ -33,7 +32,8 @@ fn stored_default() -> Option<std::path::PathBuf> {
             std::env::var_os("XDG_DATA_HOME").map(|dir| std::path::PathBuf::from(dir).join("miao"))
         })
         .or_else(|| {
-            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".local/share/miao"))
+            std::env::var_os("HOME")
+                .map(|home| std::path::PathBuf::from(home).join(".local/share/miao"))
         })?;
     let path = root.join("miao.db");
     path.is_file().then_some(path)
@@ -62,7 +62,6 @@ fn stored_credential(
         .into()),
     }
 }
-
 
 /// The transport and endpoint a provider declares in configuration, used when a
 /// start names only its model. `--provider` and `--endpoint` still win over it,
@@ -371,9 +370,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
                             integration,
                         },
                         None => {
-                            return Err(
-                                "API key or explicit credential source is required".into()
-                            )
+                            return Err("API key or explicit credential source is required".into())
                         }
                     }
                 }
