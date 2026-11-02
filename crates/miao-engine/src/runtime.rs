@@ -108,8 +108,9 @@ struct Inner {
     /// counts as a change.
     model_digest: Mutex<Option<String>>,
     /// Where the base policy was derived from at startup, so a reload derives
-    /// it the same way, including the operator's `--mode` override.
-    policy_origin: Mutex<Option<(crate::config_derive::PolicyOrigin, Option<Mode>)>>,
+    /// it the same way, including the operator's `--mode` and `--auto-approve`
+    /// overrides.
+    policy_origin: Mutex<Option<(crate::config_derive::PolicyOrigin, Option<Mode>, bool)>>,
     /// Number of reloads that changed at least one section. Replaying the same
     /// configuration does not advance it.
     config_generation: Mutex<u64>,
@@ -1173,13 +1174,15 @@ impl Runtime {
     }
 
     /// Record where the base policy came from, including the operator's
-    /// `--mode` override, so `config_reload` derives it the way startup did.
+    /// `--mode` and `--auto-approve` overrides, so `config_reload` derives it
+    /// the way startup did.
     pub async fn set_policy_origin(
         &self,
         origin: crate::config_derive::PolicyOrigin,
         mode: Option<Mode>,
+        auto_approve: bool,
     ) {
-        *self.inner.policy_origin.lock().await = Some((origin, mode));
+        *self.inner.policy_origin.lock().await = Some((origin, mode, auto_approve));
     }
 
     /// Whether any Session in this process is inside a drain. A standalone
@@ -1216,7 +1219,7 @@ impl Runtime {
             .lock()
             .await
             .clone()
-            .map(|(origin, _)| origin);
+            .map(|(origin, _, _)| origin);
         let sources = match origin {
             Some(crate::config_derive::PolicyOrigin::Sources(plan)) => plan,
             Some(crate::config_derive::PolicyOrigin::Directory(directory)) => {
@@ -1227,7 +1230,7 @@ impl Runtime {
             _ => {
                 return Err(Error::Invalid(
                     "this engine was started without ordered config sources".into(),
-                ))
+                ));
             }
         };
         crate::config_derive::normalized_from_sources(&sources)
@@ -1277,8 +1280,12 @@ impl Runtime {
         // Derive every section before touching any of them, then validate, then
         // apply: a derivation or boundary error leaves every section as it was.
         let policy = match &policy_origin {
-            Some((origin, mode)) => {
-                let derived = Policy::new(origin.derive(*mode).map_err(Error::Invalid)?)?;
+            Some((origin, mode, auto_approve)) => {
+                let derived = Policy::new(
+                    origin
+                        .derive(*mode, *auto_approve)
+                        .map_err(Error::Invalid)?,
+                )?;
                 (self.inner.policy().revision() != derived.revision()).then_some(derived)
             }
             None => None,
@@ -2828,7 +2835,7 @@ async fn execute(
             Err(error) => {
                 return Err(Error::Invalid(format!(
                     "instruction discovery failed: {error}"
-                )))
+                )));
             }
         };
         let mut bundle = match crate::context::assemble_for_agent(
@@ -2911,7 +2918,11 @@ async fn execute(
                 state_selected(&state)?
             } else {
                 let ready = crate::state::runnable_state(&state)?;
-                let text=format!("<session-state>\n{}\n</session-state>\nRunnable tasks (all prerequisites completed): {}. Waiting jobs block only their dependents; continue independent runnable work. Current durable progress tracking; recorded evidence is a claim, not independent verification. Follow the latest user request.",serde_json::to_string(&state)?,serde_json::to_string(&ready)?);
+                let text = format!(
+                    "<session-state>\n{}\n</session-state>\nRunnable tasks (all prerequisites completed): {}. Waiting jobs block only their dependents; continue independent runnable work. Current durable progress tracking; recorded evidence is a claim, not independent verification. Follow the latest user request.",
+                    serde_json::to_string(&state)?,
+                    serde_json::to_string(&ready)?
+                );
                 // The note is optional context, so an input already near the
                 // request budget is sent without it. Refusing the turn left a
                 // Session with todos or a goal unable to run at all once its
@@ -3610,7 +3621,9 @@ command: None,
                     let error = if known {
                         "Invalid JSON tool arguments. This call was not executed. Supply a valid JSON object for this call only; do not repeat completed operations.".to_string()
                     } else {
-                        format!("Unknown tool: {name}. Its arguments were also not valid JSON, so nothing was executed. Call an available tool with a valid JSON object; do not repeat completed operations.")
+                        format!(
+                            "Unknown tool: {name}. Its arguments were also not valid JSON, so nothing was executed. Call an available tool with a valid JSON object; do not repeat completed operations."
+                        )
                     };
                     inner
                         .store
@@ -5188,7 +5201,7 @@ async fn send_peer_message(
         Some(other) => {
             return Err(ToolError::External(format!(
                 "unknown delivery \"{other}\"; use steer or queue"
-            )))
+            )));
         }
     };
     let wake = input
@@ -5285,7 +5298,9 @@ fn wake_requested(policy: &str, peer_working: bool, reason: &str) -> Result<bool
     match policy {
         "never" => Ok(false),
         "always" => match reason.trim().is_empty() {
-            true => Err("wake: always needs a reason: explicit direction, an unresolved dependency, or unfinished shared work"),
+            true => Err(
+                "wake: always needs a reason: explicit direction, an unresolved dependency, or unfinished shared work",
+            ),
             false => Ok(true),
         },
         // `if_active` and any unset value follow what the peer is doing.

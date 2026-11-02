@@ -231,6 +231,7 @@ pub fn policy(documents: &[Document], miao_sandbox: Option<&str>) -> permission:
         allow_wakeup: true,
         allow_cron: true,
         process_network: true,
+        auto: false,
         sandbox: sandbox_enabled(documents, miao_sandbox),
         rules: permission_rules(&merged),
         // Matches the engine's default; the product policy never sets it.
@@ -628,9 +629,15 @@ pub enum PolicyOrigin {
 impl PolicyOrigin {
     /// Re-derive the policy from the sources. `mode` is the operator's
     /// `--mode` override, applied last because it wins over both the entry
-    /// default and a policy file. The sandbox switch is re-read from the
-    /// environment, which cannot change inside a running process.
-    pub fn derive(&self, mode: Option<permission::Mode>) -> Result<permission::Config, String> {
+    /// default and a policy file. `auto_approve` is the operator's
+    /// `--auto-approve`, the same kind of launch-time override over the
+    /// derived policy. The sandbox switch is re-read from the environment,
+    /// which cannot change inside a running process.
+    pub fn derive(
+        &self,
+        mode: Option<permission::Mode>,
+        auto_approve: bool,
+    ) -> Result<permission::Config, String> {
         let sandbox = std::env::var("MIAO_SANDBOX").ok();
         let mut config = match self {
             PolicyOrigin::File(path) => {
@@ -651,6 +658,9 @@ impl PolicyOrigin {
         if let Some(mode) = mode {
             config.mode = mode;
         }
+        // The operator override lands after derivation, the same place the
+        // --mode override does: a policy file cannot grant or revoke it.
+        config.auto = auto_approve;
         Ok(config)
     }
 

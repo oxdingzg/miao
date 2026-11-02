@@ -93,6 +93,7 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
     let mut session: Option<String> = None;
     let mut continue_last = false;
     let mut prompt: Option<String> = None;
+    let mut auto = false;
     let mut args = args.peekable();
     while let Some(arg) = args.next() {
         let (name, inline) = match arg.split_once('=') {
@@ -113,12 +114,16 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
             "--session" => session = Some(value("--session")?),
             "--continue" => continue_last = true,
             "--prompt" => prompt = Some(value("--prompt")?),
+            // Three spellings the TypeScript entry carried for the same thing:
+            // a launch-wide permission relaxation. They map onto the engine's
+            // classifier-guarded auto mode, which still honours operator deny
+            // and ask rules.
+            "--auto" | "--yolo" | "--dangerously-skip-permissions" => auto = true,
             // The legacy interface carried these; the Rust TUI does not
             // implement them yet. Refusing with the reason beats a different
             // Session than the one asked for, and names the still-available
             // escape hatch (CLI-01's "clear error before the terminal exists").
-            "--mini" | "--fork" | "--agent" | "--auto" | "--yolo"
-            | "--dangerously-skip-permissions" | "--replay" | "--no-replay"
+            "--mini" | "--fork" | "--agent" | "--replay" | "--no-replay"
             | "--replay-limit" | "--demo" => {
                 return Err(format!(
                     "the Rust TUI does not implement {name}; drop it, or run the legacy TypeScript TUI with `miao --tui legacy`"
@@ -140,6 +145,7 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
         session,
         continue_last,
         prompt,
+        auto,
     })
 }
 
@@ -5100,9 +5106,6 @@ mod tests {
             "--mini",
             "--fork",
             "--agent",
-            "--auto",
-            "--yolo",
-            "--dangerously-skip-permissions",
             "--replay",
             "--no-replay",
             "--replay-limit",
@@ -5126,6 +5129,27 @@ mod tests {
                 .map(str::to_string)
         )
         .is_ok());
+    }
+
+    #[test]
+    fn the_auto_spellings_map_onto_the_engine_flag() {
+        // The TypeScript entry carried three spellings for one behaviour; all
+        // of them now parse and land in Launch.auto, which the TUI forwards as
+        // the engine's --auto-approve (classifier-guarded, deny/ask stay put).
+        for option in ["--auto", "--yolo", "--dangerously-skip-permissions"] {
+            let launch = launch(
+                [
+                    "--db".to_string(),
+                    "/tmp/x.db".to_string(),
+                    option.to_string(),
+                ]
+                .into_iter(),
+            )
+            .expect(option);
+            assert!(launch.auto, "{option} must set auto");
+        }
+        let plain = launch(["--db", "/tmp/x.db"].into_iter().map(str::to_string)).unwrap();
+        assert!(!plain.auto);
     }
 
     #[test]

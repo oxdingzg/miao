@@ -63,6 +63,13 @@ pub struct Config {
     pub allow_cron: bool,
     #[serde(default)]
     pub process_network: bool,
+    /// Process-level `--auto-approve`: asks the default or ordered policy
+    /// raises settle through the deterministic classifier instead of a host
+    /// approval, for every agent in this process. Operator deny and ask rules
+    /// stay authoritative either way — the same contract as an agent's own
+    /// `permission_mode: auto`, widened to the whole launch.
+    #[serde(default)]
+    pub auto: bool,
     /// Operator sandbox switch. The engine keeps confining commands unless a
     /// product policy explicitly records `sandbox: false`.
     #[serde(default = "sandbox_on")]
@@ -115,6 +122,7 @@ impl Default for Config {
             allow_wakeup: false,
             allow_cron: false,
             process_network: false,
+            auto: false,
             sandbox: sandbox_on(),
             rules: vec![],
             approval_timeout_ms: approval_timeout(),
@@ -197,7 +205,10 @@ impl Policy {
             .as_ref()
             .map(|policy| policy.compile())
             .transpose()?;
-        policy.auto = agent.permission_mode.is_some();
+        // An agent's own permission_mode and a process-level --auto-approve
+        // both widen the same classifier path; neither can lift an operator
+        // deny or ask rule.
+        policy.auto = agent.permission_mode.is_some() || policy.auto;
         policy.revision = digest(&serde_json::to_vec(&serde_json::json!({
             "policy": policy.revision, "agent": agent.digest()?,
         }))?);
@@ -250,12 +261,13 @@ impl Policy {
                 })
             })
             .collect::<Result<Vec<_>, Error>>()?;
+        let auto = config.auto;
         Ok(Self {
             config,
             revision,
             matchers,
             ordered: None,
-            auto: false,
+            auto,
         })
     }
     /// The ordered action a tool dispatches under, for rule layers that speak
@@ -606,6 +618,40 @@ mod auto_mode_tests {
             ".",
             Access::Execute,
             Some(&bash_input),
+            &[".".to_owned()]
+        ));
+    }
+
+    #[test]
+    fn the_process_wide_switch_widens_the_same_classifier_path() {
+        // --auto-approve flips the base config, so even an agent with no
+        // permission_mode of its own settles classifier-proven asks; the
+        // dangerous shape still prompts.
+        let base = Policy::new(Config {
+            mode: Mode::Workspace,
+            allow_process: true,
+            auto: true,
+            ..Config::default()
+        })
+        .unwrap();
+        let policy = base.for_agent(None).unwrap();
+        let bash_input = serde_json::json!({"command": "ls -la"});
+        assert_eq!(
+            cfg!(windows),
+            !policy.auto_settles(
+                "bash",
+                ".",
+                Access::Execute,
+                Some(&bash_input),
+                &[".".to_owned()]
+            )
+        );
+        let dangerous = serde_json::json!({"command": "rm -rf scratch"});
+        assert!(!policy.auto_settles(
+            "bash",
+            ".",
+            Access::Execute,
+            Some(&dangerous),
             &[".".to_owned()]
         ));
     }

@@ -511,6 +511,7 @@ pub fn settings(
     db: Option<PathBuf>,
     model: Option<String>,
     config_dir: Option<PathBuf>,
+    auto_approve: bool,
 ) -> Result<Settings, String> {
     let db = db
         .or_else(|| std::env::var_os("MIAO_ENGINE_DB").map(PathBuf::from))
@@ -528,9 +529,14 @@ pub fn settings(
     let spawn = EngineSpawn {
         program: engine_binary(),
         args: launch_args(
-            args(&db, workspace, &model, config_dir.as_deref(), |name| {
-                std::env::var(name).ok()
-            }),
+            args(
+                &db,
+                workspace,
+                &model,
+                config_dir.as_deref(),
+                auto_approve,
+                |name| std::env::var(name).ok(),
+            ),
             std::env::var("MIAO_ENGINE_LAUNCH_PREFIX").ok().as_deref(),
         )?,
         env: Vec::new(),
@@ -580,6 +586,7 @@ fn args(
     workspace: &Path,
     model: &str,
     config_dir: Option<&Path>,
+    auto_approve: bool,
     env: impl Fn(&str) -> Option<String>,
 ) -> Vec<String> {
     let mut args = vec![
@@ -596,6 +603,11 @@ fn args(
     }
     if let Some(dir) = config_dir {
         push(&mut args, "--config-dir", dir.display().to_string());
+    }
+    // A valueless flag: the engine parses its presence as the operator's
+    // launch-wide classifier approval.
+    if auto_approve {
+        args.push("--auto-approve".into());
     }
     // Every name in this table is accepted by `miao-engine serve`; a flag the
     // engine does not know would end the child process at startup.
@@ -1863,6 +1875,7 @@ mod tests {
             Path::new("/work"),
             "openai/gpt-5",
             Some(Path::new("/config")),
+            false,
             environment(&[]),
         );
         assert_eq!(
@@ -1912,6 +1925,7 @@ mod tests {
             Path::new("/work"),
             "openai/gpt-5",
             None,
+            false,
             environment(&[
                 ("MIAO_ENGINE_CREDENTIAL_DB", "/data/miao.db"),
                 ("MIAO_ENGINE_CREDENTIAL_ID", "cred_1"),
@@ -1944,6 +1958,7 @@ mod tests {
             Path::new("/work"),
             "m",
             None,
+            false,
             environment(&[]),
         );
         assert_eq!(args.len(), 7);
