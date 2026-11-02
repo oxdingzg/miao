@@ -85,10 +85,7 @@ fn write_credentials(path: &std::path::Path) {
 }
 
 fn options(config_dir: &std::path::Path) -> HashMap<String, String> {
-    HashMap::from([(
-        "--config-dir".to_string(),
-        config_dir.display().to_string(),
-    )])
+    HashMap::from([("--config-dir".to_string(), config_dir.display().to_string())])
 }
 
 #[tokio::test]
@@ -135,13 +132,11 @@ async fn no_configuration_means_no_manifest() {
     write_credentials(&database);
     let empty = root.path().join("empty");
     std::fs::create_dir_all(&empty).expect("empty dir");
-    assert!(
-        miao_engine::cli::test_support::config_routes_manifest(
-            &options(&empty),
-            Some(&database),
-        )
-        .await
-        .expect("derives")
-        .is_none()
-    );
+    assert!(miao_engine::cli::test_support::config_routes_manifest(
+        &options(&empty),
+        Some(&database),
+    )
+    .await
+    .expect("derives")
+    .is_none());
 }
