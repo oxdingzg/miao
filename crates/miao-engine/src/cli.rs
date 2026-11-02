@@ -252,6 +252,10 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
         .or_else(|| configured.as_ref().map(|(transport, _)| transport.clone()))
         .unwrap_or_else(|| "anthropic".to_string());
     let provider_name = provider_name.as_str();
+    // A prefix that resolved to a configured provider is the host-side provider,
+    // so the model is the bare id. A prefix that resolves to nothing is part of
+    // the model name and stays whole (`fixture/fixture`).
+    let named_provider = configured.is_some();
     let endpoint: Option<String> = options
         .get("--endpoint")
         .cloned()
@@ -262,7 +266,8 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     // route resolution.
     let model: String = match model.split_once('/') {
         Some((prefix, bare)) if prefix == provider_name => bare.to_owned(),
-        _ => bare_model,
+        Some(_) if named_provider => bare_model,
+        _ => model,
     };
     if ![
         "anthropic",
