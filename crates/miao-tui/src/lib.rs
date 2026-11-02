@@ -233,7 +233,13 @@ async fn drive(
                         app.handle(AppEvent::EditorFinished(result));
                     }
                 }
-                None => return Ok(()),
+                None => {
+                    // Every sender died while the UI is alive, which should
+                    // be impossible; say so instead of vanishing without a
+                    // trace when a report of a vanished session arrives.
+                    eprintln!("miao-tui: every event sender closed; exiting");
+                    return Ok(());
+                }
             },
         }
     }
