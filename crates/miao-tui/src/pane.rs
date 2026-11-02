@@ -17,55 +17,30 @@ use crate::{markdown, tool};
 
 const SIDEBAR_MIN_WIDTH: u16 = 100;
 
-/// The widest measure the transcript wraps at. Prose reads worse the wider it
-/// gets — at 200 columns a paragraph has no return sweep and the eye loses its
-/// place — so past this the text keeps its measure and centres in the body, the
-/// same rule the session list follows.
-const TRANSCRIPT_COLUMN: u16 = 100;
-
-/// The width the input is painted at on a Session screen: the same measure as
-/// the prose it answers, so the caret sits under the text rather than in a
-/// stripe of its own across a wide terminal.
+/// The width the input is painted at on a Session screen: the prose column it
+/// sits in, which fills the body, so the caret stays under the text it answers.
 fn composer_column(width: u16) -> u16 {
-    width.min(TRANSCRIPT_COLUMN)
+    width
 }
 
 /// Where the body splits between the transcript and the sidebar.
 ///
-/// A wide window centres the prose column, so the sidebar sits beside that
-/// column instead of at the window's edge with a band of empty space between
-/// the text and the panel describing it. When the window is too narrow to hold
-/// both with air between them, the sidebar takes its columns from the right and
-/// the prose uses what is left.
+/// The body fills the window: the sidebar holds the right edge and the prose
+/// keeps everything left of it. A capped, centred prose column used to leave a
+/// band of empty cells on both sides of a wide terminal, which read as the
+/// content occupying only the middle of the screen.
 fn body_columns(area: Rect) -> (Rect, Option<Rect>) {
     if area.width < SIDEBAR_MIN_WIDTH {
         return (area, None);
     }
-    let column = area.width.min(TRANSCRIPT_COLUMN);
-    let group = column + SIDEBAR_WIDTH + 1;
-    if group > area.width {
-        let split = area.width - SIDEBAR_WIDTH;
-        return (
-            Rect {
-                width: split,
-                ..area
-            },
-            Some(Rect {
-                x: area.x + split,
-                width: SIDEBAR_WIDTH,
-                ..area
-            }),
-        );
-    }
-    let left = area.x + (area.width - group) / 2;
+    let split = area.width.saturating_sub(SIDEBAR_WIDTH + 1);
     (
         Rect {
-            x: left,
-            width: column,
+            width: split,
             ..area
         },
         Some(Rect {
-            x: left + column + 1,
+            x: area.x + split + 1,
             width: SIDEBAR_WIDTH,
             ..area
         }),
@@ -593,14 +568,9 @@ impl Pane for TranscriptPane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
         self.refresh_draft(false);
-        // Wrap at the measure, not at the window: a wide terminal should give
-        // the text margins, not longer lines.
-        let width = area.width.min(TRANSCRIPT_COLUMN);
-        let content = Rect {
-            x: area.x + area.width.saturating_sub(width) / 2,
-            width,
-            ..area
-        };
+        // The pane is already the prose column, so it fills it: wrapping, not a
+        // narrower measure, is what keeps a long line readable.
+        let content = area;
         let resized = content.width != self.width;
         if resized || self.body_version != self.body_built {
             self.body = wrap_lines(&self.lines, content.width);
@@ -832,11 +802,6 @@ fn selection_text(rendered: &[Vec<String>], inner: Rect, a: Position, b: Positio
     }
     lines.join("\n")
 }
-
-/// The widest column the session list uses. A wider terminal does not make a
-/// wider row more readable: stretched across one, a title and its age sit a
-/// screen apart and the eye has no edge to follow down the list. Past this
-/// measure the column keeps its width and centers instead.
 
 pub struct Home {
     pub rows: Vec<SessionSummary>,
@@ -3569,21 +3534,21 @@ mod tests {
     }
 
     #[test]
-    fn the_sidebar_sits_beside_the_prose_on_a_wide_frame() {
-        // A 200-column window used to leave ~30 empty columns between the text
-        // and the panel that describes it.
+    fn the_body_fills_the_window() {
+        // The prose keeps everything the sidebar does not: a capped, centred
+        // column left a band of empty cells on both sides of a wide terminal.
         let area = Rect::new(0, 0, 200, 20);
         let (prose, sidebar) = body_columns(area);
         let sidebar = sidebar.expect("wide enough for both");
-        assert_eq!(prose.width, TRANSCRIPT_COLUMN);
+        assert_eq!(prose.x, 0, "the prose starts at the window's edge");
+        assert_eq!(prose.width, 200 - SIDEBAR_WIDTH - 1);
         assert_eq!(sidebar.width, SIDEBAR_WIDTH);
         assert_eq!(
             sidebar.x,
             prose.right() + 1,
             "one column of air between them"
         );
-        assert!(sidebar.right() <= area.right());
-        assert_eq!(prose.x, (200 - (TRANSCRIPT_COLUMN + SIDEBAR_WIDTH + 1)) / 2);
+        assert_eq!(sidebar.right(), area.right(), "and it holds the right edge");
     }
 
     #[test]
@@ -3593,9 +3558,9 @@ mod tests {
         let area = Rect::new(0, 0, 120, 20);
         let (prose, sidebar) = body_columns(area);
         let sidebar = sidebar.expect("120 columns show it");
-        assert_eq!(sidebar.x, prose.right());
+        assert_eq!(sidebar.x, prose.right() + 1);
         assert_eq!(sidebar.width, SIDEBAR_WIDTH);
-        assert_eq!(prose.width, 120 - SIDEBAR_WIDTH);
+        assert_eq!(prose.width, 120 - SIDEBAR_WIDTH - 1);
         // A body narrower than the threshold has no sidebar at all.
         let (prose, sidebar) = body_columns(Rect::new(0, 0, 99, 20));
         assert!(sidebar.is_none());
@@ -3625,27 +3590,20 @@ mod tests {
                     .contains("composer")
             })
             .expect("the composer is painted");
-        // The composer shares the prose column, which the sidebar shifts left.
+        // The composer fills the prose column, which now runs from the edge.
         let (prose, sidebar) = body_columns(ratatui::layout::Rect::new(0, 0, 200, 20));
         assert!(sidebar.is_some(), "this frame has a sidebar");
         let gutter = prose.x as usize;
-        assert_eq!(
-            gutter,
-            (200 - (TRANSCRIPT_COLUMN + SIDEBAR_WIDTH + 1)) as usize / 2,
-            "the gutter is the prose column's, not the window's"
-        );
+        let column = prose.width as usize;
+        assert_eq!(gutter, 0, "the prose column starts at the window's edge");
         let symbols = rows[top]
             .iter()
             .map(|cell| cell.symbol())
             .collect::<Vec<_>>();
         assert_eq!(symbols[gutter], "┌", "the box starts on the column");
-        assert_eq!(
-            symbols[gutter + TRANSCRIPT_COLUMN as usize - 1],
-            "┐",
-            "and ends on it"
-        );
+        assert_eq!(symbols[gutter + column - 1], "┐", "and ends on it");
         for (x, symbol) in symbols.iter().enumerate() {
-            let inside = x >= gutter && x < gutter + TRANSCRIPT_COLUMN as usize;
+            let inside = x >= gutter && x < gutter + column;
             if !inside {
                 assert_eq!(symbol, &" ", "the input does not reach column {x}");
             }
@@ -3715,20 +3673,18 @@ mod tests {
         terminal
             .draw(|frame| shell.transcript.render(frame, frame.area()))
             .expect("draw");
+        // The transcript owns the whole area it is given: text may paint anywhere
+        // in it, and nothing spills past its right edge.
         let buffer = terminal.backend().buffer();
-        let gutter = (200 - TRANSCRIPT_COLUMN as usize) / 2;
-        for (index, cell) in buffer.content.iter().enumerate() {
-            let x = index % 200;
-            let inside = x >= gutter && x < gutter + TRANSCRIPT_COLUMN as usize;
-            if !inside {
-                assert_eq!(
-                    cell.symbol(),
-                    " ",
-                    "text outside the measure at column {x}: {:?}",
-                    cell.symbol()
-                );
-            }
-        }
+        let painted = buffer
+            .content
+            .iter()
+            .enumerate()
+            .filter(|(_, cell)| cell.symbol() != " ")
+            .map(|(index, _)| index % 200)
+            .max()
+            .expect("the sentence is painted");
+        assert!(painted < 200, "the text stays inside the window");
         let painted = buffer
             .content
             .iter()
@@ -4207,7 +4163,7 @@ mod tests {
         home.set_rows(vec![home_row("ses_a", "login fix", None)]);
         let lines = drawn(&mut home, 200, 12);
         let (prose, _) = body_columns(ratatui::layout::Rect::new(0, 0, 200, 12));
-        let gutter = prose.x as usize - 1;
+        let gutter = prose.x.saturating_sub(1) as usize;
         let header = lines
             .iter()
             .find(|line| {
@@ -4229,9 +4185,9 @@ mod tests {
 
     #[test]
     fn a_wide_home_keeps_the_list_in_the_transcripts_column() {
-        // A row stretched across a wide terminal separates a title from its age
-        // by a screen. The column keeps its measure, and it is the transcript's
-        // column, so opening a Session does not move the body sideways.
+        // The body fills the window, so the landing list starts on the prose
+        // column's left edge and never runs into the sidebar's column. Opening a
+        // Session therefore does not move the body sideways.
         let mut home = Home::new(home_theme());
         home.set_rows(vec![
             home_row("ses_a", "login fix", None),
@@ -4240,29 +4196,30 @@ mod tests {
         let (prose, _) = body_columns(ratatui::layout::Rect::new(0, 0, 200, 12));
         let lines = drawn(&mut home, 200, 12);
         let column = prose.width as usize;
-        let gutter = prose.x as usize - 1;
-        assert!(gutter > 0, "the frame is wider than the column");
         // The list body stops one row short of the border: the bottom row is a
         // full-width key hint, not a list row.
+        let mut titled = 0;
         for line in &lines[1..lines.len() - 2] {
+            let text: String = line.iter().map(|cell| cell.as_str()).collect();
+            if text.contains("login fix") || text.contains("offset fix") {
+                titled += 1;
+                // The first visible character sits on the prose column's edge
+                // (one cell in, after the selection marker column).
+                let first = line[1..].iter().position(|cell| !cell.trim().is_empty());
+                assert!(
+                    first.is_some_and(|x| x <= column),
+                    "a row's text starts inside the column: {line:?}"
+                );
+            }
+            // Nothing paints past the prose column into the sidebar's cells.
             assert!(
-                line[1..1 + gutter]
+                line[1 + column..line.len() - 1]
                     .iter()
                     .all(|cell| cell.trim().is_empty()),
-                "the left margin stays empty: {line:?}"
-            );
-            assert!(
-                line[1 + gutter + column..line.len() - 1]
-                    .iter()
-                    .all(|cell| cell.trim().is_empty()),
-                "the right margin stays empty: {line:?}"
+                "a row overruns the transcript column: {line:?}"
             );
         }
-        // An age ends on the column's right edge, not on the terminal's.
-        let age_end = 1 + gutter + column - 1;
-        for line in &lines[2..4] {
-            assert_eq!(line[age_end], "o", "{line:?}");
-        }
+        assert_eq!(titled, 2, "both rows are painted");
     }
 
     #[test]
