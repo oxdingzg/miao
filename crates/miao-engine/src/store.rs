@@ -382,6 +382,7 @@ impl Store {
                 conn.execute_batch(&format!("PRAGMA application_id={APPLICATION_ID};
                     CREATE TABLE IF NOT EXISTS engine_session(id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL DEFAULT 0, mode TEXT NOT NULL DEFAULT 'build');
                     CREATE TABLE IF NOT EXISTS engine_event(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,seq));
+                    CREATE TABLE IF NOT EXISTS engine_retention(session_id TEXT NOT NULL REFERENCES engine_session(id), through_seq INTEGER NOT NULL, removed INTEGER NOT NULL, created_ms INTEGER NOT NULL, PRIMARY KEY(session_id, through_seq));
                     CREATE INDEX IF NOT EXISTS engine_event_kind ON engine_event(kind);
                     CREATE INDEX IF NOT EXISTS engine_event_selection ON engine_event(session_id,kind,seq);
                     CREATE TABLE IF NOT EXISTS engine_input(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), prompt TEXT NOT NULL, delivery TEXT NOT NULL, state TEXT NOT NULL, admitted_seq INTEGER NOT NULL);
@@ -519,6 +520,12 @@ impl Store {
                         [],
                     )?;
                 }
+                // The retention cut point: retention writes one row per session
+                // it truncates, and the export cursor refuses ranges below it.
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS engine_retention(session_id TEXT NOT NULL REFERENCES engine_session(id), through_seq INTEGER NOT NULL, removed INTEGER NOT NULL, created_ms INTEGER NOT NULL, PRIMARY KEY(session_id, through_seq))",
+                    [],
+                )?;
                 if version < 18 {
                     // Schema 17 overwrote the request watermark with the stage
                     // event's sequence. The original request is in that event.

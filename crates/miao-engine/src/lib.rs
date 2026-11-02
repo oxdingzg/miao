@@ -71,6 +71,7 @@ pub mod recovery;
 pub mod request_options;
 pub mod responses_cache;
 pub mod responses_websocket;
+pub mod retention;
 pub mod roles;
 pub mod routing;
 pub mod runtime;
