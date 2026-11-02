@@ -104,6 +104,10 @@ pub struct Shell {
     /// The projection behind `transcript.lines`, kept so a theme change can
     /// repaint the same content instead of waiting for the next snapshot.
     last: Option<Transcript>,
+    /// The chord that unfolds a tool result, resolved from the live keymap so
+    /// the elision line names a key the operator has. `None` means the action
+    /// is unbound, and then the line promises no chord at all.
+    toggle_chord: Option<String>,
 }
 
 impl Shell {
@@ -123,6 +127,25 @@ impl Shell {
                 todos: Vec::new(),
             }),
             last: None,
+            toggle_chord: None,
+        }
+    }
+
+    /// Name the unfold chord the way the operator's keymap spells it. The
+    /// projection is repainted so the hint follows a remap without waiting for
+    /// the next snapshot.
+    pub fn set_toggle_chord(&mut self, chord: Option<String>) {
+        if self.toggle_chord == chord {
+            return;
+        }
+        self.toggle_chord = chord;
+        if let Some(last) = &self.last {
+            self.transcript.set_lines(transcript_lines(
+                last,
+                &self.transcript.theme,
+                self.transcript.expanded,
+                self.toggle_chord.as_deref(),
+            ));
         }
     }
 
@@ -131,6 +154,7 @@ impl Shell {
             transcript,
             &self.transcript.theme,
             self.transcript.expanded,
+            self.toggle_chord.as_deref(),
         ));
         let max = self.transcript.max_scroll();
         self.transcript.scroll = self.transcript.scroll.min(max);
@@ -200,8 +224,12 @@ impl Shell {
             sidebar.theme = theme.clone();
         }
         if let Some(last) = &self.last {
-            self.transcript
-                .set_lines(transcript_lines(last, &theme, self.transcript.expanded));
+            self.transcript.set_lines(transcript_lines(
+                last,
+                &theme,
+                self.transcript.expanded,
+                self.toggle_chord.as_deref(),
+            ));
         }
     }
 
@@ -231,6 +259,7 @@ impl Shell {
                 last,
                 &self.transcript.theme,
                 self.transcript.expanded,
+                self.toggle_chord.as_deref(),
             ));
         }
         self.transcript.expanded
@@ -1457,7 +1486,12 @@ fn draft_lines(text: &str, reasoning: &str, theme: &Theme) -> Vec<Line<'static>>
     lines
 }
 
-fn transcript_lines(transcript: &Transcript, theme: &Theme, expanded: bool) -> Vec<Line<'static>> {
+fn transcript_lines(
+    transcript: &Transcript,
+    theme: &Theme,
+    expanded: bool,
+    toggle: Option<&str>,
+) -> Vec<Line<'static>> {
     let palette = theme.palette;
     let mut lines = Vec::new();
     for entry in &transcript.entries {
@@ -1498,6 +1532,7 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme, expanded: bool) -> V
                             transcript.displays.get(&call.id).map(Vec::as_slice),
                             theme,
                             expanded,
+                            toggle,
                         )),
                     }
                 }
@@ -3331,7 +3366,7 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let lines = transcript_lines(&transcript, &theme, false);
+        let lines = transcript_lines(&transcript, &theme, false, None);
         assert_eq!(lines[0].to_string(), "✗ provider unavailable");
         assert_eq!(lines[0].spans[0].style.fg, Some(theme.palette.error));
     }
