@@ -43,7 +43,9 @@ Usage:
   miao doctor           check storage, schema, and configuration health
   miao providers        list model routes and stored credentials
   miao memory           summarise the workspace knowledge store
-  miao db path          print the engine database path this directory resolves to
+  miao db path          print the engine and product database paths this directory resolves to
+  miao db stats|vacuum  report or reclaim space (--db PATH, --apply for vacuum)
+  miao db retention     report events a snapshot-then-truncate could drop (report-only)
   miao completion SHELL print a completion script (bash or zsh)
   miao debug paths|info|mcp|lsp|routes
                         read-only diagnostics
@@ -1230,15 +1232,27 @@ fn product_config_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
 /// database the model itself could write. One file per workspace keeps
 /// sessions from different directories apart without opting into a shared
 /// store.
+///
+/// The name resolves through the engine's own placement rule. A private hash
+/// here once sent `miao tui` to a second, empty ledger while `miao-tui` opened
+/// the one the product already uses — every entry point has to agree on the
+/// file, or the maintenance commands audit a database nobody writes.
 fn default_db(workspace: &std::path::Path) -> PathBuf {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    workspace.display().to_string().hash(&mut hasher);
-    let base = std::env::var_os("HOME")
-        .map(|home| PathBuf::from(home).join(".local/share/miao/engine"))
-        .unwrap_or_else(std::env::temp_dir);
-    base.join(format!("{:x}.db", hasher.finish()))
+    let root = miao_engine::placement::storage_root().unwrap_or_else(std::env::temp_dir);
+    miao_engine::placement::database_for(&root, workspace).unwrap_or_else(|| root.join("unnamed.db"))
+}
+
+/// The product database the host projects into. The three-step rule matches the
+/// one the engine already applies to stored credentials, so a report that names
+/// this file points at the file the product actually writes.
+fn product_db() -> Option<PathBuf> {
+    let root = std::env::var_os("MIAO_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("XDG_DATA_HOME").map(|dir| PathBuf::from(dir).join("miao")))
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share/miao"))
+        })?;
+    Some(root.join("miao.db"))
 }
 
 /// Hand the derived routes to the TUI through the variables its own argument
@@ -1819,8 +1833,11 @@ fn completion(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Print the database path this directory resolves to, so scripts do not have
-/// to re-implement the default.
+/// Print the database paths this directory resolves to, so scripts do not have
+/// to re-implement the default. The first line stays a bare engine-ledger path
+/// for the scripts that already read it; the product database follows labelled,
+/// because a maintenance command that reports only one of the two files invites
+/// auditing an empty database.
 fn db_path(rest: &[String]) -> Result<(), String> {
     let mut db: Option<PathBuf> = None;
     let mut index = 0;
@@ -1833,8 +1850,18 @@ fn db_path(rest: &[String]) -> Result<(), String> {
             _ => index += 1,
         }
     }
-    let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    println!("{}", db.unwrap_or_else(|| default_db(&workspace)).display());
+    match db {
+        Some(path) => println!("{path}"),
+        None => {
+            let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            println!("{}", default_db(&workspace).display());
+            match product_db() {
+                Some(path) if path.is_file() => println!("product · {}", path.display()),
+                Some(path) => println!("product · {} (absent)", path.display()),
+                None => println!("product · none"),
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1983,6 +2010,128 @@ fn db_vacuum(rest: &[String]) -> Result<(), String> {
         human_bytes(main + wal + shm)
     );
     Ok(())
+}
+
+/// Report what a snapshot-then-truncate retention could drop, without dropping
+/// it. Events at or before each session's latest compaction baseline are the
+/// candidates: their content already lives in the compacted summary, so the
+/// copies in the event log are the growth a later truncation would reclaim.
+///
+/// The command deliberately has no `--apply`: the event log is still read in
+/// full by cursors that assume history stays present, and deleting from it
+/// safely needs a snapshot export plus a per-kind audit of every reader before
+/// a single row may go. Reporting first is the DATA-03 rule — show the target
+/// and the impact, and let the operator decide with numbers in hand.
+fn db_retention(rest: &[String]) -> Result<(), String> {
+    let mut db: Option<PathBuf> = None;
+    let mut index = 0;
+    while index < rest.len() {
+        match rest[index].as_str() {
+            "--db" => {
+                db = rest.get(index + 1).map(PathBuf::from);
+                index += 2;
+            }
+            _ => index += 1,
+        }
+    }
+    let mut reported = false;
+    let targets = match db {
+        Some(path) => vec![path],
+        None => {
+            let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let mut found = vec![default_db(&workspace)];
+            if let Some(path) = product_db() {
+                if path.is_file() && !found.contains(&path) {
+                    found.push(path);
+                }
+            }
+            found
+        }
+    };
+    for path in targets {
+        if !path.exists() {
+            println!("database · {} · absent", path.display());
+            continue;
+        }
+        let connection = db_read_only(&path)?;
+        println!(
+            "database · {} · {}",
+            path.display(),
+            if is_engine_ledger(&connection) {
+                "engine ledger"
+            } else {
+                "product database"
+            }
+        );
+        for line in retention_plan(&connection).map_err(|error| error.to_string())? {
+            println!("{line}");
+        }
+        reported = true;
+    }
+    if reported {
+        println!("report-only · nothing was deleted; retention truncation is not enabled");
+    }
+    Ok(())
+}
+
+/// An engine ledger announces its tables; the product database uses different
+/// names. The retention SQL differs per family, so the family decides which
+/// query runs rather than guessing from the file name.
+fn is_engine_ledger(connection: &rusqlite::Connection) -> bool {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'engine_event')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(false)
+}
+
+/// One prunable-size line for whichever database family the connection holds.
+fn retention_plan(connection: &rusqlite::Connection) -> rusqlite::Result<Vec<String>> {
+    if is_engine_ledger(connection) {
+        // The compaction baseline is per session: everything at or before the
+        // latest `through_seq` is already summarised in the projection.
+        let mut statement = connection.prepare(
+            "SELECT COUNT(DISTINCT e.session_id), COUNT(*), COALESCE(SUM(LENGTH(e.data)), 0) \
+             FROM engine_event e \
+             WHERE e.seq <= (SELECT COALESCE(MAX(c.through_seq), -1) \
+                             FROM engine_compaction c WHERE c.session_id = e.session_id)",
+        )?;
+        let (sessions, events, bytes): (i64, i64, i64) = statement.query_row([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
+        return Ok(vec![format!(
+            "retention plan · {events} event(s) across {sessions} session(s) · {} prunable",
+            human_bytes(bytes.max(0) as u64)
+        )]);
+    }
+    let projected = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'event') \
+             AND EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'session_message')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+    if !projected {
+        return Ok(vec!["retention plan · neither engine nor product tables found".into()]);
+    }
+    // The product projection keeps the same shape: events strictly before the
+    // session's newest compaction message are represented by it.
+    let mut statement = connection.prepare(
+        "SELECT COUNT(DISTINCT e.aggregate_id), COUNT(*), COALESCE(SUM(LENGTH(e.data)), 0) \
+         FROM event e \
+         WHERE e.seq < (SELECT MAX(m.seq) FROM session_message m \
+                        WHERE m.session_id = e.aggregate_id AND m.type = 'compaction')",
+    )?;
+    let (sessions, events, bytes): (i64, i64, i64) = statement.query_row([], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+    })?;
+    Ok(vec![format!(
+        "retention plan · {events} event(s) across {sessions} session(s) · {} prunable",
+        human_bytes(bytes.max(0) as u64)
+    )])
 }
 
 /// One view of what a turn could use: routes first (what can be called), then
@@ -3641,8 +3790,15 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                         std::process::ExitCode::from(1)
                     }
                 },
+                Some("retention") => match db_retention(&rest[1..]) {
+                    Ok(()) => std::process::ExitCode::SUCCESS,
+                    Err(message) => {
+                        eprintln!("miao db retention: {message}");
+                        std::process::ExitCode::from(1)
+                    }
+                },
                 _ => {
-                    eprintln!("usage: miao db [path|stats|vacuum] [--db PATH] [--apply]");
+                    eprintln!("usage: miao db [path|stats|vacuum|retention] [--db PATH] [--apply]");
                     std::process::ExitCode::from(2)
                 }
             }
@@ -3853,8 +4009,8 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        db_file_bytes, db_report, db_vacuum, lsp_servers, mcp_servers, model_routes,
-        parsed_session_location, plugin_entries, strip_comments,
+        db_file_bytes, db_report, db_vacuum, default_db, lsp_servers, mcp_servers, model_routes,
+        parsed_session_location, plugin_entries, retention_plan, strip_comments,
     };
     use std::io::Write;
 
@@ -4148,5 +4304,62 @@ mod tests {
         std::fs::write(dir.join("miao.jsonc"), "{ \"model\": \"a/b\" }").expect("config");
         assert!(plugin_entries(Some(&dir)).expect("parses").is_empty());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_default_engine_ledger_uses_the_placement_rule() {
+        // The CLI and the TUI have to resolve the same ledger for one workspace.
+        // A private hash here once sent `miao tui` to a second, empty database,
+        // so the default must carry the engine's own 64-hex placement name.
+        let workspace = std::path::Path::new("/some/workspace");
+        let path = default_db(workspace);
+        let name = path
+            .file_name()
+            .expect("a ledger name")
+            .to_string_lossy()
+            .to_string();
+        assert_eq!(name.len(), 64 + ".db".len(), "{name}");
+        assert!(name.ends_with(".db"), "{name}");
+        assert!(name[..64].chars().all(|c| c.is_ascii_hexdigit()), "{name}");
+    }
+
+    #[test]
+    fn the_engine_retention_plan_counts_events_at_or_before_the_baseline() {
+        let connection = rusqlite::Connection::open_in_memory().expect("memory database");
+        connection
+            .execute_batch(
+                "CREATE TABLE engine_event (session_id TEXT NOT NULL, seq INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (session_id, seq)); \
+                 CREATE TABLE engine_compaction (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, through_seq INTEGER NOT NULL, summary TEXT NOT NULL, created_seq INTEGER NOT NULL); \
+                 INSERT INTO engine_event VALUES ('s1', 1, 'user.message', '\"long\"'), ('s1', 2, 'assistant.message', X'0000'), ('s1', 3, 'run.started', '\"x\"'); \
+                 INSERT INTO engine_event VALUES ('s1', 5, 'summary.ready', X'00'); \
+                 INSERT INTO engine_event VALUES ('s2', 1, 'user.message', '\"fresh\"'); \
+                 INSERT INTO engine_compaction VALUES ('c1', 's1', 2, 'summary', 4);",
+            )
+            .expect("seed");
+
+        let lines = retention_plan(&connection).expect("engine plan");
+        let text = lines.join("\n");
+        // Session s1 has events 1 and 2 at or before its baseline (through_seq 2);
+        // s2 has no baseline, so its fresh event stays out of the plan.
+        assert!(text.contains("retention plan · 2 event(s) across 1 session(s) · "), "{text}");
+    }
+
+    #[test]
+    fn the_product_retention_plan_reads_events_before_the_compaction_message() {
+        let connection = rusqlite::Connection::open_in_memory().expect("memory database");
+        connection
+            .execute_batch(
+                "CREATE TABLE event (aggregate_id TEXT NOT NULL, seq INTEGER NOT NULL, data TEXT NOT NULL); \
+                 CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL, seq INTEGER NOT NULL, data TEXT NOT NULL); \
+                 INSERT INTO event VALUES ('s1', 1, '\"a\"'), ('s1', 2, '\"b\"'), ('s1', 3, '\"live\"'); \
+                 INSERT INTO session_message VALUES ('m1', 's1', 'compaction', 9, '{}');",
+            )
+            .expect("seed");
+
+        let lines = retention_plan(&connection).expect("product plan");
+        let text = lines.join("\n");
+        // Events 1 and 2 sit strictly before the compaction message (seq 9);
+        // event 3 is past it and the projection already summarises the rest.
+        assert!(text.contains("retention plan · 2 event(s) across 1 session(s) · "), "{text}");
     }
 }
