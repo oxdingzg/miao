@@ -852,3 +852,25 @@ async fn a_dead_old_owner_does_not_block_format_upgrade_or_restart_provider_work
         ("running".into(), None)
     );
 }
+
+/// Startup adoption of wakeups and crons asks `engine_event` for one `kind` at a
+/// time. On a store with a long history that is a full table scan unless the
+/// column is indexed, which cost seconds per launch on a 1 GiB ledger.
+#[tokio::test]
+async fn opening_a_store_indexes_the_event_kind_so_recovery_does_not_scan_the_table() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("engine.db");
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    Store::open(&path).await.unwrap().close().await.unwrap();
+    let plan: Vec<String> = connection
+        .prepare("EXPLAIN QUERY PLAN SELECT q.session_id FROM engine_event q WHERE q.kind='wakeup.scheduled' AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind='wakeup.resolved' AND json_extract(r.data,'$.timer_id')=json_extract(q.data,'$.timer_id')) LIMIT 65")
+        .unwrap()
+        .query_map([], |row| row.get(3))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(
+        plan.iter().any(|detail| detail.contains("engine_event_kind")),
+        "the recovery query must seek the kind index instead of scanning the table: {plan:?}"
+    );
+}
