@@ -1337,6 +1337,43 @@ mod tests {
     }
 
     #[test]
+    fn the_operators_permission_rules_reach_the_base_policy() {
+        let policy = policy(
+            &documents(&[serde_json::json!({
+                "permissions": [
+                    {"action": "*", "resource": "*", "effect": "allow"},
+                    {"action": "edit", "resource": "src/**", "effect": "ask"},
+                    {"action": "bash", "resource": "*", "effect": "deny"},
+                ]
+            })]),
+            None,
+        );
+        assert_eq!(
+            serde_json::to_value(&policy.rules).unwrap(),
+            serde_json::json!([
+                {"tool": "*", "path": "**", "decision": "allow"},
+                {"tool": "{apply_patch,edit_file,write_file}", "path": "src/**", "decision": "ask"},
+                {"tool": "bash", "path": "**", "decision": "deny"},
+            ])
+        );
+        // The wildcard grant answers for a workspace-relative command, and an
+        // edit lands under the narrower ask.
+        let compiled = permission::Policy::new(policy).unwrap();
+        assert_eq!(
+            compiled.evaluate("bash", ".", crate::permission::Access::Execute),
+            permission::Decision::Deny
+        );
+        assert_eq!(
+            compiled.evaluate("write_file", "src/lib.rs", crate::permission::Access::Write),
+            permission::Decision::Ask
+        );
+        assert_eq!(
+            compiled.evaluate("glob", "**", crate::permission::Access::Read),
+            permission::Decision::Allow
+        );
+    }
+
+    #[test]
     fn lsp_defaults_resolve_through_the_lookup_and_skip_missing_servers() {
         let entries =
             lsp_entries(None, &BUILTIN_SERVERS, &lookup(&["gopls", "rust-analyzer"])).unwrap();
