@@ -1288,6 +1288,11 @@ impl Tools {
                 crate::patch::parse(&Self::patch_input(name, input.clone())?)?;
                 ".".into()
             }
+            // Coordination touches no workspace path, so the resource is the
+            // workspace itself and the target Session is validated by the tool
+            // (same project, resolved by id). Its own permission target is a
+            // policy-layer follow-up, not a path.
+            "list_sessions" | "send_message" | "read_session_context" => ".".into(),
             _ => return Err(ToolError::Unsupported),
         };
         let path = if name == "apply_patch" {
