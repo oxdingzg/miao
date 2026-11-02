@@ -29,6 +29,48 @@ const TRANSCRIPT_COLUMN: u16 = 100;
 fn composer_column(width: u16) -> u16 {
     width.min(TRANSCRIPT_COLUMN)
 }
+
+/// Where the body splits between the transcript and the sidebar.
+///
+/// A wide window centres the prose column, so the sidebar sits beside that
+/// column instead of at the window's edge with a band of empty space between
+/// the text and the panel describing it. When the window is too narrow to hold
+/// both with air between them, the sidebar takes its columns from the right and
+/// the prose uses what is left.
+fn body_columns(area: Rect) -> (Rect, Option<Rect>) {
+    if area.width < SIDEBAR_MIN_WIDTH {
+        return (area, None);
+    }
+    let column = area.width.min(TRANSCRIPT_COLUMN);
+    let group = column + SIDEBAR_WIDTH + 1;
+    if group > area.width {
+        let split = area.width - SIDEBAR_WIDTH;
+        return (
+            Rect {
+                width: split,
+                ..area
+            },
+            Some(Rect {
+                x: area.x + split,
+                width: SIDEBAR_WIDTH,
+                ..area
+            }),
+        );
+    }
+    let left = area.x + (area.width - group) / 2;
+    (
+        Rect {
+            x: left,
+            width: column,
+            ..area
+        },
+        Some(Rect {
+            x: left + column + 1,
+            width: SIDEBAR_WIDTH,
+            ..area
+        }),
+    )
+}
 const SIDEBAR_WIDTH: u16 = 40;
 
 pub trait Pane {
@@ -263,16 +305,10 @@ impl Shell {
         ])
         .areas(frame.area());
         self.title.render(frame, title_area);
-        if body_area.width >= SIDEBAR_MIN_WIDTH {
-            let [transcript_area, sidebar_area] =
-                Layout::horizontal([Constraint::Min(1), Constraint::Length(SIDEBAR_WIDTH)])
-                    .areas(body_area);
-            self.transcript.render(frame, transcript_area);
-            if let Some(sidebar) = self.sidebar.as_mut() {
-                sidebar.render(frame, sidebar_area);
-            }
-        } else {
-            self.transcript.render(frame, body_area);
+        let (transcript_area, sidebar_area) = body_columns(body_area);
+        self.transcript.render(frame, transcript_area);
+        if let (Some(sidebar), Some(sidebar_area)) = (self.sidebar.as_mut(), sidebar_area) {
+            sidebar.render(frame, sidebar_area);
         }
         if let Some(panel) = self.panel.as_ref() {
             panel.render(frame, panel_area, &self.transcript.theme);
@@ -3317,6 +3353,40 @@ mod tests {
             Shell::new(Path::new("."), shell.theme().clone()).last_response(),
             None
         );
+    }
+
+    #[test]
+    fn the_sidebar_sits_beside_the_prose_on_a_wide_frame() {
+        // A 200-column window used to leave ~30 empty columns between the text
+        // and the panel that describes it.
+        let area = Rect::new(0, 0, 200, 20);
+        let (prose, sidebar) = body_columns(area);
+        let sidebar = sidebar.expect("wide enough for both");
+        assert_eq!(prose.width, TRANSCRIPT_COLUMN);
+        assert_eq!(sidebar.width, SIDEBAR_WIDTH);
+        assert_eq!(
+            sidebar.x,
+            prose.right() + 1,
+            "one column of air between them"
+        );
+        assert!(sidebar.right() <= area.right());
+        assert_eq!(prose.x, (200 - (TRANSCRIPT_COLUMN + SIDEBAR_WIDTH + 1)) / 2);
+    }
+
+    #[test]
+    fn a_narrow_body_still_gives_the_sidebar_its_columns() {
+        // Below the width that holds both with air between them, the sidebar
+        // takes its columns from the right and the prose uses what is left.
+        let area = Rect::new(0, 0, 120, 20);
+        let (prose, sidebar) = body_columns(area);
+        let sidebar = sidebar.expect("120 columns show it");
+        assert_eq!(sidebar.x, prose.right());
+        assert_eq!(sidebar.width, SIDEBAR_WIDTH);
+        assert_eq!(prose.width, 120 - SIDEBAR_WIDTH);
+        // A body narrower than the threshold has no sidebar at all.
+        let (prose, sidebar) = body_columns(Rect::new(0, 0, 99, 20));
+        assert!(sidebar.is_none());
+        assert_eq!(prose.width, 99);
     }
 
     #[test]
