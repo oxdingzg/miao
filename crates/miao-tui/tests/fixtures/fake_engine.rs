@@ -138,7 +138,25 @@ fn main() {
                 next += 1;
             }
             // A small, complete change set so the review surface can be driven.
+            // `MIAO_FAKE_VCS_FILES` scales the answer for the WSP-02 whole-path
+            // latency scenarios; unset keeps the three named files.
             "vcs_status" if sessions => {
+                let scaled = std::env::var("MIAO_FAKE_VCS_FILES")
+                    .ok()
+                    .and_then(|count| count.parse::<usize>().ok());
+                let files: Vec<Value> = match scaled {
+                    Some(count) => (0..count)
+                        .map(|index| {
+                            json!({"path": format!("src/file_{index}.rs"), "kind": "modified"})
+                        })
+                        .collect(),
+                    None => vec![
+                        json!({"path":"src/parser.rs","kind":"modified"}),
+                        json!({"path":"src/main.rs","kind":"modified"}),
+                        json!({"path":"docs/notes.md","kind":"added"}),
+                    ],
+                };
+                let count = files.len();
                 send(
                     &mut out,
                     json!({"id":id,"result":{
@@ -148,12 +166,8 @@ fn main() {
                         "ahead":1,
                         "behind":0,
                         "truncated":false,
-                        "file_count":3,
-                        "files":[
-                            {"path":"src/parser.rs","kind":"modified"},
-                            {"path":"src/main.rs","kind":"modified"},
-                            {"path":"docs/notes.md","kind":"added"}
-                        ]
+                        "file_count":count,
+                        "files":files
                     }}),
                 );
             }
