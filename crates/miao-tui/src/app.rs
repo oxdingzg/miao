@@ -4652,10 +4652,10 @@ mod tests {
             ))
         };
         // First click: selection only.
-        app.handle(click(3));
+        app.handle(click(4));
         assert!(requests.try_recv().is_err(), "one click must not open");
         // Second click on the same row opens it.
-        app.handle(click(3));
+        app.handle(click(4));
         assert!(matches!(
             requests.try_recv(),
             Ok(engine::Request::Open(id)) if id == "ses_second"
@@ -4686,7 +4686,7 @@ mod tests {
         app.handle(AppEvent::Mouse(MouseEvent::new(
             MouseEventKind::Down(MouseButton::Left),
             4,
-            3,
+            4,
             KeyModifiers::NONE,
         )));
         assert_eq!(
@@ -4780,9 +4780,9 @@ mod tests {
         app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
         app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
         assert_eq!(app.home.query(), "");
-        // Filter cleared: the cursor goes to the action row.
+        // Filter cleared: the cursor goes to the action row, which is not a
+        // Session, so current() is None.
         assert_eq!(app.home.current(), None);
-        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
     }
 
     #[test]
