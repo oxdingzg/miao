@@ -317,8 +317,10 @@ impl Shell {
 
     pub fn render(&mut self, frame: &mut Frame) {
         let panel_height = self.panel.as_ref().map_or(0, Panel::height);
-        let [title_area, body_area, panel_area, composer_area, status_area] = Layout::vertical([
-            Constraint::Length(1),
+        // No title row: the workspace, branch and version fold into the status
+        // strip at the bottom, so the whole screen above the composer is
+        // content. The terminal tab already names the workspace too.
+        let [body_area, panel_area, composer_area, status_area] = Layout::vertical([
             Constraint::Min(1),
             Constraint::Length(panel_height),
             Constraint::Length(composer_height(
@@ -328,7 +330,6 @@ impl Shell {
             Constraint::Length(1),
         ])
         .areas(frame.area());
-        self.title.render(frame, group_columns(title_area));
         let (transcript_area, sidebar_area) = body_columns(body_area);
         self.transcript.render(frame, transcript_area);
         if let (Some(sidebar), Some(sidebar_area)) = (self.sidebar.as_mut(), sidebar_area) {
@@ -1211,7 +1212,6 @@ impl Home {
         // The landing list opens on the action, not on the newest Session: a
         // launch that resumes yesterday's conversation is not what "start" means.
         let offset = usize::from(self.show_new_session());
-        let gutter = ((inner.width.saturating_sub(2).min(SESSION_COLUMN) as usize) / 2);
         if offset == 1 {
             let selected = self.selected == 0;
             let style = match selected {
@@ -1221,11 +1221,12 @@ impl Home {
                     .add_modifier(Modifier::BOLD),
                 false => Style::new().fg(palette.secondary),
             };
+            // The action reads as a list row: same marker column as the
+            // Sessions under it. An indentation gutter once printed its width
+            // as digits ("48 ＋ new session"), so the row never looked
+            // selectable.
             body.push(Line::from(Span::styled(
-                format!(
-                    "{gutter}{}＋ new session",
-                    if selected { "▸ " } else { "  " }
-                ),
+                format!("{}＋ new session", if selected { "▸ " } else { "  " }),
                 style,
             )));
             lines_to_row.push(Some(0));
@@ -4073,7 +4074,7 @@ mod tests {
         });
         home.set_notice(Some("engine engine_closed: miao-engine exited (exit code: 1): miao engine-shim: could not prepare the product engine plan: Native TUI requires default-agent capture support".into()));
         let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 10)).expect("terminal");
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 20)).expect("terminal");
         terminal
             .draw(|frame| home.render(frame, frame.area()))
             .expect("draw");
@@ -4444,6 +4445,9 @@ mod tests {
         drawn(&mut home, 80, 20);
         // Twenty rows: one of header and one of key hints, so one screenful
         // is eighteen rows.
+        // Start paging from the action row so the offset doesn't shift every
+        // expected value by one.
+        home.select_first();
         home.page();
         assert_eq!(home.selected, 18);
         home.page();
