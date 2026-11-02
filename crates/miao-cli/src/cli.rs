@@ -4351,7 +4351,7 @@ mod tests {
             .execute_batch(
                 "CREATE TABLE event (aggregate_id TEXT NOT NULL, seq INTEGER NOT NULL, data TEXT NOT NULL); \
                  CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL, seq INTEGER NOT NULL, data TEXT NOT NULL); \
-                 INSERT INTO event VALUES ('s1', 1, '\"a\"'), ('s1', 2, '\"b\"'), ('s1', 3, '\"live\"'); \
+                 INSERT INTO event VALUES ('s1', 1, '\"a\"'), ('s1', 2, '\"b\"'), ('s1', 9, '\"live\"'); \
                  INSERT INTO session_message VALUES ('m1', 's1', 'compaction', 9, '{}');",
             )
             .expect("seed");
@@ -4359,7 +4359,7 @@ mod tests {
         let lines = retention_plan(&connection).expect("product plan");
         let text = lines.join("\n");
         // Events 1 and 2 sit strictly before the compaction message (seq 9);
-        // event 3 is past it and the projection already summarises the rest.
+        // the event at seq 9 is the compaction's own admission and stays.
         assert!(text.contains("retention plan · 2 event(s) across 1 session(s) · "), "{text}");
     }
 }
