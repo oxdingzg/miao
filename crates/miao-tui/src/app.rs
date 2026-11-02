@@ -2150,6 +2150,13 @@ impl App {
             if self.reject_question() {
                 return;
             }
+            // An approval is a decision too, and Escape declines it. Without
+            // this exit an approval the engine no longer holds — a run that
+            // ended, a restarted process — left the panel on screen with nothing
+            // able to answer it, and every key blocked.
+            if self.decline_pending_approval() {
+                return;
+            }
             // A queued prompt is cheaper to take back than a running turn is to
             // interrupt, so Escape cancels the newest queued input first and
             // only reaches the turn when the queue is empty.
@@ -2256,39 +2263,63 @@ impl App {
         };
         let session_id = self.session.as_ref().map(|session| session.id.clone());
         let typing = panel.typing().is_some();
+        // A key this panel does not answer falls through. Swallowing every key
+        // while a panel was on screen made a pending approval look like a frozen
+        // TUI: the panel could not be answered and nothing else could be done
+        // either.
         match &mut panel.kind {
             PanelKind::Approval(view) => {
-                let decision = match key.code {
-                    KeyCode::Char('1') => Some(("allow", false)),
-                    KeyCode::Char('2') => Some(("allow", true)),
-                    KeyCode::Char('3') => Some(("deny", false)),
-                    _ => None,
+                let (decision, persistent) = match key.code {
+                    KeyCode::Char('1') => ("allow", false),
+                    KeyCode::Char('2') => ("allow", true),
+                    KeyCode::Char('3') => ("deny", false),
+                    // Scrolling is not a decision, and a long approval prompt is
+                    // worth reading. Everything else stays blocked: a decision
+                    // is blocking, so a stray key must not land in the draft.
+                    KeyCode::PageUp | KeyCode::PageDown => return false,
+                    _ => return true,
                 };
-                if let Some((decision, persistent)) = decision {
-                    let response = view.response(decision);
-                    if let (Some(session_id), Some(engine)) =
-                        (session_id.as_deref(), self.engine.as_ref())
-                    {
-                        engine.approve(session_id, response, persistent);
-                    }
+                let response = view.response(decision);
+                if let (Some(session_id), Some(engine)) =
+                    (session_id.as_deref(), self.engine.as_ref())
+                {
+                    engine.approve(session_id, response, persistent);
                 }
+                true
             }
             PanelKind::Question(_) if typing => match key.code {
                 // While a custom answer is being typed, keys belong to it.
                 KeyCode::Enter => {
                     panel.accept_typing();
+                    true
                 }
                 KeyCode::Esc => {
                     panel.cancel_typing();
+                    true
                 }
-                KeyCode::Backspace => panel.backspace_typing(),
-                KeyCode::Char(character) => panel.type_char(character),
-                _ => {}
+                KeyCode::Backspace => {
+                    panel.backspace_typing();
+                    true
+                }
+                KeyCode::Char(character) => {
+                    panel.type_char(character);
+                    true
+                }
+                _ => false,
             },
             PanelKind::Question(_) => match key.code {
-                KeyCode::Up | KeyCode::Char('k') => panel.move_cursor(-1),
-                KeyCode::Down | KeyCode::Char('j') => panel.move_cursor(1),
-                KeyCode::Char(' ') => panel.toggle(),
+                KeyCode::Up | KeyCode::Char('k') => {
+                    panel.move_cursor(-1);
+                    true
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    panel.move_cursor(1);
+                    true
+                }
+                KeyCode::Char(' ') => {
+                    panel.toggle();
+                    true
+                }
                 KeyCode::Enter => {
                     if panel.begin_typing() {
                         return true;
@@ -2300,10 +2331,31 @@ impl App {
                             engine.answer(session_id, answer);
                         }
                     }
+                    true
                 }
-                _ => {}
+                _ => false,
             },
         }
+    }
+
+    /// Declining a pending approval is the other Esc that is answered locally.
+    ///
+    /// It clears the panel whether or not the engine still holds the request:
+    /// the operator asked to get out, and a stale prompt must not outlive that.
+    fn decline_pending_approval(&mut self) -> bool {
+        let Some(view) = self.shell.panel.as_ref().and_then(Panel::approval_view) else {
+            return false;
+        };
+        let response = view.response("deny");
+        if let (Some(session), Some(engine)) = (
+            self.session.as_ref().map(|session| session.id.clone()),
+            self.engine.as_ref(),
+        ) {
+            engine.approve(&session, response, false);
+        }
+        self.state.approvals.clear();
+        self.shell.panel = None;
+        self.notice("approval declined");
         true
     }
 
@@ -3798,6 +3850,56 @@ mod tests {
             questions: Vec::new(),
             reverted: 0,
         }
+    }
+
+    fn approval_app() -> App {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            // An approval belongs to a Session: without one the decision has
+            // nowhere to go.
+            summary: Some(summary("ses_open", 1)),
+            transcript: Box::new(Transcript::default()),
+            state: approval_state(),
+        });
+        assert!(app.shell.panel.is_some(), "the approval is on screen");
+        app
+    }
+
+    /// A decision is blocking, so a letter stays out of the draft, and the
+    /// numbered answers reach the engine instead.
+    #[test]
+    fn an_approval_answers_its_own_keys_and_keeps_stray_ones_out_of_the_draft() {
+        let mut app = approval_app();
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::NONE));
+        assert!(
+            app.shell.composer.editor.is_empty(),
+            "a stray key does not land in the draft"
+        );
+
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Char('1'), KeyModifiers::NONE));
+        assert!(
+            matches!(requests.try_recv(), Ok(engine::Request::Approve { .. })),
+            "1 answers the approval"
+        );
+        assert!(app.shell.composer.editor.is_empty());
+    }
+
+    /// Escape always has an answer, even for a request the engine dropped: a
+    /// stale approval used to leave the panel up with every key blocked.
+    #[test]
+    fn escape_declines_a_pending_approval_instead_of_doing_nothing() {
+        let mut app = approval_app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(
+            matches!(requests.try_recv(), Ok(engine::Request::Approve { .. })),
+            "Escape declines the approval"
+        );
+        assert!(app.shell.panel.is_none(), "the panel is gone");
+        assert!(app.state.approvals.is_empty());
     }
 
     #[test]
