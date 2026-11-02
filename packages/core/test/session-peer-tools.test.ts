@@ -144,3 +144,30 @@ describe("peer tool factory", () => {
     expect(text).toContain("has no recorded messages")
   })
 })
+
+test("one Session whose work dies does not take the listing down", async () => {
+  // A deleted worktree makes `peers.work` die inside Filesystem.realPath. That is
+  // a defect, not a typed failure, so without per-row isolation the whole listing
+  // disappears — the state this machine actually hit (#2281).
+  const dying = {
+    ...peers,
+    work: (id: SessionSchema.ID) =>
+      id === targetID ? Effect.die(new Error("Filesystem.realPath: not found")) : peers.work(id),
+  } as PeerTools.Peers
+  const local = PeerTools.make({
+    sessionID: senderID,
+    permission: { assert: () => Effect.void } as unknown as PermissionV2.Interface,
+    peers: dying,
+  })
+  const output = await Effect.runPromise(
+    Tool.settle(
+      local.list_sessions!,
+      { type: "tool-call", id: "call_dying", name: "list_sessions", input: { includeHistory: true } },
+      context,
+    ),
+  )
+  const text = output.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+  expect(text).toContain("ses_target")
+  expect(text).toContain("execution: unknown")
+  expect(text).toContain("task: unknown")
+})
