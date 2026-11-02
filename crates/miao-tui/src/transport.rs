@@ -188,18 +188,21 @@ impl EngineClient {
                 tokio::select! {
                     frame = inbound.recv() => {
                         let Some(frame) = frame else { break };
+                        wire_note("out", frame.get("method").and_then(Value::as_str).unwrap_or("?"));
                         let id = frame.get("id").cloned().unwrap_or(Value::Null);
                         let outcome = match miao_engine::embed::decode(&frame) {
                             Ok(command) => host.dispatch(command).await,
                             Err(error) => Err(error),
                         };
                         let reply = miao_engine::embed::reply(id, outcome);
+                        wire_note("in-reply", &serde_json::to_string(&reply).unwrap_or_default());
                         if let Ok(line) = serde_json::to_string(&reply) {
                             reap.dispatch(&line);
                         }
                     }
                     _ = tokio::time::sleep(Duration::from_millis(20)) => {
                         let Ok(values) = host.poll_events().await else { continue };
+                        if !values.is_empty() { wire_note("event", &format!("{} durable", values.len())); }
                         for value in values {
                             let frame = json!({ "method": "event", "params": value });
                             if let Ok(line) = serde_json::to_string(&frame) {
@@ -511,6 +514,32 @@ impl EngineClient {
 }
 
 /// A client whose cursors outlive it, so a respawn can replay from them.
+
+/// When `MIAO_TUI_WIRE_LOG` names a file, every frame in and out of the
+/// engine — plus the pump's lifecycle marks — lands there with a millisecond
+/// stamp. It exists to catch the lost-request现场: a catalog ask that never
+/// reached the engine while the landing screen spun.
+fn wire_note(direction: &str, body: &str) {
+    static WIRE: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    let Some(path) = WIRE
+        .get_or_init(|| {
+            std::env::var_os("MIAO_TUI_WIRE_LOG").map(|value| PathBuf::from(value))
+        })
+        .as_ref()
+    else {
+        return;
+    };
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        use std::io::Write as _;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let head: String = body.chars().take(160).collect();
+        let _ = writeln!(file, "{stamp} {direction} {head}");
+    }
+}
+
 fn spawn_engine(
     spawn: &EngineSpawn,
     request_timeout: Duration,
@@ -550,10 +579,13 @@ fn spawn_engine(
             // One frame per line, as the engine's `read_line` expects.
             let mut line = frame.to_string();
             line.push('\n');
+            wire_note("out", &line);
             if writer.write_all(line.as_bytes()).is_err() || writer.flush().is_err() {
+                wire_note("out-error", "engine stdin write failed");
                 break;
             }
         }
+        wire_note("out-closed", "writer loop ended");
     });
 
     let reap = Reap {
@@ -572,11 +604,13 @@ fn spawn_engine(
     std::thread::spawn(move || {
         let lines = BufReader::new(stdout).lines();
         for line in lines {
-            let Ok(line) = line else { break };
+            let Ok(line) = line else { wire_note("in-error", "stdout read failed"); break };
+            wire_note("in", &line);
             if !line.trim().is_empty() {
                 reap.dispatch(&line);
             }
         }
+        wire_note("in-closed", "stdout EOF");
         // EOF usually means the child exited, and its status plus stderr name
         // the reason. Wait briefly for that status so the message reports the
         // engine's own words instead of losing a race with the stream closing.

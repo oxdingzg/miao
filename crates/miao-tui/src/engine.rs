@@ -739,8 +739,10 @@ async fn run(
 ) {
     let mut open: Option<Opened> = None;
     let mut dirty: Option<Instant> = None;
+    crate::transport::wire_note("run", "startup refresh begin");
     if let Ok(client) = connection.connect().await {
         refresh_sessions(client, &bus).await;
+        crate::transport::wire_note("run", "startup refresh done");
     }
     loop {
         let deadline = dirty.map(|start| start + REFRESH_DELAY);
