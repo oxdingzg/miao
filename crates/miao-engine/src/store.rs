@@ -382,6 +382,7 @@ impl Store {
                 conn.execute_batch(&format!("PRAGMA application_id={APPLICATION_ID};
                     CREATE TABLE IF NOT EXISTS engine_session(id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL DEFAULT 0, mode TEXT NOT NULL DEFAULT 'build');
                     CREATE TABLE IF NOT EXISTS engine_event(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,seq));
+                    CREATE INDEX IF NOT EXISTS engine_event_kind ON engine_event(kind);
                     CREATE TABLE IF NOT EXISTS engine_input(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), prompt TEXT NOT NULL, delivery TEXT NOT NULL, state TEXT NOT NULL, admitted_seq INTEGER NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_message(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, checkpoint TEXT, PRIMARY KEY(session_id,seq));
                     CREATE TABLE IF NOT EXISTS engine_run(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), state TEXT NOT NULL);
@@ -1155,6 +1156,66 @@ impl Store {
                 sessions.push(row?);
             }
             Ok(sessions)
+        })
+        .await
+    }
+
+    /// Every Session's catalog row, in one transaction.
+    ///
+    /// The list used to be assembled from one `snapshot` per Session, so a
+    /// store with a hundred Sessions paid a hundred request round trips and a
+    /// few thousand queries before the first frame could paint. A row keeps the
+    /// snapshot's own field names, so one parser reads both.
+    pub async fn session_catalog(&self) -> Result<Vec<Value>, Error> {
+        self.call(|conn| {
+            let tx = conn.transaction()?;
+            let ids = {
+                let mut statement = tx.prepare("SELECT id FROM engine_session ORDER BY id")?;
+                let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+                rows.collect::<Result<Vec<_>, _>>()?
+            };
+            let mut catalog = Vec::with_capacity(ids.len());
+            for session in ids {
+                let (title, updated_at_ms, archived_at_ms, pinned_at_ms): (
+                    String,
+                    Option<i64>,
+                    Option<i64>,
+                    Option<i64>,
+                ) = tx.query_row(
+                    "SELECT title,updated_at_ms,archived_at_ms,pinned_at_ms FROM engine_session \
+                     WHERE id=?1",
+                    [&session],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )?;
+                let location: Option<String> = tx
+                    .query_row(
+                        "SELECT root FROM engine_location WHERE session_id=?1",
+                        [&session],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let parent: Option<String> = tx
+                    .query_row(
+                        "SELECT parent_session_id FROM engine_lineage WHERE session_id=?1",
+                        [&session],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                catalog.push(json!({
+                    "session_id": session,
+                    "parent_session_id": parent,
+                    "location": location,
+                    "title": title,
+                    "updated_at_ms": updated_at_ms,
+                    "archived_at_ms": archived_at_ms,
+                    "pinned_at_ms": pinned_at_ms,
+                    "preview": metadata_preview(&tx, &session)?,
+                    "model_selection": crate::session_model::selected(&tx, &session)?,
+                    "account_selection": crate::session_account::selected_at(&tx, &session, i64::MAX as u64)?,
+                }));
+            }
+            tx.commit()?;
+            Ok(catalog)
         })
         .await
     }

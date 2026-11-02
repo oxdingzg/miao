@@ -59,6 +59,7 @@ does not prevent the engine from settling its own cancelled drain.
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id`, `metadata_only?` | committed Session snapshot; metadata-only replies omit `messages` |
 | `sessions` | — | `string[]` (Session ids) |
+| `session_catalog` | — | `object[]`: one row per Session with the catalog fields a `snapshot` reports (`session_id`, `title`, `parent_session_id`, `location`, `updated_at_ms`, `archived_at_ms`, `pinned_at_ms`, `preview`, `model_selection`, `account_selection`). One transaction for the whole list, so a client does not ask for a `snapshot` per Session |
 | `config_reload` | — | `{generation, changed, unchanged, unsupported, lsp?, mcp?, context?}` |
 | `session_children` | `session_id` | `{session_id, children[], truncated}` (see below) |
 | `config_reload` | — | `{generation, changed, unchanged, unsupported, lsp?, mcp?}` |

@@ -8,6 +8,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::keybinds::Action;
+
 /// Config documents, lowest to highest priority inside one directory.
 const FILE_NAMES: [&str; 4] = ["miao.json", "miao.jsonc", "opencode.json", "opencode.jsonc"];
 /// Directory names a project may use for markdown commands.
@@ -134,38 +136,40 @@ impl Builtin {
         }
     }
 
-    /// The key chord that runs the same action, empty when it has none.
-    pub fn keys(self) -> &'static str {
+    /// The key action that runs this command.
+    ///
+    /// The palette and the help list name the chord beside each command, so
+    /// this is the one place that answers "which action is this?". A second
+    /// table of spelled-out chords drifted the moment an operator remapped a
+    /// key: the list kept advertising `<leader>t` while the keymap had moved
+    /// elsewhere. `None` means the command has no chord of its own.
+    pub fn action(self) -> Option<Action> {
         match self {
-            Builtin::Models => "<leader>m",
-            Builtin::Permissions => "",
-            Builtin::WorkspaceChanges => "",
-            Builtin::Theme => "<leader>t",
-            Builtin::Sessions => "<leader>l",
-            Builtin::NewSession => "<leader>n",
-            Builtin::Rename => "ctrl+r",
-            Builtin::Tag => "",
-            Builtin::Status => "<leader>s",
-            Builtin::Accounts => "ctrl+o",
-            Builtin::Debug => "<leader>d",
-            Builtin::Stash => "<leader>p",
-            Builtin::StashDraft => "<leader>P",
-            Builtin::Timeline => "",
-            Builtin::Undo => "",
-            Builtin::Redo => "",
-            Builtin::Editor => "<leader>e",
-            Builtin::Redraw => "",
-            Builtin::Suspend => {
-                if cfg!(unix) {
-                    "ctrl+z"
-                } else {
-                    ""
-                }
-            }
-            Builtin::TerminalTitle => "",
-            Builtin::Recall => "",
-            Builtin::Help => "",
-            Builtin::Quit => "<leader>q",
+            Builtin::Models => Some(Action::ModelList),
+            Builtin::Permissions => None,
+            Builtin::WorkspaceChanges => Some(Action::WorkspaceChanges),
+            Builtin::Theme => Some(Action::ThemeList),
+            Builtin::Sessions => Some(Action::SessionList),
+            Builtin::NewSession => Some(Action::SessionNew),
+            Builtin::Rename => Some(Action::SessionRename),
+            Builtin::Tag => None,
+            Builtin::Status => Some(Action::StatusView),
+            Builtin::Accounts => Some(Action::Accounts),
+            Builtin::Debug => Some(Action::DebugView),
+            Builtin::Stash => Some(Action::Stash),
+            Builtin::StashDraft => Some(Action::StashDraft),
+            Builtin::Timeline => None,
+            Builtin::Undo => None,
+            Builtin::Redo => None,
+            Builtin::Editor => Some(Action::EditorOpen),
+            Builtin::Redraw => Some(Action::TerminalRedraw),
+            // Windows has no default suspend stroke; the keymap, not this
+            // table, decides whether the palette can offer one.
+            Builtin::Suspend => Some(Action::TerminalSuspend),
+            Builtin::TerminalTitle => Some(Action::TerminalTitleToggle),
+            Builtin::Recall => None,
+            Builtin::Help => Some(Action::Help),
+            Builtin::Quit => Some(Action::AppExit),
         }
     }
 

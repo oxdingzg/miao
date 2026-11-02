@@ -278,6 +278,9 @@ impl App {
         shell
             .composer
             .set_command_details(commands::completion_details(&templates));
+        // The folded-output hint names the operator's own chord, so a remap or
+        // an unbound action cannot leave the transcript promising a dead key.
+        shell.set_toggle_chord(keys.chord(keybinds::Action::ToolOutputToggle));
         Self {
             shell,
             home,
@@ -536,6 +539,7 @@ impl App {
             },
             AppEvent::Resize { .. } => {}
             AppEvent::Sessions(rows) => {
+                self.sync_open_session(&rows);
                 self.home.set_rows(rows);
                 self.home.set_notice(None);
             }
@@ -639,28 +643,18 @@ impl App {
                     }
                 }
                 self.state = state;
-                // The product creates a Session with a placeholder title and
-                // leaves the real name to the host's title model. The rust-only
-                // TUI is the host on this path and has no title model, so it
-                // names the Session from the first prompt it can see — once, and
-                // only while the title is still a placeholder.
-                if let Some(session) = self.session.as_ref() {
-                    if placeholder_title(session.label())
-                        && !self.named_sessions.contains(&session.id)
-                    {
-                        let first = transcript.entries.iter().find_map(|entry| match entry {
-                            Entry::User { text, .. } if !text.trim().is_empty() => {
-                                Some(text.as_str())
-                            }
-                            _ => None,
-                        });
-                        if let (Some(text), Some(engine)) = (first, self.engine.as_ref()) {
-                            if let Some(title) = title_from_prompt(text) {
-                                engine.rename(&session.id, &title);
-                                self.named_sessions.insert(session.id.clone());
-                            }
-                        }
-                    }
+                // A Session that already holds prompts may still be unnamed —
+                // resuming one must not leave the sidebar reading "New session".
+                if let Some((id, first)) = self
+                    .session
+                    .as_ref()
+                    .map(|session| session.id.clone())
+                    .zip(transcript.entries.iter().find_map(|entry| match entry {
+                        Entry::User { text, .. } if !text.trim().is_empty() => Some(text.clone()),
+                        _ => None,
+                    }))
+                {
+                    self.name_session_from_prompt(&id, &first);
                 }
                 // A live phase only ever describes the run it was announced for.
                 if self.live.as_ref().is_some_and(|live| {
@@ -1103,7 +1097,10 @@ impl App {
             .map(|builtin| Row {
                 id: builtin.name().to_string(),
                 label: builtin.label().to_string(),
-                detail: builtin.keys().to_string(),
+                detail: builtin
+                    .action()
+                    .and_then(|action| self.keys.chord(action))
+                    .unwrap_or_default(),
             })
             .collect();
         self.open_dialog(Dialog::command_palette(rows));
@@ -1115,9 +1112,9 @@ impl App {
             .map(|builtin| Row {
                 id: format!("/{}", builtin.name()),
                 label: format!("/{}", builtin.name()),
-                detail: match builtin.keys() {
-                    "" => builtin.label().to_string(),
-                    keys => format!("{} · {keys}", builtin.label()),
+                detail: match builtin.action().and_then(|action| self.keys.chord(action)) {
+                    Some(chord) => format!("{} · {chord}", builtin.label()),
+                    None => builtin.label().to_string(),
                 },
             })
             .collect::<Vec<_>>();
@@ -2735,6 +2732,10 @@ impl App {
             self.shell.composer.notice = Some(unknown_command_notice(&name));
             return;
         }
+        // The first prompt is what names a Session that has no title yet, so the
+        // sidebar and the terminal tab stop reading "New session" the moment it
+        // is sent rather than after some later reopen.
+        self.name_session_from_prompt(&session_id, &text);
         // Editor context is a prompt prefix rather than a wire field: the
         // engine admits one text string, and the TS client does the same.
         let text = match self.zed_context() {
@@ -2746,6 +2747,77 @@ impl App {
         // would restore text the Session already sent if the operator switched
         // away and back.
         self.drafts.remove(&session_id);
+    }
+
+    /// The product creates a Session with a placeholder title and leaves the real
+    /// name to the host's title model. The rust-only TUI is the host on this path
+    /// and has no title model, so it names the Session from its first prompt —
+    /// once, and only while the title is still a placeholder.
+    fn name_session_from_prompt(&mut self, session_id: &str, prompt: &str) {
+        let placeholder = self
+            .session
+            .as_ref()
+            .is_some_and(|session| session.id == session_id && placeholder_title(session.label()));
+        if !placeholder || self.named_sessions.contains(session_id) {
+            return;
+        }
+        let Some(title) = title_from_prompt(prompt) else {
+            return;
+        };
+        let Some(engine) = self.engine.as_ref() else {
+            return;
+        };
+        engine.rename(session_id, &title);
+        self.named_sessions.insert(session_id.to_string());
+        // The rename is answered later; painting the name now keeps the sidebar
+        // from reading "New session" for the whole turn.
+        if let Some(session) = self.session.as_mut() {
+            session.title = Some(title.clone());
+        }
+        if let Some(row) = self.catalog.iter_mut().find(|row| row.id == session_id) {
+            row.title = Some(title);
+        }
+        self.shell.set_session(self.session.as_ref());
+    }
+
+    /// The home list is refreshed as the ledger changes, so the open Session's
+    /// title and age come from it too: a rename, a title model upstream, or a
+    /// fresh turn must not leave the sidebar describing the moment it was opened.
+    fn sync_open_session(&mut self, rows: &[SessionSummary]) {
+        let Some(session) = self.session.as_ref() else {
+            return;
+        };
+        let Some(row) = rows.iter().find(|row| row.id == session.id) else {
+            return;
+        };
+        // A list computed before this process renamed the Session must not hand
+        // the placeholder back, and an older answer must not make the age go
+        // backwards.
+        let title = match row.title.as_deref() {
+            Some(title) if !placeholder_title(title) => row.title.clone(),
+            _ => session.title.clone(),
+        };
+        let updated_at_ms = match (session.updated_at_ms, row.updated_at_ms) {
+            (Some(current), Some(fresh)) if fresh < current => Some(current),
+            (_, fresh) => fresh.or(session.updated_at_ms),
+        };
+        if title == session.title && updated_at_ms == session.updated_at_ms {
+            return;
+        }
+        let row = row.clone();
+        if let Some(session) = self.session.as_mut() {
+            session.title = title;
+            session.updated_at_ms = updated_at_ms;
+            session.preview = row.preview.clone();
+        }
+        if let Some(catalog_row) = self
+            .catalog
+            .iter_mut()
+            .find(|candidate| candidate.id == row.id)
+        {
+            *catalog_row = row;
+        }
+        self.shell.set_session(self.session.as_ref());
     }
 
     /// Interrupt the running turn, or leave the Session when nothing is
@@ -3516,6 +3588,54 @@ mod tests {
         assert_eq!(app.terminal_title(), None);
         app.configure_terminal_title(true, false);
         assert_eq!(app.terminal_title(), None);
+    }
+
+    /// The palette and the help list name the chord the keymap binds. They used
+    /// to carry their own spelled-out table, which kept advertising `<leader>t`
+    /// after the operator moved that action somewhere else.
+    #[test]
+    fn the_palette_names_the_chord_the_keymap_binds() {
+        let mut app = app_with(Startup::default());
+        app.open_palette();
+        let detail = |app: &App, id: &str| {
+            let Some(Dialog::Palette(palette)) = app.dialog.as_ref() else {
+                panic!("the palette opens");
+            };
+            palette
+                .rows
+                .iter()
+                .find(|row| row.id == id)
+                .map(|row| row.detail.clone())
+                .unwrap_or_default()
+        };
+        assert_eq!(detail(&app, "theme"), "ctrl+x t");
+        // A command with no chord of its own claims none.
+        assert_eq!(detail(&app, "tag"), "");
+
+        let mut remapped =
+            app_with_overrides(&[("theme_list".into(), Some(vec!["ctrl+y".into()]))].into());
+        remapped.open_palette();
+        assert_eq!(
+            detail(&remapped, "theme"),
+            "ctrl+y",
+            "the palette follows the live keymap"
+        );
+    }
+
+    /// Every command the palette offers with a chord has to resolve to a bound
+    /// action, or the row advertises a key that does nothing.
+    #[test]
+    fn every_shortcut_command_resolves_to_a_bound_chord() {
+        let keys = Keymap::default();
+        let unbound = Builtin::ALL
+            .into_iter()
+            .filter_map(|builtin| builtin.action().map(|action| (builtin, action)))
+            .filter(|(_, action)| keys.chord(*action).is_none())
+            .map(|(builtin, _)| builtin.name())
+            .collect::<Vec<_>>();
+        // Toggling the terminal title ships unbound on purpose: it is reachable
+        // only when the operator binds it.
+        assert_eq!(unbound, ["terminal-title"]);
     }
 
     #[test]
@@ -5396,6 +5516,82 @@ mod tests {
             state: SessionState::default(),
         });
         assert!(requests.try_recv().is_err(), "renamed an operator's title");
+    }
+
+    /// Sending the first prompt names a placeholder Session straight away: the
+    /// sidebar and the terminal tab read the prompt, not "New session", for the
+    /// rest of the turn instead of waiting for some later reopen.
+    #[test]
+    fn submitting_the_first_prompt_names_the_session_and_its_tab() {
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        let mut opened = summary("ses_a", 10);
+        opened.title = Some("New session".into());
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(opened),
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        app.submit("fix the parser".into(), Vec::new());
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Rename { session_id, title })
+                if session_id == "ses_a" && title == "fix the parser"
+        ));
+        assert_eq!(
+            app.session
+                .as_ref()
+                .and_then(|session| session.title.as_deref()),
+            Some("fix the parser")
+        );
+        assert_eq!(app.terminal_title().as_deref(), Some("fix the parser"));
+    }
+
+    /// The sidebar follows the ledger: a title or an age that changed upstream
+    /// reaches the open Session when the home list refreshes.
+    #[test]
+    fn a_refreshed_list_brings_the_open_sessions_title_and_age_to_the_sidebar() {
+        let mut app = app();
+        let mut opened = summary("ses_a", 10);
+        opened.title = Some("New session".into());
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(opened),
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        let mut renamed = summary("ses_a", 99);
+        renamed.title = Some("auth refactor".into());
+        app.handle(AppEvent::Sessions(vec![renamed]));
+        assert_eq!(
+            app.session
+                .as_ref()
+                .and_then(|session| session.title.as_deref()),
+            Some("auth refactor")
+        );
+        assert_eq!(
+            app.session
+                .as_ref()
+                .and_then(|session| session.updated_at_ms),
+            Some(99)
+        );
+        // A list computed before that rename landed, and older than what the
+        // sidebar already shows, must not take either back.
+        let mut stale = summary("ses_a", 5);
+        stale.title = Some("New session".into());
+        app.handle(AppEvent::Sessions(vec![stale]));
+        assert_eq!(
+            app.session
+                .as_ref()
+                .and_then(|session| session.title.as_deref()),
+            Some("auth refactor")
+        );
+        assert_eq!(
+            app.session
+                .as_ref()
+                .and_then(|session| session.updated_at_ms),
+            Some(99)
+        );
     }
 
     #[test]

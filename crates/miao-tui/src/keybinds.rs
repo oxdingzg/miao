@@ -470,6 +470,30 @@ impl Keymap {
             .collect()
     }
 
+    /// The stroke an operator actually presses for `action`, spelled for a hint
+    /// line rather than for the config file.
+    ///
+    /// A leader stroke is written as the leader key followed by its own key
+    /// (`ctrl+x u`), because the footer naming `<leader>u` describes a config
+    /// placeholder instead of a key that exists on the keyboard. `None` means
+    /// the action is unbound, so a hint must not promise it.
+    pub fn chord(&self, action: Action) -> Option<String> {
+        let leader = self.strokes.get(&Action::Leader).and_then(|strokes| {
+            strokes.iter().find_map(|stroke| match stroke {
+                Stroke::Plain(key) => Some(*key),
+                Stroke::Leader(_) => None,
+            })
+        });
+        self.strokes.get(&action).and_then(|strokes| {
+            strokes.iter().find_map(|stroke| match stroke {
+                Stroke::Plain(key) => Some(key.spec()),
+                Stroke::Leader(key) => {
+                    leader.map(|leader| format!("{} {}", leader.spec(), key.spec()))
+                }
+            })
+        })
+    }
+
     /// The leader key itself, as configured.
     pub fn is_leader(&self, key: &KeyEvent) -> bool {
         self.strokes.get(&Action::Leader).is_some_and(|strokes| {
@@ -833,6 +857,21 @@ mod tests {
             Action::CommandList,
             &key(KeyCode::Char('p'), KeyModifiers::CONTROL)
         ));
+    }
+
+    /// A hint line has to name a key that exists on the keyboard. `<leader>u`
+    /// is config syntax, so a footer spelling that sends the operator looking
+    /// for a `<leader>` key instead of the leader they actually bound.
+    #[test]
+    fn a_chord_spells_the_leader_as_the_key_it_is() {
+        let keys = Keymap::default();
+        assert_eq!(
+            keys.chord(Action::ToolOutputToggle).as_deref(),
+            Some("ctrl+x u")
+        );
+        // A plain stroke is unchanged, and an unbound action claims nothing.
+        assert_eq!(keys.chord(Action::CommandList).as_deref(), Some("ctrl+p"));
+        assert_eq!(keys.chord(Action::TerminalTitleToggle), None);
     }
 
     #[test]

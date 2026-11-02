@@ -593,6 +593,13 @@ pub enum Command {
         import_id: String,
     },
     Sessions,
+    /// Every Session's catalog row in one transaction.
+    ///
+    /// A client that wants the list used to ask for one `snapshot` per Session,
+    /// so a store with a hundred Sessions cost a hundred round trips and a few
+    /// thousand queries before the first frame. Each row carries the same field
+    /// names a snapshot does, so one parser reads both.
+    SessionCatalog,
     /// Re-derive the configuration sections the engine owns and reconcile them
     /// in place. The reply names what changed, what kept its connection, and
     /// what this build cannot reload yet.

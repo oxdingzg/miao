@@ -1568,11 +1568,15 @@ fn due_in(due_at_ms: Option<u64>) -> String {
 }
 
 async fn refresh_sessions(client: &EngineClient, bus: &Bus) {
-    let ids = match client.command("sessions").await {
-        Ok(Value::Array(ids)) => ids,
+    // One transaction answers the whole list. Asking for a `snapshot` per
+    // Session turned a startup with a hundred Sessions into a hundred request
+    // round trips and a few thousand queries before the home list could paint,
+    // which is exactly the slow first frame an operator notices.
+    let rows = match client.command("session_catalog").await {
+        Ok(Value::Array(rows)) => rows,
         Ok(_) => {
             bus.send(AppEvent::EngineFailure(
-                "engine answered sessions with a non-array".into(),
+                "engine answered session_catalog with a non-array".into(),
             ));
             return;
         }
@@ -1581,20 +1585,10 @@ async fn refresh_sessions(client: &EngineClient, bus: &Bus) {
             return;
         }
     };
-    let mut rows = Vec::new();
-    for id in ids.iter().filter_map(Value::as_str) {
-        let snapshot = client
-            .request(
-                "snapshot",
-                json!({ "session_id": id, "metadata_only": true }),
-            )
-            .await;
-        if let Ok(snapshot) = snapshot {
-            if let Some(row) = SessionSummary::from_snapshot(&snapshot) {
-                rows.push(row);
-            }
-        }
-    }
+    let rows = rows
+        .iter()
+        .filter_map(SessionSummary::from_snapshot)
+        .collect::<Vec<_>>();
     bus.send(AppEvent::Catalog(catalog_rows(rows.clone())));
     bus.send(AppEvent::Sessions(home_rows(rows)));
 }
