@@ -29,6 +29,12 @@ fn composer_column(width: u16) -> u16 {
 /// keeps everything left of it. A capped, centred prose column used to leave a
 /// band of empty cells on both sides of a wide terminal, which read as the
 /// content occupying only the middle of the screen.
+/// The air between the window's edge and the transcript. The prose starting on
+/// column 0 glued every line to the border; a small gutter keeps the text off
+/// the edge the way the editor's own prompt block does. A body too narrow to
+/// hold the sidebar keeps its full width instead.
+const PROSE_MARGIN: u16 = 2;
+
 fn body_columns(area: Rect) -> (Rect, Option<Rect>) {
     if area.width < SIDEBAR_MIN_WIDTH {
         return (area, None);
@@ -36,7 +42,8 @@ fn body_columns(area: Rect) -> (Rect, Option<Rect>) {
     let split = area.width.saturating_sub(SIDEBAR_WIDTH + 1);
     (
         Rect {
-            width: split,
+            x: area.x + PROSE_MARGIN,
+            width: split.saturating_sub(PROSE_MARGIN),
             ..area
         },
         Some(Rect {
@@ -1846,28 +1853,40 @@ fn render_composer_in(
     // so the text stays readable while the covered cells read as chosen.
     let selection_style = Style::new().fg(palette.background).bg(accent);
     let selection_cells = composer.editor.selection_cells();
-    let lines = composer
-        .editor
-        .lines()
-        .enumerate()
-        .skip(row_offset)
-        .take(input_area.height as usize)
-        .map(|(index, line)| {
-            let selection = selection_cells
-                .iter()
-                .find(|(line_index, _, _)| *line_index == index)
-                .map(|(_, start, end)| (*start, *end));
-            composer_line(
-                &line,
-                cell_offset,
-                input_area.width,
-                selection,
-                Style::new().fg(text_color),
-                selection_style,
-            )
-        })
-        .collect::<Vec<_>>();
-    frame.render_widget(Paragraph::new(lines), input_area);
+    if composer.editor.is_empty() && composer.completion.items.is_empty() {
+        // An empty composer reads as a dead box; a quiet hint names what the
+        // two completions answer for. The caret stays where the typing goes.
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "type a prompt · / for commands · @ for files",
+                Style::new().fg(palette.text_muted),
+            )),
+            input_area,
+        );
+    } else {
+        let lines = composer
+            .editor
+            .lines()
+            .enumerate()
+            .skip(row_offset)
+            .take(input_area.height as usize)
+            .map(|(index, line)| {
+                let selection = selection_cells
+                    .iter()
+                    .find(|(line_index, _, _)| *line_index == index)
+                    .map(|(_, start, end)| (*start, *end));
+                composer_line(
+                    &line,
+                    cell_offset,
+                    input_area.width,
+                    selection,
+                    Style::new().fg(text_color),
+                    selection_style,
+                )
+            })
+            .collect::<Vec<_>>();
+        frame.render_widget(Paragraph::new(lines), input_area);
+    }
 
     let cursor_row = cursor_line - row_offset;
     let cursor_column = cursor_cell - cell_offset;
@@ -3294,6 +3313,76 @@ mod tests {
         assert!(painted.contains("ctrl+c to interrupt"), "{painted}");
     }
 
+    /// One routable model paints its label. The 0.3.26 models dialog came up
+    /// an empty box: whatever the catalog carried, the frame drew only the
+    /// border, the filter row and the hint.
+    #[test]
+    fn the_models_dialog_paints_its_rows() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let models = crate::dialogs::ModelInfo::catalog(&serde_json::json!([
+            {"protocol": "openai-chat", "model": "deepseek-v4-1-flash-261017"}
+        ]));
+        assert_eq!(models.len(), 1);
+        let dialog = crate::dialogs::Dialog::models(&models, None);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).expect("terminal");
+        terminal
+            .draw(|frame| super::render_dialog(frame, frame.area(), &dialog, &theme))
+            .expect("draw");
+        let painted = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol().to_string())
+            .collect::<String>();
+        assert!(
+            painted.contains("deepseek-v4-1-flash-261017"),
+            "the model label paints: {painted}"
+        );
+        assert!(!painted.contains("nothing to show"), "{painted}");
+    }
+
+    /// An empty composer hints at what it accepts, the way the agent CLIs do;
+    /// a draft replaces the hint instead of stacking on it.
+    #[test]
+    fn an_empty_composer_hints_at_the_completions() {
+        let theme = home_theme();
+        let composer = crate::editor::Composer::new(Path::new("."));
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 6)).expect("terminal");
+        terminal
+            .draw(|frame| super::render_composer(frame, ratatui::layout::Rect::new(0, 0, 80, 6), &composer, &theme))
+            .expect("draw");
+        let painted = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol().to_string())
+            .collect::<String>();
+        assert!(painted.contains("type a prompt"), "{painted}");
+
+        let mut composer = crate::editor::Composer::new(Path::new("."));
+        composer.editor.insert_str("hello");
+        terminal
+            .draw(|frame| super::render_composer(frame, ratatui::layout::Rect::new(0, 0, 80, 6), &composer, &theme))
+            .expect("draw");
+        let painted = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol().to_string())
+            .collect::<String>();
+        assert!(painted.contains("hello"), "{painted}");
+        assert!(!painted.contains("type a prompt"), "{painted}");
+    }
+
     /// Context the engine injected is a history note. Painting it behind the
     /// prompt marker claimed the operator typed words they never wrote.
     #[test]
@@ -3544,8 +3633,8 @@ mod tests {
         let area = Rect::new(0, 0, 200, 20);
         let (prose, sidebar) = body_columns(area);
         let sidebar = sidebar.expect("wide enough for both");
-        assert_eq!(prose.x, 0, "the prose starts at the window's edge");
-        assert_eq!(prose.width, 200 - SIDEBAR_WIDTH - 1);
+        assert_eq!(prose.x, PROSE_MARGIN, "the prose starts past the gutter");
+        assert_eq!(prose.width, 200 - SIDEBAR_WIDTH - 1 - PROSE_MARGIN);
         assert_eq!(sidebar.width, SIDEBAR_WIDTH);
         assert_eq!(
             sidebar.x,
@@ -3564,7 +3653,7 @@ mod tests {
         let sidebar = sidebar.expect("120 columns show it");
         assert_eq!(sidebar.x, prose.right() + 1);
         assert_eq!(sidebar.width, SIDEBAR_WIDTH);
-        assert_eq!(prose.width, 120 - SIDEBAR_WIDTH - 1);
+        assert_eq!(prose.width, 120 - SIDEBAR_WIDTH - 1 - PROSE_MARGIN);
         // A body narrower than the threshold has no sidebar at all.
         let (prose, sidebar) = body_columns(Rect::new(0, 0, 99, 20));
         assert!(sidebar.is_none());
@@ -3594,12 +3683,13 @@ mod tests {
                     .contains("composer")
             })
             .expect("the composer is painted");
-        // The composer fills the prose column, which now runs from the edge.
+        // The composer fills the prose column, which now starts past the
+        // window's gutter.
         let (prose, sidebar) = body_columns(ratatui::layout::Rect::new(0, 0, 200, 20));
         assert!(sidebar.is_some(), "this frame has a sidebar");
         let gutter = prose.x as usize;
         let column = prose.width as usize;
-        assert_eq!(gutter, 0, "the prose column starts at the window's edge");
+        assert_eq!(gutter, PROSE_MARGIN as usize, "the prose column starts past the gutter");
         let symbols = rows[top]
             .iter()
             .map(|cell| cell.symbol())
@@ -4165,9 +4255,25 @@ mod tests {
         // screen the rows are not on.
         let mut home = Home::new(home_theme());
         home.set_rows(vec![home_row("ses_a", "login fix", None)]);
-        let lines = drawn(&mut home, 200, 12);
+        // The shell hands the landing screen the prose column; draw into that
+        // same column so the assertion covers the real alignment.
+        let area = body_columns(ratatui::layout::Rect::new(0, 0, 200, 12)).0;
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(200, 12))
+            .expect("terminal");
+        terminal
+            .draw(|frame| home.render(frame, area))
+            .expect("draw");
+        let lines = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(200)
+            .map(|row| row.iter().map(|cell| cell.symbol().to_string()).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
         let (prose, _) = body_columns(ratatui::layout::Rect::new(0, 0, 200, 12));
-        let gutter = prose.x.saturating_sub(1) as usize;
+        // The rows start one cell inside the prose column, so the header does
+        // too; the cells before the prose column are outside the block.
+        let start = 1 + prose.x as usize;
         let header = lines
             .iter()
             .find(|line| {
@@ -4177,10 +4283,9 @@ mod tests {
                     .contains("sessions · ")
             })
             .expect("the header is painted");
-        // Column 0 is outside the block; the text starts one cell in, on the gutter.
-        assert_eq!(header[1 + gutter], "s", "the header starts on the column");
+        assert_eq!(header[start], "s", "the header starts on the column");
         assert!(
-            header[1..1 + gutter]
+            header[1..start]
                 .iter()
                 .all(|cell| cell.trim().is_empty()),
             "and nothing is painted before it: {header:?}"

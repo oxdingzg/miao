@@ -216,6 +216,11 @@ fn validate_lsp(origin: &str, lsp: &serde_json::Value) -> Result<(), String> {
 /// address, no implicit request-count cutoff, and the operator's OS-sandbox
 /// choice recorded for process commands.
 pub fn policy(documents: &[Document], miao_sandbox: Option<&str>) -> permission::Config {
+    let values = documents
+        .iter()
+        .map(|document| document.value.clone())
+        .collect::<Vec<_>>();
+    let merged = config_scope::merge_values(&values);
     permission::Config {
         mode: permission::Mode::Workspace,
         allow_process: true,
@@ -227,7 +232,7 @@ pub fn policy(documents: &[Document], miao_sandbox: Option<&str>) -> permission:
         allow_cron: true,
         process_network: true,
         sandbox: sandbox_enabled(documents, miao_sandbox),
-        rules: Vec::new(),
+        rules: permission_rules(&merged),
         // Matches the engine's default; the product policy never sets it.
         approval_timeout_ms: 60_000,
         max_provider_turns: None,
@@ -261,6 +266,50 @@ fn env_switch(value: Option<&str>) -> Option<bool> {
         None | Some("") => None,
         Some(value) => Some(value.eq_ignore_ascii_case("1") || value.eq_ignore_ascii_case("true")),
     }
+}
+
+/// The product's `permissions` array (action/resource/effect, `*` wildcards)
+/// as engine base rules. The product words an action after its tool surface
+/// while the engine matches tool names, so an edit action covers the writing
+/// tools the way the host's bindings table does. A resource wildcard must
+/// cross path separators to answer for edits and reads, so it compiles to
+/// `**`. Patterns the engine would reject — absolute or escaping paths — are
+/// skipped here instead of failing the whole policy at startup.
+fn permission_rules(merged: &serde_json::Value) -> Vec<permission::Rule> {
+    let Some(entries) = merged.get("permissions").and_then(serde_json::Value::as_array) else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let action = entry.get("action")?.as_str()?;
+            let resource = entry.get("resource")?.as_str()?;
+            let decision = match entry.get("effect")?.as_str()? {
+                "allow" => permission::Decision::Allow,
+                "deny" => permission::Decision::Deny,
+                "ask" => permission::Decision::Ask,
+                _ => return None,
+            };
+            let tool = match action {
+                "*" => "*".to_string(),
+                "edit" => "{apply_patch,edit_file,write_file}".to_string(),
+                other => other.to_string(),
+            };
+            let path = match resource {
+                "*" | "**" => "**".to_string(),
+                other => other.to_string(),
+            };
+            let valid = !tool.is_empty()
+                && !path.is_empty()
+                && !path.starts_with('/')
+                && !path.split('/').any(|part| part == "..");
+            valid.then_some(permission::Rule {
+                tool,
+                path,
+                decision,
+            })
+        })
+        .collect()
 }
 
 /// Derive the product policy from one config directory plus the environment:
@@ -1284,6 +1333,43 @@ mod tests {
                 "approval_timeout_ms": 60_000,
                 "max_provider_turns": null,
             })
+        );
+    }
+
+    #[test]
+    fn the_operators_permission_rules_reach_the_base_policy() {
+        let policy = policy(
+            &documents(&[serde_json::json!({
+                "permissions": [
+                    {"action": "*", "resource": "*", "effect": "allow"},
+                    {"action": "edit", "resource": "src/**", "effect": "ask"},
+                    {"action": "bash", "resource": "*", "effect": "deny"},
+                ]
+            })]),
+            None,
+        );
+        assert_eq!(
+            serde_json::to_value(&policy.rules).unwrap(),
+            serde_json::json!([
+                {"tool": "*", "path": "**", "decision": "allow"},
+                {"tool": "{apply_patch,edit_file,write_file}", "path": "src/**", "decision": "ask"},
+                {"tool": "bash", "path": "**", "decision": "deny"},
+            ])
+        );
+        // The wildcard grant answers for a workspace-relative command, and an
+        // edit lands under the narrower ask.
+        let compiled = permission::Policy::new(policy).unwrap();
+        assert_eq!(
+            compiled.evaluate("bash", ".", crate::permission::Access::Execute),
+            permission::Decision::Deny
+        );
+        assert_eq!(
+            compiled.evaluate("write_file", "src/lib.rs", crate::permission::Access::Write),
+            permission::Decision::Ask
+        );
+        assert_eq!(
+            compiled.evaluate("glob", "**", crate::permission::Access::Read),
+            permission::Decision::Allow
         );
     }
 

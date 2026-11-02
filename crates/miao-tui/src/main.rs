@@ -58,6 +58,34 @@ enum Invocation {
 }
 
 fn main() -> ExitCode {
+    // The engine runs every command through this binary as its process runner
+    // (`std::env::current_exe`), so the single installed binary answers the
+    // engine's hidden runner modes the way `miao-engine` itself does. Without
+    // this dispatch every bash and terminal tool fails with "unexpected
+    // argument" — the engine's argv reaches the TUI's option parser instead.
+    let mut args = std::env::args().skip(1);
+    if let Some(mode @ ("__sandbox-run" | "__process-guardian")) = args.next().as_deref() {
+        let payload = match args.next() {
+            Some(payload) => payload,
+            None => {
+                eprintln!("miao-tui: sandbox payload missing");
+                return ExitCode::from(2);
+            }
+        };
+        if args.next().is_some() {
+            eprintln!("miao-tui: unexpected sandbox arguments");
+            return ExitCode::from(2);
+        }
+        let result = match mode {
+            "__process-guardian" => miao_engine::process::guardian(&payload),
+            _ => miao_engine::process::sandbox_runner(&payload),
+        };
+        if let Err(error) = result {
+            eprintln!("miao-tui: {error}");
+            return ExitCode::from(1);
+        }
+        return ExitCode::SUCCESS;
+    }
     match parse(std::env::args().skip(1)) {
         Ok(Invocation::Run(options)) => launch(options),
         Ok(Invocation::Help) => {

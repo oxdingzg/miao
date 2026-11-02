@@ -214,6 +214,25 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     if !remainder.is_empty() {
         return Err("missing option value".into());
     }
+    // The native single-binary start has no host to materialize a route
+    // manifest, so the engine derives one from the operator's config and the
+    // product credential store — the same plan the product's shim used to
+    // build. An explicit `--model` or `--provider` keeps the operator's own
+    // single-route selection, and a manifest the host passed wins outright.
+    if !options.contains_key("--model-routes-config")
+        && !options.contains_key("--model")
+        && !options.contains_key("--provider")
+    {
+        if let Some(sources) = config_sources(&options)? {
+            match miao_engine::native_routes::materialize(&sources, stored_default().as_deref()) {
+                Ok(Some(path)) => {
+                    options.insert("--model-routes-config".into(), path.display().to_string());
+                }
+                Ok(None) => {}
+                Err(error) => eprintln!("miao-engine native routes: {error}"),
+            }
+        }
+    }
     if options.contains_key("--permission-root-db") != options.contains_key("--permission-project")
     {
         return Err(

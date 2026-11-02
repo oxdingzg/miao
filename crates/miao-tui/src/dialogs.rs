@@ -942,7 +942,10 @@ impl Dialog {
             return (palette.visible.len().clamp(1, 12) + 3) as u16;
         }
         if let Some(list) = self.list() {
-            return (list.rows.len().min(14) + 3) as u16;
+            // Border, filter row and hint surround the rows: with only a
+            // model or two the +3 left the list itself zero rows tall, and
+            // the dialog painted its box around nothing.
+            return (list.rows.len().min(14) + 4) as u16;
         }
         if self.rename_input().is_some() {
             return 5;

@@ -69,6 +69,7 @@ pub fn lines(
         "skill" => inline(&mut out, tool, "Skill", &text(&input, "name"), theme),
         "task" => task(&mut out, tool, &input, raw, theme, fold),
         "send_message" => receipt(&mut out, tool, &input, raw, theme),
+        "list_sessions" => sessions(&mut out, tool, result.as_ref(), theme, fold),
         "read_session_context" => out.push(header(
             tool,
             "read session",
@@ -279,6 +280,60 @@ fn receipt(
 
 fn inline(out: &mut Vec<Line<'static>>, tool: &ToolPart, label: &str, detail: &str, theme: &Theme) {
     out.push(header(tool, label, &compact(detail), theme));
+}
+
+/// Peer discovery as one line per Session. The raw result is a catalog of
+/// every live Session in the Location — printing it verbatim buried the
+/// transcript under a screen of JSON on sessions that coordinate with peers.
+fn sessions(
+    out: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    result: Option<&Value>,
+    theme: &Theme,
+    fold: Fold<'_>,
+) {
+    let palette = theme.palette;
+    let rows = result
+        .and_then(|value| value.get("sessions"))
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let summary = match rows {
+        [] => "no peer sessions".to_string(),
+        [only] => peer_line(only),
+        rows => format!("{} sessions: {}", rows.len(), peer_line(&rows[0])),
+    };
+    out.push(header(tool, "sessions", &compact(&summary), theme));
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
+    let body = rows
+        .iter()
+        .map(peer_line)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !body.is_empty() {
+        preview(out, &body, palette.text_muted, limit, fold.toggle);
+    }
+}
+
+fn peer_line(row: &Value) -> String {
+    let title = row
+        .get("title")
+        .and_then(Value::as_str)
+        .filter(|title| !title.is_empty())
+        .unwrap_or("untitled");
+    let task = row
+        .get("task")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let objective = row
+        .get("objective")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if objective.is_empty() {
+        format!("{title} · {task}")
+    } else {
+        format!("{title} · {task} · {objective}")
+    }
 }
 
 fn bash(
