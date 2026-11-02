@@ -233,6 +233,17 @@ pub fn truncate(
 /// must be refused, not silently shorted.
 pub fn cut_for(connection: &Connection, session: &str) -> rusqlite::Result<Option<u64>> {
     use rusqlite::OptionalExtension;
+    // A store the retention command has never touched predates the table; a
+    // hand-built fixture can too. No table means no cut, which is exactly what
+    // the caller wants to hear.
+    let has_table: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'engine_retention')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_table {
+        return Ok(None);
+    }
     connection
         .query_row(
             "SELECT MAX(through_seq) FROM engine_retention WHERE session_id=?1",

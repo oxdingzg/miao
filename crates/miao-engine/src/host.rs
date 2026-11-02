@@ -279,6 +279,9 @@ impl Host {
             Command::State { session_id } => runtime.store().state(&session_id).await,
             Command::Usage { session_id } => runtime.store().usage_report(&session_id).await,
             Command::VcsStatus { session_id } => runtime.store().vcs_status(&session_id).await,
+            Command::VcsDiff { session_id, path } => {
+                runtime.store().vcs_diff(&session_id, &path).await
+            }
             Command::MoveSession {
                 session_id,
                 target_directory,
