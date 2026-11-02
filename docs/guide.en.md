@@ -89,25 +89,25 @@ Replace `<provider>/<model>` with an entry from `miao models`. A typical config 
 Config files merge by precedence: project `.miao/` > global `~/.config/miao/`; `MIAO_CONFIG`
 overrides the path. Main fields:
 
-| Field                                                             | Purpose                                                                                                            |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `model`                                                           | default model (`provider/model`)                                                                                   |
-| `default_agent`                                                   | default agent                                                                                                      |
-| `permission`                                                      | permission rules (`allow` / `ask` / `deny`, by tool/path); unmatched defaults to `ask`                             |
-| `agents`                                                          | custom agents (model, system prompt, permissions, step cap)                                                        |
-| `lsp`                                                             | language servers: `true` enables all built-ins, `false` disables, or a per-name record. **Omitted = all disabled** |
-| `formatter`                                                       | formatters: `true` enables built-ins, or a per-name record with commands                                           |
-| `mcp`                                                             | MCP servers (local stdio / remote streamable-http)                                                                 |
-| `compaction`                                                      | `prune` old tool output, `threshold` ratio, `max_context` per-model window, `summarize_small`, `hot_prefix`, `precise_tokens` |
-| `cache`                                                           | `ttl_seconds` extends the prompt-cache TTL                                                                         |
-| `cost`                                                            | `budget_usd` per-session cost budget (warns and stops continuation)                                                |
-| `loop`                                                            | autonomous continuation (see §5.8)                                                                                 |
-| `shell`                                                           | default shell                                                                                                      |
-| `skills` / `commands` / `instructions` / `references` / `plugins` | skills, commands, instructions, references, plugins                                                                |
-| `watcher` / `attachments` / `tool_output` / `snapshots`           | watcher, attachments, tool-output thresholds, snapshots                                                            |
-| `providers`                                                       | custom providers/models (including native-currency `cost`)                                                         |
+| Field                                                             | Purpose                                                                                                                                              |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`                                                           | default model (`provider/model`)                                                                                                                     |
+| `default_agent`                                                   | default agent                                                                                                                                        |
+| `permission`                                                      | permission rules (`allow` / `ask` / `deny`, by tool/path); unmatched defaults to `ask`                                                               |
+| `agents`                                                          | custom agents (model, system prompt, permissions, step cap)                                                                                          |
+| `lsp`                                                             | language servers: `true` enables all built-ins, `false` disables, or a per-name record. **Omitted = all disabled**                                   |
+| `formatter`                                                       | formatters: `true` enables built-ins, or a per-name record with commands                                                                             |
+| `mcp`                                                             | MCP servers (local stdio / remote streamable-http)                                                                                                   |
+| `compaction`                                                      | `prune` old tool output, `threshold` ratio, `max_context` per-model window, `summarize_small`, `hot_prefix`, `precise_tokens`                        |
+| `cache`                                                           | `ttl_seconds` extends the prompt-cache TTL                                                                                                           |
+| `cost`                                                            | `budget_usd` per-session cost budget (warns and stops continuation)                                                                                  |
+| `loop`                                                            | autonomous continuation (see §5.8)                                                                                                                   |
+| `shell`                                                           | default shell                                                                                                                                        |
+| `skills` / `commands` / `instructions` / `references` / `plugins` | skills, commands, instructions, references, plugins                                                                                                  |
+| `watcher` / `attachments` / `tool_output` / `snapshots`           | watcher, attachments, tool-output thresholds, snapshots                                                                                              |
+| `providers`                                                       | custom providers/models (including native-currency `cost`)                                                                                           |
 | `engine`                                                          | native engine settings (global config only): `storage` places new Sessions on Rust; see [enabling the native engine](native-engine-enablement.en.md) |
-| `experimental`                                                    | experimental flags (e.g. Code Mode)                                                                                |
+| `experimental`                                                    | experimental flags (e.g. Code Mode)                                                                                                                  |
 
 **Native currency**: set `providers.<id>.models.<m>.cost` in the provider's own currency (for
 example DeepSeek in CNY) to estimate costs using the declared currency; `/currency` in the TUI switches the
@@ -137,6 +137,17 @@ The default **leader key is `ctrl+x`**:
 | `ctrl+x` `c` | compact                                              |
 | `ctrl+x` `g` | timeline                                             |
 | `ctrl+x` `q` | quit                                                 |
+
+While the prompt holds the keyboard:
+
+| Keys                                    | Action                                                     |
+| --------------------------------------- | ---------------------------------------------------------- |
+| `shift+←` `shift+→` `shift+↑` `shift+↓` | select text (`shift+Home/End`, `shift+ctrl+←/→` for words) |
+| `alt+a`                                 | select the whole draft                                     |
+| `alt+z` / `alt+.`                       | undo / redo inside the draft                               |
+| `ctrl+y`                                | copy the selection, or the last response                   |
+| `ctrl+j`                                | start a new line without sending                           |
+| `ctrl+c`                                | clear the draft (an empty draft quits)                     |
 
 Rebind in `~/.config/miao/tui.json` (or `keybinds` in miao.jsonc).
 
