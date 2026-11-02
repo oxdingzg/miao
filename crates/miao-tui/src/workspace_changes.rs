@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     layout::Rect,
     style::Style,
-    text::Line,
+    text::{Line, Span},
     widgets::{Paragraph, Wrap},
     Frame,
 };
@@ -52,6 +52,38 @@ pub fn decode(value: Value) -> Result<VcsState, String> {
     Ok(state)
 }
 
+/// One file's patch against HEAD, decoded from the `vcs_diff` answer. A `null`
+/// diff is a fact, not a failure: an untracked file has no committed version,
+/// and a patch past the engine's limit names its own size instead of arriving.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiffView {
+    pub path: String,
+    #[serde(default)]
+    pub diff: Option<String>,
+    #[serde(default)]
+    pub untracked: bool,
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(default)]
+    pub chars: Option<u64>,
+    #[serde(default)]
+    pub limit: Option<u64>,
+}
+
+pub fn decode_diff(value: Value) -> Result<DiffView, String> {
+    serde_json::from_value(value).map_err(|error| error.to_string())
+}
+
+/// The per-file diff the operator opened from the list. The list stays loaded
+/// underneath, so Esc returns to it with the selection intact.
+pub struct DiffPanel {
+    pub path: String,
+    loading: bool,
+    view: Option<DiffView>,
+    notice: Option<String>,
+    scroll: usize,
+}
+
 pub struct Dialog {
     pub generation: u64,
     pub session_id: String,
@@ -59,6 +91,7 @@ pub struct Dialog {
     selected: usize,
     loading: bool,
     notice: Option<String>,
+    diff: Option<DiffPanel>,
 }
 
 impl Dialog {
@@ -70,6 +103,7 @@ impl Dialog {
             selected: 0,
             loading: true,
             notice: None,
+            diff: None,
         }
     }
 
@@ -85,6 +119,40 @@ impl Dialog {
         }
     }
 
+    /// Ask for the selected file's patch. The dialog switches to the diff view
+    /// at once so the UI answers immediately; the patch arrives as an event.
+    pub fn open_diff(&mut self, path: String) {
+        self.diff = Some(DiffPanel {
+            path,
+            loading: true,
+            view: None,
+            notice: None,
+            scroll: 0,
+        });
+    }
+
+    pub fn diff_loaded(&mut self, path: &str, result: Result<DiffView, String>) {
+        let Some(panel) = self.diff.as_mut() else {
+            return;
+        };
+        if panel.path != path {
+            return;
+        }
+        panel.loading = false;
+        panel.scroll = 0;
+        match result {
+            Ok(view) => {
+                panel.notice = None;
+                panel.view = Some(view);
+            }
+            Err(error) => panel.notice = Some(error),
+        }
+    }
+
+    pub fn diff_open(&self) -> bool {
+        self.diff.is_some()
+    }
+
     /// Rows the painted body needs: the branch header, a separator, and one row
     /// per change (or the line that says the tree is clean). The caller adds
     /// the two border rows.
@@ -95,12 +163,48 @@ impl Dialog {
         }
     }
 
+    /// Body height while the diff view is up: the patch itself (capped), the
+    /// header line naming the file, and the fact lines untracked or truncation
+    /// contribute.
+    pub fn view_rows(&self) -> usize {
+        let Some(panel) = &self.diff else {
+            return self.body_rows();
+        };
+        let patch = panel
+            .view
+            .as_ref()
+            .and_then(|view| view.diff.as_ref())
+            .map(|text| text.lines().count())
+            .unwrap_or(0);
+        (patch + 2).clamp(6, 32)
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> Action {
         if key.kind != KeyEventKind::Press {
             return Action::None;
         }
         if key.code == KeyCode::Esc {
+            // Esc in the diff view returns to the list; Esc on the list closes.
+            if self.diff.take().is_some() {
+                return Action::None;
+            }
             return Action::Close;
+        }
+        if let Some(panel) = &mut self.diff {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => panel.scroll = panel.scroll.saturating_sub(1),
+                KeyCode::Down | KeyCode::Char('j') => panel.scroll += 1,
+                KeyCode::PageUp => panel.scroll = panel.scroll.saturating_sub(10),
+                KeyCode::PageDown => panel.scroll += 10,
+                KeyCode::Home => panel.scroll = 0,
+                KeyCode::Char('r') => {
+                    panel.loading = true;
+                    panel.notice = None;
+                    return Action::OpenWorkspaceDiff(panel.path.clone());
+                }
+                _ => {}
+            }
+            return Action::None;
         }
         if self.loading {
             return Action::None;
@@ -113,8 +217,15 @@ impl Dialog {
         if let Some(state) = &self.state {
             match key.code {
                 KeyCode::Up => self.selected = self.selected.saturating_sub(1),
-                KeyCode::Down | KeyCode::Enter => {
+                KeyCode::Down => {
                     self.selected = (self.selected + 1).min(state.files.len().saturating_sub(1))
+                }
+                KeyCode::Enter => {
+                    if let Some(change) = state.files.get(self.selected) {
+                        let path = change.path.clone();
+                        self.open_diff(path.clone());
+                        return Action::OpenWorkspaceDiff(path);
+                    }
                 }
                 _ => {}
             }
@@ -123,6 +234,10 @@ impl Dialog {
     }
 
     pub fn render(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
+        if let Some(panel) = &self.diff {
+            self.render_diff(panel, frame, area, theme);
+            return;
+        }
         let mut lines: Vec<Line> = Vec::new();
         match (&self.state, &self.notice) {
             (None, Some(notice)) => lines
@@ -176,6 +291,75 @@ impl Dialog {
             (None, None) => lines.push(Line::from("reading workspace state…")),
         }
         let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+        frame.render_widget(paragraph, area);
+    }
+
+    fn render_diff(&self, panel: &DiffPanel, frame: &mut Frame, area: Rect, theme: &Theme) {
+        let mut lines: Vec<Line> = Vec::new();
+        match (&panel.view, &panel.notice) {
+            (None, Some(notice)) => lines
+                .push(Line::from(notice.as_str()).style(Style::default().fg(theme.palette.error))),
+            (None, _) if panel.loading => lines.push(Line::from(format!(
+                "reading diff of {}…",
+                panel.path
+            ))),
+            (Some(view), notice) => {
+                lines.push(
+                    Line::from(view.path.clone()).style(Style::default().fg(theme.palette.accent)),
+                );
+                if let Some(notice) = notice {
+                    lines.push(
+                        Line::from(notice.as_str()).style(Style::default().fg(theme.palette.error)),
+                    );
+                }
+                if view.untracked {
+                    lines.push(Line::from(
+                        "untracked — no committed version to diff against",
+                    ));
+                } else if view.truncated {
+                    lines.push(
+                        Line::from(format!(
+                            "patch too large: {} chars against the {} limit; the engine refused to stream it",
+                            view.chars.unwrap_or_default(),
+                            view.limit.unwrap_or_default()
+                        ))
+                        .style(Style::default().fg(theme.palette.warning)),
+                    );
+                } else if let Some(text) = &view.diff {
+                    for line in text.lines() {
+                        // The +/-/@@ prefixes colour themselves; everything else
+                        // stays plain so context lines read as context.
+                        let style = match line.first() {
+                            Some('+') if !line.starts_with("+++") => {
+                                Style::default().fg(theme.palette.success)
+                            }
+                            Some('-') if !line.starts_with("---") => {
+                                Style::default().fg(theme.palette.error)
+                            }
+                            Some('@') => Style::default().fg(theme.palette.accent),
+                            _ => Style::default(),
+                        };
+                        lines.push(Line::from(Span::styled(line.to_string(), style)));
+                    }
+                    if text.lines().count() == 0 {
+                        lines.push(Line::from("no difference against HEAD"));
+                    }
+                } else {
+                    lines.push(Line::from("no difference against HEAD"));
+                }
+                lines.push(Line::from(""));
+                lines.push(
+                    Line::from("esc back · j/k or arrows scroll · r re-read")
+                        .style(Style::default().fg(theme.palette.text_muted)),
+                );
+            }
+            (None, None) => {
+                lines.push(Line::from(format!("reading diff of {}…", panel.path)))
+            }
+        }
+        let paragraph = Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((panel.scroll.min(u16::MAX as usize) as u16, 0));
         frame.render_widget(paragraph, area);
     }
 }
@@ -270,5 +454,186 @@ mod tests {
             .collect();
         let value = serde_json::json!({"repository": true, "files": files});
         assert!(decode(value).is_err());
+    }
+
+    #[test]
+    fn decode_diff_reads_the_three_engine_answers() {
+        let patch = decode_diff(serde_json::json!({
+            "path": "src/lib.rs",
+            "diff": "@@ -1 +1,2 @@\n-one\n+one\n+two\n",
+            "untracked": false
+        }))
+        .expect("patch answer");
+        assert_eq!(patch.diff.as_deref().map(str::len), Some(29));
+        assert!(!patch.untracked);
+
+        let untracked = decode_diff(serde_json::json!({
+            "path": "fresh.txt", "diff": Value::Null, "untracked": true
+        }))
+        .expect("untracked answer");
+        assert!(untracked.untracked && untracked.diff.is_none());
+
+        let truncated = decode_diff(serde_json::json!({
+            "path": "big.rs", "diff": Value::Null,
+            "truncated": true, "chars": 900_000, "limit": 256_000
+        }))
+        .expect("truncated answer");
+        assert!(truncated.truncated);
+        assert_eq!(truncated.chars, Some(900_000));
+    }
+
+    fn loaded_dialog() -> Dialog {
+        let mut dialog = Dialog::new(1, "ses_a");
+        dialog.loaded(Ok(decode(serde_json::json!({
+            "repository": true,
+            "branch": "main",
+            "detached": false,
+            "files": [
+                {"path": "src/lib.rs", "kind": "modified"},
+                {"path": "src/new.rs", "original_path": "src/old.rs", "kind": "renamed"},
+                {"path": "src/fresh.rs", "kind": "untracked"}
+            ],
+            "truncated": false,
+            "file_count": 3
+        }))
+        .expect("state")));
+        dialog
+    }
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, crossterm::event::KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn enter_opens_the_selected_files_diff_and_esc_returns_to_the_list() {
+        let mut dialog = loaded_dialog();
+        let action = dialog.handle_key(key(KeyCode::Down)); // select src/new.rs
+        assert!(matches!(action, Action::None));
+        let action = dialog.handle_key(key(KeyCode::Enter));
+        assert!(dialog.diff_open());
+        assert!(
+            matches!(action, Action::OpenWorkspaceDiff(path) if path == "src/new.rs"),
+            "{action:?}"
+        );
+        // The reply fills the panel; Esc steps back to the list, not out.
+        dialog.diff_loaded(
+            "src/new.rs",
+            Ok(decode_diff(serde_json::json!({
+                "path": "src/new.rs", "diff": "+new content\n", "untracked": false
+            }))
+            .expect("view")),
+        );
+        assert_eq!(dialog.handle_key(key(KeyCode::Esc)), Action::None);
+        assert!(!dialog.diff_open());
+        assert!(matches!(dialog.handle_key(key(KeyCode::Esc)), Action::Close));
+    }
+
+    #[test]
+    fn the_diff_view_paints_the_patch_the_facts_and_the_hints() {
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let paint = |dialog: &Dialog| {
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 16)).expect("term");
+            terminal
+                .draw(|frame| dialog.render(frame, frame.area(), &theme))
+                .expect("draw");
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+        };
+
+        let mut dialog = loaded_dialog();
+        dialog.open_diff("src/lib.rs".into());
+        assert!(paint(&dialog).contains("reading diff"), "loading state");
+        dialog.diff_loaded(
+            "src/lib.rs",
+            Ok(decode_diff(serde_json::json!({
+                "path": "src/lib.rs",
+                "diff": "@@ -1 +1,2 @@\n-one\n+one\n+two\n",
+                "untracked": false
+            }))
+            .expect("view")),
+        );
+        let text = paint(&dialog);
+        assert!(text.contains("src/lib.rs"), "{text}");
+        assert!(text.contains("+two"), "{text}");
+        assert!(text.contains("esc back"), "{text}");
+
+        let mut untracked = loaded_dialog();
+        untracked.open_diff("src/fresh.rs".into());
+        untracked.diff_loaded(
+            "src/fresh.rs",
+            Ok(decode_diff(serde_json::json!({
+                "path": "src/fresh.rs", "diff": Value::Null, "untracked": true
+            }))
+            .expect("view")),
+        );
+        assert!(
+            paint(&untracked).contains("no committed version"),
+            "the untracked fact is the answer"
+        );
+
+        let mut truncated = loaded_dialog();
+        truncated.open_diff("big.rs".into());
+        truncated.diff_loaded(
+            "big.rs",
+            Ok(decode_diff(serde_json::json!({
+                "path": "big.rs", "diff": Value::Null,
+                "truncated": true, "chars": 900_000, "limit": 256_000
+            }))
+            .expect("view")),
+        );
+        assert!(
+            paint(&truncated).contains("patch too large"),
+            "the truncation fact is shown, not hidden"
+        );
+    }
+
+    #[test]
+    fn a_late_answer_for_a_closed_view_does_not_revive_it() {
+        let mut dialog = loaded_dialog();
+        dialog.open_diff("src/lib.rs".into());
+        dialog.handle_key(key(KeyCode::Esc)); // operator backed out early
+        dialog.diff_loaded(
+            "src/lib.rs",
+            Ok(decode_diff(serde_json::json!({
+                "path": "src/lib.rs", "diff": "+late\n", "untracked": false
+            }))
+            .expect("view")),
+        );
+        assert!(!dialog.diff_open());
+    }
+
+    #[test]
+    fn the_diff_box_grows_with_its_patch_up_to_the_cap() {
+        let mut dialog = loaded_dialog();
+        assert_eq!(dialog.view_rows(), dialog.body_rows(), "list mode unchanged");
+        dialog.open_diff("src/lib.rs".into());
+        assert_eq!(dialog.view_rows(), 6, "no patch yet: the minimum");
+        dialog.diff_loaded(
+            "src/lib.rs",
+            Ok(decode_diff(serde_json::json!({
+                "path": "src/lib.rs",
+                "diff": "a\nb\nc\nd\ne\nf\ng\n",
+                "untracked": false
+            }))
+            .expect("view")),
+        );
+        assert_eq!(dialog.view_rows(), 9, "seven patch lines + two");
+        dialog.diff_loaded(
+            "src/lib.rs",
+            Ok(decode_diff(serde_json::json!({
+                "path": "src/lib.rs", "diff": "x\n".repeat(100).trim_end(), "untracked": false
+            }))
+            .expect("view")),
+        );
+        assert_eq!(dialog.view_rows(), 32, "capped at 32");
     }
 }

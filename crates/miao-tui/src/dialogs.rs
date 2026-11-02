@@ -1029,7 +1029,12 @@ impl Dialog {
         // The change set is the point of the panel, so the box grows with it
         // instead of the fixed six rows that left the body empty.
         if let Dialog::WorkspaceChanges(changes) = self {
-            return (changes.body_rows() + 2).min(u16::MAX as usize) as u16;
+            let rows = if changes.diff_open() {
+                changes.view_rows()
+            } else {
+                changes.body_rows()
+            };
+            return (rows + 2).min(u16::MAX as usize) as u16;
         }
         if let Some(palette) = self.palette() {
             // Filter line, one row even when nothing matches, and the border.
@@ -1055,6 +1060,8 @@ pub enum Action {
     RefreshPermissions,
     RevokePermission(String),
     RefreshWorkspaceChanges(String),
+    /// Open the selected file's patch inside the workspace-changes dialog.
+    OpenWorkspaceDiff(String),
     None,
     Close,
     Chosen(usize),
