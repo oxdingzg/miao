@@ -245,7 +245,10 @@ pub(crate) fn resolve_references(
 
 impl Tools {
     pub async fn new(root: impl AsRef<Path>) -> Result<Self, ToolError> {
-        let root = tokio::fs::canonicalize(root).await?;
+        // Re-resolve through placement's canonical spelling so the root here
+        // matches the ledger name storage derived, verbatim prefix included
+        // on Windows.
+        let root = crate::placement::canonical(root.as_ref());
         if !tokio::fs::metadata(&root).await?.is_dir() {
             return Err(ToolError::InvalidInput);
         }
