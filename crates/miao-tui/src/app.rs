@@ -1847,13 +1847,26 @@ impl App {
         });
     }
 
+    /// What the copy keystroke should take: the composer's selection when there
+    /// is one, otherwise the last response. Kept separate from the clipboard
+    /// write so a test can check the choice without touching the operator's
+    /// clipboard.
+    fn copy_target(&self) -> Option<(String, &'static str)> {
+        if let Some(selected) = self.shell.composer.editor.selected_text() {
+            return Some((selected.to_string(), "copied the selection"));
+        }
+        self.shell
+            .last_response()
+            .map(|text| (text, "copied the last response"))
+    }
+
     fn copy_last_response(&mut self) {
-        let Some(text) = self.shell.last_response() else {
-            self.notice("there is no response to copy");
+        let Some((text, notice)) = self.copy_target() else {
+            self.notice("there is nothing to copy: select text, or open a Session with a response");
             return;
         };
         clipboard::copy(&text);
-        self.notice("copied the last response");
+        self.notice(notice);
     }
 
     fn open_editor(&mut self) {
@@ -4955,6 +4968,48 @@ mod tests {
         let mut app = app();
         app.handle(key(KeyCode::Char('c'), KeyModifiers::CONTROL));
         assert!(app.quit);
+    }
+
+    /// A selection is what the operator just chose, so the copy keystroke takes
+    /// it instead of the last response.
+    #[test]
+    fn copying_prefers_the_selection_over_the_last_response() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript {
+                entries: vec![crate::session::Entry::Assistant {
+                    agent: Some("build".into()),
+                    model: Some("glm-5.3-flash".into()),
+                    parts: vec![crate::session::Part::Text("answer".into())],
+                }],
+                ..Transcript::default()
+            }),
+            state: SessionState::default(),
+        });
+        // Without a selection the copy falls back to the response.
+        assert_eq!(
+            app.copy_target(),
+            Some(("answer".to_string(), "copied the last response"))
+        );
+        for c in "picked".chars() {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        for _ in 0..6 {
+            app.handle(key(KeyCode::Left, KeyModifiers::SHIFT));
+        }
+        assert_eq!(
+            app.copy_target(),
+            Some(("picked".to_string(), "copied the selection"))
+        );
+        // With neither, the keystroke says so instead of copying something else.
+        app.shell.composer.editor.clear();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: SessionState::default(),
+        });
+        assert_eq!(app.copy_target(), None);
     }
 
     /// `shift` on the composer's own motions selects, and backspace removes
