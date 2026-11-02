@@ -2018,6 +2018,11 @@ impl App {
                         self.open_landing_selection();
                         return;
                     }
+                    // The composer's exit words quit before they can become a
+                    // Session named "exit".
+                    if self.accept_exit_word(&text) {
+                        return;
+                    }
                     self.startup.prompt = Some(text);
                     if let Some(engine) = self.engine.as_ref() {
                         engine.new_session();
@@ -2047,10 +2052,10 @@ impl App {
                     return;
                 }
                 KeyCode::Enter => {
-                    let selected = self.home.current().map(|row| row.id.clone());
-                    if let (Some(id), Some(engine)) = (selected, self.engine.as_ref()) {
-                        engine.open(&id);
-                    }
+                    // Same act as the unfocused-list Enter: the action row
+                    // starts a Session, a Session row opens it. Sharing one
+                    // path keeps the two Enters from drifting.
+                    self.open_landing_selection();
                     return;
                 }
                 KeyCode::Char(c) if !c.is_ascii_control() => {
@@ -2723,7 +2728,22 @@ impl App {
         self.submit(text, Vec::new());
     }
 
+    /// The composer's exit words (`exit`, `quit`, with or without the slash)
+    /// quit instead of becoming prompts, the way the TS composer answers them.
+    fn accept_exit_word(&mut self, text: &str) -> bool {
+        match text.trim() {
+            "exit" | "quit" => {
+                self.quit = true;
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn submit(&mut self, text: String, attachments: Vec<Value>) {
+        if self.accept_exit_word(&text) {
+            return;
+        }
         let Some(session_id) = self.session.as_ref().map(|session| session.id.clone()) else {
             self.shell.composer.restore_with(&text, attachments);
             return;
