@@ -2000,12 +2000,7 @@ impl App {
             // Enter on an empty prompt opens the selected Session: the prompt owns
             // the keyboard on the landing screen, so Enter must still be the way in.
             if key.code == KeyCode::Enter && self.shell.composer.editor.is_empty() {
-                if let Some(row) = self.home.current() {
-                    let id = row.id.clone();
-                    if let Some(engine) = self.engine.as_ref() {
-                        engine.open(&id);
-                    }
-                }
+                self.open_landing_selection();
                 return;
             }
             match self.shell.composer.handle_key(key, &self.keys) {
@@ -2017,15 +2012,10 @@ impl App {
                 }
                 Action::Submit { text, .. } => {
                     if text.trim().is_empty() {
-                        // An empty prompt means "open what the list has selected":
-                        // the keyboard belongs to the prompt, so Enter has to keep
-                        // working as the way into a Session.
-                        if let Some(row) = self.home.current() {
-                            let id = row.id.clone();
-                            if let Some(engine) = self.engine.as_ref() {
-                                engine.open(&id);
-                            }
-                        }
+                        // An empty prompt means "act on what the list has
+                        // selected": the keyboard belongs to the prompt, so
+                        // Enter has to keep working as the way in.
+                        self.open_landing_selection();
                         return;
                     }
                     self.startup.prompt = Some(text);
@@ -2085,12 +2075,7 @@ impl App {
             (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Up, _) => {
                 self.home.move_cursor(-1);
             }
-            (KeyCode::Enter, _) => {
-                let selected = self.home.current().map(|row| row.id.clone());
-                if let (Some(id), Some(engine)) = (selected, self.engine.as_ref()) {
-                    engine.open(&id);
-                }
-            }
+            (KeyCode::Enter, _) => self.open_landing_selection(),
             (KeyCode::Char('r'), KeyModifiers::NONE) => {
                 if let Some(engine) = self.engine.as_ref() {
                     engine.refresh_sessions();
@@ -2252,6 +2237,20 @@ impl App {
             Action::Quit => self.quit = true,
             Action::Submit { text, attachments } => self.submit(text, attachments),
             Action::Shell { command } => self.run_shell(command),
+        }
+    }
+
+    /// Enter on the landing list acts on the row under the cursor: the action
+    /// row starts a new Session, a Session row opens it.
+    fn open_landing_selection(&mut self) {
+        let id = self.home.current().map(|row| row.id.clone());
+        let Some(engine) = self.engine.clone() else {
+            return;
+        };
+        match (self.home.is_new_session(), id) {
+            (true, _) => engine.new_session(),
+            (false, Some(id)) => engine.open(&id),
+            (false, None) => {}
         }
     }
 

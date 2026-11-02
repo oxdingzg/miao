@@ -909,8 +909,10 @@ impl Home {
         let selected_id = self.current().map(|row| row.id.clone());
         self.rows = rows;
         let visible = self.visible_len();
+        let offset = usize::from(self.show_new_session());
         self.selected = selected_id
             .and_then(|id| self.visible().iter().position(|row| row.id == id))
+            .map(|index| index + offset)
             .unwrap_or(0)
             .min(visible.saturating_sub(1));
     }
@@ -968,8 +970,27 @@ impl Home {
             .collect()
     }
 
+    /// Whether the list leads with the "new session" action.
+    ///
+    /// A filter narrows Sessions, so the action steps aside while a query is
+    /// typed: nothing about a search should be able to open a new Session.
+    fn show_new_session(&self) -> bool {
+        self.query.is_empty()
+    }
+
+    /// `index` in the list's display space: 0 is the action row, Sessions follow.
+    fn session_at(&self, index: usize) -> Option<&SessionSummary> {
+        let offset = usize::from(self.show_new_session());
+        self.visible().into_iter().nth(index.checked_sub(offset)?)
+    }
+
+    /// True when the cursor sits on the action row rather than on a Session.
+    pub fn is_new_session(&self) -> bool {
+        self.show_new_session() && self.selected == 0
+    }
+
     fn visible_len(&self) -> usize {
-        self.visible().len()
+        self.visible().len() + usize::from(self.show_new_session())
     }
 
     pub fn query(&self) -> &str {
@@ -1053,7 +1074,7 @@ impl Home {
     }
 
     pub fn current(&self) -> Option<&SessionSummary> {
-        self.visible().into_iter().nth(self.selected)
+        self.session_at(self.selected)
     }
 
     fn warning_lines(&self) -> Vec<Line<'static>> {
@@ -1146,7 +1167,7 @@ impl Home {
             .saturating_sub(1)
             .saturating_sub(notice_lines.len() as u16) as usize;
         let visible = self.visible();
-        if visible.is_empty() {
+        if visible.is_empty() && !self.show_new_session() {
             let mut lines = self.warning_lines();
             let message = self.notice.clone().unwrap_or_else(|| {
                 if self.rows.is_empty() {
@@ -1180,7 +1201,34 @@ impl Home {
         let mut selected_line = 0usize;
         let mut selected_tail = 0usize;
         let mut bucket: Option<&'static str> = None;
+        // The landing list opens on the action, not on the newest Session: a
+        // launch that resumes yesterday's conversation is not what "start" means.
+        let offset = usize::from(self.show_new_session());
+        if offset == 1 {
+            let selected = self.selected == 0;
+            let style = match selected {
+                true => Style::new()
+                    .fg(palette.primary)
+                    .bg(palette.element)
+                    .add_modifier(Modifier::BOLD),
+                false => Style::new().fg(palette.secondary),
+            };
+            body.push(Line::from(Span::styled(
+                format!(
+                    "{gutter}{}＋ new session",
+                    if selected { "▸ " } else { "  " }
+                ),
+                style,
+            )));
+            lines_to_row.push(Some(0));
+            if selected {
+                selected_line = notice_lines.len() + body.len() - 1;
+            }
+        }
         for (index, row) in visible.iter().enumerate() {
+            // Every painted row answers with its display index, so a click and
+            // the action share one numbering.
+            let index = index + offset;
             let group = match row.updated_at_ms {
                 Some(updated) => session_group(now, updated),
                 None => "Earlier",
