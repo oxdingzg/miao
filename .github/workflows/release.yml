@@ -153,7 +153,16 @@ jobs:
       # so a release ships `miao-<os>-<arch>` and nothing else. The engine and TUI
       # archives the Bun host used are not produced.
       - name: Build and upload this platform
+        # The upload inside `build.ts` runs only when MIAO_RELEASE marks this as
+        # a release build, and it talks to the release through GH_TOKEN and
+        # GH_REPO. Without them the leg builds and smokes a binary that never
+        # lands on the release — how v0.3.26 published with zero assets.
         run: ./packages/miao/script/build.ts --native-cli
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ needs.version.outputs.repo }}
+          MIAO_VERSION: ${{ needs.version.outputs.version }}
+          MIAO_RELEASE: ${{ needs.version.outputs.release }}
 
       - name: Smoke the artifact this leg built
         # Each leg runs on a runner of its artifact's own architecture, so the
@@ -251,6 +260,19 @@ jobs:
       # The versioned note pair was reviewed with the release commit. Keep the
       # same checkout for the final CI check and notes, even if main advances.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Require the platform artifacts on the release
+        # Publishing is the point of no return: the install script reads this
+        # release, so an empty asset list must fail the release rather than
+        # ship one nobody can download. The legs upload during their build.
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          release="v${{ needs.version.outputs.version }}"
+          repo="${{ needs.version.outputs.repo }}"
+          count=$(gh api "repos/$repo/releases/tags/$release" --jq '.assets | length')
+          echo "$count asset(s) on $release"
+          test "$count" -gt 0
       - name: Publish the draft release
         run: |
           set -euo pipefail
