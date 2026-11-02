@@ -16,6 +16,7 @@ test.skipIf(process.platform === "win32")(
 import { appendFileSync, realpathSync } from "node:fs"
 appendFileSync(process.env.BENCH_INVOCATIONS, JSON.stringify({cwd:realpathSync(process.cwd()),pwd:realpathSync(process.env.PWD),storage:process.env.MIAO_ENGINE_STORAGE})+"\\n")
 console.log(JSON.stringify({type:"text",part:{text:"I cannot change the guarded files."}}))
+console.log(JSON.stringify({type:"step_finish",part:{cost:0,tokens:{input:1,output:1}}}))
 `,
     )
     await chmod(binary, 0o755)
