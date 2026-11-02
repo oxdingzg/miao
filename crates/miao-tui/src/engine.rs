@@ -150,6 +150,11 @@ pub enum Request {
         session_id: String,
         target_directory: String,
     },
+    /// Copy a Session's committed history into a fresh Session (CLI-01
+    /// `--fork`); the executor opens the fresh copy on success.
+    ForkSession {
+        session_id: String,
+    },
     /// Read the open Session's billed usage for the status dialog.
     Usage {
         session_id: String,
@@ -339,6 +344,12 @@ impl Handle {
         let _ = self.tx.send(Request::MoveSession {
             session_id: session_id.to_string(),
             target_directory: target_directory.to_string(),
+        });
+    }
+
+    pub fn fork_session(&self, session_id: &str) {
+        let _ = self.tx.send(Request::ForkSession {
+            session_id: session_id.to_string(),
         });
     }
 
@@ -1019,6 +1030,29 @@ async fn run(
                         Ok(_) => bus.send(AppEvent::SessionMoved),
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("move failed: {error}")))
+                        }
+                    }
+                }
+                Request::ForkSession { session_id } => {
+                    // The client names the target the way it names an
+                    // initialized Session, so the fresh copy is openable before
+                    // the copy itself answers.
+                    let target = new_id("ses");
+                    let result = client
+                        .request(
+                            "fork_session",
+                            json!({ "session_id": session_id, "target_session_id": target }),
+                        )
+                        .await;
+                    match result {
+                        Ok(_) => {
+                            dirty = None;
+                            open_session(client, &bus, &mut open, target).await
+                        }
+                        Err(error) => {
+                            bus.send(AppEvent::EngineFailure(format!(
+                                "cannot fork the Session: {error}"
+                            )));
                         }
                     }
                 }
