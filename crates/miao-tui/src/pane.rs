@@ -3356,7 +3356,14 @@ mod tests {
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 6)).expect("terminal");
         terminal
-            .draw(|frame| super::render_composer(frame, ratatui::layout::Rect::new(0, 0, 80, 6), &composer, &theme))
+            .draw(|frame| {
+                super::render_composer(
+                    frame,
+                    ratatui::layout::Rect::new(0, 0, 80, 6),
+                    &composer,
+                    &theme,
+                )
+            })
             .expect("draw");
         let painted = terminal
             .backend()
@@ -3370,7 +3377,14 @@ mod tests {
         let mut composer = crate::editor::Composer::new(Path::new("."));
         composer.editor.insert_str("hello");
         terminal
-            .draw(|frame| super::render_composer(frame, ratatui::layout::Rect::new(0, 0, 80, 6), &composer, &theme))
+            .draw(|frame| {
+                super::render_composer(
+                    frame,
+                    ratatui::layout::Rect::new(0, 0, 80, 6),
+                    &composer,
+                    &theme,
+                )
+            })
             .expect("draw");
         let painted = terminal
             .backend()
@@ -3689,7 +3703,10 @@ mod tests {
         assert!(sidebar.is_some(), "this frame has a sidebar");
         let gutter = prose.x as usize;
         let column = prose.width as usize;
-        assert_eq!(gutter, PROSE_MARGIN as usize, "the prose column starts past the gutter");
+        assert_eq!(
+            gutter, PROSE_MARGIN as usize,
+            "the prose column starts past the gutter"
+        );
         let symbols = rows[top]
             .iter()
             .map(|cell| cell.symbol())
@@ -4258,8 +4275,8 @@ mod tests {
         // The shell hands the landing screen the prose column; draw into that
         // same column so the assertion covers the real alignment.
         let area = body_columns(ratatui::layout::Rect::new(0, 0, 200, 12)).0;
-        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(200, 12))
-            .expect("terminal");
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(200, 12)).expect("terminal");
         terminal
             .draw(|frame| home.render(frame, area))
             .expect("draw");
@@ -4268,7 +4285,11 @@ mod tests {
             .buffer()
             .content
             .chunks(200)
-            .map(|row| row.iter().map(|cell| cell.symbol().to_string()).collect::<Vec<_>>())
+            .map(|row| {
+                row.iter()
+                    .map(|cell| cell.symbol().to_string())
+                    .collect::<Vec<_>>()
+            })
             .collect::<Vec<_>>();
         let (prose, _) = body_columns(ratatui::layout::Rect::new(0, 0, 200, 12));
         // The rows start one cell inside the prose column, so the header does
@@ -4285,9 +4306,7 @@ mod tests {
             .expect("the header is painted");
         assert_eq!(header[start], "s", "the header starts on the column");
         assert!(
-            header[1..start]
-                .iter()
-                .all(|cell| cell.trim().is_empty()),
+            header[1..start].iter().all(|cell| cell.trim().is_empty()),
             "and nothing is painted before it: {header:?}"
         );
     }

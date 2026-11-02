@@ -39,10 +39,7 @@ pub fn materialize(
     Ok(Some(path))
 }
 
-fn routes(
-    sources: &[Source],
-    credential_db: Option<&Path>,
-) -> Result<Option<Vec<Value>>, String> {
+fn routes(sources: &[Source], credential_db: Option<&Path>) -> Result<Option<Vec<Value>>, String> {
     let documents = config_derive::load(sources)?;
     let values = documents
         .iter()
@@ -66,10 +63,7 @@ fn routes(
     // One unexpired credential per integration. A later stored credential is
     // reachable through the product UI, which rewrites the manifest on use.
     let mut live: BTreeMap<&str, &crate::credential::Metadata> = BTreeMap::new();
-    for credential in credentials
-        .iter()
-        .filter(|credential| !credential.expired)
-    {
+    for credential in credentials.iter().filter(|credential| !credential.expired) {
         live.entry(credential.integration.as_str())
             .or_insert(credential);
     }
@@ -189,7 +183,9 @@ fn transport(api: &Value, model_id: &str) -> Option<(String, Option<String>)> {
             match package {
                 "@ai-sdk/anthropic" => {
                     let endpoint = base.as_deref().unwrap_or("https://api.anthropic.com/v1");
-                    endpoint.join_pair("messages").map(|url| ("anthropic".into(), Some(url)))
+                    endpoint
+                        .join_pair("messages")
+                        .map(|url| ("anthropic".into(), Some(url)))
                 }
                 "@ai-sdk/google" => {
                     let endpoint = base
@@ -199,19 +195,28 @@ fn transport(api: &Value, model_id: &str) -> Option<(String, Option<String>)> {
                         "models/{}:streamGenerateContent",
                         model_id.trim_start_matches("models/")
                     );
-                    endpoint.join_pair(&suffix).map(|url| ("gemini".into(), Some(url)))
+                    endpoint
+                        .join_pair(&suffix)
+                        .map(|url| ("gemini".into(), Some(url)))
                 }
                 "@ai-sdk/openai" => {
                     let endpoint = base.as_deref().unwrap_or("https://api.openai.com/v1");
-                    endpoint.join_pair("responses").map(|url| ("openai-responses".into(), Some(url)))
+                    endpoint
+                        .join_pair("responses")
+                        .map(|url| ("openai-responses".into(), Some(url)))
                 }
                 "@ai-sdk/amazon-bedrock" => Some(("amazon-bedrock".into(), url.map(str::to_owned))),
                 // The OpenAI-compatible family, including every package whose
                 // default URL is itself chat-completions shaped.
-                "@ai-sdk/openai-compatible" | "@ai-sdk/deepseek" | "@ai-sdk/groq"
-                | "@ai-sdk/mistral" | "@ai-sdk/xai" => {
+                "@ai-sdk/openai-compatible"
+                | "@ai-sdk/deepseek"
+                | "@ai-sdk/groq"
+                | "@ai-sdk/mistral"
+                | "@ai-sdk/xai" => {
                     let endpoint = base?;
-                    endpoint.join_pair("chat/completions").map(|url| ("openai-chat".into(), Some(url)))
+                    endpoint
+                        .join_pair("chat/completions")
+                        .map(|url| ("openai-chat".into(), Some(url)))
                 }
                 _ => None,
             }
@@ -237,7 +242,9 @@ impl EndpointJoin for &str {
         }
         let forbidden = |key: &str| {
             let key = key.to_ascii_lowercase();
-            ["key", "token", "secret", "auth"].iter().any(|word| key.contains(word))
+            ["key", "token", "secret", "auth"]
+                .iter()
+                .any(|word| key.contains(word))
         };
         if url
             .query_pairs()
@@ -317,11 +324,19 @@ mod tests {
         .unwrap();
         // Only the covered provider's routable model survives; the unknown
         // wire and the credential-less provider contribute nothing.
-        assert_eq!(entries.len(), 1, "{}", serde_json::to_string(&entries).unwrap());
+        assert_eq!(
+            entries.len(),
+            1,
+            "{}",
+            serde_json::to_string(&entries).unwrap()
+        );
         let entry = &entries[0];
         assert_eq!(entry["id"], "volcengine/deepseek");
         assert_eq!(entry["provider"], "openai-chat");
-        assert_eq!(entry["endpoint"], "https://ark.example.com/api/v3/chat/completions");
+        assert_eq!(
+            entry["endpoint"],
+            "https://ark.example.com/api/v3/chat/completions"
+        );
         assert_eq!(entry["primary"], true);
         assert_eq!(entry["credential"]["integration"], "volcengine");
         assert_eq!(entry["input_modalities"], json!(["text"]));
@@ -342,8 +357,14 @@ mod tests {
 
     #[test]
     fn a_url_carrying_secrets_in_its_query_is_refused() {
-        assert!("https://host.example/v1?api-key=xyz".join_pair("chat/completions").is_none());
-        assert!("https://user:pw@host.example/v1".join_pair("chat/completions").is_none());
-        assert!("ftp://host.example/v1".join_pair("chat/completions").is_none());
+        assert!("https://host.example/v1?api-key=xyz"
+            .join_pair("chat/completions")
+            .is_none());
+        assert!("https://user:pw@host.example/v1"
+            .join_pair("chat/completions")
+            .is_none());
+        assert!("ftp://host.example/v1"
+            .join_pair("chat/completions")
+            .is_none());
     }
 }

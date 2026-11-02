@@ -305,11 +305,7 @@ fn sessions(
     };
     out.push(header(tool, "sessions", &compact(&summary), theme));
     let limit = fold.limit(TOOL_PREVIEW_LINES);
-    let body = rows
-        .iter()
-        .map(peer_line)
-        .collect::<Vec<_>>()
-        .join("\n");
+    let body = rows.iter().map(peer_line).collect::<Vec<_>>().join("\n");
     if !body.is_empty() {
         preview(out, &body, palette.text_muted, limit, fold.toggle);
     }
@@ -321,10 +317,7 @@ fn peer_line(row: &Value) -> String {
         .and_then(Value::as_str)
         .filter(|title| !title.is_empty())
         .unwrap_or("untitled");
-    let task = row
-        .get("task")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown");
+    let task = row.get("task").and_then(Value::as_str).unwrap_or("unknown");
     let objective = row
         .get("objective")
         .and_then(Value::as_str)
