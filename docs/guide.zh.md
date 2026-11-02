@@ -143,6 +143,7 @@ prompt 获得焦点时：
 | `ctrl+y`                                | 复制选区，没有选区时复制上一条回复                  |
 | `ctrl+j`                                | 换行而不发送                                        |
 | `ctrl+c`                                | 清空草稿（草稿为空时退出）                          |
+| 点击 / 拖拽 | 在 prompt 里定位光标 / 选中文本 |
 
 可在 `~/.config/miao/tui.json`（或 miao.jsonc 的 `keybinds`）里重绑定。
 

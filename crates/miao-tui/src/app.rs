@@ -171,6 +171,8 @@ pub struct App {
     /// agent CLI behaves: the first thing typed is the first prompt. `Tab`
     /// moves focus to the home list (filter, numbered slots, pin) and back.
     home_list_focus: bool,
+    /// Where the landing prompt was painted, for pointer hit-testing.
+    home_composer_hit: Option<crate::pane::ComposerHit>,
     dialog: Option<Dialog>,
     permission_generation: u64,
     workspace_changes_generation: u64,
@@ -276,6 +278,7 @@ impl App {
             state: SessionState::default(),
             quit: false,
             home_list_focus: false,
+            home_composer_hit: None,
             dialog: None,
             permission_generation: 0,
             workspace_changes_generation: 0,
@@ -430,12 +433,12 @@ impl App {
                     )),
                 ])
                 .areas(frame.area());
-                crate::pane::render_home_composer(
+                self.home_composer_hit = Some(crate::pane::render_home_composer(
                     frame,
                     composer_area,
                     &self.shell.composer,
                     &self.shell.theme().clone(),
-                );
+                ));
                 self.home.render(frame, body);
             }
             Screen::Session => self.shell.render(frame),
@@ -813,6 +816,43 @@ impl App {
         // A drag over the transcript copies what it covered, like the
         // TypeScript UI: cells, not logical lines, because the transcript is
         // wrapped.
+        // The prompt takes the pointer first: a click in it places the caret and
+        // a drag selects, the same gesture the transcript already answers one
+        // panel down. Anything outside it falls through to that transcript
+        // selection.
+        if self.dialog.is_none() {
+            let hit = match self.screen {
+                Screen::Session => self.shell.composer_hit,
+                Screen::Home => self.home_composer_hit,
+            };
+            let position = ratatui::layout::Position::new(mouse.column, mouse.row);
+            if let Some((line, cell)) = hit.and_then(|hit| hit.draft_position(position)) {
+                if let Some(index) = self.shell.composer.index_at(line, cell) {
+                    match mouse.kind {
+                        MouseEventKind::Down(MouseButton::Left) => {
+                            self.leader = false;
+                            self.shell.composer.pointer_press(index);
+                            // The prompt keeps the keyboard, so typing continues
+                            // where the pointer went.
+                            if self.screen == Screen::Home {
+                                self.home_list_focus = false;
+                                self.home.set_list_focus(false);
+                            }
+                            return;
+                        }
+                        MouseEventKind::Drag(MouseButton::Left) => {
+                            self.shell.composer.drag_selection_to(index);
+                            return;
+                        }
+                        MouseEventKind::Up(MouseButton::Left) => {
+                            self.shell.composer.pointer_release();
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
         if self.dialog.is_none() && self.screen == Screen::Session {
             let position = ratatui::layout::Position::new(mouse.column, mouse.row);
             match mouse.kind {
@@ -4968,6 +5008,69 @@ mod tests {
         let mut app = app();
         app.handle(key(KeyCode::Char('c'), KeyModifiers::CONTROL));
         assert!(app.quit);
+    }
+
+    /// A click inside the prompt places the caret there; the prompt keeps the
+    /// keyboard afterwards so typing continues where the pointer landed.
+    #[test]
+    fn a_click_in_the_composer_places_the_caret() {
+        use ratatui::layout::Rect;
+        let mut app = session_app();
+        for c in "hello".chars() {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        app.shell.composer_hit = Some(crate::pane::ComposerHit {
+            area: Rect::new(10, 20, 40, 1),
+            row_offset: 0,
+            cell_offset: 0,
+        });
+        app.handle(AppEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Down(MouseButton::Left),
+            12,
+            20,
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(app.shell.composer.editor.cursor(), 2, "between e and l");
+        assert!(!app.shell.composer.editor.selecting());
+    }
+
+    /// Dragging from the press extends a selection over the draft, which the
+    /// copy and delete keys then act on.
+    #[test]
+    fn dragging_in_the_composer_selects_text() {
+        use ratatui::layout::Rect;
+        let mut app = session_app();
+        for c in "hello".chars() {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        app.shell.composer_hit = Some(crate::pane::ComposerHit {
+            area: Rect::new(10, 20, 40, 1),
+            row_offset: 0,
+            cell_offset: 0,
+        });
+        app.handle(AppEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Down(MouseButton::Left),
+            11,
+            20,
+            KeyModifiers::NONE,
+        )));
+        app.handle(AppEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Drag(MouseButton::Left),
+            14,
+            20,
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(app.shell.composer.editor.selected_text(), Some("ell"));
+        // A pointer position outside the prompt does not reach it: the draft and
+        // its selection stay where they were.
+        app.handle(AppEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Down(MouseButton::Left),
+            11,
+            2,
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(app.shell.composer.editor.selected_text(), Some("ell"));
+        assert_eq!(app.shell.composer.editor.text(), "hello");
     }
 
     /// A selection is what the operator just chose, so the copy keystroke takes

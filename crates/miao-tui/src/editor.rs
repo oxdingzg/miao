@@ -129,6 +129,56 @@ impl Editor {
         self.goal = None;
     }
 
+    /// Put the cursor at `index`, ending any selection. A pointer click lands
+    /// on a character boundary by construction; anything else is floored to one
+    /// so the buffer never splits a character.
+    pub fn set_cursor(&mut self, index: usize) {
+        self.cursor = self.boundary_at(index);
+        self.anchor = None;
+        self.goal = None;
+        self.group = None;
+    }
+
+    /// The byte offset a pointer position names: `line` is a logical line and
+    /// `cell` a display column on it, already shifted by the horizontal scroll.
+    /// A row past the last line lands at the end of the draft.
+    pub fn index_at(&self, line: usize, cell: usize) -> Option<usize> {
+        let mut base = 0;
+        for (index, current) in self.buffer.split('\n').enumerate() {
+            if index == line {
+                return Some(index_at_cell(current, base, cell));
+            }
+            base += current.len() + 1;
+        }
+        (line > 0).then_some(self.buffer.len())
+    }
+
+    /// Start a pointer selection at `index`: the anchor is where the press
+    /// landed, the cursor follows the drag.
+    pub fn begin_pointer_selection(&mut self, index: usize) {
+        let index = self.boundary_at(index);
+        self.cursor = index;
+        self.anchor = Some(index);
+        self.goal = None;
+        self.group = None;
+    }
+
+    /// Extend the pointer selection to `index`, keeping the anchor.
+    pub fn drag_to(&mut self, index: usize) {
+        self.cursor = self.boundary_at(index);
+        self.goal = None;
+        self.group = None;
+    }
+
+    /// The nearest char boundary at or before `index`.
+    fn boundary_at(&self, index: usize) -> usize {
+        let mut index = index.min(self.buffer.len());
+        while index > 0 && !self.buffer.is_char_boundary(index) {
+            index -= 1;
+        }
+        index
+    }
+
     /// Run a motion with the selection extended: the anchor stays where the
     /// selection started and the cursor moves, which is what `shift+arrow`
     /// means. A motion that does not move keeps the anchor as it was.
@@ -697,6 +747,9 @@ pub struct Composer {
     pub editor: Editor,
     mode: Mode,
     pub completion: Completion,
+    /// Where a pointer pressed, waiting for the drag that turns it into a
+    /// selection.
+    pointer_press: Option<usize>,
     pub notice: Option<String>,
     /// Prompts durably admitted but not yet promoted into a turn. They are
     /// re-read from the snapshot every frame, so this is display state rather
@@ -730,6 +783,7 @@ impl Composer {
             editor: Editor::new(),
             mode: Mode::Normal,
             completion: Completion::default(),
+            pointer_press: None,
             notice: None,
             queued: 0,
             phase: None,
@@ -1066,6 +1120,35 @@ impl Composer {
         self.completion = Completion::default();
     }
 
+    /// Place the caret where a pointer pressed. A press on its own is a click,
+    /// not a selection, so the anchor is only set once a drag follows it.
+    pub fn pointer_press(&mut self, index: usize) {
+        self.editor.set_cursor(index);
+        self.pointer_press = Some(self.editor.cursor());
+        self.refresh_completion();
+    }
+
+    /// Follow a pointer drag, turning the press into a selection the first time
+    /// it moves.
+    pub fn drag_selection_to(&mut self, index: usize) {
+        if let Some(press) = self.pointer_press.take() {
+            self.editor.begin_pointer_selection(press);
+        }
+        self.editor.drag_to(index);
+    }
+
+    /// Forget a press that never became a drag, e.g. once the pointer is
+    /// released.
+    pub fn pointer_release(&mut self) {
+        self.pointer_press = None;
+    }
+
+    /// The byte offset a pointer position names, in the composer's own
+    /// coordinates.
+    pub fn index_at(&self, line: usize, cell: usize) -> Option<usize> {
+        self.editor.index_at(line, cell)
+    }
+
     /// Whether the draft has an editing step to take back, so a shared stroke
     /// belongs to the composer rather than to the page.
     pub fn can_undo(&self) -> bool {
@@ -1333,6 +1416,7 @@ mod tests {
             editor: Editor::new(),
             mode: Mode::Normal,
             completion: Completion::default(),
+            pointer_press: None,
             notice: None,
             queued: 0,
             phase: None,
@@ -1415,6 +1499,25 @@ mod tests {
         editor.set_text("recalled from history");
         assert!(!editor.undo(), "the recalled text is the baseline");
         assert_eq!(editor.text(), "recalled from history");
+    }
+
+    /// The pointer's screen position names a byte offset: the line comes from
+    /// the row, the offset from the display column, so a click after two CJK
+    /// characters lands after two characters rather than after two bytes.
+    #[test]
+    fn index_at_maps_a_pointer_position_into_the_draft() {
+        let mut editor = Editor::new();
+        editor.insert_str("ab\n你好\ncd");
+        assert_eq!(editor.index_at(0, 1), Some(1), "after a");
+        assert_eq!(editor.index_at(0, 9), Some(2), "past the end of line 0");
+        assert_eq!(editor.index_at(1, 2), Some(6), "after the first CJK char");
+        assert_eq!(editor.index_at(1, 4), Some(9), "after the second");
+        assert_eq!(editor.index_at(2, 0), Some(10), "start of the last line");
+        assert_eq!(
+            editor.index_at(9, 0),
+            Some(12),
+            "below the draft is its end"
+        );
     }
 
     /// A pasted path that names an image becomes an attachment the engine can

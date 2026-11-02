@@ -22,6 +22,27 @@ pub trait Pane {
     fn render(&mut self, frame: &mut Frame, area: Rect);
 }
 
+/// Where the composer's input landed on screen, and how far it is scrolled, so a
+/// pointer can be turned back into a byte offset in the draft.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ComposerHit {
+    pub area: Rect,
+    pub row_offset: usize,
+    pub cell_offset: usize,
+}
+
+impl ComposerHit {
+    /// The `(line, cell)` a pointer position names inside the draft.
+    pub fn draft_position(&self, position: Position) -> Option<(usize, usize)> {
+        if !self.area.contains(position) {
+            return None;
+        }
+        let row = (position.y - self.area.y) as usize;
+        let cell = (position.x - self.area.x) as usize;
+        Some((self.row_offset + row, self.cell_offset + cell))
+    }
+}
+
 pub struct Shell {
     pub title: TitlePane,
     pub transcript: TranscriptPane,
@@ -36,6 +57,8 @@ pub struct Shell {
     /// The projection behind `transcript.lines`, kept so a theme change can
     /// repaint the same content instead of waiting for the next snapshot.
     last: Option<Transcript>,
+    /// Where the composer was painted, for pointer hit-testing.
+    pub composer_hit: Option<ComposerHit>,
 }
 
 impl Shell {
@@ -55,6 +78,7 @@ impl Shell {
                 todos: Vec::new(),
             }),
             last: None,
+            composer_hit: None,
         }
     }
 
@@ -261,7 +285,12 @@ impl Shell {
         if let Some(panel) = self.panel.as_ref() {
             panel.render(frame, panel_area, &self.transcript.theme);
         }
-        render_composer(frame, composer_area, &self.composer, &self.transcript.theme);
+        self.composer_hit = Some(render_composer(
+            frame,
+            composer_area,
+            &self.composer,
+            &self.transcript.theme,
+        ));
         match &self.leader_hint {
             Some(menu) => frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
@@ -1565,11 +1594,21 @@ pub fn composer_height(composer: &Composer, width: u16) -> u16 {
 
 /// The home screen shows the same composer as a Session, so a prompt can be
 /// typed before any Session exists.
-pub fn render_home_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
+pub fn render_home_composer(
+    frame: &mut Frame,
+    area: Rect,
+    composer: &Composer,
+    theme: &Theme,
+) -> ComposerHit {
     render_composer(frame, area, composer, theme)
 }
 
-fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
+fn render_composer(
+    frame: &mut Frame,
+    area: Rect,
+    composer: &Composer,
+    theme: &Theme,
+) -> ComposerHit {
     let palette = theme.palette;
     // The queue count rides the same title line as a transient notice so the
     // composer answers "is my prompt waiting?" without a second row.
@@ -1621,7 +1660,11 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if inner.width == 0 || inner.height == 0 {
-        return;
+        return ComposerHit {
+            area: Rect::default(),
+            row_offset: 0,
+            cell_offset: 0,
+        };
     }
 
     let completion_rows = composer
@@ -1743,6 +1786,11 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
         })
         .collect::<Vec<_>>();
     frame.render_widget(Paragraph::new(items), completion_area);
+    ComposerHit {
+        area: input_area,
+        row_offset,
+        cell_offset,
+    }
 }
 
 /// Skip `offset` display cells and take at most `width` cells of a line.
@@ -2954,7 +3002,9 @@ mod tests {
             let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 8))
                 .expect("terminal");
             terminal
-                .draw(|frame| render_composer(frame, frame.area(), &composer, &theme))
+                .draw(|frame| {
+                    render_composer(frame, frame.area(), &composer, &theme);
+                })
                 .expect("draw");
             let text = terminal
                 .backend()
@@ -3451,7 +3501,9 @@ mod tests {
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 8)).expect("terminal");
         terminal
-            .draw(|frame| render_composer(frame, frame.area(), &composer, &theme))
+            .draw(|frame| {
+                render_composer(frame, frame.area(), &composer, &theme);
+            })
             .expect("draw");
         let visible = terminal
             .backend()

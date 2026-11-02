@@ -148,6 +148,7 @@ While the prompt holds the keyboard:
 | `ctrl+y`                                | copy the selection, or the last response                   |
 | `ctrl+j`                                | start a new line without sending                           |
 | `ctrl+c`                                | clear the draft (an empty draft quits)                     |
+| click / drag | place the caret / select text in the prompt |
 
 Rebind in `~/.config/miao/tui.json` (or `keybinds` in miao.jsonc).
 
