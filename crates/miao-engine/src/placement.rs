@@ -46,8 +46,25 @@ mod tests {
     fn the_ledger_name_is_the_product_location_digest() {
         let root = Path::new("/tmp/root");
         let path = database_for(root, Path::new("/Users/someone/project")).expect("a ledger");
-        // The product hashes `{ "directory": "<absolute directory>" }`; a start
-        // without flags has to open that store, not a second one.
+        let name = path
+            .file_name()
+            .expect("a ledger name")
+            .to_string_lossy()
+            .to_string();
+        // Shape first, on every platform: one 64-hex digest and its suffix.
+        assert_eq!(name.len(), 64 + ".db".len(), "{name}");
+        assert!(name.ends_with(".db"), "{name}");
+        assert!(name[..64].chars().all(|c| c.is_ascii_hexdigit()), "{name}");
+        // Two workspaces never share a ledger.
+        assert_ne!(
+            path,
+            database_for(root, Path::new("/Users/someone/other")).expect("a ledger")
+        );
+        // The exact digest is the product's: it hashes
+        // `{ "directory": "<absolute directory>" }`. That string is only stable
+        // across hosts on unix — a Windows absolute path differs — so the parity
+        // pin lives where the string it pins actually is.
+        #[cfg(unix)]
         assert_eq!(
             path,
             root.join("228535309a12cfe4cf9e7b4139686b73a264de615d53cb4ba1e11ac4abab3ef6.db")
