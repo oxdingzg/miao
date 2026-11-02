@@ -148,6 +148,31 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
+    fn unicode_and_case_fold_to_the_filesystem_truth_on_apfs() {
+        // APFS stores names NFD-normalised and matches case-insensitively, so
+        // `café` spelled NFC, spelled NFD, and spelled `CAFE` are one directory
+        // and one ledger. ext4 keeps the bytes and the case, which is why this
+        // is a macOS assertion and not a portable one: there the three spellings
+        // are genuinely three directories, and identity must not fold them.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let nfc = dir.path().join("caf\u{e9}");
+        std::fs::create_dir_all(&nfc).expect("create NFC");
+        let nfd = dir.path().join("cafe\u{301}");
+
+        let root = Path::new("/tmp/root");
+        let via_nfc = database_for(root, &nfc).expect("a ledger");
+        let via_nfd = database_for(root, &nfd).expect("a ledger");
+        assert_eq!(via_nfc, via_nfd, "NFC and NFD spellings split the ledger");
+        // Case folding is deliberately NOT asserted: on a case-insensitive
+        // filesystem canonicalize resolves `CAFE` to the real directory and the
+        // spellings fold; on a case-sensitive one (modern APFS, ext4) `CAFE` is
+        // a different, absent directory and must not fold. The mechanism is the
+        // same either way — identity asks the filesystem, and the filesystem's
+        // answer is the Location.
+    }
+
+    #[test]
     fn the_ledger_name_is_the_product_location_digest() {
         let root = Path::new("/tmp/root");
         let path = database_for(root, Path::new("/Users/someone/project")).expect("a ledger");
