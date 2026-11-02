@@ -5226,6 +5226,9 @@ async fn send_peer_message(
             "a Session cannot send a coordination message to itself".into(),
         ));
     }
+    if let Err(denied) = peer_allowed(inner, "send_message", &target) {
+        return Err(ToolError::External(denied));
+    }
     let pending = inner
         .store
         .pending_inputs(&target, None, MAX_INBOUND_QUEUE + 1)
@@ -5270,6 +5273,22 @@ async fn send_peer_message(
     }))
 }
 
+/// Whether this Session may act on that peer, judged per target.
+///
+/// The peer is the resource, so a rule can allow one neighbour and deny another.
+/// Only an explicit rule stops the call: the tool itself already passed its own
+/// permission gate, and treating the policy's default as a denial here would
+/// make coordination impossible without a rule nobody knew to write.
+fn peer_allowed(inner: &Arc<Inner>, tool: &str, target: &str) -> Result<(), String> {
+    // Only an explicit rule stops the call: the tool itself already passed its
+    // own permission gate, and the policy's default for a name it has never
+    // seen would otherwise make coordination impossible.
+    match inner.policy().rule_denies(tool, target) {
+        true => Err(format!("{target} is denied by this Session's permissions")),
+        false => Ok(()),
+    }
+}
+
 /// Whether the chosen policy asks for execution.
 ///
 /// `wake: always` is the one case that can be refused: asking a peer to start
@@ -5310,6 +5329,9 @@ async fn read_peer_context(
         .map_err(external)?
         .unwrap_or_default();
     let target = resolve_peer(inner, &root, to).await?;
+    if let Err(denied) = peer_allowed(inner, "read_session_context", &target) {
+        return Err(ToolError::External(denied));
+    }
     let snapshot = inner.store.snapshot(&target).await.map_err(external)?;
     let title = snapshot
         .get("title")

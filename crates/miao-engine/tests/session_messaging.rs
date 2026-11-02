@@ -6,6 +6,7 @@
 
 use async_trait::async_trait;
 use miao_engine::{
+    permission::{Config, Decision, Policy, Rule},
     protocol::{Delivery, Input, Message, ModelRequest},
     provider::{Provider, ProviderError, Reply},
     runtime::Runtime,
@@ -145,5 +146,50 @@ async fn a_message_lands_in_the_peer_inbox_without_waking_it() {
     // `wake: never` leaves mail and starts nothing.
     let peer = store.snapshot("b").await.unwrap();
     assert!(peer["active_run"].is_null(), "the peer was not woken");
+    runtime.shutdown().await;
+}
+
+/// Authorisation is per target, so a rule can allow one neighbour and deny
+/// another. The denial must keep the mail out of the peer's inbox rather than
+/// admit it and hope the caller behaves.
+#[tokio::test]
+async fn a_denied_target_receives_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let root = dir.path().to_string_lossy().to_string();
+    store.initialize("a", "Sender", &root).await.unwrap();
+    store.initialize("b", "Peer", &root).await.unwrap();
+    let (turns, _receive) = mpsc::channel(10);
+    let policy = Policy::new(Config {
+        rules: vec![Rule {
+            tool: "send_message".into(),
+            path: "b".into(),
+            decision: Decision::Deny,
+        }],
+        ..Config::default()
+    })
+    .unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Calls {
+            tool: json!({
+                "type": "tool_use",
+                "id": "call_msg",
+                "name": "send_message",
+                "input": {"to": "b", "message": "do the thing", "wake": "never"}
+            }),
+            turns,
+        }),
+        Tools::new(dir.path()).await.unwrap(),
+        policy,
+    )
+    .await
+    .unwrap();
+    runtime.admit(prompt("a", "first"), true).await.unwrap();
+    wait_for_turn(&store, "a").await;
+    assert!(
+        pending(&store, "b").await.is_empty(),
+        "a denied target received mail"
+    );
     runtime.shutdown().await;
 }
