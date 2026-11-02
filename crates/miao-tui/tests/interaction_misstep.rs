@@ -217,7 +217,8 @@ fn filter(query: &str, corrections: Vec<Vec<u8>>) -> Option<(usize, u128)> {
 fn a_wrong_turn_costs_the_correction_on_top_of_the_intended_path() {
     // Sequential on purpose: the harness reaps every fixture engine on shutdown,
     // so two measurements running in parallel would kill each other's engine.
-    let clean_query = filter("session 150", Vec::new()).expect("the clean query never opened the row");
+    let clean_query =
+        filter("session 150", Vec::new()).expect("the clean query never opened the row");
     let mistyped = filter("session 15O", vec![vec![0x7f], b"0".to_vec()])
         .expect("the corrected query never opened the row");
     println!(
