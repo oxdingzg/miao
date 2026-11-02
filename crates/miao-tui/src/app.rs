@@ -4780,6 +4780,8 @@ mod tests {
         app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
         app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
         assert_eq!(app.home.query(), "");
+        // Filter cleared: the cursor goes to the action row.
+        assert_eq!(app.home.current(), None);
         assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
     }
 
