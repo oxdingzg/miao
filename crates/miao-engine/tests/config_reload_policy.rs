@@ -63,7 +63,7 @@ async fn engine(dir: &Path, file: &Path) -> (Runtime, Tools) {
     .await
     .unwrap();
     runtime
-        .set_policy_origin(PolicyOrigin::File(file.to_path_buf()), None)
+        .set_policy_origin(PolicyOrigin::File(file.to_path_buf()), None, false)
         .await;
     (runtime, tools)
 }
