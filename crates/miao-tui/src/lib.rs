@@ -149,9 +149,30 @@ async fn drive(
     let input = input::spawn(bus);
     app.start();
     let mut title = terminal_title::Title::new(std::io::stdout());
+    // A paint whose PTY cannot accept it must never end the run. A hidden
+    // web-IDE tab stops draining the output, so writes block or start failing
+    // until the operator comes back; the loop skips those frames and keeps the
+    // engine tasks, the session, and the process alive.
+    let mut paint_failures = 0u32;
     loop {
-        title.update(app.terminal_title().as_deref())?;
-        terminal.draw(|frame| app.render(frame))?;
+        let _ = title.update(app.terminal_title().as_deref());
+        match terminal.draw(|frame| app.render(frame)) {
+            Ok(_) => paint_failures = 0,
+            Err(error) => {
+                paint_failures += 1;
+                if paint_failures == 1 {
+                    app.warn(&format!(
+                        "paint failed ({error}); holding frames until output drains"
+                    ));
+                }
+                if paint_failures > 60 {
+                    // A minute of unresponsive output is a dead terminal, not
+                    // backpressure; say so instead of spinning.
+                    return Err(format!("painting kept failing: {error}").into());
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
         if std::env::var_os("MIAO_TUI_TEST_PANIC").is_some() {
             panic!("miao-tui: injected panic (MIAO_TUI_TEST_PANIC)");
         }
@@ -195,15 +216,20 @@ async fn drive(
                         app.handle(queued);
                     }
                     if app.take_redraw_request() {
-                        terminal::redraw(terminal)?;
+                        let _ = terminal::redraw(terminal);
                     }
                     #[cfg(unix)]
                     if app.take_suspend_request() {
-                        let paused = input.pause()?;
-                        title.update(None)?;
+                        let Ok(paused) = input.pause() else {
+                            app.warn("cannot suspend: the input reader stopped");
+                            continue;
+                        };
+                        let _ = title.update(None);
                         terminal::suspend();
                         let result = platform::job_control::suspend();
-                        terminal::resume(terminal, preferences)?;
+                        if let Err(error) = terminal::resume(terminal, preferences) {
+                            app.warn(&format!("terminal did not resume cleanly: {error}"));
+                        }
                         drop(paused);
                         title.invalidate();
                         if let Err(error) = result {
@@ -211,7 +237,10 @@ async fn drive(
                         }
                     }
                     if let Some(request) = app.take_editor_request() {
-                        let paused = input.pause()?;
+                        let Ok(paused) = input.pause() else {
+                            app.warn("cannot open the editor: the input reader stopped");
+                            continue;
+                        };
                         terminal::suspend();
                         let editor = platform::editor::run(&request);
                         tokio::pin!(editor);
@@ -228,7 +257,9 @@ async fn drive(
                                 result = &mut editor => break result,
                             }
                         };
-                        terminal::resume(terminal, preferences)?;
+                        if let Err(error) = terminal::resume(terminal, preferences) {
+                            app.warn(&format!("terminal did not resume cleanly: {error}"));
+                        }
                         drop(paused);
                         app.handle(AppEvent::EditorFinished(result));
                     }
