@@ -172,7 +172,9 @@ jobs:
           # Windows leg builds a baseline variant too), so every match is smoked.
           shopt -s nullglob
           found=0
-          for binary in "dist/miao-${os}-${arch}"*/bin/miao "dist/miao-${os}-${arch}"*/bin/miao.exe; do
+          # `build.ts` chdirs into `packages/miao`, so its artifacts land under
+          # that package's `dist/`, not the repository root's.
+          for binary in "packages/miao/dist/miao-${os}-${arch}"*/bin/miao "packages/miao/dist/miao-${os}-${arch}"*/bin/miao.exe; do
             [ -f "$binary" ] || continue
             found=$((found + 1))
             if ! "$binary" --version; then
