@@ -82,6 +82,18 @@ fn normalise_dot_segments(path: PathBuf) -> PathBuf {
     out
 }
 
+/// The filesystem's own spelling of a stored directory: `canonicalize` with
+/// the Windows verbatim prefix (`\\?\C:\...`) stripped. Storage derives
+/// ledger names through [`identity`], and any surface that re-resolves a
+/// stored root — the toolset, transfers, snapshots — must come back to the
+/// same bytes, or one directory opens two ledgers.
+pub fn canonical(workspace: &Path) -> PathBuf {
+    match std::fs::canonicalize(workspace) {
+        Ok(real) => strip_windows_prefix(real),
+        Err(_) => identity(workspace),
+    }
+}
+
 /// The ledger for one workspace, under `root`.
 pub fn database_for(root: &Path, workspace: &Path) -> Option<PathBuf> {
     let directory = identity(workspace);
@@ -219,7 +231,10 @@ mod tests {
 
         let spelled = PathBuf::from(format!("{}/", link.display()));
         let stored = identity(&spelled);
-        let toolset = std::fs::canonicalize(&stored).expect("resolve the stored root");
+        // The toolset re-resolves through `canonical`, not raw `canonicalize`:
+        // on Windows the raw form hands back a verbatim path and the two
+        // surfaces split the ledger.
+        let toolset = canonical(&stored);
         assert_eq!(
             stored, toolset,
             "identity's output is not the filesystem truth"
