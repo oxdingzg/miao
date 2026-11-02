@@ -40,6 +40,11 @@ pub enum Request {
         generation: u64,
         session_id: String,
     },
+    VcsDiff {
+        generation: u64,
+        session_id: String,
+        path: String,
+    },
     SavedPermissions {
         generation: u64,
     },
@@ -225,6 +230,14 @@ impl Handle {
         let _ = self.tx.send(Request::VcsChanges {
             generation,
             session_id: session_id.into(),
+        });
+    }
+
+    pub fn vcs_diff(&self, generation: u64, session_id: &str, path: &str) {
+        let _ = self.tx.send(Request::VcsDiff {
+            generation,
+            session_id: session_id.into(),
+            path: path.into(),
         });
     }
 
@@ -968,6 +981,25 @@ async fn run(
                         .map_err(|error| error.to_string())
                         .and_then(crate::workspace_changes::decode);
                     bus.send(AppEvent::WorkspaceChanges { generation, result });
+                }
+                Request::VcsDiff {
+                    generation,
+                    session_id,
+                    path,
+                } => {
+                    let result = client
+                        .request(
+                            "vcs_diff",
+                            json!({ "session_id": session_id, "path": path }),
+                        )
+                        .await
+                        .map_err(|error| error.to_string())
+                        .and_then(crate::workspace_changes::decode_diff);
+                    bus.send(AppEvent::WorkspaceDiff {
+                        generation,
+                        path,
+                        result,
+                    });
                 }
                 Request::SavedPermissions { generation } => {
                     let result = client.command("permission_pattern_list").await

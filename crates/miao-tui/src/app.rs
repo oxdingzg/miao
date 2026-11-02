@@ -742,6 +742,18 @@ impl App {
                     }
                 }
             }
+            AppEvent::WorkspaceDiff {
+                generation,
+                path,
+                result,
+            } => {
+                if let Some(Dialog::WorkspaceChanges(dialog)) = self.dialog.as_mut() {
+                    if dialog.generation == generation {
+                        dialog.diff_loaded(&path, result);
+                        self.redraw_requested = true;
+                    }
+                }
+            }
             AppEvent::ActionFailed(message) => {
                 self.shell.composer.notice = Some(with_remedy(&message));
             }
@@ -1191,6 +1203,17 @@ impl App {
                         engine.vcs_changes(dialog.generation, &session_id);
                     } else {
                         dialog.loaded(Err("Engine is not connected".into()));
+                    }
+                }
+            }
+            DialogAction::OpenWorkspaceDiff(path) => {
+                if let Some(Dialog::WorkspaceChanges(dialog)) = self.dialog.as_mut() {
+                    let session_id = dialog.session_id.clone();
+                    let generation = dialog.generation;
+                    dialog.open_diff(path.clone());
+                    match self.engine.as_ref() {
+                        Some(engine) => engine.vcs_diff(generation, &session_id, &path),
+                        None => dialog.diff_loaded(&path, Err("Engine is not connected".into())),
                     }
                 }
             }

@@ -63,6 +63,11 @@ pub enum AppEvent {
         generation: u64,
         result: Result<crate::workspace_changes::VcsState, String>,
     },
+    WorkspaceDiff {
+        generation: u64,
+        path: String,
+        result: Result<crate::workspace_changes::DiffView, String>,
+    },
     /// The selectable accounts named by the same catalog.
     Accounts(Vec<AccountInfo>),
     /// The open Session's billed usage, for the status dialog.
