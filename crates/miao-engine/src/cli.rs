@@ -193,7 +193,9 @@ pub async fn config_routes_manifest(
     let mut credentials: std::collections::BTreeMap<String, Vec<crate::credential::Metadata>> =
         std::collections::BTreeMap::new();
     for entry in crate::credential::list_database(database)? {
-        if !entry.expired {
+        // A generic chat route carries a key. OAuth grants (ChatGPT, Gemini,
+        // Copilot) speak their own transports and wait for their own routes.
+        if !entry.expired && entry.kind == "key" {
             credentials
                 .entry(entry.integration.clone())
                 .or_default()
@@ -319,12 +321,159 @@ pub async fn config_routes_manifest(
             }
         }
     }
+    // The credential integrations the configuration does not name still
+    // answer the picker the way the product host answers: the catalog
+    // snapshot names their transport, endpoint and models, and a stored key
+    // credential routes them. Configuration wins where both name a provider.
+    if let Some(snapshot) = models_snapshot() {
+        let snapshot_providers = match snapshot.as_object() {
+            Some(map) => map,
+            None => return finish_manifest(entries).await,
+        };
+        for (provider_id, provider) in snapshot_providers {
+            if providers.contains_key(provider_id) {
+                continue;
+            }
+            let Some(stored) = credentials
+                .get(provider_id.as_str())
+                .filter(|list| !list.is_empty())
+            else {
+                continue;
+            };
+            let Some(transport) = provider
+                .get("npm")
+                .and_then(serde_json::Value::as_str)
+                .and_then(transport_for_package)
+            else {
+                continue;
+            };
+            let Some(api) = provider.get("api").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            let models = match provider.get("models").and_then(serde_json::Value::as_object) {
+                Some(map) => map,
+                None => continue,
+            };
+            for (model_id, model) in models {
+                // The snapshot describes modalities instead of capabilities;
+                // a model that cannot answer in text never reaches a coding
+                // Session.
+                let produces_text = model
+                    .get("modalities")
+                    .and_then(|modalities| modalities.get("output"))
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|outputs| outputs.iter().any(|item| item == "text"));
+                if !produces_text {
+                    continue;
+                }
+                let model_ref = format!("{provider_id}/{model_id}");
+                let input = model
+                    .get("modalities")
+                    .and_then(|modalities| modalities.get("input"))
+                    .and_then(serde_json::Value::as_array)
+                    .map(|list| {
+                        list.iter()
+                            .filter_map(serde_json::Value::as_str)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                for (index, credential) in stored.iter().enumerate() {
+                    let primary = index == 0
+                        && default_model.as_deref().is_some_and(|default| default == model_ref);
+                    let id = if index == 0 {
+                        model_ref.clone()
+                    } else {
+                        use sha2::Digest;
+                        let digest = sha2::Sha256::digest(serde_json::to_vec(&serde_json::json!([
+                            provider_id, model_id, credential.id,
+                        ]))?);
+                        let mut hex = String::with_capacity(digest.len() * 2);
+                        for byte in digest {
+                            hex.push_str(&format!("{byte:02x}"));
+                        }
+                        format!("account/{hex}")
+                    };
+                    let mut entry = serde_json::json!({
+                        "id": id,
+                        "provider": transport,
+                        "model": model_id,
+                        "credential": {
+                            "type": "database",
+                            "path": database.display().to_string(),
+                            "id": credential.id.clone(),
+                            "integration": provider_id,
+                        },
+                        "account": {
+                            "id": credential.id.clone(),
+                            "model_key": model_ref,
+                            "default": index == 0,
+                        },
+                        "endpoint": endpoint_for(api, transport),
+                    });
+                    if primary {
+                        entry["primary"] = serde_json::Value::Bool(true);
+                    }
+                    let limit = model.get("limit");
+                    let context = limit
+                        .and_then(|limit| limit.get("context"))
+                        .and_then(serde_json::Value::as_u64);
+                    let output = limit
+                        .and_then(|limit| limit.get("output"))
+                        .and_then(serde_json::Value::as_u64);
+                    if context.is_some() || output.is_some() {
+                        entry["limit"] = serde_json::json!({ "context": context, "output": output });
+                    }
+                    if !input.is_empty() {
+                        entry["input_modalities"] = serde_json::json!(input);
+                    }
+                    entries.push(entry);
+                }
+            }
+        }
+    }
+    finish_manifest(entries).await
+}
+
+/// Publish the manifest when the derivation found anything routable.
+async fn finish_manifest(
+    entries: Vec<serde_json::Value>,
+) -> Result<Option<std::path::PathBuf>, Box<dyn Error + Send + Sync>> {
     if entries.is_empty() {
         return Ok(None);
     }
     let path = std::env::temp_dir().join(format!("miao-routes-{}.json", std::process::id()));
     tokio::fs::write(&path, serde_json::to_vec(&entries)?).await?;
     Ok(Some(path))
+}
+
+/// The provider catalog snapshot the product ships and caches, in the order
+/// the TS catalog service reads them: an explicit path, a snapshot beside the
+/// engine binary, the installer's shipped copy, then the user cache.
+fn models_snapshot() -> Option<serde_json::Value> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(path) = std::env::var_os("MIAO_MODELS_PATH") {
+        candidates.push(std::path::PathBuf::from(path));
+    }
+    if let Ok(executable) = std::env::current_exe() {
+        if let Some(directory) = executable.parent() {
+            candidates.push(directory.join("models.json"));
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = std::path::PathBuf::from(home);
+        candidates.push(home.join(".miao/bin/models.json"));
+        candidates.push(home.join(".local/share/miao/bin/models.json"));
+        let cache = std::env::var_os("XDG_CACHE_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| home.join(".cache"));
+        // The newest copy the TS catalog service keeps, and the one it
+        // actually serves from once it has fetched at least once.
+        candidates.push(cache.join("miao/models.json"));
+    }
+    candidates
+        .iter()
+        .find_map(|path| std::fs::read(path).ok())
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
 }
 
 /// Test and diagnostic access to the generated manifest derivation.
