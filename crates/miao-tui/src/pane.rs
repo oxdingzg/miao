@@ -2271,9 +2271,12 @@ impl Pane for SidebarPane {
                 // The glyph takes two cells, so the text gets the rest of the
                 // row measured the way the terminal draws it.
                 let text = fit(&todo.content, width.saturating_sub(2));
+                // The text stays at the muted weight the transcript uses for
+                // tool output, so the sidebar reads as a summary rather than
+                // competing with the conversation for attention.
                 lines.push(Line::from(vec![
                     Span::styled(glyph, style),
-                    Span::styled(text, Style::new().fg(palette.text)),
+                    Span::styled(text, Style::new().fg(palette.text_muted)),
                 ]));
             }
         }
