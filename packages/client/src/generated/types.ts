@@ -612,6 +612,16 @@ export type SessionsListOutput = {
         readonly lastTurnAt: number
       }>
       readonly delegated?: number
+      readonly auxiliary?: {
+        readonly turns: number
+        readonly cost: number
+        readonly tokens: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+      }
     }
     readonly tokens: {
       readonly input: number
@@ -722,6 +732,16 @@ export type SessionsCreateOutput = {
         readonly lastTurnAt: number
       }>
       readonly delegated?: number
+      readonly auxiliary?: {
+        readonly turns: number
+        readonly cost: number
+        readonly tokens: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+      }
     }
     readonly tokens: {
       readonly input: number
@@ -808,6 +828,16 @@ export type SessionsGetOutput = {
         readonly lastTurnAt: number
       }>
       readonly delegated?: number
+      readonly auxiliary?: {
+        readonly turns: number
+        readonly cost: number
+        readonly tokens: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+      }
     }
     readonly tokens: {
       readonly input: number
@@ -1464,6 +1494,16 @@ export type SessionsForkOutput = {
         readonly lastTurnAt: number
       }>
       readonly delegated?: number
+      readonly auxiliary?: {
+        readonly turns: number
+        readonly cost: number
+        readonly tokens: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+      }
     }
     readonly tokens: {
       readonly input: number
@@ -1697,6 +1737,16 @@ export type SessionsChildrenOutput = {
         readonly lastTurnAt: number
       }>
       readonly delegated?: number
+      readonly auxiliary?: {
+        readonly turns: number
+        readonly cost: number
+        readonly tokens: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+      }
     }
     readonly tokens: {
       readonly input: number
@@ -1795,6 +1845,16 @@ export type SessionsHistoryOutput = {
                 readonly lastTurnAt: number
               }>
               readonly delegated?: number
+              readonly auxiliary?: {
+                readonly turns: number
+                readonly cost: number
+                readonly tokens: {
+                  readonly input: number
+                  readonly output: number
+                  readonly reasoning: number
+                  readonly cache: { readonly read: number; readonly write: number }
+                }
+              }
             }
             readonly tokens: {
               readonly input: number
@@ -2569,6 +2629,16 @@ export type SessionsEventsOutput =
               readonly lastTurnAt: number
             }>
             readonly delegated?: number
+            readonly auxiliary?: {
+              readonly turns: number
+              readonly cost: number
+              readonly tokens: {
+                readonly input: number
+                readonly output: number
+                readonly reasoning: number
+                readonly cache: { readonly read: number; readonly write: number }
+              }
+            }
           }
           readonly tokens: {
             readonly input: number
@@ -4603,6 +4673,16 @@ export type EventsDurableOutput =
               readonly lastTurnAt: number
             }>
             readonly delegated?: number
+            readonly auxiliary?: {
+              readonly turns: number
+              readonly cost: number
+              readonly tokens: {
+                readonly input: number
+                readonly output: number
+                readonly reasoning: number
+                readonly cache: { readonly read: number; readonly write: number }
+              }
+            }
           }
         }
       }
@@ -4704,6 +4784,16 @@ export type EventsDurableOutput =
               readonly lastTurnAt: number
             }>
             readonly delegated?: number
+            readonly auxiliary?: {
+              readonly turns: number
+              readonly cost: number
+              readonly tokens: {
+                readonly input: number
+                readonly output: number
+                readonly reasoning: number
+                readonly cache: { readonly read: number; readonly write: number }
+              }
+            }
           }
         }
       }
@@ -4805,6 +4895,16 @@ export type EventsDurableOutput =
               readonly lastTurnAt: number
             }>
             readonly delegated?: number
+            readonly auxiliary?: {
+              readonly turns: number
+              readonly cost: number
+              readonly tokens: {
+                readonly input: number
+                readonly output: number
+                readonly reasoning: number
+                readonly cache: { readonly read: number; readonly write: number }
+              }
+            }
           }
         }
       }
@@ -5520,6 +5620,16 @@ export type EventsDurableOutput =
               readonly lastTurnAt: number
             }>
             readonly delegated?: number
+            readonly auxiliary?: {
+              readonly turns: number
+              readonly cost: number
+              readonly tokens: {
+                readonly input: number
+                readonly output: number
+                readonly reasoning: number
+                readonly cache: { readonly read: number; readonly write: number }
+              }
+            }
           }
           readonly tokens: {
             readonly input: number
@@ -5613,6 +5723,16 @@ export type EventsDurableOutput =
               readonly lastTurnAt: number
             }>
             readonly delegated?: number
+            readonly auxiliary?: {
+              readonly turns: number
+              readonly cost: number
+              readonly tokens: {
+                readonly input: number
+                readonly output: number
+                readonly reasoning: number
+                readonly cache: { readonly read: number; readonly write: number }
+              }
+            }
           }
           readonly tokens: {
             readonly input: number
