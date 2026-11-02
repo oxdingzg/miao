@@ -276,7 +276,10 @@ fn env_switch(value: Option<&str>) -> Option<bool> {
 /// `**`. Patterns the engine would reject — absolute or escaping paths — are
 /// skipped here instead of failing the whole policy at startup.
 fn permission_rules(merged: &serde_json::Value) -> Vec<permission::Rule> {
-    let Some(entries) = merged.get("permissions").and_then(serde_json::Value::as_array) else {
+    let Some(entries) = merged
+        .get("permissions")
+        .and_then(serde_json::Value::as_array)
+    else {
         return Vec::new();
     };
     entries
