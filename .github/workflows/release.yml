@@ -151,6 +151,40 @@ jobs:
 
       - name: Build and upload this platform
         run: ./packages/miao/script/build.ts ${{ runner.os == 'macOS' && '--darwin' || '--single' }} ${{ runner.os == 'Windows' && '--baseline' || '' }}
+
+      - name: Smoke the artifact this leg built
+        # Each leg runs on a runner of its artifact's own architecture, so the
+        # binary to start is the one matching this runner. Never a foreign build
+        # the leg would have to emulate, and never one built by another leg.
+        run: |
+          set -euo pipefail
+          # The artifact name says "darwin" where the runner says "macOS".
+          case "$RUNNER_OS" in
+            macOS) os=darwin ;;
+            *) os="$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')" ;;
+          esac
+          case "$RUNNER_ARCH" in
+            ARM64) arch=arm64 ;;
+            X64) arch=x64 ;;
+            *) echo "::error::unsupported runner architecture $RUNNER_ARCH"; exit 1 ;;
+          esac
+          # A leg can emit more than one name for the same architecture (the
+          # Windows leg builds a baseline variant too), so every match is smoked.
+          shopt -s nullglob
+          found=0
+          for binary in "dist/miao-${os}-${arch}"*/bin/miao "dist/miao-${os}-${arch}"*/bin/miao.exe; do
+            [ -f "$binary" ] || continue
+            found=$((found + 1))
+            if ! "$binary" --version; then
+              echo "::error::the artifact this leg built does not start: $binary"
+              exit 1
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::this leg produced no artifact for ${os}-${arch}"
+            ls -d dist/* 2>/dev/null || true
+            exit 1
+          fi
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ needs.version.outputs.repo }}
