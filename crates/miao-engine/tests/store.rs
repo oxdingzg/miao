@@ -897,7 +897,8 @@ async fn the_selection_lookup_seeks_its_index_instead_of_walking_the_journal() {
             .collect::<Result<_, _>>()
             .unwrap();
         assert!(
-            plan.iter().any(|detail| detail.contains("engine_event_selection")),
+            plan.iter()
+                .any(|detail| detail.contains("engine_event_selection")),
             "{kind} must seek the selection index: {plan:?}"
         );
     }
