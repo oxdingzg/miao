@@ -979,8 +979,19 @@ fn worktree(rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("remove") => {
-            let name = rest.get(1).ok_or("usage: miao worktree remove NAME")?;
+            let name = rest.get(1).ok_or("usage: miao worktree remove NAME [--apply]")?;
+            if name.contains('/') || name.contains("..") {
+                return Err("worktree name must be a single path component".into());
+            }
+            let apply = rest.iter().any(|argument| argument == "--apply");
             let path = PathBuf::from(&root).join(".miao-worktrees").join(name);
+            for line in worktree_remove_plan(&root, name, &path)? {
+                println!("{line}");
+            }
+            if !apply {
+                println!("dry run · pass --apply to remove");
+                return Ok(());
+            }
             let removed = git(&["worktree", "remove", "--force", &path.display().to_string()])?;
             if !removed.status.success() {
                 return Err(String::from_utf8_lossy(&removed.stderr).trim().to_string());
@@ -991,6 +1002,84 @@ fn worktree(rest: &[String]) -> Result<(), String> {
         }
         Some(other) => Err(format!("unknown worktree subcommand {other}")),
     }
+}
+
+/// What removing one worktree touches, collected before anything is removed:
+/// the git registration, the branch and the commits only it holds, the engine
+/// sessions anchored to the tree's directory, and the bytes on disk including
+/// the ledger file the tree's sessions wrote into. The WSP-04 rule is that a
+/// cleanup shows who references the target first, so `--apply` is a separate,
+/// explicit step rather than a flag buried in the same action.
+fn worktree_remove_plan(root: &str, name: &str, path: &std::path::Path) -> Result<Vec<String>, String> {
+    let git = |args: &[&str]| -> Result<std::process::Output, String> {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .map_err(|error| format!("git: {error}"))
+    };
+    let success = |output: &std::process::Output| output.status.success();
+    let mut plan = vec![format!("worktree · {}", path.display())];
+
+    let registered = git(&["worktree", "list", "--porcelain"])?;
+    let listed = String::from_utf8_lossy(&registered.stdout);
+    // git reports the real path, and a symlinked temp dir (macOS /var →
+    // /private/var) otherwise reads as unregistered; compare canonical forms.
+    let check_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let is_registered = listed
+        .lines()
+        .any(|line| line.strip_prefix("worktree ") == Some(check_path.display().to_string().as_str()));
+    plan.push(format!(
+        "git registration · {}",
+        if is_registered { "registered" } else { "not registered (git already forgot it)" }
+    ));
+
+    let branch_tip = git(&["rev-parse", "--verify", &format!("refs/heads/{name}")])?;
+    if success(&branch_tip) {
+        // `branch -D` discards every commit the branch holds that HEAD cannot
+        // reach; the count is what an operator needs before agreeing to that.
+        let ahead = git(&["rev-list", "--count", &format!("HEAD..refs/heads/{name}")])?;
+        let commits = String::from_utf8_lossy(&ahead.stdout).trim().to_string();
+        plan.push(format!(
+            "branch {name} · {} commit(s) not reachable from HEAD will be discarded",
+            if commits.is_empty() { "0" } else { &commits }
+        ));
+    } else {
+        plan.push(format!("branch {name} · absent"));
+    }
+
+    let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let ledger = default_db(&canonical);
+    if ledger.is_file() {
+        let connection = rusqlite::Connection::open_with_flags(
+            &ledger,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(|error| error.to_string())?;
+        let anchored: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM engine_location WHERE root = ?1 OR root LIKE ?1 || '/%'",
+                [canonical.display().to_string()],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        plan.push(format!(
+            "engine sessions · {} anchored in {} ({})",
+            anchored,
+            ledger.display(),
+            human_bytes(db_file_bytes(&ledger).0)
+        ));
+        if anchored > 0 {
+            plan.push(
+                "  · removing the tree strands these sessions' cwd; move or close them first".into(),
+            );
+        }
+    } else {
+        plan.push("engine sessions · none (no ledger for this tree)".to_string());
+    }
+
+    plan.push(format!("directory · {} on disk", human_bytes(tree_bytes(path))));
+    Ok(plan)
 }
 
 /// Run a declarative plan: each step is a separate `miao run`, so a failure is
@@ -4149,7 +4238,7 @@ mod tests {
     use super::{
         db_file_bytes, db_report, db_vacuum, default_db, lsp_servers, mcp_servers, model_routes,
         parsed_session_location, plugin_entries, retention_plan, strip_comments, tree_bytes,
-        uninstall_targets,
+        uninstall_targets, worktree_remove_plan,
     };
     use std::io::Write;
 
@@ -4497,6 +4586,60 @@ mod tests {
         std::env::remove_var("XDG_CACHE_HOME");
         std::env::remove_var("XDG_STATE_HOME");
         std::env::remove_var("HOME");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_worktree_remove_plan_previews_references_before_any_removal() {
+        // A real repository with a real worktree: the plan reads git's own
+        // registration, not a model of it, because the acceptance asks the
+        // cleanup to show who references the target before anything moves.
+        let dir = std::env::temp_dir().join(format!("miao-wt-plan-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("workspace dir");
+        let run = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .expect("git runs")
+        };
+        assert!(run(&["init", "-q", "-b", "main"]).status.success(), "git init");
+        std::fs::write(dir.join("seed"), "seed").expect("seed file");
+        assert!(run(&["add", "."]).status.success());
+        assert!(run(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"]).status.success());
+        let name = "plan-preview";
+        let path = dir.join(".miao-worktrees").join(name);
+        assert!(
+            run(&["worktree", "add", "-b", name, path.display().to_string().as_str()])
+                .status
+                .success(),
+            "worktree add"
+        );
+        // A commit only the branch holds: the plan has to count what `branch -D`
+        // would discard, which is the number an operator decides on.
+        std::fs::write(path.join("only"), "only on the branch").expect("branch file");
+        assert!(std::process::Command::new("git").args(["add", "only"]).current_dir(&path).output().expect("git runs").status.success());
+        assert!(
+            std::process::Command::new("git")
+                .args(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "branch-only"])
+                .current_dir(&path)
+                .output()
+                .expect("git runs")
+                .status
+                .success()
+        );
+
+        let plan = worktree_remove_plan(dir.display().to_string().as_str(), name, &path).expect("plan");
+        let text = plan.join("\n");
+        assert!(text.contains("git registration · registered"), "{text}");
+        assert!(text.contains("1 commit(s) not reachable from HEAD"), "{text}");
+        assert!(text.contains("engine sessions · none"), "{text}");
+        assert!(text.contains("directory ·"), "{text}");
+        // The plan itself removes nothing: the tree and the branch still exist.
+        assert!(path.exists(), "a plan must not remove the tree");
+        assert_eq!(run(&["rev-parse", "--verify", &format!("refs/heads/{name}")]).status.success(), true);
+
         std::fs::remove_dir_all(&dir).ok();
     }
 
