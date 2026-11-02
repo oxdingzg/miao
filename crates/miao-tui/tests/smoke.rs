@@ -433,8 +433,11 @@ fn tag_sets_the_label_from_its_argument() {
     );
     harness.select_second_row();
     harness.write(b"\r");
+    // The transcript is drawn through incremental frame diffs, so the raw
+    // output stream holds fragments of a line across redraws; assert on the
+    // reconstructed screen, which is what an operator reads.
     assert!(
-        wait_for_plain(&harness, "Fixture Notes", Duration::from_secs(3)),
+        wait_for_screen(&harness, "Fixture Notes", Duration::from_secs(3)),
         "the Session never showed the fixture message:\n{}",
         plain(&harness.text())
     );
@@ -444,7 +447,7 @@ fn tag_sets_the_label_from_its_argument() {
     harness.write(b"/tag release");
     harness.write(b"\r");
     assert!(
-        !wait_for_plain(&harness, "tag failed", Duration::from_secs(2)),
+        !wait_for_screen(&harness, "tag failed", Duration::from_secs(2)),
         "the engine refused the tag:\n{}",
         plain(&harness.text())
     );
@@ -572,17 +575,19 @@ fn the_transcript_renders_markdown_and_tool_rows() {
     // fixture (markdown document plus one completed read).
     harness.select_second_row();
     harness.write(b"\r");
+    // Same as tag_sets: the fixture arrives across frame diffs, so wait for
+    // the reconstructed screen rather than the raw stream.
     assert!(
-        wait_for_plain(&harness, "Fixture Notes", Duration::from_secs(2)),
+        wait_for_screen(&harness, "Fixture Notes", Duration::from_secs(2)),
         "the markdown heading did not render:\n{}",
         plain(&harness.text())
     );
     assert!(
-        wait_for_plain(&harness, "Read 2 lines", Duration::from_secs(2)),
+        wait_for_screen(&harness, "Read 2 lines", Duration::from_secs(2)),
         "the tool summary did not render:\n{}",
         plain(&harness.text())
     );
-    let rendered = plain(&harness.text());
+    let rendered = harness.screen();
     for expected in [
         "• bold and code",
         "name │ value",
