@@ -4501,7 +4501,8 @@ mod tests {
         let draft = app.draft.as_ref().expect("a streaming draft");
         assert_eq!(draft.reasoning, "weighing");
         assert!(draft.text.is_empty(), "reasoning is not the answer");
-        assert_eq!(drafted(&mut app), "▸ thinking · 8 chars");
+        // With no answer yet the thinking streams verbatim, muted.
+        assert_eq!(drafted(&mut app), "  weighing");
         app.handle(delta_frame("run-1", "text.delta", "the answer"));
         let shown = drafted(&mut app);
         assert!(shown.starts_with("▸ thinking · 8 chars"));

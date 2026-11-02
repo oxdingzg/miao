@@ -1486,10 +1486,22 @@ fn draft_lines(text: &str, reasoning: &str, theme: &Theme) -> Vec<Line<'static>>
     let palette = theme.palette;
     let mut lines = Vec::new();
     if !reasoning.is_empty() {
-        lines.push(Line::from(Span::styled(
-            format!("▸ thinking · {} chars", reasoning.chars().count()),
-            Style::new().fg(palette.text_muted),
-        )));
+        // Before the first answer token the thinking is the show: stream it
+        // verbatim, muted, so it reads as it arrives. Once text starts, fold
+        // it into a summary line and give the answer the screen.
+        if text.is_empty() {
+            for line in reasoning.lines() {
+                lines.push(Line::from(Span::styled(
+                    format!("  {line}"),
+                    Style::new().fg(palette.text_muted),
+                )));
+            }
+        } else {
+            lines.push(Line::from(Span::styled(
+                format!("▸ thinking · {} chars", reasoning.chars().count()),
+                Style::new().fg(palette.text_muted),
+            )));
+        }
     }
     if !text.is_empty() {
         lines.extend(markdown::lines(text, theme));
@@ -3522,6 +3534,46 @@ mod tests {
         // A projection, or a run that ends, clears it in one assignment.
         shell.set_draft("", "");
         assert!(shell.draft().is_empty());
+    }
+
+    #[test]
+    fn the_draft_streams_the_thinking_verbatim_before_any_answer() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        shell.set_draft("", "reading the diff\nthen the tests");
+        let draft = shell
+            .draft()
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(draft, "  reading the diff\n  then the tests");
+        // The first answer token folds the thinking back into a summary.
+        shell.set_draft("partial", "reading the diff\nthen the tests");
+        let draft = shell
+            .draft()
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(draft.starts_with("▸ thinking · "));
+        assert!(draft.contains("partial"));
     }
 
     #[test]

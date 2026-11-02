@@ -1612,9 +1612,9 @@ async fn refresh_sessions(client: &EngineClient, bus: &Bus) {
         }
     }
     let Some(rows) = rows else {
-        bus.send(AppEvent::EngineFailure(last_error.unwrap_or_else(|| {
-            "session catalog unavailable".to_string()
-        })));
+        bus.send(AppEvent::EngineFailure(
+            last_error.unwrap_or_else(|| "session catalog unavailable".to_string()),
+        ));
         return;
     };
     let rows = rows
