@@ -1121,18 +1121,25 @@ fn a_stashed_draft_comes_back_into_the_composer() {
     // the engine. Sending both blindly raced the focus change: on a loaded runner
     // the second Enter could land while the list still owned the key and open a
     // Session instead of admitting the prompt. Press until the admission shows.
+    // Enter restores the draft into the composer; only then is there anything to
+    // submit. Waiting for the composer to show it removes the race that blind
+    // repeats were papering over: on a loaded runner the restore and the submit
+    // could otherwise land in the same frame, or the second Enter could reach the
+    // list and open a Session instead.
+    harness.write(b"\r");
+    assert!(
+        wait_for_plain(&harness, "restored from stash", Duration::from_secs(5)),
+        "the restore never settled:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\r");
     let log = harness.dir.join("admit.log");
     let start = Instant::now();
     let mut recorded = String::new();
-    let mut pressed = 0;
     while start.elapsed() < Duration::from_secs(15) {
         recorded = std::fs::read_to_string(&log).unwrap_or_default();
         if recorded.contains("stash me") {
             break;
-        }
-        if pressed < 6 && start.elapsed() >= Duration::from_millis(400 * pressed as u64) {
-            harness.write(b"\r");
-            pressed += 1;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
