@@ -1945,6 +1945,16 @@ impl Tools {
             description: "Discover other Sessions in the same project, prioritizing active execution and unfinished work rather than open tabs. Execution status is observed from this engine's durable run state. Unfinished goals/todos may be stale and are not proof that a resource is in use; a related title alone is not a reason to wake an idle Session. Use includeHistory: true to include idle historical Sessions.".into(),
             input_schema: json!({"type":"object","properties":{"includeHistory":{"type":"boolean","default":false},"search":{"type":"string"},"directory":{"type":"string"}},"additionalProperties":false}),
         });
+        definitions.push(ToolDefinition {
+            name: "send_message".into(),
+            description: "Send a focused coordination message to another Session in the same project. Default wake: if_active leaves mail for a peer that is not working without starting it; wake: always asks for execution and needs a concrete reason (explicit direction, an unresolved dependency, unfinished shared work), never a similar title. Name the resource, the planned action, the timing and the question. A wake is advisory: running tools are not interrupted and no reply is guaranteed, so do not wait on it.".into(),
+            input_schema: json!({"type":"object","properties":{"to":{"type":"string","description":"Target Session id or @id (a unique prefix is enough)"},"message":{"type":"string"},"delivery":{"type":"string","enum":["steer","queue"],"description":"steer delivers at the next safe provider-turn boundary (default); queue waits until the recipient would otherwise become idle"},"wake":{"type":"string","enum":["if_active","always","never"]},"reason":{"type":"string","description":"Required for wake: always"}},"required":["to","message"],"additionalProperties":false}),
+        });
+        definitions.push(ToolDefinition {
+            name: "read_session_context".into(),
+            description: "Read a bounded window of another Session's recent transcript in the same project, to consult its findings before contacting it. Text only: no tool schemas and no attachments, and the window is capped so a long Session cannot fill this one's context.".into(),
+            input_schema: json!({"type":"object","properties":{"to":{"type":"string","description":"Target Session id or @id"},"limit":{"type":"integer","minimum":1,"maximum":40,"default":12}},"required":["to"],"additionalProperties":false}),
+        });
         definitions.extend(self.delegation_definitions());
         definitions.extend(self.lsp_definitions());
         if self.background_enabled() && crate::terminal::supported() {
