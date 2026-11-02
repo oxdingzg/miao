@@ -44,6 +44,10 @@ const LIVE_SILENCE: Duration = Duration::from_secs(15);
 /// enough that selecting two rows in turn never opens either of them.
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 
+/// How long a transient notice stays on screen. Long enough to read a
+/// sentence, short enough that it does not outlive its own event.
+const NOTICE_LIFETIME: Duration = Duration::from_secs(5);
+
 /// Where the engine last said an active run was. Ephemeral: a client that
 /// attaches mid-turn learns the run from the snapshot and the rest from the next
 /// frame, so nothing here is persisted.
@@ -183,6 +187,10 @@ pub struct App {
     /// second click on the same row is a double click rather than two
     /// selections.
     last_click: Option<(usize, Instant)>,
+    /// When a transient notice stops being true. A notice reports something
+    /// that already happened ("copied 120 characters"); leaving it on screen
+    /// until the next event turns it into permanent clutter.
+    notice_until: Option<Instant>,
     /// How long an armed leader waits for its chord key.
     leader_timeout: Duration,
     keys: Keymap,
@@ -282,6 +290,7 @@ impl App {
             leader: false,
             leader_since: None,
             last_click: None,
+            notice_until: None,
             leader_timeout: Duration::from_millis(2000),
             keys,
             workspace,
@@ -408,6 +417,7 @@ impl App {
         // The status counts elapsed time, so it is recomputed per frame rather
         // than only when the projection changes.
         self.update_status();
+        self.expire_notice();
         // A leader that is still waiting paints its menu, so the chords are
         // discoverable instead of memorised. Both screens carry it: the landing
         // footer and the Session's status row.
@@ -1800,6 +1810,23 @@ impl App {
             Screen::Home => self.home.set_notice(Some(message.to_string())),
             Screen::Session => self.shell.composer.notice = Some(message.to_string()),
         }
+        self.notice_until = Some(Instant::now() + NOTICE_LIFETIME);
+    }
+
+    /// Drop a notice once its moment has passed, so the line goes back to saying
+    /// nothing rather than repeating an event from minutes ago.
+    fn expire_notice(&mut self) {
+        let Some(until) = self.notice_until else {
+            return;
+        };
+        if Instant::now() < until {
+            return;
+        }
+        self.notice_until = None;
+        match self.screen {
+            Screen::Home => self.home.set_notice(None),
+            Screen::Session => self.shell.composer.notice = None,
+        }
     }
 
     /// Warn about a configuration problem that the next catalog load does not
@@ -2422,10 +2449,17 @@ impl App {
                 .into_iter()
                 .collect(),
         };
-        stamps
+        let label = stamps
             .into_iter()
             .map(|updated| crate::pane::next_relative_change(updated, now))
-            .min()
+            .min();
+        let notice = self
+            .notice_until
+            .map(|until| until.saturating_duration_since(Instant::now()));
+        match (label, notice) {
+            (Some(label), Some(notice)) => Some(label.min(notice)),
+            (label, notice) => label.or(notice),
+        }
     }
 
     fn update_status(&mut self) {
@@ -2913,6 +2947,39 @@ mod tests {
             app.shell.following(),
             "the last visible row is the tail, so one notch back follows again"
         );
+    }
+
+    #[test]
+    fn a_transient_notice_clears_when_its_moment_passes() {
+        // A notice reports something that already happened ("copied 120
+        // characters"); leaving it there until the next event turns feedback
+        // into furniture.
+        let mut session = session_app();
+        session.notice("copied 120 characters");
+        assert_eq!(
+            session.shell.composer.notice.as_deref(),
+            Some("copied 120 characters")
+        );
+        assert!(
+            session.next_repaint().is_some(),
+            "the loop has to wake to clear it"
+        );
+        // Pretend the moment passed rather than sleeping for it.
+        session.notice_until = Some(Instant::now() - Duration::from_millis(1));
+        draw(&mut session);
+        assert_eq!(
+            session.shell.composer.notice, None,
+            "an expired notice is gone"
+        );
+        assert!(session.notice_until.is_none());
+
+        // The landing screen behaves the same way.
+        let mut landing = app();
+        landing.notice("pinned");
+        assert_eq!(landing.home.notice(), Some("pinned"));
+        landing.notice_until = Some(Instant::now() - Duration::from_millis(1));
+        draw(&mut landing);
+        assert_eq!(landing.home.notice(), None);
     }
 
     #[test]
