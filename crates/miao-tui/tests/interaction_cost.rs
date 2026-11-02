@@ -167,12 +167,10 @@ fn walk() -> Option<(usize, u128)> {
         harness.text()
     );
     let started = Instant::now();
-    // The prompt owns the landing screen's keyboard, so `Tab` hands it to the
-    // list first: without it `j` is typed into the prompt and Enter sends that
-    // text as a new turn, which measured composing a prompt rather than walking
-    // the catalog.
-    harness.write(b"\t");
-    let mut keys = 1;
+    // The landing list owns the keyboard from the start, so `j` walks it
+    // directly; a Tab here would hand the keys to the prompt and the walk
+    // would measure composing a prompt instead.
+    let mut keys = 0;
     // Row 1 is already selected, so reaching row TARGET costs TARGET - 1 moves.
     for _ in 1..TARGET {
         harness.write(b"j");
@@ -196,11 +194,10 @@ fn filter() -> Option<(usize, u128)> {
     );
     let query = format!("session {TARGET}");
     let started = Instant::now();
-    // Same reason as the walk: the filter belongs to the list, so the list has
-    // to hold the keyboard before `/` arms it.
-    harness.write(b"\t");
+    // Same reason as the walk: the list holds the keyboard from the start,
+    // so `/` arms the filter directly.
     harness.write(b"/");
-    let mut keys = 2;
+    let mut keys = 1;
     for byte in query.bytes() {
         harness.write(&[byte]);
         keys += 1;

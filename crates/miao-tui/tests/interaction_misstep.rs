@@ -177,9 +177,9 @@ fn walk(overshoot: usize) -> Option<(usize, u128)> {
         harness.text()
     );
     let started = Instant::now();
-    // The prompt owns the landing screen's keyboard, so `Tab` hands it to the list.
-    harness.write(b"\t");
-    let mut keys = 1;
+    // The landing list owns the keyboard from the start; a Tab here would
+    // hand the keys to the prompt and the j/k walk would type into it.
+    let mut keys = 0;
     for _ in 1..TARGET + overshoot {
         harness.write(b"j");
         keys += 1;
@@ -208,9 +208,9 @@ fn filter(query: &str, corrections: Vec<Vec<u8>>) -> Option<(usize, u128)> {
         harness.text()
     );
     let started = Instant::now();
-    harness.write(b"\t");
+    // The list holds the keyboard from the start, so `/` arms the filter.
     harness.write(b"/");
-    let mut keys = 2;
+    let mut keys = 1;
     harness.write(query.as_bytes());
     keys += query.len();
     for correction in corrections {
