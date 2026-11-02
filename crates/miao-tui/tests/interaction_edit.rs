@@ -147,10 +147,23 @@ impl Harness {
         out
     }
 
+    /// The screen, not the byte stream. A repaint writes cell runs separated by
+    /// cursor motions, so the raw stream never carries a typed line contiguously
+    /// — and because frames accumulate, "ends with" is not a stable test either.
+    /// Reconstructing the terminal gives what a person actually sees.
+    fn screen(&self) -> String {
+        let size = self.pty.get_size().expect("pty size");
+        let mut parser = vt100::Parser::new(size.rows, size.cols, 0);
+        parser.process(&self.output.lock().expect("output lock"));
+        parser.screen().contents()
+    }
+
     fn wait_for_typed(&self, needle: &str, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         loop {
-            if self.typed().ends_with(needle) {
+            // Lines are joined without separators so a wrapped composer still
+            // matches: at 120 columns the 44-character correction wraps.
+            if self.screen().lines().collect::<String>().contains(needle) {
                 return true;
             }
             if Instant::now() >= deadline {
