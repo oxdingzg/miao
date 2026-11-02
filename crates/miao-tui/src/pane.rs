@@ -1089,10 +1089,6 @@ impl Home {
         // No frame: the list reads as text on the background, the way miao's
         // TypeScript UI and the agent CLIs it follows do. One dim line names
         // the screen; the selected row carries the only accent.
-        let header = match self.query.is_empty() {
-            true => format!("sessions · {}", self.rows.len()),
-            false => format!("sessions · filter \"{}\" · esc clear", self.query),
-        };
         let header_area = Rect {
             height: 1.min(area.height),
             ..area
@@ -1111,13 +1107,35 @@ impl Home {
         let gutter = " ".repeat(inner.width.saturating_sub(column) as usize / 2);
         // The header names the screen the rows belong to, so it starts on the
         // column the rows start on instead of at the window's edge.
+        // The rows start one cell in, so the header does too. The label stays
+        // quiet and the count carries the accent: one number on this screen
+        // says how much history it is holding, and that is what an eye should
+        // land on.
+        let mut header = vec![Span::styled(
+            format!(" {gutter}sessions"),
+            Style::new().fg(palette.text_muted),
+        )];
+        header.push(Span::styled(" · ", Style::new().fg(palette.border)));
+        match self.query.is_empty() {
+            true => header.push(Span::styled(
+                self.rows.len().to_string(),
+                Style::new()
+                    .fg(palette.primary)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            false => {
+                header.push(Span::styled(
+                    format!("filter \"{}\"", self.query),
+                    Style::new().fg(palette.secondary),
+                ));
+                header.push(Span::styled(
+                    " · esc clear",
+                    Style::new().fg(palette.text_muted),
+                ));
+            }
+        }
         frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                // The rows start one cell in, so the header does too.
-                format!(" {gutter}{header}"),
-                Style::new().fg(palette.text_muted),
-            )))
-            .style(Style::new().bg(palette.background)),
+            Paragraph::new(Line::from(header)).style(Style::new().bg(palette.background)),
             header_area,
         );
         let mut notice_lines: Vec<Line<'static>> = self.warning_lines();
@@ -1182,7 +1200,7 @@ impl Home {
                 body.push(Line::from(Span::styled(
                     format!("{gutter}{group}"),
                     Style::new()
-                        .fg(palette.text_muted)
+                        .fg(palette.secondary)
                         .add_modifier(Modifier::BOLD),
                 )));
                 lines_to_row.push(None);
@@ -1241,10 +1259,10 @@ impl Home {
                 // Spending the whole width on it made one row read as a
                 // paragraph, so it is capped even when there is room left.
                 let room = measure.saturating_sub(4).min(PREVIEW_CELLS);
-                body.push(Line::from(Span::styled(
-                    format!("{gutter}    {}", fit(preview, room)),
-                    Style::new().fg(palette.text_muted),
-                )));
+                body.push(Line::from(vec![
+                    Span::styled(format!("{gutter}   ┃ "), Style::new().fg(palette.primary)),
+                    Span::styled(fit(preview, room), Style::new().fg(palette.text_muted)),
+                ]));
                 lines_to_row.push(None);
             }
         }
@@ -1536,10 +1554,11 @@ fn transcript_lines(
                     (None, Some(model)) => format!("✳ {model}"),
                     (None, None) => "✳ assistant".to_string(),
                 };
-                lines.push(Line::from(Span::styled(
-                    label,
-                    Style::new().fg(palette.text_muted),
-                )));
+                let body = label.trim_start_matches("✳ ").to_string();
+                lines.push(Line::from(vec![
+                    Span::styled("✳ ", Style::new().fg(palette.secondary)),
+                    Span::styled(body, Style::new().fg(palette.text_muted)),
+                ]));
                 for part in parts {
                     match part {
                         Part::Text(text) => lines.extend(markdown::lines(text, theme)),
@@ -1625,7 +1644,7 @@ fn render_status(frame: &mut Frame, area: Rect, status: &StatusStrip, theme: &Th
     if let Some(model) = &status.model {
         spans.push(Span::styled(
             format!(" {model} "),
-            Style::new().fg(palette.text_muted).bg(palette.surface),
+            Style::new().fg(palette.secondary).bg(palette.surface),
         ));
     }
     if let Some(usage) = &status.usage {
@@ -1763,13 +1782,6 @@ fn render_composer_in(
     let mut parts = composer.phase.iter().cloned().collect::<Vec<_>>();
     parts.extend(queued);
     parts.extend(composer.notice.iter().cloned());
-    let title = match parts.is_empty() {
-        true => format!(" {name} "),
-        false => format!(" {name} · {} ", parts.join(" · ")),
-    };
-    // The composer is a hairline, not a frame: the only thing that changes
-    // colour is the phase beside the name, so "working" still stands out while
-    // the box itself stays quiet.
     let title_style = match shell {
         true => Style::new().fg(palette.warning),
         false => Style::new().fg(palette.text_muted),
@@ -1779,10 +1791,32 @@ fn render_composer_in(
     } else {
         palette.primary
     };
+    let mut title = vec![Span::styled(format!(" {name} "), title_style)];
+    if !parts.is_empty() {
+        title.push(Span::styled("· ", Style::new().fg(palette.border)));
+        title.push(Span::styled(
+            parts.join(" · "),
+            Style::new().fg(if shell {
+                palette.warning
+            } else {
+                palette.accent
+            }),
+        ));
+        title.push(Span::styled(" ", Style::new()));
+    }
+    // The box answers "am I holding a draft?" with its border: the quiet rule
+    // when empty, the brand colour once the operator has written something, and
+    // the shell warning in shell mode. The panel's own surface keeps it readable
+    // as one input rather than a frame drawn on the page.
+    let border = match (shell, composer.editor.is_empty()) {
+        (true, _) => palette.warning,
+        (false, true) => palette.border,
+        (false, false) => palette.primary,
+    };
     let block = Block::bordered()
-        .title(Span::styled(title, title_style))
-        .border_style(Style::new().fg(palette.text_muted))
-        .style(Style::new().bg(palette.background));
+        .title(Line::from(title))
+        .border_style(Style::new().fg(border))
+        .style(Style::new().bg(palette.surface));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if inner.width == 0 || inner.height == 0 {
@@ -4048,6 +4082,72 @@ mod tests {
             .chunks(width as usize)
             .map(|row| row.iter().map(|cell| cell.symbol().to_string()).collect())
             .collect()
+    }
+
+    /// The painted buffer, so a test can ask what colour a cell carries.
+    fn painted(home: &mut Home, width: u16, height: u16) -> Vec<ratatui::buffer::Cell> {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
+                .expect("terminal");
+        terminal
+            .draw(|frame| home.render(frame, frame.area()))
+            .expect("draw");
+        terminal.backend().buffer().content.clone()
+    }
+
+    fn composer_border(theme: &Theme, composer: &Composer) -> ratatui::style::Color {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 3)).expect("terminal");
+        terminal
+            .draw(|frame| render_home_composer(frame, frame.area(), composer, theme))
+            .expect("draw");
+        terminal.backend().buffer().content[0].fg
+    }
+
+    /// The screen keeps one accent: the count in the header. Rows are text and
+    /// stay neutral, which is what separates a readable list from the flat grey
+    /// wall it used to be.
+    #[test]
+    fn the_header_count_carries_the_accent_and_row_titles_stay_neutral() {
+        let theme = home_theme();
+        let mut home = Home::new(theme.clone());
+        // The first row is selected, so the second is what proves the list is
+        // text: only the cursor's row wears the accent band.
+        home.set_rows(vec![
+            home_row("ses_a", "login fix", None),
+            home_row("ses_b", "offset fix", None),
+        ]);
+        let cells = painted(&mut home, 80, 8);
+        assert!(
+            cells
+                .iter()
+                .take(80)
+                .any(|cell| cell.symbol() == "2" && cell.fg == theme.palette.primary),
+            "the header names the count in the accent"
+        );
+        assert!(
+            cells
+                .iter()
+                .any(|cell| cell.symbol() == "l" && cell.fg == theme.palette.primary),
+            "the selected row carries the accent"
+        );
+        assert!(
+            cells
+                .iter()
+                .any(|cell| cell.symbol() == "o" && cell.fg == theme.palette.text),
+            "an unselected row title keeps the body colour"
+        );
+    }
+
+    /// The composer answers "am I holding a draft?" without the operator
+    /// reading the draft: quiet rule when empty, brand colour once it is armed.
+    #[test]
+    fn the_composer_border_says_whether_it_holds_a_draft() {
+        let theme = home_theme();
+        let mut composer = Composer::new(Path::new("."));
+        assert_eq!(composer_border(&theme, &composer), theme.palette.border);
+        composer.editor.insert_str("a draft");
+        assert_eq!(composer_border(&theme, &composer), theme.palette.primary);
     }
 
     #[test]
