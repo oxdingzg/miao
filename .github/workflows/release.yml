@@ -149,8 +149,11 @@ jobs:
             fi
           } >> "$GITHUB_ENV"
 
+      # One artifact per platform: the Rust binary carries the engine in-process,
+      # so a release ships `miao-<os>-<arch>` and nothing else. The engine and TUI
+      # archives the Bun host used are not produced.
       - name: Build and upload this platform
-        run: ./packages/miao/script/build.ts ${{ runner.os == 'macOS' && '--darwin' || '--single' }} ${{ runner.os == 'Windows' && '--baseline' || '' }}
+        run: ./packages/miao/script/build.ts --native-cli
 
       - name: Smoke the artifact this leg built
         # Each leg runs on a runner of its artifact's own architecture, so the
@@ -173,8 +176,9 @@ jobs:
           shopt -s nullglob
           found=0
           # `build.ts` chdirs into `packages/miao`, so its artifacts land under
-          # that package's `dist/`, not the repository root's.
-          for binary in "packages/miao/dist/miao-${os}-${arch}"*/bin/miao "packages/miao/dist/miao-${os}-${arch}"*/bin/miao.exe; do
+          # that package's `dist/`, not the repository root's. The native release
+          # writes `miao` at the archive root; the Bun host nested it under `bin/`.
+          for binary in "packages/miao/dist/miao-${os}-${arch}"*/miao "packages/miao/dist/miao-${os}-${arch}"*/miao.exe "packages/miao/dist/miao-${os}-${arch}"*/bin/miao "packages/miao/dist/miao-${os}-${arch}"*/bin/miao.exe; do
             [ -f "$binary" ] || continue
             found=$((found + 1))
             if ! "$binary" --version; then

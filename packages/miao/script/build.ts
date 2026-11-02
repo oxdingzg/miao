@@ -32,6 +32,39 @@ const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
 
+// A native release ships one artifact. The Rust binary carries the engine
+// in-process, so `miao-<os>-<arch>` is the whole product: no separate engine
+// archive (the code is linked in) and no separate TUI archive (this *is* the
+// TUI). `install` already degrades when those archives are absent.
+if (process.argv.includes("--native-cli")) {
+  await $`rm -rf dist`
+  const { archives } = await buildNativeArchives({
+    crate: "miao-tui",
+    binary: "miao-tui",
+    archiveAs: "miao",
+    licenses: [path.resolve(dir, "../../LICENSE")],
+    env: { MIAO_VERSION: Script.version },
+  })
+  if (Script.release && archives.length) {
+    // Bare executables cannot carry a staple ticket; submitting the zip
+    // registers the binary's cdhash and Gatekeeper checks it online.
+    const notary = notaryCredentials()
+    if (notary) {
+      for (const archive of archives.filter((item) => item.includes("darwin"))) {
+        await $`xcrun notarytool submit ${archive} --key ${notary.key} --key-id ${notary.keyId} --issuer ${notary.issuer} --wait`
+      }
+    }
+    for (const archive of archives) {
+      const hash = new Bun.CryptoHasher("sha256").update(await Bun.file(archive.slice(2)).arrayBuffer()).digest("hex")
+      await Bun.write(`${archive}.sha256`, `${hash}  ${path.basename(archive)}\n`)
+    }
+    const manifests = archives.map((archive) => `${archive}.sha256`)
+    await $`gh release upload v${Script.version} ${archives} ${manifests} --clobber --repo ${process.env.GH_REPO}`
+  }
+  console.log(`native release artifact: ${archives.join(", ")}`)
+  process.exit(0)
+}
+
 const createEmbeddedEngineModule = (enginePath: string) => {
   if (!existsSync(enginePath)) throw new Error(`--engine: no such file: ${enginePath}`)
   const spec = path.relative(dir, enginePath).replaceAll("\\", "/")
@@ -399,6 +432,8 @@ function nativeTargets(): { target: string | undefined; arch: string }[] {
 async function buildNativeArchives(spec: {
   crate: string
   binary: string
+  /** Archive and in-archive name, when it differs from the built binary. */
+  archiveAs?: string
   licenses: string[]
   env?: Record<string, string>
 }): Promise<{ archives: string[]; bins: Record<string, string> }> {
@@ -445,12 +480,15 @@ async function buildNativeArchives(spec: {
       }
     }
     bins[`${process.platform}-${arch}`] = bin
-    const name = `${spec.binary}-${os}-${arch}`
+    // A release ships the Rust binary as `miao` itself: it carries the engine
+    // in-process, so the name inside the archive is the product's entry point.
+    const staged = `${spec.archiveAs ?? spec.binary}${suffix}`
+    const name = `${spec.archiveAs ?? spec.binary}-${os}-${arch}`
     const staging = `dist/${name}`
     await mkdir(staging, { recursive: true })
-    const files = [`${spec.binary}${suffix}`, ...spec.licenses.map((file) => path.basename(file))]
+    const files = [staged, ...spec.licenses.map((file) => path.basename(file))]
     await Promise.all([
-      copyFile(bin, path.join(staging, `${spec.binary}${suffix}`)),
+      copyFile(bin, path.join(staging, staged)),
       ...spec.licenses.map((file) => copyFile(file, path.join(staging, path.basename(file)))),
     ])
     if (process.platform === "win32") {
