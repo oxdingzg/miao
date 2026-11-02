@@ -54,6 +54,10 @@ pub struct Launch {
     /// `--fork`: copy the resumed Session into a fresh one instead of
     /// appending onto the original. Requires `--session` or `--continue`.
     pub fork: bool,
+    /// `--agent <name>`: start the Session under that configuration agent.
+    /// Forwarded to the engine as `--agent-name`, which resolves the merged
+    /// configuration's `agents` entry into the default manifest.
+    pub agent: Option<String>,
     /// `--auto`/`--yolo`/`--dangerously-skip-permissions`: forwarded to the
     /// engine as `--auto-approve`, where asks the policy raises settle through
     /// the deterministic classifier instead of a host approval.
@@ -137,6 +141,7 @@ async fn drive(
         launch.model,
         launch.config_dir,
         launch.auto,
+        launch.agent.as_deref(),
     ) {
         Ok(settings) => {
             app.set_settings(settings.clone());
