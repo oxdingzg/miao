@@ -903,13 +903,17 @@ export const fromOwners = (
       read<readonly Readonly<Record<string, unknown>>[]>(input, (connection) =>
         connection.client.request("session_children", { session_id: input.sessionID }),
       ).pipe(
-        Effect.map((value) =>
-          Array.isArray(value)
-            ? value.filter(
+        Effect.map((value) => {
+          // The engine answers an object — { session_id, children, truncated } —
+          // not a bare list, so reading it as an array silently yielded "no
+          // children" and every delegated Session's spend went unreported.
+          const entries = typeof value === "object" && value !== null ? (value as { children?: unknown }).children : undefined
+          return Array.isArray(entries)
+            ? entries.filter(
                 (entry): entry is Readonly<Record<string, unknown>> => typeof entry === "object" && entry !== null,
               )
-            : [],
-        ),
+            : []
+        }),
       ),
     transcript: (input) =>
       read(input, (connection) =>
