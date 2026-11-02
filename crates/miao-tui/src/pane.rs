@@ -1558,6 +1558,14 @@ pub struct StatusHint {
 
 fn render_status(frame: &mut Frame, area: Rect, status: &StatusStrip, theme: &Theme) {
     let palette = theme.palette;
+    // The bar is a bar: its surface spans the window. What it says lines up with
+    // the body, so the model on the left and the hints on the right are not
+    // anchored to edges the text no longer touches.
+    frame.render_widget(
+        Block::default().style(Style::new().bg(palette.surface)),
+        area,
+    );
+    let area = group_columns(area);
     let mut spans = Vec::new();
     if let Some(model) = &status.model {
         spans.push(Span::styled(
@@ -3365,6 +3373,46 @@ mod tests {
         assert_eq!(
             Shell::new(Path::new("."), shell.theme().clone()).last_response(),
             None
+        );
+    }
+
+    #[test]
+    fn the_status_line_lines_up_with_the_body() {
+        // The surface spans the window, but what it says should start where the
+        // text starts rather than at the window's edge.
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let mut shell = Shell::new(Path::new("."), theme);
+        shell.status.model = Some("fake/model".into());
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(200, 20)).expect("terminal");
+        terminal.draw(|frame| shell.render(frame)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let area = buffer.area;
+        let group = group_columns(Rect::new(area.x, area.y + area.height - 1, area.width, 1));
+        let status = buffer
+            .content
+            .chunks(area.width as usize)
+            .last()
+            .expect("the status row");
+        let first = status
+            .iter()
+            .position(|cell| cell.symbol().trim().is_empty() == false)
+            .expect("the model is painted");
+        assert_eq!(
+            first,
+            group.x as usize + 1,
+            "the model starts one cell into the group"
+        );
+        assert!(
+            status
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+                .contains("fake/model"),
+            "and it is still painted"
         );
     }
 
