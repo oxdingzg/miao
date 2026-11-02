@@ -231,6 +231,41 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               models: yield* availableModels,
               snapshot,
             })
+            // A delegated Session spends under its own id. Without this the
+            // parent's usage answers only for the parent, and a cost report
+            // built from it silently drops every handed-off turn (#2236). Each
+            // child is projected by the same function, so pricing stays in one
+            // place.
+            const children = yield* native.value.children({
+              sessionID: ctx.params.sessionID,
+              ...placement,
+            })
+            const delegated = yield* Effect.forEach(children, (child) => {
+              const childID =
+                typeof child["id"] === "string"
+                  ? child["id"]
+                  : typeof child["session_id"] === "string"
+                    ? child["session_id"]
+                    : undefined
+              if (childID === undefined || childID === ctx.params.sessionID) return Effect.succeed(0)
+              const childSessionID = SessionV2.ID.make(childID)
+              return Effect.gen(function* () {
+                const childSnapshot = yield* native.value.snapshot({
+                  sessionID: childSessionID,
+                  storage: placement.storage,
+                  location: placement.location,
+                  metadataOnly: true,
+                })
+                const childUsage = nativeSessionUsage({
+                  report: yield* native.value.usage({ sessionID: childSessionID, ...placement }),
+                  models: yield* availableModels,
+                  snapshot: childSnapshot,
+                })
+                return childUsage ? childUsage.models.reduce((sum, model) => sum + model.cost, 0) : 0
+              }).pipe(Effect.catch(() => Effect.succeed(0)))
+            }).pipe(Effect.map((costs) => costs.reduce((sum, cost) => sum + cost, 0)))
+            const usageWithDelegated =
+              usage && children.length > 0 ? { ...usage, delegated } : usage
             const pinned = (yield* nativePins(db)).get(ctx.params.sessionID)
             return {
               data: nativeSessionInfo({
@@ -238,7 +273,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 projectID: project.id,
                 location: placement.location,
                 snapshot,
-                usage,
+                usage: usageWithDelegated,
                 pinned,
               }),
             }
