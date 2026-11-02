@@ -192,7 +192,7 @@ impl Store {
             let event=append(&tx,&session,if refused {"shell.refused"} else {"shell.ended"},data.clone())?;
             if !refused {
                 let content=history_content(&data,&invocation.call_id)?;
-                tx.execute("INSERT INTO engine_message(session_id,seq,role,content,recorded_at_ms) VALUES(?1,?2,'user',?3,?4)",params![session,event.seq,serde_json::to_string(&content)?,event.recorded_at_ms])?;
+                tx.execute("INSERT INTO engine_message(session_id,seq,role,content,recorded_at_ms,kind) VALUES(?1,?2,'user',?3,?4,?5)",params![session,event.seq,serde_json::to_string(&content)?,event.recorded_at_ms,event.kind])?;
             }
             tx.execute("UPDATE engine_tool SET state=?2 WHERE id=?1",params![format!("{run}/{}",invocation.execution_id(&session)),if data["reason"]=="unknown" {"unknown"} else {"completed"}])?;
             let reason=if refused {"denied"} else if data["reason"]=="cancelled" {"interrupted"} else {"completed"};
@@ -253,7 +253,7 @@ pub(crate) fn copy_history(
         ended,
         message["recorded_at_ms"].as_u64(),
     )?;
-    tx.execute("INSERT INTO engine_message(session_id,seq,role,content,recorded_at_ms) VALUES(?1,?2,'user',?3,?4)",params![target,last.seq,serde_json::to_string(&content)?,last.recorded_at_ms])?;
+    tx.execute("INSERT INTO engine_message(session_id,seq,role,content,recorded_at_ms,kind) VALUES(?1,?2,'user',?3,?4,?5)",params![target,last.seq,serde_json::to_string(&content)?,last.recorded_at_ms,last.kind])?;
     Ok(Some(last))
 }
 

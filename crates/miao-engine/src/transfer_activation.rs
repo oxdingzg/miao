@@ -360,7 +360,7 @@ impl Store {
             let mut seq_by_source=std::collections::HashMap::<String,u64>::new();
             for message in prepared.messages {
                 let event=append(&tx,&session,"session.transfer.history",json!({"import_id":id,"source_message_id":message.source_message_id}))?;
-                tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,?3,?4,?5,?6)",params![session,event.seq,message.message.role,serde_json::to_string(&message.message.content)?,message.message.checkpoint,message.message.recorded_at_ms])?;
+                tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms,kind) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![session,event.seq,message.message.role,serde_json::to_string(&message.message.content)?,message.message.checkpoint,message.message.recorded_at_ms,event.kind])?;
                 tx.execute("INSERT INTO engine_transfer_message(import_id,source_message_id,seq) VALUES(?1,?2,?3)",params![id,message.source_message_id,event.seq])?;
                 seq_by_source.insert(message.source_message_id,event.seq);
             }

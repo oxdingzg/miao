@@ -385,7 +385,7 @@ impl Store {
                     CREATE INDEX IF NOT EXISTS engine_event_kind ON engine_event(kind);
                     CREATE INDEX IF NOT EXISTS engine_event_selection ON engine_event(session_id,kind,seq);
                     CREATE TABLE IF NOT EXISTS engine_input(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), prompt TEXT NOT NULL, delivery TEXT NOT NULL, state TEXT NOT NULL, admitted_seq INTEGER NOT NULL);
-                    CREATE TABLE IF NOT EXISTS engine_message(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, checkpoint TEXT, PRIMARY KEY(session_id,seq));
+                    CREATE TABLE IF NOT EXISTS engine_message(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, checkpoint TEXT, kind TEXT, PRIMARY KEY(session_id,seq));
                     CREATE TABLE IF NOT EXISTS engine_run(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), state TEXT NOT NULL);
                     CREATE UNIQUE INDEX IF NOT EXISTS engine_active_run ON engine_run(session_id) WHERE state='running';
                     CREATE TABLE IF NOT EXISTS engine_timing(session_id TEXT NOT NULL REFERENCES engine_session(id), run_id TEXT NOT NULL, step INTEGER NOT NULL, ttft_ms INTEGER NOT NULL, PRIMARY KEY(session_id,run_id,step));
@@ -502,6 +502,22 @@ impl Store {
                             [],
                         )?;
                     }
+                }
+                // The message's own copy of its event kind. History reads used to
+                // INNER JOIN engine_event for it, which means truncating that log
+                // below a compaction baseline would delete every historical message
+                // from the read. Backfill once from the event the row was written
+                // with; a null kind degrades to an unlabelled message instead of a
+                // missing one.
+                let has_kind:bool=conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_message') WHERE name='kind')",
+                    [],|r|r.get(0))?;
+                if !has_kind {
+                    conn.execute("ALTER TABLE engine_message ADD COLUMN kind TEXT", [])?;
+                    conn.execute(
+                        "UPDATE engine_message SET kind=(SELECT e.kind FROM engine_event e WHERE e.session_id=engine_message.session_id AND e.seq=engine_message.seq) WHERE kind IS NULL",
+                        [],
+                    )?;
                 }
                 if version < 18 {
                     // Schema 17 overwrote the request watermark with the stage
@@ -2127,9 +2143,11 @@ impl Store {
                 // matches today; a left join keeps a future writer that
                 // inserts the row alone from silently losing it from every
                 // page, and that row simply is not synthetic.
-                "SELECT m.seq,m.role,m.content,m.checkpoint,m.recorded_at_ms,e.kind
+                // kind is materialised on the message itself: the event log may
+                // later be truncated below a compaction baseline, and this read
+                // must keep returning every message when it is.
+                "SELECT m.seq,m.role,m.content,m.checkpoint,m.recorded_at_ms,m.kind
                  FROM engine_message m
-                 LEFT JOIN engine_event e ON e.session_id=m.session_id AND e.seq=m.seq
                  WHERE m.session_id=?1 AND m.reverted=0 AND m.quarantined=0
                    AND (?2 IS NULL OR m.seq<?2)
                  ORDER BY m.seq DESC LIMIT ?3",
@@ -2369,8 +2387,8 @@ impl Store {
                 json!({"role":role,"content":content}),
             )?;
             tx.execute(
-                "INSERT INTO engine_message(session_id,seq,role,content,recorded_at_ms) VALUES(?1,?2,?3,?4,?5)",
-                params![session, e.seq, role, serde_json::to_string(&content)?, e.recorded_at_ms],
+                "INSERT INTO engine_message(session_id,seq,role,content,recorded_at_ms,kind) VALUES(?1,?2,?3,?4,?5,?6)",
+                params![session, e.seq, role, serde_json::to_string(&content)?, e.recorded_at_ms, e.kind],
             )?;
             tx.commit()?;
             Ok(e)
@@ -3168,7 +3186,7 @@ fn promote_tx(tx: &Transaction<'_>, session: &str, idle: bool) -> Result<Vec<Eve
         if !is_command {
             parts.extend(agents.mentions.iter().map(|reference|json!({"type":"agent_reference","name":reference.name,"metadata":{"source":reference.source}})));
         }
-        tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,'user',?3,?4,?5)", params![session,e.seq,serde_json::to_string(&Value::Array(parts))?,checkpoint,e.recorded_at_ms])?;
+        tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms,kind) VALUES(?1,?2,'user',?3,?4,?5,?6)", params![session,e.seq,serde_json::to_string(&Value::Array(parts))?,checkpoint,e.recorded_at_ms,e.kind])?;
         events.push(e);
         // Preparation is a settled operator boundary. Do not promote
         // a later steer past this command before its effects settle.
@@ -3688,14 +3706,15 @@ fn project_message_at(
     };
     let event = append_at(tx, session, "message.committed", payload, recorded_at_ms)?;
     tx.execute(
-        "INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,?3,?4,?5,?6)",
+        "INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms,kind) VALUES(?1,?2,?3,?4,?5,?6,?7)",
         params![
             session,
             event.seq,
             role,
             serde_json::to_string(&content)?,
             checkpoint,
-            event.recorded_at_ms
+            event.recorded_at_ms,
+            event.kind
         ],
     )?;
     Ok(event)
@@ -4735,6 +4754,116 @@ impl Store {
             created_ms,
             updated_ms,
         }
+    }
+}
+
+#[cfg(test)]
+mod message_kind_materialisation_tests {
+    use super::*;
+
+    async fn a_store_with_one_message(dir: &std::path::Path) -> Store {
+        let store = Store::open(dir.join("engine.db")).await.expect("store");
+        store
+            .admit(crate::protocol::Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "task".into(),
+                delivery: crate::protocol::Delivery::Steer,
+            })
+            .await
+            .expect("admit");
+        store.promote("s", true).await.expect("promote");
+        store
+    }
+
+    #[tokio::test]
+    async fn new_messages_carry_their_event_kind() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = a_store_with_one_message(dir.path()).await;
+        let connection = rusqlite::Connection::open_with_flags(
+            dir.path().join("engine.db"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .expect("open");
+        let (count, kinds): (i64, String) = connection
+            .query_row(
+                "SELECT count(*), COALESCE(group_concat(kind), '<null>') FROM engine_message",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("query");
+        assert!(count >= 1, "the promoted input became a message");
+        assert!(kinds.contains("input.promoted"), "kinds: {kinds}");
+    }
+
+    #[tokio::test]
+    async fn history_reads_survive_truncated_events() {
+        // The whole point of the materialised kind: a retention run that takes
+        // the event log below a baseline must not remove messages from the
+        // history the model and the TUI read. Before this column, the read
+        // INNER JOINed engine_event and the deletion deleted the messages.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = a_store_with_one_message(dir.path()).await;
+        let connection = rusqlite::Connection::open(dir.path().join("engine.db")).expect("open");
+        connection
+            .execute("DELETE FROM engine_event WHERE kind='input.promoted'", [])
+            .expect("simulate truncation");
+        drop(connection);
+
+        let history = store.selected_history("s").await.expect("history");
+        assert!(!history.is_empty(), "messages survive the event deletion");
+        let connection = rusqlite::Connection::open_with_flags(
+            dir.path().join("engine.db"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .expect("reopen");
+        let kind: String = connection
+            .query_row(
+                "SELECT kind FROM engine_message WHERE session_id='s' LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("kind");
+        assert_eq!(kind, "input.promoted", "the materialised kind survives");
+    }
+
+    #[tokio::test]
+    async fn the_migration_backfills_kind_from_the_event_log() {
+        // An older ledger that predates the column: build a real one, drop the
+        // column the upgrade adds, and reopen — the upgrade has to fill every
+        // existing message from the event it was written with, so the very
+        // first truncation after upgrading cannot strand a message.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("engine.db");
+        a_store_with_one_message(dir.path()).await;
+        drop(rusqlite::Connection::open(&path).expect("marker"));
+
+        {
+            let connection = rusqlite::Connection::open(&path).expect("reopen");
+            connection
+                .execute("ALTER TABLE engine_message DROP COLUMN kind", [])
+                .expect("degrade to the pre-column shape");
+        }
+        Store::open(&path).await.expect("upgrade opens");
+
+        let connection = rusqlite::Connection::open_with_flags(
+            &path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .expect("reopen");
+        let kind: String = connection
+            .query_row(
+                "SELECT kind FROM engine_message WHERE session_id='s' LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("kind");
+        assert_eq!(
+            kind, "input.promoted",
+            "the upgrade backfilled from the event"
+        );
     }
 }
 
