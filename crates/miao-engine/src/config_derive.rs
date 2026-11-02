@@ -232,11 +232,77 @@ pub fn policy(documents: &[Document], miao_sandbox: Option<&str>) -> permission:
         allow_cron: true,
         process_network: true,
         sandbox: sandbox_enabled(documents, miao_sandbox),
-        rules: permission_rules(&merged),
+        rules: permission_rules(documents),
         // Matches the engine's default; the product policy never sets it.
         approval_timeout_ms: 60_000,
         max_provider_turns: None,
     }
+}
+
+/// The product's `permissions` ruleset names actions the way the TS
+/// permission service does (`bash`, `edit`, `*` over a `resource` glob with an
+/// `effect`), while the engine's rules match engine tool names over resource
+/// paths. Translate the operator's configured ruleset so a standalone start
+/// answers the way the product host answers instead of asking on every
+/// command the operator already allowed in configuration. Later documents
+/// override earlier ones the same way every other merged key does.
+fn permission_rules(documents: &[Document]) -> Vec<permission::Rule> {
+    /// Config actions the engine names differently. An action the table does
+    /// not know passes through verbatim, so `webfetch` and MCP names keep
+    /// matching their engine tools.
+    const TOOL_TABLE: &[(&str, &[&str])] = &[
+        (
+            "bash",
+            &[
+                "run_command",
+                "bash",
+                "start_job",
+                "monitor",
+                "terminal_*",
+            ],
+        ),
+        ("edit", &["write_file", "edit_file", "apply_patch"]),
+        ("subagent", &["task", "task_cancel"]),
+    ];
+    let mut rules = Vec::new();
+    for document in documents {
+        let Some(entries) = document.value.get("permissions").and_then(Value::as_array) else {
+            continue;
+        };
+        for entry in entries {
+            let Some(action) = entry.get("action").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(resource) = entry.get("resource").and_then(Value::as_str) else {
+                continue;
+            };
+            if action.is_empty() || resource.is_empty() {
+                continue;
+            }
+            let decision = match entry.get("effect").and_then(Value::as_str) {
+                Some("allow") => permission::Decision::Allow,
+                Some("deny") => permission::Decision::Deny,
+                _ => permission::Decision::Ask,
+            };
+            let tools: Vec<&str> = match TOOL_TABLE.iter().find(|(known, _)| *known == action) {
+                Some((_, tools)) => tools.to_vec(),
+                None => vec![action],
+            };
+            for tool in tools {
+                rules.push(permission::Rule {
+                    tool: tool.to_string(),
+                    path: resource.to_string(),
+                    decision,
+                });
+            }
+        }
+    }
+    // The engine refuses a policy past this size; the merged ruleset keeps the
+    // last entries, which carry the overriding documents.
+    if rules.len() > 256 {
+        rules.drain(..rules.len() - 256);
+    }
+    rules
 }
 
 /// The native sandbox switch (product `SandboxPolicy.nativeEnabled`): an
