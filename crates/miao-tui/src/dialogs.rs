@@ -942,10 +942,13 @@ impl Dialog {
             return (palette.visible.len().clamp(1, 12) + 3) as u16;
         }
         if let Some(list) = self.list() {
-            // Border, filter row and hint surround the rows: with only a
-            // model or two the +3 left the list itself zero rows tall, and
-            // the dialog painted its box around nothing.
-            return (list.rows.len().min(14) + 4) as u16;
+            // The box needs room for the rows plus the filter line, the hint
+            // line and the border. A one-row list (`models` on a single-model
+            // engine) used to lose its only row to those chrome rows and paint
+            // an empty picker, and an empty list still shows "nothing to show".
+            let rows = list.rows.len().min(14).max(1) as u16;
+            let filter = u16::from(list.shows_filter());
+            return rows + 3 + filter;
         }
         if self.rename_input().is_some() {
             return 5;
@@ -1439,6 +1442,31 @@ mod tests {
         assert_eq!(models[2].label(), "gpt-5 · responses · high");
         assert_eq!(models[0].binding()["route_id"], "r1");
         assert_eq!(models[2].binding()["variant"], "high");
+    }
+
+    #[test]
+    fn a_single_row_list_asks_for_room_for_its_row() {
+        // One model used to size the box to filter + hint + border alone, so
+        // the only row a single-model engine serves had zero rows to paint in.
+        let one = ModelInfo::catalog(&serde_json::json!([
+            {"protocol": "openai-chat", "model": "deepseek-v4-1-flash-261017"}
+        ]));
+        let dialog = Dialog::models(&one, None);
+        let list = dialog.list().expect("list");
+        let filter = u16::from(list.shows_filter());
+        assert_eq!(
+            dialog.height(),
+            1 + filter + 1 + 2,
+            "row + hint + filter + border"
+        );
+    }
+
+    #[test]
+    fn an_empty_list_still_fits_its_placeholder() {
+        let dialog = Dialog::models(&[], None);
+        let list = dialog.list().expect("list");
+        let filter = u16::from(list.shows_filter());
+        assert_eq!(dialog.height(), 1 + filter + 1 + 2);
     }
 
     #[test]
