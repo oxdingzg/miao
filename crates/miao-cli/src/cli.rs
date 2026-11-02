@@ -46,6 +46,7 @@ Usage:
   miao db path          print the engine and product database paths this directory resolves to
   miao db stats|vacuum  report or reclaim space (--db PATH, --apply for vacuum)
   miao db retention     report events a snapshot-then-truncate could drop (report-only)
+  miao db blob-gc       report or remove blob files nothing references (--db PATH, --apply)
   miao completion SHELL print a completion script (bash or zsh)
   miao debug paths|info|mcp|lsp|routes
                         read-only diagnostics
@@ -2342,6 +2343,52 @@ fn db_vacuum(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Reclaim blob files no surviving row references, but only when the operator
+/// asked for it in words: a dry run counts the orphans and states that nothing
+/// was written. The live set is read through one read-only snapshot, so the
+/// scan and the directory walk agree on what survives (DATA-04).
+fn db_blob_gc(rest: &[String]) -> Result<(), String> {
+    let path = db_argument(rest)?;
+    let apply = rest.iter().any(|argument| argument == "--apply");
+    let connection = db_read_only(&path)?;
+    let mut live = std::collections::HashSet::new();
+    let scans = [
+        "SELECT data FROM engine_event WHERE data LIKE '%\"blob\"%'",
+        "SELECT content FROM engine_message WHERE content LIKE '%\"blob\"%'",
+        "SELECT input FROM engine_tool WHERE input LIKE '%\"blob\"%'",
+        "SELECT prompt FROM engine_input WHERE prompt LIKE '%\"blob\"%'",
+        "SELECT summary FROM engine_compaction WHERE summary LIKE '%\"blob\"%'",
+    ];
+    for sql in scans {
+        let mut statement = connection.prepare(sql).map_err(|error| error.to_string())?;
+        let mut rows = statement.query([]).map_err(|error| error.to_string())?;
+        while let Some(row) = rows.next().map_err(|error| error.to_string())? {
+            let text: String = row.get(0).map_err(|error| error.to_string())?;
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+                continue;
+            };
+            let mut found = Vec::new();
+            miao_engine::blob::references(&value, &mut found);
+            live.extend(found);
+        }
+    }
+    let root = miao_engine::blob::root_for(&path);
+    let report = miao_engine::blob::gc(&root, live, apply);
+    let (main, wal, shm) = db_file_bytes(&path);
+    println!(
+        "ledger {} · blobs {} kept · {} orphans {} ({} reclaimed) · {} staging writes removed · {} failures · ledger now {}",
+        path.display(),
+        report.kept,
+        report.removed_orphans,
+        if apply { "removed" } else { "found (dry run; pass --apply)" },
+        human_bytes(report.reclaimed_bytes),
+        report.removed_tmp,
+        report.failed,
+        human_bytes(main + wal + shm),
+    );
+    Ok(())
+}
+
 /// Report what a snapshot-then-truncate retention could drop, without dropping
 /// it. Events at or before each session's latest compaction baseline are the
 /// candidates: their content already lives in the compacted summary, so the
@@ -4099,6 +4146,13 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                     Ok(()) => std::process::ExitCode::SUCCESS,
                     Err(message) => {
                         eprintln!("miao db vacuum: {message}");
+                        std::process::ExitCode::from(1)
+                    }
+                },
+                Some("blob-gc") => match db_blob_gc(&rest[1..]) {
+                    Ok(()) => std::process::ExitCode::SUCCESS,
+                    Err(message) => {
+                        eprintln!("miao db blob-gc: {message}");
                         std::process::ExitCode::from(1)
                     }
                 },

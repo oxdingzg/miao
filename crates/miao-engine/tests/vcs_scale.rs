@@ -81,30 +81,32 @@ fn build_repo(dir: &Path, changed: Option<(usize, usize, usize, usize, usize)>) 
         }
         for index in 0..staged {
             let name = format!("pkg/file_{}.txt", LARGE_MODIFIED + index);
+            write(dir, &name, "staged content\n");
             git(dir, &["add", &name]);
             write(dir, &name, "staged then edited again\n");
         }
         for index in 0..renamed {
             let from = format!("pkg/file_{}.txt", LARGE_MODIFIED + LARGE_STAGED + index);
-            let to = format!("moved/file_{}.txt", index);
-            // The moved file keeps the source's text plus one line, so git's
-            // rename detection pairs the records instead of reporting a
-            // separate deletion and addition.
-            let source = format!("v1 line {}\n", LARGE_MODIFIED + LARGE_STAGED + index);
-            write(dir, &to, &format!("{source}appended\n"));
-            std::fs::remove_file(dir.join(&from)).expect("remove for rename");
-            git(dir, &["add", &from]);
-            git(dir, &["add", &to]);
+            let to = format!("moved/file_{index}.txt");
+            // A pure `git mv`: status pairs the records through rename
+            // detection, and a content change on a thirteen-byte file would
+            // drop below the similarity bar and split into D+A.
+            git(dir, &["mv", &from, &to]);
         }
+        // Deleted files start past the renamed band, so no two groups touch
+        // the same row of the tree.
         for index in 0..deleted {
             let name = format!(
                 "pkg/file_{}.txt",
-                LARGE_MODIFIED + LARGE_STAGED + LARGE_RENAMED + index
+                LARGE_MODIFIED + LARGE_STAGED + LARGE_RENAMED + LARGE_UNTRACKED + index
             );
             std::fs::remove_file(dir.join(&name)).expect("remove file");
         }
+        // Untracked files land inside a tracked directory: `--untracked-files=normal`
+        // folds a wholly-untracked directory into one record, which would
+        // turn two hundred entries into one.
         for index in 0..untracked {
-            write(dir, &format!("fresh/untracked_{index}.txt"), "new\n");
+            write(dir, &format!("pkg/fresh_{index}.txt"), "new\n");
         }
     }
     dir.to_path_buf()
