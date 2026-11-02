@@ -7,11 +7,19 @@ BIN_DIR="${MIAO_PREVIEW_INSTALL_DIR:-${HOME}/.local/share/miao/bin}"
 LINK="${MIAO_PREVIEW_LINK:-${HOME}/.local/bin/miao-preview}"
 usage() {
   echo 'Usage: ./script/install-local.sh --binary /path/to/prebuilt/miao [--engine-binary /path/to/prebuilt/miao-engine] [--tui-binary /path/to/prebuilt/miao-tui]' >&2
+  echo '       ./script/install-local.sh --native --tui-binary /path/to/prebuilt/miao-tui --engine-binary /path/to/prebuilt/miao-engine' >&2
   exit 1
 }
-if [[ "${1:-}" != "--binary" || -z "${2:-}" ]]; then usage; fi
-SRC="$2"
-shift 2
+NATIVE=false
+if [[ "${1:-}" == "--native" ]]; then
+  NATIVE=true
+  shift
+fi
+if [[ "$NATIVE" == false ]]; then
+  if [[ "${1:-}" != "--binary" || -z "${2:-}" ]]; then usage; fi
+  SRC="$2"
+  shift 2
+fi
 ENGINE=""
 TUI=""
 while [[ $# -gt 0 ]]; do
@@ -29,12 +37,18 @@ while [[ $# -gt 0 ]]; do
   esac
   shift 2
 done
-VERSION="$("$SRC" --version)"
+# A native preview is the Rust binary itself: it *is* `miao`, so the installer
+# treats it as the CLI and pairs the engine beside it.
+if [[ "$NATIVE" == true ]]; then
+  [[ -n "$TUI" && -n "$ENGINE" ]] || usage
+  SRC="$TUI"
+fi
+VERSION="$("$SRC" --version | awk '{print $2}')"
 if [[ -n "$ENGINE" ]]; then
   [[ "$("$ENGINE" --version)" == "miao-engine $VERSION" ]] || { echo 'Preview CLI and engine versions must match' >&2; exit 1; }
   "$ENGINE" --capabilities >/dev/null
 fi
-if [[ -n "$TUI" ]]; then
+if [[ -n "$TUI" && "$NATIVE" == false ]]; then
   [[ "$("$TUI" --version)" == "miao-tui $VERSION" ]] || { echo 'Preview CLI and TUI versions must match' >&2; exit 1; }
 fi
 mkdir -p "$BIN_DIR" "$(dirname "$LINK")"
@@ -57,7 +71,7 @@ pair_binary() {
   rm -f "$staged"
 }
 if [[ -n "$ENGINE" ]]; then pair_binary miao-engine "$ENGINE"; fi
-if [[ -n "$TUI" ]]; then pair_binary miao-tui "$TUI"; fi
+if [[ -n "$TUI" && "$NATIVE" == false ]]; then pair_binary miao-tui "$TUI"; fi
 ln -s "$TARGET" "${LINK}.new-$$"
 mv -f "${LINK}.new-$$" "$LINK"
 echo "Installed miao-preview $VERSION at $LINK"

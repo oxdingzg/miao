@@ -74,6 +74,31 @@ for i in range(6):
     p.terminate(); p.wait(timeout=5)
 ```
 
+## Native start against a real ledger
+
+What a start costs when the store already holds history, measured on one
+operator's machine (macOS arm64, 1.09 GiB ledger with 324k events and 170 root
+Sessions) with the Rust TUI started directly — no host process, no shim.
+
+| Step | Before | After |
+| --- | --- | --- |
+| `adopt_wakeups` (one query) | 2.63 s | 16 ms |
+| `adopt_crons` (one query) | ~2.6 s | 6 ms |
+| engine `serve` ready | 13.2–14.8 s | 7–9 ms warm, 336 ms cold |
+| home list (`session_catalog`, 170 rows) | 4–5 s (one snapshot per Session) | 0.26 s warm |
+| open a 40-message Session | — | 0.41 s warm, 2.9 s cold |
+
+The two startup scans were full table scans: `engine_event` carried only its
+`(session_id, seq)` primary key, so asking for one `kind` read every row, and
+`runtime.rs` asked twice. `engine_event(kind)` plus a single-transaction
+`session_catalog` is what moved the first four rows.
+
+Method: the TUI probe writes the engine's argv to a PTY, then timestamps the
+first byte of output and the first frame that renders the home list, so a
+number here includes process start, engine handshake and the list query. Cold
+means the first run after a build; warm repeats immediately after. Opening a
+Session is measured the same way with `--session <id>`.
+
 ## Long-session RSS
 
 Not snapshotted here: it needs a real provider to drive turns. Procedure: run N

@@ -22,6 +22,134 @@ pub struct Configured {
     pub plugin_hooks: Option<crate::product::Marker>,
 }
 
+/// Where the product keeps credentials when the operator names no source. The
+/// single-binary start has no host to pass `--credential-db`, so the engine
+/// looks where the product installs write.
+fn stored_default() -> Option<std::path::PathBuf> {
+    let root = std::env::var_os("MIAO_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("XDG_DATA_HOME").map(|dir| std::path::PathBuf::from(dir).join("miao"))
+        })
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(|home| std::path::PathBuf::from(home).join(".local/share/miao"))
+        })?;
+    let path = root.join("miao.db");
+    path.is_file().then_some(path)
+}
+
+/// The one unexpired credential stored for `integration`. A credential that is
+/// expired is skipped rather than used: its owning broker has to refresh it
+/// first, and that refusal is the existing, named error.
+fn stored_credential(
+    path: &std::path::Path,
+    integration: &str,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let candidates: Vec<crate::credential::Metadata> = crate::credential::list_database(path)?
+        .into_iter()
+        .filter(|credential| credential.integration == integration && !credential.expired)
+        .collect();
+    match candidates.len() {
+        1 => Ok(candidates.into_iter().next().expect("one candidate").id),
+        0 => Err(format!(
+            "no unexpired credential is stored for {integration}; pass --credential-id or set an API key"
+        )
+        .into()),
+        _ => Err(format!(
+            "several unexpired credentials are stored for {integration}; pass --credential-id to choose one"
+        )
+        .into()),
+    }
+}
+
+/// The configuration sources this start reads, when it names any.
+fn config_sources(
+    options: &HashMap<String, String>,
+) -> Result<Option<Vec<miao_engine::config_derive::Source>>, Box<dyn std::error::Error + Send + Sync>>
+{
+    let sources = match options.get("--config-sources") {
+        Some(plan) => miao_engine::config_derive::plan(plan)?,
+        None => match options.get("--config-dir") {
+            Some(directory) => vec![miao_engine::config_derive::Source::Dir(
+                std::path::PathBuf::from(directory),
+            )],
+            None => return Ok(None),
+        },
+    };
+    Ok(Some(sources))
+}
+
+/// The model the configuration asks for, used when this start names none: a
+/// single binary is started from the operator's configuration, not from a host
+/// that hands it a model name.
+fn configured_model(
+    options: &HashMap<String, String>,
+) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+    let Some(sources) = config_sources(options)? else {
+        return Ok(None);
+    };
+    let documents = miao_engine::config_derive::load(&sources)?;
+    Ok(documents.iter().rev().find_map(|document| {
+        document
+            .value
+            .get("model")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+    }))
+}
+
+/// The transport and endpoint a provider declares in configuration, used when a
+/// start names only its model. `--provider` and `--endpoint` still win over it,
+/// and an unknown package stays unresolved rather than guessing a protocol.
+async fn configured_route(
+    options: &HashMap<String, String>,
+    provider: Option<&str>,
+    model: &str,
+) -> Result<Option<(String, Option<String>)>, Box<dyn std::error::Error + Send + Sync>> {
+    let Some(provider) = provider else {
+        return Ok(None);
+    };
+    if options.contains_key("--provider") && options.contains_key("--endpoint") {
+        return Ok(None);
+    }
+    let Some(sources) = config_sources(options)? else {
+        return Ok(None);
+    };
+    let documents = miao_engine::config_derive::load(&sources)?;
+    let api = documents.iter().rev().find_map(|document| {
+        document
+            .value
+            .get("providers")?
+            .get(provider)?
+            .get("models")?
+            .get(model)?
+            .get("api")
+            .cloned()
+    });
+    let Some(api) = api else {
+        return Ok(None);
+    };
+    let transport = match api.get("package").and_then(serde_json::Value::as_str) {
+        Some("@ai-sdk/anthropic") => "anthropic",
+        Some("@ai-sdk/google" | "@ai-sdk/google-vertex") => "gemini",
+        Some("@ai-sdk/openai" | "@ai-sdk/openai-compatible") => "openai-chat",
+        _ => return Ok(None),
+    };
+    let endpoint = api
+        .get("url")
+        .and_then(serde_json::Value::as_str)
+        .map(|url| {
+            let base = url.trim_end_matches('/');
+            match transport {
+                "openai-chat" => format!("{base}/chat/completions"),
+                "anthropic" => format!("{base}/messages"),
+                _ => base.to_string(),
+            }
+        });
+    Ok(Some((transport.to_string(), endpoint)))
+}
+
 pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Send + Sync>> {
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
@@ -98,18 +226,48 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     let workspace = options
         .get("--workspace")
         .ok_or("--workspace is required")?;
-    let model = options.get("--model").ok_or("--model is required")?;
+    let model = match options.get("--model") {
+        Some(model) => model.clone(),
+        None => configured_model(&options)?.ok_or("--model is required")?,
+    };
+    // A `provider/model` value also names the host-side provider, which is what a
+    // credential is stored under: `volcengine/deepseek-v4-1` bills the volcengine
+    // credential even though the transport underneath is OpenAI-compatible.
+    let model_provider = model
+        .split_once('/')
+        .map(|(prefix, _)| prefix.to_owned())
+        .filter(|prefix| !prefix.is_empty());
+    let bare_model = match model.split_once('/') {
+        Some((_, bare)) => bare.to_owned(),
+        None => model.to_owned(),
+    };
+    // Naming only the model is enough: the transport and endpoint then come from
+    // the provider's entry in configuration, exactly where the product's route
+    // plan read them.
+    let configured = configured_route(&options, model_provider.as_deref(), &bare_model).await?;
     let provider_name = options
         .get("--provider")
         .map(String::as_str)
-        .unwrap_or("anthropic");
+        .map(str::to_owned)
+        .or_else(|| configured.as_ref().map(|(transport, _)| transport.clone()))
+        .unwrap_or_else(|| "anthropic".to_string());
+    let provider_name = provider_name.as_str();
+    // A prefix that resolved to a configured provider is the host-side provider,
+    // so the model is the bare id. A prefix that resolves to nothing is part of
+    // the model name and stays whole (`fixture/fixture`).
+    let named_provider = configured.is_some();
+    let endpoint: Option<String> = options
+        .get("--endpoint")
+        .cloned()
+        .or_else(|| configured.and_then(|(_, endpoint)| endpoint));
     // A `provider/model` --model value names the provider for host-side
     // routing; when the provider is given explicitly (the acp mode always
     // does), the transport wants the bare model id, mirroring serve-mode
     // route resolution.
     let model: String = match model.split_once('/') {
         Some((prefix, bare)) if prefix == provider_name => bare.to_owned(),
-        _ => model.to_owned(),
+        Some(_) if named_provider => bare_model,
+        _ => model,
     };
     if ![
         "anthropic",
@@ -131,16 +289,20 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     let integration = options
         .get("--credential-integration")
         .cloned()
-        .unwrap_or_else(|| {
-            if provider_name == "anthropic" {
-                "anthropic".into()
-            } else if provider_name == "amazon-bedrock" {
-                "amazon-bedrock".into()
-            } else if provider_name == "gemini" {
-                "google".into()
-            } else {
-                "openai".into()
-            }
+        .or_else(|| {
+            model_provider
+                .clone()
+                .filter(|prefix| prefix != provider_name)
+        })
+        .unwrap_or_else(|| match provider_name {
+            "anthropic" => "anthropic".into(),
+            "amazon-bedrock" => "amazon-bedrock".into(),
+            "gemini" => "google".into(),
+            "openai-chat" | "openai-responses" | "subscription-responses" => "openai".into(),
+            // The product names a third-party provider's integration after the
+            // provider itself (`provider.integrationID ?? provider.id`), which is
+            // where a route like volcengine stores its credential.
+            other => other.to_string(),
         });
     if options.contains_key("--credential-db") && options.contains_key("--auth-file") {
         return Err("select only one credential source".into());
@@ -163,12 +325,17 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             integration,
         }
     } else if let Some(path) = options.get("--credential-db") {
+        let path = tokio::fs::canonicalize(path).await?;
+        // Naming the database is enough: a host that does not choose between the
+        // credentials stored for this integration leaves it to the engine, which
+        // refuses to guess when two of them are live.
+        let id = match options.get("--credential-id") {
+            Some(id) => id.clone(),
+            None => stored_credential(&path, &integration)?,
+        };
         Source::Database {
-            path: tokio::fs::canonicalize(path).await?,
-            id: options
-                .get("--credential-id")
-                .ok_or("--credential-id is required")?
-                .clone(),
+            path,
+            id,
             integration,
         }
     } else if let Some(path) = options.get("--auth-file") {
@@ -180,8 +347,11 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             integration,
         }
     } else {
-        if options.contains_key("--credential-id")
-            || options.contains_key("--credential-integration")
+        // A selection without a source resolves against the store the product
+        // installation writes, which is what a single-binary start has.
+        if (options.contains_key("--credential-id")
+            || options.contains_key("--credential-integration"))
+            && stored_default().is_none()
         {
             return Err("credential selection requires a file, database, or socket source".into());
         }
@@ -214,10 +384,35 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             } else {
                 "OPENAI_API_KEY"
             };
-            Source::Static(Credential::key(
-                std::env::var(name)
-                    .map_err(|_| "API key or explicit credential source is required")?,
-            ))
+            // An exported key is the operator's own override, so it wins. Without
+            // one, a single-binary start reads the product store the installation
+            // writes, because it has no host to pass `--credential-db`.
+            match std::env::var(name) {
+                Ok(key) => Source::Static(Credential::key(key)),
+                Err(_) => {
+                    let stored = match stored_default() {
+                        Some(path) => {
+                            let path = tokio::fs::canonicalize(&path).await?;
+                            let id = match options.get("--credential-id") {
+                                Some(id) => Some(id.clone()),
+                                None => stored_credential(&path, &integration).ok(),
+                            };
+                            id.map(|id| (path, id))
+                        }
+                        None => None,
+                    };
+                    match stored {
+                        Some((path, id)) => Source::Database {
+                            path,
+                            id,
+                            integration,
+                        },
+                        None => {
+                            return Err("API key or explicit credential source is required".into())
+                        }
+                    }
+                }
+            }
         }
     };
     source.validate().await?;
@@ -253,7 +448,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             return Err("Responses continuation contracts are unsupported by Bedrock".into());
         }
         miao_engine::routing::build_bedrock(
-            options.get("--endpoint").map(String::as_str),
+            endpoint.as_deref(),
             source.clone(),
             model.clone(),
             options.get("--aws-region").map(String::as_str),
@@ -262,7 +457,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     } else {
         miao_engine::routing::build_with_responses(
             provider_name,
-            options.get("--endpoint").map(String::as_str),
+            endpoint.as_deref(),
             source.clone(),
             model.clone(),
             prompt_cache,
@@ -275,7 +470,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             if provider_name == "gemini" {
                 None
             } else {
-                options.get("--endpoint")
+                endpoint.as_ref()
             }
         });
         let fallback = if provider_name == "amazon-bedrock" {

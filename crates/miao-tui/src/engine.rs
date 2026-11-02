@@ -507,7 +507,10 @@ pub fn settings(
 ) -> Result<Settings, String> {
     let db = db
         .or_else(|| std::env::var_os("MIAO_ENGINE_DB").map(PathBuf::from))
-        .ok_or("pass --db <engine.db> or set MIAO_ENGINE_DB")?;
+        // Naming no database is the normal single-binary start: the engine's own
+        // placement decides which ledger this workspace uses.
+        .or_else(|| miao_engine::placement::default_database(workspace))
+        .ok_or("pass --db <engine.db>, set MIAO_ENGINE_DB, or set MIAO_ENGINE_STORAGE")?;
     // The engine creates and migrates the database on first use. A freshly
     // installed product has no database yet, and requiring one here would make
     // the first launch of the Rust TUI fail before the engine can initialize.
@@ -578,9 +581,12 @@ fn args(
         db.display().to_string(),
         "--workspace".into(),
         workspace.display().to_string(),
-        "--model".into(),
-        model.to_string(),
     ];
+    // The placeholder means no model was chosen: naming it would route nowhere,
+    // so the engine reads the configured model instead.
+    if model != UNROUTED_MODEL {
+        push(&mut args, "--model", model.to_string());
+    }
     if let Some(dir) = config_dir {
         push(&mut args, "--config-dir", dir.display().to_string());
     }

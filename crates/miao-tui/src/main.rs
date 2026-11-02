@@ -12,6 +12,33 @@ const VERSION: &str = match option_env!("MIAO_TUI_VERSION") {
     None => env!("CARGO_PKG_VERSION"),
 };
 
+/// The identity an installer keeps this build under. It answers before the TUI
+/// starts so an install can name a directory and verify the artifact it holds.
+const BUILD_ID: &str = match option_env!("MIAO_TUI_BUILD_ID") {
+    Some(id) => id,
+    None => "00000000-0000-0000-0000-000000000000",
+};
+
+/// What this build calls itself. Installed as the product's only binary it is
+/// `miao`; kept as the paired TUI it stays `miao-tui`, so an installer can tell
+/// which file it is looking at.
+fn program_name() -> &'static str {
+    let stem = std::env::current_exe()
+        .ok()
+        .and_then(|path| {
+            path.file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+        })
+        .unwrap_or_default();
+    // Anything the product ships or installs under its own name answers as the
+    // product: the release artifact (`miao-<target>`), the installed binary, and
+    // the preview link all read `miao 0.3.25`. Only the paired TUI names itself.
+    match stem.starts_with("miao") && stem != "miao-tui" && stem != "miao-engine" {
+        true => "miao",
+        false => "miao-tui",
+    }
+}
+
 struct Options {
     workspace: PathBuf,
     db: Option<PathBuf>,
@@ -26,6 +53,8 @@ enum Invocation {
     Run(Options),
     Help,
     Version,
+    /// What an installer asks for before it trusts the artifact.
+    BuildId,
 }
 
 fn main() -> ExitCode {
@@ -35,8 +64,12 @@ fn main() -> ExitCode {
             println!("{USAGE}");
             ExitCode::SUCCESS
         }
+        Ok(Invocation::BuildId) => {
+            println!("{BUILD_ID}");
+            ExitCode::SUCCESS
+        }
         Ok(Invocation::Version) => {
-            println!("miao-tui {VERSION}");
+            println!("{} {VERSION}", program_name());
             ExitCode::SUCCESS
         }
         Err(message) => {
@@ -70,6 +103,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Invocation, String> {
         match name.as_str() {
             "-h" | "--help" => return Ok(Invocation::Help),
             "-v" | "--version" => return Ok(Invocation::Version),
+            "--build-id" => return Ok(Invocation::BuildId),
             "--workspace" => workspace = Some(PathBuf::from(value("--workspace")?)),
             "--db" => db = Some(PathBuf::from(value("--db")?)),
             "--model" => model = Some(value("--model")?),
@@ -95,7 +129,18 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Invocation, String> {
             continue_last,
             prompt,
         }),
-        None => Invocation::Help,
+        // A single binary is started in a directory, so the working directory is
+        // the workspace unless one is named; `-h` still asks for help.
+        None => Invocation::Run(Options {
+            workspace: std::env::current_dir()
+                .map_err(|error| format!("cannot read the working directory: {error}"))?,
+            db,
+            model,
+            config_dir,
+            session,
+            continue_last,
+            prompt,
+        }),
     })
 }
 
