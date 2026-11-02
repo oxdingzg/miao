@@ -29,7 +29,8 @@ Usage:
   miao session import BUNDLE [--sha256 HEX]
                         import a session bundle into this database
   miao session move ID DIRECTORY
-                        list the move's impact first; --apply performs it
+                        list the move's impact first; --apply performs it,
+                        --copy-changes carries uncommitted work along
   miao session revert ID CHECKPOINT
   miao session unrevert ID
                         rewind a session's history, or undo the rewind
@@ -61,6 +62,8 @@ Usage:
   miao hubctl OP ...    talk to a running hub: register|list|ping
   miao worktree add|list|remove
                         manage git worktrees for parallel sessions
+  miao project copy SOURCE TARGET_PARENT [--name NAME] [--apply]
+                        copy a project as a git worktree of its repository
   miao workflow run PLAN  run a declarative plan as separate miao runs
   miao workflow script FILE.rhai
                         run an orchestration script (only agent() is exposed)
@@ -837,6 +840,7 @@ fn session_move_plan(
     db: &std::path::Path,
     session_id: &str,
     target: &std::path::Path,
+    copy_changes: bool,
 ) -> Result<Vec<String>, String> {
     let connection = db_read_only(db)?;
     let exists: bool = connection
@@ -896,6 +900,11 @@ fn session_move_plan(
         }
     }
     plan.push(format!("target · {}", target.display()));
+    plan.push(if copy_changes {
+        "uncommitted changes · carried to the target (--copy-changes)".into()
+    } else {
+        "uncommitted changes · left behind in the source".into()
+    });
     if target.exists() {
         plan.push("target state · exists".into());
         if target.join(".git").exists() {
@@ -1093,11 +1102,12 @@ fn worktree(rest: &[String]) -> Result<(), String> {
         Some("remove") => {
             let name = rest
                 .get(1)
-                .ok_or("usage: miao worktree remove NAME [--apply]")?;
+                .ok_or("usage: miao worktree remove NAME [--apply] [--force]")?;
             if name.contains('/') || name.contains("..") {
                 return Err("worktree name must be a single path component".into());
             }
             let apply = rest.iter().any(|argument| argument == "--apply");
+            let force = rest.iter().any(|argument| argument == "--force");
             let path = PathBuf::from(&root).join(".miao-worktrees").join(name);
             for line in worktree_remove_plan(&root, name, &path)? {
                 println!("{line}");
@@ -1106,11 +1116,7 @@ fn worktree(rest: &[String]) -> Result<(), String> {
                 println!("dry run · pass --apply to remove");
                 return Ok(());
             }
-            let removed = git(&["worktree", "remove", "--force", &path.display().to_string()])?;
-            if !removed.status.success() {
-                return Err(String::from_utf8_lossy(&removed.stderr).trim().to_string());
-            }
-            let _ = git(&["branch", "-D", name]);
+            worktree_remove_apply(&root, name, &path, force)?;
             println!("removed {name}");
             Ok(())
         }
@@ -1201,11 +1207,337 @@ fn worktree_remove_plan(
         plan.push("engine sessions · none (no ledger for this tree)".to_string());
     }
 
+    let main_anchored = anchored_sessions(&default_db(std::path::Path::new(root)), &canonical)?;
+    plan.push(format!(
+        "main ledger · {main_anchored} session(s) anchor this tree from the checkout's ledger"
+    ));
+
     plan.push(format!(
         "directory · {} on disk",
         human_bytes(tree_bytes(path))
     ));
     Ok(plan)
+}
+
+/// One `git` invocation with `dir` as the working directory. Arguments travel
+/// directly to git — never through a shell.
+fn git_in(dir: &std::path::Path, args: &[&str]) -> Result<std::process::Output, String> {
+    std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .map_err(|error| format!("git: {error}"))
+}
+
+/// Sessions in `db` whose recorded root is `tree` itself or lives below it.
+/// Roots are canonical in the ledger, so the caller passes a canonical path.
+fn anchored_sessions(db: &std::path::Path, tree: &std::path::Path) -> Result<i64, String> {
+    if !db.is_file() {
+        return Ok(0);
+    }
+    let connection = db_read_only(db)?;
+    connection
+        .query_row(
+            "SELECT count(*) FROM engine_location WHERE root = ?1 OR root LIKE ?1 || '/%'",
+            [tree.display().to_string()],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())
+}
+
+/// Remove one worktree after the plan: a tree whose sessions still anchor it
+/// must not strand them with a dead cwd. Without `force`, refuse and say who
+/// is anchored; with it, point those sessions back at the main checkout first,
+/// then remove. The tree's own ledger disappears with the directory — the plan
+/// said so before anything was removed.
+fn worktree_remove_apply(
+    root: &str,
+    name: &str,
+    path: &std::path::Path,
+    force: bool,
+) -> Result<(), String> {
+    let check_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let anchored = tree_anchored_sessions(root, &check_path)?;
+    if anchored > 0 && !force {
+        return Err(format!(
+            "{anchored} session(s) still anchor {}: move or close them first, or pass --force to point them back at the main checkout before removal",
+            path.display()
+        ));
+    }
+    if anchored > 0 {
+        let checkout = git_worktree_main_checkout(root)?;
+        let moved = tree_migrate_sessions(root, &check_path, &checkout)?;
+        println!("migrated {moved} session(s) back to {}", checkout.display());
+    }
+    let removed = git_in(
+        std::path::Path::new(root),
+        &["worktree", "remove", "--force", &path.display().to_string()],
+    )?;
+    if !removed.status.success() {
+        return Err(String::from_utf8_lossy(&removed.stderr).trim().to_string());
+    }
+    let _ = git_in(std::path::Path::new(root), &["branch", "-D", name]);
+    Ok(())
+}
+
+/// Sessions anchored to `tree` across the two ledgers that can hold one: the
+/// checkout's own ledger and the tree's. Removal strands both kinds.
+fn tree_anchored_sessions(root: &str, tree: &std::path::Path) -> Result<i64, String> {
+    let main = anchored_sessions(&default_db(std::path::Path::new(root)), tree)?;
+    let tree_own = anchored_sessions(&default_db(tree), tree)?;
+    Ok(main + tree_own)
+}
+
+/// Point every session anchored to `from` at `to` instead, in both ledgers
+/// that can hold one, and return how many moved.
+fn tree_migrate_sessions(
+    root: &str,
+    from: &std::path::Path,
+    to: &std::path::Path,
+) -> Result<usize, String> {
+    let mut moved = 0;
+    for db in [default_db(std::path::Path::new(root)), default_db(from)] {
+        if !db.is_file() {
+            continue;
+        }
+        let connection = rusqlite::Connection::open(&db).map_err(|error| error.to_string())?;
+        moved += connection
+            .execute(
+                "UPDATE engine_location SET root = ?2 WHERE root = ?1 OR root LIKE ?1 || '/%'",
+                rusqlite::params![from.display().to_string(), to.display().to_string()],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(moved)
+}
+
+/// The main working tree of the repository `root` belongs to: the first entry
+/// `worktree list --porcelain` reports, which git always puts first.
+fn git_worktree_main_checkout(root: &str) -> Result<PathBuf, String> {
+    let listed = git_in(
+        std::path::Path::new(root),
+        &["worktree", "list", "--porcelain"],
+    )?;
+    if !listed.status.success() {
+        return Err(String::from_utf8_lossy(&listed.stderr).trim().to_string());
+    }
+    for line in String::from_utf8_lossy(&listed.stdout).lines() {
+        if let Some(path) = line.strip_prefix("worktree ") {
+            return Ok(PathBuf::from(path));
+        }
+    }
+    Err("git worktree list reported no worktrees".into())
+}
+
+/// The path a copy lands on: `name`, then `name-2` up to `name-10`, then a
+/// refusal — the same suffix walk the TypeScript product runs, so a copy never
+/// silently lands on, or overwrites, a directory the operator did not ask for.
+fn project_copy_target(parent: &std::path::Path, name: &str) -> Result<PathBuf, String> {
+    let mut suffix = 1;
+    loop {
+        let candidate = parent.join(if suffix == 1 {
+            name.to_string()
+        } else {
+            format!("{name}-{suffix}")
+        });
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+        suffix += 1;
+        if suffix > 10 {
+            return Err(format!(
+                "every spelling of {name} up to {name}-10 already exists in {}",
+                parent.display()
+            ));
+        }
+    }
+}
+
+/// What copying one project creates, collected before anything is created: the
+/// source's registration as a repository, the target path the suffix rule
+/// picks, the sessions that stay with the source, and the fact a worktree
+/// checks out HEAD, so uncommitted changes stay behind. The plan touches
+/// nothing: the source is only ever read.
+fn project_copy_plan(
+    source: &std::path::Path,
+    target_parent: &std::path::Path,
+    name: &str,
+    db: &std::path::Path,
+) -> Result<Vec<String>, String> {
+    let head = git_in(source, &["rev-parse", "--verify", "HEAD"])?;
+    if !head.status.success() {
+        return Err(format!("{} has no commits to copy", source.display()));
+    }
+    let mut plan = vec![format!("project copy · {}", source.display())];
+    plan.push("strategy · git worktree of the source repository".into());
+    let anchored = anchored_sessions(&default_db(source), source)?;
+    plan.push(format!(
+        "source sessions · {anchored} anchored session(s) stay with the source"
+    ));
+    let target = project_copy_target(target_parent, name)?;
+    plan.push(format!("target · {}", target.display()));
+    plan.push("uncommitted changes · stay in the source (a worktree checks out HEAD)".into());
+    let size = db_file_bytes(db);
+    plan.push(format!(
+        "ledger · {} ({})",
+        db.display(),
+        human_bytes(size.0 + size.1 + size.2)
+    ));
+    Ok(plan)
+}
+
+/// Copy a project: a git worktree of the source repository at a new path (the
+/// TypeScript product's `git_worktree` strategy). The source is read-only for
+/// the whole run; the target gets a fresh suffix instead of ever touching an
+/// existing directory; a failed `worktree add` cleans up its half-built
+/// directory and prunes the registration before reporting the error.
+fn project_copy(rest: &[String]) -> Result<(), String> {
+    let mut db: Option<PathBuf> = None;
+    let mut name: Option<String> = None;
+    let mut apply = false;
+    let mut positional: Vec<String> = Vec::new();
+    let mut index = 0;
+    while index < rest.len() {
+        let value = |offset: usize| rest.get(offset + 1).cloned();
+        match rest[index].as_str() {
+            "--db" => {
+                db = value(index).map(PathBuf::from);
+                index += 2;
+            }
+            "--name" => {
+                let taken = value(index).ok_or("--name needs a value")?;
+                if taken.starts_with("--") {
+                    return Err("--name needs a value".into());
+                }
+                name = Some(taken);
+                index += 2;
+            }
+            "--apply" => {
+                apply = true;
+                index += 1;
+            }
+            other => {
+                positional.push(other.to_string());
+                index += 1;
+            }
+        }
+    }
+    let (Some(source), Some(target_parent)) = (positional.first(), positional.get(1)) else {
+        return Err("usage: miao project copy SOURCE TARGET_PARENT [--name NAME] [--apply]".into());
+    };
+    if name
+        .as_deref()
+        .is_some_and(|value| value.contains('/') || value.contains(".."))
+    {
+        return Err("copy name must be a single path component".into());
+    }
+    let source = std::fs::canonicalize(source).map_err(|error| format!("source: {error}"))?;
+    if !source.is_dir() {
+        return Err(format!("source {} is not a directory", source.display()));
+    }
+    let target_parent =
+        std::fs::canonicalize(target_parent).map_err(|error| format!("target parent: {error}"))?;
+    if !target_parent.is_dir() {
+        return Err(format!(
+            "target parent {} is not a directory",
+            target_parent.display()
+        ));
+    }
+    let name = name.unwrap_or_else(|| {
+        source
+            .file_name()
+            .map(|base| base.to_string_lossy().to_string())
+            .unwrap_or_else(|| "copy".into())
+    });
+    let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let db = db.unwrap_or_else(|| default_db(&workspace));
+    for line in project_copy_plan(&source, &target_parent, &name, &db)? {
+        println!("{line}");
+    }
+    if !apply {
+        println!("dry run · pass --apply to create the copy");
+        return Ok(());
+    }
+    let target = project_copy_apply(&source, &target_parent, &name)?;
+    println!("copy created · {}", target.display());
+    Ok(())
+}
+
+/// Create the worktree a copy is: the target gets a fresh suffix instead of
+/// ever touching an existing directory, and a failed `worktree add` cleans up
+/// its half-built directory and prunes the registration before the error
+/// surfaces. The source is only ever read.
+fn project_copy_apply(
+    source: &std::path::Path,
+    target_parent: &std::path::Path,
+    name: &str,
+) -> Result<PathBuf, String> {
+    let target = project_copy_target(target_parent, name)?;
+    let created = git_in(source, &["worktree", "add", &target.display().to_string()])?;
+    if !created.status.success() {
+        if target.is_dir() {
+            let _ = std::fs::remove_dir_all(&target);
+        }
+        let _ = git_in(source, &["worktree", "prune"]);
+        return Err(String::from_utf8_lossy(&created.stderr).trim().to_string());
+    }
+    Ok(std::fs::canonicalize(&target).unwrap_or(target))
+}
+
+/// Carry the source's uncommitted changes onto the target — the TypeScript
+/// product's warp `copyChanges` (packages/core/src/workspace-live.ts): the
+/// HEAD diff plus every untracked file, applied on the target as one patch.
+/// Returns the patch size carried; zero means the source was clean. The
+/// target must be a git repository: a patch needs something to apply against.
+/// The source is only ever read.
+fn carry_uncommitted_changes(
+    source: &std::path::Path,
+    target: &std::path::Path,
+) -> Result<usize, String> {
+    let status = git_in(source, &["status", "--porcelain", "-z"])?;
+    if !status.status.success() {
+        return Err(String::from_utf8_lossy(&status.stderr).trim().to_string());
+    }
+    let mut patch = String::from_utf8_lossy(&git_in(source, &["diff", "HEAD"])?.stdout).to_string();
+    for entry in String::from_utf8_lossy(&status.stdout).split('\0') {
+        let Some(file) = entry.strip_prefix("?? ") else {
+            continue;
+        };
+        if file.is_empty() {
+            continue;
+        }
+        // Untracked files have no HEAD version: diff each against /dev/null.
+        let single = git_in(source, &["diff", "--no-index", "--", "/dev/null", file])?;
+        patch.push_str(&String::from_utf8_lossy(&single.stdout));
+    }
+    if patch.is_empty() {
+        return Ok(0);
+    }
+    let applied = std::process::Command::new("git")
+        .arg("-C")
+        .arg(target)
+        .args(["apply", "--whitespace=nowarn", "-"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child
+                .stdin
+                .as_mut()
+                .expect("piped stdin")
+                .write_all(patch.as_bytes())?;
+            child.wait_with_output()
+        })
+        .map_err(|error| format!("git apply: {error}"))?;
+    if !applied.status.success() {
+        return Err(format!(
+            "the target could not take the source's changes: {}",
+            String::from_utf8_lossy(&applied.stderr).trim()
+        ));
+    }
+    Ok(patch.len())
 }
 
 /// Run a declarative plan: each step is a separate `miao run`, so a failure is
@@ -4080,6 +4412,13 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                 std::process::ExitCode::from(1)
             }
         },
+        Some("project") => match project_copy(&args.collect::<Vec<_>>()) {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(message) => {
+                eprintln!("miao project: {message}");
+                std::process::ExitCode::from(1)
+            }
+        },
         Some("workflow") => {
             let rest: Vec<String> = args.collect();
             match rest.first().map(String::as_str) {
@@ -4254,57 +4593,84 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                 },
                 Some("move") => {
                     let inner = &rest[1..];
-                    if inner.iter().any(|argument| argument == "--apply") {
-                        match session_engine_call(inner, "move_session") {
-                            Ok(()) => std::process::ExitCode::SUCCESS,
-                            Err(message) => {
-                                eprintln!("miao session: {message}");
-                                std::process::ExitCode::from(1)
+                    let copy_changes = inner.iter().any(|argument| argument == "--copy-changes");
+                    let apply = inner.iter().any(|argument| argument == "--apply");
+                    let mut db: Option<PathBuf> = None;
+                    let mut positional: Vec<String> = Vec::new();
+                    let mut index = 0;
+                    while index < inner.len() {
+                        match inner[index].as_str() {
+                            "--db" => {
+                                db = inner.get(index + 1).map(PathBuf::from);
+                                index += 2;
+                            }
+                            other if other.starts_with("--") => index += 1,
+                            other => {
+                                positional.push(other.to_string());
+                                index += 1;
                             }
                         }
-                    } else {
-                        // The impact is listed before anything moves; `--apply`
-                        // is the operator's separate, explicit step.
-                        let mut db: Option<PathBuf> = None;
-                        let mut positional: Vec<String> = Vec::new();
-                        let mut index = 0;
-                        while index < inner.len() {
-                            match inner[index].as_str() {
-                                "--db" => {
-                                    db = inner.get(index + 1).map(PathBuf::from);
-                                    index += 2;
-                                }
-                                other if other.starts_with("--") => index += 1,
-                                other => {
-                                    positional.push(other.to_string());
-                                    index += 1;
-                                }
-                            }
+                    }
+                    let result = (|| -> Result<(), String> {
+                        let (Some(id), Some(directory)) = (positional.first(), positional.get(1))
+                        else {
+                            return Err(
+                                "usage: miao session move ID DIRECTORY [--apply] [--copy-changes]"
+                                    .into(),
+                            );
+                        };
+                        let workspace =
+                            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                        let db = db.unwrap_or_else(|| default_db(&workspace));
+                        for line in session_move_plan(
+                            &db,
+                            id,
+                            std::path::Path::new(directory),
+                            copy_changes,
+                        )? {
+                            println!("{line}");
                         }
-                        let result = (|| -> Result<(), String> {
-                            let (Some(id), Some(directory)) =
-                                (positional.first(), positional.get(1))
-                            else {
-                                return Err(
-                                    "usage: miao session move ID DIRECTORY [--apply]".into()
-                                );
-                            };
-                            let workspace =
-                                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                            let db = db.unwrap_or_else(|| default_db(&workspace));
-                            for line in session_move_plan(&db, id, std::path::Path::new(directory))?
-                            {
-                                println!("{line}");
-                            }
+                        if !apply {
                             println!("dry run · pass --apply to move");
-                            Ok(())
-                        })();
-                        match result {
-                            Ok(()) => std::process::ExitCode::SUCCESS,
-                            Err(message) => {
-                                eprintln!("miao session: {message}");
-                                std::process::ExitCode::from(1)
-                            }
+                            return Ok(());
+                        }
+                        // Warp's carry rule: the source's uncommitted changes
+                        // land on the target before the move, or the move does
+                        // not happen — the session keeps working on them after
+                        // its cwd changes, instead of losing reachability.
+                        if copy_changes {
+                            let connection = db_read_only(&db)?;
+                            let source: Option<String> = connection
+                                .query_row(
+                                    "SELECT root FROM engine_location WHERE session_id=?1",
+                                    [id],
+                                    |row| row.get(0),
+                                )
+                                .map(Some)
+                                .or_else(|error| match error {
+                                    rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                                    other => Err(other.to_string()),
+                                })?;
+                            let Some(source) = source else {
+                                return Err(format!(
+                                    "session {id} has no recorded location to carry changes from"
+                                ));
+                            };
+                            let carried = carry_uncommitted_changes(
+                                std::path::Path::new(&source),
+                                std::path::Path::new(directory),
+                            )?;
+                            println!(
+                                "carried · {carried} byte(s) of uncommitted patch onto {directory}"
+                            );
+                        }
+                        session_engine_call(inner, "move_session")
+                    })();
+                    match result {
+                        Ok(()) => std::process::ExitCode::SUCCESS,
+                        Err(message) => {
+                            eprintln!("miao session: {message}");
+                            std::process::ExitCode::from(1)
                         }
                     }
                 }
@@ -4439,11 +4805,14 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        db_file_bytes, db_report, db_vacuum, default_db, launch, lsp_servers, mcp_servers,
-        model_routes, parsed_session_location, plugin_entries, retention_plan, strip_comments,
-        tree_bytes, uninstall_targets, worktree_remove_plan,
+        anchored_sessions, carry_uncommitted_changes, db_file_bytes, db_read_only, db_report,
+        db_vacuum, default_db, git_worktree_main_checkout, launch, lsp_servers, mcp_servers,
+        model_routes, parsed_session_location, plugin_entries, project_copy_apply,
+        project_copy_plan, retention_plan, strip_comments, tree_bytes, uninstall_targets,
+        worktree_remove_apply, worktree_remove_plan,
     };
     use std::io::Write;
+    use std::path::PathBuf;
 
     #[test]
     fn the_report_counts_the_write_ahead_log_and_the_shared_index() {
@@ -4975,6 +5344,266 @@ mod tests {
                 .success()
         );
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A real repository with one commit: the smallest source a copy needs.
+    fn seeded_repository(dir: &std::path::Path, name: &str) -> PathBuf {
+        let source = dir.join(name);
+        std::fs::create_dir_all(&source).expect("source dir");
+        std::fs::write(source.join("README.md"), "original").expect("seed file");
+        for args in [
+            vec!["init", "-q"],
+            vec!["-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"],
+            vec![
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-qm",
+                "seed",
+            ],
+        ] {
+            assert!(
+                std::process::Command::new("git")
+                    .args(&args)
+                    .current_dir(&source)
+                    .output()
+                    .expect("git runs")
+                    .status
+                    .success(),
+                "git {args:?} runs"
+            );
+        }
+        source
+    }
+
+    fn git_worktree_paths(source: &std::path::Path) -> Vec<String> {
+        let listed = std::process::Command::new("git")
+            .args(["worktree", "list", "--porcelain"])
+            .current_dir(source)
+            .output()
+            .expect("git runs");
+        String::from_utf8_lossy(&listed.stdout)
+            .lines()
+            .filter(|line| line.starts_with("worktree "))
+            .map(|line| line.trim_start_matches("worktree ").to_string())
+            .collect()
+    }
+
+    fn git_status_is_clean(source: &std::path::Path) -> bool {
+        let status = std::process::Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(source)
+            .output()
+            .expect("git runs");
+        String::from_utf8_lossy(&status.stdout).trim().is_empty()
+    }
+
+    #[test]
+    fn a_project_copy_plan_previews_the_target_and_never_writes_the_source() {
+        let dir = std::env::temp_dir().join(format!("miao-copy-plan-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        std::env::set_var("MIAO_ENGINE_STORAGE", dir.join("engine-storage"));
+
+        let source = seeded_repository(&dir, "app");
+        let parent = dir.join("copies");
+        std::fs::create_dir_all(&parent).expect("parent dir");
+
+        let plan = project_copy_plan(&source, &parent, "app", &default_db(&dir)).expect("plan");
+        let text = plan.join("\n");
+        assert!(text.contains("strategy · git worktree"), "{text}");
+        assert!(
+            text.contains(&format!("target · {}", parent.join("app").display())),
+            "{text}"
+        );
+        assert!(text.contains("stay in the source"), "{text}");
+
+        // An occupied name walks the suffix: the plan never points at a path
+        // that already exists.
+        std::fs::create_dir_all(parent.join("app")).expect("occupied name");
+        let plan = project_copy_plan(&source, &parent, "app", &default_db(&dir)).expect("plan");
+        let text = plan.join("\n");
+        assert!(
+            text.contains(&format!("target · {}", parent.join("app-2").display())),
+            "{text}"
+        );
+
+        // The plan is read-only: the source keeps a clean tree and exactly one
+        // registered worktree.
+        assert!(git_status_is_clean(&source), "the source stays clean");
+        let paths = git_worktree_paths(&source);
+        assert_eq!(paths.len(), 1, "only the main worktree: {paths:?}");
+
+        std::env::remove_var("MIAO_ENGINE_STORAGE");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_project_copy_apply_registers_a_worktree_and_a_failure_leaves_no_half_copy() {
+        let dir = std::env::temp_dir().join(format!("miao-copy-apply-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        std::env::set_var("MIAO_ENGINE_STORAGE", dir.join("engine-storage"));
+
+        let source = seeded_repository(&dir, "app");
+        let parent = dir.join("copies");
+        std::fs::create_dir_all(&parent).expect("parent dir");
+
+        let target = project_copy_apply(&source, &parent, "fork").expect("copy succeeds");
+        assert!(target.is_dir());
+        assert!(
+            target.join("README.md").exists(),
+            "the worktree checks out HEAD"
+        );
+        let paths = git_worktree_paths(&source);
+        assert!(
+            paths.contains(&target.display().to_string()),
+            "the copy is registered: {paths:?}"
+        );
+        assert!(git_status_is_clean(&source), "the source stays clean");
+
+        // A failure must leave no half-built copy behind and the source
+        // intact: an unwritable parent makes `worktree add` fail after it
+        // started, exercising the cleanup path.
+        let readonly = dir.join("readonly-parent");
+        std::fs::create_dir_all(&readonly).expect("readonly parent dir");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&readonly, std::fs::Permissions::from_mode(0o555))
+                .expect("readonly parent");
+        }
+        let failed = project_copy_apply(&source, &readonly, "fork");
+        assert!(failed.is_err(), "an unwritable parent fails the copy");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&readonly, std::fs::Permissions::from_mode(0o755))
+                .expect("restore parent");
+        }
+        assert_eq!(
+            std::fs::read_dir(&readonly).expect("read parent").count(),
+            0,
+            "no half copy remains"
+        );
+        assert!(
+            git_status_is_clean(&source),
+            "the source survives the failure"
+        );
+
+        std::env::remove_var("MIAO_ENGINE_STORAGE");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_worktree_remove_refuses_anchored_sessions_then_migrates_with_force() {
+        let dir = std::env::temp_dir().join(format!("miao-wt-anchored-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("engine-storage")).expect("temp dir");
+        std::env::set_var("MIAO_ENGINE_STORAGE", dir.join("engine-storage"));
+
+        let repo = seeded_repository(&dir, "main");
+        let name = "side";
+        let path = repo.join(".miao-worktrees").join(name);
+        let added = std::process::Command::new("git")
+            .args(["worktree", "add", "-B", name, &path.display().to_string()])
+            .current_dir(&repo)
+            .output()
+            .expect("git runs");
+        assert!(added.status.success(), "worktree add runs");
+
+        // The main ledger anchors one session to the worktree's canonical path.
+        let canonical = std::fs::canonicalize(&path).expect("canonical");
+        let ledger = default_db(&repo);
+        {
+            let connection = rusqlite::Connection::open(&ledger).expect("ledger opens");
+            connection
+                .execute_batch(
+                    "CREATE TABLE IF NOT EXISTS engine_session (id TEXT PRIMARY KEY, title TEXT);
+                     CREATE TABLE IF NOT EXISTS engine_location (session_id TEXT PRIMARY KEY, root TEXT NOT NULL);
+                     INSERT INTO engine_session (id, title) VALUES ('s1', 'anchored');",
+                )
+                .expect("seed tables");
+            connection
+                .execute(
+                    "INSERT INTO engine_location (session_id, root) VALUES ('s1', ?1)",
+                    [canonical.display().to_string()],
+                )
+                .expect("seed anchored session");
+        }
+
+        // Without --force: refuse, and leave both the tree and the anchor.
+        let refused =
+            worktree_remove_apply(repo.display().to_string().as_str(), name, &path, false);
+        assert!(
+            refused.is_err(),
+            "anchored sessions refuse removal: {refused:?}"
+        );
+        assert!(path.exists(), "the tree survived the refusal");
+        assert_eq!(
+            anchored_sessions(&ledger, &canonical).expect("count"),
+            1,
+            "the anchor is untouched"
+        );
+
+        // With --force: the sessions migrate back to the main checkout first,
+        // then the tree goes away.
+        let checkout =
+            git_worktree_main_checkout(repo.display().to_string().as_str()).expect("main checkout");
+        worktree_remove_apply(repo.display().to_string().as_str(), name, &path, true)
+            .expect("forced removal");
+        assert!(!path.exists(), "the tree is gone");
+        let root: String = {
+            let connection = db_read_only(&ledger).expect("ledger opens");
+            connection
+                .query_row(
+                    "SELECT root FROM engine_location WHERE session_id = 's1'",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("session root")
+        };
+        assert_eq!(
+            root,
+            checkout.display().to_string(),
+            "the session now anchors the main checkout"
+        );
+
+        std::env::remove_var("MIAO_ENGINE_STORAGE");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn carrying_changes_lands_the_source_edits_on_the_target_and_leaves_the_source() {
+        let dir = std::env::temp_dir().join(format!("miao-move-carry-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("engine-storage")).expect("temp dir");
+        std::env::set_var("MIAO_ENGINE_STORAGE", dir.join("engine-storage"));
+
+        // The source edits a tracked file and adds an untracked one; neither
+        // is committed.
+        let source = seeded_repository(&dir, "origin-app");
+        std::fs::write(source.join("README.md"), "edited, uncommitted").expect("edit");
+        std::fs::write(source.join("notes.txt"), "untracked").expect("untracked");
+        let target = seeded_repository(&dir, "dest-app");
+
+        let carried = carry_uncommitted_changes(&source, &target).expect("the carry succeeds");
+        assert!(carried > 0, "the patch is non-empty: {carried}");
+        assert_eq!(
+            std::fs::read_to_string(target.join("README.md")).expect("target readme"),
+            "edited, uncommitted",
+            "the edit landed on the target"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.join("notes.txt")).expect("target notes"),
+            "untracked",
+            "the untracked file landed too"
+        );
+        assert!(
+            !git_status_is_clean(&source),
+            "the source keeps its changes: carrying reads it, never writes it"
+        );
+
+        std::env::remove_var("MIAO_ENGINE_STORAGE");
         std::fs::remove_dir_all(&dir).ok();
     }
 
