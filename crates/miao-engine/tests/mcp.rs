@@ -1347,7 +1347,11 @@ mod disclosure {
             }
         });
         let (read, write) = tokio::io::split(client);
-        let registry = Arc::new(Registry::connect_io("fixture".into(), read, write).await.unwrap());
+        let registry = Arc::new(
+            Registry::connect_io("fixture".into(), read, write)
+                .await
+                .unwrap(),
+        );
         registry.start_watchers();
         (registry, generation, task)
     }
@@ -1372,8 +1376,14 @@ mod disclosure {
     }
 
     async fn flip_and_settle(registry: &Registry) {
+        let flip = registry
+            .definitions()
+            .iter()
+            .find(|def| def.name.ends_with("flip"))
+            .map(|def| def.name.clone())
+            .expect("the flip tool is in the catalogue");
         registry
-            .call("mcp_fixture_flip", json!({}), CancellationToken::new())
+            .call(&flip, json!({}), CancellationToken::new())
             .await
             .unwrap();
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -1414,14 +1424,21 @@ mod disclosure {
     #[tokio::test]
     async fn an_allowlisted_alias_leaving_changes_the_disclosed_surface() {
         let (registry, _generation, task) = scenario(&[(100, &[]), (100, &["tool_5"])]).await;
-        let before = surface(&registry, &["tool_5"]);
+        let alias = registry
+            .definitions()
+            .iter()
+            .map(|def| def.name.clone())
+            .find(|name| name.starts_with("mcp_fixture_tool_5_"))
+            .expect("tool_5 carries a hash-suffixed alias");
+        let allowlist = [alias.as_str()];
+        let before = surface(&registry, &allowlist);
         assert_eq!(
             before.len(),
             3,
             "discovery pair plus the allow-listed alias"
         );
         flip_and_settle(&registry).await;
-        let after = surface(&registry, &["tool_5"]);
+        let after = surface(&registry, &allowlist);
         assert_eq!(after.len(), 2);
         assert_ne!(before, after);
         registry.shutdown().await;
