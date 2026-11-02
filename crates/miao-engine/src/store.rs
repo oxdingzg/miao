@@ -1168,57 +1168,84 @@ impl Store {
     /// few thousand queries before the first frame could paint. A row keeps the
     /// snapshot's own field names, so one parser reads both.
     pub async fn session_catalog(&self) -> Result<Vec<Value>, Error> {
-        self.call(|conn| {
-            let tx = conn.transaction()?;
-            let ids = {
-                let mut statement = tx.prepare("SELECT id FROM engine_session ORDER BY id")?;
-                let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
-                rows.collect::<Result<Vec<_>, _>>()?
-            };
-            let mut catalog = Vec::with_capacity(ids.len());
-            for session in ids {
-                let (title, updated_at_ms, archived_at_ms, pinned_at_ms): (
-                    String,
-                    Option<i64>,
-                    Option<i64>,
-                    Option<i64>,
-                ) = tx.query_row(
-                    "SELECT title,updated_at_ms,archived_at_ms,pinned_at_ms FROM engine_session \
-                     WHERE id=?1",
-                    [&session],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-                )?;
-                let location: Option<String> = tx
-                    .query_row(
-                        "SELECT root FROM engine_location WHERE session_id=?1",
-                        [&session],
-                        |row| row.get(0),
-                    )
-                    .optional()?;
-                let parent: Option<String> = tx
-                    .query_row(
-                        "SELECT parent_session_id FROM engine_lineage WHERE session_id=?1",
-                        [&session],
-                        |row| row.get(0),
-                    )
-                    .optional()?;
-                catalog.push(json!({
-                    "session_id": session,
-                    "parent_session_id": parent,
-                    "location": location,
-                    "title": title,
-                    "updated_at_ms": updated_at_ms,
-                    "archived_at_ms": archived_at_ms,
-                    "pinned_at_ms": pinned_at_ms,
-                    "preview": metadata_preview(&tx, &session)?,
-                    "model_selection": crate::session_model::selected(&tx, &session)?,
-                    "account_selection": crate::session_account::selected_at(&tx, &session, i64::MAX as u64)?,
-                }));
-            }
-            tx.commit()?;
-            Ok(catalog)
+        // The catalog answers the product's first screen, and the shared work
+        // thread also fronts every write transaction: under a concurrently
+        // draining Session the list waited behind the writer for minutes. WAL
+        // lets a dedicated read-only connection answer without the queue; the
+        // shared connection stays the fallback for a store a read-only open
+        // cannot reach.
+        let path = self.path().to_owned();
+        let readonly = tokio::task::spawn_blocking(move || {
+            let mut conn = rusqlite::Connection::open_with_flags(
+                &path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .map_err(|error| Error::Invalid(error.to_string()))?;
+            conn.busy_timeout(std::time::Duration::from_secs(2))
+                .map_err(|error| Error::Invalid(error.to_string()))?;
+            Self::session_catalog_rows(&mut conn)
         })
         .await
+        .map_err(|_| Error::Closed)?;
+        if let Ok(rows) = readonly {
+            return Ok(rows);
+        }
+        self.call(Self::session_catalog_rows).await
+    }
+
+    /// The whole Session catalog in one read: identity, lineage, location,
+    /// listing metadata, preview and selections. Runs on either a dedicated
+    /// read-only connection or the shared work thread, so it touches `conn`
+    /// only through the transaction it opens.
+    fn session_catalog_rows(conn: &mut rusqlite::Connection) -> Result<Vec<Value>, Error> {
+        let tx = conn.transaction()?;
+        let ids = {
+            let mut statement = tx.prepare("SELECT id FROM engine_session ORDER BY id")?;
+            let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+        let mut catalog = Vec::with_capacity(ids.len());
+        for session in ids {
+            let (title, updated_at_ms, archived_at_ms, pinned_at_ms): (
+                String,
+                Option<i64>,
+                Option<i64>,
+                Option<i64>,
+            ) = tx.query_row(
+                "SELECT title,updated_at_ms,archived_at_ms,pinned_at_ms FROM engine_session \
+                 WHERE id=?1",
+                [&session],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )?;
+            let location: Option<String> = tx
+                .query_row(
+                    "SELECT root FROM engine_location WHERE session_id=?1",
+                    [&session],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let parent: Option<String> = tx
+                .query_row(
+                    "SELECT parent_session_id FROM engine_lineage WHERE session_id=?1",
+                    [&session],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            catalog.push(json!({
+                "session_id": session,
+                "parent_session_id": parent,
+                "location": location,
+                "title": title,
+                "updated_at_ms": updated_at_ms,
+                "archived_at_ms": archived_at_ms,
+                "pinned_at_ms": pinned_at_ms,
+                "preview": metadata_preview(&tx, &session)?,
+                "model_selection": crate::session_model::selected(&tx, &session)?,
+                "account_selection": crate::session_account::selected_at(&tx, &session, i64::MAX as u64)?,
+            }));
+        }
+        tx.commit()?;
+        Ok(catalog)
     }
 
     /// Create the Session row if it does not exist.
