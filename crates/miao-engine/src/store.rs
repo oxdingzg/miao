@@ -4781,7 +4781,7 @@ mod message_kind_materialisation_tests {
     #[tokio::test]
     async fn new_messages_carry_their_event_kind() {
         let dir = tempfile::tempdir().expect("temp dir");
-        let store = a_store_with_one_message(dir.path()).await;
+        a_store_with_one_message(dir.path()).await;
         let connection = rusqlite::Connection::open_with_flags(
             dir.path().join("engine.db"),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
