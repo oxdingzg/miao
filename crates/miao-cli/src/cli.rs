@@ -3114,7 +3114,7 @@ async fn run_prompt(
     let bridge = miao_engine::product::Bridge::new(bridge_tx);
     configured
         .runtime
-        .with_product_tools(product_tools(), bridge.clone(), None);
+        .with_product_tools(product_tools(), bridge.clone());
     let (mut connection, mut events) =
         Connection::start_embedded(configured.runtime, Duration::from_secs(120))
             .map_err(|error| error.to_string())?;
