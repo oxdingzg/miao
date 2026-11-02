@@ -148,7 +148,10 @@ mod tests {
             .expect("object");
 
         let wal = database.get("wal").expect("wal block");
-        assert!(wal.get("bytes").is_some() && wal.get("shm_bytes").is_some(), "{wal}");
+        assert!(
+            wal.get("bytes").is_some() && wal.get("shm_bytes").is_some(),
+            "{wal}"
+        );
         let foreign_keys = database.get("foreign_keys").expect("foreign key block");
         assert_eq!(
             foreign_keys.get("ok").and_then(Value::as_bool),
@@ -158,7 +161,9 @@ mod tests {
         let transfers = database.get("transfers").expect("transfer block");
         assert!(transfers.get("imports").is_some(), "{transfers}");
         assert!(
-            database.get("migrations").is_some_and(|value| !value.is_string()),
+            database
+                .get("migrations")
+                .is_some_and(|value| !value.is_string()),
             "a migrated store has the engine_migration table: {database:?}"
         );
     }
