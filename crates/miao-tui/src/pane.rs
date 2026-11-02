@@ -842,9 +842,6 @@ fn selection_text(rendered: &[Vec<String>], inner: Rect, a: Position, b: Positio
     lines.join("\n")
 }
 
-/// The widest column the session list uses.
-const SESSION_COLUMN: u16 = 96;
-
 pub struct Home {
     pub rows: Vec<SessionSummary>,
     pub selected: usize,
@@ -4521,9 +4518,6 @@ mod tests {
         ]);
         let lines = drawn(&mut home, 200, 12);
         let mut titled = 0;
-        let gutter = ((200 - 2 - SESSION_COLUMN) / 2) as usize;
-        // The first body line is the action row.
-        assert!(gutter > 0, "the frame is wider than the column");
         // The list body stops one row short of the border: the bottom row is a
         // full-width key hint, not a list row.
         for line in &lines[1..lines.len() - 2] {
