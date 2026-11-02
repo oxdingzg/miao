@@ -419,7 +419,11 @@ mod tests {
             .enable_all()
             .build()
             .expect("runtime")
-            .block_on(async { diff(&root, "fresh.txt", MAX_DIFF_CHARS).await.expect("diff") });
+            .block_on(async {
+                diff(&root, "fresh.txt", MAX_DIFF_CHARS)
+                    .await
+                    .expect("diff")
+            });
         assert_eq!(untracked["untracked"], true);
         assert!(untracked["diff"].is_null(), "{untracked}");
 
