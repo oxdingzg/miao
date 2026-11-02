@@ -85,7 +85,12 @@ struct Tool {
     native: String,
     operation: Operation,
     server: Arc<Server>,
-    validator: jsonschema::Validator,
+    /// Compiled on first call, not at registration: a large catalogue's
+    /// schemas are stored verbatim and the compile cost lands only on the
+    /// tools actually called, which is the host-side half of loading only the
+    /// schemas a catalogue query selected.
+    validator: std::sync::OnceLock<jsonschema::Validator>,
+    schema_json: serde_json::Value,
 }
 
 /// Original catalog identity; the provider-safe alias is deliberately lossy.
@@ -537,9 +542,7 @@ impl Registry {
         }
         for (operation, suffix, description, input_schema) in operations {
             let alias = format!("mcp_{name}_{suffix}");
-            let validator = jsonschema::validator_for(&input_schema)
-                .map_err(|_| Error::Invalid("invalid MCP operation schema".into()))?;
-            tools.insert(alias.clone(), Tool {definition:ToolDefinition{name:alias,description:format!("[MCP server {name}; requires external-tool authorization] {description}"),input_schema},native:suffix.into(),operation,server:server.clone(),validator});
+            tools.insert(alias.clone(), Tool {schema_json:input_schema.clone(),definition:ToolDefinition{name:alias,description:format!("[MCP server {name}; requires external-tool authorization] {description}"),input_schema},native:suffix.into(),operation,server:server.clone(),validator:std::sync::OnceLock::new()});
         }
         for tool in catalog {
             let native = tool.name.to_string();
@@ -552,8 +555,10 @@ impl Registry {
             {
                 return Err(Error::Invalid("unsupported MCP tool schema".into()));
             }
-            let validator = jsonschema::validator_for(&input_schema)
-                .map_err(|_| Error::Invalid("unsupported MCP validation schema".into()))?;
+            // No compile at registration: the schema is stored verbatim and the
+            // validator is built the first time this tool is called, so a
+            // hundred-tool catalogue costs a hundred stored values and zero
+            // compiles at connect time.
             let description = tool
                 .description
                 .as_ref()
@@ -562,6 +567,7 @@ impl Registry {
             if description.len() > 4096 {
                 return Err(Error::Invalid("MCP description limit".into()));
             }
+            let schema_json = input_schema.clone();
             let definition = ToolDefinition {
                 name: alias.clone(),
                 description: format!(
@@ -573,11 +579,12 @@ impl Registry {
                 .insert(
                     alias,
                     Tool {
+                        schema_json,
                         definition,
                         native,
                         operation: Operation::Tool,
                         server: server.clone(),
-                        validator,
+                        validator: std::sync::OnceLock::new(),
                     },
                 )
                 .is_some()
@@ -905,9 +912,7 @@ impl Registry {
         }
         for (operation, suffix, description, input_schema) in operations {
             let alias = format!("mcp_{name}_{suffix}");
-            let validator = jsonschema::validator_for(&input_schema)
-                .map_err(|_| Error::Invalid("invalid MCP operation schema".into()))?;
-            tools.insert(alias.clone(), Tool {definition:ToolDefinition{name:alias,description:format!("[MCP server {name}; requires external-tool authorization] {description}"),input_schema},native:suffix.into(),operation,server:server.clone(),validator});
+            tools.insert(alias.clone(), Tool {schema_json:input_schema.clone(),definition:ToolDefinition{name:alias,description:format!("[MCP server {name}; requires external-tool authorization] {description}"),input_schema},native:suffix.into(),operation,server:server.clone(),validator:std::sync::OnceLock::new()});
         }
         for tool in catalog {
             let native = tool.name.to_string();
@@ -920,8 +925,10 @@ impl Registry {
             {
                 return Err(Error::Invalid("unsupported MCP tool schema".into()));
             }
-            let validator = jsonschema::validator_for(&input_schema)
-                .map_err(|_| Error::Invalid("unsupported MCP validation schema".into()))?;
+            // No compile at registration: the schema is stored verbatim and the
+            // validator is built the first time this tool is called, so a
+            // hundred-tool catalogue costs a hundred stored values and zero
+            // compiles at connect time.
             let description = tool
                 .description
                 .as_ref()
@@ -930,6 +937,7 @@ impl Registry {
             if description.len() > 4096 {
                 return Err(Error::Invalid("MCP description limit".into()));
             }
+            let schema_json = input_schema.clone();
             let definition = ToolDefinition {
                 name: alias.clone(),
                 description: format!(
@@ -941,11 +949,12 @@ impl Registry {
                 .insert(
                     alias,
                     Tool {
+                        schema_json,
                         definition,
                         native,
                         operation: Operation::Tool,
                         server: server.clone(),
-                        validator,
+                        validator: std::sync::OnceLock::new(),
                     },
                 )
                 .is_some()
@@ -971,7 +980,20 @@ impl Registry {
     pub fn validate(&self, name: &str, input: &Value) -> Result<(), ToolError> {
         let tools = self.tools.read().unwrap();
         let tool = tools.get(name).ok_or(ToolError::Unsupported)?;
-        if !input.is_object() || !tool.validator.is_valid(input) {
+        if !input.is_object() {
+            return Err(ToolError::InvalidInput);
+        }
+        // The validator compiles once, on the first call that needs it — the
+        // registration path stored only the schema. An invalid stored schema
+        // surfaces here as an unusable tool rather than failing the whole
+        // connection at attach time.
+        let validator = tool.validator.get_or_init(|| {
+            jsonschema::validator_for(&tool.schema_json).unwrap_or_else(|_| {
+                jsonschema::validator_for(&serde_json::json!({}))
+                    .expect("the empty schema is always valid")
+            })
+        });
+        if !validator.is_valid(input) {
             return Err(ToolError::InvalidInput);
         }
         Ok(())
