@@ -1253,7 +1253,7 @@ mod disclosure {
     async fn allowlisted_aliases_stay_disclosed_from_a_folded_server() {
         let (registry, _calls, task) = folded().await;
         let first = registry.definitions()[0].name.clone();
-        let disclosed = registry.disclosed(Disclosure::Threshold(32), &[first.clone()]);
+        let disclosed = registry.disclosed(Disclosure::Threshold(32), std::slice::from_ref(&first));
         let names = disclosed
             .iter()
             .map(|def| def.name.as_str())
