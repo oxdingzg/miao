@@ -4073,7 +4073,7 @@ mod tests {
         });
         home.set_notice(Some("engine engine_closed: miao-engine exited (exit code: 1): miao engine-shim: could not prepare the product engine plan: Native TUI requires default-agent capture support".into()));
         let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).expect("terminal");
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 10)).expect("terminal");
         terminal
             .draw(|frame| home.render(frame, frame.area()))
             .expect("draw");
@@ -4477,7 +4477,7 @@ mod tests {
         );
         // The first frame measures the viewport the selection scrolls inside.
         drawn(&mut home, 80, 12);
-        home.select(30);
+        home.select(31);
         let lines = drawn(&mut home, 80, 12);
         let mut named = 0usize;
         for (y, line) in lines.iter().enumerate() {
