@@ -16,13 +16,13 @@ use crate::editor::{Action, Mode};
 use crate::engine;
 use crate::event::{AppEvent, Bus};
 use crate::keybinds::{self, Keymap};
-use crate::pane::{render_dialog, Home, Panel, PanelKind, Shell, StatusHint};
+use crate::pane::{Home, Panel, PanelKind, Shell, StatusHint, render_dialog};
 use crate::platform::attention::{self, Attention};
 use crate::platform::{clipboard, editor, zed};
 use crate::scroll::Scroll;
 use crate::session::{Entry, Part, SessionState, SessionSummary};
 use crate::state::{self, StashEntry};
-use crate::status::{compact_tokens, UsageSummary};
+use crate::status::{UsageSummary, compact_tokens};
 use crate::theme::{self, Theme};
 use crate::tool;
 
@@ -4501,7 +4501,8 @@ mod tests {
         let draft = app.draft.as_ref().expect("a streaming draft");
         assert_eq!(draft.reasoning, "weighing");
         assert!(draft.text.is_empty(), "reasoning is not the answer");
-        assert_eq!(drafted(&mut app), "▸ thinking · 8 chars");
+        // With no answer yet the thinking streams verbatim, muted.
+        assert_eq!(drafted(&mut app), "  weighing");
         app.handle(delta_frame("run-1", "text.delta", "the answer"));
         let shown = drafted(&mut app);
         assert!(shown.starts_with("▸ thinking · 8 chars"));
@@ -4515,10 +4516,11 @@ mod tests {
         // A snapshot taken for an unrelated event carries no new message, so
         // the stream keeps showing rather than blinking away mid-answer.
         app.handle(opened(Transcript::default(), Some("run-1")));
-        assert!(app
-            .draft
-            .as_ref()
-            .is_some_and(|draft| draft.text == "Hello"));
+        assert!(
+            app.draft
+                .as_ref()
+                .is_some_and(|draft| draft.text == "Hello")
+        );
         assert!(drafted(&mut app).contains("Hello"));
         let committed = Transcript::from_snapshot(&serde_json::json!({
             "messages": [{"role": "assistant", "content": [{"type": "text", "text": "Hello"}]}],
@@ -5216,10 +5218,12 @@ mod tests {
         leader(&mut app, 's');
         assert!(matches!(app.dialog, Some(Dialog::Status(_))));
         let loading = app.dialog.as_ref().and_then(Dialog::list).expect("list");
-        assert!(loading
-            .rows
-            .iter()
-            .any(|row| row.label == "usage" && row.detail == "loading…"));
+        assert!(
+            loading
+                .rows
+                .iter()
+                .any(|row| row.label == "usage" && row.detail == "loading…")
+        );
         app.handle(AppEvent::Usage(UsageSummary::from_value(
             &serde_json::json!({
                 "turns": 3,
@@ -5231,18 +5235,21 @@ mod tests {
             }),
         )));
         let list = app.dialog.as_ref().and_then(Dialog::list).expect("list");
-        assert!(list
-            .rows
-            .iter()
-            .any(|row| row.label == "turns" && row.detail == "3 (1 partial)"));
-        assert!(list
-            .rows
-            .iter()
-            .any(|row| row.label == "ttft" && row.detail == "avg 812 ms"));
-        assert!(list
-            .rows
-            .iter()
-            .any(|row| row.label == "lineage" && row.detail.contains("glm-5 · chat ×3")));
+        assert!(
+            list.rows
+                .iter()
+                .any(|row| row.label == "turns" && row.detail == "3 (1 partial)")
+        );
+        assert!(
+            list.rows
+                .iter()
+                .any(|row| row.label == "ttft" && row.detail == "avg 812 ms")
+        );
+        assert!(
+            list.rows
+                .iter()
+                .any(|row| row.label == "lineage" && row.detail.contains("glm-5 · chat ×3"))
+        );
     }
 
     #[test]
@@ -5278,14 +5285,16 @@ mod tests {
         let mut app = app();
         leader(&mut app, 'd');
         let list = app.dialog.as_ref().and_then(Dialog::list).expect("list");
-        assert!(list
-            .rows
-            .iter()
-            .any(|row| row.label == "state dir" && !row.detail.is_empty()));
-        assert!(list
-            .rows
-            .iter()
-            .any(|row| row.label == "version" && row.detail == env!("CARGO_PKG_VERSION")));
+        assert!(
+            list.rows
+                .iter()
+                .any(|row| row.label == "state dir" && !row.detail.is_empty())
+        );
+        assert!(
+            list.rows
+                .iter()
+                .any(|row| row.label == "version" && row.detail == env!("CARGO_PKG_VERSION"))
+        );
     }
 
     #[test]
@@ -5537,10 +5546,11 @@ mod tests {
             .expect("help list");
         assert_eq!(list.title, "help");
         assert!(list.rows.iter().any(|row| row.label == "/status"));
-        assert!(list
-            .rows
-            .iter()
-            .any(|row| row.label == "/review" && row.detail == "Read a diff"));
+        assert!(
+            list.rows
+                .iter()
+                .any(|row| row.label == "/review" && row.detail == "Read a diff")
+        );
     }
 
     #[test]
