@@ -1,0 +1,17 @@
+{
+  "date": "2026-11-03",
+  "issues": ["#2148 item 3 (WSP-02 whole-path measurement)", "#2178 items 1+3 (DATA-04 blob externalisation + GC)"],
+  "branch": "feat/wsp02-vcs-whole-path",
+  "host": "macmini (Apple M4, macOS, release builds)",
+  "harnesses": [
+    "crates/miao-engine/tests/vcs_scale.rs",
+    "crates/miao-tui/tests/vcs_latency.rs",
+    "crates/miao-engine/tests/blob_externalization.rs",
+    "crates/miao-engine/src/blob.rs (unit tests)"
+  ],
+  "real_ledger_rehearsal": {
+    "path": "read-only copy of the 1.24 GB production ledger",
+    "event_rows_over_64kib": "116 MB, 91% covered by the string-value externalisation threshold",
+    "gc_dry_run": "0 live references, 0 orphans (no-op, correct before any externalisation)"
+  }
+}
