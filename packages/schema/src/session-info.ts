@@ -69,6 +69,17 @@ export const Usage = Schema.Struct({
    * own turns. Absent when the Session has no children (#2236).
    */
   delegated: Schema.Finite.pipe(optional),
+  /** Token and cost totals for auxiliary (non-primary) provider calls, such as the compaction summariser. */
+  auxiliary: Schema.Struct({
+    turns: Schema.Finite,
+    cost: Schema.Finite,
+    tokens: Schema.Struct({
+      input: Schema.Finite,
+      output: Schema.Finite,
+      reasoning: Schema.Finite,
+      cache: Schema.Struct({ read: Schema.Finite, write: Schema.Finite }),
+    }),
+  }).pipe(optional),
 }).annotate({ identifier: "SessionV2.Usage" })
 
 /**
