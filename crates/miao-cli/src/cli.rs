@@ -1247,7 +1247,10 @@ fn worktree_remove_apply(
         let moved = tree_migrate_sessions(root, &check_path, &checkout)?;
         println!("migrated {moved} session(s) back to {}", checkout.display());
     }
-    let removed = git_in(std::path::Path::new(root), &["worktree", "remove", "--force", &path.display().to_string()])?;
+    let removed = git_in(
+        std::path::Path::new(root),
+        &["worktree", "remove", "--force", &path.display().to_string()],
+    )?;
     if !removed.status.success() {
         return Err(String::from_utf8_lossy(&removed.stderr).trim().to_string());
     }
@@ -1265,7 +1268,11 @@ fn tree_anchored_sessions(root: &str, tree: &std::path::Path) -> Result<i64, Str
 
 /// Point every session anchored to `from` at `to` instead, in both ledgers
 /// that can hold one, and return how many moved.
-fn tree_migrate_sessions(root: &str, from: &std::path::Path, to: &std::path::Path) -> Result<usize, String> {
+fn tree_migrate_sessions(
+    root: &str,
+    from: &std::path::Path,
+    to: &std::path::Path,
+) -> Result<usize, String> {
     let mut moved = 0;
     for db in [default_db(std::path::Path::new(root)), default_db(from)] {
         if !db.is_file() {
