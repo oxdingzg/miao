@@ -4026,11 +4026,7 @@ impl Store {
     }
 
     /// Priced provider turns and auxiliary attempts recorded for one Session.
-    async fn priced_entries(
-        &self,
-        session: &str,
-        costs: &Value,
-    ) -> Result<(f64, f64, u64), Error> {
+    async fn priced_entries(&self, session: &str, costs: &Value) -> Result<(f64, f64, u64), Error> {
         let report = self.usage_report(session).await?;
         let empty: Vec<Value> = Vec::new();
         let mut unpriced = 0u64;
@@ -4039,7 +4035,10 @@ impl Store {
                 unpriced += 1;
                 return 0.0;
             };
-            match costs.get(model).and_then(|rates| crate::pricing::turn(rates, &entry["usage"])) {
+            match costs
+                .get(model)
+                .and_then(|rates| crate::pricing::turn(rates, &entry["usage"]))
+            {
                 Some(value) => value,
                 None => {
                     unpriced += 1;

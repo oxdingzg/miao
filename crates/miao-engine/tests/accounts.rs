@@ -26,7 +26,11 @@ async fn a_session_pays_for_its_own_auxiliary_calls() {
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     store.ensure("parent").await.unwrap();
     store
-        .record("parent", "role.provider.completed", auxiliary("parent", "r", 1_000_000))
+        .record(
+            "parent",
+            "role.provider.completed",
+            auxiliary("parent", "r", 1_000_000),
+        )
         .await
         .unwrap();
 
@@ -45,11 +49,19 @@ async fn a_delegated_session_is_paid_for_under_the_parent() {
     // `fork` writes the lineage edge, which is how a subagent appears.
     store.fork("parent", "child", None).await.unwrap();
     store
-        .record("parent", "role.provider.completed", auxiliary("parent", "p", 1_000_000))
+        .record(
+            "parent",
+            "role.provider.completed",
+            auxiliary("parent", "p", 1_000_000),
+        )
         .await
         .unwrap();
     store
-        .record("child", "role.provider.completed", auxiliary("child", "c", 2_000_000))
+        .record(
+            "child",
+            "role.provider.completed",
+            auxiliary("child", "c", 2_000_000),
+        )
         .await
         .unwrap();
 
@@ -65,7 +77,11 @@ async fn an_entry_whose_model_has_no_rate_is_counted_not_priced_at_zero() {
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     store.ensure("parent").await.unwrap();
     store
-        .record("parent", "role.provider.completed", auxiliary("parent", "r", 10))
+        .record(
+            "parent",
+            "role.provider.completed",
+            auxiliary("parent", "r", 10),
+        )
         .await
         .unwrap();
 
