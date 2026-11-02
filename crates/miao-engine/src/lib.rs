@@ -61,6 +61,7 @@ pub mod permission_source;
 pub mod permission_source_control;
 mod persona;
 pub mod process;
+pub mod pricing;
 pub mod protocol;
 pub mod provider;
 pub mod question;
