@@ -243,6 +243,13 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     let workspace = options
         .get("--workspace")
         .ok_or("--workspace is required")?;
+    // One directory, one Location: the workspace string reaches
+    // engine_location.root, the tools' working directory, and every permission
+    // boundary, so it is normalised once here instead of spelled differently
+    // at each consumer. CFG-06.
+    let workspace = miao_engine::placement::identity(std::path::Path::new(workspace))
+        .display()
+        .to_string();
     let model = match options.get("--model") {
         Some(model) => model.clone(),
         None => configured_model(&options)?.ok_or("--model is required")?,
