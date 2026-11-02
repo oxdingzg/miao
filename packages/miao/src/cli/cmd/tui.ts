@@ -61,9 +61,6 @@ export function unsupportedByRustTui(args: {
 }): string | undefined {
   const options: Array<[string, boolean | undefined]> = [
     ["--mini", args.mini],
-    ["--fork", args.fork],
-    ["--agent", args.agent !== undefined],
-    ["--auto", args.auto || args.yolo || args["dangerously-skip-permissions"]],
     ["--replay", args.replay !== undefined],
     ["--no-replay", args.noReplay],
     ["--replay-limit", args.replayLimit !== undefined],
@@ -244,6 +241,9 @@ export const TuiThreadCommand = cmd({
         if (args.session) argv.push("--session", args.session)
         else if (args.continue) argv.push("--continue")
         if (prompt) argv.push("--prompt", prompt)
+        if (args.agent) argv.push("--agent", args.agent)
+        if (args.fork) argv.push("--fork")
+        if (args.auto || args.yolo || args["dangerously-skip-permissions"]) argv.push("--auto")
         setTimeout(() => {
           void (async () => {
             const { upgrade } = await import("@/cli/upgrade")
