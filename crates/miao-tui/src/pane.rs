@@ -3301,6 +3301,40 @@ mod tests {
         assert!(painted.contains("ctrl+c to interrupt"), "{painted}");
     }
 
+    /// One routable model paints its label. The 0.3.26 models dialog came up
+    /// an empty box: whatever the catalog carried, the frame drew only the
+    /// border, the filter row and the hint.
+    #[test]
+    fn the_models_dialog_paints_its_rows() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let models = crate::dialogs::ModelInfo::catalog(&serde_json::json!([
+            {"protocol": "openai-chat", "model": "deepseek-v4-1-flash-261017"}
+        ]));
+        assert_eq!(models.len(), 1);
+        let dialog = crate::dialogs::Dialog::models(&models, None);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).expect("terminal");
+        terminal
+            .draw(|frame| super::render_dialog(frame, frame.area(), &dialog, &theme))
+            .expect("draw");
+        let painted = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol().to_string())
+            .collect::<String>();
+        assert!(
+            painted.contains("deepseek-v4-1-flash-261017"),
+            "the model label paints: {painted}"
+        );
+        assert!(!painted.contains("nothing to show"), "{painted}");
+    }
+
     /// Context the engine injected is a history note. Painting it behind the
     /// prompt marker claimed the operator typed words they never wrote.
     #[test]
