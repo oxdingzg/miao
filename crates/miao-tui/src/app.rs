@@ -4683,17 +4683,18 @@ mod tests {
                 KeyModifiers::NONE,
             ))
         };
-        // First click: selection only.
-        app.handle(click(4));
+        // First click: selection only. The action row and the "Today" header
+        // sit above the rows, so ses_second paints on y = 5.
+        app.handle(click(5));
         assert!(requests.try_recv().is_err(), "one click must not open");
         // Second click on the same row opens it.
-        app.handle(click(4));
+        app.handle(click(5));
         assert!(matches!(
             requests.try_recv(),
             Ok(engine::Request::Open(id)) if id == "ses_second"
         ));
         // A click on a different row starts over instead of opening.
-        app.handle(click(4));
+        app.handle(click(5));
         app.handle(click(2));
         assert!(requests.try_recv().is_err(), "different rows must not open");
     }
@@ -4713,12 +4714,12 @@ mod tests {
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).expect("terminal");
         terminal.draw(|frame| app.render(frame)).expect("draw");
-        // Below the border and the "Today" header the rows are painted on
-        // y = 2, 3, 4; the prompt had the keyboard until this click.
+        // Below the border, the action row and the "Today" header the rows are
+        // painted on y = 4, 5, 6; the prompt had the keyboard until this click.
         app.handle(AppEvent::Mouse(MouseEvent::new(
             MouseEventKind::Down(MouseButton::Left),
             4,
-            4,
+            5,
             KeyModifiers::NONE,
         )));
         assert_eq!(

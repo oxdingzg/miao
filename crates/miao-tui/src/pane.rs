@@ -1208,7 +1208,11 @@ impl Home {
             .saturating_sub(1)
             .saturating_sub(notice_lines.len() as u16) as usize;
         let visible = self.visible();
-        if visible.is_empty() && !self.show_new_session() {
+        // The action row leads an empty list only when the frame has nothing
+        // more urgent to say: a startup refusal reads as wrapped text, the way
+        // it did before the action row existed, and an action under it would
+        // sit on an engine that is not there to answer.
+        if visible.is_empty() && !(self.show_new_session() && self.notice.is_none()) {
             let mut lines = self.warning_lines();
             let message = self.notice.clone().unwrap_or_else(|| {
                 if self.rows.is_empty() {
