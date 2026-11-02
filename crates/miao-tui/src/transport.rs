@@ -173,9 +173,17 @@ impl EngineClient {
         };
         tokio::spawn(async move {
             use miao_engine::host::Host;
+            use tokio::sync::broadcast::error::RecvError;
             // Hold the sender for the runner's lifetime: dropping it would make
             // the client read the watch channel as "the engine exited".
             let _alive = exited;
+            // The stdio adapter forwards the runtime's ephemeral progress and
+            // config broadcasts beside the durable event poll; the in-process
+            // adapter must carry the same two streams or every streamed delta
+            // waits for its turn's committed event and the transcript paints
+            // one finished block instead of streaming.
+            let mut progress = runtime.progress();
+            let mut config_events = runtime.config_events();
             let mut host = Host::new(runtime);
             loop {
                 tokio::select! {
@@ -200,6 +208,33 @@ impl EngineClient {
                             }
                         }
                     }
+                    notice = progress.recv() => match notice {
+                        Ok(notice) => {
+                            if notice["session_id"].as_str().is_some_and(|s| host.subscribed(s)) {
+                                let frame = json!({ "method": "progress", "params": notice });
+                                if let Ok(line) = serde_json::to_string(&frame) {
+                                    reap.dispatch(&line);
+                                }
+                            }
+                        }
+                        Err(RecvError::Lagged(_)) => {
+                            let frame = json!({ "method": "resync", "params": { "reason": "ephemeral_progress_lagged" } });
+                            if let Ok(line) = serde_json::to_string(&frame) {
+                                reap.dispatch(&line);
+                            }
+                        }
+                        Err(RecvError::Closed) => break,
+                    },
+                    report = config_events.recv() => match report {
+                        Ok(report) => {
+                            let frame = json!({ "method": "config", "params": report });
+                            if let Ok(line) = serde_json::to_string(&frame) {
+                                reap.dispatch(&line);
+                            }
+                        }
+                        Err(RecvError::Lagged(_)) => {}
+                        Err(RecvError::Closed) => break,
+                    },
                 }
             }
             reap.publish_restart();
