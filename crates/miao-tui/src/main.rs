@@ -23,15 +23,20 @@ const BUILD_ID: &str = match option_env!("MIAO_TUI_BUILD_ID") {
 /// `miao`; kept as the paired TUI it stays `miao-tui`, so an installer can tell
 /// which file it is looking at.
 fn program_name() -> &'static str {
-    std::env::current_exe()
+    let stem = std::env::current_exe()
         .ok()
         .and_then(|path| {
             path.file_stem()
                 .map(|stem| stem.to_string_lossy().into_owned())
         })
-        .filter(|stem| stem == "miao")
-        .map(|_| "miao")
-        .unwrap_or("miao-tui")
+        .unwrap_or_default();
+    // Anything the product ships or installs under its own name answers as the
+    // product: the release artifact (`miao-<target>`), the installed binary, and
+    // the preview link all read `miao 0.3.25`. Only the paired TUI names itself.
+    match stem.starts_with("miao") && stem != "miao-tui" && stem != "miao-engine" {
+        true => "miao",
+        false => "miao-tui",
+    }
 }
 
 struct Options {
