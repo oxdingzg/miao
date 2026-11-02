@@ -134,84 +134,6 @@ fn routes(sources: &[Source], credential_db: Option<&Path>) -> Result<Option<Vec
             entries.push(entry);
         }
     }
-    // Credential integrations the configuration does not name still answer
-    // the picker the way the product host answers: the catalog snapshot names
-    // their transport, endpoint and models, and a stored key credential
-    // routes them. Configuration wins where both name a provider, and an
-    // OAuth grant speaks its own transport, so only key credentials route a
-    // snapshot provider. Models that cannot answer in text step aside.
-    if let Some(snapshot) = models_snapshot() {
-        let empty = serde_json::Map::new();
-        let snapshot_providers = snapshot.as_object().unwrap_or(&empty);
-        for (id, provider) in snapshot_providers {
-            if providers.contains_key(id) {
-                continue;
-            }
-            let Some(credential) = live.get(id.as_str()).filter(|c| c.kind == "key") else {
-                continue;
-            };
-            let Some(db_path) = credential_db else {
-                continue;
-            };
-            let npm = provider.get("npm").and_then(Value::as_str);
-            if npm != Some("@ai-sdk/openai-compatible") {
-                continue;
-            }
-            let Some(base) = provider.get("api").and_then(Value::as_str) else {
-                continue;
-            };
-            let models = provider.get("models").and_then(Value::as_object);
-            let Some(models) = models else { continue };
-            for (model_id, model) in models {
-                let produces_text = model
-                    .get("modalities")
-                    .and_then(|modalities| modalities.get("output"))
-                    .and_then(Value::as_array)
-                    .is_some_and(|outputs| outputs.iter().any(|item| item == "text"));
-                if !produces_text {
-                    continue;
-                }
-                let Some(endpoint) = base.join_pair("chat/completions") else {
-                    continue;
-                };
-                let transport = "openai-chat";
-                let mut entry = json!({
-                    "id": format!("{id}/{model_id}"),
-                    "provider": transport,
-                    "model": model_id,
-                    "credential": {
-                        "type": "database",
-                        "path": db_path.display().to_string(),
-                        "id": credential.id,
-                        "integration": credential.integration,
-                    },
-                });
-                entry["endpoint"] = json!(endpoint);
-                let limit = model.get("limit").and_then(Value::as_object);
-                let mut bounded = serde_json::Map::new();
-                for field in ["context", "output"] {
-                    if let Some(size) = limit
-                        .and_then(|limit| limit.get(field))
-                        .and_then(Value::as_u64)
-                    {
-                        bounded.insert(field.into(), json!(size));
-                    }
-                }
-                if !bounded.is_empty() {
-                    entry["limit"] = Value::Object(bounded);
-                }
-                if let Some(input) = model
-                    .get("modalities")
-                    .and_then(|modalities| modalities.get("input"))
-                    .and_then(Value::as_array)
-                    .filter(|input| !input.is_empty())
-                {
-                    entry["input_modalities"] = json!(input);
-                }
-                entries.push(entry);
-            }
-        }
-    }
     if entries.is_empty() {
         return Ok(None);
     }
@@ -221,36 +143,6 @@ fn routes(sources: &[Source], credential_db: Option<&Path>) -> Result<Option<Vec
         entries[0]["primary"] = json!(true);
     }
     Ok(Some(entries))
-}
-
-/// The provider catalog snapshot the product ships and caches, in the order
-/// the TS catalog service reads them: an explicit path, a snapshot beside the
-/// engine binary, the installer's shipped copy, then the user cache.
-fn models_snapshot() -> Option<serde_json::Value> {
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-    if let Some(path) = std::env::var_os("MIAO_MODELS_PATH") {
-        candidates.push(std::path::PathBuf::from(path));
-    }
-    if let Ok(executable) = std::env::current_exe() {
-        if let Some(directory) = executable.parent() {
-            candidates.push(directory.join("models.json"));
-        }
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = std::path::PathBuf::from(home);
-        candidates.push(home.join(".miao/bin/models.json"));
-        candidates.push(home.join(".local/share/miao/bin/models.json"));
-        let cache = std::env::var_os("XDG_CACHE_HOME")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| home.join(".cache"));
-        // The newest copy the TS catalog service keeps, and the one it
-        // actually serves from once it has fetched at least once.
-        candidates.push(cache.join("miao/models.json"));
-    }
-    candidates
-        .iter()
-        .find_map(|path| std::fs::read(path).ok())
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
 }
 
 /// The wire a configured api rides, and the endpoint it reaches. The mapping

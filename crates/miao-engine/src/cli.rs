@@ -446,6 +446,36 @@ async fn finish_manifest(
     Ok(Some(path))
 }
 
+/// The provider catalog snapshot the product ships and caches, in the order
+/// the TS catalog service reads them: an explicit path, a snapshot beside the
+/// engine binary, the installer's shipped copy, then the user cache.
+fn models_snapshot() -> Option<serde_json::Value> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(path) = std::env::var_os("MIAO_MODELS_PATH") {
+        candidates.push(std::path::PathBuf::from(path));
+    }
+    if let Ok(executable) = std::env::current_exe() {
+        if let Some(directory) = executable.parent() {
+            candidates.push(directory.join("models.json"));
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = std::path::PathBuf::from(home);
+        candidates.push(home.join(".miao/bin/models.json"));
+        candidates.push(home.join(".local/share/miao/bin/models.json"));
+        let cache = std::env::var_os("XDG_CACHE_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| home.join(".cache"));
+        // The newest copy the TS catalog service keeps, and the one it
+        // actually serves from once it has fetched at least once.
+        candidates.push(cache.join("miao/models.json"));
+    }
+    candidates
+        .iter()
+        .find_map(|path| std::fs::read(path).ok())
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+}
+
 /// Test and diagnostic access to the generated manifest derivation.
 pub mod test_support {
     pub use super::config_routes_manifest;
