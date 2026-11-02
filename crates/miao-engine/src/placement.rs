@@ -246,7 +246,7 @@ mod tests {
         let segment = "segment".repeat(6);
         let mut long = base;
         (0..8).for_each(|_| long.push(segment.as_str()));
-        assert!(long.as_os_str().len() > 260, "{}", long.display());
+        assert!(long.to_string_lossy().len() > 260, "{}", long.display());
         let verbatim = PathBuf::from(format!(r"\\?\{}", long.display()));
         std::fs::create_dir_all(&verbatim).expect("create the long directory");
 
