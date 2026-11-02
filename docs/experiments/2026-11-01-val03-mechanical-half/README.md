@@ -4,9 +4,10 @@ Measured 2026-11-01 on the macOS build host with the PTY harnesses in
 `crates/miao-tui/tests/`. VAL-03 asks for six tasks measured on time-to-state,
 keystrokes, mistakes and rework. All six have a part that a script observes
 honestly — keystrokes are counted by construction and the clock stops when the
-target state renders. Mistakes and rework are not observable this way for any of
-the six and stay with the operator session. Reviewing changes only became
-measurable after the fix described below.
+target state renders. Mistakes and rework split in two: the *cost of a
+correction* is deterministic and measured here, while *how often* people take a
+wrong turn needs an operator. Reviewing changes only became measurable after the
+fix described below.
 
 ## Result
 
@@ -21,6 +22,8 @@ measurable after the fix described below.
 | approval | `1` on the blocking decision | 1 | 7 ms | `interaction_approval.rs` |
 | failure recovery | recall the failed prompt + send again | 2 | 180 ms | `interaction_recovery.rs` |
 | reviewing changes | `<leader>g` | 2 | 16 ms | `interaction_review.rs` |
+| rework: mistyped query | `session 15O` → backspace → `0` | 16 (clean 14) | 28–30 ms (clean 25–45 ms) | `interaction_misstep.rs` |
+| rework: overshoot 5 rows | `j` × 154 then `k` × 5 | 161 (clean 151) | 487–499 ms (clean 460–462 ms) | `interaction_misstep.rs` |
 
 The failure-recovery figure moved from 30 ms to about 180 ms when the test
 started waiting for the failed turn to settle before recalling the prompt. The
@@ -56,10 +59,15 @@ else. With that arm added, the row above is measurable — 2 keys to the first
 row, 13 ms — and the whole `miao-tui` suite passes (319 unit tests plus every
 integration test).
 
-**mistakes and rework.** Not observable from a script for any of the six tasks: a
-mistyped query, a wrong pane, or an overshoot is exactly what a scripted keystroke
-sequence does not have. This is the part of VAL-03 that needs a real operator
-record, and no amount of harness work substitutes for it.
+**mistakes and rework — split into what a script can and cannot know.** The *cost*
+of a correction is deterministic and is now measured: a query typo corrected with
+one backspace costs exactly the two extra keys (14 → 16), and overshooting by five
+rows then walking back costs exactly the five `j` plus five `k` (151 → 161). Those
+figures are properties of the product, not samples.
+
+What no script produces is the *frequency*: how often a person mistypes, opens the
+wrong pane, or overshoots. That distribution needs a real operator record, and this
+file does not pretend otherwise.
 
 **the shape of a real workspace.** The session catalog is synthetic (200 rows,
 newest first) and the change set is a fixed three files, so these are costs per
