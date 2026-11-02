@@ -4732,8 +4732,10 @@ mod tests {
                 .collect(),
         ));
         // List behaviour starts from the list: Tab hands it the keyboard, as a
-        // user would, because the prompt owns the landing screen.
+        // user would, because the prompt owns the landing screen. One `j`
+        // moves past the action row so tests interact with Sessions directly.
         app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('j'), KeyModifiers::NONE));
         app
     }
 
