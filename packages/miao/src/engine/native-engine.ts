@@ -902,15 +902,7 @@ export const fromOwners = (
     children: (input) =>
       read<readonly Readonly<Record<string, unknown>>[]>(input, (connection) =>
         connection.client.request("session_children", { session_id: input.sessionID }),
-      ).pipe(
-        Effect.map((value) =>
-          Array.isArray(value)
-            ? value.filter(
-                (entry): entry is Readonly<Record<string, unknown>> => typeof entry === "object" && entry !== null,
-              )
-            : [],
-        ),
-      ),
+      ).pipe(Effect.map(childrenOf)),
     transcript: (input) =>
       read(input, (connection) =>
         readTranscript({
@@ -1552,3 +1544,17 @@ export const node = makeGlobalNode({
 export const listenerNode: typeof node = { ...node, implementation: Layer.fresh(layer) }
 
 export * as NativeEngineNode from "./native-engine"
+
+/**
+ * The engine answers `session_children` with `{ session_id, children, truncated }`,
+ * not a bare list. Reading that object as an array silently meant "no children",
+ * which cost every delegated Session its place in the run total (#2236), so the
+ * shape is decoded in one named place with a test of its own.
+ */
+export const childrenOf = (value: unknown): readonly Readonly<Record<string, unknown>>[] => {
+  const entries = typeof value === "object" && value !== null ? (value as { children?: unknown }).children : undefined
+  if (!Array.isArray(entries)) return []
+  return entries.filter(
+    (entry): entry is Readonly<Record<string, unknown>> => typeof entry === "object" && entry !== null,
+  )
+}
