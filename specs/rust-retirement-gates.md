@@ -134,7 +134,16 @@ Windows 验收通过。构建与重型检查使用项目配置的构建机，机
 
 这条只证明「x86_64 产物在 Rosetta 翻译层下可启动」，**不是**在真实 Intel Mac 上的原生运行；后者仍未取得。
 
-仍未取得：**linux-arm64** 的原生验证——当前可用的构建机没有 arm64 Linux 主机，`docker run --platform linux/arm64` 在 x86_64 主机上因缺 binfmt/QEMU 直接 `exec format error`；以及健康/损坏扩展混合下的 G5 回归。
+**健康/损坏扩展混合**（2026-11-02 复核，实测而非推断）：
+
+| 用例 | 断言 |
+| --- | --- |
+| `worker-load-diagnostics.test.ts`「a failed project tool import is diagnosed without losing healthy worker tools」 | 同一 `.miao/tool` 目录里 `broken.js` 缺依赖时，`healthy.js` 仍可 `tool.list` 与 `tool.call`，`shutdown` 后进程以 0 退出；诊断包含 `[worker-host]`、`broken.js` 与缺失依赖名 |
+| 同文件三例（`import` / `missing` / `flood`，需真实引擎） | 失败到达产品连接，而引擎仍可用（`flood` 用 32 个损坏工具触发上限并明确写出「further diagnostics omitted」） |
+
+`MIAO_ENGINE_BIN=… bun test test/engine/worker-load-diagnostics.test.ts` → 4 pass / 0 fail。因此本条不再列为缺口。
+
+仍未取得：**linux-arm64** 的原生验证——当前可用的构建机没有 arm64 Linux 主机，`docker run --platform linux/arm64` 在 x86_64 主机上因缺 binfmt/QEMU 直接 `exec format error`；
 
 要彻底覆盖而不是逐台手工验证，应当让**发布工作流在自己构建产物的那条腿上**加一步 `--version` 冒烟：每条 cli 腿都在目标架构的 runner 上构建，这样五个平台按构造被覆盖，且验证的是真正要发布的那个文件。这是需要单独验证的管线改动，本轮未做。
 
