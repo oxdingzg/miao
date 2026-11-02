@@ -521,7 +521,7 @@ impl EngineClient {
 pub(crate) fn wire_note(direction: &str, body: &str) {
     static WIRE: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
     let Some(path) = WIRE
-        .get_or_init(|| std::env::var_os("MIAO_TUI_WIRE_LOG").map(|value| PathBuf::from(value)))
+        .get_or_init(|| std::env::var_os("MIAO_TUI_WIRE_LOG").map(PathBuf::from))
         .as_ref()
     else {
         return;
