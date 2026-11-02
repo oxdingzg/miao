@@ -261,30 +261,8 @@ fn main() {
             "snapshot" if sessions => {
                 let target = frame["params"]["session_id"].as_str().unwrap_or("ses_a");
                 let metadata_only = frame["params"]["metadata_only"].as_bool().unwrap_or(false);
-                let (title, updated) = if target == "ses_a" {
-                    ("Project A".to_string(), 2_000)
-                } else if let Some(index) = target
-                    .strip_prefix("ses_n")
-                    .and_then(|rest| rest.parse::<u64>().ok())
-                {
-                    // A generated catalog row: newest first, so row n is the
-                    // n-th most recent Session.
-                    (format!("Note session {index}"), 10_000 - index)
-                } else {
-                    ("Project B".to_string(), 1_000)
-                };
-                let mut snapshot = json!({
-                    "session_id": target,
-                    "title": title,
-                    "cursor": 2,
-                    "updated_at_ms": updated,
-                    "archived_at_ms": null,
-                    "pinned_at_ms": null,
-                    "parent_session_id": null,
-                    "location": "/tmp",
-                    "model_selection": {"protocol": "chat", "model": "fake/glm"},
-                    "account_selection": {"credential_id": "cred_a"},
-                });
+                let mut snapshot = summary_row(target);
+                snapshot["cursor"] = json!(2);
                 if !metadata_only {
                     // ses_b is the renderer fixture: markdown structure plus a
                     // completed tool call, so the smoke test can assert what a
@@ -361,6 +339,16 @@ fn main() {
             // open and close one subscription without a fake catalog.
             "unsubscribe" => {
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            // The list the TUI paints before any Session is open: one reply for
+            // every Session, which is what a batch command is for.
+            "session_catalog" if sessions => {
+                let ids: Vec<String> = match catalog {
+                    0 => vec!["ses_a".to_string(), "ses_b".to_string()],
+                    count => (1..=count).map(|index| format!("ses_n{index}")).collect(),
+                };
+                let rows: Vec<Value> = ids.iter().map(|id| summary_row(id)).collect();
+                unit_command(&mut out, id, &frame, json!(rows));
             }
             "sessions" if sessions => {
                 let ids: Vec<String> = match catalog {
@@ -494,6 +482,37 @@ fn log_action(params: &Value, method: &str) {
 /// A command the engine declares as a unit variant. Its envelope is adjacently
 /// tagged, so the `params` key must be absent: a client that sends `params: {}`
 /// gets the same `invalid_request` the engine answers instead of a result.
+/// The catalog row a fake Session reports.
+///
+/// `snapshot` and `session_catalog` share it so a client parsing either sees
+/// the same names: the TUI reads the list from the batch command and the
+/// transcript from the single-Session one.
+fn summary_row(target: &str) -> Value {
+    let (title, updated) = if target == "ses_a" {
+        ("Project A".to_string(), 2_000)
+    } else if let Some(index) = target
+        .strip_prefix("ses_n")
+        .and_then(|rest| rest.parse::<u64>().ok())
+    {
+        // A generated catalog row: newest first, so row n is the n-th most
+        // recent Session.
+        (format!("Note session {index}"), 10_000 - index)
+    } else {
+        ("Project B".to_string(), 1_000)
+    };
+    json!({
+        "session_id": target,
+        "title": title,
+        "updated_at_ms": updated,
+        "archived_at_ms": null,
+        "pinned_at_ms": null,
+        "parent_session_id": null,
+        "location": "/tmp",
+        "model_selection": {"protocol": "chat", "model": "fake/glm"},
+        "account_selection": {"credential_id": "cred_a"},
+    })
+}
+
 fn unit_command(out: &mut std::io::Stdout, id: u64, frame: &Value, result: Value) {
     if frame.get("params").is_some() {
         send(

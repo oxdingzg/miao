@@ -209,3 +209,101 @@ fn catalog_rejects_stdin_beyond_its_bound() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("catalog input exceeds 1 MiB"));
     assert!(!path.exists());
 }
+
+/// The batch row and the single-Session snapshot answer the same question, so
+/// they have to agree: a client parses both with one parser, and a field that
+/// drifts would make the list disagree with the Session it opens.
+#[tokio::test]
+async fn a_catalog_row_matches_the_snapshot_it_stands_for() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join("engine.db")).await.unwrap();
+    store.initialize("ses_a", "First", "/work/a").await.unwrap();
+    store
+        .initialize("ses_b", "Second", "/work/b")
+        .await
+        .unwrap();
+    store
+        .message(
+            "ses_a",
+            "user",
+            json!([{"type":"text","text":"hello from the fixture"}]),
+        )
+        .await
+        .unwrap();
+
+    let catalog = store.session_catalog().await.unwrap();
+    assert_eq!(catalog.len(), 2, "every Session is listed, in one reply");
+    let row = catalog
+        .iter()
+        .find(|row| row["session_id"] == "ses_a")
+        .expect("ses_a is listed");
+    let snapshot = store.snapshot_with_metadata("ses_a", true).await.unwrap();
+    for field in [
+        "session_id",
+        "title",
+        "parent_session_id",
+        "location",
+        "updated_at_ms",
+        "archived_at_ms",
+        "pinned_at_ms",
+        "preview",
+        "model_selection",
+        "account_selection",
+    ] {
+        assert_eq!(
+            row.get(field),
+            snapshot.get(field),
+            "the batch row and the snapshot disagree on {field}"
+        );
+    }
+    assert_eq!(row["title"], "First");
+    assert_eq!(row["location"], "/work/a");
+    // The batch is a listing, never a transcript.
+    assert!(snapshot.get("messages").is_none());
+    assert!(row.get("messages").is_none());
+    store.close().await.unwrap();
+}
+
+/// A dated comparison of the two ways to build the same list, not a gate.
+///
+/// `cargo test --test catalog -- --ignored --nocapture` prints both numbers, so
+/// a regression in the batch path shows up as a measurement instead of a slow
+/// first frame somebody has to notice.
+#[tokio::test]
+#[ignore]
+async fn one_catalog_reply_beats_a_snapshot_per_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join("engine.db")).await.unwrap();
+    for index in 0..200 {
+        let id = format!("ses_{index:03}");
+        store
+            .initialize(&id, &format!("Session {index}"), "/work")
+            .await
+            .unwrap();
+        store
+            .message(
+                &id,
+                "user",
+                json!([{"type":"text","text":format!("prompt {index}")}]),
+            )
+            .await
+            .unwrap();
+    }
+    let ids = store.sessions().await.unwrap();
+    let started = std::time::Instant::now();
+    for id in &ids {
+        store.snapshot_with_metadata(id, true).await.unwrap();
+    }
+    let per_session = started.elapsed();
+    let started = std::time::Instant::now();
+    let rows = store.session_catalog().await.unwrap();
+    let batch = started.elapsed();
+    println!(
+        "{} sessions: {:?} as one snapshot each, {:?} as one catalog",
+        ids.len(),
+        per_session,
+        batch
+    );
+    assert_eq!(rows.len(), ids.len());
+    store.close().await.unwrap();
+}
