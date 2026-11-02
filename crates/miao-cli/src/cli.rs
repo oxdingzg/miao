@@ -1185,7 +1185,7 @@ fn worktree_remove_plan(
         plan.push("engine sessions · none (no ledger for this tree)".to_string());
     }
 
-    let main_anchored = anchored_sessions(&default_db(Path::new(root)), &canonical)?;
+    let main_anchored = anchored_sessions(&default_db(std::path::Path::new(root)), &canonical)?;
     plan.push(format!(
         "main ledger · {main_anchored} session(s) anchor this tree from the checkout's ledger"
     ));
@@ -1247,18 +1247,18 @@ fn worktree_remove_apply(
         let moved = tree_migrate_sessions(root, &check_path, &checkout)?;
         println!("migrated {moved} session(s) back to {}", checkout.display());
     }
-    let removed = git_in(Path::new(root), &["worktree", "remove", "--force", &path.display().to_string()])?;
+    let removed = git_in(std::path::Path::new(root), &["worktree", "remove", "--force", &path.display().to_string()])?;
     if !removed.status.success() {
         return Err(String::from_utf8_lossy(&removed.stderr).trim().to_string());
     }
-    let _ = git_in(Path::new(root), &["branch", "-D", name]);
+    let _ = git_in(std::path::Path::new(root), &["branch", "-D", name]);
     Ok(())
 }
 
 /// Sessions anchored to `tree` across the two ledgers that can hold one: the
 /// checkout's own ledger and the tree's. Removal strands both kinds.
 fn tree_anchored_sessions(root: &str, tree: &std::path::Path) -> Result<i64, String> {
-    let main = anchored_sessions(&default_db(Path::new(root)), tree)?;
+    let main = anchored_sessions(&default_db(std::path::Path::new(root)), tree)?;
     let tree_own = anchored_sessions(&default_db(tree), tree)?;
     Ok(main + tree_own)
 }
@@ -1267,7 +1267,7 @@ fn tree_anchored_sessions(root: &str, tree: &std::path::Path) -> Result<i64, Str
 /// that can hold one, and return how many moved.
 fn tree_migrate_sessions(root: &str, from: &std::path::Path, to: &std::path::Path) -> Result<usize, String> {
     let mut moved = 0;
-    for db in [default_db(Path::new(root)), default_db(from)] {
+    for db in [default_db(std::path::Path::new(root)), default_db(from)] {
         if !db.is_file() {
             continue;
         }
@@ -1285,7 +1285,7 @@ fn tree_migrate_sessions(root: &str, from: &std::path::Path, to: &std::path::Pat
 /// The main working tree of the repository `root` belongs to: the first entry
 /// `worktree list --porcelain` reports, which git always puts first.
 fn git_worktree_main_checkout(root: &str) -> Result<PathBuf, String> {
-    let listed = git_in(Path::new(root), &["worktree", "list", "--porcelain"])?;
+    let listed = git_in(std::path::Path::new(root), &["worktree", "list", "--porcelain"])?;
     if !listed.status.success() {
         return Err(String::from_utf8_lossy(&listed.stderr).trim().to_string());
     }
