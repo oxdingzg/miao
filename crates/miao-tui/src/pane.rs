@@ -1156,7 +1156,10 @@ impl Home {
             // the engine already bounded the text.
             if let Some(preview) = row.preview.as_deref().filter(|_| selected) {
                 selected_tail += 1;
-                let room = measure.saturating_sub(4);
+                // A preview answers "which conversation was this?" in a glance.
+                // Spending the whole width on it made one row read as a
+                // paragraph, so it is capped even when there is room left.
+                let room = measure.saturating_sub(4).min(PREVIEW_CELLS);
                 body.push(Line::from(Span::styled(
                     format!("{gutter}    {}", fit(preview, room)),
                     Style::new().fg(palette.text_muted),
@@ -1208,10 +1211,12 @@ impl Home {
             .skip(notice_skip)
             .chain(body.into_iter().skip(offset).take(list_height))
             .collect();
+        // One Line is one row here: the anchors recorded above, the window
+        // arithmetic and the pointer all assume it. Wrapping turned a long
+        // preview into three or four rows, which pushed titles off the page and
+        // made a click land on a neighbour.
         frame.render_widget(
-            Paragraph::new(all)
-                .style(Style::new().bg(palette.background))
-                .wrap(Wrap { trim: false }),
+            Paragraph::new(all).style(Style::new().bg(palette.background)),
             body_area,
         );
         // An armed leader replaces the key hint with its menu: those chords
@@ -1791,6 +1796,10 @@ fn render_composer_in(
 /// Skip `offset` display cells and take at most `width` cells of a line.
 /// One display row of text: newlines and runs of spaces collapse, and an
 /// overlong value is cut with an ellipsis so rows keep their alignment.
+/// How many cells the selected row's preview may use. A list row is a summary,
+/// not a place to read the conversation back.
+const PREVIEW_CELLS: usize = 72;
+
 fn fit(text: &str, width: usize) -> String {
     let single = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if UnicodeWidthStr::width(single.as_str()) <= width {
@@ -3655,6 +3664,52 @@ mod tests {
             .collect::<String>();
         assert!(visible.contains("itwasthestubconfig"), "{visible}");
         assert!(visible.contains("loginfix"), "{visible}");
+    }
+
+    /// A long title and a long preview stay on their own rows: the list keeps
+    /// one line per row, so the next Session is always two rows below the
+    /// selected one instead of wherever the wrapped text ends.
+    #[test]
+    fn a_long_preview_never_wraps_the_list() {
+        let mut home = Home::new(home_theme());
+        let long = "这是一段很长的会话预览".repeat(12);
+        // Both in one day bucket, so no group header sits between them and the
+        // only thing that can separate the rows is a wrapped line.
+        let mut first = home_row("ses_a", &"AAAA".repeat(20), Some(&long));
+        let mut second = home_row("ses_b", "BBBB", None);
+        first.updated_at_ms = Some(10);
+        second.updated_at_ms = Some(10);
+        home.set_rows(vec![first, second]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 14)).expect("terminal");
+        terminal
+            .draw(|frame| home.render(frame, frame.area()))
+            .expect("draw");
+        let rows = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(40)
+            .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let a = rows
+            .iter()
+            .position(|row| row.contains("AAAA"))
+            .expect("first row");
+        let b = rows
+            .iter()
+            .position(|row| row.contains("BBBB"))
+            .expect("second row");
+        assert_eq!(
+            b,
+            a + 2,
+            "the selected row owns exactly two lines: {rows:#?}"
+        );
+        assert!(
+            rows[a + 1].contains('…'),
+            "the preview is truncated: {:?}",
+            rows[a + 1]
+        );
     }
 
     fn home_theme() -> Theme {
