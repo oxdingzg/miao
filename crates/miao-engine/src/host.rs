@@ -683,6 +683,11 @@ impl Host {
                 .sessions()
                 .await
                 .and_then(|value| serde_json::to_value(value).map_err(Error::from)),
+            Command::SessionCatalog => runtime
+                .store()
+                .session_catalog()
+                .await
+                .and_then(|value| serde_json::to_value(value).map_err(Error::from)),
             Command::Shutdown => Ok(json!({ "accepted": true })),
         }
     }

@@ -1160,6 +1160,66 @@ impl Store {
         .await
     }
 
+    /// Every Session's catalog row, in one transaction.
+    ///
+    /// The list used to be assembled from one `snapshot` per Session, so a
+    /// store with a hundred Sessions paid a hundred request round trips and a
+    /// few thousand queries before the first frame could paint. A row keeps the
+    /// snapshot's own field names, so one parser reads both.
+    pub async fn session_catalog(&self) -> Result<Vec<Value>, Error> {
+        self.call(|conn| {
+            let tx = conn.transaction()?;
+            let ids = {
+                let mut statement = tx.prepare("SELECT id FROM engine_session ORDER BY id")?;
+                let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+                rows.collect::<Result<Vec<_>, _>>()?
+            };
+            let mut catalog = Vec::with_capacity(ids.len());
+            for session in ids {
+                let (title, updated_at_ms, archived_at_ms, pinned_at_ms): (
+                    String,
+                    Option<i64>,
+                    Option<i64>,
+                    Option<i64>,
+                ) = tx.query_row(
+                    "SELECT title,updated_at_ms,archived_at_ms,pinned_at_ms FROM engine_session \
+                     WHERE id=?1",
+                    [&session],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )?;
+                let location: Option<String> = tx
+                    .query_row(
+                        "SELECT root FROM engine_location WHERE session_id=?1",
+                        [&session],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let parent: Option<String> = tx
+                    .query_row(
+                        "SELECT parent_session_id FROM engine_lineage WHERE session_id=?1",
+                        [&session],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                catalog.push(json!({
+                    "session_id": session,
+                    "parent_session_id": parent,
+                    "location": location,
+                    "title": title,
+                    "updated_at_ms": updated_at_ms,
+                    "archived_at_ms": archived_at_ms,
+                    "pinned_at_ms": pinned_at_ms,
+                    "preview": metadata_preview(&tx, &session)?,
+                    "model_selection": crate::session_model::selected(&tx, &session)?,
+                    "account_selection": crate::session_account::selected_at(&tx, &session, i64::MAX as u64)?,
+                }));
+            }
+            tx.commit()?;
+            Ok(catalog)
+        })
+        .await
+    }
+
     /// Create the Session row if it does not exist.
     pub async fn ensure(&self, session: &str) -> Result<(), Error> {
         let session = session.to_owned();
