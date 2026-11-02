@@ -3787,7 +3787,11 @@ fn metadata_row(tx: &Transaction<'_>, session: &str) -> Result<Value, Error> {
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
     )?;
     let location: Option<String> = tx
-        .query_row("SELECT root FROM engine_location WHERE session_id=?1", [session], |row| row.get(0))
+        .query_row(
+            "SELECT root FROM engine_location WHERE session_id=?1",
+            [session],
+            |row| row.get(0),
+        )
         .optional()?;
     Ok(json!({
         "session_id": session,
