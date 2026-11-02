@@ -16,6 +16,19 @@ use crate::theme::Theme;
 use crate::{markdown, tool};
 
 const SIDEBAR_MIN_WIDTH: u16 = 100;
+
+/// The widest measure the transcript wraps at. Prose reads worse the wider it
+/// gets — at 200 columns a paragraph has no return sweep and the eye loses its
+/// place — so past this the text keeps its measure and centres in the body, the
+/// same rule the session list follows.
+const TRANSCRIPT_COLUMN: u16 = 100;
+
+/// The width the input is painted at on a Session screen: the same measure as
+/// the prose it answers, so the caret sits under the text rather than in a
+/// stripe of its own across a wide terminal.
+fn composer_column(width: u16) -> u16 {
+    width.min(TRANSCRIPT_COLUMN)
+}
 const SIDEBAR_WIDTH: u16 = 40;
 
 pub trait Pane {
@@ -242,7 +255,10 @@ impl Shell {
             Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(panel_height),
-            Constraint::Length(composer_height(&self.composer, frame.area().width)),
+            Constraint::Length(composer_height(
+                &self.composer,
+                composer_column(frame.area().width),
+            )),
             Constraint::Length(1),
         ])
         .areas(frame.area());
@@ -489,16 +505,24 @@ impl Pane for TranscriptPane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
         self.refresh_draft(false);
-        let resized = area.width != self.width;
+        // Wrap at the measure, not at the window: a wide terminal should give
+        // the text margins, not longer lines.
+        let width = area.width.min(TRANSCRIPT_COLUMN);
+        let content = Rect {
+            x: area.x + area.width.saturating_sub(width) / 2,
+            width,
+            ..area
+        };
+        let resized = content.width != self.width;
         if resized || self.body_version != self.body_built {
-            self.body = wrap_lines(&self.lines, area.width);
+            self.body = wrap_lines(&self.lines, content.width);
             self.body_built = self.body_version;
         }
         if resized || self.draft_version != self.draft_rows_built {
-            self.draft_rows = wrap_lines(&self.draft, area.width);
+            self.draft_rows = wrap_lines(&self.draft, content.width);
             self.draft_rows_built = self.draft_version;
         }
-        self.width = area.width;
+        self.width = content.width;
         let viewport = area.height as usize;
         let rows = self.body.len() + self.draft_rows.len();
         if self.follow {
@@ -516,14 +540,14 @@ impl Pane for TranscriptPane {
         // the transcript only steals columns from the text.
         frame.render_widget(
             Paragraph::new(visible).style(Style::new().fg(palette.text).bg(palette.background)),
-            area,
+            content,
         );
-        self.area = area;
+        self.area = content;
         // Only a drag reads the cells back, so an idle frame does not copy the
         // viewport into strings.
         if self.selection.is_some() {
-            self.snapshot(frame, area);
-            self.paint_selection(frame, area);
+            self.snapshot(frame, content);
+            self.paint_selection(frame, content);
         }
     }
 }
@@ -1132,7 +1156,10 @@ impl Home {
             // the engine already bounded the text.
             if let Some(preview) = row.preview.as_deref().filter(|_| selected) {
                 selected_tail += 1;
-                let room = measure.saturating_sub(4);
+                // A preview answers "which conversation was this?" in a glance.
+                // Spending the whole width on it made one row read as a
+                // paragraph, so it is capped even when there is room left.
+                let room = measure.saturating_sub(4).min(PREVIEW_CELLS);
                 body.push(Line::from(Span::styled(
                     format!("{gutter}    {}", fit(preview, room)),
                     Style::new().fg(palette.text_muted),
@@ -1184,10 +1211,12 @@ impl Home {
             .skip(notice_skip)
             .chain(body.into_iter().skip(offset).take(list_height))
             .collect();
+        // One Line is one row here: the anchors recorded above, the window
+        // arithmetic and the pointer all assume it. Wrapping turned a long
+        // preview into three or four rows, which pushed titles off the page and
+        // made a click land on a neighbour.
         frame.render_widget(
-            Paragraph::new(all)
-                .style(Style::new().bg(palette.background))
-                .wrap(Wrap { trim: false }),
+            Paragraph::new(all).style(Style::new().bg(palette.background)),
             body_area,
         );
         // An armed leader replaces the key hint with its menu: those chords
@@ -1446,14 +1475,14 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme, expanded: bool) -> V
 }
 
 /// Cap a single line of prose to `COMPACT_CELLS` display cells. Counting
-/// characters let a CJK line twice the width through and the widget then clipped
-/// it mid-word.
+/// characters let a CJK line twice the width through, and the widget then
+/// clipped it mid-word.
 fn compact(text: &str) -> String {
     let single = text.split_whitespace().collect::<Vec<_>>().join(" ");
     fit(&single, COMPACT_CELLS)
 }
 
-/// How much of a compacted line survives. Enough for a sentence, short of a
+/// How much of a compacted line survives: enough for a sentence, short of a
 /// paragraph.
 const COMPACT_CELLS: usize = 80;
 
@@ -1568,11 +1597,30 @@ pub fn composer_height(composer: &Composer, width: u16) -> u16 {
 /// The home screen shows the same composer as a Session, so a prompt can be
 /// typed before any Session exists.
 pub fn render_home_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
-    render_composer(frame, area, composer, theme)
+    // The landing screen keeps the full width: its composer sits in a fixed
+    // three-row band, and narrowing it would wrap a draft into a band that
+    // cannot grow.
+    render_composer_in(frame, area, composer, theme, area.width)
 }
 
 fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
+    render_composer_in(frame, area, composer, theme, composer_column(area.width))
+}
+
+fn render_composer_in(
+    frame: &mut Frame,
+    area: Rect,
+    composer: &Composer,
+    theme: &Theme,
+    column: u16,
+) {
     let palette = theme.palette;
+    let column = column.min(area.width);
+    let area = Rect {
+        x: area.x + area.width.saturating_sub(column) / 2,
+        width: column,
+        ..area
+    };
     // The queue count rides the same title line as a transient notice so the
     // composer answers "is my prompt waiting?" without a second row.
     let queued = (composer.queued > 0).then(|| {
@@ -1750,6 +1798,10 @@ fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &T
 /// Skip `offset` display cells and take at most `width` cells of a line.
 /// One display row of text: newlines and runs of spaces collapse, and an
 /// overlong value is cut with an ellipsis so rows keep their alignment.
+/// How many cells the selected row's preview may use. A list row is a summary,
+/// not a place to read the conversation back.
+const PREVIEW_CELLS: usize = 72;
+
 fn fit(text: &str, width: usize) -> String {
     let single = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if UnicodeWidthStr::width(single.as_str()) <= width {
@@ -3264,6 +3316,94 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_wide_frame_paints_the_input_in_the_same_column_as_the_prose() {
+        // The caret should sit under the text it answers, not in a stripe across
+        // a 200-column terminal.
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let mut shell = Shell::new(Path::new("."), theme);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(200, 20)).expect("terminal");
+        terminal.draw(|frame| shell.render(frame)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let rows = buffer.content.chunks(200).collect::<Vec<_>>();
+        let top = rows
+            .iter()
+            .position(|row| {
+                row.iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>()
+                    .contains("composer")
+            })
+            .expect("the composer is painted");
+        let gutter = (200 - TRANSCRIPT_COLUMN as usize) / 2;
+        let symbols = rows[top]
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<Vec<_>>();
+        assert_eq!(symbols[gutter], "┌", "the box starts on the column");
+        assert_eq!(
+            symbols[gutter + TRANSCRIPT_COLUMN as usize - 1],
+            "┐",
+            "and ends on it"
+        );
+        for (x, symbol) in symbols.iter().enumerate() {
+            let inside = x >= gutter && x < gutter + TRANSCRIPT_COLUMN as usize;
+            if !inside {
+                assert_eq!(symbol, &" ", "the input does not reach column {x}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_wide_frame_keeps_the_transcript_at_a_readable_measure() {
+        // A 200-column terminal should give the prose margins rather than
+        // 200-column lines: the same rule the session list follows.
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let mut shell = Shell::new(Path::new("."), theme);
+        shell.set_transcript(&Transcript {
+            entries: vec![Entry::User {
+                text: "a sentence long enough to need the whole measure of the column".into(),
+                seq: 1,
+            }],
+            ..Transcript::default()
+        });
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(200, 10)).expect("terminal");
+        terminal
+            .draw(|frame| shell.transcript.render(frame, frame.area()))
+            .expect("draw");
+        let buffer = terminal.backend().buffer();
+        let gutter = (200 - TRANSCRIPT_COLUMN as usize) / 2;
+        for (index, cell) in buffer.content.iter().enumerate() {
+            let x = index % 200;
+            let inside = x >= gutter && x < gutter + TRANSCRIPT_COLUMN as usize;
+            if !inside {
+                assert_eq!(
+                    cell.symbol(),
+                    " ",
+                    "text outside the measure at column {x}: {:?}",
+                    cell.symbol()
+                );
+            }
+        }
+        let painted = buffer
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(
+            painted.contains("a sentence long enough"),
+            "the text is still painted: {painted}"
+        );
+    }
+
     fn question(multi: bool) -> QuestionView {
         QuestionView {
             question_id: "run-1/call_2".into(),
@@ -3527,6 +3667,59 @@ mod tests {
         assert!(visible.contains("loginfix"), "{visible}");
     }
 
+    /// A long title and a long preview stay on their own rows: the list keeps
+    /// one line per row, so the next Session is always two rows below the
+    /// selected one instead of wherever the wrapped text ends.
+    #[test]
+    fn a_long_preview_never_wraps_the_list() {
+        let mut home = Home::new(home_theme());
+        let long = "这是一段很长的会话预览".repeat(12);
+        // Both in one day bucket, so no group header sits between them and the
+        // only thing that can separate the rows is a wrapped line.
+        let mut first = home_row("ses_a", &"AAAA".repeat(20), Some(&long));
+        let mut second = home_row("ses_b", "BBBB", None);
+        first.updated_at_ms = Some(10);
+        second.updated_at_ms = Some(10);
+        home.set_rows(vec![first, second]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 14)).expect("terminal");
+        terminal
+            .draw(|frame| home.render(frame, frame.area()))
+            .expect("draw");
+        let rows = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(40)
+            .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let a = rows
+            .iter()
+            .position(|row| row.contains("AAAA"))
+            .expect("first row");
+        let b = rows
+            .iter()
+            .position(|row| row.contains("BBBB"))
+            .expect("second row");
+        assert_eq!(
+            b,
+            a + 2,
+            "the selected row owns exactly two lines: {rows:#?}"
+        );
+        assert!(
+            rows[a + 1].contains('…'),
+            "the preview is truncated: {:?}",
+            rows[a + 1]
+        );
+    }
+
+    fn home_theme() -> Theme {
+        Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        }
+    }
+
     /// A long CJK title and a long CJK todo each stay on one row. Counting
     /// characters instead of cells let both through at twice the column's
     /// width, and the wrapping widget then broke them one character per line.
@@ -3586,13 +3779,6 @@ mod tests {
             "the title is truncated: {:?}",
             rows[title]
         );
-    }
-
-    fn home_theme() -> Theme {
-        Theme {
-            name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
-        }
     }
 
     fn home_row(id: &str, title: &str, preview: Option<&str>) -> SessionSummary {
