@@ -9,15 +9,14 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::{ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
+use std::io::{BufRead, BufReader, Write};
 use tokio::sync::{mpsc, oneshot, watch};
 
 /// Catalog reads that a timeout must not take the whole transport down with:
@@ -332,7 +331,7 @@ impl EngineClient {
                     ),
                 };
                 if let Some(child) = self.child.as_ref() {
-                    let _ = child.lock().expect("child lock").start_kill();
+                    let _ = child.lock().expect("child lock").kill();
                 }
                 self.publish_failure(failure);
                 Err(error)
@@ -486,7 +485,7 @@ impl EngineClient {
             let stopped = tokio::time::timeout(Duration::from_secs(1), self.exited.changed()).await;
             if stopped.is_err() {
                 if let Some(child) = self.child.as_ref() {
-                    let _ = child.lock().expect("child lock").start_kill();
+                    let _ = child.lock().expect("child lock").kill();
                 }
                 let _ = tokio::time::timeout(Duration::from_secs(1), self.exited.changed()).await;
             }
@@ -517,14 +516,14 @@ fn spawn_engine(
     request_timeout: Duration,
     cursors: Cursors,
 ) -> Result<(EngineClient, EventRx), TransportError> {
-    let mut child = Command::new(&spawn.program)
+    let mut command = Command::new(&spawn.program);
+    command
         .args(&spawn.args)
         .envs(spawn.env.iter().cloned())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()?;
+        .stderr(Stdio::piped());
+    let mut child = command.spawn()?;
     let stdin = child.stdin.take().expect("piped stdin");
     let stdout = child.stdout.take().expect("piped stdout");
     let stderr = child.stderr.take().expect("piped stderr");
@@ -538,13 +537,20 @@ fn spawn_engine(
     let stderr_tail: Arc<Mutex<Stderr>> = Arc::new(Mutex::new(Stderr::default()));
     let (stderr_done_tx, stderr_done_rx) = watch::channel(false);
 
-    let mut writer = stdin;
-    tokio::spawn(async move {
-        while let Some(frame) = outbound_rx.recv().await {
+    // The pump threads are OS threads, not runtime tasks: a frame the product
+    // sends must reach the engine even when the single-threaded UI runtime is
+    // parked in the render loop, and a reply must reach the UI even while
+    // every task is waiting on it. Tokio tasks for these pipes starved under
+    // exactly that parking, and a lost catalog request left the landing
+    // screen on its spinner for minutes.
+    let pump_handle = tokio::runtime::Handle::current();
+    std::thread::spawn(move || {
+        let mut writer = stdin;
+        while let Some(frame) = outbound_rx.blocking_recv() {
             // One frame per line, as the engine's `read_line` expects.
             let mut line = frame.to_string();
             line.push('\n');
-            if writer.write_all(line.as_bytes()).await.is_err() || writer.flush().await.is_err() {
+            if writer.write_all(line.as_bytes()).is_err() || writer.flush().is_err() {
                 break;
             }
         }
@@ -559,12 +565,14 @@ fn spawn_engine(
         outbound: outbound_tx.clone(),
     };
     let reader_reap = reap.clone();
+    let reaper_reap = reap.clone();
     let reader_child = child.clone();
     let reader_tail = stderr_tail.clone();
     let mut reader_stderr_done = stderr_done_rx.clone();
-    tokio::spawn(async move {
-        let mut lines = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
+    std::thread::spawn(move || {
+        let lines = BufReader::new(stdout).lines();
+        for line in lines {
+            let Ok(line) = line else { break };
             if !line.trim().is_empty() {
                 reap.dispatch(&line);
             }
@@ -573,20 +581,25 @@ fn spawn_engine(
         // the reason. Wait briefly for that status so the message reports the
         // engine's own words instead of losing a race with the stream closing.
         // A child that closed its output but keeps running is still a failure.
-        let status = exit_status(&reader_child, EXIT_STATUS_GRACE).await;
-        // Exit status and stdout EOF do not mean the stderr task has drained.
-        // Bound the wait because a descendant can inherit the stderr pipe.
-        let _ = tokio::time::timeout(EXIT_STATUS_GRACE, reader_stderr_done.changed()).await;
-        match status {
-            Some(status) if status.success() => reap.publish_restart(),
-            status => reap.publish(engine_failure(status, &reader_tail)),
-        }
+        // The post-EOF bookkeeping awaits, so it hops back onto the runtime.
+        pump_handle.spawn(async move {
+            let status = exit_status(&reader_child, EXIT_STATUS_GRACE).await;
+            // Exit status and stdout EOF do not mean the stderr task has
+            // drained. Bound the wait because a descendant can inherit the
+            // stderr pipe.
+            let _ = tokio::time::timeout(EXIT_STATUS_GRACE, reader_stderr_done.changed()).await;
+            match status {
+                Some(status) if status.success() => reader_reap.publish_restart(),
+                status => reader_reap.publish(engine_failure(status, &reader_tail)),
+            }
+        });
     });
 
     let tail = stderr_tail.clone();
-    tokio::spawn(async move {
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
+    std::thread::spawn(move || {
+        let lines = BufReader::new(stderr).lines();
+        for line in lines {
+            let Ok(line) = line else { break };
             let mut buffer = tail.lock().expect("stderr tail");
             buffer.push(&line);
         }
@@ -604,9 +617,9 @@ fn spawn_engine(
             if let Some(status) = status {
                 let _ = tokio::time::timeout(EXIT_STATUS_GRACE, reaper_stderr_done.changed()).await;
                 if status.success() {
-                    reader_reap.publish_restart();
+                    reaper_reap.publish_restart();
                 } else {
-                    reader_reap.publish(engine_failure(Some(status), &stderr_tail));
+                    reaper_reap.publish(engine_failure(Some(status), &stderr_tail));
                 }
                 let _ = exited_tx.send(true);
                 break;
