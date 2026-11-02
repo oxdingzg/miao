@@ -3,7 +3,8 @@ use std::process::ExitCode;
 
 const USAGE: &str =
     "usage: miao-tui [--workspace <dir>] [--db <engine.db>] [--model <provider/model>]
-                  [--config-dir <dir>] [--session <id>] [--continue] [--prompt <text>]";
+                  [--config-dir <dir>] [--session <id>] [--continue] [--prompt <text>]
+                  [--auto] [--fork]";
 
 /// The release build injects the product version; a source build falls back to
 /// the crate's own version.
@@ -47,6 +48,8 @@ struct Options {
     session: Option<String>,
     continue_last: bool,
     prompt: Option<String>,
+    auto: bool,
+    fork: bool,
 }
 
 enum Invocation {
@@ -115,6 +118,8 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Invocation, String> {
     let mut session: Option<String> = None;
     let mut continue_last = false;
     let mut prompt: Option<String> = None;
+    let mut auto = false;
+    let mut fork = false;
     while let Some(arg) = args.next() {
         // Both `--flag value` and `--flag=value` are accepted; the CLI passes
         // the former, a person typing the command often uses the latter.
@@ -144,6 +149,18 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Invocation, String> {
                 }
                 continue_last = true;
             }
+            "--auto" => {
+                if inline.is_some() {
+                    return Err("--auto takes no value".into());
+                }
+                auto = true;
+            }
+            "--fork" => {
+                if inline.is_some() {
+                    return Err("--fork takes no value".into());
+                }
+                fork = true;
+            }
             other => return Err(format!("unexpected argument \"{other}\"")),
         }
     }
@@ -156,6 +173,8 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Invocation, String> {
             session,
             continue_last,
             prompt,
+            auto,
+            fork,
         }),
         // A single binary is started in a directory, so the working directory is
         // the workspace unless one is named; `-h` still asks for help.
@@ -168,6 +187,8 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Invocation, String> {
             session,
             continue_last,
             prompt,
+            auto,
+            fork,
         }),
     })
 }
@@ -187,6 +208,8 @@ fn launch(options: Options) -> ExitCode {
         session: options.session,
         continue_last: options.continue_last,
         prompt: options.prompt,
+        auto: options.auto,
+        fork: options.fork,
     }) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {

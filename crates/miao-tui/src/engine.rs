@@ -150,6 +150,11 @@ pub enum Request {
         session_id: String,
         target_directory: String,
     },
+    /// Copy a Session's committed history into a fresh Session (CLI-01
+    /// `--fork`); the executor opens the fresh copy on success.
+    ForkSession {
+        session_id: String,
+    },
     /// Read the open Session's billed usage for the status dialog.
     Usage {
         session_id: String,
@@ -342,6 +347,12 @@ impl Handle {
         });
     }
 
+    pub fn fork_session(&self, session_id: &str) {
+        let _ = self.tx.send(Request::ForkSession {
+            session_id: session_id.to_string(),
+        });
+    }
+
     pub fn devices(&self) {
         let _ = self.tx.send(Request::Devices);
     }
@@ -511,6 +522,7 @@ pub fn settings(
     db: Option<PathBuf>,
     model: Option<String>,
     config_dir: Option<PathBuf>,
+    auto_approve: bool,
 ) -> Result<Settings, String> {
     let db = db
         .or_else(|| std::env::var_os("MIAO_ENGINE_DB").map(PathBuf::from))
@@ -528,9 +540,14 @@ pub fn settings(
     let spawn = EngineSpawn {
         program: engine_binary(),
         args: launch_args(
-            args(&db, workspace, &model, config_dir.as_deref(), |name| {
-                std::env::var(name).ok()
-            }),
+            args(
+                &db,
+                workspace,
+                &model,
+                config_dir.as_deref(),
+                auto_approve,
+                |name| std::env::var(name).ok(),
+            ),
             std::env::var("MIAO_ENGINE_LAUNCH_PREFIX").ok().as_deref(),
         )?,
         env: Vec::new(),
@@ -580,6 +597,7 @@ fn args(
     workspace: &Path,
     model: &str,
     config_dir: Option<&Path>,
+    auto_approve: bool,
     env: impl Fn(&str) -> Option<String>,
 ) -> Vec<String> {
     let mut args = vec![
@@ -596,6 +614,11 @@ fn args(
     }
     if let Some(dir) = config_dir {
         push(&mut args, "--config-dir", dir.display().to_string());
+    }
+    // A valueless flag: the engine parses its presence as the operator's
+    // launch-wide classifier approval.
+    if auto_approve {
+        args.push("--auto-approve".into());
     }
     // Every name in this table is accepted by `miao-engine serve`; a flag the
     // engine does not know would end the child process at startup.
@@ -1007,6 +1030,29 @@ async fn run(
                         Ok(_) => bus.send(AppEvent::SessionMoved),
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("move failed: {error}")))
+                        }
+                    }
+                }
+                Request::ForkSession { session_id } => {
+                    // The client names the target the way it names an
+                    // initialized Session, so the fresh copy is openable before
+                    // the copy itself answers.
+                    let target = new_id("ses");
+                    let result = client
+                        .request(
+                            "fork_session",
+                            json!({ "session_id": session_id, "target_session_id": target }),
+                        )
+                        .await;
+                    match result {
+                        Ok(_) => {
+                            dirty = None;
+                            open_session(client, &bus, &mut open, target).await
+                        }
+                        Err(error) => {
+                            bus.send(AppEvent::EngineFailure(format!(
+                                "cannot fork the Session: {error}"
+                            )));
                         }
                     }
                 }
@@ -1863,6 +1909,7 @@ mod tests {
             Path::new("/work"),
             "openai/gpt-5",
             Some(Path::new("/config")),
+            false,
             environment(&[]),
         );
         assert_eq!(
@@ -1912,6 +1959,7 @@ mod tests {
             Path::new("/work"),
             "openai/gpt-5",
             None,
+            false,
             environment(&[
                 ("MIAO_ENGINE_CREDENTIAL_DB", "/data/miao.db"),
                 ("MIAO_ENGINE_CREDENTIAL_ID", "cred_1"),
@@ -1944,6 +1992,7 @@ mod tests {
             Path::new("/work"),
             "m",
             None,
+            false,
             environment(&[]),
         );
         assert_eq!(args.len(), 7);

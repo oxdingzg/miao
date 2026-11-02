@@ -111,6 +111,10 @@ impl Host {
             Command::SelectAgent { session_id, agent } => {
                 runtime.set_agent(&session_id, *agent).await
             }
+            Command::ForkSession {
+                session_id,
+                target_session_id,
+            } => runtime.fork(&session_id, &target_session_id, None).await,
             Command::PendingInputs {
                 session_id,
                 after,

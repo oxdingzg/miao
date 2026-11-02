@@ -203,13 +203,20 @@ pub async fn config_routes_manifest(
         }
     }
     let normalized = miao_engine::config_derive::normalized_from_sources(&sources)?;
-    let providers = match normalized.get("providers").and_then(serde_json::Value::as_object) {
+    let providers = match normalized
+        .get("providers")
+        .and_then(serde_json::Value::as_object)
+    {
         Some(map) if !map.is_empty() => map,
         _ => return Ok(None),
     };
     let mut entries = Vec::new();
     for (provider_id, provider) in providers {
-        if provider.get("disabled").and_then(serde_json::Value::as_bool) == Some(true) {
+        if provider
+            .get("disabled")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        {
             continue;
         }
         let Some(stored) = credentials
@@ -218,7 +225,10 @@ pub async fn config_routes_manifest(
         else {
             continue;
         };
-        let models = match provider.get("models").and_then(serde_json::Value::as_object) {
+        let models = match provider
+            .get("models")
+            .and_then(serde_json::Value::as_object)
+        {
             Some(map) => map,
             None => continue,
         };
@@ -266,15 +276,17 @@ pub async fn config_routes_manifest(
                 .unwrap_or_default();
             for (index, credential) in stored.iter().enumerate() {
                 let primary = index == 0
-                    && default_model.as_deref().is_some_and(|default| {
-                        default == model_ref.as_str()
-                    });
+                    && default_model
+                        .as_deref()
+                        .is_some_and(|default| default == model_ref.as_str());
                 let id = if index == 0 {
                     model_ref.clone()
                 } else {
                     use sha2::Digest;
                     let digest = sha2::Sha256::digest(serde_json::to_vec(&serde_json::json!([
-                        provider_id, model_id, credential.id,
+                        provider_id,
+                        model_id,
+                        credential.id,
                     ]))?);
                     let mut hex = String::with_capacity(digest.len() * 2);
                     for byte in digest {
@@ -350,7 +362,10 @@ pub async fn config_routes_manifest(
             let Some(api) = provider.get("api").and_then(serde_json::Value::as_str) else {
                 continue;
             };
-            let models = match provider.get("models").and_then(serde_json::Value::as_object) {
+            let models = match provider
+                .get("models")
+                .and_then(serde_json::Value::as_object)
+            {
                 Some(map) => map,
                 None => continue,
             };
@@ -379,14 +394,19 @@ pub async fn config_routes_manifest(
                     .unwrap_or_default();
                 for (index, credential) in stored.iter().enumerate() {
                     let primary = index == 0
-                        && default_model.as_deref().is_some_and(|default| default == model_ref);
+                        && default_model
+                            .as_deref()
+                            .is_some_and(|default| default == model_ref);
                     let id = if index == 0 {
                         model_ref.clone()
                     } else {
                         use sha2::Digest;
-                        let digest = sha2::Sha256::digest(serde_json::to_vec(&serde_json::json!([
-                            provider_id, model_id, credential.id,
-                        ]))?);
+                        let digest =
+                            sha2::Sha256::digest(serde_json::to_vec(&serde_json::json!([
+                                provider_id,
+                                model_id,
+                                credential.id,
+                            ]))?);
                         let mut hex = String::with_capacity(digest.len() * 2);
                         for byte in digest {
                             hex.push_str(&format!("{byte:02x}"));
@@ -421,7 +441,8 @@ pub async fn config_routes_manifest(
                         .and_then(|limit| limit.get("output"))
                         .and_then(serde_json::Value::as_u64);
                     if context.is_some() || output.is_some() {
-                        entry["limit"] = serde_json::json!({ "context": context, "output": output });
+                        entry["limit"] =
+                            serde_json::json!({ "context": context, "output": output });
                     }
                     if !input.is_empty() {
                         entry["input_modalities"] = serde_json::json!(input);
@@ -484,7 +505,9 @@ pub mod test_support {
 pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Send + Sync>> {
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\n       miao-engine retention --db PATH [--session ID] [--apply]\n       miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]\n       miao-engine permission-source --db PATH --project ID --directory PATH\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
+        eprintln!(
+            "Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\n       miao-engine retention --db PATH [--session ID] [--apply]\n       miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]\n       miao-engine permission-source --db PATH --project ID --directory PATH\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required."
+        );
         std::process::exit(2);
     }
     let acp = mode == Some("acp");
@@ -504,6 +527,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             "--config-dir",
             "--config-sources",
             "--mode",
+            "--auto-approve",
             "--edit-recovery",
             "--verify-command",
             "--prompt-cache",
@@ -764,7 +788,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
                             integration,
                         },
                         None => {
-                            return Err("API key or explicit credential source is required".into())
+                            return Err("API key or explicit credential source is required".into());
                         }
                     }
                 }
@@ -857,7 +881,22 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
         Some("read-only" | "read_only") => Some(Mode::ReadOnly),
         Some("workspace") => Some(Mode::Workspace),
         Some(other) => {
-            return Err(format!("unknown --mode `{other}`, expected read-only or workspace").into())
+            return Err(
+                format!("unknown --mode `{other}`, expected read-only or workspace").into(),
+            );
+        }
+    };
+    // A launch-wide permission relaxation: asks the default or ordered policy
+    // raises settle through the classifier instead of a host approval. The
+    // value is a spelling choice (`--auto-approve`, no value), not a level.
+    let auto_approve = match options.get("--auto-approve").map(String::as_str) {
+        None => false,
+        Some("") | Some("true") | Some("on") => true,
+        Some("false") | Some("off") => false,
+        Some(other) => {
+            return Err(
+                format!("unknown --auto-approve value `{other}`, expected true or false").into(),
+            );
         }
     };
     // Where the base policy comes from. Kept for the process lifetime so
@@ -878,7 +917,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     } else {
         miao_engine::config_derive::PolicyOrigin::Entry { acp }
     };
-    let policy = Policy::new(policy_origin.derive(mode)?)?;
+    let policy = Policy::new(policy_origin.derive(mode, auto_approve)?)?;
     let mut tools = Tools::new(workspace)
         .await?
         .with_workspace_instructions(
@@ -904,9 +943,18 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     // An operator who names a route, a transport, or a credential source has
     // said exactly what this start serves; the generated manifest is for the
     // standalone start that only names configuration.
-    let operator_named_route = ["--model-routes-config", "--provider", "--endpoint", "--credential-db", "--auth-file", "--credential-id", "--credential-integration", "--credential-socket"]
-        .iter()
-        .any(|flag| options.contains_key(*flag));
+    let operator_named_route = [
+        "--model-routes-config",
+        "--provider",
+        "--endpoint",
+        "--credential-db",
+        "--auth-file",
+        "--credential-id",
+        "--credential-integration",
+        "--credential-socket",
+    ]
+    .iter()
+    .any(|flag| options.contains_key(*flag));
     let provider = if let Some(path) = options.get("--model-routes-config") {
         let path = tokio::fs::canonicalize(path).await?;
         let workspace = std::path::PathBuf::from(tools.location());
@@ -1014,9 +1062,13 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
         let config = serde_json::from_slice::<miao_engine::worker::Config>(&bytes)
             .map_err(|_| "invalid Worker host config")?;
         tools = tools.with_protected_resource(&path);
-        match miao_engine::worker::Registry::connect(config, std::path::Path::new(tools.location())).await {
+        match miao_engine::worker::Registry::connect(config, std::path::Path::new(tools.location()))
+            .await
+        {
             Ok(registry) => tools = tools.with_worker(Arc::new(registry)),
-            Err(error) => eprintln!("miao-engine extension worker unavailable: {error}; built-in tools remain available"),
+            Err(error) => eprintln!(
+                "miao-engine extension worker unavailable: {error}; built-in tools remain available"
+            ),
         }
     }
     let mut mcp_origin = None;
@@ -1184,7 +1236,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
         _ => {
             return Err(
                 "--permission-root-db and --permission-project must be selected together".into(),
-            )
+            );
         }
     };
     if let Some(limits) = context_limits {
@@ -1202,7 +1254,9 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     if let Some(origin) = &model_origin {
         runtime.set_model_origin(origin.clone()).await?;
     }
-    runtime.set_policy_origin(policy_origin.clone(), mode).await;
+    runtime
+        .set_policy_origin(policy_origin.clone(), mode, auto_approve)
+        .await;
     // No host watches these files in the standalone entry, so the engine polls
     // them itself; a hosted engine gets an explicit `config_reload`. Both
     // origins contribute: one reload re-derives every section from its source.

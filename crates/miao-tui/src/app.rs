@@ -161,6 +161,10 @@ pub struct Startup {
     pub session: Option<String>,
     pub continue_last: bool,
     pub prompt: Option<String>,
+    /// `--fork`: the resolved Session (named, or the newest for `--continue`)
+    /// is copied into a fresh Session before it opens, so the resumed work
+    /// never appends onto the original.
+    pub fork: bool,
 }
 
 pub struct App {
@@ -352,7 +356,11 @@ impl App {
             return;
         };
         if let Some(session) = self.startup.session.clone() {
-            engine.open(&session);
+            if self.startup.fork {
+                engine.fork_session(&session);
+            } else {
+                engine.open(&session);
+            }
             return;
         }
         if self.startup.continue_last {
@@ -2714,7 +2722,11 @@ impl App {
         match newest {
             Some(id) => {
                 if let Some(engine) = self.engine.clone() {
-                    engine.open(&id);
+                    if self.startup.fork {
+                        engine.fork_session(&id);
+                    } else {
+                        engine.open(&id);
+                    }
                 }
             }
             None => self.start_unsaved(),
@@ -3480,6 +3492,22 @@ mod tests {
         // routed", so it must not make the warning disappear.
         app.handle(AppEvent::Sessions(vec![summary("ses_known", 1)]));
         assert_eq!(app.home.warning(), Some("no model routes"));
+    }
+
+    #[test]
+    fn a_forked_launch_copies_instead_of_appending() {
+        let mut app = app_with(Startup {
+            session: Some("ses_known".into()),
+            fork: true,
+            ..Startup::default()
+        });
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.start();
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::ForkSession { .. })
+        ));
     }
 
     #[test]

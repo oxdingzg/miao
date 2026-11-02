@@ -51,6 +51,13 @@ pub struct Launch {
     pub session: Option<String>,
     pub continue_last: bool,
     pub prompt: Option<String>,
+    /// `--fork`: copy the resumed Session into a fresh one instead of
+    /// appending onto the original. Requires `--session` or `--continue`.
+    pub fork: bool,
+    /// `--auto`/`--yolo`/`--dangerously-skip-permissions`: forwarded to the
+    /// engine as `--auto-approve`, where asks the policy raises settle through
+    /// the deterministic classifier instead of a host approval.
+    pub auto: bool,
 }
 
 pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
@@ -68,6 +75,7 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         session: launch.session.clone(),
         continue_last: launch.continue_last,
         prompt: launch.prompt.clone(),
+        fork: launch.fork,
     };
     let mut app = App::new(
         workspace.clone(),
@@ -128,6 +136,7 @@ async fn drive(
         launch.db,
         launch.model,
         launch.config_dir,
+        launch.auto,
     ) {
         Ok(settings) => {
             app.set_settings(settings.clone());
