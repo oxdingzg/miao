@@ -54,6 +54,7 @@ Usage:
   miao remote           show this machine's pairing state
   miao pr [NUMBER]      show the current branch and working tree
   miao upgrade          show the installed version and how it upgrades
+  miao uninstall        list install artifacts to remove (--apply to remove)
   miao report TO TEXT   hand a conclusion back to another session
   miao hub              run the local session hub (single instance)
   miao hubctl OP ...    talk to a running hub: register|list|ping
@@ -1239,7 +1240,8 @@ fn product_config_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
 /// file, or the maintenance commands audit a database nobody writes.
 fn default_db(workspace: &std::path::Path) -> PathBuf {
     let root = miao_engine::placement::storage_root().unwrap_or_else(std::env::temp_dir);
-    miao_engine::placement::database_for(&root, workspace).unwrap_or_else(|| root.join("unnamed.db"))
+    miao_engine::placement::database_for(&root, workspace)
+        .unwrap_or_else(|| root.join("unnamed.db"))
 }
 
 /// The product database the host projects into. The three-step rule matches the
@@ -1253,6 +1255,135 @@ fn product_db() -> Option<PathBuf> {
             std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share/miao"))
         })?;
     Some(root.join("miao.db"))
+}
+
+/// One XDG-scoped directory: the explicit `MIAO_*` variable wins, then the
+/// XDG base, then the home-relative default. Uninstall and the db reports
+/// share this so a removal target and a reporting target can never disagree.
+fn xdg_dir(
+    explicit: Option<&str>,
+    xdg: &str,
+    xdg_sub: &str,
+    home_default: &str,
+) -> Option<PathBuf> {
+    explicit
+        .and_then(|name| std::env::var_os(name).map(PathBuf::from))
+        .or_else(|| std::env::var_os(xdg).map(|dir| PathBuf::from(dir).join(xdg_sub)))
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(home_default)))
+}
+
+/// The directories an uninstall removes, in removal order. The engine ledger
+/// storage is part of the data group: it is the single largest residue a
+/// single-binary install leaves, and the TS uninstall never knew about it.
+fn uninstall_targets(keep_config: bool, keep_data: bool) -> Vec<(&'static str, PathBuf, bool)> {
+    let mut targets = Vec::new();
+    if let Some(dir) = xdg_dir(
+        Some("MIAO_DATA_HOME"),
+        "XDG_DATA_HOME",
+        "miao",
+        ".local/share/miao",
+    ) {
+        targets.push(("data", dir, keep_data));
+    }
+    if let Some(root) = miao_engine::placement::storage_root() {
+        targets.push(("engine storage", root, keep_data));
+    }
+    if let Some(dir) = xdg_dir(None, "XDG_CACHE_HOME", "miao", ".cache/miao") {
+        targets.push(("cache", dir, false));
+    }
+    if let Some(dir) = product_config_dir(None) {
+        targets.push(("config", dir, keep_config));
+    }
+    if let Some(dir) = xdg_dir(None, "XDG_STATE_HOME", "miao", ".local/state/miao") {
+        targets.push(("state", dir, false));
+    }
+    targets
+}
+
+/// Bytes of a directory tree, or zero when it does not exist. Uninstall shows
+/// the size before removing, so the operator sees what a `--apply` reclaims.
+fn tree_bytes(path: &std::path::Path) -> u64 {
+    let mut total = 0;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
+            if metadata.is_dir() {
+                total += tree_bytes(&entry.path());
+            } else {
+                total += metadata.len();
+            }
+        }
+    }
+    total
+}
+
+/// Remove every install artifact the single binary owns. A dry run is the
+/// default and lists each target with its size; `--apply` removes. The shell
+/// rc lines and the running binary itself are reported, not touched — editing
+/// a user's rc by string match risks eating unrelated lines, and deleting the
+/// file this process runs from is the operator's call.
+fn uninstall(rest: &[String]) -> Result<(), String> {
+    let apply = rest.iter().any(|argument| argument == "--apply");
+    let keep_config = rest.iter().any(|argument| argument == "--keep-config");
+    let keep_data = rest.iter().any(|argument| argument == "--keep-data");
+    let targets = uninstall_targets(keep_config, keep_data);
+    let mut failures = Vec::new();
+    println!(
+        "uninstall · {}",
+        if apply {
+            "removing"
+        } else {
+            "dry run (pass --apply to remove)"
+        }
+    );
+    for (label, path, keep) in &targets {
+        if !path.exists() {
+            println!("  ○ {label} · {} · absent", path.display());
+            continue;
+        }
+        if *keep {
+            println!(
+                "  ○ {label} · {} · keeping ({})",
+                path.display(),
+                human_bytes(tree_bytes(path))
+            );
+            continue;
+        }
+        println!(
+            "  ✓ {label} · {} · {}",
+            path.display(),
+            human_bytes(tree_bytes(path))
+        );
+        if apply {
+            if let Err(error) = std::fs::remove_dir_all(path) {
+                failures.push(format!("{label}: {error}"));
+            }
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        println!(
+            "  · binary {} — remove by hand once no session is running",
+            exe.display()
+        );
+    }
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        for rc in [".zshrc", ".bashrc", ".profile"] {
+            let path = home.join(rc);
+            if path.is_file() {
+                println!(
+                    "  · {} may hold a PATH line for ~/.miao/bin — check by hand",
+                    path.display()
+                );
+            }
+        }
+    }
+    if !failures.is_empty() {
+        return Err(failures.join("; "));
+    }
+    Ok(())
 }
 
 /// Hand the derived routes to the TUI through the variables its own argument
@@ -2098,9 +2229,8 @@ fn retention_plan(connection: &rusqlite::Connection) -> rusqlite::Result<Vec<Str
              WHERE e.seq <= (SELECT COALESCE(MAX(c.through_seq), -1) \
                              FROM engine_compaction c WHERE c.session_id = e.session_id)",
         )?;
-        let (sessions, events, bytes): (i64, i64, i64) = statement.query_row([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?;
+        let (sessions, events, bytes): (i64, i64, i64) =
+            statement.query_row([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
         return Ok(vec![format!(
             "retention plan · {events} event(s) across {sessions} session(s) · {} prunable",
             human_bytes(bytes.max(0) as u64)
@@ -2115,7 +2245,9 @@ fn retention_plan(connection: &rusqlite::Connection) -> rusqlite::Result<Vec<Str
         )
         .unwrap_or(false);
     if !projected {
-        return Ok(vec!["retention plan · neither engine nor product tables found".into()]);
+        return Ok(vec![
+            "retention plan · neither engine nor product tables found".into(),
+        ]);
     }
     // The product projection keeps the same shape: events strictly before the
     // session's newest compaction message are represented by it.
@@ -2125,9 +2257,8 @@ fn retention_plan(connection: &rusqlite::Connection) -> rusqlite::Result<Vec<Str
          WHERE e.seq < (SELECT MAX(m.seq) FROM session_message m \
                         WHERE m.session_id = e.aggregate_id AND m.type = 'compaction')",
     )?;
-    let (sessions, events, bytes): (i64, i64, i64) = statement.query_row([], |row| {
-        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-    })?;
+    let (sessions, events, bytes): (i64, i64, i64) =
+        statement.query_row([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
     Ok(vec![format!(
         "retention plan · {events} event(s) across {sessions} session(s) · {} prunable",
         human_bytes(bytes.max(0) as u64)
@@ -3678,6 +3809,13 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                 std::process::ExitCode::from(1)
             }
         },
+        Some("uninstall") => match uninstall(&args.collect::<Vec<_>>()) {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(message) => {
+                eprintln!("miao uninstall: {message}");
+                std::process::ExitCode::from(1)
+            }
+        },
         Some("report") => match report(&args.collect::<Vec<_>>()) {
             Ok(()) => std::process::ExitCode::SUCCESS,
             Err(message) => {
@@ -4010,7 +4148,8 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 mod tests {
     use super::{
         db_file_bytes, db_report, db_vacuum, default_db, lsp_servers, mcp_servers, model_routes,
-        parsed_session_location, plugin_entries, retention_plan, strip_comments,
+        parsed_session_location, plugin_entries, retention_plan, strip_comments, tree_bytes,
+        uninstall_targets,
     };
     use std::io::Write;
 
@@ -4307,6 +4446,61 @@ mod tests {
     }
 
     #[test]
+    fn tree_bytes_counts_a_nested_file_and_ignores_a_missing_path() {
+        let dir = std::env::temp_dir().join(format!("miao-treebytes-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("nested")).expect("tree");
+        std::fs::write(dir.join("a"), vec![0u8; 100]).expect("file");
+        std::fs::write(dir.join("nested").join("b"), vec![0u8; 50]).expect("file");
+        assert_eq!(tree_bytes(&dir), 150);
+        assert_eq!(tree_bytes(&dir.join("absent")), 0);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_uninstall_targets_cover_the_five_xdg_roots() {
+        // Isolated environment so the test never looks at the real home: the
+        // variables the targets read are all pointed at one temp tree.
+        let dir =
+            std::env::temp_dir().join(format!("miao-uninstall-targets-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let home = dir.join("home");
+        std::env::set_var("HOME", &home);
+        std::env::set_var("MIAO_ENGINE_STORAGE", dir.join("engine-storage"));
+        std::env::set_var("XDG_DATA_HOME", dir.join("xdg-data"));
+        std::env::set_var("XDG_CACHE_HOME", dir.join("xdg-cache"));
+        std::env::set_var("XDG_STATE_HOME", dir.join("xdg-state"));
+        std::env::remove_var("MIAO_CONFIG_DIR");
+        std::env::remove_var("MIAO_DATA_HOME");
+
+        let labels: Vec<&str> = uninstall_targets(false, false)
+            .into_iter()
+            .map(|(label, _, _)| label)
+            .collect();
+        assert_eq!(
+            labels,
+            vec!["data", "engine storage", "cache", "config", "state"],
+            "removal order and coverage: {labels:?}"
+        );
+
+        // Keeping flags move whole groups: the product data root and the engine
+        // ledger are both "data", the config root is its own.
+        let keeps: Vec<(bool, bool)> = uninstall_targets(true, false)
+            .into_iter()
+            .map(|(_, _, keep)| (keep, false))
+            .collect();
+        assert_eq!(keeps[3].0, true, "config is kept with --keep-config");
+        assert_eq!(keeps[0].0, false, "data is removed without --keep-data");
+
+        std::env::remove_var("MIAO_ENGINE_STORAGE");
+        std::env::remove_var("XDG_DATA_HOME");
+        std::env::remove_var("XDG_CACHE_HOME");
+        std::env::remove_var("XDG_STATE_HOME");
+        std::env::remove_var("HOME");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn the_default_engine_ledger_uses_the_placement_rule() {
         // The CLI and the TUI have to resolve the same ledger for one workspace.
         // A private hash here once sent `miao tui` to a second, empty database,
@@ -4341,7 +4535,10 @@ mod tests {
         let text = lines.join("\n");
         // Session s1 has events 1 and 2 at or before its baseline (through_seq 2);
         // s2 has no baseline, so its fresh event stays out of the plan.
-        assert!(text.contains("retention plan · 2 event(s) across 1 session(s) · "), "{text}");
+        assert!(
+            text.contains("retention plan · 2 event(s) across 1 session(s) · "),
+            "{text}"
+        );
     }
 
     #[test]
@@ -4360,6 +4557,9 @@ mod tests {
         let text = lines.join("\n");
         // Events 1 and 2 sit strictly before the compaction message (seq 9);
         // the event at seq 9 is the compaction's own admission and stays.
-        assert!(text.contains("retention plan · 2 event(s) across 1 session(s) · "), "{text}");
+        assert!(
+            text.contains("retention plan · 2 event(s) across 1 session(s) · "),
+            "{text}"
+        );
     }
 }
