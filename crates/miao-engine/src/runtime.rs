@@ -42,38 +42,6 @@ const MAX_IDENTICAL_REFUSALS: u32 = 3;
 /// durable, and a client cannot tell that from a dead engine.
 const TOOL_WAIT_NOTICE: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// How many characters of the first prompt name the Session. Long enough to
-/// tell two conversations apart, short enough for a sidebar.
-const TITLE_CHARS: usize = 60;
-
-/// Whether a stored title carries no information of its own.
-fn is_placeholder_title(title: Option<&str>) -> bool {
-    // "run" is what the headless entry point creates a Session with and "New
-    // session" what the TUI uses: both are the client talking, not the operator.
-    matches!(
-        title,
-        None | Some("") | Some("untitled") | Some("New session") | Some("run")
-    )
-}
-
-/// A one-line title taken from the first prompt: its first non-empty line, with
-/// runs of whitespace collapsed and a cap so a pasted file does not become one.
-fn title_from_prompt(prompt: &str) -> Option<String> {
-    let line = prompt
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())?;
-    let single = line.split_whitespace().collect::<Vec<_>>().join(" ");
-    if single.is_empty() {
-        return None;
-    }
-    let mut title = single.chars().take(TITLE_CHARS).collect::<String>();
-    if single.chars().count() > TITLE_CHARS {
-        title.push('…');
-    }
-    Some(title)
-}
-
 #[derive(Clone)]
 pub struct Runtime {
     inner: Arc<Inner>,
@@ -1845,7 +1813,6 @@ impl Runtime {
             }
         }
         let session = input.session_id.clone();
-        let first_prompt = input.prompt.clone();
         let admission = self
             .inner
             .store
@@ -1860,19 +1827,6 @@ impl Runtime {
         // but never restarts promoted/completed provider work.
         if resume && admission.pending {
             self.wake(&session, false).await?;
-        }
-        // The product creates a Session with a placeholder title and leaves the
-        // real one to a host title model. A client driving this engine directly
-        // has no such host, so every Session stayed "New session" forever; the
-        // first prompt is the cheapest honest name, and a placeholder is never
-        // an operator's choice, so a rename is left alone.
-        if !admission.duplicate
-            && self.inner.store.message_count(&session).await? <= 1
-            && is_placeholder_title(self.inner.store.title(&session).await?.as_deref())
-        {
-            if let Some(title) = title_from_prompt(&first_prompt) {
-                self.inner.store.rename(&session, &title).await?;
-            }
         }
         Ok(admission)
     }
@@ -7133,40 +7087,5 @@ mod window_tests {
     fn a_trimmed_request_lands_below_the_window_that_refused_it() {
         assert!(request_budget(1_048_576, 62_048) < 1_048_576);
         assert_eq!(request_budget(1_000, 5_000), 1);
-    }
-}
-
-#[cfg(test)]
-mod title_tests {
-    use super::*;
-
-    #[test]
-    fn only_the_placeholders_count_as_no_title() {
-        for placeholder in [None, Some(""), Some("untitled"), Some("New session")] {
-            assert!(is_placeholder_title(placeholder), "{placeholder:?}");
-        }
-        // An operator's rename is a decision, not a gap to fill.
-        assert!(!is_placeholder_title(Some("auth refactor")));
-        assert!(!is_placeholder_title(Some("New session about auth")));
-    }
-
-    #[test]
-    fn the_first_prompt_names_the_session() {
-        assert_eq!(
-            title_from_prompt("fix the parser\nand then ship it").as_deref(),
-            Some("fix the parser")
-        );
-        // Runs of whitespace collapse, so a wrapped paste stays one line.
-        assert_eq!(
-            title_from_prompt("\n\n  ship   the   fix  \nmore").as_deref(),
-            Some("ship the fix")
-        );
-        // Long prompts are cut with an ellipsis rather than becoming a title.
-        let long = "a".repeat(100);
-        let title = title_from_prompt(&long).expect("title");
-        assert_eq!(title.chars().count(), 61, "{title}");
-        assert!(title.ends_with('…'));
-        // Nothing to name it after.
-        assert_eq!(title_from_prompt("   \n\t\n"), None);
     }
 }
