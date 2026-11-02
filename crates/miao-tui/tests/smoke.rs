@@ -1177,10 +1177,13 @@ fn the_palette_runs_actions_and_a_template_command_reaches_the_engine() {
     );
     harness.write(b"keys");
     harness.write(b"\r");
+    // Read the screen, not the byte stream: a diffed frame only sends the cells
+    // that changed, so a row the palette already painted can arrive with holes
+    // and the row's text never appears contiguously in the stream.
     assert!(
-        wait_for_plain(&harness, "/stash-draft", Duration::from_secs(2)),
+        wait_for_screen(&harness, "/stash-draft", Duration::from_secs(10)),
         "the palette did not open the help dialog:\n{}",
-        plain(&harness.text())
+        harness.screen()
     );
     // A lone Esc needs a pause so it is not read as an Alt chord prefix.
     harness.write(b"\x1b");
