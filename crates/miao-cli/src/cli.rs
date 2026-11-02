@@ -1956,6 +1956,17 @@ fn uninstall(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// The documented exit convention: 0 success, 1 operational failure, 2 usage
+/// error. Commands that build their usage line into the error message carry
+/// the distinction in that prefix; this maps it to the code the docs promise.
+fn exit_for(message: &str) -> std::process::ExitCode {
+    if message.starts_with("usage:") {
+        std::process::ExitCode::from(2)
+    } else {
+        std::process::ExitCode::from(1)
+    }
+}
+
 /// Hand the derived routes to the TUI through the variables its own argument
 /// builder already reads. Without this the default entry point has no model
 /// catalogue and cannot resolve a credential.
@@ -4440,7 +4451,7 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
             Ok(()) => std::process::ExitCode::SUCCESS,
             Err(message) => {
                 eprintln!("miao attach: {message}");
-                std::process::ExitCode::from(1)
+                exit_for(&message)
             }
         },
         Some("remote") => match remote() {
@@ -4475,7 +4486,7 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
             Ok(()) => std::process::ExitCode::SUCCESS,
             Err(message) => {
                 eprintln!("miao report: {message}");
-                std::process::ExitCode::from(1)
+                exit_for(&message)
             }
         },
         Some("hub") => match hub(&args.collect::<Vec<_>>()) {
