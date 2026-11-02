@@ -2542,6 +2542,15 @@ impl App {
         // question blocks the turn, so it reads as a warning; the interrupt key
         // is a fact about the run.
         let mut hints = Vec::new();
+        // Scrolled away from the newest row: the transcript keeps filling below
+        // the window, so without this the operator cannot tell a stalled run
+        // from output that has scrolled out of sight.
+        if !self.shell.following() {
+            hints.push(StatusHint {
+                text: "not following · page down to resume".to_string(),
+                warning: false,
+            });
+        }
         // A blocking approval or question is already the phase line, so
         // repeating it here would say the same thing twice in the one strip the
         // operator scans.
@@ -2904,6 +2913,34 @@ mod tests {
             app.shell.following(),
             "the last visible row is the tail, so one notch back follows again"
         );
+    }
+
+    #[test]
+    fn scrolling_up_says_the_transcript_is_no_longer_following() {
+        // Output keeps arriving below a window that has scrolled away, so the
+        // strip has to say why the newest rows are missing; otherwise a working
+        // run and a stalled one look the same.
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(forty_messages()),
+            state: SessionState::default(),
+        });
+        draw(&mut app);
+        let says = |app: &App| {
+            app.shell
+                .status
+                .hints
+                .iter()
+                .any(|hint| hint.text.contains("not following"))
+        };
+        assert!(!says(&app), "a following transcript says nothing");
+        app.handle(wheel(MouseEventKind::ScrollUp));
+        draw(&mut app);
+        assert!(says(&app), "scrolling away has to be visible");
+        app.handle(wheel(MouseEventKind::ScrollDown));
+        draw(&mut app);
+        assert!(!says(&app), "coming back to the tail clears it");
     }
 
     #[test]
