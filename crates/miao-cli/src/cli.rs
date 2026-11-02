@@ -4689,11 +4689,14 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        db_file_bytes, db_report, db_vacuum, default_db, launch, lsp_servers, mcp_servers,
-        model_routes, parsed_session_location, plugin_entries, retention_plan, strip_comments,
-        tree_bytes, uninstall_targets, worktree_remove_plan,
+        anchored_sessions, db_file_bytes, db_report, db_vacuum, default_db,
+        git_worktree_main_checkout, launch, lsp_servers, mcp_servers, model_routes,
+        parsed_session_location, plugin_entries, project_copy_apply, project_copy_plan,
+        retention_plan, strip_comments, tree_bytes, uninstall_targets, worktree_remove_apply,
+        worktree_remove_plan,
     };
     use std::io::Write;
+    use std::path::PathBuf;
 
     #[test]
     fn the_report_counts_the_write_ahead_log_and_the_shared_index() {
