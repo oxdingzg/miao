@@ -139,8 +139,8 @@ const tree = (pid: number): number[] => {
   return [pid, ...children.flatMap(tree)]
 }
 
-const serveRun = async (command: string[], seconds: number): Promise<ServeSample> => {
-  const child = Bun.spawn(command, { stdout: "ignore", stderr: "ignore" })
+const serveRun = async (command: string[], seconds: number, environment: Record<string, string>) => {
+  const child = Bun.spawn(command, { stdout: "ignore", stderr: "ignore", env: { ...process.env, ...environment } })
   const samples: ServeSample["samples"] = []
   // A resident server that dies in the first 300 ms is an artifact that does
   // not support this start, not a measured window; the sampler skips ahead so
@@ -229,17 +229,40 @@ for (const cell of startupCells) {
   }
 }
 
+// The serve window runs against an isolated home and its own ledger, so the
+// resident resources measured are the binary's own baseline, not anything the
+// machine's real sessions brought in.
+const serveRoot = await mkdtemp(path.join(os.tmpdir(), "miao-startup-serve-"))
+for (const dir of ["data", "storage", "config", "home"]) {
+  await mkdir(path.join(serveRoot, dir), { recursive: true })
+}
+await mkdir(path.join(serveRoot, "workspace"), { recursive: true })
+const serveEnvironment = {
+  MIAO_DATA_HOME: path.join(serveRoot, "data"),
+  MIAO_ENGINE_STORAGE: path.join(serveRoot, "storage"),
+  XDG_CONFIG_HOME: path.join(serveRoot, "config"),
+  HOME: path.join(serveRoot, "home"),
+  // serve refuses to start without a credential source, which is the right
+  // production posture; the window never sends a prompt, so a placeholder key
+  // measures the resident baseline and nothing beyond it.
+  ANTHROPIC_API_KEY: "benchmark-placeholder-not-a-real-key",
+}
 const serveCell: Cell = {
-  command: `${binary} serve`,
+  command: `${binary} serve (--db beside, not inside, the isolated workspace)`,
   kind: "serve",
   samples: [],
   failures: 0,
   unsupported: false,
-  serve: await serveRun([binary, "serve"], serveSeconds),
+  serve: await serveRun(
+    [binary, "serve", "--db", path.join(serveRoot, "engine.db"), "--workspace", path.join(serveRoot, "workspace")],
+    serveSeconds,
+    serveEnvironment,
+  ),
 }
 serveCell.unsupported = serveCell.serve!.samples.length === 0
 if (serveCell.unsupported) serveCell.first_error = "serve exited before the sampling window opened"
 cells.push(serveCell)
+await rm(serveRoot, { recursive: true, force: true })
 
 const version = Bun.spawnSync([binary, "--version"]).stdout.toString().trim()
 

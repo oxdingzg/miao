@@ -1,0 +1,702 @@
+{
+  "harness": "script/startup-benchmark.ts",
+  "date": "2026-11-02T14:19:58.124Z",
+  "binary": "/private/tmp/miao-test-db03/crates/miao-cli/target/release/miao",
+  "version": "miao 0.0.1",
+  "os": "Darwin 25.5.0 arm64",
+  "cpu": "Apple M4",
+  "repeat": 10,
+  "serve_seconds": 5,
+  "cells": [
+    {
+      "command": "--version (cold)",
+      "kind": "startup",
+      "samples": [
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8384
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8384
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8384
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 24,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8416
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 10,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8384
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8384
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8384
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 9,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8384
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 8,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8416
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 8,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8384
+        }
+      ],
+      "failures": 0,
+      "unsupported": false
+    },
+    {
+      "command": "--version (warm)",
+      "kind": "startup",
+      "samples": [
+        {
+          "exit_code": 0,
+          "wall_ms": 7,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8592
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 10,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8592
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 7,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8592
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 7,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8592
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 9,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8592
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 10,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8592
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 8,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8592
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8592
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8592
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8592
+        }
+      ],
+      "failures": 0,
+      "unsupported": false
+    },
+    {
+      "command": "db path (cold)",
+      "kind": "startup",
+      "samples": [
+        {
+          "exit_code": 0,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8544
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8544
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8544
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8544
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8544
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8544
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8544
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8560
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8544
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8544
+        }
+      ],
+      "failures": 0,
+      "unsupported": false
+    },
+    {
+      "command": "db path (warm)",
+      "kind": "startup",
+      "samples": [
+        {
+          "exit_code": 0,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8752
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8752
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8752
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8752
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8752
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8752
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8752
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8752
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8752
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 6,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8752
+        }
+      ],
+      "failures": 0,
+      "unsupported": false
+    },
+    {
+      "command": "session list (cold)",
+      "kind": "startup",
+      "samples": [
+        {
+          "exit_code": 0,
+          "wall_ms": 10,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12944
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 10,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12896
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 10,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12976
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 10,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12864
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 10,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12880
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 10,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12864
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 10,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12864
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 10,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12960
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 10,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12896
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 10,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12960
+        }
+      ],
+      "failures": 0,
+      "unsupported": false
+    },
+    {
+      "command": "session list (warm)",
+      "kind": "startup",
+      "samples": [
+        {
+          "exit_code": 0,
+          "wall_ms": 8,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12384
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 7,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12464
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 7,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12384
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 7,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12464
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 7,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12400
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 7,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12432
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 7,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12400
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 7,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12400
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 7,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12384
+        },
+        {
+          "exit_code": 0,
+          "wall_ms": 7,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 12448
+        }
+      ],
+      "failures": 0,
+      "unsupported": false
+    },
+    {
+      "command": "models (cold)",
+      "kind": "startup",
+      "samples": [
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8352
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8352
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8352
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8352
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8352
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8352
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8352
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8352
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8352
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8352
+        }
+      ],
+      "failures": 10,
+      "unsupported": false
+    },
+    {
+      "command": "models (warm)",
+      "kind": "startup",
+      "samples": [
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8576
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8576
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8576
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8576
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8576
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8576
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8576
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8576
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8576
+        },
+        {
+          "exit_code": 1,
+          "wall_ms": 5,
+          "user_ms": 0,
+          "sys_ms": 0,
+          "max_rss_kb": 8576
+        }
+      ],
+      "failures": 10,
+      "unsupported": false
+    },
+    {
+      "command": "/private/tmp/miao-test-db03/crates/miao-cli/target/release/miao serve (--db beside, not inside, the isolated workspace)",
+      "kind": "serve",
+      "samples": [],
+      "failures": 0,
+      "unsupported": false,
+      "serve": {
+        "samples": [
+          {
+            "rss_kb": 16096,
+            "tree_rss_kb": 16096,
+            "fds": 20,
+            "processes": 1
+          },
+          {
+            "rss_kb": 16096,
+            "tree_rss_kb": 16096,
+            "fds": 20,
+            "processes": 1
+          },
+          {
+            "rss_kb": 16144,
+            "tree_rss_kb": 16144,
+            "fds": 20,
+            "processes": 1
+          },
+          {
+            "rss_kb": 16144,
+            "tree_rss_kb": 16144,
+            "fds": 20,
+            "processes": 1
+          },
+          {
+            "rss_kb": 16144,
+            "tree_rss_kb": 16144,
+            "fds": 20,
+            "processes": 1
+          },
+          {
+            "rss_kb": 16144,
+            "tree_rss_kb": 16144,
+            "fds": 20,
+            "processes": 1
+          },
+          {
+            "rss_kb": 16144,
+            "tree_rss_kb": 16144,
+            "fds": 20,
+            "processes": 1
+          },
+          {
+            "rss_kb": 16144,
+            "tree_rss_kb": 16144,
+            "fds": 20,
+            "processes": 1
+          },
+          {
+            "rss_kb": 16144,
+            "tree_rss_kb": 16144,
+            "fds": 20,
+            "processes": 1
+          }
+        ],
+        "window_seconds": 5
+      }
+    }
+  ]
+}
