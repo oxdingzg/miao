@@ -356,6 +356,42 @@ fn main() {
                 }
                 send(&mut out, json!({"id":id,"result":snapshot}));
             }
+            // The home list asks for every row at once: answer from the same
+            // per-Session facts the single-Session snapshot carries, without the
+            // messages it would project.
+            "sessions_metadata" if sessions => {
+                let ids: Vec<String> = match catalog {
+                    0 => vec!["ses_a".to_string(), "ses_b".to_string()],
+                    count => (1..=count).map(|index| format!("ses_n{index}")).collect(),
+                };
+                let rows: Vec<serde_json::Value> = ids
+                    .iter()
+                    .map(|target| {
+                        let (title, updated) = if target == "ses_a" {
+                            ("Project A".to_string(), 2_000)
+                        } else if let Some(index) = target
+                            .strip_prefix("ses_n")
+                            .and_then(|rest| rest.parse::<u64>().ok())
+                        {
+                            (format!("Note session {index}"), 10_000 - index)
+                        } else {
+                            ("Project B".to_string(), 1_000)
+                        };
+                        json!({
+                            "session_id": target,
+                            "title": title,
+                            "updated_at_ms": updated,
+                            "archived_at_ms": null,
+                            "pinned_at_ms": null,
+                            "parent_session_id": null,
+                            "location": "/tmp",
+                            "model_selection": {"protocol": "chat", "model": "fake/glm"},
+                            "account_selection": {"credential_id": "cred_a"},
+                        })
+                    })
+                    .collect();
+                unit_command(&mut out, id, &frame, json!(rows));
+            }
             "events" if sessions => send(&mut out, json!({"id":id,"result":[]})),
             // `subscribe` is not gated on the catalog view either, so a test can
             // open and close one subscription without a fake catalog.
