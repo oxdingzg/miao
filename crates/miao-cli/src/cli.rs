@@ -5316,7 +5316,7 @@ mod tests {
     #[test]
     fn a_worktree_remove_refuses_anchored_sessions_then_migrates_with_force() {
         let dir = std::env::temp_dir().join(format!("miao-wt-anchored-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("temp dir");
+        std::fs::create_dir_all(dir.join("engine-storage")).expect("temp dir");
         std::env::set_var("MIAO_ENGINE_STORAGE", dir.join("engine-storage"));
 
         let repo = seeded_repository(&dir, "main");
@@ -5338,15 +5338,14 @@ mod tests {
                 .execute_batch(
                     "CREATE TABLE IF NOT EXISTS engine_session (id TEXT PRIMARY KEY, title TEXT);
                      CREATE TABLE IF NOT EXISTS engine_location (session_id TEXT PRIMARY KEY, root TEXT NOT NULL);
-                     INSERT INTO engine_session (id, title) VALUES ('s1', 'anchored');
-                     INSERT INTO engine_location (session_id, root) VALUES ('s1', ?1);",
+                     INSERT INTO engine_session (id, title) VALUES ('s1', 'anchored');",
                 )
-                .and_then(|_| {
-                    connection.execute(
-                        "UPDATE engine_location SET root = ?1 WHERE session_id = 's1'",
-                        [canonical.display().to_string()],
-                    )
-                })
+                .expect("seed tables");
+            connection
+                .execute(
+                    "INSERT INTO engine_location (session_id, root) VALUES ('s1', ?1)",
+                    [canonical.display().to_string()],
+                )
                 .expect("seed anchored session");
         }
 
