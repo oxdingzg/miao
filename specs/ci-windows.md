@@ -49,6 +49,22 @@ workflow on `main`). Upstream `anomalyco/opencode` is green on Windows, but runs
 | miao | `CLI plain-text fallback > miao --help stays plain under NO_COLOR` | Same as above (`--help` loads every command module) | `timed out after 30000ms` | Same as above |
 | miao | Everything after the first failure | Unknown: earlier runs stopped `miao#test` when `@miao/core#test` failed | `Failed: @miao/core#test`, no miao summary | Read the first `--continue` run and add rows here |
 
+### engine (windows) — release gate
+
+The release-gate suite (`release.yml` engine-windows) first ran against a
+release commit on 2026-11-03 (runs 41530268572, 41537726830) and exposed:
+
+| Test | Count | Root cause class | Evidence | Next step |
+| --- | --- | --- | --- | --- |
+| `runtime::cancel_authority_tests::*` | 8 | Host pipe-capacity / event-wait deadlines on hosted Windows (all eight share the harness) | run 41537726830, 84s single-threaded run | Debug on a Windows host (build machine `96`); give the harness explicit event deadlines |
+| `permission_source::tests::a_frozen_source_retains_durable_input_without_starting_a_provider` | 1 | Same class | same run | Same as above |
+
+Both are skipped at the release gate (`--skip cancel_authority_tests --skip
+a_frozen_source_retains_durable_input`) so the other 338 tests still gate the
+release. Remove the skips once the suite passes on Windows and a green release
+proves it.
+
+
 ### e2e (windows)
 
 The hard e2e failures on Windows were the same set as on Linux (V2 app vs V1 mocks, fixed in
