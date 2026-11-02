@@ -3675,98 +3675,98 @@ command: None,
                     // them the turn is actually blocked on.
                     let _waiting = WaitNotice::start(&inner.progress, session, run, step, id, name);
                     let block_input = block["input"].clone();
-                        let recorded_read = match &inner.tool_replay {
-                            Some(replay) => replay.read_receipt(name, &block_input).await?,
-                            None => None,
-                        };
-                        let prepared = match recorded_read {
-                            Some(read) => inner.tools.prepare_recorded_read(block_input, &read),
-                            None => inner.tools.prepare(name, block_input).await,
-                        };
-                        match prepared {
-                            Err(error) => (
-                                json!({"error":inner.tools.rejection(name, &block["input"], &error)}),
-                                true,
-                            ),
-                            Ok(prepared) => {
-                                let allowed = authorize(
-                                    inner,
-                                    session,
-                                    run,
-                                    id,
-                                    &prepared,
-                                    cancel.child_token(),
-                                    TurnAuthority {
-                                        plan,
-                                        policy: &policy,
-                                        agent: manifest,
-                                        delegated,
-                                        lease,
-                                    },
-                                )
-                                .await?;
-                                if cancel.is_cancelled() {
-                                    return Ok(());
-                                }
-                                if !allowed {
-                                    (json!({"error":"permission denied"}), true)
-                                } else if let Some(blocked) = run_hooks(
-                                    inner,
-                                    session,
-                                    crate::events::Lifecycle::PreToolUse,
-                                    effective_name,
-                                    cancel.child_token(),
-                                )
-                                .await?
-                                {
-                                    (json!({"error":blocked}), true)
+                    let recorded_read = match &inner.tool_replay {
+                        Some(replay) => replay.read_receipt(name, &block_input).await?,
+                        None => None,
+                    };
+                    let prepared = match recorded_read {
+                        Some(read) => inner.tools.prepare_recorded_read(block_input, &read),
+                        None => inner.tools.prepare(name, block_input).await,
+                    };
+                    match prepared {
+                        Err(error) => (
+                            json!({"error":inner.tools.rejection(name, &block["input"], &error)}),
+                            true,
+                        ),
+                        Ok(prepared) => {
+                            let allowed = authorize(
+                                inner,
+                                session,
+                                run,
+                                id,
+                                &prepared,
+                                cancel.child_token(),
+                                TurnAuthority {
+                                    plan,
+                                    policy: &policy,
+                                    agent: manifest,
+                                    delegated,
+                                    lease,
+                                },
+                            )
+                            .await?;
+                            if cancel.is_cancelled() {
+                                return Ok(());
+                            }
+                            if !allowed {
+                                (json!({"error":"permission denied"}), true)
+                            } else if let Some(blocked) = run_hooks(
+                                inner,
+                                session,
+                                crate::events::Lifecycle::PreToolUse,
+                                effective_name,
+                                cancel.child_token(),
+                            )
+                            .await?
+                            {
+                                (json!({"error":blocked}), true)
+                            } else {
+                                inner
+                                    .store
+                                    .mark_dispatched_fenced(session, run, id, lease)
+                                    .await?;
+                                verification_scope.observe(&prepared);
+                                // Snapshot the same normalized resources that passed
+                                // workspace containment and permission checks. Raw
+                                // tool input may contain an absolute path.
+                                let touched = match name {
+                                    "write_file" | "edit_file" => {
+                                        vec![prepared.resource().to_owned()]
+                                    }
+                                    "apply_patch" => prepared.targets().to_vec(),
+                                    _ => Vec::new(),
+                                };
+                                let prepared_external =
+                                    prepared.access() == crate::permission::Access::External;
+                                let replayed = if let Some(replay) = &inner.tool_replay {
+                                    Some(
+                                        replay
+                                            .take(
+                                                session,
+                                                name,
+                                                if name == "tool_call" {
+                                                    &block["input"]
+                                                } else {
+                                                    prepared.input()
+                                                },
+                                            )
+                                            .await?,
+                                    )
                                 } else {
-                                    inner
-                                        .store
-                                        .mark_dispatched_fenced(session, run, id, lease)
-                                        .await?;
-                                    verification_scope.observe(&prepared);
-                                    // Snapshot the same normalized resources that passed
-                                    // workspace containment and permission checks. Raw
-                                    // tool input may contain an absolute path.
-                                    let touched = match name {
-                                        "write_file" | "edit_file" => {
-                                            vec![prepared.resource().to_owned()]
-                                        }
-                                        "apply_patch" => prepared.targets().to_vec(),
-                                        _ => Vec::new(),
-                                    };
-                                    let prepared_external =
-                                        prepared.access() == crate::permission::Access::External;
-                                    let replayed = if let Some(replay) = &inner.tool_replay {
-                                        Some(
-                                            replay
-                                                .take(
-                                                    session,
-                                                    name,
-                                                    if name == "tool_call" {
-                                                        &block["input"]
-                                                    } else {
-                                                        prepared.input()
-                                                    },
-                                                )
-                                                .await?,
-                                        )
-                                    } else {
-                                        None
-                                    };
-                                    let (executed, replay_error) = if let Some((output, is_error)) =
-                                        replayed
-                                    {
-                                        replayed_call = true;
-                                        (Ok(output), Some(is_error))
-                                    } else {
-                                        let _ = inner.progress.send(json!({
-                                            "session_id": session, "run_id": run, "step": step,
-                                            "kind": "tool.started", "tool": name,
-                                            "resource": prepared.resource(),
-                                        }));
-                                        (                                match name {
+                                    None
+                                };
+                                let (executed, replay_error) = if let Some((output, is_error)) =
+                                    replayed
+                                {
+                                    replayed_call = true;
+                                    (Ok(output), Some(is_error))
+                                } else {
+                                    let _ = inner.progress.send(json!({
+                                        "session_id": session, "run_id": run, "step": step,
+                                        "kind": "tool.started", "tool": name,
+                                        "resource": prepared.resource(),
+                                    }));
+                                    (                                match name {
                                 "cron_create" => {
                                     start_cron(inner, session, run, id, &prepared).await?
                                 }
@@ -4012,11 +4012,11 @@ command: None,
                                         .await
                                 }
                             }, None)
-                                    };
-                                    match executed {
-                                        Ok(output) => {
-                                            let is_error = replay_error.unwrap_or(
-                                                (prepared_external && output["isError"] == true)
+                                };
+                                match executed {
+                                    Ok(output) => {
+                                        let is_error = replay_error.unwrap_or(
+                                            (prepared_external && output["isError"] == true)
                                                 || (name == "question"
                                                     && output["state"] != "answered")
                                                 // Native tools signal rejection through a
@@ -4026,24 +4026,23 @@ command: None,
                                                     && output
                                                         .get("error")
                                                         .is_some_and(Value::is_string)),
-                                            );
-                                            if !is_error {
-                                                for path in &touched {
-                                                    inner
-                                                        .store
-                                                        .record_file_touch(session, path)
-                                                        .await?;
-                                                }
+                                        );
+                                        if !is_error {
+                                            for path in &touched {
+                                                inner
+                                                    .store
+                                                    .record_file_touch(session, path)
+                                                    .await?;
                                             }
-                                            (output, is_error)
                                         }
-                                        Err(ToolError::Interrupted) => return Ok(()),
-                                        Err(error) => (json!({"error":error.to_string()}), true),
+                                        (output, is_error)
                                     }
+                                    Err(ToolError::Interrupted) => return Ok(()),
+                                    Err(error) => (json!({"error":error.to_string()}), true),
                                 }
                             }
                         }
-                    
+                    }
                 };
                 let polling_terminal = name == "terminal_read"
                     && !is_error
@@ -6522,10 +6521,7 @@ async fn execute_read_batch(
     policy: &Policy,
     agent: Option<&crate::session_agent::AgentManifest>,
 ) -> Result<HashMap<String, (Value, bool)>, Error> {
-    if cancel.is_cancelled()
-        || !inner.tools.hooks().is_empty()
-        || inner.tool_replay.is_some()
-    {
+    if cancel.is_cancelled() || !inner.tools.hooks().is_empty() || inner.tool_replay.is_some() {
         return Ok(HashMap::new());
     }
     let blocks: Vec<&Value> = content

@@ -372,11 +372,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         result?;
         return Ok(());
     }
-    let result = serve(
-        runtime.clone(),
-        options.remove("--product-tools"),
-    )
-    .await;
+    let result = serve(runtime.clone(), options.remove("--product-tools")).await;
     runtime.shutdown().await;
     // tokio's stdin fallback reader parks in read(2) while a pipe peer keeps
     // the descriptor open, so dropping the async runtime after an idle
@@ -474,10 +470,7 @@ where
     Ok(())
 }
 
-async fn serve(
-    runtime: Runtime,
-    product_tools: Option<String>,
-) -> io::Result<()> {
+async fn serve(runtime: Runtime, product_tools: Option<String>) -> io::Result<()> {
     let (output, mut outgoing) = mpsc::channel::<Value>(128);
     if let Some(path) = product_tools {
         let file = tokio::fs::read_to_string(&path)
