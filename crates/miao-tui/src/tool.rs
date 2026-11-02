@@ -19,54 +19,55 @@ const TOOL_PREVIEW_LINES: usize = 1;
 /// Diff lines one changed file shows before collapsing.
 const DIFF_PREVIEW_LINES: usize = 12;
 
+/// How much of a tool result to paint, and the chord that changes it.
+///
+/// Folding is one decision, so the budget and the hint travel together: every
+/// renderer used to recompute the same limit from `expanded`, and passing the
+/// chord beside it on its own pushed three of them past clippy's argument
+/// budget for no gain in clarity.
+#[derive(Clone, Copy)]
+struct Fold<'a> {
+    expanded: bool,
+    /// The chord the operator presses to unfold, as the keymap spells it.
+    toggle: Option<&'a str>,
+}
+
+impl Fold<'_> {
+    /// Rows a preview may paint out of `budget`, unlimited when expanded.
+    fn limit(self, budget: usize) -> usize {
+        match self.expanded {
+            true => usize::MAX,
+            false => budget,
+        }
+    }
+}
+
 pub fn lines(
     tool: &ToolPart,
     files: Option<&[DisplayFile]>,
     theme: &Theme,
     expanded: bool,
+    toggle: Option<&str>,
 ) -> Vec<Line<'static>> {
     let name = product_name(&tool.name);
     let input = product_input(&tool.name, &tool.input);
     let raw = tool.output.as_deref();
     let result = raw.and_then(parse_json);
     let mut out = Vec::new();
+    let fold = Fold { expanded, toggle };
     match name {
-        "bash" => bash(
-            &mut out,
-            tool,
-            &input,
-            result.as_ref(),
-            raw,
-            theme,
-            expanded,
-        ),
-        "read" => read(&mut out, tool, &input, result.as_ref(), theme, expanded),
-        "glob" | "grep" => search(
-            &mut out,
-            tool,
-            name,
-            &input,
-            result.as_ref(),
-            theme,
-            expanded,
-        ),
+        "bash" => bash(&mut out, tool, &input, result.as_ref(), raw, theme, fold),
+        "read" => read(&mut out, tool, &input, result.as_ref(), theme, fold),
+        "glob" | "grep" => search(&mut out, tool, name, &input, result.as_ref(), theme, fold),
         "write" | "edit" | "apply_patch" => {
-            file(&mut out, tool, name, &input, files, raw, theme, expanded)
+            file(&mut out, tool, name, &input, files, raw, theme, fold)
         }
-        "todowrite" => todos(
-            &mut out,
-            tool,
-            &input,
-            result.as_ref(),
-            raw,
-            theme,
-            expanded,
-        ),
+        "todowrite" => todos(&mut out, tool, &input, result.as_ref(), raw, theme, fold),
         "question" => question(&mut out, tool, &input, result.as_ref(), theme),
         "webfetch" => inline(&mut out, tool, "WebFetch", &text(&input, "url"), theme),
         "websearch" => inline(&mut out, tool, "WebSearch", &text(&input, "query"), theme),
         "skill" => inline(&mut out, tool, "Skill", &text(&input, "name"), theme),
-        "task" => task(&mut out, tool, &input, raw, theme),
+        "task" => task(&mut out, tool, &input, raw, theme, fold),
         _ => generic(
             &mut out,
             tool,
@@ -75,7 +76,7 @@ pub fn lines(
             result.as_ref(),
             raw,
             theme,
-            expanded,
+            fold,
         ),
     }
     out
@@ -203,7 +204,13 @@ fn result_line(text: &str, color: Color) -> Line<'static> {
     Line::from(Span::styled(format!("  ⎿ {text}"), Style::new().fg(color)))
 }
 
-fn preview(out: &mut Vec<Line<'static>>, text: &str, color: Color, limit: usize) {
+fn preview(
+    out: &mut Vec<Line<'static>>,
+    text: &str,
+    color: Color,
+    limit: usize,
+    toggle: Option<&str>,
+) {
     let text = strip_ansi(text).replace('\r', "");
     let text = text.trim_end_matches('\n');
     if text.is_empty() {
@@ -218,11 +225,15 @@ fn preview(out: &mut Vec<Line<'static>>, text: &str, color: Color, limit: usize)
     }
     if lines.len() > limit {
         // Say how to see the rest: a folded tool block that cannot be opened
-        // reads like lost output.
-        out.push(Line::from(Span::styled(
-            format!("  │ … {} more lines · <leader>u 展开", lines.len() - limit),
-            Style::new().fg(color),
-        )));
+        // reads like lost output. The chord is the one the keymap actually
+        // binds, so a remap or an unbound action cannot leave the line
+        // promising a key that does nothing.
+        let hidden = lines.len() - limit;
+        let line = match toggle {
+            Some(chord) => format!("  │ … {hidden} more lines · {chord} expand"),
+            None => format!("  │ … {hidden} more lines"),
+        };
+        out.push(Line::from(Span::styled(line, Style::new().fg(color))));
     }
 }
 
@@ -237,13 +248,9 @@ fn bash(
     result: Option<&Value>,
     raw: Option<&str>,
     theme: &Theme,
-    expanded: bool,
+    fold: Fold<'_>,
 ) {
-    let limit = if expanded {
-        usize::MAX
-    } else {
-        TOOL_PREVIEW_LINES
-    };
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
     let palette = theme.palette;
     let command = text(input, "command");
     let first = command.lines().next().unwrap_or_default().trim();
@@ -255,7 +262,7 @@ fn bash(
             .map(str::to_string)
             .or_else(|| raw.map(str::to_string))
             .unwrap_or_default();
-        preview(out, &text, palette.error, limit);
+        preview(out, &text, palette.error, limit, fold.toggle);
         return;
     }
     let Some(text) = shell_text(result) else {
@@ -270,6 +277,7 @@ fn bash(
             palette.text_muted
         },
         limit,
+        fold.toggle,
     );
 }
 
@@ -322,19 +330,15 @@ fn read(
     input: &Value,
     result: Option<&Value>,
     theme: &Theme,
-    expanded: bool,
+    fold: Fold<'_>,
 ) {
-    let limit = if expanded {
-        usize::MAX
-    } else {
-        TOOL_PREVIEW_LINES
-    };
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
     let palette = theme.palette;
     let path = text(input, "filePath");
     out.push(header(tool, "read", &compact(&path), theme));
     if tool.failed {
         if let Some(output) = tool.output.as_deref() {
-            preview(out, output, palette.error, limit);
+            preview(out, output, palette.error, limit, fold.toggle);
         }
         return;
     }
@@ -389,13 +393,9 @@ fn search(
     input: &Value,
     result: Option<&Value>,
     theme: &Theme,
-    expanded: bool,
+    fold: Fold<'_>,
 ) {
-    let limit = if expanded {
-        usize::MAX
-    } else {
-        TOOL_PREVIEW_LINES
-    };
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
     let palette = theme.palette;
     let pattern = text(input, "pattern");
     let path = text(input, "path");
@@ -412,7 +412,7 @@ fn search(
         return;
     }
     if let Some(output) = tool.output.as_deref() {
-        preview(out, output, palette.error, limit);
+        preview(out, output, palette.error, limit, fold.toggle);
     }
 }
 
@@ -446,18 +446,10 @@ fn file(
     files: Option<&[DisplayFile]>,
     raw: Option<&str>,
     theme: &Theme,
-    expanded: bool,
+    fold: Fold<'_>,
 ) {
-    let diff_limit = if expanded {
-        usize::MAX
-    } else {
-        DIFF_PREVIEW_LINES
-    };
-    let limit = if expanded {
-        usize::MAX
-    } else {
-        TOOL_PREVIEW_LINES
-    };
+    let diff_limit = fold.limit(DIFF_PREVIEW_LINES);
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
     let palette = theme.palette;
     let path = text(input, "filePath");
     let label = match name {
@@ -468,7 +460,7 @@ fn file(
     out.push(header(tool, label, &compact(&path), theme));
     if tool.failed {
         let message = raw.unwrap_or_default();
-        preview(out, message, palette.error, limit);
+        preview(out, message, palette.error, limit, fold.toggle);
         return;
     }
     let Some(files) = files.filter(|files| !files.is_empty()) else {
@@ -557,13 +549,9 @@ fn todos(
     result: Option<&Value>,
     raw: Option<&str>,
     theme: &Theme,
-    expanded: bool,
+    fold: Fold<'_>,
 ) {
-    let limit = if expanded {
-        usize::MAX
-    } else {
-        TOOL_PREVIEW_LINES
-    };
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
     let palette = theme.palette;
     let list = input
         .get("todos")
@@ -579,7 +567,13 @@ fn todos(
         .unwrap_or_default();
     out.push(header(tool, "todowrite", "", theme));
     if tool.failed {
-        preview(out, raw.unwrap_or_default(), palette.error, limit);
+        preview(
+            out,
+            raw.unwrap_or_default(),
+            palette.error,
+            limit,
+            fold.toggle,
+        );
         return;
     }
     for todo in &list {
@@ -673,6 +667,7 @@ fn task(
     input: &Value,
     raw: Option<&str>,
     theme: &Theme,
+    fold: Fold<'_>,
 ) {
     let palette = theme.palette;
     let description = text(input, "description");
@@ -704,6 +699,7 @@ fn task(
                     palette.text_muted
                 },
                 3,
+                fold.toggle,
             );
         }
     }
@@ -718,13 +714,9 @@ fn generic(
     result: Option<&Value>,
     raw: Option<&str>,
     theme: &Theme,
-    expanded: bool,
+    fold: Fold<'_>,
 ) {
-    let limit = if expanded {
-        usize::MAX
-    } else {
-        TOOL_PREVIEW_LINES
-    };
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
     let palette = theme.palette;
     out.push(header(tool, label, &input_summary(input), theme));
     let body = if tool.failed {
@@ -748,6 +740,7 @@ fn generic(
             palette.text_muted
         },
         limit,
+        fold.toggle,
     );
 }
 
@@ -907,14 +900,18 @@ mod tests {
             Some(json!({"stdout": "hi\n", "stderr": "", "exit_code": 0})),
             false,
         );
-        let lines = lines(&part, None, &theme(), false);
+        let lines = lines(&part, None, &theme(), false, Some("ctrl+x u"));
         let rendered = rendered(&lines);
         assert_eq!(rendered[0], "✓ bash  echo hi");
         assert!(rendered.contains(&"  │ hi".to_string()));
         // Folded output keeps one line; the tail and the hint stay reachable
         // through the elision marker instead of crowding the transcript.
         assert!(rendered.iter().any(|line| line.contains("more lines")));
-        assert!(rendered.iter().any(|line| line.contains("<leader>u")));
+        // The hint names the key the operator presses, not the config's
+        // `<leader>` placeholder.
+        assert!(rendered
+            .iter()
+            .any(|line| line.contains("· ctrl+x u expand")));
     }
 
     #[test]
@@ -929,10 +926,10 @@ mod tests {
             Some(json!({"stdout": output, "stderr": "", "exit_code": 0})),
             false,
         );
-        let folded = rendered(&lines(&part, None, &theme(), false));
+        let folded = rendered(&lines(&part, None, &theme(), false, None));
         assert!(folded.len() < 12);
         assert!(folded.iter().any(|line| line.contains("more lines")));
-        let expanded = rendered(&lines(&part, None, &theme(), true));
+        let expanded = rendered(&lines(&part, None, &theme(), true, None));
         assert!(expanded.iter().any(|line| line.contains("line 12")));
         assert!(!expanded.iter().any(|line| line.contains("more lines")));
     }
@@ -945,7 +942,7 @@ mod tests {
             Some(json!({"error": "permission denied"})),
             true,
         );
-        let lines = lines(&part, None, &theme(), false);
+        let lines = lines(&part, None, &theme(), false, None);
         let rendered = rendered(&lines);
         assert_eq!(rendered[0], "✗ bash  ls");
         assert!(rendered.contains(&"  │ permission denied".to_string()));
@@ -963,9 +960,11 @@ mod tests {
             Some(json!({"stdout": output, "exit_code": 0})),
             false,
         );
-        let rendered = rendered(&lines(&part, None, &theme(), false));
+        // An unbound toggle keeps the count and promises no key at all.
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
         assert!(rendered.iter().any(|line| line.contains("  │ … ")));
-        assert!(rendered.iter().any(|line| line.contains("<leader>u 展开")));
+        assert!(rendered.iter().any(|line| line.contains("more lines")));
+        assert!(!rendered.iter().any(|line| line.contains("expand")));
     }
 
     #[test]
@@ -976,7 +975,7 @@ mod tests {
             Some(json!({"stdout": "\u{1b}[31mred\u{1b}[0m\n", "exit_code": 0})),
             false,
         );
-        let rendered = rendered(&lines(&part, None, &theme(), false));
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
         assert!(rendered.contains(&"  │ red".to_string()));
     }
 
@@ -988,7 +987,7 @@ mod tests {
             Some(json!({"text": "one\ntwo\n", "sha256": "0"})),
             false,
         );
-        let rendered = rendered(&lines(&part, None, &theme(), false));
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
         assert_eq!(rendered[0], "✓ read  a.rs");
         assert!(rendered.contains(&"  ⎿ Read 2 lines".to_string()));
     }
@@ -1001,7 +1000,7 @@ mod tests {
             Some(json!({"matches": [{"path": "@a"}], "truncated": true})),
             false,
         );
-        let rendered = rendered(&lines(&part, None, &theme(), false));
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
         assert_eq!(rendered[0], "✓ grep  fn main in src");
         assert!(rendered.contains(&"  ⎿ 1 match (truncated)".to_string()));
     }
@@ -1015,7 +1014,7 @@ mod tests {
             Some(json!({"path": "src/lib.rs", "sha256": "1"})),
             false,
         );
-        let rendered = rendered(&lines(&part, Some(&files), &theme(), false));
+        let rendered = rendered(&lines(&part, Some(&files), &theme(), false, None));
         assert_eq!(rendered[0], "✓ edit  src/lib.rs");
         assert!(rendered.contains(&"  ⎿ Added 1 line, removed 1 line".to_string()));
         assert!(rendered.contains(&"  ◆ update src/lib.rs +1 −1".to_string()));
@@ -1035,7 +1034,7 @@ mod tests {
             None,
             false,
         );
-        let rendered = rendered(&lines(&part, None, &theme(), false));
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
         assert_eq!(rendered[0], "· todowrite");
         assert!(rendered.contains(&"  [✓] 1: write code".to_string()));
         assert!(rendered.contains(&"  [•] 2: test it ← 1".to_string()));
@@ -1049,7 +1048,7 @@ mod tests {
             Some(json!({"content": "an entire page"})),
             false,
         );
-        let rendered = rendered(&lines(&part, None, &theme(), false));
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
         assert_eq!(rendered, ["✓ WebFetch  https://example.com/docs"]);
     }
 
@@ -1064,7 +1063,7 @@ mod tests {
             Some(json!({"state": "answered", "answers": [["src"], ["yes", "now"]]})),
             false,
         );
-        let rendered = rendered(&lines(&part, None, &theme(), false));
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
         assert!(rendered.contains(&"  Which files?".to_string()));
         assert!(rendered.contains(&"  ⎿ src".to_string()));
         assert!(rendered.contains(&"  ⎿ yes, now".to_string()));
@@ -1078,7 +1077,7 @@ mod tests {
             Some(json!({"result": "world"})),
             false,
         );
-        let rendered = rendered(&lines(&part, None, &theme(), false));
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
         assert_eq!(rendered[0], "✓ mcp_server_tool  hello");
         assert!(rendered.contains(&"  │ {\"result\":\"world\"}".to_string()));
     }
