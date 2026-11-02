@@ -1937,6 +1937,14 @@ impl Tools {
             ToolDefinition{name:"glob".into(),description:"Find workspace-relative file paths by glob under a directory. No symlink following; generated directories excluded. Per-file permissions and output/traversal budgets apply; truncated reports partial results.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
             ToolDefinition{name:"grep".into(),description:"Find regex matches in permitted UTF-8 workspace files under a directory. Returns paths, 1-based lines and bounded previews. Optional workspace-relative glob filter. No shell or symlink traversal.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"glob":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"case_sensitive":{"type":"boolean","default":true},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
         ]);
+        // Inter-Session coordination: discovery is read-only, so it ships
+        // before delivery does. `specs/v2/session-messaging.md` holds the whole
+        // contract; `send_message` arrives separately because it admits mail.
+        definitions.push(ToolDefinition {
+            name: "list_sessions".into(),
+            description: "Discover other Sessions in the same project, prioritizing active execution and unfinished work rather than open tabs. Execution status is observed from this engine's durable run state. Unfinished goals/todos may be stale and are not proof that a resource is in use; a related title alone is not a reason to wake an idle Session. Use includeHistory: true to include idle historical Sessions.".into(),
+            input_schema: json!({"type":"object","properties":{"includeHistory":{"type":"boolean","default":false},"search":{"type":"string"},"directory":{"type":"string"}},"additionalProperties":false}),
+        });
         definitions.extend(self.delegation_definitions());
         definitions.extend(self.lsp_definitions());
         if self.background_enabled() && crate::terminal::supported() {

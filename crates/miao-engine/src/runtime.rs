@@ -3832,6 +3832,7 @@ command: None,
                                     None => Err(ToolError::Interrupted),
                                 },
                                 "session_state" => Ok(inner.store.state(session).await?),
+                                "list_sessions" => list_peer_sessions(inner, session, &prepared).await,
                                 "knowledge"=>inner.tools.execute_knowledge(prepared,&policy,session,cancel.child_token()).await,
                                 "todowrite" | "goal" => match crate::state::Mutation::parse(
                                     name,
@@ -5091,6 +5092,153 @@ async fn start_wakeup(
     timers.insert(id, background);
     Ok(Ok(data))
 }
+/// What a peer's persisted task state says, as far as a peer may trust it.
+///
+/// `unknown` is not `completed`: a Session that never recorded a goal or a
+/// checklist says nothing about whether it finished, and the spec is explicit
+/// that a peer's task record is not proof of live work either way.
+fn task_observation(state: &Value) -> &'static str {
+    let todos = state["todos"]["value"]["todos"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let goal = state["goal"]["value"]["status"].as_str() == Some("active");
+    let unfinished = goal
+        || todos
+            .iter()
+            .any(|todo| todo["status"].as_str() != Some("completed"));
+    match (unfinished, todos.is_empty() && !goal) {
+        (true, _) => "unfinished",
+        (false, true) => "unknown",
+        (false, false) => "completed",
+    }
+}
+
+/// A store failure inside a coordination tool reads as an external fault: the
+/// model asked a question about other Sessions, not about this Session's data.
+fn external(error: crate::protocol::Error) -> ToolError {
+    ToolError::External(error.to_string())
+}
+
+/// Peers in the same project, with what this engine can honestly observe.
+///
+/// Discovery stays separate from starting model execution: nothing here admits
+/// mail or wakes a Session. `specs/v2/session-messaging.md` holds the contract.
+async fn list_peer_sessions(
+    inner: &Inner,
+    session: &str,
+    prepared: &Prepared,
+) -> Result<Value, ToolError> {
+    const PEER_LIMIT: usize = 50;
+    let input = prepared.input();
+    let include_history = input
+        .get("includeHistory")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let search = input
+        .get("search")
+        .and_then(Value::as_str)
+        .map(str::to_lowercase);
+    let directory = input.get("directory").and_then(Value::as_str);
+    let me = inner
+        .store
+        .snapshot_with_metadata(session, true)
+        .await
+        .map_err(external)?;
+    let root = me
+        .get("location")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let mut peers: Vec<Value> = Vec::new();
+    for row in inner.store.session_catalog().await.map_err(external)? {
+        let Some(id) = row.get("session_id").and_then(Value::as_str) else {
+            continue;
+        };
+        if id == session {
+            continue;
+        }
+        // Cross-project coordination is out of scope, and an archived Session is
+        // history rather than a peer.
+        if row.get("location").and_then(Value::as_str) != Some(root.as_str()) {
+            continue;
+        }
+        if !row.get("archived_at_ms").is_none_or(Value::is_null) {
+            continue;
+        }
+        if let Some(directory) = directory {
+            let location = row
+                .get("location")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if !location.starts_with(directory) {
+                continue;
+            }
+        }
+        let title = row
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if search
+            .as_ref()
+            .is_some_and(|needle| !title.to_lowercase().contains(needle))
+        {
+            continue;
+        }
+        let snapshot = inner
+            .store
+            .snapshot_with_metadata(id, true)
+            .await
+            .map_err(external)?;
+        let busy = !snapshot.get("active_run").is_none_or(Value::is_null);
+        let state = inner.store.state(id).await.map_err(external)?;
+        let task = task_observation(&state);
+        let background = inner.store.jobs(id).await.map_err(external)?.len();
+        // "Prioritizing active execution or unfinished work" means idle history
+        // stays out of the default answer.
+        if !include_history && !busy && task != "unfinished" {
+            continue;
+        }
+        let objective = state["goal"]["value"]["objective"]
+            .as_str()
+            .or_else(|| {
+                state["todos"]["value"]["todos"]
+                    .as_array()
+                    .map(Vec::as_slice)
+                    .unwrap_or_default()
+                    .iter()
+                    .find(|todo| todo["status"].as_str() != Some("completed"))
+                    .and_then(|todo| todo["content"].as_str())
+            })
+            .unwrap_or_default()
+            .to_string();
+        peers.push(json!({
+            "id": id,
+            "title": title,
+            "parentID": row.get("parent_session_id").cloned().unwrap_or(Value::Null),
+            "execution": if busy { "busy" } else { "idle" },
+            "task": task,
+            "lastActivity": row.get("updated_at_ms").cloned().unwrap_or(Value::Null),
+            "backgroundJobs": background,
+            "objective": (!objective.is_empty()).then_some(objective),
+        }));
+    }
+    // The caller is looking for someone to coordinate with, so live work sorts
+    // ahead of idle work and recency breaks the ties.
+    peers.sort_by(|a, b| {
+        let live = |row: &Value| (row["execution"].as_str() != Some("busy")) as u8;
+        live(a).cmp(&live(b)).then_with(|| {
+            b["lastActivity"]
+                .as_u64()
+                .unwrap_or(0)
+                .cmp(&a["lastActivity"].as_u64().unwrap_or(0))
+        })
+    });
+    peers.truncate(PEER_LIMIT);
+    Ok(json!({ "sessions": peers }))
+}
+
 async fn cancel_wakeup(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
     let token = inner
         .timers
@@ -7019,6 +7167,47 @@ fn validate_agent(inner: &Inner, agent: &crate::session_agent::AgentManifest) ->
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod peer_tests {
+    use super::*;
+
+    #[test]
+    fn a_peer_with_no_task_record_is_unknown_not_completed() {
+        // "Nothing recorded" and "finished" are different answers: the second
+        // would tell a caller its work is done.
+        assert_eq!(
+            task_observation(&json!({"todos":null,"goal":null})),
+            "unknown"
+        );
+        assert_eq!(
+            task_observation(&json!({"todos":{"value":{"todos":[]}},"goal":null})),
+            "unknown"
+        );
+    }
+
+    #[test]
+    fn a_waiting_todo_or_an_active_goal_keeps_a_peer_unfinished() {
+        let waiting = json!({"todos":{"value":{"todos":[
+            {"content":"first","status":"completed"},
+            {"content":"second","status":"waiting"}
+        ]}},"goal":null});
+        assert_eq!(task_observation(&waiting), "unfinished");
+        let goal = json!({
+            "todos":{"value":{"todos":[{"content":"only","status":"completed"}]}},
+            "goal":{"value":{"objective":"ship it","status":"active"}}
+        });
+        assert_eq!(task_observation(&goal), "unfinished");
+    }
+
+    #[test]
+    fn every_recorded_todo_completed_with_no_goal_is_completed() {
+        let done = json!({"todos":{"value":{"todos":[
+            {"content":"first","status":"completed"}
+        ]}},"goal":{"value":{"objective":"ship it","status":"completed"}}});
+        assert_eq!(task_observation(&done), "completed");
+    }
 }
 
 #[cfg(test)]
