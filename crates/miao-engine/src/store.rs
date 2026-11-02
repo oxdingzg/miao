@@ -1024,37 +1024,6 @@ impl Store {
         .await
     }
 
-    /// How many messages the Session holds, so a caller can tell its first turn
-    /// from the rest.
-    pub async fn message_count(&self, session: &str) -> Result<u64, Error> {
-        let session = session.to_owned();
-        self.call(move |conn| {
-            let count: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM engine_message WHERE session_id=?1",
-                params![session],
-                |row| row.get(0),
-            )?;
-            Ok(count.max(0) as u64)
-        })
-        .await
-    }
-
-    /// The Session's stored title, if one was ever set.
-    pub async fn title(&self, session: &str) -> Result<Option<String>, Error> {
-        let session = session.to_owned();
-        self.call(move |conn| {
-            Ok(conn
-                .query_row(
-                    "SELECT title FROM engine_session WHERE id=?1",
-                    params![session],
-                    |row| row.get::<_, Option<String>>(0),
-                )
-                .optional()?
-                .flatten())
-        })
-        .await
-    }
-
     /// Set the Session title. Records a durable event so replay and other
     /// clients observe the same title.
     pub async fn rename(&self, session: &str, title: &str) -> Result<Event, Error> {
