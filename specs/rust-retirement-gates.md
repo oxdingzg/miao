@@ -86,7 +86,17 @@ Windows 验收通过。构建与重型检查使用项目配置的构建机，机
 
 结论只覆盖审计到的范围：macOS arm64 的发布产物在没有源码树、没有外部 Bun/Node、只有系统库可用的环境里可以启动。
 
-仍未取得：其余受支持平台（darwin-x64、linux-x64/arm64、windows-x64）的同样验证，以及健康/损坏扩展混合下的 G5 回归。
+同一检查在 **Linux x64** 上用另一台无 Bun/Node 的机器复现（2026-11-02）：
+
+| 检查 | 做法 | 结果 |
+| --- | --- | --- |
+| 产物校验 | `miao-linux-x64.tar.gz` 与 `.sha256` | `935e494f…9f05` 一致 |
+| 形态 | 解压后目录 | 单个 `miao` 265,377,248 字节，另有 `models.json`、LICENSE/NOTICE |
+| 外部运行时 | `command -v bun; command -v node` | 两者均 absent |
+| 启动 | `env -i PATH=/usr/bin:/bin HOME=… ./miao --version` | 输出 `0.3.25` |
+| 动态依赖 | `ldd ./miao` | 仅 linux-vdso、libc、ld-linux、libpthread、libdl、libm |
+
+仍未取得：darwin-x64、linux-arm64、windows-x64 的同样验证，以及健康/损坏扩展混合下的 G5 回归。
 
 ## G6 证据：本地产物清点与不兼容引擎拒绝（2026-11-01）
 
