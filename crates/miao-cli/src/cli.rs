@@ -3726,6 +3726,7 @@ async fn run_prompt(
     // engine journals it.
     let mut printed = baseline;
     let mut finished = false;
+    let mut saw_run = false;
     let mut found: Vec<String> = Vec::new();
     loop {
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -3735,6 +3736,17 @@ async fn run_prompt(
             .map_err(|error| error.to_string())?;
         found.clear();
         texts(&snapshot, &mut found);
+        // The snapshot itself carries the run boundary:  is set
+        // while a turn is in flight and null again once it settles. A turn
+        // that settles between two polls still reads as finished, because the
+        // text it committed pushed  past the baseline.
+        let running = snapshot.get("active_run").is_some_and(|run| !run.is_null());
+        if running {
+            saw_run = true;
+        }
+        if !running && (saw_run || printed > baseline) {
+            finished = true;
+        }
         while printed < found.len() {
             emit_event(
                 &target.format,
@@ -3780,6 +3792,14 @@ async fn run_prompt(
             bridge.resolve(id, reply);
         }
         while let Ok(event) = events.try_recv() {
+            let label = match &event {
+                miao_tui::transport::TransportEvent::Event(e) => format!("event:{}", e.kind),
+                miao_tui::transport::TransportEvent::Progress(_) => "progress".into(),
+                miao_tui::transport::TransportEvent::Config(_) => "config".into(),
+                miao_tui::transport::TransportEvent::Resync(_) => "resync".into(),
+                miao_tui::transport::TransportEvent::Failure(_) => "failure".into(),
+                miao_tui::transport::TransportEvent::Restart => "restart".into(),
+            };
             let miao_tui::transport::TransportEvent::Event(event) = event else {
                 continue;
             };
@@ -3827,10 +3847,6 @@ async fn run_prompt(
             // soon as it lands, so it streams like text does.
             if kind == "tool.completed" {
                 emit_event(&target.format, "tool_use", &session, event.data.clone());
-            }
-            if kind == "stop" {
-                finished = true;
-                continue;
             }
             if kind.contains("question.requested") {
                 owner.shutdown().await;
