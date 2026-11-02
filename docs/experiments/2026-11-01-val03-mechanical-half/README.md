@@ -24,6 +24,8 @@ fix described below.
 | reviewing changes | `<leader>g` | 2 | 16 ms | `interaction_review.rs` |
 | rework: mistyped query | `session 15O` → backspace → `0` | 16 (clean 14) | 28–30 ms (clean 25–45 ms) | `interaction_misstep.rs` |
 | rework: overshoot 5 rows | `j` × 154 then `k` × 5 | 161 (clean 151) | 487–499 ms (clean 460–462 ms) | `interaction_misstep.rs` |
+| rework: mistyped query | `session 15O` → backspace → `0` | 16 (clean 14) | 28–30 ms (clean 25–45 ms) | `interaction_misstep.rs` |
+| rework: overshoot 5 rows | `j` × 154 then `k` × 5 | 161 (clean 151) | 487–499 ms (clean 460–462 ms) | `interaction_misstep.rs` |
 
 The failure-recovery figure moved from 30 ms to about 180 ms when the test
 started waiting for the failed turn to settle before recalling the prompt. The
