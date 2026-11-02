@@ -63,6 +63,64 @@ fn stored_credential(
     }
 }
 
+
+/// The transport and endpoint a provider declares in configuration, used when a
+/// start names only its model. `--provider` and `--endpoint` still win over it,
+/// and an unknown package stays unresolved rather than guessing a protocol.
+async fn configured_route(
+    options: &HashMap<String, String>,
+    provider: Option<&str>,
+    model: &str,
+) -> Result<Option<(String, Option<String>)>, Box<dyn std::error::Error + Send + Sync>> {
+    let Some(provider) = provider else {
+        return Ok(None);
+    };
+    if options.contains_key("--provider") && options.contains_key("--endpoint") {
+        return Ok(None);
+    }
+    let sources = match options.get("--config-sources") {
+        Some(plan) => miao_engine::config_derive::plan(plan)?,
+        None => match options.get("--config-dir") {
+            Some(directory) => vec![miao_engine::config_derive::Source::Dir(
+                std::path::PathBuf::from(directory),
+            )],
+            None => return Ok(None),
+        },
+    };
+    let documents = miao_engine::config_derive::load(&sources)?;
+    let api = documents.iter().rev().find_map(|document| {
+        document
+            .value
+            .get("providers")?
+            .get(provider)?
+            .get("models")?
+            .get(model)?
+            .get("api")
+            .cloned()
+    });
+    let Some(api) = api else {
+        return Ok(None);
+    };
+    let transport = match api.get("package").and_then(serde_json::Value::as_str) {
+        Some("@ai-sdk/anthropic") => "anthropic",
+        Some("@ai-sdk/google" | "@ai-sdk/google-vertex") => "gemini",
+        Some("@ai-sdk/openai" | "@ai-sdk/openai-compatible") => "openai-chat",
+        _ => return Ok(None),
+    };
+    let endpoint = api
+        .get("url")
+        .and_then(serde_json::Value::as_str)
+        .map(|url| {
+            let base = url.trim_end_matches('/');
+            match transport {
+                "openai-chat" => format!("{base}/chat/completions"),
+                "anthropic" => format!("{base}/messages"),
+                _ => base.to_string(),
+            }
+        });
+    Ok(Some((transport.to_string(), endpoint)))
+}
+
 pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Send + Sync>> {
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
@@ -140,14 +198,6 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
         .get("--workspace")
         .ok_or("--workspace is required")?;
     let model = options.get("--model").ok_or("--model is required")?;
-    let provider_name = options
-        .get("--provider")
-        .map(String::as_str)
-        .unwrap_or("anthropic");
-    // A `provider/model` --model value names the provider for host-side
-    // routing; when the provider is given explicitly (the acp mode always
-    // does), the transport wants the bare model id, mirroring serve-mode
-    // route resolution.
     // A `provider/model` value also names the host-side provider, which is what a
     // credential is stored under: `volcengine/deepseek-v4-1` bills the volcengine
     // credential even though the transport underneath is OpenAI-compatible.
@@ -155,9 +205,32 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
         .split_once('/')
         .map(|(prefix, _)| prefix.to_owned())
         .filter(|prefix| !prefix.is_empty());
+    let bare_model = match model.split_once('/') {
+        Some((_, bare)) => bare.to_owned(),
+        None => model.to_owned(),
+    };
+    // Naming only the model is enough: the transport and endpoint then come from
+    // the provider's entry in configuration, exactly where the product's route
+    // plan read them.
+    let configured = configured_route(&options, model_provider.as_deref(), &bare_model).await?;
+    let provider_name = options
+        .get("--provider")
+        .map(String::as_str)
+        .map(str::to_owned)
+        .or_else(|| configured.as_ref().map(|(transport, _)| transport.clone()))
+        .unwrap_or_else(|| "anthropic".to_string());
+    let provider_name = provider_name.as_str();
+    let endpoint: Option<String> = options
+        .get("--endpoint")
+        .cloned()
+        .or_else(|| configured.and_then(|(_, endpoint)| endpoint));
+    // A `provider/model` --model value names the provider for host-side
+    // routing; when the provider is given explicitly (the acp mode always
+    // does), the transport wants the bare model id, mirroring serve-mode
+    // route resolution.
     let model: String = match model.split_once('/') {
         Some((prefix, bare)) if prefix == provider_name => bare.to_owned(),
-        _ => model.to_owned(),
+        _ => bare_model,
     };
     if ![
         "anthropic",
@@ -340,7 +413,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             return Err("Responses continuation contracts are unsupported by Bedrock".into());
         }
         miao_engine::routing::build_bedrock(
-            options.get("--endpoint").map(String::as_str),
+            endpoint.as_deref(),
             source.clone(),
             model.clone(),
             options.get("--aws-region").map(String::as_str),
@@ -349,7 +422,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     } else {
         miao_engine::routing::build_with_responses(
             provider_name,
-            options.get("--endpoint").map(String::as_str),
+            endpoint.as_deref(),
             source.clone(),
             model.clone(),
             prompt_cache,
@@ -362,7 +435,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             if provider_name == "gemini" {
                 None
             } else {
-                options.get("--endpoint")
+                endpoint.as_ref()
             }
         });
         let fallback = if provider_name == "amazon-bedrock" {
