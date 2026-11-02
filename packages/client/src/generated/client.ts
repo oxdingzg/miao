@@ -125,8 +125,6 @@ import type {
   ModelsDefaultOutput,
   ProvidersListInput,
   ProvidersListOutput,
-  ProvidersGetInput,
-  ProvidersGetOutput,
   IntegrationsListInput,
   IntegrationsListOutput,
   IntegrationsGetInput,
@@ -139,8 +137,6 @@ import type {
   IntegrationsAttemptStatusOutput,
   IntegrationsAttemptCompleteInput,
   IntegrationsAttemptCompleteOutput,
-  IntegrationsAttemptCancelInput,
-  IntegrationsAttemptCancelOutput,
   CredentialsListInput,
   CredentialsListOutput,
   CredentialsUpdateInput,
@@ -155,12 +151,8 @@ import type {
   PermissionsListSavedOutput,
   PermissionsRemoveSavedInput,
   PermissionsRemoveSavedOutput,
-  PermissionsCreateInput,
-  PermissionsCreateOutput,
   PermissionsListInput,
   PermissionsListOutput,
-  PermissionsGetInput,
-  PermissionsGetOutput,
   PermissionsReplyInput,
   PermissionsReplyOutput,
   FilesContentInput,
@@ -1202,18 +1194,6 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
-      get: (input: ProvidersGetInput, requestOptions?: RequestOptions) =>
-        request<ProvidersGetOutput>(
-          {
-            method: "GET",
-            path: `/api/provider/${encodeURIComponent(input.providerID)}`,
-            query: { location: input["location"] },
-            successStatus: 200,
-            declaredStatuses: [404, 503, 401, 400],
-            empty: false,
-          },
-          requestOptions,
-        ),
     },
     integrations: {
       list: (input?: IntegrationsListInput, requestOptions?: RequestOptions) =>
@@ -1287,18 +1267,6 @@ export function make(options: ClientOptions) {
             body: { code: input["code"] },
             successStatus: 204,
             declaredStatuses: [400, 401],
-            empty: true,
-          },
-          requestOptions,
-        ),
-      attemptCancel: (input: IntegrationsAttemptCancelInput, requestOptions?: RequestOptions) =>
-        request<IntegrationsAttemptCancelOutput>(
-          {
-            method: "DELETE",
-            path: `/api/integration/attempt/${encodeURIComponent(input.attemptID)}`,
-            query: { location: input["location"] },
-            successStatus: 204,
-            declaredStatuses: [401, 400],
             empty: true,
           },
           requestOptions,
@@ -1391,42 +1359,11 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
-      create: (input: PermissionsCreateInput, requestOptions?: RequestOptions) =>
-        request<{ readonly data: PermissionsCreateOutput }>(
-          {
-            method: "POST",
-            path: `/api/session/${encodeURIComponent(input.sessionID)}/permission`,
-            body: {
-              id: input["id"],
-              action: input["action"],
-              resources: input["resources"],
-              save: input["save"],
-              metadata: input["metadata"],
-              source: input["source"],
-              agent: input["agent"],
-            },
-            successStatus: 200,
-            declaredStatuses: [404, 409, 400, 410, 401],
-            empty: false,
-          },
-          requestOptions,
-        ).then((value) => value.data),
       list: (input: PermissionsListInput, requestOptions?: RequestOptions) =>
         request<{ readonly data: PermissionsListOutput }>(
           {
             method: "GET",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/permission`,
-            successStatus: 200,
-            declaredStatuses: [404, 400, 410, 409, 401],
-            empty: false,
-          },
-          requestOptions,
-        ).then((value) => value.data),
-      get: (input: PermissionsGetInput, requestOptions?: RequestOptions) =>
-        request<{ readonly data: PermissionsGetOutput }>(
-          {
-            method: "GET",
-            path: `/api/session/${encodeURIComponent(input.sessionID)}/permission/${encodeURIComponent(input.requestID)}`,
             successStatus: 200,
             declaredStatuses: [404, 400, 410, 409, 401],
             empty: false,

@@ -83,14 +83,6 @@ export type MessageNotFoundError = {
 export const isMessageNotFoundError = (value: unknown): value is MessageNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "MessageNotFoundError"
 
-export type ProviderNotFoundError = {
-  readonly _tag: "ProviderNotFoundError"
-  readonly providerID: string
-  readonly message: string
-}
-export const isProviderNotFoundError = (value: unknown): value is ProviderNotFoundError =>
-  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ProviderNotFoundError"
-
 export type PermissionNotFoundError = {
   readonly _tag: "PermissionNotFoundError"
   readonly requestID: string
@@ -3877,39 +3869,6 @@ export type ProvidersListOutput = {
   }>
 }
 
-export type ProvidersGetInput = {
-  readonly providerID: { readonly providerID: string }["providerID"]
-  readonly location?: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-  }["location"]
-}
-
-export type ProvidersGetOutput = {
-  readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
-  }
-  readonly data: {
-    readonly id: string
-    readonly integrationID?: string
-    readonly name: string
-    readonly disabled?: boolean
-    readonly api:
-      | {
-          readonly type: "aisdk"
-          readonly package: string
-          readonly url?: string
-          readonly settings?: { readonly [x: string]: JsonValue }
-        }
-      | { readonly type: "native"; readonly url?: string; readonly settings: { readonly [x: string]: JsonValue } }
-    readonly request: {
-      readonly headers: { readonly [x: string]: string }
-      readonly body: { readonly [x: string]: JsonValue }
-    }
-  }
-}
-
 export type IntegrationsListInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
@@ -4119,15 +4078,6 @@ export type IntegrationsAttemptCompleteInput = {
 
 export type IntegrationsAttemptCompleteOutput = void
 
-export type IntegrationsAttemptCancelInput = {
-  readonly attemptID: { readonly attemptID: string }["attemptID"]
-  readonly location?: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-  }["location"]
-}
-
-export type IntegrationsAttemptCancelOutput = void
-
 export type CredentialsListInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
@@ -4231,91 +4181,6 @@ export type PermissionsRemoveSavedInput = { readonly id: { readonly id: string }
 
 export type PermissionsRemoveSavedOutput = void
 
-export type PermissionsCreateInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly id?: {
-    readonly id?: string | null
-    readonly action: string
-    readonly resources: ReadonlyArray<string>
-    readonly save?: ReadonlyArray<string>
-    readonly metadata?: { readonly [x: string]: JsonValue }
-    readonly source?:
-      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
-      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
-  }["id"]
-  readonly action: {
-    readonly id?: string | null
-    readonly action: string
-    readonly resources: ReadonlyArray<string>
-    readonly save?: ReadonlyArray<string>
-    readonly metadata?: { readonly [x: string]: JsonValue }
-    readonly source?:
-      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
-      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
-  }["action"]
-  readonly resources: {
-    readonly id?: string | null
-    readonly action: string
-    readonly resources: ReadonlyArray<string>
-    readonly save?: ReadonlyArray<string>
-    readonly metadata?: { readonly [x: string]: JsonValue }
-    readonly source?:
-      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
-      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
-  }["resources"]
-  readonly save?: {
-    readonly id?: string | null
-    readonly action: string
-    readonly resources: ReadonlyArray<string>
-    readonly save?: ReadonlyArray<string>
-    readonly metadata?: { readonly [x: string]: JsonValue }
-    readonly source?:
-      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
-      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
-  }["save"]
-  readonly metadata?: {
-    readonly id?: string | null
-    readonly action: string
-    readonly resources: ReadonlyArray<string>
-    readonly save?: ReadonlyArray<string>
-    readonly metadata?: { readonly [x: string]: JsonValue }
-    readonly source?:
-      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
-      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
-  }["metadata"]
-  readonly source?: {
-    readonly id?: string | null
-    readonly action: string
-    readonly resources: ReadonlyArray<string>
-    readonly save?: ReadonlyArray<string>
-    readonly metadata?: { readonly [x: string]: JsonValue }
-    readonly source?:
-      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
-      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
-  }["source"]
-  readonly agent?: {
-    readonly id?: string | null
-    readonly action: string
-    readonly resources: ReadonlyArray<string>
-    readonly save?: ReadonlyArray<string>
-    readonly metadata?: { readonly [x: string]: JsonValue }
-    readonly source?:
-      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
-      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
-  }["agent"]
-}
-
-export type PermissionsCreateOutput = {
-  readonly data: { readonly id: string; readonly effect: "allow" | "deny" | "ask" }
-}["data"]
-
 export type PermissionsListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type PermissionsListOutput = {
@@ -4330,25 +4195,6 @@ export type PermissionsListOutput = {
       | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
       | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
   }>
-}["data"]
-
-export type PermissionsGetInput = {
-  readonly sessionID: { readonly sessionID: string; readonly requestID: string }["sessionID"]
-  readonly requestID: { readonly sessionID: string; readonly requestID: string }["requestID"]
-}
-
-export type PermissionsGetOutput = {
-  readonly data: {
-    readonly id: string
-    readonly sessionID: string
-    readonly action: string
-    readonly resources: ReadonlyArray<string>
-    readonly save?: ReadonlyArray<string>
-    readonly metadata?: { readonly [x: string]: JsonValue }
-    readonly source?:
-      | { readonly type: "command"; readonly messageID: string; readonly name: string; readonly callID: string }
-      | { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-  }
 }["data"]
 
 export type PermissionsReplyInput = {

@@ -92,13 +92,5 @@ export const IntegrationHandler = HttpApiBuilder.group(Api, "server.integration"
           return HttpApiSchema.NoContent.make()
         }),
       )
-      .handle(
-        "integration.attempt.cancel",
-        Effect.fn(function* (ctx) {
-          const service = yield* Integration.Service
-          yield* service.attempt.cancel(ctx.params.attemptID)
-          return HttpApiSchema.NoContent.make()
-        }),
-      )
   }),
 )
