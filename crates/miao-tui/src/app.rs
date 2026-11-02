@@ -3821,14 +3821,12 @@ mod tests {
         ]));
         // j/k move the list, so the list has to own the keyboard first.
         app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
-        // The action row is at index 0; j moves to the first Session.
-        assert_eq!(app.home.current().map(|row| row.id.as_str()), None);
+        // `set_rows` defaults to the first Session past the action row.
+        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_b"));
         app.handle(key(KeyCode::Char('j'), KeyModifiers::NONE));
         assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
-        app.handle(key(KeyCode::Char('j'), KeyModifiers::NONE));
-        assert_eq!(app.home.selected, 1);
         app.handle(key(KeyCode::Char('k'), KeyModifiers::NONE));
-        assert_eq!(app.home.selected, 0);
+        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_b"));
     }
 
     fn approval_state() -> SessionState {
