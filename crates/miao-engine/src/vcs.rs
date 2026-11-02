@@ -378,33 +378,63 @@ mod tests {
                 .output()
                 .expect("git runs")
         };
-        assert!(run(&["init", "-q", "-b", "main"]).status.success(), "git init");
+        assert!(
+            run(&["init", "-q", "-b", "main"]).status.success(),
+            "git init"
+        );
         std::fs::write(dir.path().join("tracked.txt"), "one\n").expect("write");
         assert!(run(&["add", "."]).status.success());
-        assert!(run(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed"]).status.success());
+        assert!(run(&[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-qm",
+            "seed"
+        ])
+        .status
+        .success());
         std::fs::write(dir.path().join("tracked.txt"), "one\ntwo\n").expect("edit");
         std::fs::write(dir.path().join("fresh.txt"), "new\n").expect("untracked");
 
         let root = dir.path().display().to_string();
-        let changed =
-            tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime")
-                .block_on(async { diff(&root, "tracked.txt", MAX_DIFF_CHARS).await.expect("diff") });
-        assert!(changed["diff"].as_str().is_some_and(|patch| patch.contains("+two")), "{changed}");
+        let changed = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime")
+            .block_on(async {
+                diff(&root, "tracked.txt", MAX_DIFF_CHARS)
+                    .await
+                    .expect("diff")
+            });
+        assert!(
+            changed["diff"]
+                .as_str()
+                .is_some_and(|patch| patch.contains("+two")),
+            "{changed}"
+        );
 
-        let untracked =
-            tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime")
-                .block_on(async { diff(&root, "fresh.txt", MAX_DIFF_CHARS).await.expect("diff") });
+        let untracked = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime")
+            .block_on(async { diff(&root, "fresh.txt", MAX_DIFF_CHARS).await.expect("diff") });
         assert_eq!(untracked["untracked"], true);
         assert!(untracked["diff"].is_null(), "{untracked}");
 
-        let escape =
-            tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime")
-                .block_on(async { diff(&root, "-p", MAX_DIFF_CHARS).await });
+        let escape = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime")
+            .block_on(async { diff(&root, "-p", MAX_DIFF_CHARS).await });
         assert!(escape.is_err(), "a flag-shaped path is refused");
 
-        let outside =
-            tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime")
-                .block_on(async { diff(&root, "../outside.txt", MAX_DIFF_CHARS).await });
+        let outside = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime")
+            .block_on(async { diff(&root, "../outside.txt", MAX_DIFF_CHARS).await });
         assert!(outside.is_err(), "a `..` path is refused");
     }
 }
