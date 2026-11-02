@@ -29,7 +29,7 @@ Usage:
   miao session import BUNDLE [--sha256 HEX]
                         import a session bundle into this database
   miao session move ID DIRECTORY
-                        move a session (and its storage) to another workspace
+                        list the move's impact first; --apply performs it
   miao session revert ID CHECKPOINT
   miao session unrevert ID
                         rewind a session's history, or undo the rewind
@@ -671,7 +671,7 @@ fn session_import(rest: &[String]) -> Result<(), String> {
         // that planning step, so record it here before activating.
         if let Ok(connection) = rusqlite::Connection::open(&product) {
             let location = parsed_session_location(&bytes);
-            let now = (cli_now_ms() / 1) as i64;
+            let now = cli_now_ms() as i64;
             let _ = connection.execute(
                 "INSERT OR REPLACE INTO session_migration(id,session_id,state,native_storage,location,bundle_sha256,source_seq,created_at,updated_at,direction) VALUES(?1,?2,'switched',?3,?4,?5,0,?6,?6,'native')",
                 rusqlite::params![import_id, session_id_for_record, db.display().to_string(), location, computed, now],
@@ -801,6 +801,91 @@ fn drain_inbox(session: &str) -> Vec<String> {
 /// Fork one session into another through the engine's own command, so the
 /// copy carries the engine's message sequence and placement rather than a
 /// host-side guess at either.
+/// What moving one session would touch, read from its own ledger before the
+/// engine moves anything: where the session lives now, how much history the
+/// move carries, what else is anchored to the same tree, and what the target
+/// looks like. The WSP-03 rule is that the impact is listed first, so the move
+/// itself waits for `--apply`.
+fn session_move_plan(
+    db: &std::path::Path,
+    session_id: &str,
+    target: &std::path::Path,
+) -> Result<Vec<String>, String> {
+    let connection = db_read_only(db)?;
+    let exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+            [session_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !exists {
+        return Err(format!("no session {session_id} in {}", db.display()));
+    }
+    let mut plan = vec![format!("session · {session_id}")];
+    let current: Option<String> = connection
+        .query_row(
+            "SELECT root FROM engine_location WHERE session_id=?1",
+            [session_id],
+            |row| row.get(0),
+        )
+        .map(Some)
+        .or_else(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other.to_string()),
+        })
+        .map_err(|error| error.to_string())?;
+    match current.as_deref() {
+        Some(root) => plan.push(format!("current location · {root}")),
+        None => plan.push("current location · none recorded".into()),
+    }
+    let (events, messages, last_ms): (i64, i64, Option<i64>) = connection
+        .query_row(
+            "SELECT (SELECT count(*) FROM engine_event WHERE session_id=?1), \
+                    (SELECT count(*) FROM engine_message WHERE session_id=?1), \
+                    (SELECT MAX(recorded_at_ms) FROM engine_event WHERE session_id=?1)",
+            [session_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|error| error.to_string())?;
+    plan.push(format!(
+        "history carried · {events} event(s), {messages} message(s)"
+    ));
+    if let Some(ms) = last_ms {
+        plan.push(format!("last activity · {ms} ms epoch"));
+    }
+    if let Some(root) = &current {
+        let siblings: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM engine_location WHERE root=?1 AND session_id<>?2",
+                [root, session_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if siblings > 0 {
+            plan.push(format!(
+                "anchored with the session · {siblings} other session(s) share the current root and stay put"
+            ));
+        }
+    }
+    plan.push(format!("target · {}", target.display()));
+    if target.exists() {
+        plan.push("target state · exists".into());
+        if target.join(".git").exists() {
+            plan.push("target state · a git checkout".into());
+        }
+    } else {
+        plan.push("target state · absent (the engine creates it)".into());
+    }
+    let ledger = db_file_bytes(db);
+    plan.push(format!(
+        "ledger · {} ({})",
+        db.display(),
+        human_bytes(ledger.0 + ledger.1 + ledger.2)
+    ));
+    Ok(plan)
+}
+
 fn session_engine_call(rest: &[String], method: &str) -> Result<(), String> {
     let mut db: Option<PathBuf> = None;
     let mut at: Option<u64> = None;
@@ -979,7 +1064,9 @@ fn worktree(rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("remove") => {
-            let name = rest.get(1).ok_or("usage: miao worktree remove NAME [--apply]")?;
+            let name = rest
+                .get(1)
+                .ok_or("usage: miao worktree remove NAME [--apply]")?;
             if name.contains('/') || name.contains("..") {
                 return Err("worktree name must be a single path component".into());
             }
@@ -1010,7 +1097,11 @@ fn worktree(rest: &[String]) -> Result<(), String> {
 /// the ledger file the tree's sessions wrote into. The WSP-04 rule is that a
 /// cleanup shows who references the target first, so `--apply` is a separate,
 /// explicit step rather than a flag buried in the same action.
-fn worktree_remove_plan(root: &str, name: &str, path: &std::path::Path) -> Result<Vec<String>, String> {
+fn worktree_remove_plan(
+    root: &str,
+    name: &str,
+    path: &std::path::Path,
+) -> Result<Vec<String>, String> {
     let git = |args: &[&str]| -> Result<std::process::Output, String> {
         std::process::Command::new("git")
             .args(args)
@@ -1026,12 +1117,16 @@ fn worktree_remove_plan(root: &str, name: &str, path: &std::path::Path) -> Resul
     // git reports the real path, and a symlinked temp dir (macOS /var →
     // /private/var) otherwise reads as unregistered; compare canonical forms.
     let check_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let is_registered = listed
-        .lines()
-        .any(|line| line.strip_prefix("worktree ") == Some(check_path.display().to_string().as_str()));
+    let is_registered = listed.lines().any(|line| {
+        line.strip_prefix("worktree ") == Some(check_path.display().to_string().as_str())
+    });
     plan.push(format!(
         "git registration · {}",
-        if is_registered { "registered" } else { "not registered (git already forgot it)" }
+        if is_registered {
+            "registered"
+        } else {
+            "not registered (git already forgot it)"
+        }
     ));
 
     let branch_tip = git(&["rev-parse", "--verify", &format!("refs/heads/{name}")])?;
@@ -1071,14 +1166,18 @@ fn worktree_remove_plan(root: &str, name: &str, path: &std::path::Path) -> Resul
         ));
         if anchored > 0 {
             plan.push(
-                "  · removing the tree strands these sessions' cwd; move or close them first".into(),
+                "  · removing the tree strands these sessions' cwd; move or close them first"
+                    .into(),
             );
         }
     } else {
         plan.push("engine sessions · none (no ledger for this tree)".to_string());
     }
 
-    plan.push(format!("directory · {} on disk", human_bytes(tree_bytes(path))));
+    plan.push(format!(
+        "directory · {} on disk",
+        human_bytes(tree_bytes(path))
+    ));
     Ok(plan)
 }
 
@@ -3201,31 +3300,6 @@ fn collect_all_texts(value: &serde_json::Value, out: &mut Vec<String>) {
     }
 }
 
-fn unused_texts(value: &serde_json::Value, out: &mut Vec<String>) {
-    match value {
-        serde_json::Value::Object(map) => {
-            // Reasoning fragments also carry `text`; they are not the answer.
-            if map.get("type").and_then(|kind| kind.as_str()) == Some("reasoning") {
-                return;
-            }
-            for (key, child) in map {
-                if key == "reasoning" {
-                    continue;
-                }
-                if key == "text" {
-                    if let Some(text) = child.as_str() {
-                        out.push(text.to_string());
-                        continue;
-                    }
-                }
-                texts(child, out);
-            }
-        }
-        serde_json::Value::Array(items) => items.iter().for_each(|item| texts(item, out)),
-        _ => {}
-    }
-}
-
 /// Generate a credential id in the product's shape (`cred_` + 26 base62 chars).
 /// Uniqueness is what matters; the alphabet matches the existing rows so any
 /// consumer that pattern-matches on the prefix keeps working.
@@ -3254,7 +3328,7 @@ fn auth_write(rest: &[String]) -> Result<(), String> {
         "set MIAO_ENGINE_CREDENTIAL_DB (the product passes it to the engine)".to_string()
     })?;
     let connection = rusqlite::Connection::open(&db).map_err(|error| format!("{db}: {error}"))?;
-    let now = (cli_now_ms() / 1) as i64;
+    let now = cli_now_ms() as i64;
     match rest.first().map(String::as_str) {
         Some("login") => {
             let integration = rest
@@ -3694,19 +3768,19 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
     let mut args = args.into_iter();
     match args.next().as_deref() {
         Some("tui") => match launch(args) {
-            Ok(mut launch) => match {
+            Ok(mut launch) => {
                 // The Rust TUI builds its own engine argv from MIAO_ENGINE_*
                 // variables, so the routes derived here reach it exactly the way
                 // an operator-supplied manifest would.
                 prepare_tui_engine(&mut launch);
-                miao_tui::run(launch)
-            } {
-                Ok(()) => std::process::ExitCode::SUCCESS,
-                Err(error) => {
-                    eprintln!("miao tui: {error}");
-                    std::process::ExitCode::from(1)
+                match miao_tui::run(launch) {
+                    Ok(()) => std::process::ExitCode::SUCCESS,
+                    Err(error) => {
+                        eprintln!("miao tui: {error}");
+                        std::process::ExitCode::from(1)
+                    }
                 }
-            },
+            }
             Err(message) => {
                 eprintln!("miao: {message}\n{USAGE}");
                 std::process::ExitCode::from(2)
@@ -4098,13 +4172,62 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                         std::process::ExitCode::from(1)
                     }
                 },
-                Some("move") => match session_engine_call(&rest[1..], "move_session") {
-                    Ok(()) => std::process::ExitCode::SUCCESS,
-                    Err(message) => {
-                        eprintln!("miao session: {message}");
-                        std::process::ExitCode::from(1)
+                Some("move") => {
+                    let inner = &rest[1..];
+                    if inner.iter().any(|argument| argument == "--apply") {
+                        match session_engine_call(inner, "move_session") {
+                            Ok(()) => std::process::ExitCode::SUCCESS,
+                            Err(message) => {
+                                eprintln!("miao session: {message}");
+                                std::process::ExitCode::from(1)
+                            }
+                        }
+                    } else {
+                        // The impact is listed before anything moves; `--apply`
+                        // is the operator's separate, explicit step.
+                        let mut db: Option<PathBuf> = None;
+                        let mut positional: Vec<String> = Vec::new();
+                        let mut index = 0;
+                        while index < inner.len() {
+                            match inner[index].as_str() {
+                                "--db" => {
+                                    db = inner.get(index + 1).map(PathBuf::from);
+                                    index += 2;
+                                }
+                                other if other.starts_with("--") => index += 1,
+                                other => {
+                                    positional.push(other.to_string());
+                                    index += 1;
+                                }
+                            }
+                        }
+                        let result = (|| -> Result<(), String> {
+                            let (Some(id), Some(directory)) =
+                                (positional.first(), positional.get(1))
+                            else {
+                                return Err(
+                                    "usage: miao session move ID DIRECTORY [--apply]".into()
+                                );
+                            };
+                            let workspace =
+                                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                            let db = db.unwrap_or_else(|| default_db(&workspace));
+                            for line in session_move_plan(&db, id, std::path::Path::new(directory))?
+                            {
+                                println!("{line}");
+                            }
+                            println!("dry run · pass --apply to move");
+                            Ok(())
+                        })();
+                        match result {
+                            Ok(()) => std::process::ExitCode::SUCCESS,
+                            Err(message) => {
+                                eprintln!("miao session: {message}");
+                                std::process::ExitCode::from(1)
+                            }
+                        }
                     }
-                },
+                }
                 Some("revert") => match session_engine_call(&rest[1..], "revert") {
                     Ok(()) => std::process::ExitCode::SUCCESS,
                     Err(message) => {
@@ -4578,8 +4701,8 @@ mod tests {
             .into_iter()
             .map(|(_, _, keep)| (keep, false))
             .collect();
-        assert_eq!(keeps[3].0, true, "config is kept with --keep-config");
-        assert_eq!(keeps[0].0, false, "data is removed without --keep-data");
+        assert!(keeps[3].0, "config is kept with --keep-config");
+        assert!(!keeps[0].0, "data is removed without --keep-data");
 
         std::env::remove_var("MIAO_ENGINE_STORAGE");
         std::env::remove_var("XDG_DATA_HOME");
@@ -4604,41 +4727,81 @@ mod tests {
                 .output()
                 .expect("git runs")
         };
-        assert!(run(&["init", "-q", "-b", "main"]).status.success(), "git init");
+        assert!(
+            run(&["init", "-q", "-b", "main"]).status.success(),
+            "git init"
+        );
         std::fs::write(dir.join("seed"), "seed").expect("seed file");
         assert!(run(&["add", "."]).status.success());
-        assert!(run(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"]).status.success());
+        assert!(run(&[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "-m",
+            "seed"
+        ])
+        .status
+        .success());
         let name = "plan-preview";
         let path = dir.join(".miao-worktrees").join(name);
         assert!(
-            run(&["worktree", "add", "-b", name, path.display().to_string().as_str()])
-                .status
-                .success(),
+            run(&[
+                "worktree",
+                "add",
+                "-b",
+                name,
+                path.display().to_string().as_str()
+            ])
+            .status
+            .success(),
             "worktree add"
         );
         // A commit only the branch holds: the plan has to count what `branch -D`
         // would discard, which is the number an operator decides on.
         std::fs::write(path.join("only"), "only on the branch").expect("branch file");
-        assert!(std::process::Command::new("git").args(["add", "only"]).current_dir(&path).output().expect("git runs").status.success());
-        assert!(
-            std::process::Command::new("git")
-                .args(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "branch-only"])
-                .current_dir(&path)
-                .output()
-                .expect("git runs")
-                .status
-                .success()
-        );
+        assert!(std::process::Command::new("git")
+            .args(["add", "only"])
+            .current_dir(&path)
+            .output()
+            .expect("git runs")
+            .status
+            .success());
+        assert!(std::process::Command::new("git")
+            .args([
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-qm",
+                "branch-only"
+            ])
+            .current_dir(&path)
+            .output()
+            .expect("git runs")
+            .status
+            .success());
 
-        let plan = worktree_remove_plan(dir.display().to_string().as_str(), name, &path).expect("plan");
+        let plan =
+            worktree_remove_plan(dir.display().to_string().as_str(), name, &path).expect("plan");
         let text = plan.join("\n");
         assert!(text.contains("git registration · registered"), "{text}");
-        assert!(text.contains("1 commit(s) not reachable from HEAD"), "{text}");
+        assert!(
+            text.contains("1 commit(s) not reachable from HEAD"),
+            "{text}"
+        );
         assert!(text.contains("engine sessions · none"), "{text}");
         assert!(text.contains("directory ·"), "{text}");
         // The plan itself removes nothing: the tree and the branch still exist.
         assert!(path.exists(), "a plan must not remove the tree");
-        assert_eq!(run(&["rev-parse", "--verify", &format!("refs/heads/{name}")]).status.success(), true);
+        assert!(
+            run(&["rev-parse", "--verify", &format!("refs/heads/{name}")])
+                .status
+                .success()
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
