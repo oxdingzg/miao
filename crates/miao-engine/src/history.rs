@@ -134,7 +134,10 @@ impl Store {
             let mut pending_tools=std::collections::HashSet::new();
             let mut deferred_context=Vec::new();
             let mut count=selected.len();
-            let mut stmt=tx.prepare("SELECT m.role,m.content,m.recorded_at_ms,e.kind FROM engine_message m JOIN engine_event e ON e.session_id=m.session_id AND e.seq=m.seq WHERE m.session_id=?1 AND m.seq>?2 AND m.seq<=?3 AND m.reverted=0 AND m.quarantined=0 ORDER BY m.seq LIMIT 20001")?;
+            // kind lives on the message row: the event log may be truncated
+            // below a compaction baseline, and this read must keep returning
+            // every message regardless.
+            let mut stmt=tx.prepare("SELECT m.role,m.content,m.recorded_at_ms,m.kind FROM engine_message m WHERE m.session_id=?1 AND m.seq>?2 AND m.seq<=?3 AND m.reverted=0 AND m.quarantined=0 ORDER BY m.seq LIMIT 20001")?;
             let mut rows=stmt.query(params![session,through,cut])?;
             while let Some(row)=rows.next()? {
                 let content:String=row.get(1)?;bytes+=content.len();count+=1;
@@ -147,7 +150,7 @@ impl Store {
                 // Injected context may arrive while tools execute. Keep the
                 // immutable transcript order, but do not split the provider's
                 // assistant-tool/result block with a synthetic user message.
-                if row.get::<_,String>(3)?=="message.synthetic" && !pending_tools.is_empty() {deferred_context.push(message);continue;}
+                if row.get::<_,Option<String>>(3)?.as_deref()==Some("message.synthetic") && !pending_tools.is_empty() {deferred_context.push(message);continue;}
                 // Recovery history may contain an orphan result whose call
                 // never committed. Track open blocks here without imposing the
                 // stricter closed-prefix validation used by fork/compaction.

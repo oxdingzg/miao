@@ -44,7 +44,7 @@ impl Store {
             // The provider sees explicitly attributed context; the transcript
             // projects the synthetic event, never an operator prompt.
             let content=json!([{"type":"text","text":format!("<injected-context source={}>\n{}\n</injected-context>",serde_json::to_string(&source)?,text)}]);
-            tx.execute("INSERT INTO engine_message(session_id,seq,role,content,recorded_at_ms) VALUES(?1,?2,'user',?3,?4)",params![session,event.seq,serde_json::to_string(&content)?,event.recorded_at_ms])?;
+            tx.execute("INSERT INTO engine_message(session_id,seq,role,content,recorded_at_ms,kind) VALUES(?1,?2,'user',?3,?4,?5)",params![session,event.seq,serde_json::to_string(&content)?,event.recorded_at_ms,event.kind])?;
             tx.commit()?;
             Ok(json!({"seq":event.seq,"duplicate":false}))
         }).await
