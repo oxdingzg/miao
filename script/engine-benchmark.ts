@@ -426,6 +426,12 @@ type Cell = {
    * (#2236): the report says so instead of printing a total that looks complete.
    */
   delegated?: boolean
+  /**
+   * The run's own account, when the CLI reported one. A run that delegates
+   * records the child's spend under the child's id, so summing `step_finish`
+   * cannot see it (#2236); this total comes from the Session record instead.
+   */
+  usageTotal?: { cost: number; delegated: number; total: number }
   input: number
   output: number
   reasoning: number
@@ -461,6 +467,16 @@ const harvest = (line: string, into: Cell) => {
   try {
     event = JSON.parse(line)
   } catch {
+    return
+  }
+  if (event.type === "usage_total" && typeof event.part === "object" && event.part !== null) {
+    const part = event.part as { cost?: unknown; delegated?: unknown; total?: unknown }
+    if (typeof part.total === "number")
+      into.usageTotal = {
+        cost: typeof part.cost === "number" ? part.cost : 0,
+        delegated: typeof part.delegated === "number" ? part.delegated : 0,
+        total: part.total,
+      }
     return
   }
   if (event.type === "tool_use" && typeof event.part === "object" && event.part !== null) {
@@ -768,7 +784,8 @@ const fmt = (cell: Cell | undefined) => {
   const mark = cell.ok ? "" : " · FAILED"
   const resumed = cell.resumed ? " · resumed" : ""
   const delegated = cell.delegated ? " · delegated" : ""
-  return `${cell.turns}t · ${billedInput(cell)}b-in (${cell.input}in/${cell.cacheRead}cached)/${cell.output}out · ${money(cell)} · ${cell.seconds.toFixed(0)}s${mark}${resumed}${delegated}`
+  const total = cell.usageTotal ? ` · run total $${cell.usageTotal.total.toFixed(4)}` : ""
+  return `${cell.turns}t · ${billedInput(cell)}b-in (${cell.input}in/${cell.cacheRead}cached)/${cell.output}out · ${money(cell)} · ${cell.seconds.toFixed(0)}s${mark}${resumed}${delegated}${total}`
 }
 
 const lines: string[] = []
