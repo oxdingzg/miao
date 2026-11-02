@@ -1450,7 +1450,6 @@ fn project_copy_apply(
     }
     Ok(std::fs::canonicalize(&target).unwrap_or(target))
 }
-}
 
 /// Run a declarative plan: each step is a separate `miao run`, so a failure is
 /// isolated and a step can be re-run on its own. Steps honour `depends_on`;
