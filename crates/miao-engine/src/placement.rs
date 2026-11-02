@@ -200,4 +200,65 @@ mod tests {
             root.join("228535309a12cfe4cf9e7b4139686b73a264de615d53cb4ba1e11ac4abab3ef6.db")
         );
     }
+
+    #[test]
+    fn the_toolsets_reresolution_names_the_same_ledger() {
+        // Two surfaces consume the workspace spelling independently: storage
+        // derives the ledger from identity(spelling), and the toolset takes
+        // the string storage produced and resolves it again through
+        // canonicalize (Toolset::new in tools.rs). Whatever each surface does
+        // to the spelling, both must land on one directory and one ledger.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let real = dir.path().join("real");
+        std::fs::create_dir_all(&real).expect("real dir");
+        let link = dir.path().join("link");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real, &link).expect("symlink");
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&real, &link).expect("symlink");
+
+        let spelled = PathBuf::from(format!("{}/", link.display()));
+        let stored = identity(&spelled);
+        let toolset = std::fs::canonicalize(&stored).expect("resolve the stored root");
+        assert_eq!(
+            stored, toolset,
+            "identity's output is not the filesystem truth"
+        );
+        assert_eq!(
+            database_for(Path::new("/tmp/root"), &stored).expect("a ledger"),
+            database_for(Path::new("/tmp/root"), &toolset).expect("a ledger"),
+            "storage and the toolset split the ledger",
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_long_path_names_one_ledger_in_both_spellings() {
+        // Windows caps ordinary path APIs at 260 chars; the verbatim spelling
+        // (`\\?\C:\...`) bypasses the cap. The directory is created through
+        // the verbatim form — the plain spelling cannot even be created past
+        // the cap — and identity must digest both spellings to one ledger:
+        // canonicalize resolves the verbatim form, the plain one rides the
+        // lexical branch (or canonicalizes when the process is long-path
+        // aware), and the prefix strip makes both read the same.
+        let temp = tempfile::tempdir().expect("temp dir");
+        let base = identity(temp.path());
+        let segment = "segment".repeat(6);
+        let mut long = base;
+        (0..8).for_each(|_| long.push(segment.as_str()));
+        assert!(long.to_string_lossy().len() > 260, "{}", long.display());
+        let verbatim = PathBuf::from(format!(r"\\?\{}", long.display()));
+        std::fs::create_dir_all(&verbatim).expect("create the long directory");
+
+        assert_eq!(
+            identity(&long),
+            identity(&verbatim),
+            "the long-path spellings disagree"
+        );
+        assert_eq!(
+            database_for(Path::new("/tmp/root"), &long).expect("a ledger"),
+            database_for(Path::new("/tmp/root"), &verbatim).expect("a ledger"),
+            "the long-path spellings split the ledger",
+        );
+    }
 }
