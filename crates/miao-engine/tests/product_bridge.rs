@@ -89,7 +89,7 @@ async fn product_tool_reverse_dispatches_to_host_and_returns_result() {
     )
     .await
     .unwrap();
-    runtime.with_product_tools(product_definitions(), Bridge::new(bridge_tx), None);
+    runtime.with_product_tools(product_definitions(), Bridge::new(bridge_tx));
     runtime
         .admit(
             Input {
@@ -210,7 +210,6 @@ async fn product_tool_moved_reply_ends_the_run_cleanly() {
             }),
         }],
         Bridge::new(bridge_tx),
-        None,
     );
     runtime
         .admit(
@@ -295,7 +294,7 @@ async fn product_tool_cancel_notifies_the_host_when_the_run_is_cancelled() {
     let runtime = Runtime::with_policy(store.clone(), Arc::new(Parked), tools, policy())
         .await
         .unwrap();
-    runtime.with_product_tools(product_definitions(), Bridge::new(bridge_tx), None);
+    runtime.with_product_tools(product_definitions(), Bridge::new(bridge_tx));
     runtime
         .admit(
             Input {

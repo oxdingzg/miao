@@ -115,9 +115,7 @@ export interface EngineOptions {
   /** Host-owned product tool definitions the engine may reverse-dispatch. */
   productToolsFile?: string
   /** Plugin hook families the host resolves; a marker, never the callbacks. */
-  pluginHooksFile?: string
   /** The hook-family marker as inline JSON; spawn turns it into the child env. */
-  pluginHooks?: string
   /**
    * Execute a product tool the engine planned. The reply becomes the tool
    * result, so a rejection must be thrown, never swallowed.
@@ -320,7 +318,6 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.hooksConfigFile) args.push("--hooks-config", options.hooksConfigFile)
   if (options.modelRoutesConfigFile) args.push("--model-routes-config", options.modelRoutesConfigFile)
   if (options.productToolsFile) args.push("--product-tools", options.productToolsFile)
-  if (options.pluginHooksFile) args.push("--plugin-hooks", options.pluginHooksFile)
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
   if (options.responsesCacheContract)
     args.push("--responses-cache-contract", JSON.stringify(options.responsesCacheContract))
@@ -443,7 +440,6 @@ export class EngineClient {
       if (manifest) environment.MIAO_ENGINE_MCP_SERVERS = manifest.servers
       // Set after the caller's env so an override cannot drop the marker: the
       // hooks are a property of the prepared options, not of process env.
-      if (options.pluginHooks) environment.MIAO_ENGINE_PLUGIN_HOOKS = options.pluginHooks
       const child = spawn([options.binary, ...args], {
         stdin: "pipe",
         stdout: "pipe",

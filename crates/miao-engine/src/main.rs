@@ -315,7 +315,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         runtime,
         mut options,
         acp,
-        plugin_hooks,
     } = configured;
     if acp {
         let result = miao_engine::acp::serve(runtime.clone()).await;
@@ -373,12 +372,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         result?;
         return Ok(());
     }
-    let result = serve(
-        runtime.clone(),
-        options.remove("--product-tools"),
-        plugin_hooks,
-    )
-    .await;
+    let result = serve(runtime.clone(), options.remove("--product-tools")).await;
     runtime.shutdown().await;
     // tokio's stdin fallback reader parks in read(2) while a pipe peer keeps
     // the descriptor open, so dropping the async runtime after an idle
@@ -476,11 +470,7 @@ where
     Ok(())
 }
 
-async fn serve(
-    runtime: Runtime,
-    product_tools: Option<String>,
-    plugin_hooks: Option<miao_engine::product::Marker>,
-) -> io::Result<()> {
+async fn serve(runtime: Runtime, product_tools: Option<String>) -> io::Result<()> {
     let (output, mut outgoing) = mpsc::channel::<Value>(128);
     if let Some(path) = product_tools {
         let file = tokio::fs::read_to_string(&path)
@@ -489,11 +479,7 @@ async fn serve(
         let manifest: Value = serde_json::from_str(&file).map_err(io::Error::other)?;
         let tools: Vec<miao_engine::protocol::ToolDefinition> =
             serde_json::from_value(manifest["tools"].clone()).map_err(io::Error::other)?;
-        runtime.with_product_tools(
-            tools,
-            miao_engine::product::Bridge::new(output.clone()),
-            plugin_hooks,
-        );
+        runtime.with_product_tools(tools, miao_engine::product::Bridge::new(output.clone()));
         if let Some(context) = manifest.get("host_context") {
             runtime
                 .set_product_context(

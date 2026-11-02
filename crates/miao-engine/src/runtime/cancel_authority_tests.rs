@@ -76,7 +76,6 @@ async fn running_in(name: &str) -> Fixture {
             input_schema: json!({"type":"object"}),
         }],
         bridge.clone(),
-        None,
     );
     runtime
         .admit(
@@ -537,19 +536,10 @@ async fn shutdown_releases_a_detach_waiting_to_deliver_its_cancellation_notice()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn authority_withdrawal_preserves_hook_cancellation_when_host_output_is_full() {
+async fn authority_withdrawal_preserves_reverse_call_cancellation_when_host_output_is_full() {
     let mut fixture = running().await;
-    let bridge = fixture.bridge.clone();
-    let hook = tokio::spawn(async move {
-        bridge
-            .call_hook("s", "before", "read_file", "hook-call", json!({}))
-            .await
-    });
-    let frame = tokio::time::timeout(Duration::from_secs(5), fixture.receive.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(frame["method"], "hook_tool");
+    // The fixture already has one reverse call parked, so a full host output must
+    // not swallow its cancellation notice.
     fixture.send.send(json!({"fixture":"full"})).await.unwrap();
     assert!(
         tokio::time::timeout(Duration::from_secs(5), fixture.runtime.cancel("s"))
@@ -558,28 +548,12 @@ async fn authority_withdrawal_preserves_hook_cancellation_when_host_output_is_fu
             .unwrap()
     );
     assert!(fixture.bridge.pending().lock().unwrap().is_empty());
-    assert!(tokio::time::timeout(Duration::from_secs(5), hook)
+    assert_eq!(fixture.receive.recv().await.unwrap()["fixture"], "full");
+    let notice = tokio::time::timeout(Duration::from_secs(5), fixture.receive.recv())
         .await
         .unwrap()
-        .unwrap()
-        .is_err());
-    assert_eq!(fixture.receive.recv().await.unwrap()["fixture"], "full");
-    let mut notices = Vec::new();
-    for _ in 0..2 {
-        notices.push(
-            tokio::time::timeout(Duration::from_secs(5), fixture.receive.recv())
-                .await
-                .unwrap()
-                .unwrap(),
-        );
-    }
-    assert!(notices
-        .iter()
-        .any(|notice| notice["method"] == "hook_tool.cancel"
-            && notice["bridge_id"] == frame["bridge_id"]));
-    assert!(notices
-        .iter()
-        .any(|notice| notice["method"] == "product_tool.cancel"
-            && notice["bridge_id"] == fixture.source.bridge_id));
+        .unwrap();
+    assert_eq!(notice["method"], "product_tool.cancel");
+    assert_eq!(notice["bridge_id"], fixture.source.bridge_id);
     fixture.runtime.shutdown().await;
 }

@@ -95,7 +95,6 @@ async fn running_with_mode(
             input_schema: json!({"type":"object","properties":{},"additionalProperties":false}),
         }],
         Bridge::new(send),
-        None,
     );
     runtime
         .admit(
@@ -1070,7 +1069,7 @@ async fn late_always_replies_cannot_cross_bridge_replacement_or_source_reply() {
             .unwrap();
         if replace {
             let (send, _receive) = mpsc::channel(8);
-            runtime.with_product_tools(vec![], Bridge::new(send), None);
+            runtime.with_product_tools(vec![], Bridge::new(send));
         }
         if !replace {
             assert!(runtime.deliver_product_reply(source.bridge_id, json!({"result":{}})));
