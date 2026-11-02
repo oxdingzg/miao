@@ -125,7 +125,7 @@ async fn a_large_catalogue_discloses_two_tools_and_the_numbers_say_by_how_much()
         )
         .await
         .unwrap();
-    let search_ms = started.elapsed().as_millis_f64();
+    let search_ms = started.elapsed().as_secs_f64() * 1000.0;
     let matches = search["matches"].as_array().unwrap();
     assert!(!matches.is_empty());
     let alias = matches[0]["name"].as_str().unwrap().to_string();
@@ -139,7 +139,7 @@ async fn a_large_catalogue_discloses_two_tools_and_the_numbers_say_by_how_much()
         )
         .await
         .unwrap();
-    let detail_ms = detail_started.elapsed().as_millis_f64();
+    let detail_ms = detail_started.elapsed().as_secs_f64() * 1000.0;
     assert!(
         detail["schema"].is_object()
             || detail["input_schema"].is_object()
@@ -156,7 +156,7 @@ async fn a_large_catalogue_discloses_two_tools_and_the_numbers_say_by_how_much()
         )
         .await
         .unwrap();
-    let call_ms = call_started.elapsed().as_millis_f64();
+    let call_ms = call_started.elapsed().as_secs_f64() * 1000.0;
     assert_eq!(result["content"][0]["text"], "42 rows");
     assert_eq!(
         calls.load(std::sync::atomic::Ordering::SeqCst),
@@ -175,7 +175,7 @@ async fn a_large_catalogue_discloses_two_tools_and_the_numbers_say_by_how_much()
     );
     println!(
         "[acceptance] discovery flow search={search_ms}ms detail={detail_ms}ms call={call_ms}ms total={:.2}ms",
-        started.elapsed().as_millis_f64()
+        started.elapsed().as_secs_f64() * 1000.0
     );
 
     registry.shutdown().await;
