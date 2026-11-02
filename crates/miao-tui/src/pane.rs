@@ -1087,9 +1087,10 @@ impl Home {
         // The list uses the transcript's column: same left edge, same measure.
         // Its own centred measure made the body jump sideways when an operator
         // opened a Session, which is the difference the two screens showed.
-        let (prose, _) = body_columns(area);
-        let column = prose.width.min(inner.width);
-        let gutter = " ".repeat(prose.x.saturating_sub(inner.x) as usize);
+        // The landing screen has no sidebar, so its list is the whole body: the
+        // split `body_columns` makes is for a Session, and subtracting the
+        // sidebar here left the list 41 columns short of the window.
+        let column = inner.width;
         // The header names the screen the rows belong to, so it starts on the
         // column the rows start on instead of at the window's edge.
         // The rows start one cell in, so the header does too. The label stays
@@ -1097,7 +1098,7 @@ impl Home {
         // says how much history it is holding, and that is what an eye should
         // land on.
         let mut header = vec![Span::styled(
-            format!(" {gutter}sessions"),
+            " sessions".to_string(),
             Style::new().fg(palette.text_muted),
         )];
         header.push(Span::styled(" · ", Style::new().fg(palette.border)));
@@ -1183,7 +1184,7 @@ impl Home {
                     lines_to_row.push(None);
                 }
                 body.push(Line::from(Span::styled(
-                    format!("{gutter}{group}"),
+                    group.to_string(),
                     Style::new()
                         .fg(palette.secondary)
                         .add_modifier(Modifier::BOLD),
@@ -1229,7 +1230,7 @@ impl Home {
                     + UnicodeWidthStr::width(meta.as_str()),
             );
             body.push(Line::from(vec![
-                Span::styled(format!("{gutter}{marker}{title}"), style),
+                Span::styled(format!("{marker}{title}"), style),
                 Span::styled(format!("{}{meta}", " ".repeat(pad)), meta_style),
             ]));
             lines_to_row.push(Some(index));
@@ -1245,7 +1246,7 @@ impl Home {
                 // paragraph, so it is capped even when there is room left.
                 let room = measure.saturating_sub(4).min(PREVIEW_CELLS);
                 body.push(Line::from(vec![
-                    Span::styled(format!("{gutter}   ┃ "), Style::new().fg(palette.primary)),
+                    Span::styled("   ┃ ".to_string(), Style::new().fg(palette.primary)),
                     Span::styled(fit(preview, room), Style::new().fg(palette.text_muted)),
                 ]));
                 lines_to_row.push(None);
@@ -1719,7 +1720,7 @@ pub fn render_home_composer(frame: &mut Frame, area: Rect, composer: &Composer, 
     // The landing composer is the Session composer, in the Session's column: the
     // band grows with the draft on both screens, so a fixed full width here was
     // never needed and made the input change shape between screens.
-    render_composer(frame, body_columns(area).0, composer, theme)
+    render_composer(frame, area, composer, theme)
 }
 
 fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
@@ -4184,40 +4185,37 @@ mod tests {
     }
 
     #[test]
-    fn a_wide_home_keeps_the_list_in_the_transcripts_column() {
-        // The body fills the window, so the landing list starts on the prose
-        // column's left edge and never runs into the sidebar's column. Opening a
-        // Session therefore does not move the body sideways.
+    fn a_wide_home_spans_the_window() {
+        // The landing screen has no sidebar: its list is the whole body. It used
+        // to subtract the Session's sidebar and stop ~41 columns short of the
+        // window, which read as a list floating in the middle of the screen.
         let mut home = Home::new(home_theme());
         home.set_rows(vec![
             home_row("ses_a", "login fix", None),
             home_row("ses_b", "offset fix", None),
         ]);
-        let (prose, _) = body_columns(ratatui::layout::Rect::new(0, 0, 200, 12));
         let lines = drawn(&mut home, 200, 12);
-        let column = prose.width as usize;
-        // The list body stops one row short of the border: the bottom row is a
-        // full-width key hint, not a list row.
         let mut titled = 0;
         for line in &lines[1..lines.len() - 2] {
             let text: String = line.iter().map(|cell| cell.as_str()).collect();
             if text.contains("login fix") || text.contains("offset fix") {
                 titled += 1;
-                // The first visible character sits on the prose column's edge
-                // (one cell in, after the selection marker column).
-                let first = line[1..].iter().position(|cell| !cell.trim().is_empty());
+                // The row's text starts near the left edge, not in a centred band.
+                let first = line
+                    .iter()
+                    .position(|cell| !cell.trim().is_empty())
+                    .expect("the row paints");
+                assert!(first < 6, "a row starts at the window's edge: {line:?}");
+                // The row reaches the window's right side, where the age sits.
+                let last = line
+                    .iter()
+                    .rposition(|cell| !cell.trim().is_empty())
+                    .expect("the row paints");
                 assert!(
-                    first.is_some_and(|x| x <= column),
-                    "a row's text starts inside the column: {line:?}"
+                    last > 150,
+                    "the row spans the window, not a centre: {line:?}"
                 );
             }
-            // Nothing paints past the prose column into the sidebar's cells.
-            assert!(
-                line[1 + column..line.len() - 1]
-                    .iter()
-                    .all(|cell| cell.trim().is_empty()),
-                "a row overruns the transcript column: {line:?}"
-            );
         }
         assert_eq!(titled, 2, "both rows are painted");
     }
