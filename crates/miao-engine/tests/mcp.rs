@@ -31,6 +31,15 @@ async fn peer(
                 "initialize" => {
                     json!({"protocolVersion":request["params"]["protocolVersion"],"capabilities":{"tools":{}},"serverInfo":{"name":"fixture","version":"1"}})
                 }
+                "tools/list" if mode.starts_with("catalog:") => {
+                    let count: usize = mode["catalog:".len()..].parse().unwrap();
+                    let tools: Vec<Value> = (0..count)
+                        .map(|i| {
+                            json!({"name":format!("tool_{i}"),"description":format!("Fixture tool {i}"),"inputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}})
+                        })
+                        .collect();
+                    json!({"tools":tools})
+                }
                 "tools/list" => {
                     let native = if mode == "identity" {
                         "find_documents_with_metadata/v2"
@@ -52,7 +61,11 @@ async fn peer(
                 "tools/call" => {
                     counter.fetch_add(1, Ordering::SeqCst);
                     assert!(
-                        request["params"]["name"] == "first/tool"
+                        request["params"]["name"]
+                            .as_str()
+                            .unwrap()
+                            .starts_with("tool_")
+                            || request["params"]["name"] == "first/tool"
                             || request["params"]["name"] == "second.tool"
                             || request["params"]["name"] == "find_documents_with_metadata/v2"
                     );
@@ -1074,6 +1087,181 @@ async fn original_catalog_identity_survives_approval_reopen_and_fork() {
                 if bridge { "tool_call" } else { name.as_str() }
             );
         }
+        task.await.unwrap();
+    }
+}
+
+mod disclosure {
+    use super::peer;
+    use miao_engine::mcp::Disclosure;
+    use miao_engine::tools::ToolError;
+    use serde_json::json;
+    use std::sync::Arc;
+    use tokio_util::sync::CancellationToken;
+
+    use miao_engine::mcp::Registry;
+
+    async fn folded() -> (Arc<Registry>, tokio::task::JoinHandle<()>) {
+        let (registry, _calls, task) = peer("catalog:100").await;
+        (registry, task)
+    }
+
+    #[tokio::test]
+    async fn a_large_catalogue_folds_to_the_discovery_pair() {
+        let (registry, task) = folded().await;
+        let disclosed = registry.disclosed(Disclosure::Threshold(32), &[]);
+        assert_eq!(
+            disclosed
+                .iter()
+                .map(|def| def.name.as_str())
+                .collect::<Vec<_>>(),
+            ["mcp_fixture_search", "mcp_fixture_detail"]
+        );
+        assert!(disclosed[0].description.contains("100-tool"));
+        let again = registry.disclosed(Disclosure::Threshold(32), &[]);
+        assert_eq!(
+            again
+                .iter()
+                .map(|def| def.name.as_str())
+                .collect::<Vec<_>>(),
+            disclosed
+                .iter()
+                .map(|def| def.name.as_str())
+                .collect::<Vec<_>>()
+        );
+        registry.shutdown().await;
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn search_finds_a_tool_and_detail_returns_its_schema() {
+        let (registry, calls, task) = folded().await;
+        let result = registry
+            .call(
+                "mcp_fixture_search",
+                json!({"query":"tool_5","limit":3}),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result["server"], "fixture");
+        assert_eq!(result["total"], 100);
+        let matches = result["matches"].as_array().unwrap();
+        assert!(!matches.is_empty() && matches.len() <= 3);
+        let name = matches
+            .iter()
+            .map(|entry| entry["name"].as_str().unwrap())
+            .find(|name| name.starts_with("mcp_fixture_tool_5_"))
+            .expect("tool_5 among the matches")
+            .to_string();
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+        let detail = registry
+            .call(
+                "mcp_fixture_detail",
+                json!({"tool":name}),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(detail["name"], name);
+        assert_eq!(
+            detail["input_schema"]["properties"]["text"]["type"],
+            "string"
+        );
+
+        let miss = registry
+            .call(
+                "mcp_fixture_detail",
+                json!({"tool":"never_listed"}),
+                CancellationToken::new(),
+            )
+            .await;
+        assert!(matches!(miss, Err(ToolError::InvalidArgs(_))));
+        let malformed = registry
+            .call(
+                "mcp_fixture_search",
+                json!({"query":7}),
+                CancellationToken::new(),
+            )
+            .await;
+        assert!(matches!(malformed, Err(ToolError::InvalidInput)));
+        registry.shutdown().await;
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_folded_tool_still_calls_through_its_alias() {
+        let (registry, calls, task) = folded().await;
+        let result = registry
+            .call(
+                "mcp_fixture_search",
+                json!({"query":"tool_5"}),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        let name = result["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["name"].as_str().unwrap())
+            .find(|name| name.starts_with("mcp_fixture_tool_5_"))
+            .unwrap()
+            .to_string();
+        let answer = registry
+            .call(&name, json!({"text":"roundtrip"}), CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(answer["content"][0]["text"], "roundtrip");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        registry.shutdown().await;
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn small_catalogues_and_off_keep_the_full_disclosure() {
+        let (registry, _calls, task) = peer("catalog:5").await;
+        let disclosed = registry.disclosed(Disclosure::Threshold(32), &[]);
+        assert_eq!(disclosed.len(), 5);
+        assert!(disclosed.iter().all(|def| !def.name.ends_with("_search")));
+        let full = registry.definitions();
+        assert_eq!(disclosed.len(), full.len());
+        registry.shutdown().await;
+        task.await.unwrap();
+
+        let (registry, _calls, task) = peer("catalog:100").await;
+        let off = registry.disclosed(Disclosure::Off, &[]);
+        assert_eq!(off.len(), registry.definitions().len());
+        let always = registry.disclosed(Disclosure::Always, &[]);
+        assert_eq!(
+            always
+                .iter()
+                .map(|def| def.name.as_str())
+                .collect::<Vec<_>>(),
+            ["mcp_fixture_search", "mcp_fixture_detail"]
+        );
+        registry.shutdown().await;
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn allowlisted_aliases_stay_disclosed_from_a_folded_server() {
+        let (registry, _calls, task) = folded().await;
+        let first = registry.definitions()[0].name.clone();
+        let disclosed = registry.disclosed(Disclosure::Threshold(32), &[first.clone()]);
+        let names = disclosed
+            .iter()
+            .map(|def| def.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 3);
+        assert_eq!(&names[2], &first.as_str());
+        let allowlisted = disclosed.iter().find(|def| def.name == first).unwrap();
+        assert_eq!(
+            allowlisted.input_schema["properties"]["text"]["type"],
+            "string"
+        );
+        registry.shutdown().await;
         task.await.unwrap();
     }
 }
