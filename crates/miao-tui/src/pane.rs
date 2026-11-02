@@ -802,9 +802,19 @@ fn selection_text(rendered: &[Vec<String>], inner: Rect, a: Position, b: Positio
             row.len().saturating_sub(1) as u16
         };
         let mut text = String::new();
+        // A wide glyph (CJK, emoji) takes one cell and leaves the next one as its
+        // continuation. Copying that continuation appends a space after every
+        // wide character, which is why a selected sentence used to come back
+        // with 一 个 空 格 between every pair.
+        let mut wide = false;
         for x in from..=to {
             if let Some(symbol) = row.get(x as usize) {
+                if wide {
+                    wide = false;
+                    continue;
+                }
                 text.push_str(symbol);
+                wide = UnicodeWidthStr::width(symbol.as_str()) > 1;
             }
         }
         lines.push(text.trim_end().to_string());
@@ -4353,6 +4363,23 @@ mod tests {
         assert_eq!(response["decision"], "allow");
         assert_eq!(response["policy_revision"], "rev-2");
         assert_eq!(response["matcher"]["kind"], "builtin");
+    }
+
+    /// A wide glyph leaves its next cell as a continuation. Copying that cell
+    /// put a space after every Chinese character, so a copied sentence read
+    /// "无 失 败" instead of "无失败".
+    #[test]
+    fn a_drag_over_wide_glyphs_copies_them_without_gaps() {
+        let inner = Rect::new(0, 0, 6, 1);
+        // What the buffer holds for "无失败": each glyph, then its continuation.
+        let row = ["无", " ", "失", " ", "败", " "]
+            .iter()
+            .map(|cell| cell.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            selection_text(&[row], inner, Position::new(0, 0), Position::new(5, 0)),
+            "无失败"
+        );
     }
 
     #[test]
