@@ -1097,7 +1097,10 @@ impl App {
             .map(|builtin| Row {
                 id: builtin.name().to_string(),
                 label: builtin.label().to_string(),
-                detail: builtin.keys().to_string(),
+                detail: builtin
+                    .action()
+                    .and_then(|action| self.keys.chord(action))
+                    .unwrap_or_default(),
             })
             .collect();
         self.open_dialog(Dialog::command_palette(rows));
@@ -1109,9 +1112,9 @@ impl App {
             .map(|builtin| Row {
                 id: format!("/{}", builtin.name()),
                 label: format!("/{}", builtin.name()),
-                detail: match builtin.keys() {
-                    "" => builtin.label().to_string(),
-                    keys => format!("{} · {keys}", builtin.label()),
+                detail: match builtin.action().and_then(|action| self.keys.chord(action)) {
+                    Some(chord) => format!("{} · {chord}", builtin.label()),
+                    None => builtin.label().to_string(),
                 },
             })
             .collect::<Vec<_>>();
@@ -3547,6 +3550,54 @@ mod tests {
         assert_eq!(app.terminal_title(), None);
         app.configure_terminal_title(true, false);
         assert_eq!(app.terminal_title(), None);
+    }
+
+    /// The palette and the help list name the chord the keymap binds. They used
+    /// to carry their own spelled-out table, which kept advertising `<leader>t`
+    /// after the operator moved that action somewhere else.
+    #[test]
+    fn the_palette_names_the_chord_the_keymap_binds() {
+        let mut app = app_with(Startup::default());
+        app.open_palette();
+        let detail = |app: &App, id: &str| {
+            let Some(Dialog::Palette(palette)) = app.dialog.as_ref() else {
+                panic!("the palette opens");
+            };
+            palette
+                .rows
+                .iter()
+                .find(|row| row.id == id)
+                .map(|row| row.detail.clone())
+                .unwrap_or_default()
+        };
+        assert_eq!(detail(&app, "theme"), "ctrl+x t");
+        // A command with no chord of its own claims none.
+        assert_eq!(detail(&app, "tag"), "");
+
+        let mut remapped =
+            app_with_overrides(&[("theme_list".into(), Some(vec!["ctrl+y".into()]))].into());
+        remapped.open_palette();
+        assert_eq!(
+            detail(&remapped, "theme"),
+            "ctrl+y",
+            "the palette follows the live keymap"
+        );
+    }
+
+    /// Every command the palette offers with a chord has to resolve to a bound
+    /// action, or the row advertises a key that does nothing.
+    #[test]
+    fn every_shortcut_command_resolves_to_a_bound_chord() {
+        let keys = Keymap::default();
+        let unbound = Builtin::ALL
+            .into_iter()
+            .filter_map(|builtin| builtin.action().map(|action| (builtin, action)))
+            .filter(|(_, action)| keys.chord(*action).is_none())
+            .map(|(builtin, _)| builtin.name())
+            .collect::<Vec<_>>();
+        // Toggling the terminal title ships unbound on purpose: it is reachable
+        // only when the operator binds it.
+        assert_eq!(unbound, ["terminal-title"]);
     }
 
     #[test]

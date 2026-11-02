@@ -19,6 +19,29 @@ const TOOL_PREVIEW_LINES: usize = 1;
 /// Diff lines one changed file shows before collapsing.
 const DIFF_PREVIEW_LINES: usize = 12;
 
+/// How much of a tool result to paint, and the chord that changes it.
+///
+/// Folding is one decision, so the budget and the hint travel together: every
+/// renderer used to recompute the same limit from `expanded`, and passing the
+/// chord beside it on its own pushed three of them past clippy's argument
+/// budget for no gain in clarity.
+#[derive(Clone, Copy)]
+struct Fold<'a> {
+    expanded: bool,
+    /// The chord the operator presses to unfold, as the keymap spells it.
+    toggle: Option<&'a str>,
+}
+
+impl Fold<'_> {
+    /// Rows a preview may paint out of `budget`, unlimited when expanded.
+    fn limit(self, budget: usize) -> usize {
+        match self.expanded {
+            true => usize::MAX,
+            false => budget,
+        }
+    }
+}
+
 pub fn lines(
     tool: &ToolPart,
     files: Option<&[DisplayFile]>,
@@ -31,54 +54,20 @@ pub fn lines(
     let raw = tool.output.as_deref();
     let result = raw.and_then(parse_json);
     let mut out = Vec::new();
+    let fold = Fold { expanded, toggle };
     match name {
-        "bash" => bash(
-            &mut out,
-            tool,
-            &input,
-            result.as_ref(),
-            raw,
-            theme,
-            expanded,
-            toggle,
-        ),
-        "read" => read(
-            &mut out,
-            tool,
-            &input,
-            result.as_ref(),
-            theme,
-            expanded,
-            toggle,
-        ),
-        "glob" | "grep" => search(
-            &mut out,
-            tool,
-            name,
-            &input,
-            result.as_ref(),
-            theme,
-            expanded,
-            toggle,
-        ),
-        "write" | "edit" | "apply_patch" => file(
-            &mut out, tool, name, &input, files, raw, theme, expanded, toggle,
-        ),
-        "todowrite" => todos(
-            &mut out,
-            tool,
-            &input,
-            result.as_ref(),
-            raw,
-            theme,
-            expanded,
-            toggle,
-        ),
+        "bash" => bash(&mut out, tool, &input, result.as_ref(), raw, theme, fold),
+        "read" => read(&mut out, tool, &input, result.as_ref(), theme, fold),
+        "glob" | "grep" => search(&mut out, tool, name, &input, result.as_ref(), theme, fold),
+        "write" | "edit" | "apply_patch" => {
+            file(&mut out, tool, name, &input, files, raw, theme, fold)
+        }
+        "todowrite" => todos(&mut out, tool, &input, result.as_ref(), raw, theme, fold),
         "question" => question(&mut out, tool, &input, result.as_ref(), theme),
         "webfetch" => inline(&mut out, tool, "WebFetch", &text(&input, "url"), theme),
         "websearch" => inline(&mut out, tool, "WebSearch", &text(&input, "query"), theme),
         "skill" => inline(&mut out, tool, "Skill", &text(&input, "name"), theme),
-        "task" => task(&mut out, tool, &input, raw, theme, toggle),
+        "task" => task(&mut out, tool, &input, raw, theme, fold),
         _ => generic(
             &mut out,
             tool,
@@ -87,8 +76,7 @@ pub fn lines(
             result.as_ref(),
             raw,
             theme,
-            expanded,
-            toggle,
+            fold,
         ),
     }
     out
@@ -260,14 +248,9 @@ fn bash(
     result: Option<&Value>,
     raw: Option<&str>,
     theme: &Theme,
-    expanded: bool,
-    toggle: Option<&str>,
+    fold: Fold<'_>,
 ) {
-    let limit = if expanded {
-        usize::MAX
-    } else {
-        TOOL_PREVIEW_LINES
-    };
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
     let palette = theme.palette;
     let command = text(input, "command");
     let first = command.lines().next().unwrap_or_default().trim();
@@ -279,7 +262,7 @@ fn bash(
             .map(str::to_string)
             .or_else(|| raw.map(str::to_string))
             .unwrap_or_default();
-        preview(out, &text, palette.error, limit, toggle);
+        preview(out, &text, palette.error, limit, fold.toggle);
         return;
     }
     let Some(text) = shell_text(result) else {
@@ -294,7 +277,7 @@ fn bash(
             palette.text_muted
         },
         limit,
-        toggle,
+        fold.toggle,
     );
 }
 
@@ -347,20 +330,15 @@ fn read(
     input: &Value,
     result: Option<&Value>,
     theme: &Theme,
-    expanded: bool,
-    toggle: Option<&str>,
+    fold: Fold<'_>,
 ) {
-    let limit = if expanded {
-        usize::MAX
-    } else {
-        TOOL_PREVIEW_LINES
-    };
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
     let palette = theme.palette;
     let path = text(input, "filePath");
     out.push(header(tool, "read", &compact(&path), theme));
     if tool.failed {
         if let Some(output) = tool.output.as_deref() {
-            preview(out, output, palette.error, limit, toggle);
+            preview(out, output, palette.error, limit, fold.toggle);
         }
         return;
     }
@@ -415,14 +393,9 @@ fn search(
     input: &Value,
     result: Option<&Value>,
     theme: &Theme,
-    expanded: bool,
-    toggle: Option<&str>,
+    fold: Fold<'_>,
 ) {
-    let limit = if expanded {
-        usize::MAX
-    } else {
-        TOOL_PREVIEW_LINES
-    };
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
     let palette = theme.palette;
     let pattern = text(input, "pattern");
     let path = text(input, "path");
@@ -439,7 +412,7 @@ fn search(
         return;
     }
     if let Some(output) = tool.output.as_deref() {
-        preview(out, output, palette.error, limit, toggle);
+        preview(out, output, palette.error, limit, fold.toggle);
     }
 }
 
@@ -473,19 +446,10 @@ fn file(
     files: Option<&[DisplayFile]>,
     raw: Option<&str>,
     theme: &Theme,
-    expanded: bool,
-    toggle: Option<&str>,
+    fold: Fold<'_>,
 ) {
-    let diff_limit = if expanded {
-        usize::MAX
-    } else {
-        DIFF_PREVIEW_LINES
-    };
-    let limit = if expanded {
-        usize::MAX
-    } else {
-        TOOL_PREVIEW_LINES
-    };
+    let diff_limit = fold.limit(DIFF_PREVIEW_LINES);
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
     let palette = theme.palette;
     let path = text(input, "filePath");
     let label = match name {
@@ -496,7 +460,7 @@ fn file(
     out.push(header(tool, label, &compact(&path), theme));
     if tool.failed {
         let message = raw.unwrap_or_default();
-        preview(out, message, palette.error, limit, toggle);
+        preview(out, message, palette.error, limit, fold.toggle);
         return;
     }
     let Some(files) = files.filter(|files| !files.is_empty()) else {
@@ -585,14 +549,9 @@ fn todos(
     result: Option<&Value>,
     raw: Option<&str>,
     theme: &Theme,
-    expanded: bool,
-    toggle: Option<&str>,
+    fold: Fold<'_>,
 ) {
-    let limit = if expanded {
-        usize::MAX
-    } else {
-        TOOL_PREVIEW_LINES
-    };
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
     let palette = theme.palette;
     let list = input
         .get("todos")
@@ -608,7 +567,13 @@ fn todos(
         .unwrap_or_default();
     out.push(header(tool, "todowrite", "", theme));
     if tool.failed {
-        preview(out, raw.unwrap_or_default(), palette.error, limit, toggle);
+        preview(
+            out,
+            raw.unwrap_or_default(),
+            palette.error,
+            limit,
+            fold.toggle,
+        );
         return;
     }
     for todo in &list {
@@ -702,7 +667,7 @@ fn task(
     input: &Value,
     raw: Option<&str>,
     theme: &Theme,
-    toggle: Option<&str>,
+    fold: Fold<'_>,
 ) {
     let palette = theme.palette;
     let description = text(input, "description");
@@ -734,7 +699,7 @@ fn task(
                     palette.text_muted
                 },
                 3,
-                toggle,
+                fold.toggle,
             );
         }
     }
@@ -749,14 +714,9 @@ fn generic(
     result: Option<&Value>,
     raw: Option<&str>,
     theme: &Theme,
-    expanded: bool,
-    toggle: Option<&str>,
+    fold: Fold<'_>,
 ) {
-    let limit = if expanded {
-        usize::MAX
-    } else {
-        TOOL_PREVIEW_LINES
-    };
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
     let palette = theme.palette;
     out.push(header(tool, label, &input_summary(input), theme));
     let body = if tool.failed {
@@ -780,7 +740,7 @@ fn generic(
             palette.text_muted
         },
         limit,
-        toggle,
+        fold.toggle,
     );
 }
 
