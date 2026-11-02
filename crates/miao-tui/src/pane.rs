@@ -859,7 +859,9 @@ impl Home {
             anchors: Vec::new(),
             query: String::new(),
             filtering: false,
-            list_focus: false,
+            // The list owns the landing keyboard first; the hint names the
+            // side the next Tab reaches.
+            list_focus: true,
             leader_hint: None,
             notice: None,
             warning: None,
@@ -4011,7 +4013,9 @@ mod tests {
             .flatten()
             .collect::<Vec<_>>()
             .join("");
-        assert!(plain.contains("tab list"), "{plain}");
+        // The list owns the landing keyboard by default, so the hint names
+        // its keys and where Tab hands the keys next.
+        assert!(plain.contains("tab prompt"), "{plain}");
         home.set_leader_hint(Some("ctrl+x · q app exit · n session new".into()));
         let armed = drawn(&mut home, 80, 12)
             .into_iter()
