@@ -1,11 +1,11 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
 
@@ -317,13 +317,7 @@ impl Shell {
 
     pub fn render(&mut self, frame: &mut Frame) {
         let panel_height = self.panel.as_ref().map_or(0, Panel::height);
-        let [
-            title_area,
-            body_area,
-            panel_area,
-            composer_area,
-            status_area,
-        ] = Layout::vertical([
+        let [title_area, body_area, panel_area, composer_area, status_area] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(panel_height),
@@ -3496,11 +3490,9 @@ mod tests {
             shell.transcript.draft.is_empty(),
             "a delta must not re-parse the whole draft"
         );
-        assert!(
-            wrapped_text(shell.draft())
-                .join("")
-                .contains("streamed words")
-        );
+        assert!(wrapped_text(shell.draft())
+            .join("")
+            .contains("streamed words"));
     }
 
     #[test]

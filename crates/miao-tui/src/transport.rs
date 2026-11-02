@@ -522,14 +522,16 @@ impl EngineClient {
 fn wire_note(direction: &str, body: &str) {
     static WIRE: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
     let Some(path) = WIRE
-        .get_or_init(|| {
-            std::env::var_os("MIAO_TUI_WIRE_LOG").map(|value| PathBuf::from(value))
-        })
+        .get_or_init(|| std::env::var_os("MIAO_TUI_WIRE_LOG").map(|value| PathBuf::from(value)))
         .as_ref()
     else {
         return;
     };
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
         use std::io::Write as _;
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -604,7 +606,10 @@ fn spawn_engine(
     std::thread::spawn(move || {
         let lines = BufReader::new(stdout).lines();
         for line in lines {
-            let Ok(line) = line else { wire_note("in-error", "stdout read failed"); break };
+            let Ok(line) = line else {
+                wire_note("in-error", "stdout read failed");
+                break;
+            };
             wire_note("in", &line);
             if !line.trim().is_empty() {
                 reap.dispatch(&line);
