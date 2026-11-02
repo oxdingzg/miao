@@ -22,6 +22,16 @@ pub fn committed_events(
         [session],
         |r| r.get(0),
     )?;
+    // Retention may have removed rows below a recorded cut. A cursor that far
+    // back is asking for history that no longer exists; refusing is the honest
+    // answer, a short read would look like the session ended early.
+    if let Some(cut) = crate::retention::cut_for(&tx, session)? {
+        if after < cut {
+            return Err(Error::Invalid(format!(
+                "cursor {after} is below the retention cut {cut} for this session; the removed range was snapshotted beside the ledger, resume from {cut}"
+            )));
+        }
+    }
     {
         // Read-only exports must also support stores not yet migrated by serve.
         let has_time: bool = tx.query_row(

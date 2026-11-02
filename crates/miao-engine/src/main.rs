@@ -207,6 +207,90 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", serde_json::to_string(&report)?);
         return Ok(());
     }
+    if args.first().map(String::as_str) == Some("retention") {
+        let mut db: Option<std::path::PathBuf> = None;
+        let mut session: Option<String> = None;
+        let mut apply = false;
+        let mut index = 1;
+        while index < args.len() {
+            match args[index].as_str() {
+                "--db" => {
+                    db = args.get(index + 1).map(std::path::PathBuf::from);
+                    index += 2;
+                }
+                "--session" => {
+                    session = args.get(index + 1).cloned();
+                    index += 2;
+                }
+                "--apply" => {
+                    apply = true;
+                    index += 1;
+                }
+                other => {
+                    return Err(format!(
+                        "unknown retention flag {other}; usage: miao-engine retention --db PATH [--session ID] [--apply]"
+                    )
+                    .into())
+                }
+            }
+        }
+        let Some(path) = db else {
+            return Err("Usage: miao-engine retention --db PATH [--session ID] [--apply]".into());
+        };
+        if !path.is_file() {
+            return Err(format!("no database at {}", path.display()).into());
+        }
+        let report =
+            tokio::task::spawn_blocking(move || -> Result<Vec<String>, miao_engine::protocol::Error> {
+                let mut connection = rusqlite::Connection::open(&path)?;
+                connection.busy_timeout(std::time::Duration::from_secs(60))?;
+                let app_id: u32 =
+                    connection.query_row("PRAGMA application_id", [], |row| row.get(0))?;
+                // Same magic number export.rs checks: bin code cannot reach the
+                // pub(crate) constant, and the ledger id is stable.
+                if app_id != 0x4d494145 {
+                    return Err(miao_engine::protocol::Error::Invalid(
+                        "not a miao-engine database".into(),
+                    ));
+                }
+                // The cut-point table arrives with this command, not only with
+                // serve: a plan run against a store no engine has opened still
+                // records cuts the export cursor can find.
+                connection.execute_batch("CREATE TABLE IF NOT EXISTS engine_retention(session_id TEXT NOT NULL REFERENCES engine_session(id), through_seq INTEGER NOT NULL, removed INTEGER NOT NULL, created_ms INTEGER NOT NULL, PRIMARY KEY(session_id, through_seq))")?;
+                if !apply {
+                    return miao_engine::retention::plan(&connection).map_err(|error| {
+                        miao_engine::protocol::Error::Invalid(format!("plan failed: {error}"))
+                    });
+                }
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|duration| duration.as_millis() as u64)
+                    .unwrap_or_default();
+                let summary =
+                    miao_engine::retention::truncate(&mut connection, session.as_deref(), now_ms)?;
+                let mut lines = Vec::new();
+                for cut in &summary.cuts {
+                    lines.push(format!(
+                        "session {} · cut at {} · {} event(s) removed · snapshot beside the ledger",
+                        cut.session_id, cut.through_seq, cut.removed
+                    ));
+                }
+                lines.push(format!(
+                    "{} event(s) kept by the never-delete kinds",
+                    summary.kept_by_kind
+                ));
+                Ok(lines)
+            })
+            .await
+            .map_err(|error| format!("retention worker failed: {error}"))??;
+        for line in report {
+            println!("{line}");
+        }
+        if !apply {
+            println!("report-only · pass --apply to snapshot and remove");
+        }
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("catalog") {
         let (flags, remainder) = args[1..].as_chunks::<2>();
         let mut options = HashMap::new();
