@@ -8,7 +8,7 @@
 //! files, and the same pass over a live reference keeps them. The disk curve
 //! prints its numbers as JSON, so a rerun is comparable instead of anecdotal.
 
-use miao_engine::store::Store;
+use miao_engine::{protocol, store::Store};
 use serde_json::{json, Value};
 use std::path::Path;
 
@@ -17,8 +17,24 @@ fn big_document(seed: &str, kilobytes: usize) -> String {
     chunk.repeat(kilobytes * 1024 / chunk.len() + 1)
 }
 
+/// A session row has to exist before any event can append to it.
+async fn admit_session(store: &Store, session: &str) {
+    store
+        .admit(protocol::Input {
+            agent_references: Default::default(),
+            command: None,
+            session_id: session.into(),
+            input_id: format!("in_{session}"),
+            prompt: "task".into(),
+            delivery: protocol::Delivery::Steer,
+        })
+        .await
+        .expect("admit");
+}
+
 async fn ledger_with_document(dir: &Path, seed: &str) -> (Store, String) {
     let store = Store::open(dir.join("engine.db")).await.expect("store");
+    admit_session(&store, "ses_blob").await;
     let document = big_document(seed, 128);
     store
         .record(
@@ -115,6 +131,7 @@ async fn gc_takes_orphans_after_truncation_and_never_touches_live_references() {
     let (store, _) = ledger_with_document(dir.path(), "victim").await;
 
     // A second, live payload the truncation will not touch.
+    admit_session(&store, "ses_keep").await;
     let live_document = big_document("keeper", 96);
     store
         .record(
@@ -182,6 +199,7 @@ async fn the_disk_curve_is_reported_as_numbers() {
     let dir = tempfile::tempdir().expect("temp dir");
     let ledger = dir.path().join("engine.db");
     let store = Store::open(&ledger).await.expect("store");
+    admit_session(&store, "ses_curve").await;
 
     // Ten turns, each carrying the same 128 KB ruleset plus a distinct
     // result: externalisation should collapse the repeated one.
