@@ -3404,12 +3404,15 @@ mod tests {
         app.handle(wheel(MouseEventKind::ScrollDown));
         assert_eq!(app.home.selected, 1);
         app.handle(wheel(MouseEventKind::ScrollDown));
-        assert_eq!(app.home.selected, 1, "the selection stops at the end");
+        assert_eq!(
+            app.home.selected, 2,
+            "the second scroll reaches the second Session"
+        );
         app.handle(wheel(MouseEventKind::ScrollUp));
-        assert_eq!(app.home.selected, 0);
+        assert_eq!(app.home.selected, 1);
 
         app.handle(wheel(MouseEventKind::Moved));
-        assert_eq!(app.home.selected, 0, "only the wheel does anything");
+        assert_eq!(app.home.selected, 1, "only the wheel does anything");
     }
 
     /// A row that `--continue` must skip.
@@ -4619,11 +4622,9 @@ mod tests {
             app.home.current().map(|row| row.id.as_str()),
             Some("ses_third")
         );
+        // Home goes to the action row, which is not a Session.
         app.handle(key(KeyCode::Home, KeyModifiers::NONE));
-        assert_eq!(
-            app.home.current().map(|row| row.id.as_str()),
-            Some("ses_first")
-        );
+        assert_eq!(app.home.current(), None);
     }
 
     #[test]
