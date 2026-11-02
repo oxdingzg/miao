@@ -1749,6 +1749,30 @@ impl Store {
         }).await
     }
 
+    /// The home list's rows for every Session in one store call.
+    ///
+    /// The list needs one narrow row per Session, and asking one Session at a
+    /// time took the store worker and its own transaction per row: 170 Sessions
+    /// on a long ledger cost seconds, which is what the operator waited for
+    /// between a ready engine and a visible list.
+    pub async fn sessions_metadata(&self) -> Result<Value, Error> {
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let ids = {
+                let mut stmt = tx.prepare("SELECT id FROM engine_session ORDER BY id")?;
+                let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+                rows.collect::<Result<Vec<_>, _>>()?
+            };
+            let mut entries = Vec::with_capacity(ids.len());
+            for id in ids {
+                entries.push(metadata_row(&tx, &id)?);
+            }
+            tx.commit()?;
+            Ok(json!(entries))
+        })
+        .await
+    }
+
     /// Fork only a closed message prefix, never executions, pending inbox,
     /// permissions, side effects or filesystem state. Target ID reconciles an
     /// exact retry even when the parent has advanced after the first commit.
@@ -3747,6 +3771,38 @@ pub(crate) fn projected(
 /// messages' text parts win; a trailing tool-only turn is skipped so the
 /// preview keeps saying what the conversation last said. The bound matches
 /// the inbox preview: 200 characters plus a truncation flag.
+/// One list row: exactly the fields `SessionSummary` reads, so the home list
+/// never pays for the state, questions, wakeups or messages a full snapshot
+/// gathers.
+fn metadata_row(tx: &Transaction<'_>, session: &str) -> Result<Value, Error> {
+    let (title, parent, updated_at_ms, archived_at_ms, pinned_at_ms): (
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<i64>,
+        Option<i64>,
+    ) = tx.query_row(
+        "SELECT s.title,l.parent_session_id,s.updated_at_ms,s.archived_at_ms,s.pinned_at_ms FROM engine_session s LEFT JOIN engine_lineage l ON l.session_id=s.id WHERE s.id=?1",
+        [session],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+    )?;
+    let location: Option<String> = tx
+        .query_row("SELECT root FROM engine_location WHERE session_id=?1", [session], |row| row.get(0))
+        .optional()?;
+    Ok(json!({
+        "session_id": session,
+        "title": title,
+        "parent_session_id": parent,
+        "updated_at_ms": updated_at_ms,
+        "archived_at_ms": archived_at_ms,
+        "pinned_at_ms": pinned_at_ms,
+        "location": location,
+        "model_selection": crate::session_model::selected(tx, session)?,
+        "account_selection": crate::session_account::selected_at(tx, session, i64::MAX as u64)?,
+        "preview": metadata_preview(tx, session)?,
+    }))
+}
+
 fn metadata_preview(tx: &Transaction<'_>, session: &str) -> Result<Option<Value>, Error> {
     let mut stmt = tx.prepare(
         "SELECT m.content FROM engine_message m WHERE m.session_id=?1 AND m.reverted=0 \

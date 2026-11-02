@@ -852,3 +852,42 @@ async fn a_dead_old_owner_does_not_block_format_upgrade_or_restart_provider_work
         ("running".into(), None)
     );
 }
+
+/// The home list reads one row per Session, so the batched answer has to carry
+/// exactly what a metadata-only snapshot carries — including the fields the
+/// sidebar shows — or a fast list would be a different list.
+#[tokio::test]
+async fn sessions_metadata_matches_the_metadata_only_snapshot_per_session() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("engine.db");
+    let store = Store::open(&path).await.unwrap();
+    store.admit(input("first", Delivery::Steer)).await.unwrap();
+    store.admit(input("second", Delivery::Queue)).await.unwrap();
+    store
+        .set_archived("s", true)
+        .await
+        .expect("the test needs a catalog fact to compare");
+    let batched = store.sessions_metadata().await.unwrap();
+    let batched = batched.as_array().expect("an array of rows");
+    assert!(!batched.is_empty());
+    for row in batched {
+        let id = row["session_id"].as_str().expect("a row names its Session");
+        let snapshot = store.snapshot_with_metadata(id, true).await.unwrap();
+        for field in [
+            "title",
+            "updated_at_ms",
+            "archived_at_ms",
+            "pinned_at_ms",
+            "location",
+            "model_selection",
+            "account_selection",
+            "preview",
+        ] {
+            assert_eq!(
+                row.get(field),
+                snapshot.get(field),
+                "{id} disagrees on {field}"
+            );
+        }
+    }
+}

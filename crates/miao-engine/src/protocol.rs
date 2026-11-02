@@ -593,6 +593,10 @@ pub enum Command {
         import_id: String,
     },
     Sessions,
+    /// The home list's rows for every Session, answered in one transaction.
+    /// A client that asks one Session at a time pays the store worker once per
+    /// row, which is seconds on a long ledger.
+    SessionsMetadata,
     /// Re-derive the configuration sections the engine owns and reconcile them
     /// in place. The reply names what changed, what kept its connection, and
     /// what this build cannot reload yet.

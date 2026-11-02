@@ -1568,35 +1568,29 @@ fn due_in(due_at_ms: Option<u64>) -> String {
 }
 
 async fn refresh_sessions(client: &EngineClient, bus: &Bus) {
-    let ids = match client.command("sessions").await {
-        Ok(Value::Array(ids)) => ids,
-        Ok(_) => {
-            bus.send(AppEvent::EngineFailure(
-                "engine answered sessions with a non-array".into(),
-            ));
-            return;
-        }
-        Err(error) => {
-            bus.send(AppEvent::EngineFailure(error.to_string()));
+    let rows = match session_rows(client).await {
+        Ok(rows) => rows,
+        Err(message) => {
+            bus.send(AppEvent::EngineFailure(message));
             return;
         }
     };
-    let mut rows = Vec::new();
-    for id in ids.iter().filter_map(Value::as_str) {
-        let snapshot = client
-            .request(
-                "snapshot",
-                json!({ "session_id": id, "metadata_only": true }),
-            )
-            .await;
-        if let Ok(snapshot) = snapshot {
-            if let Some(row) = SessionSummary::from_snapshot(&snapshot) {
-                rows.push(row);
-            }
-        }
-    }
     bus.send(AppEvent::Catalog(catalog_rows(rows.clone())));
     bus.send(AppEvent::Sessions(home_rows(rows)));
+}
+
+/// Every list row in one round trip. The engine answers them inside a single
+/// transaction, because asking one Session at a time took the store worker per
+/// row and cost seconds on a long ledger.
+async fn session_rows(client: &EngineClient) -> Result<Vec<SessionSummary>, String> {
+    match client.command("sessions_metadata").await {
+        Ok(Value::Array(entries)) => Ok(entries
+            .iter()
+            .filter_map(SessionSummary::from_snapshot)
+            .collect()),
+        Ok(_) => Err("engine answered sessions_metadata with a non-array".into()),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 async fn open_session(
