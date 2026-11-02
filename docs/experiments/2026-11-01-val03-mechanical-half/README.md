@@ -65,9 +65,19 @@ one backspace costs exactly the two extra keys (14 → 16), and overshooting by 
 rows then walking back costs exactly the five `j` plus five `k` (151 → 161). Those
 figures are properties of the product, not samples.
 
-What no script produces is the *frequency*: how often a person mistypes, opens the
-wrong pane, or overshoots. That distribution needs a real operator record, and this
-file does not pretend otherwise.
+The one input a script cannot produce is the *frequency* — how often a person
+mistypes or overshoots. It is treated as a parameter rather than left blank,
+because the measured increments are what turn a rate into a cost:
+
+| mistype rate | query path (+2 keys per slip) | walk path (+10 keys per slip) |
+| --- | --- | --- |
+| 1 in 10 | +0.2 keys (1.4%) | +1.0 keys (0.7%) |
+| 1 in 5 | +0.4 keys (2.9%) | +2.0 keys (1.3%) |
+| 1 in 2 | +1.0 keys (7.1%) | +5.0 keys (3.3%) |
+
+Percentages are against the clean paths measured above (14 and 151 keys). Any
+operator record only has to supply the rate in the left column; the cost follows
+from what is already measured, so the column is no longer empty waiting for one.
 
 **the shape of a real workspace.** The session catalog is synthetic (200 rows,
 newest first) and the change set is a fixed three files, so these are costs per
