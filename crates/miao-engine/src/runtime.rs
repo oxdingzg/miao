@@ -3832,6 +3832,21 @@ command: None,
                                     None => Err(ToolError::Interrupted),
                                 },
                                 "session_state" => Ok(inner.store.state(session).await?),
+                                // The host owns these names when it registers them:
+                                // its implementation carries its own permission
+                                // surface and its own receipt, so the built-in
+                                // only answers where no host tool exists.
+                                "list_sessions" if !inner.tools.is_product("list_sessions") => {
+                                    list_peer_sessions(inner, session, &prepared).await
+                                }
+                                "send_message" if !inner.tools.is_product("send_message") => {
+                                    send_peer_message(inner, session, &prepared).await
+                                }
+                                "read_session_context"
+                                    if !inner.tools.is_product("read_session_context") =>
+                                {
+                                    read_peer_context(inner, session, &prepared).await
+                                }
                                 "knowledge"=>inner.tools.execute_knowledge(prepared,&policy,session,cancel.child_token()).await,
                                 "todowrite" | "goal" => match crate::state::Mutation::parse(
                                     name,
@@ -5091,6 +5106,406 @@ async fn start_wakeup(
     timers.insert(id, background);
     Ok(Ok(data))
 }
+/// What a peer's persisted task state says, as far as a peer may trust it.
+///
+/// `unknown` is not `completed`: a Session that never recorded a goal or a
+/// checklist says nothing about whether it finished, and the spec is explicit
+/// that a peer's task record is not proof of live work either way.
+fn task_observation(state: &Value) -> &'static str {
+    let todos = state["todos"]["value"]["todos"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let goal = state["goal"]["value"]["status"].as_str() == Some("active");
+    let unfinished = goal
+        || todos
+            .iter()
+            .any(|todo| todo["status"].as_str() != Some("completed"));
+    match (unfinished, todos.is_empty() && !goal) {
+        (true, _) => "unfinished",
+        (false, true) => "unknown",
+        (false, false) => "completed",
+    }
+}
+
+/// A store failure inside a coordination tool reads as an external fault: the
+/// model asked a question about other Sessions, not about this Session's data.
+fn external(error: crate::protocol::Error) -> ToolError {
+    ToolError::External(error.to_string())
+}
+
+/// Resolve a peer by Session id or `@id` within `root`.
+///
+/// A prefix is accepted only while it is unique: guessing between two Sessions
+/// would deliver mail to the wrong conversation, which is worse than refusing.
+async fn resolve_peer(inner: &Arc<Inner>, root: &str, to: &str) -> Result<String, ToolError> {
+    let needle = to.trim().trim_start_matches('@');
+    if needle.is_empty() {
+        return Err(ToolError::InvalidInput);
+    }
+    let mut matches = Vec::new();
+    for row in inner.store.session_catalog().await.map_err(external)? {
+        if row.get("location").and_then(Value::as_str) != Some(root) {
+            continue;
+        }
+        let Some(id) = row.get("session_id").and_then(Value::as_str) else {
+            continue;
+        };
+        if id == needle || id.starts_with(needle) {
+            matches.push(id.to_string());
+        }
+    }
+    match matches.len() {
+        1 => Ok(matches.remove(0)),
+        0 => Err(ToolError::External(format!(
+            "no Session in this project matches \"{to}\""
+        ))),
+        count => Err(ToolError::External(format!(
+            "\"{to}\" matches {count} Sessions; pass the full Session id"
+        ))),
+    }
+}
+
+/// Whether a peer looks like it is doing something worth waking.
+///
+/// The same observations `list_sessions` reports, so the two tools cannot
+/// disagree about a peer: live execution, unfinished recorded work, or a
+/// background job still registered.
+async fn peer_is_working(inner: &Arc<Inner>, peer: &str) -> Result<bool, Error> {
+    let snapshot = inner.store.snapshot_with_metadata(peer, true).await?;
+    if !snapshot.get("active_run").is_none_or(Value::is_null) {
+        return Ok(true);
+    }
+    if !inner.store.jobs(peer).await?.is_empty() {
+        return Ok(true);
+    }
+    Ok(task_observation(&inner.store.state(peer).await?) == "unfinished")
+}
+
+/// Deliver one attributed message into a peer's durable inbox.
+///
+/// Delivery and execution stay separate, as `specs/v2/session-messaging.md`
+/// requires: the mail is admitted either way, and only the chosen wake policy
+/// asks for a drain.
+async fn send_peer_message(
+    inner: &Arc<Inner>,
+    session: &str,
+    prepared: &Prepared,
+) -> Result<Value, ToolError> {
+    /// Bounded so one caller cannot flood a peer's inbox.
+    const MAX_INBOUND_QUEUE: usize = 16;
+    let input = prepared.input();
+    let to = input.get("to").and_then(Value::as_str).unwrap_or_default();
+    let message = input
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if message.is_empty() {
+        return Err(ToolError::InvalidInput);
+    }
+    let delivery = match input.get("delivery").and_then(Value::as_str) {
+        None | Some("steer") => Delivery::Steer,
+        Some("queue") => Delivery::Queue,
+        Some(other) => {
+            return Err(ToolError::External(format!(
+                "unknown delivery \"{other}\"; use steer or queue"
+            )))
+        }
+    };
+    let wake = input
+        .get("wake")
+        .and_then(Value::as_str)
+        .unwrap_or("if_active");
+    let reason = input
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let root = inner
+        .store
+        .location(session)
+        .await
+        .map_err(external)?
+        .unwrap_or_default();
+    let target = resolve_peer(inner, &root, to).await?;
+    if target == session {
+        return Err(ToolError::External(
+            "a Session cannot send a coordination message to itself".into(),
+        ));
+    }
+    if let Err(denied) = peer_allowed(inner, "send_message", &target) {
+        return Err(ToolError::External(denied));
+    }
+    let pending = inner
+        .store
+        .pending_inputs(&target, None, MAX_INBOUND_QUEUE + 1)
+        .await
+        .map_err(external)?;
+    let queued = pending["inputs"].as_array().map(Vec::len).unwrap_or(0);
+    if queued >= MAX_INBOUND_QUEUE {
+        return Err(ToolError::External(format!(
+            "{target} already has {queued} messages waiting; let it catch up instead of queueing more"
+        )));
+    }
+    let working = match wake {
+        "never" | "always" => false,
+        _ => peer_is_working(inner, &target).await.map_err(external)?,
+    };
+    let requested = wake_requested(wake, working, &reason)
+        .map_err(|reason| ToolError::External(reason.to_string()))?;
+    inner
+        .store
+        .admit(Input {
+            agent_references: Default::default(),
+            command: None,
+            session_id: target.clone(),
+            input_id: format!("msg_{}", uuid::Uuid::new_v4()),
+            // Attribution is part of the prompt: the recipient's history is the
+            // one place every provider will show it, and the model must be able
+            // to tell a peer's request from its operator's instruction.
+            prompt: format!("Message from Session {session}:\n{message}"),
+            delivery,
+        })
+        .await
+        .map_err(external)?;
+    if requested {
+        wake_session(inner, &target, false)
+            .await
+            .map_err(external)?;
+    }
+    Ok(json!({
+        "sessionID": target,
+        "wake": if requested { "requested" } else { "not_requested" },
+        "reason": (!reason.is_empty()).then_some(reason),
+    }))
+}
+
+/// Whether this Session may act on that peer, judged per target.
+///
+/// The peer is the resource, so a rule can allow one neighbour and deny another.
+/// Only an explicit rule stops the call: the tool itself already passed its own
+/// permission gate, and treating the policy's default as a denial here would
+/// make coordination impossible without a rule nobody knew to write.
+fn peer_allowed(inner: &Arc<Inner>, tool: &str, target: &str) -> Result<(), String> {
+    // Only an explicit rule stops the call: the tool itself already passed its
+    // own permission gate, and the policy's default for a name it has never
+    // seen would otherwise make coordination impossible.
+    match inner.policy().rule_denies(tool, target) {
+        true => Err(format!("{target} is denied by this Session's permissions")),
+        false => Ok(()),
+    }
+}
+
+/// Whether the chosen policy asks for execution.
+///
+/// `wake: always` is the one case that can be refused: asking a peer to start
+/// work needs a stated reason, and the spec is explicit that a similar title is
+/// not one.
+fn wake_requested(policy: &str, peer_working: bool, reason: &str) -> Result<bool, &'static str> {
+    match policy {
+        "never" => Ok(false),
+        "always" => match reason.trim().is_empty() {
+            true => Err("wake: always needs a reason: explicit direction, an unresolved dependency, or unfinished shared work"),
+            false => Ok(true),
+        },
+        // `if_active` and any unset value follow what the peer is doing.
+        _ => Ok(peer_working),
+    }
+}
+
+/// A bounded window of a peer's recent transcript, text only.
+async fn read_peer_context(
+    inner: &Arc<Inner>,
+    session: &str,
+    prepared: &Prepared,
+) -> Result<Value, ToolError> {
+    /// Characters one read may return: enough for findings, not a transcript
+    /// dump that would spend the caller's whole window on someone else's turn.
+    const CONTEXT_CHARS: usize = 20_000;
+    let input = prepared.input();
+    let to = input.get("to").and_then(Value::as_str).unwrap_or_default();
+    let limit = input
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(12)
+        .clamp(1, 40) as usize;
+    let root = inner
+        .store
+        .location(session)
+        .await
+        .map_err(external)?
+        .unwrap_or_default();
+    let target = resolve_peer(inner, &root, to).await?;
+    if let Err(denied) = peer_allowed(inner, "read_session_context", &target) {
+        return Err(ToolError::External(denied));
+    }
+    let snapshot = inner.store.snapshot(&target).await.map_err(external)?;
+    let title = snapshot
+        .get("title")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let messages = snapshot["messages"].as_array().cloned().unwrap_or_default();
+    let mut text = String::new();
+    for message in messages.iter().rev().take(limit).rev() {
+        let role = message.get("role").and_then(Value::as_str).unwrap_or("?");
+        let body = message_text(message);
+        if body.is_empty() {
+            continue;
+        }
+        text.push_str(&format!("{role}: {body}\n"));
+    }
+    let truncated = text.chars().count() > CONTEXT_CHARS;
+    let text = text.chars().take(CONTEXT_CHARS).collect::<String>();
+    Ok(json!({
+        "sessionID": target,
+        "title": title,
+        "text": text,
+        "truncated": truncated,
+    }))
+}
+
+/// The readable text of one projected message, without tool schemas or media.
+fn message_text(message: &Value) -> String {
+    let Some(content) = message.get("content") else {
+        return String::new();
+    };
+    if let Some(text) = content.as_str() {
+        return text.to_string();
+    }
+    content
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter(|part| part.get("type").and_then(Value::as_str) == Some("text"))
+        .filter_map(|part| part.get("text").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Peers in the same project, with what this engine can honestly observe.
+///
+/// Discovery stays separate from starting model execution: nothing here admits
+/// mail or wakes a Session. `specs/v2/session-messaging.md` holds the contract.
+async fn list_peer_sessions(
+    inner: &Inner,
+    session: &str,
+    prepared: &Prepared,
+) -> Result<Value, ToolError> {
+    const PEER_LIMIT: usize = 50;
+    let input = prepared.input();
+    let include_history = input
+        .get("includeHistory")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let search = input
+        .get("search")
+        .and_then(Value::as_str)
+        .map(str::to_lowercase);
+    let directory = input.get("directory").and_then(Value::as_str);
+    let me = inner
+        .store
+        .snapshot_with_metadata(session, true)
+        .await
+        .map_err(external)?;
+    let root = me
+        .get("location")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let mut peers: Vec<Value> = Vec::new();
+    for row in inner.store.session_catalog().await.map_err(external)? {
+        let Some(id) = row.get("session_id").and_then(Value::as_str) else {
+            continue;
+        };
+        if id == session {
+            continue;
+        }
+        // Cross-project coordination is out of scope, and an archived Session is
+        // history rather than a peer.
+        if row.get("location").and_then(Value::as_str) != Some(root.as_str()) {
+            continue;
+        }
+        if !row.get("archived_at_ms").is_none_or(Value::is_null) {
+            continue;
+        }
+        if let Some(directory) = directory {
+            let location = row
+                .get("location")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if !location.starts_with(directory) {
+                continue;
+            }
+        }
+        let title = row
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if search
+            .as_ref()
+            .is_some_and(|needle| !title.to_lowercase().contains(needle))
+        {
+            continue;
+        }
+        let snapshot = inner
+            .store
+            .snapshot_with_metadata(id, true)
+            .await
+            .map_err(external)?;
+        let busy = !snapshot.get("active_run").is_none_or(Value::is_null);
+        let state = inner.store.state(id).await.map_err(external)?;
+        let task = task_observation(&state);
+        let background = inner.store.jobs(id).await.map_err(external)?.len();
+        // "Prioritizing active execution or unfinished work" means idle history
+        // stays out of the default answer.
+        if !include_history && !busy && task != "unfinished" {
+            continue;
+        }
+        let objective = state["goal"]["value"]["objective"]
+            .as_str()
+            .or_else(|| {
+                state["todos"]["value"]["todos"]
+                    .as_array()
+                    .map(Vec::as_slice)
+                    .unwrap_or_default()
+                    .iter()
+                    .find(|todo| todo["status"].as_str() != Some("completed"))
+                    .and_then(|todo| todo["content"].as_str())
+            })
+            .unwrap_or_default()
+            .to_string();
+        peers.push(json!({
+            "id": id,
+            "title": title,
+            "parentID": row.get("parent_session_id").cloned().unwrap_or(Value::Null),
+            "execution": if busy { "busy" } else { "idle" },
+            "task": task,
+            "lastActivity": row.get("updated_at_ms").cloned().unwrap_or(Value::Null),
+            "backgroundJobs": background,
+            "objective": (!objective.is_empty()).then_some(objective),
+        }));
+    }
+    // The caller is looking for someone to coordinate with, so live work sorts
+    // ahead of idle work and recency breaks the ties.
+    peers.sort_by(|a, b| {
+        let live = |row: &Value| (row["execution"].as_str() != Some("busy")) as u8;
+        live(a).cmp(&live(b)).then_with(|| {
+            b["lastActivity"]
+                .as_u64()
+                .unwrap_or(0)
+                .cmp(&a["lastActivity"].as_u64().unwrap_or(0))
+        })
+    });
+    peers.truncate(PEER_LIMIT);
+    Ok(json!({ "sessions": peers }))
+}
+
 async fn cancel_wakeup(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
     let token = inner
         .timers
@@ -7019,6 +7434,85 @@ fn validate_agent(inner: &Inner, agent: &crate::session_agent::AgentManifest) ->
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod peer_tests {
+    use super::*;
+
+    #[test]
+    fn a_peer_with_no_task_record_is_unknown_not_completed() {
+        // "Nothing recorded" and "finished" are different answers: the second
+        // would tell a caller its work is done.
+        assert_eq!(
+            task_observation(&json!({"todos":null,"goal":null})),
+            "unknown"
+        );
+        assert_eq!(
+            task_observation(&json!({"todos":{"value":{"todos":[]}},"goal":null})),
+            "unknown"
+        );
+    }
+
+    #[test]
+    fn a_waiting_todo_or_an_active_goal_keeps_a_peer_unfinished() {
+        let waiting = json!({"todos":{"value":{"todos":[
+            {"content":"first","status":"completed"},
+            {"content":"second","status":"waiting"}
+        ]}},"goal":null});
+        assert_eq!(task_observation(&waiting), "unfinished");
+        let goal = json!({
+            "todos":{"value":{"todos":[{"content":"only","status":"completed"}]}},
+            "goal":{"value":{"objective":"ship it","status":"active"}}
+        });
+        assert_eq!(task_observation(&goal), "unfinished");
+    }
+
+    #[test]
+    fn wake_never_leaves_mail_without_starting_the_peer() {
+        assert_eq!(wake_requested("never", true, ""), Ok(false));
+    }
+
+    #[test]
+    fn wake_always_needs_a_stated_reason() {
+        assert!(wake_requested("always", false, "   ").is_err());
+        assert_eq!(
+            wake_requested("always", false, "the operator asked"),
+            Ok(true)
+        );
+    }
+
+    /// `if_active` is the default, so an unset policy has to behave like it.
+    #[test]
+    fn wake_if_active_follows_what_the_peer_is_doing() {
+        assert_eq!(wake_requested("if_active", true, ""), Ok(true));
+        assert_eq!(wake_requested("if_active", false, ""), Ok(false));
+        assert_eq!(wake_requested("", true, ""), Ok(true));
+    }
+
+    /// A peer read returns what the peer said, not its tool schemas or its
+    /// private reasoning.
+    #[test]
+    fn a_peer_read_keeps_only_the_readable_text() {
+        let message = json!({"role":"assistant","content":[
+            {"type":"reasoning","text":"hidden"},
+            {"type":"text","text":"the finding"},
+            {"type":"tool_use","id":"call_1","name":"bash","input":{"command":"ls"}}
+        ]});
+        assert_eq!(message_text(&message), "the finding");
+        assert_eq!(
+            message_text(&json!({"role":"user","content":"plain"})),
+            "plain"
+        );
+    }
+
+    #[test]
+    fn every_recorded_todo_completed_with_no_goal_is_completed() {
+        let done = json!({"todos":{"value":{"todos":[
+            {"content":"first","status":"completed"}
+        ]}},"goal":{"value":{"objective":"ship it","status":"completed"}}});
+        assert_eq!(task_observation(&done), "completed");
+    }
 }
 
 #[cfg(test)]

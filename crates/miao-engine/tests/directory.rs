@@ -21,6 +21,11 @@ async fn directory_catalog_and_execution_have_bounded_workspace_scope() {
             "list_files",
             "glob",
             "grep",
+            // Inter-Session coordination, advertised before the product tool
+            // layer because it needs nothing from the host.
+            "list_sessions",
+            "send_message",
+            "read_session_context",
             "read_image",
             "load_skill",
             "knowledge",

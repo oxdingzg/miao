@@ -92,7 +92,8 @@ async fn both_wire_adapters_drive_real_http_tool_dispatch_and_durable_continuati
             .unwrap();
         server.await.unwrap();
         let first = requests.recv().await.unwrap();
-        assert_eq!(first["tools"].as_array().unwrap().len(), 12);
+        // The coordination tools ride along with every standalone Session.
+        assert_eq!(first["tools"].as_array().unwrap().len(), 15);
         if protocol == "anthropic" {
             assert!(first["system"].as_str().unwrap().contains("miao"));
         } else {

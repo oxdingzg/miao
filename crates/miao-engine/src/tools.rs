@@ -1064,7 +1064,13 @@ impl Tools {
         self
     }
 
-    fn is_product(&self, name: &str) -> bool {
+    /// Whether the host registered a tool of this name.
+    ///
+    /// A built-in with the same name must yield: under the product these tools
+    /// arrive through the host bridge with the host's own implementation and
+    /// permission surface, so a built-in that answered first would silently
+    /// take the call away from it — and the host would never see the request.
+    pub(crate) fn is_product(&self, name: &str) -> bool {
         self.product_tools
             .read()
             .unwrap()
@@ -1288,6 +1294,11 @@ impl Tools {
                 crate::patch::parse(&Self::patch_input(name, input.clone())?)?;
                 ".".into()
             }
+            // Coordination touches no workspace path, so the resource is the
+            // workspace itself and the target Session is validated by the tool
+            // (same project, resolved by id). Its own permission target is a
+            // policy-layer follow-up, not a path.
+            "list_sessions" | "send_message" | "read_session_context" => ".".into(),
             _ => return Err(ToolError::Unsupported),
         };
         let path = if name == "apply_patch" {
@@ -1937,6 +1948,32 @@ impl Tools {
             ToolDefinition{name:"glob".into(),description:"Find workspace-relative file paths by glob under a directory. No symlink following; generated directories excluded. Per-file permissions and output/traversal budgets apply; truncated reports partial results.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
             ToolDefinition{name:"grep".into(),description:"Find regex matches in permitted UTF-8 workspace files under a directory. Returns paths, 1-based lines and bounded previews. Optional workspace-relative glob filter. No shell or symlink traversal.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"glob":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"case_sensitive":{"type":"boolean","default":true},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
         ]);
+        // Inter-Session coordination: discovery is read-only, so it ships
+        // before delivery does. `specs/v2/session-messaging.md` holds the whole
+        // contract; `send_message` arrives separately because it admits mail.
+        // The host owns these names when it registers them, so its definition
+        // is the only one advertised.
+        if !self.is_product("list_sessions") {
+            definitions.push(ToolDefinition {
+            name: "list_sessions".into(),
+            description: "Discover other Sessions in the same project, prioritizing active execution and unfinished work rather than open tabs. Execution status is observed from this engine's durable run state. Unfinished goals/todos may be stale and are not proof that a resource is in use; a related title alone is not a reason to wake an idle Session. Use includeHistory: true to include idle historical Sessions.".into(),
+                input_schema: json!({"type":"object","properties":{"includeHistory":{"type":"boolean","default":false},"search":{"type":"string"},"directory":{"type":"string"}},"additionalProperties":false}),
+            });
+        }
+        if !self.is_product("send_message") {
+            definitions.push(ToolDefinition {
+            name: "send_message".into(),
+            description: "Send a focused coordination message to another Session in the same project. Default wake: if_active leaves mail for a peer that is not working without starting it; wake: always asks for execution and needs a concrete reason (explicit direction, an unresolved dependency, unfinished shared work), never a similar title. Name the resource, the planned action, the timing and the question. A wake is advisory: running tools are not interrupted and no reply is guaranteed, so do not wait on it.".into(),
+                input_schema: json!({"type":"object","properties":{"to":{"type":"string","description":"Target Session id or @id (a unique prefix is enough)"},"message":{"type":"string"},"delivery":{"type":"string","enum":["steer","queue"],"description":"steer delivers at the next safe provider-turn boundary (default); queue waits until the recipient would otherwise become idle"},"wake":{"type":"string","enum":["if_active","always","never"]},"reason":{"type":"string","description":"Required for wake: always"}},"required":["to","message"],"additionalProperties":false}),
+            });
+        }
+        if !self.is_product("read_session_context") {
+            definitions.push(ToolDefinition {
+            name: "read_session_context".into(),
+            description: "Read a bounded window of another Session's recent transcript in the same project, to consult its findings before contacting it. Text only: no tool schemas and no attachments, and the window is capped so a long Session cannot fill this one's context.".into(),
+                input_schema: json!({"type":"object","properties":{"to":{"type":"string","description":"Target Session id or @id"},"limit":{"type":"integer","minimum":1,"maximum":40,"default":12}},"required":["to"],"additionalProperties":false}),
+            });
+        }
         definitions.extend(self.delegation_definitions());
         definitions.extend(self.lsp_definitions());
         if self.background_enabled() && crate::terminal::supported() {

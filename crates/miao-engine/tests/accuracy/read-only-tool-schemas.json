@@ -203,6 +203,22 @@
     },
     "type": "object"
   },
+  "list_sessions": {
+    "additionalProperties": false,
+    "properties": {
+      "directory": {
+        "type": "string"
+      },
+      "includeHistory": {
+        "default": false,
+        "type": "boolean"
+      },
+      "search": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
   "load_skill": {
     "additionalProperties": false,
     "properties": {
@@ -318,6 +334,25 @@
     ],
     "type": "object"
   },
+  "read_session_context": {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "default": 12,
+        "maximum": 40,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "to": {
+        "description": "Target Session id or @id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "to"
+    ],
+    "type": "object"
+  },
   "recall": {
     "additionalProperties": false,
     "properties": {
@@ -344,6 +379,43 @@
         "type": "string"
       }
     },
+    "type": "object"
+  },
+  "send_message": {
+    "additionalProperties": false,
+    "properties": {
+      "delivery": {
+        "description": "steer delivers at the next safe provider-turn boundary (default); queue waits until the recipient would otherwise become idle",
+        "enum": [
+          "steer",
+          "queue"
+        ],
+        "type": "string"
+      },
+      "message": {
+        "type": "string"
+      },
+      "reason": {
+        "description": "Required for wake: always",
+        "type": "string"
+      },
+      "to": {
+        "description": "Target Session id or @id (a unique prefix is enough)",
+        "type": "string"
+      },
+      "wake": {
+        "enum": [
+          "if_active",
+          "always",
+          "never"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "to",
+      "message"
+    ],
     "type": "object"
   },
   "session_state": {

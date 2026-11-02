@@ -68,6 +68,13 @@ pub fn lines(
         "websearch" => inline(&mut out, tool, "WebSearch", &text(&input, "query"), theme),
         "skill" => inline(&mut out, tool, "Skill", &text(&input, "name"), theme),
         "task" => task(&mut out, tool, &input, raw, theme, fold),
+        "send_message" => receipt(&mut out, tool, &input, raw, theme),
+        "read_session_context" => out.push(header(
+            tool,
+            "read session",
+            &compact(&text(&input, "to")),
+            theme,
+        )),
         _ => generic(
             &mut out,
             tool,
@@ -234,6 +241,39 @@ fn preview(
             None => format!("  │ … {hidden} more lines"),
         };
         out.push(Line::from(Span::styled(line, Style::new().fg(color))));
+    }
+}
+
+/// A coordination message reads as its receipt: who it went to and whether that
+/// peer was asked to act. The engine answers with exactly that, so the row shows
+/// the answer instead of raw JSON, and the reason stays visible under it.
+fn receipt(
+    out: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    input: &Value,
+    raw: Option<&str>,
+    theme: &Theme,
+) {
+    let palette = theme.palette;
+    let to = text(input, "to");
+    let state = match raw
+        .and_then(parse_json)
+        .as_ref()
+        .and_then(|answer| answer.get("wake"))
+        .and_then(Value::as_str)
+    {
+        Some("requested") => " · wake requested",
+        Some(_) => " · left for later",
+        None => "",
+    };
+    out.push(header(
+        tool,
+        "message",
+        &compact(&format!("→ {to}{state}")),
+        theme,
+    ));
+    if let Some(reason) = input.get("reason").and_then(Value::as_str) {
+        out.push(result_line(reason, palette.text_muted));
     }
 }
 
@@ -932,6 +972,35 @@ mod tests {
         let expanded = rendered(&lines(&part, None, &theme(), true, None));
         assert!(expanded.iter().any(|line| line.contains("line 12")));
         assert!(!expanded.iter().any(|line| line.contains("more lines")));
+    }
+
+    /// The receipt is the engine's own answer, so the row repeats it rather
+    /// than dumping JSON: who received the message and whether it was asked to
+    /// act are the two facts a caller needs.
+    #[test]
+    fn a_coordination_message_reads_as_a_receipt() {
+        let part = tool(
+            "send_message",
+            json!({"to": "ses_b", "message": "verify the migration", "reason": "the operator asked"}),
+            Some(
+                json!({"sessionID": "ses_b", "wake": "requested", "reason": "the operator asked"}),
+            ),
+            false,
+        );
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
+        assert!(
+            rendered[0].contains("message") && rendered[0].contains("→ ses_b"),
+            "{rendered:?}"
+        );
+        assert!(rendered[0].contains("wake requested"), "{rendered:?}");
+        assert!(
+            rendered
+                .iter()
+                .any(|line| line.contains("the operator asked")),
+            "the reason stays visible: {rendered:?}"
+        );
+        // The raw answer never reaches the transcript.
+        assert!(!rendered.iter().any(|line| line.contains("sessionID")));
     }
 
     #[test]

@@ -329,6 +329,21 @@ impl Policy {
 
     /// The mode is an upper bound. Explicit deny dominates ask and allow;
     /// absent matching rules, reads allow and workspace writes ask.
+    /// Whether an explicit rule denies this tool on this resource.
+    ///
+    /// Coordination tools need a per-target answer that does not depend on the
+    /// access vocabulary or on capability gating: the only question is whether
+    /// the operator wrote a rule covering this peer. Evaluating a made-up
+    /// access would let "delegate is unavailable" or "the Session is
+    /// read-only" answer for a rule that was never consulted.
+    pub fn rule_denies(&self, tool: &str, resource: &str) -> bool {
+        self.matchers.iter().any(|matcher| {
+            matcher.decision == Decision::Deny
+                && matcher.tool.is_match(tool)
+                && matcher.path.is_match(resource)
+        })
+    }
+
     pub fn evaluate(&self, tool: &str, path: &str, access: Access) -> Decision {
         self.assess(tool, path, access).0
     }
@@ -678,6 +693,26 @@ mod entry_defaults {
 #[cfg(test)]
 mod agent_policy_tests {
     use super::*;
+
+    /// A coordination tool asks one question about a peer: did the operator
+    /// write a rule covering it? Capability gating and the access vocabulary
+    /// must not answer for a rule that was never consulted.
+    #[test]
+    fn a_rule_that_denies_one_peer_leaves_the_others_open() {
+        let policy = Policy::new(Config {
+            rules: vec![Rule {
+                tool: "send_message".into(),
+                path: "ses_blocked".into(),
+                decision: Decision::Deny,
+            }],
+            ..Config::default()
+        })
+        .unwrap();
+        assert!(policy.rule_denies("send_message", "ses_blocked"));
+        assert!(!policy.rule_denies("send_message", "ses_friend"));
+        // A rule for another tool is not a rule for this one.
+        assert!(!policy.rule_denies("read_session_context", "ses_blocked"));
+    }
 
     #[test]
     fn overlay_cannot_lift_base_denial_and_revision_binds_agent_identity() {
