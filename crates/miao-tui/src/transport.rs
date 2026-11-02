@@ -517,9 +517,9 @@ impl EngineClient {
 
 /// When `MIAO_TUI_WIRE_LOG` names a file, every frame in and out of the
 /// engine — plus the pump's lifecycle marks — lands there with a millisecond
-/// stamp. It exists to catch the lost-request现场: a catalog ask that never
-/// reached the engine while the landing screen spun.
-fn wire_note(direction: &str, body: &str) {
+/// stamp. It exists to catch a lost request: a catalog ask that never reached
+/// the engine while the landing screen kept spinning.
+pub(crate) fn wire_note(direction: &str, body: &str) {
     static WIRE: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
     let Some(path) = WIRE
         .get_or_init(|| {
