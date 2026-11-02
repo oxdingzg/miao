@@ -103,7 +103,7 @@ async fn an_oversized_payload_stays_out_of_the_ledger_and_reads_back_whole() {
     // The returned Event from the write path is rehydrated too, because it
     // feeds broadcasts the TUI renders: a fresh `events` read of a second
     // ledger proves the round trip holds at the store boundary.
-    let (store, document) = ledger_with_document(dir.path().join("again"), "doc2").await;
+    let (store, document) = ledger_with_document(&dir.path().join("again"), "doc2").await;
     let events = store.events("ses_blob", 0, 100).await.expect("events");
     assert_eq!(events[0].data["result"], document);
 }
@@ -133,7 +133,7 @@ async fn gc_takes_orphans_after_truncation_and_never_touches_live_references() {
 
     // Truncate the victim's rows the way retention does, then collect.
     {
-        let mut connection =
+        let connection =
             rusqlite::Connection::open(dir.path().join("engine.db")).expect("truncate connection");
         connection
             .execute("DELETE FROM engine_event WHERE session_id='ses_blob'", [])
@@ -210,7 +210,7 @@ async fn the_disk_curve_is_reported_as_numbers() {
             )
             .await
             .expect("record");
-        let (main, _, _) = {
+        let main = {
             let mut size = 0u64;
             for suffix in ["", "-wal", "-shm"] {
                 let mut path = ledger.clone().into_os_string();
