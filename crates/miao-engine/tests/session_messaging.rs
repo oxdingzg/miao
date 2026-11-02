@@ -88,6 +88,18 @@ async fn pending(store: &Store, session: &str) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+/// The runtime places a Session at its canonical tool root, so a fixture that
+/// places Sessions itself must use the same string. A raw tempdir path differs
+/// on macOS (`/var` → `/private/var`) and on Windows (8.3 short names), and the
+/// mismatch is a placement conflict rather than a missing directory.
+async fn root(dir: &tempfile::TempDir) -> String {
+    tokio::fs::canonicalize(dir.path())
+        .await
+        .unwrap()
+        .to_string_lossy()
+        .to_string()
+}
+
 async fn setup(
     tool: Value,
 ) -> (
@@ -98,7 +110,7 @@ async fn setup(
 ) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-    let root = dir.path().to_string_lossy().to_string();
+    let root = root(&dir).await;
     store.initialize("a", "Sender", &root).await.unwrap();
     store.initialize("b", "Peer", &root).await.unwrap();
     let (turns, receive) = mpsc::channel(10);
@@ -156,7 +168,7 @@ async fn a_message_lands_in_the_peer_inbox_without_waking_it() {
 async fn a_denied_target_receives_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-    let root = dir.path().to_string_lossy().to_string();
+    let root = root(&dir).await;
     store.initialize("a", "Sender", &root).await.unwrap();
     store.initialize("b", "Peer", &root).await.unwrap();
     let (turns, _receive) = mpsc::channel(10);
