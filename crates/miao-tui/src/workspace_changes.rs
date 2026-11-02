@@ -328,7 +328,7 @@ impl Dialog {
                     for line in text.lines() {
                         // The +/-/@@ prefixes colour themselves; everything else
                         // stays plain so context lines read as context.
-                        let style = match line.first() {
+                        let style = match line.chars().next() {
                             Some('+') if !line.starts_with("+++") => {
                                 Style::default().fg(theme.palette.success)
                             }
@@ -508,10 +508,10 @@ mod tests {
         assert!(matches!(action, Action::None));
         let action = dialog.handle_key(key(KeyCode::Enter));
         assert!(dialog.diff_open());
-        assert!(
-            matches!(action, Action::OpenWorkspaceDiff(path) if path == "src/new.rs"),
-            "{action:?}"
-        );
+        assert!(matches!(
+            action,
+            Action::OpenWorkspaceDiff(path) if path == "src/new.rs"
+        ));
         // The reply fills the panel; Esc steps back to the list, not out.
         dialog.diff_loaded(
             "src/new.rs",
@@ -520,7 +520,7 @@ mod tests {
             }))
             .expect("view")),
         );
-        assert_eq!(dialog.handle_key(key(KeyCode::Esc)), Action::None);
+        assert!(matches!(dialog.handle_key(key(KeyCode::Esc)), Action::None));
         assert!(!dialog.diff_open());
         assert!(matches!(
             dialog.handle_key(key(KeyCode::Esc)),
