@@ -138,7 +138,7 @@ impl Harness {
     fn wait_for(&self, needle: &str, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         loop {
-            if self.text().replace('\r', "").contains(needle) {
+            if self.screen().contains(needle) {
                 return true;
             }
             if Instant::now() >= deadline {
