@@ -71,8 +71,22 @@ Windows 验收通过。构建与重型检查使用项目配置的构建机，机
 3. 默认路径的可选扩展依赖是显式门控的；用户注册的 MCP/LSP/formatter/shell
    属外部程序能力，按其自身安装与诊断规则记录，不计入「JS 内核」。
 
-仍未审计：编译产物在空目录、无源码且无外部 Bun/Node 的机器上的启动验证（G5 证据），
-以及各受支持平台的独立复现记录。这两项需要真实产物与隔离环境，属于后续删除 PR 的前置证据。
+### G5 证据：发布产物在空目录与无外部运行时下的启动（2026-11-02）
+
+对象是**已发布产物**，不是候选构建：`miao-darwin-arm64.zip`（release `v0.3.25`）。
+
+| 检查 | 做法 | 结果 |
+| --- | --- | --- |
+| 产物校验 | 下载 zip 与 `.sha256` 后比对 | `6bc66c62…868c` 一致 |
+| 形态 | 解压后的目录 | 单个 `miao` 可执行文件 233,971,264 字节，另有 `models.json` 与 LICENSE/NOTICE |
+| 二进制哈希 | `shasum -a 256 miao` | `08c99c46…9428` |
+| 外部运行时 | `env -i PATH=/usr/bin:/bin sh -c 'command -v bun; command -v node'` | 两者均 absent |
+| 启动 | `env -i PATH=/usr/bin:/bin HOME=… ./miao --version` | 输出 `0.3.25` |
+| 动态依赖 | `otool -L ./miao` | 仅 `/usr/lib/` 下的 libicucore、libresolv、libc++、libSystem |
+
+结论只覆盖审计到的范围：macOS arm64 的发布产物在没有源码树、没有外部 Bun/Node、只有系统库可用的环境里可以启动。
+
+仍未取得：其余受支持平台（darwin-x64、linux-x64/arm64、windows-x64）的同样验证，以及健康/损坏扩展混合下的 G5 回归。
 
 ## G6 证据：本地产物清点与不兼容引擎拒绝（2026-11-01）
 
