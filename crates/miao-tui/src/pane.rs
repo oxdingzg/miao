@@ -2775,6 +2775,9 @@ fn panel_lines(panel: &Panel, theme: &Theme) -> Vec<Line<'static>> {
     }
 }
 
+fn relative_time(updated_at_ms: u64) -> String {
+    relative_time_at(updated_at_ms, now_ms())
+}
 #[cfg(test)]
 mod tests {
 
@@ -4294,6 +4297,4 @@ mod tests {
         );
     }
 }
-fn relative_time(updated_at_ms: u64) -> String {
-    relative_time_at(updated_at_ms, now_ms())
-}
+

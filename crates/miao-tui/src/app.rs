@@ -4479,38 +4479,7 @@ mod tests {
         assert!(app.shell.draft().is_empty());
     }
 
-    fn home_with(rows: Vec<SessionSummary>) -> App {
-        let mut app = app();
-        // The home list is fed by `Sessions`; `Catalog` only fills the session
-        // catalog and answers `--continue`.
-        app.handle(AppEvent::Sessions(rows));
-        // List behaviour starts from the list: it owns the landing keyboard
-        // from the start.
-        app
-    }
 
-    fn home_with_named(rows: &[(&str, &str, Option<&str>)]) -> App {
-        let mut app = app();
-        app.handle(AppEvent::Sessions(
-            rows.iter()
-                .map(|(id, title, directory)| SessionSummary {
-                    id: id.to_string(),
-                    title: Some(title.to_string()),
-                    parent_id: None,
-                    updated_at_ms: Some(100),
-                    archived_at_ms: None,
-                    pinned_at_ms: None,
-                    directory: directory.map(str::to_string),
-                    model: None,
-                    credential_id: None,
-                    preview: None,
-                })
-                .collect(),
-        ));
-        // List behaviour starts from the list, and `set_rows` lands past the
-        // action row, so tests interact with Sessions directly.
-        app
-    }
 
     #[test]
     fn help_lists_the_bindings_the_keymap_actually_uses() {
