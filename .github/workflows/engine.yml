@@ -210,3 +210,38 @@ jobs:
           "$MIAO_ENGINE_BIN" --version
           bun test --timeout 120000 test/engine/native-default-parity-http.test.ts test/engine/native-allowance-http.test.ts test/engine/native-explicit-route-http.test.ts test/engine/native-product-policy-http.test.ts
 
+
+  cli:
+    # `miao-cli` is the product's only user-facing entry point and it was the
+    # one crate no specialist workflow compiled: a signature change in the
+    # engine (#2351) or a type change in this crate (#2408) broke its build
+    # while every engine/tui/native job stayed skipped. Gate it like the engine.
+    name: cli (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ github.event_name == 'pull_request' && fromJSON('[{"os":"ubuntu-24.04","runner":"ubuntu-24.04"}]') || fromJSON('[{"os":"ubuntu-24.04","runner":"ubuntu-24.04"},{"os":"macos-arm64","runner":["self-hosted","macOS","ARM64"]}]') }}
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.runner != 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: crates/miao-cli
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --release --locked
