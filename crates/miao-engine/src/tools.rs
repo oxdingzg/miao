@@ -1368,7 +1368,7 @@ impl Tools {
             let parent =
                 tokio::fs::canonicalize(candidate.parent().ok_or(ToolError::InvalidInput)?).await?;
             if !parent.starts_with(&self.root) {
-                return { Err(ToolError::OutsideWorkspace) };
+                return Err(ToolError::OutsideWorkspace);
             }
             parent.join(candidate.file_name().ok_or(ToolError::InvalidInput)?)
         } else {
@@ -1540,7 +1540,7 @@ impl Tools {
                 .components()
                 .any(|part| !matches!(part, std::path::Component::Normal(_)))
         {
-            return { Err(ToolError::OutsideWorkspace) };
+            return Err(ToolError::OutsideWorkspace);
         }
         let resource = relative
             .components()
@@ -2180,7 +2180,7 @@ impl Tools {
         }
         let base = tokio::fs::canonicalize(existing).await?;
         if !base.starts_with(&self.root) {
-            return { Err(ToolError::OutsideWorkspace) };
+            return Err(ToolError::OutsideWorkspace);
         }
         let tail = joined
             .strip_prefix(existing)
