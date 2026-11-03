@@ -30,8 +30,14 @@ engine, 36 distinct keystrokes after entering a session):
 | ------------- | ------- | --- | --- | --- | --- |
 | composer-idle | 36      | 1 ms | 2 ms | 3 ms | 3 ms |
 
-Not yet covered: echo latency during streaming output, under a 10k-line
-history, and with input-method composition.
+The harness now also drives echo latency while a large output is on screen,
+inside a 10k-line history, while a turn streams, and while a long Session
+streams. Only the idle composer number above is recorded; the other cells are
+measured by the run and land in its JSON report rather than in this table.
+
+Not covered by any scenario: input-method composition, where the bytes reaching
+the PTY are produced by the IME and the delay a person feels includes the
+composition step itself.
 
 ## Binary size
 
