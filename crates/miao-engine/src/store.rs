@@ -3610,8 +3610,8 @@ impl<'a> WriteTx<'a> {
         // none of the writes until the process exits. PASSIVE merges committed
         // frames into the main database without blocking writers or readers,
         // and a failed checkpoint only delays visibility without losing data.
-        if let Ok(mut checkpoint_conn) = rusqlite::Connection::open_with_flags(
-            &self.path,
+        if let Ok(checkpoint_conn) = rusqlite::Connection::open_with_flags(
+            &self.ledger_path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
         ) {
             let _ = checkpoint_conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |_| Ok(()));
@@ -3640,7 +3640,7 @@ pub(crate) fn write_tx(conn: &mut Connection) -> Result<WriteTx<'_>, Error> {
         Ok(tx) => Ok(WriteTx {
             tx,
             _lock: WriteLock(lock),
-            ledger_path: ledger,
+            ledger_path,
         }),
         Err(error) => {
             let _ = FileExt::unlock(&*lock);
