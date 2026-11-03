@@ -48,6 +48,10 @@ Usage:
   miao session move ID DIRECTORY
                         list the move's impact first; --apply performs it,
                         --copy-changes carries uncommitted work along
+  miao session archive ID [--unarchive]
+                        set or clear a session's archive fact (reversible)
+  miao session delete ID
+                        delete a session; its forks survive
   miao session revert ID CHECKPOINT
   miao session unrevert ID
                         rewind a session's history, or undo the rewind
@@ -1001,6 +1005,14 @@ fn session_engine_call(rest: &[String], method: &str) -> Result<(), String> {
         };
         let mut params = serde_json::json!({ "session_id": positional[0] });
         match method {
+            "archive" => {
+                // Absence of the flag means un-archive: the reversible pair
+                // shares one command, and the engine treats archiving as a
+                // catalog fact that touches no message, run or inbox row.
+                let archived = !rest.iter().any(|argument| argument == "--unarchive");
+                params["archived"] = serde_json::json!(archived);
+            }
+            "remove" => {}
             "fork" => {
                 let Some(target) = positional.get(1) else {
                     return Err("usage: miao session fork SRC DST [--at SEQ]".into());
@@ -4831,6 +4843,20 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                     }
                 },
                 Some("fork") => match session_engine_call(&rest[1..], "fork") {
+                    Ok(()) => std::process::ExitCode::SUCCESS,
+                    Err(message) => {
+                        eprintln!("miao session: {message}");
+                        std::process::ExitCode::from(1)
+                    }
+                },
+                Some("archive") => match session_engine_call(&rest[1..], "archive") {
+                    Ok(()) => std::process::ExitCode::SUCCESS,
+                    Err(message) => {
+                        eprintln!("miao session: {message}");
+                        std::process::ExitCode::from(1)
+                    }
+                },
+                Some("delete") => match session_engine_call(&rest[1..], "remove") {
                     Ok(()) => std::process::ExitCode::SUCCESS,
                     Err(message) => {
                         eprintln!("miao session: {message}");
