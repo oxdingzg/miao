@@ -23,6 +23,14 @@ param(
   [switch]$NoModifyPath = ($env:MIAO_NO_MODIFY_PATH -eq "1")
 )
 
+# `--version` prints "<program> <version>" (`miao 0.3.27`). The program's own
+# name is not part of the release identity, so every comparison here reads the
+# version word alone — the same rule `install` applies to the bash artifact.
+function Get-MiaoVersionWord {
+  param([string]$Output)
+  return ($Output.Trim() -split '\s+')[-1]
+}
+
 function Publish-Miao {
   param([string]$Source, [string]$destination)
   $directory = Split-Path -Parent $destination
@@ -207,7 +215,7 @@ function Install-Miao {
     if (-not (Test-Path $Binary)) { throw "Binary not found: $Binary" }
     Write-Host "Installing miao from $Binary"
     Publish-Miao $Binary $exe
-    $Version = (& $exe --version | Out-String).Trim()
+    $Version = Get-MiaoVersionWord (& $exe --version | Out-String)
     Install-MiaoEngine -InstallDirectory $installDir -Version $Version -Binary $EngineBinary -Download:$false
   }
   else {
@@ -221,7 +229,7 @@ function Install-Miao {
 
     if (Test-Path $exe) {
       $installed = (& $exe --version 2>$null | Out-String).Trim()
-      if ($installed -eq $Version) {
+      if ((Get-MiaoVersionWord $installed) -eq $Version) {
         Write-Host "miao $Version is already installed at $exe"
         # Reconcile a missing sidecar even when the product is already current.
         Install-MiaoEngine -InstallDirectory $installDir -Version $Version -Binary $EngineBinary -Download:$true
@@ -246,7 +254,7 @@ function Install-Miao {
       Expand-Archive -Force -Path $zip -DestinationPath $tmp
       $downloaded = Get-ChildItem -Path $tmp -Recurse -Filter "miao.exe" | Select-Object -First 1
       if (-not $downloaded) { throw "miao.exe was not found in $url" }
-      $actual = (& $downloaded.FullName --version | Out-String).Trim()
+      $actual = Get-MiaoVersionWord (& $downloaded.FullName --version | Out-String)
       if ($LASTEXITCODE -ne 0 -or $actual -ne $Version) { throw 'Release failed version verification' }
       Publish-Miao $downloaded.FullName $exe
       Install-MiaoEngine -InstallDirectory $installDir -Version $Version -Binary $EngineBinary -Download:$true
