@@ -5,7 +5,7 @@
 //! `miao → miao-tui → miao-engine` chain.
 
 use miao_tui::transport::Connection;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// The release build injects the product version from the root package.json;
@@ -1706,60 +1706,49 @@ fn agent_list() -> Result<(), String> {
 /// The engine takes server entries as `{name, argv|url, env, headers, cwd}`
 /// through `MIAO_ENGINE_MCP_SERVERS`. The product writes them by name, so the
 /// name is lifted into the entry and `command`/`environment` are translated.
-fn mcp_servers(config_dir: Option<&std::path::Path>) -> Result<Vec<serde_json::Value>, String> {
-    let Some(dir) = config_dir else {
+fn mcp_servers(layers: &[PathBuf]) -> Result<Vec<serde_json::Value>, String> {
+    let Some(parsed) = merged_config(layers) else {
         return Ok(Vec::new());
     };
-    for name in ["miao.jsonc", "miao.json"] {
-        let path = dir.join(name);
-        if !path.is_file() {
-            continue;
+    let Some(section) = parsed
+        .get("mcp")
+        .or_else(|| parsed.get("mcpServers"))
+        .and_then(|value| value.as_object())
+    else {
+        return Ok(Vec::new());
+    };
+    let mut servers = Vec::new();
+    for (name, entry) in section {
+        let mut server = serde_json::json!({ "name": name });
+        if let Some(command) = entry.get("command") {
+            let argv: Vec<String> = match command {
+                serde_json::Value::String(line) => vec![line.clone()],
+                serde_json::Value::Array(items) => items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_string))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            server["argv"] = serde_json::json!(argv);
         }
-        let text = std::fs::read_to_string(&path)
-            .map_err(|error| format!("{}: {error}", path.display()))?;
-        let parsed: serde_json::Value = serde_json::from_str(&strip_comments(&text))
-            .map_err(|error| format!("{}: {error}", path.display()))?;
-        let section = parsed
-            .get("mcp")
-            .or_else(|| parsed.get("mcpServers"))
-            .and_then(|value| value.as_object());
-        let Some(section) = section else {
-            return Ok(Vec::new());
-        };
-        let mut servers = Vec::new();
-        for (name, entry) in section {
-            let mut server = serde_json::json!({ "name": name });
-            if let Some(command) = entry.get("command") {
-                let argv: Vec<String> = match command {
-                    serde_json::Value::String(line) => vec![line.clone()],
-                    serde_json::Value::Array(items) => items
-                        .iter()
-                        .filter_map(|item| item.as_str().map(str::to_string))
-                        .collect(),
-                    _ => Vec::new(),
-                };
-                server["argv"] = serde_json::json!(argv);
-            }
-            if let Some(url) = entry.get("url").and_then(|value| value.as_str()) {
-                server["url"] = serde_json::json!(url);
-            }
-            for (from, to) in [
-                ("env", "env"),
-                ("environment", "env"),
-                ("headers", "headers"),
-            ] {
-                if let Some(value) = entry.get(from) {
-                    server[to] = value.clone();
-                }
-            }
-            if let Some(cwd) = entry.get("cwd").and_then(|value| value.as_str()) {
-                server["cwd"] = serde_json::json!(cwd);
-            }
-            servers.push(server);
+        if let Some(url) = entry.get("url").and_then(|value| value.as_str()) {
+            server["url"] = serde_json::json!(url);
         }
-        return Ok(servers);
+        for (from, to) in [
+            ("env", "env"),
+            ("environment", "env"),
+            ("headers", "headers"),
+        ] {
+            if let Some(value) = entry.get(from) {
+                server[to] = value.clone();
+            }
+        }
+        if let Some(cwd) = entry.get("cwd").and_then(|value| value.as_str()) {
+            server["cwd"] = serde_json::json!(cwd);
+        }
+        servers.push(server);
     }
-    Ok(Vec::new())
+    Ok(servers)
 }
 
 /// The model the product configuration names as its default. Rust commands
@@ -1795,6 +1784,127 @@ fn product_config_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
         .or_else(|| {
             std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao"))
         })
+}
+
+/// The config directories one start reads, lowest priority first. An explicit
+/// directory keeps the long-standing single-directory answer. Otherwise the
+/// global directory comes first, then the project layers a walk up from the
+/// workspace finds: stray config files sit under the `.miao`/`.opencode`
+/// directories of the same level, and a nearer directory wins. The walk stops
+/// at the git worktree root, or the filesystem root outside a repository;
+/// `MIAO_DISABLE_PROJECT_CONFIG` or a workspace that is the global directory
+/// itself skips it. Mirrors the product's scoped stack.
+fn config_layers(
+    workspace: &Path,
+    explicit: Option<&Path>,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Vec<PathBuf> {
+    if let Some(dir) = explicit {
+        return vec![dir.to_path_buf()];
+    }
+    let global = env("MIAO_CONFIG_DIR")
+        .map(PathBuf::from)
+        .or_else(|| env("HOME").map(|home| PathBuf::from(home).join(".config").join("miao")));
+    let mut layers = Vec::new();
+    if let Some(dir) = global.as_ref() {
+        layers.push(dir.clone());
+    }
+    if !project_config_disabled(env) && !same_directory(global.as_deref(), workspace) {
+        let (directories, files) = project_config_layers(workspace, global.as_deref());
+        layers.extend(files.into_iter().rev());
+        layers.extend(directories.into_iter().rev());
+    }
+    layers
+}
+
+fn project_config_disabled(env: &dyn Fn(&str) -> Option<String>) -> bool {
+    matches!(
+        env("MIAO_DISABLE_PROJECT_CONFIG").as_deref(),
+        Some("true") | Some("1")
+    )
+}
+
+fn same_directory(left: Option<&Path>, right: &Path) -> bool {
+    let (Some(left), Ok(resolved)) = (left, right.canonicalize()) else {
+        return false;
+    };
+    left.canonicalize()
+        .map(|seen| seen == resolved)
+        .unwrap_or(false)
+}
+
+/// The last directory a project walk examines: the git worktree root when the
+/// workspace sits in a repository, the filesystem root otherwise — the same
+/// boundary the product's project resolution draws.
+fn walk_stop(workspace: &Path) -> Option<PathBuf> {
+    let mut current = workspace;
+    loop {
+        if current.join(".git").exists() {
+            return Some(current.to_path_buf());
+        }
+        current = current.parent()?;
+    }
+}
+
+/// The `.miao`/`.opencode` directories and stray config files a walk up from
+/// the workspace finds, nearest first. The walk ends at the git worktree root
+/// or, outside one, at the home directory — the boundary that keeps a
+/// workspace under `$HOME` from reading a sibling project's configuration.
+fn project_config_layers(workspace: &Path, global: Option<&Path>) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let stop = walk_stop(workspace).or_else(|| {
+        std::env::var_os("HOME").map(|home| {
+            let home = PathBuf::from(home);
+            home.parent().unwrap_or(&home).to_path_buf()
+        })
+    });
+    let mut directories = Vec::new();
+    let mut files = Vec::new();
+    let mut current = Some(workspace);
+    while let Some(dir) = current {
+        if same_directory(global, dir) {
+            break;
+        }
+        for name in [".miao", ".opencode"] {
+            let candidate = dir.join(name);
+            if candidate.is_dir() {
+                directories.push(candidate);
+            }
+        }
+        for name in miao_engine::config_scope::FILE_NAMES {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                files.push(candidate);
+            }
+        }
+        if stop.as_deref().map(|stop| dir == stop).unwrap_or(false) {
+            break;
+        }
+        current = dir.parent();
+    }
+    (directories, files)
+}
+
+/// The merged configuration document the layered stack produces, `None` when
+/// no layer has a config file. Each directory reads the product's file names
+/// in their documented order and a later layer wins key for key.
+fn merged_config(layers: &[PathBuf]) -> Option<serde_json::Value> {
+    let mut values = Vec::new();
+    for dir in layers {
+        for name in miao_engine::config_scope::FILE_NAMES {
+            let path = dir.join(name);
+            if !path.is_file() {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(value) = miao_engine::config_scope::parse_document(&text) else {
+                continue;
+            };
+            values.push(value);
+        }
+    }
+    (!values.is_empty()).then(|| miao_engine::config_scope::merge_values(&values))
 }
 
 /// The engine database a workspace uses when none was named.
@@ -1980,13 +2090,11 @@ fn prepare_tui_engine(launch: &mut miao_tui::Launch) {
         .or_else(|| configured_model(launch.config_dir.as_deref()))
         .unwrap_or_default();
     // A TUI started without --config-dir still needs the product's providers:
-    // resolve the same directory the product would use.
-    let config_dir = launch.config_dir.clone().or_else(|| {
-        product_config_dir(None).or_else(|| {
-            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao"))
-        })
+    // read the same layered stack the engine start will forward.
+    let layers = config_layers(&launch.workspace, launch.config_dir.as_deref(), &|name| {
+        std::env::var(name).ok()
     });
-    let Ok(routes) = model_routes(config_dir.as_deref(), &model) else {
+    let Ok(routes) = model_routes(&layers, &model) else {
         return;
     };
     let Some(primary) = routes.iter().find(|route| route["primary"] == true) else {
@@ -2029,10 +2137,19 @@ fn prepare_tui_engine(launch: &mut miao_tui::Launch) {
     }
     // The TUI passes no agent manifest, so the engine keeps its `ask` default
     // and every tool call blocks on an approval the UI then has to surface.
-    // Hand over the same auto-settling manifest `run` uses.
+    // Hand over the same auto-settling manifest `run` uses. The instructions
+    // stay a global-directory concern: AGENTS.md rides the global layer.
     if std::env::var_os("MIAO_ENGINE_AGENT_CONFIG").is_none() {
+        let global = launch.config_dir.clone().or_else(|| {
+            std::env::var_os("MIAO_CONFIG_DIR")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    std::env::var_os("HOME")
+                        .map(|home| PathBuf::from(home).join(".config").join("miao"))
+                })
+        });
         let instructions =
-            assemble_instructions(&launch.workspace, config_dir.as_deref()).unwrap_or_default();
+            assemble_instructions(&launch.workspace, global.as_deref()).unwrap_or_default();
         let manifest = serde_json::json!({
             "name": "miao",
             "instructions": instructions,
@@ -2129,28 +2246,8 @@ fn agent_manifest_for(
 /// without this a TUI model picker has nothing to list. Each route names its
 /// own credential source, which is what makes switching between providers
 /// actually authenticate.
-fn model_routes(
-    config_dir: Option<&std::path::Path>,
-    requested: &str,
-) -> Result<Vec<serde_json::Value>, String> {
-    let Some(dir) = config_dir else {
-        return Ok(Vec::new());
-    };
-    let mut parsed: Option<serde_json::Value> = None;
-    for name in ["miao.jsonc", "miao.json"] {
-        let path = dir.join(name);
-        if !path.is_file() {
-            continue;
-        }
-        let text = std::fs::read_to_string(&path)
-            .map_err(|error| format!("{}: {error}", path.display()))?;
-        parsed = Some(
-            serde_json::from_str(&strip_comments(&text))
-                .map_err(|error| format!("{}: {error}", path.display()))?,
-        );
-        break;
-    }
-    let Some(parsed) = parsed else {
+fn model_routes(layers: &[PathBuf], requested: &str) -> Result<Vec<serde_json::Value>, String> {
+    let Some(parsed) = merged_config(layers) else {
         return Ok(Vec::new());
     };
     let Some(providers) = parsed.get("providers").and_then(|value| value.as_object()) else {
@@ -2312,55 +2409,44 @@ fn model_routes(
 /// Map the product's `lsp` section onto the engine's `lsp::Config` array: the
 /// engine discovers servers from this manifest, so without it the `lsp_*` tools
 /// have nothing to talk to.
-fn lsp_servers(config_dir: Option<&std::path::Path>) -> Result<Vec<serde_json::Value>, String> {
-    let Some(dir) = config_dir else {
+fn lsp_servers(layers: &[PathBuf]) -> Result<Vec<serde_json::Value>, String> {
+    let Some(parsed) = merged_config(layers) else {
         return Ok(Vec::new());
     };
-    for name in ["miao.jsonc", "miao.json"] {
-        let path = dir.join(name);
-        if !path.is_file() {
+    let Some(section) = parsed.get("lsp").and_then(|value| value.as_object()) else {
+        return Ok(Vec::new());
+    };
+    let mut servers = Vec::new();
+    for (name, entry) in section {
+        let argv: Vec<String> = match entry.get("command") {
+            Some(serde_json::Value::String(line)) => vec![line.clone()],
+            Some(serde_json::Value::Array(items)) => items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect(),
+            _ => continue,
+        };
+        if argv.is_empty() {
             continue;
         }
-        let text = std::fs::read_to_string(&path)
-            .map_err(|error| format!("{}: {error}", path.display()))?;
-        let parsed: serde_json::Value = serde_json::from_str(&strip_comments(&text))
-            .map_err(|error| format!("{}: {error}", path.display()))?;
-        let Some(section) = parsed.get("lsp").and_then(|value| value.as_object()) else {
-            return Ok(Vec::new());
-        };
-        let mut servers = Vec::new();
-        for (name, entry) in section {
-            let argv: Vec<String> = match entry.get("command") {
-                Some(serde_json::Value::String(line)) => vec![line.clone()],
-                Some(serde_json::Value::Array(items)) => items
+        let extensions: Vec<String> = entry
+            .get("extensions")
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
                     .iter()
                     .filter_map(|item| item.as_str().map(str::to_string))
-                    .collect(),
-                _ => continue,
-            };
-            if argv.is_empty() {
-                continue;
-            }
-            let extensions: Vec<String> = entry
-                .get("extensions")
-                .and_then(|value| value.as_array())
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(|item| item.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
-            let mut server =
-                serde_json::json!({ "name": name, "argv": argv, "extensions": extensions });
-            if let Some(env) = entry.get("env").or_else(|| entry.get("environment")) {
-                server["env"] = env.clone();
-            }
-            servers.push(server);
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut server =
+            serde_json::json!({ "name": name, "argv": argv, "extensions": extensions });
+        if let Some(env) = entry.get("env").or_else(|| entry.get("environment")) {
+            server["env"] = env.clone();
         }
-        return Ok(servers);
+        servers.push(server);
     }
-    Ok(Vec::new())
+    Ok(servers)
 }
 
 /// Serve ACP over stdio: the editor-facing protocol, backed by the same engine
@@ -2446,13 +2532,9 @@ fn debug(rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("routes") => {
-            let config = std::env::var_os("MIAO_CONFIG_DIR")
-                .map(PathBuf::from)
-                .or_else(|| {
-                    std::env::var_os("HOME")
-                        .map(|home| PathBuf::from(home).join(".config").join("miao"))
-                });
-            let routes = model_routes(config.as_deref(), "")?;
+            let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let layers = config_layers(&workspace, None, &|name| std::env::var(name).ok());
+            let routes = model_routes(&layers, "")?;
             if routes.is_empty() {
                 println!("no model routes configured");
             } else {
@@ -2461,13 +2543,9 @@ fn debug(rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("lsp") => {
-            let config = std::env::var_os("MIAO_CONFIG_DIR")
-                .map(PathBuf::from)
-                .or_else(|| {
-                    std::env::var_os("HOME")
-                        .map(|home| PathBuf::from(home).join(".config").join("miao"))
-                });
-            let servers = lsp_servers(config.as_deref())?;
+            let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let layers = config_layers(&workspace, None, &|name| std::env::var(name).ok());
+            let servers = lsp_servers(&layers)?;
             if servers.is_empty() {
                 println!("no LSP servers configured");
             } else {
@@ -2476,13 +2554,9 @@ fn debug(rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("mcp") => {
-            let config = std::env::var_os("MIAO_CONFIG_DIR")
-                .map(PathBuf::from)
-                .or_else(|| {
-                    std::env::var_os("HOME")
-                        .map(|home| PathBuf::from(home).join(".config").join("miao"))
-                });
-            let servers = mcp_servers(config.as_deref())?;
+            let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let layers = config_layers(&workspace, None, &|name| std::env::var(name).ok());
+            let servers = mcp_servers(&layers)?;
             if servers.is_empty() {
                 println!("no MCP servers configured");
             } else {
@@ -3552,7 +3626,8 @@ fn engine_argv_with(
     // The engine reads the server list from this variable (it prefers it over a
     // manifest file), so a configured MCP section reaches every command with no
     // extra plumbing. Absent configuration leaves the variable alone.
-    if let Ok(servers) = mcp_servers(config_dir) {
+    let layers = config_layers(workspace, config_dir, &env);
+    if let Ok(servers) = mcp_servers(&layers) {
         if !servers.is_empty() {
             if let Ok(encoded) = serde_json::to_string(&servers) {
                 if encoded.len() <= 65536 {
@@ -3570,16 +3645,47 @@ fn engine_argv_with(
         "--model".into(),
         model.into(),
     ];
-    if let Some(dir) = config_dir {
-        argv.push("--config-dir".into());
-        argv.push(dir.display().to_string());
+    match layers.as_slice() {
+        // An explicit --config-dir keeps the one-directory shape the operator
+        // named. The default stack encodes as a plan: the engine layers the
+        // same directories in order, so a project's providers, model and
+        // permissions reach the engine they name. The env file and inline
+        // document ride above the directories, the same order the product
+        // applies them in.
+        _ if config_dir.is_some() => {
+            if let Some(dir) = config_dir {
+                argv.push("--config-dir".into());
+                argv.push(dir.display().to_string());
+            }
+        }
+        [] => {}
+        [only] if env("MIAO_CONFIG").is_none() && env("MIAO_CONFIG_CONTENT").is_none() => {
+            argv.push("--config-dir".into());
+            argv.push(only.display().to_string());
+        }
+        many => {
+            let mut plan: Vec<serde_json::Value> = many
+                .iter()
+                .map(|dir| serde_json::json!({ "dir": dir.display().to_string() }))
+                .collect();
+            if let Some(file) = env("MIAO_CONFIG") {
+                plan.push(serde_json::json!({ "file": file }));
+            }
+            if let Some(content) = env("MIAO_CONFIG_CONTENT") {
+                plan.push(serde_json::json!({ "content": content }));
+            }
+            if let Ok(encoded) = serde_json::to_string(&plan) {
+                argv.push("--config-sources".into());
+                argv.push(encoded);
+            }
+        }
     }
     // The engine compares the primary route's identity against the base
     // provider's, so the base provider must be built from the same route:
     // provider, endpoint and credential all come from the primary entry.
     let mut derived_routes = false;
     if env("MIAO_ENGINE_MODEL_ROUTES_CONFIG").is_none() {
-        if let Ok(routes) = model_routes(config_dir, model) {
+        if let Ok(routes) = model_routes(&layers, model) {
             if !routes.is_empty() {
                 if let Some(primary) = routes.iter().find(|route| route["primary"] == true) {
                     // A placeholder model name matches no route, and the engine
@@ -3641,7 +3747,7 @@ fn engine_argv_with(
             }
         }
     }
-    if let Ok(servers) = lsp_servers(config_dir) {
+    if let Ok(servers) = lsp_servers(&layers) {
         if !servers.is_empty() {
             if let Ok(encoded) = serde_json::to_string(&servers) {
                 let path =
@@ -4907,11 +5013,11 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        anchored_sessions, carry_uncommitted_changes, db_file_bytes, db_read_only, db_report,
-        db_vacuum, default_db, event_line, git_worktree_main_checkout, launch, lsp_servers,
-        mcp_servers, model_routes, parsed_session_location, plugin_entries, project_copy_apply,
-        project_copy_plan, retention_plan, strip_comments, tree_bytes, uninstall_targets,
-        worktree_remove_apply, worktree_remove_plan,
+        anchored_sessions, carry_uncommitted_changes, config_layers, db_file_bytes, db_read_only,
+        db_report, db_vacuum, default_db, engine_argv_with, event_line, git_worktree_main_checkout,
+        launch, lsp_servers, mcp_servers, merged_config, model_routes, parsed_session_location,
+        plugin_entries, project_copy_apply, project_copy_plan, retention_plan, strip_comments,
+        tree_bytes, uninstall_targets, worktree_remove_apply, worktree_remove_plan,
     };
     use std::io::Write;
     use std::path::PathBuf;
@@ -5017,7 +5123,7 @@ mod tests {
             "mcp",
             "{ // comment\n \"mcp\": { \"files\": { \"command\": [\"npx\", \"x\"], \"environment\": { \"A\": \"1\" } }, \"remote\": { \"url\": \"https://e.test/mcp\", \"headers\": { \"K\": \"v\" } } } }",
         );
-        let servers = mcp_servers(Some(&dir)).expect("maps");
+        let servers = mcp_servers(std::slice::from_ref(&dir)).expect("maps");
         assert_eq!(servers.len(), 2);
         let files = servers
             .iter()
@@ -5040,7 +5146,7 @@ mod tests {
             "lsp",
             "{ \"lsp\": { \"ts\": { \"command\": [\"ts-ls\", \"--stdio\"], \"extensions\": [\".ts\"] }, \"broken\": { \"extensions\": [\".x\"] } } }",
         );
-        let servers = lsp_servers(Some(&dir)).expect("maps");
+        let servers = lsp_servers(std::slice::from_ref(&dir)).expect("maps");
         assert_eq!(servers.len(), 1);
         assert_eq!(servers[0]["argv"], serde_json::json!(["ts-ls", "--stdio"]));
         assert_eq!(servers[0]["extensions"], serde_json::json!([".ts"]));
@@ -5060,7 +5166,7 @@ mod tests {
                \"mirror\": { \"api\": { \"type\": \"openai\", \"url\": \"https://mirror.test/v1\" }, \
                  \"models\": { \"deepseek\": {} } } } }",
         );
-        let routes = model_routes(Some(&dir), "").expect("derives");
+        let routes = model_routes(std::slice::from_ref(&dir), "").expect("derives");
         assert_eq!(routes.len(), 2);
         let ids: Vec<&str> = routes
             .iter()
@@ -5092,7 +5198,7 @@ mod tests {
                \"vendor\": { \"api\": { \"type\": \"openai\", \"url\": \"https://vendor.test/v1\" }, \
                  \"models\": { \"deepseek\": {}, \"other\": {} } } } }",
         );
-        let routes = model_routes(Some(&dir), "").expect("derives");
+        let routes = model_routes(std::slice::from_ref(&dir), "").expect("derives");
         let primary = routes
             .iter()
             .find(|route| route["primary"] == true)
@@ -5101,11 +5207,143 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// A global config directory and a workspace carrying a project layer:
+    /// the workspace's `.miao` overrides the global document key for key.
+    fn layered_fixture(tag: &str) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+        let root = std::env::temp_dir().join(format!("miao-cli-{tag}-{}", std::process::id()));
+        let global = root.join("home/.config/miao");
+        let workspace = root.join("work/repo");
+        std::fs::create_dir_all(&global).expect("global dir");
+        std::fs::create_dir_all(workspace.join(".miao")).expect("project layer");
+        std::fs::write(
+            global.join("miao.json"),
+            r#"{ "model": "deepseek", "providers": { "vendor": { "api": { "type": "openai", "url": "https://global.test/v1" }, "models": { "deepseek": {} } } } }"#,
+        )
+        .expect("global config");
+        std::fs::write(
+            workspace.join(".miao/miao.json"),
+            r#"{ "providers": { "vendor": { "api": { "type": "openai", "url": "https://project.test/v1" }, "models": { "deepseek": {} } } } }"#,
+        )
+        .expect("project config");
+        (root, global, workspace)
+    }
+
+    fn fixture_env(root: &std::path::Path) -> impl Fn(&str) -> Option<String> + '_ {
+        let home = root.join("home").display().to_string();
+        move |name: &str| match name {
+            "HOME" => Some(home.clone()),
+            "MIAO_CONFIG_DIR" | "MIAO_DISABLE_PROJECT_CONFIG" => None,
+            _ => std::env::var(name).ok(),
+        }
+    }
+
+    #[test]
+    fn a_project_layer_overrides_the_global_one() {
+        let (root, global, workspace) = layered_fixture("layer-win");
+        let layers = config_layers(&workspace, None, &fixture_env(&root));
+        assert_eq!(
+            layers.first(),
+            Some(&global),
+            "the global layer comes first: {layers:?}"
+        );
+        assert!(
+            layers.contains(&workspace.join(".miao")),
+            "the project layer rides along: {layers:?}"
+        );
+        let merged = merged_config(&layers).expect("merges both layers");
+        assert_eq!(
+            merged["providers"]["vendor"]["api"]["url"], "https://project.test/v1",
+            "the nearer layer wins key for key"
+        );
+        let routes = model_routes(&layers, "").expect("derives");
+        let primary = routes
+            .iter()
+            .find(|route| route["primary"] == true)
+            .expect("a primary");
+        assert_eq!(
+            primary["endpoint"], "https://project.test/v1/chat/completions",
+            "the project layer's endpoint serves the route"
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn disabling_the_project_config_skips_its_layers() {
+        let (root, global, workspace) = layered_fixture("layer-disabled");
+        let env = |name: &str| -> Option<String> {
+            match name {
+                "HOME" => Some(root.join("home").display().to_string()),
+                "MIAO_DISABLE_PROJECT_CONFIG" => Some("1".into()),
+                _ => std::env::var(name).ok(),
+            }
+        };
+        let layers = config_layers(&workspace, None, &env);
+        assert_eq!(layers, vec![global], "only the global layer survives");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn an_explicit_config_dir_stays_the_only_layer() {
+        let (root, _global, workspace) = layered_fixture("layer-explicit");
+        let explicit = root.join("explicit");
+        let layers = config_layers(&workspace, Some(&explicit), &fixture_env(&root));
+        assert_eq!(
+            layers,
+            vec![explicit],
+            "an explicit directory is the whole answer"
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_default_start_encodes_the_stack_as_a_plan() {
+        let (root, global, workspace) = layered_fixture("layer-plan");
+        let db = root.join("miao.db");
+        let argv = engine_argv_with(&db, &workspace, "", None, fixture_env(&root));
+        let position = argv
+            .iter()
+            .position(|arg| arg == "--config-sources")
+            .expect("the layered stack rides as a plan");
+        let plan: serde_json::Value =
+            serde_json::from_str(&argv[position + 1]).expect("valid plan");
+        let dirs: Vec<&str> = plan
+            .as_array()
+            .expect("a plan array")
+            .iter()
+            .filter_map(|entry| entry["dir"].as_str())
+            .collect();
+        assert_eq!(
+            dirs.first().copied(),
+            Some(global.display().to_string().as_str()),
+            "global first: {dirs:?}"
+        );
+        assert!(
+            dirs.iter().any(|dir| dir.ends_with(".miao")),
+            "the project layer is in the plan: {dirs:?}"
+        );
+        // The merged routes rewrite --model's endpoint to the project layer's,
+        // so the engine dials where the project points.
+        let endpoint = argv
+            .iter()
+            .position(|arg| arg == "--endpoint")
+            .expect("the project route is forwarded");
+        assert_eq!(
+            argv[endpoint + 1],
+            "https://project.test/v1/chat/completions",
+            "the engine dials where the project points"
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
     #[test]
     fn a_config_without_extensions_needs_no_sidecar() {
         let dir = config_dir("empty", "{ \"model\": \"a/b\" }");
-        assert!(mcp_servers(Some(&dir)).expect("maps").is_empty());
-        assert!(lsp_servers(Some(&dir)).expect("maps").is_empty());
+        assert!(mcp_servers(std::slice::from_ref(&dir))
+            .expect("maps")
+            .is_empty());
+        assert!(lsp_servers(std::slice::from_ref(&dir))
+            .expect("maps")
+            .is_empty());
         assert!(plugin_entries(Some(&dir)).expect("maps").is_empty());
         std::fs::remove_dir_all(&dir).ok();
     }
