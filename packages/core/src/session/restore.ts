@@ -18,6 +18,18 @@ const MERGE_ORDER = [
   "session_message",
   "session_input",
   "session_context_epoch",
+  // Usage and dispatch rows hang off `session` and were the reason a restored
+  // backup reported no cost: the transcript came back, the accounting did not.
+  "session_turn_usage",
+  "session_tool_usage",
+  "session_tool_dispatch",
+  // Permission state and notifications are Session-scoped the same way; without
+  // them a restored Session re-asks for approvals it had already settled.
+  "permission_legacy",
+  "permission_native_cursor",
+  "permission_handoff",
+  "session_notification",
+  "session_delegation",
   "todo",
   "session_share",
   "event",
@@ -28,9 +40,24 @@ export interface TableResult {
   readonly rows: number
 }
 
+/** A table the source had rows in but the target ended up with fewer of. */
+export interface Shortfall {
+  readonly table: string
+  readonly source: number
+  readonly target: number
+}
+
 export interface Result {
   readonly tables: ReadonlyArray<TableResult>
   readonly sequences: number
+  /**
+   * Tables where the merge did not land everything the source held. Empty is
+   * the only success: `INSERT OR IGNORE` skips a row whose primary key already
+   * exists in the target, which is correct for a union but hides a real loss
+   * when the target row is a different record.
+   */
+  readonly shortfalls: ReadonlyArray<Shortfall>
+  readonly dryRun: boolean
 }
 
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`
@@ -47,6 +74,33 @@ const columnNames = (db: Client, schema: string, table: string) =>
     Effect.orDie,
     Effect.map((rows) => rows.map((row) => row.name)),
   )
+
+/**
+ * Compare source and target row counts per table.
+ *
+ * `INSERT OR IGNORE` unions by primary key, so a row the target already holds
+ * is skipped — expected when the target is a superset, a loss when the two
+ * records differ. Counting both sides is the only check that distinguishes
+ * them without reading every column, and it is what makes "the restore
+ * completed" a claim the operator can trust.
+ */
+const verify = (db: Client, tables: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const shortfalls: Array<Shortfall> = []
+    for (const table of tables) {
+      const source = yield* db
+        .get<{ n: number }>(sql.raw(`SELECT COUNT(*) AS n FROM merge.${quote(table)}`))
+        .pipe(Effect.orDie)
+      const target = yield* db
+        .get<{ n: number }>(sql.raw(`SELECT COUNT(*) AS n FROM main.${quote(table)}`))
+        .pipe(Effect.orDie)
+      const from = Number(source?.n ?? 0)
+      const to = Number(target?.n ?? 0)
+      // The target may legitimately hold more (it is a union), never fewer.
+      if (to < from) shortfalls.push({ table, source: from, target: to })
+    }
+    return shortfalls
+  })
 
 const changedRows = (db: Client) =>
   db.get<{ n: number }>(sql.raw("SELECT changes() AS n")).pipe(
@@ -116,7 +170,11 @@ export const merge = (db: Client, source: string, options?: { dryRun?: boolean }
           .pipe(Effect.orDie)
         results.push({ table, rows: yield* changedRows(db) })
       }
-      return { tables: results, sequences }
+      // A merge that reports rows but leaves the target short is worse than a
+      // failed one: the operator believes the backup is whole. Count both sides
+      // per table and surface every shortfall.
+      const shortfalls = options?.dryRun ? [] : yield* verify(db, MERGE_ORDER)
+      return { tables: results, sequences, shortfalls, dryRun: options?.dryRun === true }
     })
 
     return yield* run.pipe(Effect.ensuring(db.run(sql.raw("DETACH DATABASE merge")).pipe(Effect.ignore)))

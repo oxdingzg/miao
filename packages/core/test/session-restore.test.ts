@@ -142,4 +142,30 @@ describe("SessionRestore", () => {
       expect(yield* count(db, sql`SELECT COUNT(*) AS n FROM event`)).toBe(1)
     }),
   )
+  it.effect("brings usage and permission rows across, not just the transcript", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* seed(db)
+
+      const result = yield* withSource(
+        db,
+        (source) => {
+          const sqlite = new SQLite(source)
+          // A Session that ran turns carries accounting the transcript alone
+          // cannot reconstruct; restoring without it reports zero cost.
+          sqlite.run(
+            `INSERT INTO session_turn_usage (event_id, session_id, assistant_message_id, model_provider, model_id, finish, cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, time_created) VALUES ('evt_turn_1', 'ses_a', 'msg_1', 'fake', 'fake/model', 'stop', 0.5, 10, 20, 0, 0, 0, 1)`,
+          )
+          sqlite.close()
+        },
+        (source) => SessionRestore.merge(db, source),
+      )
+
+      expect(yield* count(db, sql`SELECT COUNT(*) AS n FROM session_turn_usage`)).toBe(1)
+      expect(result.tables.find((table) => table.table === "session_turn_usage")?.rows).toBe(1)
+      expect(result.shortfalls).toEqual([])
+    }),
+  )
+
+
 })
