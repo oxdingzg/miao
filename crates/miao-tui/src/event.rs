@@ -164,6 +164,16 @@ pub fn bus() -> (Bus, Rx) {
     (Bus { tx }, rx)
 }
 
+/// The event kind crossterm's reader produces, or `None` when it is one this
+/// TUI has nothing to do with.
+///
+/// The `_` arm is required, not defensive: `TerminalEvent` is
+/// `#[non_exhaustive]`, so a crossterm upgrade may add a variant and this
+/// match has to keep compiling. With today's variant set every arm is
+/// reachable and the fallback is dead, which is why the lint fires — the
+/// `allow` records that the arm is there for the next version, not for this
+/// one.
+#[allow(unreachable_patterns)]
 pub fn from_terminal(event: TerminalEvent) -> Option<AppEvent> {
     Some(match event {
         TerminalEvent::Key(key) => AppEvent::Key(key),
