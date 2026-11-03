@@ -7,7 +7,7 @@
 //! half of that projection lives here; without it every tool row would show raw
 //! JSON.
 
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use serde_json::Value;
 
@@ -188,16 +188,19 @@ fn parse_json(text: &str) -> Option<Value> {
 
 fn header(tool: &ToolPart, label: &str, detail: &str, theme: &Theme) -> Line<'static> {
     let palette = theme.palette;
+    // The TS inline row is a two-cell dot plus a bold tool name; the dot keeps
+    // the result colour, so a finished call reads differently from a failed one
+    // at the corner of the eye.
     let (glyph, glyph_style) = if tool.failed {
-        ("✗", Style::new().fg(palette.error))
+        ("●", Style::new().fg(palette.error))
     } else if tool.output.is_some() {
-        ("✓", Style::new().fg(palette.success))
+        ("●", Style::new().fg(palette.success))
     } else {
-        ("·", Style::new().fg(palette.warning))
+        ("●", Style::new().fg(palette.text_muted))
     };
     let mut spans = vec![
         Span::styled(format!("{glyph} "), glyph_style),
-        Span::styled(label.to_string(), Style::new().fg(palette.secondary)),
+        Span::styled(label.to_string(), Style::new().fg(palette.text).add_modifier(Modifier::BOLD)),
     ];
     if !detail.is_empty() {
         spans.push(Span::styled(
@@ -990,7 +993,7 @@ mod tests {
         );
         let lines = lines(&part, None, &theme(), false, Some("ctrl+x u"));
         let rendered = rendered(&lines);
-        assert_eq!(rendered[0], "✓ bash  echo hi");
+        assert_eq!(rendered[0], "● bash  echo hi");
         assert!(rendered.contains(&"  │ hi".to_string()));
         // Folded output keeps one line; the tail and the hint stay reachable
         // through the elision marker instead of crowding the transcript.
@@ -1061,7 +1064,7 @@ mod tests {
         );
         let lines = lines(&part, None, &theme(), false, None);
         let rendered = rendered(&lines);
-        assert_eq!(rendered[0], "✗ bash  ls");
+        assert_eq!(rendered[0], "● bash  ls");
         assert!(rendered.contains(&"  │ permission denied".to_string()));
     }
 
@@ -1105,7 +1108,7 @@ mod tests {
             false,
         );
         let rendered = rendered(&lines(&part, None, &theme(), false, None));
-        assert_eq!(rendered[0], "✓ read  a.rs");
+        assert_eq!(rendered[0], "● read  a.rs");
         assert!(rendered.contains(&"  ⎿ Read 2 lines".to_string()));
     }
 
@@ -1118,7 +1121,7 @@ mod tests {
             false,
         );
         let rendered = rendered(&lines(&part, None, &theme(), false, None));
-        assert_eq!(rendered[0], "✓ grep  fn main in src");
+        assert_eq!(rendered[0], "● grep  fn main in src");
         assert!(rendered.contains(&"  ⎿ 1 match (truncated)".to_string()));
     }
 
@@ -1132,7 +1135,7 @@ mod tests {
             false,
         );
         let rendered = rendered(&lines(&part, Some(&files), &theme(), false, None));
-        assert_eq!(rendered[0], "✓ edit  src/lib.rs");
+        assert_eq!(rendered[0], "● edit  src/lib.rs");
         assert!(rendered.contains(&"  ⎿ Added 1 line, removed 1 line".to_string()));
         assert!(rendered.contains(&"  ◆ update src/lib.rs +1 −1".to_string()));
         assert!(rendered.contains(&"  -a".to_string()));
@@ -1152,7 +1155,7 @@ mod tests {
             false,
         );
         let rendered = rendered(&lines(&part, None, &theme(), false, None));
-        assert_eq!(rendered[0], "· todowrite");
+        assert_eq!(rendered[0], "● todowrite");
         assert!(rendered.contains(&"  [✓] 1: write code".to_string()));
         assert!(rendered.contains(&"  [•] 2: test it ← 1".to_string()));
     }
@@ -1166,7 +1169,7 @@ mod tests {
             false,
         );
         let rendered = rendered(&lines(&part, None, &theme(), false, None));
-        assert_eq!(rendered, ["✓ WebFetch  https://example.com/docs"]);
+        assert_eq!(rendered, ["● WebFetch  https://example.com/docs"]);
     }
 
     #[test]
@@ -1195,7 +1198,7 @@ mod tests {
             false,
         );
         let rendered = rendered(&lines(&part, None, &theme(), false, None));
-        assert_eq!(rendered[0], "✓ mcp_server_tool  hello");
+        assert_eq!(rendered[0], "● mcp_server_tool  hello");
         assert!(rendered.contains(&"  │ {\"result\":\"world\"}".to_string()));
     }
 }
