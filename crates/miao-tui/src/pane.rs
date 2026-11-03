@@ -323,7 +323,7 @@ impl Shell {
         // the agent CLIs keep a gap between the last streamed block, the
         // prompt box, and the status strip — butted together they read as one
         // cramped block.
-        let [body_area, panel_area, air_above, composer_area, air_below, status_area] =
+        let [body_area, panel_area, _air_above, composer_area, _air_below, status_area] =
             Layout::vertical([
                 Constraint::Min(1),
                 Constraint::Length(panel_height),
@@ -3597,8 +3597,6 @@ mod tests {
         assert_eq!(line.spans[0].content.to_string(), "好世界");
     }
 
-
-
     #[test]
     fn a_long_menu_is_cut_between_chords_not_inside_one() {
         // `fit` cuts at a cell, which turns `n session new` into `n session n…`
@@ -3625,8 +3623,6 @@ mod tests {
         // A menu that fits is painted as it is.
         assert_eq!(fit_chords("ctrl+x · q app exit", 40), "ctrl+x · q app exit");
     }
-
-
 
     #[test]
     fn a_command_completion_row_says_what_the_command_does() {
