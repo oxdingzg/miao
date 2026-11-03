@@ -3659,10 +3659,6 @@ mod tests {
         assert!(visible.contains("Sessionstatusandusage"), "{visible}");
     }
 
-    /// A long title and a long preview stay on their own rows: the list keeps
-    /// one line per row, so the next Session is always two rows below the
-    /// selected one instead of wherever the wrapped text ends.
-
     fn home_theme() -> Theme {
         Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
