@@ -1038,6 +1038,14 @@ impl TranscriptPane {
     /// Finish the drag: return the selected text and clear the highlight.
     pub fn take_selection(&mut self) -> Option<String> {
         let (a, b) = self.selection.take()?;
+        // A click that never moved is not a selection. Press and release on the
+        // same cell used to copy one character and announce "Copied 1
+        // characters", which reads as the app grabbing whatever the pointer
+        // happened to cover. Selecting a single cell deliberately is not a
+        // gesture anyone performs; the click should do nothing.
+        if a == b {
+            return None;
+        }
         if self.rendered.is_empty() {
             return None;
         }
@@ -4720,6 +4728,44 @@ mod tests {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
         }
+    }
+
+    fn pane_with_text() -> TranscriptPane {
+        let mut pane = TranscriptPane::new(home_theme());
+        pane.rendered = vec![vec!["a".to_string(), "b".to_string(), "c".to_string()]];
+        pane.area = Rect::new(0, 0, 3, 1);
+        pane
+    }
+
+    /// Press and release on one cell is a click, not a selection. It used to
+    /// copy a single character and announce "Copied 1 characters", which reads
+    /// as the app grabbing whatever the pointer covered.
+    #[test]
+    fn a_click_that_never_moved_selects_nothing() {
+        let mut pane = pane_with_text();
+        pane.begin_selection(Position { x: 1, y: 0 });
+        assert_eq!(pane.take_selection(), None);
+    }
+
+    /// A real drag still copies exactly the cells it covered.
+    #[test]
+    fn a_drag_still_returns_the_cells_it_covered() {
+        let mut pane = pane_with_text();
+        pane.begin_selection(Position { x: 0, y: 0 });
+        pane.update_selection(Position { x: 2, y: 0 });
+        assert_eq!(pane.take_selection().as_deref(), Some("abc"));
+    }
+
+    /// The selection is consumed either way, so a click followed by a drag
+    /// starts clean rather than extending a stale anchor.
+    #[test]
+    fn a_click_clears_its_anchor() {
+        let mut pane = pane_with_text();
+        pane.begin_selection(Position { x: 1, y: 0 });
+        assert_eq!(pane.take_selection(), None);
+        pane.begin_selection(Position { x: 0, y: 0 });
+        pane.update_selection(Position { x: 2, y: 0 });
+        assert_eq!(pane.take_selection().as_deref(), Some("abc"));
     }
 
     /// A long CJK title and a long CJK todo each stay on one row. Counting
