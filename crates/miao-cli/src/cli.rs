@@ -443,6 +443,16 @@ unsafe fn libc_kill(pid: i32) -> bool {
 /// processes and no durable state, so a hub that dies leaves nothing to reap —
 /// the truth about messages stays in the engine database.
 fn hub(rest: &[String]) -> Result<(), String> {
+    // The hub is a Unix-domain-socket service. Windows has no UDS in std and
+    // no shipping implementation here, so the command exists but says why it
+    // cannot run instead of failing to compile the whole binary.
+    #[cfg(not(unix))]
+    {
+        let _ = rest;
+        return Err("the session hub needs a Unix domain socket and is not available on this platform".into());
+    }
+    #[cfg(unix)]
+    {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let mut idle_ms: u64 = 0;
     let mut index = 0;
@@ -562,6 +572,7 @@ fn hub(rest: &[String]) -> Result<(), String> {
         }
     })
 }
+    }
 
 /// Run an orchestration script.
 ///
@@ -1073,6 +1084,14 @@ fn session_engine_call_with(
 
 /// Talk to a running hub. Used by `send_message` and by tests.
 fn hubctl(rest: &[String]) -> Result<(), String> {
+    // Same Unix-domain-socket boundary as `hub`; see its note.
+    #[cfg(not(unix))]
+    {
+        let _ = rest;
+        return Err("the session hub needs a Unix domain socket and is not available on this platform".into());
+    }
+    #[cfg(unix)]
+    {
     use std::io::{BufRead, BufReader, Write};
     let op = rest
         .first()
@@ -1106,6 +1125,7 @@ fn hubctl(rest: &[String]) -> Result<(), String> {
     println!("{}", response.trim());
     Ok(())
 }
+    }
 
 /// Manage git worktrees. Paths are canonicalised before use: a session's
 /// Location is keyed by its real path, so `/tmp/x` and `/private/tmp/x` would
