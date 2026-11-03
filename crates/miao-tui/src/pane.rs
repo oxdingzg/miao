@@ -324,11 +324,10 @@ impl Shell {
         // No title row: the workspace, branch and version fold into the status
         // strip at the bottom, so the whole screen above the composer is
         // content. The terminal tab already names the workspace too.
-        // Air around the composer on both sides: the TypeScript prompt and
-        // the agent CLIs keep a gap between the last streamed block, the
-        // prompt box, and the status strip — butted together they read as one
-        // cramped block.
-        let [body_area, panel_area, _air_above, composer_area, _air_below, status_area] =
+        // Air above the composer: the TS prompt keeps one band there for the
+        // run's phase, the queue, and notices (`composer_air`). The row below
+        // is only spacing.
+        let [body_area, panel_area, air_above, composer_area, _air_below, status_area] =
             Layout::vertical([
                 Constraint::Min(1),
                 Constraint::Length(panel_height),
