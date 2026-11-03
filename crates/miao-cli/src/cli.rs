@@ -31,6 +31,7 @@ miao — single binary (native)
 All commands run in this process: the TUI is linked in, not spawned.
 
 Usage:
+  miao                  start the terminal UI (same as `miao tui`)
   miao tui [options]    start the terminal UI in this process
   miao models           list the model routes this machine can use
   miao auth             list stored credentials (types only, never secrets)
@@ -5253,10 +5254,29 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
             println!("{BUILD_ID}");
             std::process::ExitCode::SUCCESS
         }
-        Some("--help" | "-h") | None => {
+        Some("--help" | "-h") => {
             println!("{USAGE}");
             std::process::ExitCode::SUCCESS
         }
+        // A bare `miao` is how people start the product: `miao tui` is the
+        // explicit spelling, but typing the program name alone must not print
+        // usage and exit. `--help` is the way to ask for the text.
+        None => match launch(std::iter::empty()) {
+            Ok(mut launch) => {
+                prepare_tui_engine(&mut launch);
+                match miao_tui::run(launch) {
+                    Ok(()) => std::process::ExitCode::SUCCESS,
+                    Err(error) => {
+                        eprintln!("miao: {error}");
+                        std::process::ExitCode::from(1)
+                    }
+                }
+            }
+            Err(message) => {
+                eprintln!("miao: {message}\n{USAGE}");
+                std::process::ExitCode::from(2)
+            }
+        },
         Some(other) => {
             eprintln!("miao: unknown command {other}\n{USAGE}");
             std::process::ExitCode::from(2)
