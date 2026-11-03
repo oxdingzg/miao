@@ -244,4 +244,11 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --release --locked
+        # The suite points `MIAO_ENGINE_STORAGE` at a throwaway tree per test,
+        # and several of them mutate it in sequence. Run in parallel, one test's
+        # `remove_var` lands between another's `set_var` and its ledger open, so
+        # `default_db` falls back to `$HOME/.local/share/miao-engine` — a path
+        # the runner has not created — and the test fails with "unable to open
+        # database file". One at a time; the suite finishes in well under a
+        # second.
+        run: cargo test --release --locked -- --test-threads=1
