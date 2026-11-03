@@ -146,22 +146,85 @@ pub enum AppEvent {
     EngineFailure(String),
 }
 
+/// How many events may wait for the render loop before backpressure applies.
+///
+/// A streaming turn emits one event per token and the loop paints once per
+/// frame, so the queue exists to absorb a burst, not to be unbounded. With no
+/// ceiling a producer that outruns the renderer — a slow terminal, a huge
+/// pasted block — grows the heap until the process is killed.
+const BUS_CAPACITY: usize = 1_024;
+
 #[derive(Clone)]
 pub struct Bus {
-    tx: tokio::sync::mpsc::UnboundedSender<AppEvent>,
+    tx: tokio::sync::mpsc::Sender<AppEvent>,
+    dropped: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl Bus {
+    /// Queue an event, dropping it if the render loop is far enough behind.
+    ///
+    /// Dropping is safe for events that carry the *latest* state rather than a
+    /// transition: a newer projection supersedes an older one, and a status
+    /// frame is replaced by the next. Events the operator cannot recover from
+    /// — a keystroke, a failed prompt, an engine failure — are awaited instead,
+    /// because losing them would change what the answer means.
     pub fn send(&self, event: AppEvent) {
-        let _ = self.tx.send(event);
+        match self.tx.try_send(event) {
+            Ok(()) => {}
+            Err(tokio::sync::mpsc::error::TrySendError::Full(event)) => {
+                if requires_delivery(&event) {
+                    // The bounded send would block the producer; this is the
+                    // one place where waiting is correct.
+                    let tx = self.tx.clone();
+                    tokio::spawn(async move {
+                        let _ = tx.send(event).await;
+                    });
+                    return;
+                }
+                self.dropped
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            // The receiver is gone: the TUI is shutting down.
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {}
+        }
+    }
+
+    /// How many coalescible events were dropped because the loop was behind.
+    /// Exposed for the status line and tests; zero in ordinary operation.
+    pub fn dropped(&self) -> u64 {
+        self.dropped.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
-pub type Rx = tokio::sync::mpsc::UnboundedReceiver<AppEvent>;
+/// Whether losing this event would change what the operator sees or can do.
+///
+/// Everything not listed here repeats: a later projection, status frame, or
+/// catalog reply replaces it before the loop could have drawn twice.
+fn requires_delivery(event: &AppEvent) -> bool {
+    matches!(
+        event,
+        AppEvent::Key(_)
+            | AppEvent::Paste(_)
+            | AppEvent::EngineFailure(_)
+            | AppEvent::PromptFailed { .. }
+            | AppEvent::ActionFailed(_)
+            | AppEvent::InputRetrieved { .. }
+            | AppEvent::ShellFailed { .. }
+            | AppEvent::Attention { .. }
+    )
+}
+
+pub type Rx = tokio::sync::mpsc::Receiver<AppEvent>;
 
 pub fn bus() -> (Bus, Rx) {
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    (Bus { tx }, rx)
+    let (tx, rx) = tokio::sync::mpsc::channel(BUS_CAPACITY);
+    (
+        Bus {
+            tx,
+            dropped: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        },
+        rx,
+    )
 }
 
 pub fn from_terminal(event: TerminalEvent) -> Option<AppEvent> {
@@ -174,4 +237,79 @@ pub fn from_terminal(event: TerminalEvent) -> Option<AppEvent> {
         TerminalEvent::Mouse(mouse) => AppEvent::Mouse(mouse),
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod backpressure_tests {
+    use super::{bus, AppEvent, BUS_CAPACITY};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    /// A producer that outruns the loop must not grow the heap without bound.
+    /// Coalescible events are dropped once the queue is full, and the count
+    /// makes that visible instead of silent.
+    #[tokio::test]
+    async fn coalescible_events_are_dropped_when_the_loop_is_behind() {
+        let (bus, mut rx) = bus();
+        // Fill the queue without reading, as a slow renderer would.
+        for _ in 0..BUS_CAPACITY * 2 {
+            bus.send(AppEvent::Resize {
+                width: 80,
+                height: 24,
+            });
+        }
+        assert!(
+            bus.dropped() >= BUS_CAPACITY as u64,
+            "dropped {}",
+            bus.dropped()
+        );
+        // The receiver still gets exactly what fits, and nothing is lost from
+        // the queue's own view.
+        let mut received = 0;
+        while rx.try_recv().is_ok() {
+            received += 1;
+        }
+        assert_eq!(received, BUS_CAPACITY, "queue held more than its capacity");
+    }
+
+    /// A keystroke is not coalescible: dropping it would change the answer.
+    /// It is delivered even while the queue is full.
+    #[tokio::test]
+    async fn operator_input_is_delivered_even_when_the_queue_is_full() {
+        let (bus, mut rx) = bus();
+        for _ in 0..BUS_CAPACITY {
+            bus.send(AppEvent::Notice("filler".into()));
+        }
+        assert_eq!(
+            bus.dropped(),
+            0,
+            "filling the queue must not drop notices yet"
+        );
+        bus.send(AppEvent::Key(KeyEvent::new(
+            KeyCode::Char('x'),
+            KeyModifiers::NONE,
+        )));
+        // The key waits for a slot rather than being discarded. Draining one
+        // event lets it through.
+        let first = rx.recv().await.unwrap();
+        assert!(matches!(first, AppEvent::Notice(_)));
+        // Drain until the key arrives; it must be in the queue, not dropped.
+        let mut saw_key = false;
+        while let Ok(event) = rx.try_recv() {
+            if matches!(event, AppEvent::Key(_)) {
+                saw_key = true;
+                break;
+            }
+        }
+        if !saw_key {
+            // The spawned forwarder may still be running; give it a turn.
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            while let Ok(event) = rx.try_recv() {
+                if matches!(event, AppEvent::Key(_)) {
+                    saw_key = true;
+                    break;
+                }
+            }
+        }
+        assert!(saw_key, "a keystroke was dropped instead of delivered");
+    }
 }
