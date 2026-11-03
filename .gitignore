@@ -40,3 +40,7 @@ docs/research/
 # Local agent tooling and heap snapshots
 .claude/
 *.heapsnapshot
+
+# Python bytecode from running the CI gate scripts
+__pycache__/
+*.pyc
