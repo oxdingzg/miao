@@ -2460,8 +2460,17 @@ impl App {
     /// Fold one ephemeral provider frame into the live status. The transcript
     /// does not read this: it is replaced by every projection.
     fn provider(&mut self, frame: Value) {
-        let Some(run_id) = self.state.active_run.clone() else {
-            return;
+        // A snapshot taken before this run started names no active run — the
+        // delayed refresh that would set it has not landed yet. The frame's
+        // own run id is then the first evidence of the run, and dropping the
+        // frame here swallowed the first tokens of every turn until the
+        // committed events replays them in one batch.
+        let frame_run = frame.get("run_id").and_then(Value::as_str).map(str::to_owned);
+        let run_id = match (self.state.active_run.clone(), frame_run) {
+            (Some(active), Some(id)) if active != id => return,
+            (Some(active), _) => active,
+            (None, Some(id)) => id,
+            (None, None) => return,
         };
         // A late frame from an earlier run must not refresh the current status.
         if frame
