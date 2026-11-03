@@ -53,6 +53,11 @@ jobs:
         # finishes in well under a second.
         run: cargo test --locked --release -- --test-threads=1
 
+      - name: Build the product binary
+        # `clippy` only checks and `cargo test` writes `deps/miao-<hash>`: without
+        # this step there is no `target/release/miao` for the probes to run.
+        run: cargo build --locked --release --bin miao
+
       - name: The installer's probes answer
         # `install` keeps a build under `--build-id` and refuses anything that is
         # not a UUID, then reads `--version`. A TUI-only artifact fails both, and
