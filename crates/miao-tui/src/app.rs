@@ -395,6 +395,13 @@ impl App {
         self.terminal_title_allowed = allowed;
     }
 
+    /// `prompt.max_width` from `tui.json`: the landing prompt's width cap.
+    /// The Session's prompt fills its column, like the TS session route, so
+    /// only the Home pane reads this.
+    pub fn configure_prompt_width(&mut self, width: crate::config::PromptWidth) {
+        self.home.set_prompt_width(width);
+    }
+
     /// How long the leader chord stays armed, from `tui.json`.
     pub fn configure_leader_timeout(&mut self, milliseconds: u64) {
         self.leader_timeout = Duration::from_millis(milliseconds);

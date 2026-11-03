@@ -1077,6 +1077,9 @@ pub struct Home {
     /// A configuration problem that outlives one load: painted the same way,
     /// in the warning colour.
     warning: Option<String>,
+    /// `prompt.max_width`: the TS home caps the landing prompt and leaves the
+    /// Session's full width, so the cap lives here rather than on the composer.
+    prompt_width: crate::config::PromptWidth,
     theme: Theme,
 }
 
@@ -1085,8 +1088,13 @@ impl Home {
         Self {
             notice: None,
             warning: None,
+            prompt_width: crate::config::PromptWidth::default(),
             theme,
         }
+    }
+
+    pub fn set_prompt_width(&mut self, width: crate::config::PromptWidth) {
+        self.prompt_width = width;
     }
 
     pub fn set_notice(&mut self, notice: Option<String>) {
@@ -1135,15 +1143,26 @@ impl Home {
             None => env!("CARGO_PKG_VERSION"),
         };
 
-        let prompt_width = ((area.width as usize) * 7 / 10).max(75).min(width);
+        let prompt_width = self.prompt_width.resolve(area.width) as usize;
         let prompt_h = crate::pane::composer_height(composer, area.width).max(3);
         let notice_h = usize::from(self.notice.is_some()) + usize::from(self.warning.is_some());
 
-        // Vertical: the used block (banner + version + gap + prompt + notices)
-        // is centred, riding two-fifths high the way the TS flex layout lands.
+        // Vertical, following the TS home's flex stack
+        // (`packages/tui/src/routes/home.tsx`):
+        //
+        //   flexGrow 1  ─┐
+        //   height 4    ─┤ spacer above the banner
+        //   logo + version, prompt          ← the used block
+        //   height 1    ─┤ one blank row
+        //   flexGrow 1  ─┘
+        //
+        // The two `flexGrow` children split the leftover evenly, so the group
+        // sits centred and never higher than half a screen down. The previous
+        // rule (`free * 2 / 5`) pushed it slightly below centre on every
+        // height, which is why nothing could reproduce the TS layout.
         let used = 5 + 1 + 1 + 1 + prompt_h as usize + notice_h;
         let free = (area.height as usize).saturating_sub(used);
-        let gap_top = free * 2 / 5;
+        let gap_top = free / 2;
         let gap_bottom = free.saturating_sub(gap_top);
 
         let mut y = area.y as usize;
