@@ -107,6 +107,7 @@ fn inspect(path: &Path) -> Result<Value, Error> {
     } else {
         json!("absent")
     };
+    let blobs = blob_references(&tx, path)?;
     let report = json!({
         "application_id":application_id,"schema_version":schema,"upgrade_required":schema<SCHEMA_VERSION,
         "integrity":{"ok":integrity=="ok","detail":integrity.chars().take(200).collect::<String>()},
@@ -117,9 +118,90 @@ fn inspect(path: &Path) -> Result<Value, Error> {
         "runs":states("SELECT state,count(*) FROM engine_run GROUP BY state")?,
         "tools":states("SELECT state,count(*) FROM engine_tool GROUP BY state")?,
         "transfers":transfers,"migrations":migrations,
+        "blobs":blobs,
     });
     tx.commit()?;
     Ok(report)
+}
+
+/// Blob files the ledger still points at but the disk no longer has.
+///
+/// A large value is moved to `blobs/<first two of the digest>/<digest>` and the
+/// row keeps `{"blob":…,"bytes":…}` in its place. Nothing verified that the
+/// file was still there: `db gc-blobs` removes *unreferenced* files, so a
+/// reference whose file was deleted by a partial restore, a copied database
+/// without its blob directory, or a filesystem accident read back as the
+/// reference JSON itself — a silent corruption the operator only noticed when
+/// the model received a digest instead of a document.
+///
+/// Missing files are reported, never repaired: this is the read-only path.
+fn blob_references(tx: &rusqlite::Transaction<'_>, database: &Path) -> Result<Value, Error> {
+    let root = crate::blob::root_for(database);
+    let mut stmt = tx.prepare("SELECT session_id, seq, data FROM engine_event")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, u64>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
+    let mut references: u64 = 0;
+    let mut missing: u64 = 0;
+    let mut examples: Vec<Value> = Vec::new();
+    for row in rows {
+        let (session, seq, data) = row?;
+        let Ok(value) = serde_json::from_str::<Value>(&data) else {
+            continue;
+        };
+        collect_blobs(&value, &mut |digest| {
+            references += 1;
+            let path = root.join(&digest[..2]).join(&digest);
+            if path.is_file() {
+                return;
+            }
+            missing += 1;
+            if examples.len() < 5 {
+                examples.push(json!({"session_id":session,"seq":seq,"blob":digest}));
+            }
+        });
+    }
+    Ok(json!({
+        "ok": missing == 0,
+        "references": references,
+        "missing": missing,
+        "directory": root.display().to_string(),
+        "examples": examples,
+    }))
+}
+
+/// Walk a decoded event and call `found` for every blob digest it names.
+fn collect_blobs(value: &Value, found: &mut impl FnMut(String)) {
+    match value {
+        Value::Object(map) => {
+            // The reference shape is exactly `{"blob": <hex>, "bytes": <n>}`;
+            // anything else recurses so a reference nested in a tool result is
+            // still seen.
+            if map.len() == 2 {
+                if let (Some(Value::String(digest)), Some(Value::Number(_))) =
+                    (map.get("blob"), map.get("bytes"))
+                {
+                    if digest.len() == 64 && digest.chars().all(|c| c.is_ascii_hexdigit()) {
+                        found(digest.to_ascii_lowercase());
+                        return;
+                    }
+                }
+            }
+            for nested in map.values() {
+                collect_blobs(nested, found);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_blobs(item, found);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]
@@ -210,5 +292,65 @@ mod tests {
             Some(1),
             "{foreign_keys:?}"
         );
+    }
+    /// A blob reference whose file is gone is silent corruption: the row looks
+    /// intact, and a reader that fetches it gets the reference JSON instead of
+    /// the document. The doctor has to say so.
+    #[test]
+    fn a_reference_without_its_blob_file_is_reported_missing() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("engine.db");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let digest = "a".repeat(64);
+        runtime.block_on(async {
+            let store = crate::store::Store::open(&path).await.expect("store");
+            store
+                .initialize("s", "s", dir.path().to_str().unwrap())
+                .await
+                .unwrap();
+            // Record a value the externalizer would have moved to a blob, with
+            // the reference leading to a file this test never wrote.
+            store
+                .record(
+                    "s",
+                    "fixture",
+                    serde_json::json!({"doc": {"blob": digest, "bytes": 12}}),
+                )
+                .await
+                .unwrap();
+        });
+        let report = report(Some(&path)).expect("report");
+        let blobs = report
+            .get("database")
+            .and_then(|database| database.get("blobs"))
+            .expect("blob block");
+        assert_eq!(blobs.get("ok").and_then(Value::as_bool), Some(false));
+        assert_eq!(blobs.get("references").and_then(Value::as_u64), Some(1));
+        assert_eq!(blobs.get("missing").and_then(Value::as_u64), Some(1));
+    }
+
+    /// A healthy store must report zero missing, or the check would be noise
+    /// the operator learns to ignore.
+    #[test]
+    fn a_store_without_blob_references_reports_clean() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("engine.db");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            let _store = crate::store::Store::open(&path).await.expect("store");
+        });
+        let report = report(Some(&path)).expect("report");
+        let blobs = report
+            .get("database")
+            .and_then(|database| database.get("blobs"))
+            .expect("blob block");
+        assert_eq!(blobs.get("ok").and_then(Value::as_bool), Some(true));
+        assert_eq!(blobs.get("references").and_then(Value::as_u64), Some(0));
     }
 }
