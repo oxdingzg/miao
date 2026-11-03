@@ -717,7 +717,7 @@ impl Pane for TranscriptPane {
 /// is blanked on continuations, the way the TS `❯` marker leads only the first
 /// row. `wrap: false` is TS `wrapMode="none"`: the row is clipped to the
 /// width, never folded.
-pub(crate) struct Row {
+pub struct Row {
     pub(crate) line: Line<'static>,
     pub(crate) hang: u16,
     pub(crate) keep: u16,
@@ -3834,8 +3834,10 @@ mod tests {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
         };
-        let mut status = StatusStrip::default();
-        status.model = Some("glm-5".into());
+        let mut status = StatusStrip {
+            model: Some("glm-5".into()),
+            ..StatusStrip::default()
+        };
         status.hints.push(StatusHint {
             text: "queued (2)".to_string(),
             warning: false,
