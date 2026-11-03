@@ -165,7 +165,11 @@ pub fn apply_linux_restrictions(
 /// and an inherited socket-creation filter when networking is disabled.
 /// Must be called in a fresh single-threaded runner before executing its argv.
 #[cfg(target_os = "linux")]
-pub fn apply_linux_strict(workdirs: &[PathBuf], allow_network: bool) -> Result<(), String> {
+pub fn apply_linux_strict(
+    workdirs: &[PathBuf],
+    allow_paths: &[PathBuf],
+    allow_network: bool,
+) -> Result<(), String> {
     use landlock::{
         Access, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr,
         RulesetStatus,
@@ -194,7 +198,9 @@ pub fn apply_linux_strict(workdirs: &[PathBuf], allow_network: bool) -> Result<(
             AccessFs::Execute | AccessFs::ReadFile | AccessFs::ReadDir,
         ))
         .map_err(|e| e.to_string())?;
-    for dir in workdirs {
+    // Workspace and temp are the defaults; `allow_paths` carries the
+    // operator's `sandbox.writable_roots` on top of them.
+    for dir in workdirs.iter().chain(allow_paths) {
         let fd = PathFd::new(std::fs::canonicalize(dir).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
         ruleset = ruleset
@@ -300,7 +306,11 @@ fn deny_sockets() -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn apply_linux_strict(_workdirs: &[PathBuf], _allow_network: bool) -> Result<(), String> {
+pub fn apply_linux_strict(
+    _workdirs: &[PathBuf],
+    _allow_paths: &[PathBuf],
+    _allow_network: bool,
+) -> Result<(), String> {
     Err("strict Landlock backend requires Linux".into())
 }
 

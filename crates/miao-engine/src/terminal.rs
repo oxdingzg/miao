@@ -1,7 +1,11 @@
 use crate::tools::ToolError;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, path::Path, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -186,6 +190,7 @@ impl Registry {
         input: Start,
         network: bool,
         sandbox: bool,
+        writable_roots: Vec<PathBuf>,
     ) -> Result<Value, ToolError> {
         use std::os::fd::AsRawFd;
         if self.stop.is_cancelled() {
@@ -214,6 +219,7 @@ impl Registry {
             network,
             sandbox,
             &[],
+            &writable_roots,
         )
         .await?;
         let master = master.ok_or(ToolError::Unsupported)?;
@@ -349,6 +355,7 @@ impl Registry {
         input: Start,
         network: bool,
         _sandbox: bool,
+        _writable_roots: Vec<PathBuf>,
     ) -> Result<Value, ToolError> {
         if self.stop.is_cancelled() {
             return Err(ToolError::Interrupted);
@@ -375,7 +382,11 @@ impl Registry {
         let spec = miao_sandbox::pty::Spec {
             argv,
             cwd: cwd.to_path_buf(),
-            writable: vec![workspace.to_path_buf(), temp.path().to_path_buf()],
+            writable: {
+                let mut write = vec![workspace.to_path_buf(), temp.path().to_path_buf()];
+                write.extend(writable_roots);
+                write
+            },
             temp: temp.path().to_path_buf(),
             allow_network: network,
             rows,

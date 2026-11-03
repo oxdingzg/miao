@@ -112,6 +112,7 @@ impl Registry {
                 false,
                 sandbox,
                 &envs,
+                &[],
             )
             .await;
             let (mut group, _, _temp) = match spawned {

@@ -74,6 +74,11 @@ pub struct Config {
     /// product policy explicitly records `sandbox: false`.
     #[serde(default = "sandbox_on")]
     pub sandbox: bool,
+    /// Extra directories the sandbox lets commands write to, beyond the
+    /// workspace, the command's own working directory and temp. `sandbox
+    /// .writable_roots` in the product config; empty means no extra grants.
+    #[serde(default)]
+    pub writable_roots: Vec<std::path::PathBuf>,
     #[serde(default)]
     pub rules: Vec<Rule>,
     #[serde(default = "approval_timeout")]
@@ -114,6 +119,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             mode: Mode::ReadOnly,
+            writable_roots: Vec::new(),
             allow_process: false,
             allow_background: false,
             allow_subagents: false,
@@ -307,6 +313,11 @@ impl Policy {
     }
     pub fn process_sandbox(&self) -> bool {
         self.config.sandbox
+    }
+    /// Directories the sandbox may write beyond its defaults. Empty unless the
+    /// operator granted them.
+    pub fn writable_roots(&self) -> &[std::path::PathBuf] {
+        &self.config.writable_roots
     }
     pub fn background_enabled(&self) -> bool {
         self.process_enabled() && self.config.allow_background

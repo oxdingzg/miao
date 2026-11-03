@@ -10,8 +10,8 @@
   "allow_cron": true,
   "process_network": true,
   "sandbox": true,
+  "writable_roots": [],
   "rules": [],
   "approval_timeout_ms": 60000,
-  "auto": false,
   "max_provider_turns": null
 }

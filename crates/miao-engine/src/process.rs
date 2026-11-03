@@ -169,6 +169,11 @@ struct Runner {
     timeout_ms: u64,
     #[serde(default)]
     interactive: bool,
+    /// `sandbox.writable_roots`: extra directories the confinement grants on
+    /// top of the workspace and temp. Empty is the default and the old
+    /// behaviour.
+    #[serde(default)]
+    writable_roots: Vec<PathBuf>,
 }
 
 /// Whether this engine can actually confine a spawned process. macOS uses
@@ -296,7 +301,12 @@ pub fn sandbox_runner(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     {
         use std::os::unix::process::CommandExt;
-        let mut profile = miao_sandbox::profile(&[workspace, temp], &[], spec.allow_network, false);
+        let mut profile = miao_sandbox::profile(
+            &[workspace, temp],
+            &spec.writable_roots,
+            spec.allow_network,
+            false,
+        );
         if spec.interactive {
             let mut name = [0i8; 128];
             if unsafe { libc::ttyname_r(0, name.as_mut_ptr(), name.len()) } != 0 {
@@ -323,8 +333,12 @@ pub fn sandbox_runner(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::process::CommandExt;
-        miao_sandbox::apply_linux_strict(&[workspace, temp], spec.allow_network)
-            .map_err(std::io::Error::other)?;
+        miao_sandbox::apply_linux_strict(
+            &[workspace, temp],
+            &spec.writable_roots,
+            spec.allow_network,
+        )
+        .map_err(std::io::Error::other)?;
         let error = std::process::Command::new(&spec.argv[0])
             .args(&spec.argv[1..])
             .current_dir(cwd)
@@ -585,6 +599,7 @@ pub(crate) async fn execute_with_progress(
         allow_network,
         sandbox,
         &[],
+        &[],
     )
     .await?;
     let mut readers = JoinSet::new();
@@ -745,6 +760,7 @@ pub(crate) async fn spawn(
     allow_network: bool,
     sandbox: bool,
     envs: &[(String, String)],
+    writable_roots: &[PathBuf],
 ) -> Result<(Group, Option<std::fs::File>, tempfile::TempDir), ToolError> {
     let temp = tokio::task::spawn_blocking(tempfile::tempdir)
         .await
@@ -758,6 +774,7 @@ pub(crate) async fn spawn(
         sandbox,
         timeout_ms,
         interactive,
+        writable_roots: writable_roots.to_vec(),
     };
     // On Windows the AppContainer runner is spawned directly: it owns a job
     // object whose child tree dies with it, so no guardian/lifeline is needed.
