@@ -3598,11 +3598,24 @@ impl Drop for WriteLock {
 pub(crate) struct WriteTx<'a> {
     tx: Transaction<'a>,
     _lock: WriteLock,
+    ledger_path: std::path::PathBuf,
 }
 
 impl<'a> WriteTx<'a> {
     pub(crate) fn commit(self) -> Result<(), Error> {
         self.tx.commit()?;
+        // A serve process holds its WAL open indefinitely; without a
+        // checkpoint the WAL grows unbounded and independent readers (external
+        // `session list`, `sqlite3` on the ledger, the acceptance harness) see
+        // none of the writes until the process exits. PASSIVE merges committed
+        // frames into the main database without blocking writers or readers,
+        // and a failed checkpoint only delays visibility without losing data.
+        if let Ok(mut checkpoint_conn) = rusqlite::Connection::open_with_flags(
+            &self.path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
+        ) {
+            let _ = checkpoint_conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |_| Ok(()));
+        }
         Ok(())
     }
 }
@@ -3622,10 +3635,12 @@ pub(crate) fn write_tx(conn: &mut Connection) -> Result<WriteTx<'_>, Error> {
     })?;
     let lock = write_lock(path)?;
     FileExt::lock_exclusive(&*lock)?;
+    let ledger_path = std::path::PathBuf::from(path);
     match conn.transaction_with_behavior(TransactionBehavior::Immediate) {
         Ok(tx) => Ok(WriteTx {
             tx,
             _lock: WriteLock(lock),
+            ledger_path: ledger,
         }),
         Err(error) => {
             let _ = FileExt::unlock(&*lock);
