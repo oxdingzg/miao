@@ -2004,7 +2004,11 @@ mod tests {
             .expect("list")
             .restore_search(&previous.filter.text(), previous.search);
         let list = rebuilt.list().expect("list");
-        assert_eq!(list.filter.text(), "check", "the query survives the rebuild");
+        assert_eq!(
+            list.filter.text(),
+            "check",
+            "the query survives the rebuild"
+        );
         assert!(list.search, "the search stays armed");
         assert_eq!(list.visible.len(), 1);
         assert!(matches!(
