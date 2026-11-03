@@ -83,6 +83,14 @@ impl Live {
                 "waiting for model · {elapsed} · no engine signal {}",
                 waited(now.duration_since(self.signal))
             ),
+            // A reasoning model can legitimately think for minutes before the
+            // first token; past half a minute of waiting, say so instead of
+            // leaving the operator to read the silence as a stall.
+            LivePhase::Waiting if now.duration_since(self.since) >= Duration::from_secs(30) => {
+                format!(
+                    "waiting for model · {elapsed} · the model may reason before the first token"
+                )
+            }
             LivePhase::Waiting => format!("waiting for model · {elapsed}"),
             LivePhase::Retrying { attempt } => format!("retrying attempt {attempt} · {elapsed}"),
             LivePhase::Tool { name } => format!("running {} · {elapsed}", tool_label(name)),

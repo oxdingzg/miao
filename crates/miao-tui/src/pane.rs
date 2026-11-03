@@ -46,18 +46,6 @@ fn body_columns(area: Rect) -> (Rect, Option<Rect>) {
     )
 }
 
-/// The horizontal span the titled group occupies: from the prose column to the
-/// far side of the sidebar, so the header starts and ends where the body does
-/// instead of at the window's edges.
-fn group_columns(area: Rect) -> Rect {
-    let (prose, sidebar) = body_columns(area);
-    let right = sidebar.map_or(area.right(), |sidebar| sidebar.right());
-    Rect {
-        x: prose.x,
-        width: right.saturating_sub(prose.x),
-        ..area
-    }
-}
 const SIDEBAR_WIDTH: u16 = 40;
 
 pub trait Pane {
@@ -935,7 +923,6 @@ impl Home {
         let banner_rows: Vec<String> = (0..5)
             .map(|row| format!("{}  {}", cat[row], wordmark[row].join(gap)))
             .collect();
-        let banner_width = banner_rows[0].width();
 
         let version = match option_env!("MIAO_TUI_VERSION") {
             Some(version) => version,
@@ -975,7 +962,7 @@ impl Home {
         let prompt_area = Rect {
             x: area.x + prompt_x as u16,
             width: prompt_width as u16,
-            y: (y + put_lines.len() as usize) as u16,
+            y: (y + put_lines.len()) as u16,
             height: prompt_h + 1,
         };
         for (offset, line) in put_lines.iter().enumerate() {
@@ -1486,7 +1473,7 @@ const SHELL_PLACEHOLDERS: [&str; 3] = ["ls -la", "git status", "pwd"];
 fn composer_air(composer: &Composer, theme: &Theme) -> Line<'static> {
     let palette = theme.palette;
     let mut spans: Vec<Span<'static>> = Vec::new();
-    let mut push = |spans: &mut Vec<Span<'static>>, text: String, style: Style| {
+    let push = |spans: &mut Vec<Span<'static>>, text: String, style: Style| {
         if !spans.is_empty() {
             spans.push(Span::styled(" · ", Style::new().fg(palette.border)));
         }
@@ -3829,24 +3816,6 @@ mod tests {
                 .contains("fake/model"),
             "and it is still painted"
         );
-    }
-
-    #[test]
-    fn the_title_starts_where_the_body_starts() {
-        // A header pinned to the window's edge names a body that begins thirty
-        // columns to its right.
-        let area = Rect::new(0, 0, 200, 20);
-        let span = group_columns(area);
-        let (prose, sidebar) = body_columns(area);
-        assert_eq!(span.x, prose.x, "it starts on the prose column");
-        assert_eq!(
-            span.right(),
-            sidebar.expect("wide enough").right(),
-            "and ends with the sidebar"
-        );
-        // On a narrow body there is no column to align with, so it keeps the width.
-        let narrow = group_columns(Rect::new(0, 0, 99, 20));
-        assert_eq!((narrow.x, narrow.width), (0, 99));
     }
 
     #[test]
