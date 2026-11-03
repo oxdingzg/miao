@@ -263,6 +263,18 @@ const RestoreCommand = effectCmd({
     console.log(`${args["dry-run"] ? "would merge" : "merged"} from ${source}`)
     for (const table of result.tables) console.log(`  ${table.table}\t${table.rows} row(s)`)
     console.log(`  event_sequence\t${result.sequences}`)
+    // A merge that lands fewer rows than the source held is a loss the
+    // per-table counts above cannot show: `INSERT OR IGNORE` reports what it
+    // inserted, not what the source had. Say so, and fail, because a silent
+    // shortfall is discovered when a restored Session is missing data.
+    if (result.shortfalls.length > 0) {
+      console.error("")
+      console.error("the merge did not land everything the source held:")
+      for (const entry of result.shortfalls)
+        console.error(`  ${entry.table}\tsource ${entry.source} row(s), target ${entry.target}`)
+      console.error("the target already has rows with those keys and different contents")
+      process.exitCode = 1
+    }
   }),
 })
 
