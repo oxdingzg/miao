@@ -663,6 +663,7 @@ impl App {
                 }) {
                     self.draft = None;
                     self.shell.set_draft("", "");
+                    self.shell.set_running_tool(None);
                 }
                 self.committed = committed;
                 self.shell.set_session(self.session.as_ref());
@@ -2319,6 +2320,7 @@ impl App {
             // starts to show before it commits.
             "provider.delta" => {
                 self.live = None;
+                self.shell.set_running_tool(None);
                 self.stream(&run_id, frame.get("data").unwrap_or(&Value::Null));
                 return;
             }
@@ -2333,18 +2335,22 @@ impl App {
                 Some(phase) => phase,
                 None => LivePhase::Waiting,
             },
-            // A committed tool call names the work the run is doing.
-            "tool.planned" => LivePhase::Tool {
-                name: tool_label(
+            // A committed tool call names the work the run is doing, and the
+            // transcript keeps one spinner row for it while it lasts.
+            "tool.planned" => {
+                let label = tool_label(
                     frame
                         .get("name")
                         .and_then(Value::as_str)
                         .unwrap_or_default(),
-                ),
-            },
+                );
+                self.shell.set_running_tool(Some(label.clone()));
+                LivePhase::Tool { name: label }
+            }
             // The call finished; the run's next phase is not known yet.
             "tool.completed" => {
                 self.live = None;
+                self.shell.set_running_tool(None);
                 return;
             }
             _ => return,
@@ -4289,6 +4295,40 @@ mod tests {
         })));
         app.update_status();
         assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+    }
+
+    #[test]
+    fn a_planned_tool_rides_the_transcript_tail_until_it_completes() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.planned",
+            "run_id": "run-1",
+            "name": "bash",
+        })));
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 12)).expect("terminal");
+        terminal.draw(|frame| app.shell.render(frame)).expect("draw");
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("running bash"), "{text}");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.completed",
+            "run_id": "run-1",
+        })));
+        terminal.draw(|frame| app.shell.render(frame)).expect("draw");
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(!text.contains("running bash"), "{text}");
     }
 
     #[test]

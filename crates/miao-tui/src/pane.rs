@@ -143,6 +143,11 @@ impl Shell {
         self.transcript.set_draft(text, reasoning);
     }
 
+    /// Name the tool call the run is waiting on; `None` clears it.
+    pub fn set_running_tool(&mut self, label: Option<String>) {
+        self.transcript.running_tool = label;
+    }
+
     /// Where the transcript is scrolled to, in rows from the oldest one. A test
     /// asserts a wheel step exactly instead of inferring it from `following`.
     #[cfg(test)]
@@ -472,6 +477,9 @@ pub struct TranscriptPane {
     /// Row-flow position of each operator prompt and its first line, so a
     /// scrolled-back viewport names the question its top row belongs to.
     user_anchors: Vec<(usize, String)>,
+    /// A tool the run has started but not finished. It streams into the tail
+    /// as the spinner row the TS transcript keeps under the running step.
+    running_tool: Option<String>,
     /// Tool results render at their folded budget unless this is on.
     expanded: bool,
     /// The transcript's inner area from the last frame, in screen coordinates.
@@ -510,6 +518,7 @@ impl TranscriptPane {
             scroll: 0,
             follow: true,
             user_anchors: Vec::new(),
+            running_tool: None,
             expanded: false,
             area: Rect::default(),
             selection: None,
@@ -607,6 +616,19 @@ impl Pane for TranscriptPane {
                 false => self.draft_rows[row - self.body.len()].clone(),
             })
             .collect::<Vec<_>>();
+        // The call in flight rides the tail as one spinner row. It takes the
+        // bottom slot from the oldest visible row, so the newest output stays
+        // on screen with the step that is still working.
+        if let Some(label) = self.running_tool.as_ref().filter(|_| self.follow) {
+            if visible.len() == viewport {
+                visible.remove(0);
+            }
+            let frame = SPINNER_FRAMES[(now_ms() / 160) as usize % SPINNER_FRAMES.len()];
+            visible.push(Line::from(Span::styled(
+                format!("{frame} running {label}"),
+                Style::new().fg(palette.text_muted),
+            )));
+        }
         // Scrolling back loses the question a view belongs to: the viewport's
         // first row names the nearest prompt at or above it, painted over that
         // row the way a sticky header is. The prompt's own first row needs no
@@ -3531,6 +3553,70 @@ mod tests {
         assert_eq!(rendered[note - 1], "", "prose opens with a blank row");
         assert_eq!(rendered[note + 1], "", "and leaves one before the next tool");
         assert!(rendered[note + 2].contains("http://b"));
+    }
+
+    #[test]
+    fn a_running_tool_rides_the_tail_as_one_spinner_row() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        let transcript = Transcript {
+            entries: vec![
+                Entry::User {
+                    text: "question".into(),
+                    seq: 1,
+                },
+                Entry::Assistant {
+                    agent: None,
+                    model: None,
+                    parts: vec![Part::Text("answer. ".repeat(30).trim_end().into())],
+                },
+            ],
+            ..Transcript::default()
+        };
+        shell.set_transcript(&transcript);
+        shell.set_running_tool(Some("bash".into()));
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 12)).expect("terminal");
+        terminal
+            .draw(|frame| shell.transcript.render(frame, frame.area()))
+            .expect("draw");
+        let text = |terminal: &ratatui::Terminal<ratatui::backend::TestBackend>| {
+            (0..12)
+                .map(|y| {
+                    (0..60)
+                        .map(|x| {
+                            terminal
+                                .backend()
+                                .buffer()
+                                .cell(ratatui::prelude::Position::new(x, y))
+                                .map(|cell| cell.symbol().to_string())
+                                .unwrap_or_default()
+                        })
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+        };
+        let rows = text(&terminal);
+        assert!(
+            rows.iter().any(|row| row.contains("running bash")),
+            "{rows:?}"
+        );
+        // Scrolling back detaches from the tail, and the row belongs to the
+        // tail: history keeps the rows the run has already produced.
+        shell.scroll_transcript(-3);
+        terminal
+            .draw(|frame| shell.transcript.render(frame, frame.area()))
+            .expect("draw");
+        assert!(
+            !text(&terminal).iter().any(|row| row.contains("running bash")),
+            "{:?}", text(&terminal)
+        );
     }
 
     #[test]
