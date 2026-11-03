@@ -80,6 +80,7 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         continue_last: launch.continue_last,
         prompt: launch.prompt.clone(),
         fork: launch.fork,
+        auto: launch.auto,
     };
     let mut app = App::new(
         workspace.clone(),

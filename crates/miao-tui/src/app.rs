@@ -174,6 +174,10 @@ pub struct Startup {
     /// is copied into a fresh Session before it opens, so the resumed work
     /// never appends onto the original.
     pub fork: bool,
+    /// `--auto`: asks the policy raises settle through the engine's
+    /// classifier instead of a host approval. The operator needs to see this —
+    /// a Session that stops asking is a policy change, not a quiet default.
+    pub auto: bool,
 }
 
 pub struct App {
@@ -2555,6 +2559,15 @@ impl App {
             self.shell.status.model = None;
             self.shell.status.usage = None;
             self.shell.status.hints.clear();
+            // The launch policy holds before any Session opens, so the strip
+            // names it on the launcher too: a person starting work under
+            // `--auto` should not have to open a Session to find that out.
+            if self.startup.auto {
+                self.shell.status.hints.push(StatusHint {
+                    text: "auto-approve".to_string(),
+                    warning: true,
+                });
+            }
             return;
         }
         let now = Instant::now();
@@ -2694,6 +2707,17 @@ impl App {
             hints.push(StatusHint {
                 text: "esc interrupt".to_string(),
                 warning: false,
+            });
+        }
+        // `--auto` widens what runs without asking, so the operator has to be
+        // able to see it. A Session that stops prompting should read as a
+        // policy in effect, not as the absence of one — the same reason the
+        // warning flag exists. Read-only is the other side worth naming: it
+        // refuses writes, which surprises anyone who expects a workspace mode.
+        if self.startup.auto {
+            hints.push(StatusHint {
+                text: "auto-approve".to_string(),
+                warning: true,
             });
         }
         self.shell.status.hints = hints;
@@ -3475,6 +3499,7 @@ mod tests {
         let mut app = app_with(Startup {
             session: Some("ses_known".into()),
             fork: true,
+            auto: false,
             ..Startup::default()
         });
         let (handle, mut requests) = engine::Handle::recording();
@@ -4287,6 +4312,52 @@ mod tests {
         app.state.active_run = None;
         app.update_status();
         assert!(app.shell.status.hints.is_empty());
+    }
+
+    /// `--auto` widens what runs without asking. A Session that stops
+    /// prompting has to read as a policy in effect, not as the absence of one.
+    #[test]
+    fn an_auto_session_says_so_in_the_status_strip() {
+        let mut app = app_with(Startup {
+            session: None,
+            continue_last: false,
+            prompt: None,
+            fork: false,
+            auto: true,
+        });
+        app.update_status();
+        let hints: Vec<&str> = app
+            .shell
+            .status
+            .hints
+            .iter()
+            .map(|hint| hint.text.as_str())
+            .collect();
+        assert!(hints.contains(&"auto-approve"), "{hints:?}");
+        assert!(
+            app.shell.status.hints.iter().any(|hint| hint.warning),
+            "a widened policy is not a quiet default: {hints:?}"
+        );
+    }
+
+    #[test]
+    fn a_default_session_carries_no_auto_hint() {
+        let mut app = app_with(Startup {
+            session: None,
+            continue_last: false,
+            prompt: None,
+            fork: false,
+            auto: false,
+        });
+        app.update_status();
+        let hints: Vec<&str> = app
+            .shell
+            .status
+            .hints
+            .iter()
+            .map(|hint| hint.text.as_str())
+            .collect();
+        assert!(!hints.contains(&"auto-approve"), "{hints:?}");
     }
 
     #[test]
