@@ -278,7 +278,10 @@ jobs:
           set -euo pipefail
           release="v${{ needs.version.outputs.version }}"
           repo="${{ needs.version.outputs.repo }}"
-          count=$(gh api "repos/$repo/releases/tags/$release" --jq '.assets | length')
+          # The legs upload into a *draft*, and the tags endpoint does not
+          # serve drafts — `gh release view` reads the draft's assets where
+          # `gh api releases/tags/...` answered 404 every time.
+          count=$(gh release view "$release" --repo "$repo" --json assets --jq '.assets | length')
           echo "$count asset(s) on $release"
           test "$count" -gt 0
       - name: Publish the draft release
