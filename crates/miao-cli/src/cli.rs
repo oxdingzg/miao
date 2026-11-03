@@ -52,6 +52,8 @@ Usage:
                         set or clear a session's archive fact (reversible)
   miao session delete ID
                         delete a session; its forks survive
+  miao session account SESSION [CREDENTIAL_ID | --clear]
+                        pin one session's credential choice, or clear the pin
   miao session revert ID CHECKPOINT
   miao session unrevert ID
                         rewind a session's history, or undo the rewind
@@ -950,6 +952,17 @@ fn session_move_plan(
 }
 
 fn session_engine_call(rest: &[String], method: &str) -> Result<(), String> {
+    session_engine_call_with(rest, method, |_| {})
+}
+
+/// `session_engine_call` with a hook for callers that add method-specific
+/// params beyond the session id (the account pin's credential choice, and any
+/// future forward that carries structured payload).
+fn session_engine_call_with(
+    rest: &[String],
+    method: &str,
+    decorate: impl FnOnce(&mut serde_json::Value),
+) -> Result<(), String> {
     let mut db: Option<PathBuf> = None;
     let mut at: Option<u64> = None;
     let mut positional: Vec<String> = Vec::new();
@@ -1004,6 +1017,7 @@ fn session_engine_call(rest: &[String], method: &str) -> Result<(), String> {
                 .unwrap_or_else(|_| value.to_string())
         };
         let mut params = serde_json::json!({ "session_id": positional[0] });
+        decorate(&mut params);
         match method {
             "archive" => {
                 // Absence of the flag means un-archive: the reversible pair
@@ -3912,32 +3926,92 @@ fn auth_write(rest: &[String]) -> Result<(), String> {
     let now = cli_now_ms() as i64;
     match rest.first().map(String::as_str) {
         Some("login") => {
-            let integration = rest
-                .get(1)
-                .ok_or("usage: miao auth login INTEGRATION KEY")?;
-            let key = rest
-                .get(2)
-                .ok_or("usage: miao auth login INTEGRATION KEY")?;
+            let mut args = rest.iter().peekable();
+            let mut integration: Option<String> = None;
+            let mut key: Option<String> = None;
+            let mut account: Option<String> = None;
+            let mut oauth = false;
+            while let Some(argument) = args.next() {
+                match argument.as_str() {
+                    "--account" => {
+                        account = Some(args.next().ok_or("--account needs a name")?.clone());
+                    }
+                    "--oauth" => oauth = true,
+                    other if other.starts_with('-') => {
+                        return Err(format!("unknown auth login option {other}"))
+                    }
+                    other => {
+                        if integration.is_none() {
+                            integration = Some(other.to_string());
+                        } else if key.is_none() {
+                            key = Some(other.to_string());
+                        }
+                    }
+                }
+            }
+            let Some(integration) = integration else {
+                return Err(
+                    "usage: miao auth login INTEGRATION KEY [--account NAME] [--oauth]".into(),
+                );
+            };
+            let Some(key) = key else {
+                return Err(
+                    "usage: miao auth login INTEGRATION KEY [--account NAME] [--oauth]".into(),
+                );
+            };
             if key.trim().is_empty() {
                 return Err("the key must not be empty".into());
             }
-            let value = serde_json::json!({ "type": "key", "key": key }).to_string();
+            let account = account.filter(|name| !name.trim().is_empty());
+            let value = if oauth {
+                // The engine's oauth shape: access + required expiry, account
+                // under metadata.accountID. Two tokens for one integration
+                // with different accounts are two accounts — what per-session
+                // pinning pins. A CLI-stored token has no refresh machinery,
+                // so the expiry is set far out and the operator re-logs in.
+                let far_out = now + 10 * 365 * 24 * 60 * 60 * 1000;
+                serde_json::json!({
+                    "type": "oauth",
+                    "access": key,
+                    "refresh": key,
+                    "expires": far_out,
+                    "metadata": {"accountID": account},
+                })
+            } else {
+                serde_json::json!({ "type": "key", "key": key })
+            }
+            .to_string();
             let id = credential_id();
             // A login replaces the previous default for that integration
-            // instead of piling rows up.
+            // instead of piling rows up — unless it is a named account, where
+            // multiple accounts legitimately coexist.
+            let label = match &account {
+                Some(name) => {
+                    connection
+                        .execute(
+                            "DELETE FROM credential WHERE integration_id=?1 AND label=?2",
+                            rusqlite::params![integration, name],
+                        )
+                        .map_err(|error| error.to_string())?;
+                    name.as_str()
+                }
+                None => {
+                    connection
+                        .execute(
+                            "DELETE FROM credential WHERE integration_id=?1 AND label='default'",
+                            rusqlite::params![integration],
+                        )
+                        .map_err(|error| error.to_string())?;
+                    "default"
+                }
+            };
             connection
                 .execute(
-                    "DELETE FROM credential WHERE integration_id=?1 AND label='default'",
-                    rusqlite::params![integration],
+                    "INSERT INTO credential(id,integration_id,label,value,active,time_created,time_updated) VALUES(?1,?2,?3,?4,1,?5,?5)",
+                    rusqlite::params![id, integration, label, value, now],
                 )
                 .map_err(|error| error.to_string())?;
-            connection
-                .execute(
-                    "INSERT INTO credential(id,integration_id,label,value,active,time_created,time_updated) VALUES(?1,?2,'default',?3,1,?4,?4)",
-                    rusqlite::params![id, integration, value, now],
-                )
-                .map_err(|error| error.to_string())?;
-            println!("stored {integration} default credential {id}");
+            println!("stored {integration} {label} credential {id}");
             Ok(())
         }
         Some("logout") => {
@@ -4969,6 +5043,80 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                         std::process::ExitCode::from(1)
                     }
                 },
+                Some("account") => {
+                    // Per-session account pin: forward SelectAccount with the
+                    // named credential, or clear the pin when asked. One
+                    // session's choice never moves another session's or the
+                    // global default — the engine owns that isolation.
+                    let outcome = (|| -> Result<(String, Option<String>), String> {
+                        let mut db: Option<PathBuf> = None;
+                        let mut positional: Vec<String> = Vec::new();
+                        let mut clear = false;
+                        let mut index = 0;
+                        while index < rest[1..].len() {
+                            match rest[1 + index].as_str() {
+                                "--db" => {
+                                    db = rest.get(2 + index).map(PathBuf::from);
+                                    index += 2;
+                                }
+                                "--clear" => {
+                                    clear = true;
+                                    index += 1;
+                                }
+                                other if other.starts_with("--") => index += 1,
+                                other => {
+                                    positional.push(other.to_string());
+                                    index += 1;
+                                }
+                            }
+                        }
+                        let Some(session_id) = positional.first().cloned() else {
+                            return Err(
+                                "usage: miao session account SESSION [CREDENTIAL_ID | --clear]"
+                                    .into(),
+                            );
+                        };
+                        let credential_id = positional.get(1).cloned();
+                        if credential_id.is_some() && clear {
+                            return Err("pass either a credential id or --clear, not both".into());
+                        }
+                        if credential_id.is_none() && !clear {
+                            return Err(
+                                "usage: miao session account SESSION [CREDENTIAL_ID | --clear]"
+                                    .into(),
+                            );
+                        }
+                        let _ = db;
+                        Ok((session_id, credential_id))
+                    })();
+                    let (session_id, credential_id) = match outcome {
+                        Ok(pair) => pair,
+                        Err(message) => {
+                            eprintln!("miao session: {message}");
+                            return if message.starts_with("usage:") {
+                                std::process::ExitCode::from(2)
+                            } else {
+                                std::process::ExitCode::from(1)
+                            };
+                        }
+                    };
+                    let mut forward: Vec<String> = vec![session_id];
+                    if let Some(id) = &credential_id {
+                        forward.push(id.clone());
+                    }
+                    match session_engine_call_with(&forward, "select_account", |params| {
+                        params["credential_id"] = credential_id
+                            .as_ref()
+                            .map(|id| serde_json::json!(id))
+                            .unwrap_or(serde_json::Value::Null);
+                    }) {
+                        Ok(()) => std::process::ExitCode::SUCCESS,
+                        Err(message) => {
+                            eprintln!("miao session: {message}");
+                            std::process::ExitCode::from(1)
+                        }
+                    }
+                }
                 Some("resume") => {
                     // Reuse the verified `run --session` path verbatim rather
                     // than duplicating its argv assembly here.
