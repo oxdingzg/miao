@@ -122,3 +122,22 @@ inventory is updated when a command lands or retires.
 The Rust binary exits `0` on success, `1` on an operational error, and `2` on
 a usage error (unknown command or missing argument), printed to stderr with
 the failing command as prefix.
+
+## Licence compliance
+
+The binary redistributes every crate in its dependency graph, so the licence of
+each one decides what the product can be shipped as. miao is MIT, and a
+derivative of opencode under the MIT grant, so the graph has to stay
+permissive-only.
+
+```sh
+cd crates/miao-cli
+cargo deny check licenses
+```
+
+`crates/miao-cli/deny.toml` holds the allow-list and the reason for the two
+entries that are not self-evident: `MIT-0` is MIT without the attribution
+requirement, and `CDLA-Permissive-2.0` covers the Mozilla root-certificate data
+crates. The `cli` CI job runs the same command, so a new dependency with an
+incompatible licence fails the pull request that adds it rather than the release
+that ships it.

@@ -3,6 +3,9 @@ name = "miao-native"
 version = "0.0.1"
 edition = "2021"
 publish = false
+license = "MIT"
+repository = "https://github.com/oxdingzg/miao"
+homepage = "https://mtty.dev/miao"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
