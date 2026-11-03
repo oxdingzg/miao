@@ -434,14 +434,21 @@ impl App {
         self.shell.set_leader_hint(leader_hint);
         match self.screen {
             Screen::Home => {
-                // No title row: the terminal tab already names the workspace,
-                // and the list header carries the Session count. The row it
-                // used to take goes back to the list.
-                // The landing composer is the same one a Session shows, so it
-                // grows with the draft here too: a multi-line prompt typed
-                // before any Session exists has to stay readable.
-                self.home
-                    .render(frame, frame.area(), &mut self.shell.composer);
+                // The launcher fills the window above the status strip: the
+                // strip keeps naming the model and the run state here, the
+                // same way it does on a Session screen.
+                let [home_area, status_area] = ratatui::layout::Layout::vertical([
+                    ratatui::layout::Constraint::Min(1),
+                    ratatui::layout::Constraint::Length(1),
+                ])
+                .areas(frame.area());
+                self.home.render(frame, home_area, &mut self.shell.composer);
+                crate::pane::render_status(
+                    frame,
+                    status_area,
+                    &self.shell.status,
+                    &self.shell.theme().clone(),
+                );
             }
             Screen::Session => self.shell.render(frame),
         }
@@ -1573,12 +1580,10 @@ impl App {
         for part in parts {
             match part {
                 Part::Text(text) => lines.extend(text.lines().map(str::to_string)),
-                Part::Reasoning(reasoning) => {
-                    lines.push(format!(
-                        "[thinking · {} chars]",
-                        reasoning.text.chars().count()
-                    ))
-                }
+                Part::Reasoning(reasoning) => lines.push(format!(
+                    "[thinking · {} chars]",
+                    reasoning.text.chars().count()
+                )),
                 Part::Tool(call) => lines.push(format!(
                     "[tool {} · {}]",
                     tool::product_name(&call.name),
@@ -4307,7 +4312,9 @@ mod tests {
         })));
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 12)).expect("terminal");
-        terminal.draw(|frame| app.shell.render(frame)).expect("draw");
+        terminal
+            .draw(|frame| app.shell.render(frame))
+            .expect("draw");
         let text: String = terminal
             .backend()
             .buffer()
@@ -4320,7 +4327,9 @@ mod tests {
             "kind": "tool.completed",
             "run_id": "run-1",
         })));
-        terminal.draw(|frame| app.shell.render(frame)).expect("draw");
+        terminal
+            .draw(|frame| app.shell.render(frame))
+            .expect("draw");
         let text: String = terminal
             .backend()
             .buffer()

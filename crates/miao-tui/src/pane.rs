@@ -11,7 +11,9 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::dialogs::{Dialog, ListDialog, ListKind, PaletteDialog};
 use crate::editor::{CompletionKind, Composer, Mode};
-use crate::session::{ApprovalView, Entry, Part, QuestionView, Reasoning, SessionSummary, Transcript};
+use crate::session::{
+    ApprovalView, Entry, Part, QuestionView, Reasoning, SessionSummary, Transcript,
+};
 use crate::theme::Theme;
 use crate::{markdown, tool};
 
@@ -974,21 +976,21 @@ impl Home {
         let prompt_area = Rect {
             x: area.x + prompt_x as u16,
             width: prompt_width as u16,
-            y: area.y + y as u16,
+            y: area.y + gap_top as u16 + 5 + 1 + 1,
             height: prompt_h + 1,
         };
-        render_composer(frame, prompt_area, composer, &self.theme);
         for (offset, line) in put_lines.iter().enumerate() {
             frame.render_widget(
                 Paragraph::new(line.clone()),
                 Rect {
-                    y: area.y + offset as u16,
+                    y: area.y + gap_top as u16 + offset as u16,
                     height: 1,
                     ..area
                 },
             );
         }
-        let mut notice_y = area.y + prompt_h + 1;
+        render_composer(frame, prompt_area, composer, &self.theme);
+        let mut notice_y = area.y + gap_top as u16 + 5 + 1 + 1 + prompt_h + 1;
         if let Some(warning) = &self.warning {
             frame.render_widget(
                 Paragraph::new(Span::styled(
@@ -1116,7 +1118,11 @@ fn duration_ms(input: u64) -> String {
     } else if input < 86_400_000 {
         format!("{}h {}m", input / 3_600_000, (input % 3_600_000) / 60_000)
     } else {
-        format!("{}d {}h", input / 86_400_000, (input % 86_400_000) / 3_600_000)
+        format!(
+            "{}d {}h",
+            input / 86_400_000,
+            (input % 86_400_000) / 3_600_000
+        )
     }
 }
 
@@ -1130,10 +1136,7 @@ fn reasoning_title(text: &str) -> Option<String> {
         return None;
     }
     let after = &rest[end + 2..];
-    if !(after.is_empty()
-        || after.starts_with("\n\n")
-        || after.starts_with("\r\n\r\n"))
-    {
+    if !(after.is_empty() || after.starts_with("\n\n") || after.starts_with("\r\n\r\n")) {
         return None;
     }
     Some(title.trim().to_string())
@@ -1185,10 +1188,7 @@ fn prose_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
         .enumerate()
         .map(|(index, line)| {
             let mut spans = Vec::with_capacity(line.spans.len() + 1);
-            spans.push(Span::styled(
-                if index == 0 { "● " } else { "  " },
-                bullet,
-            ));
+            spans.push(Span::styled(if index == 0 { "● " } else { "  " }, bullet));
             spans.extend(line.spans);
             Line::from(spans).style(line.style)
         })
@@ -1250,11 +1250,8 @@ fn transcript_lines(
                 lines.push(Line::default());
                 lines.push(Line::default());
                 lines.push(
-                    Line::from(vec![
-                        Span::styled("┃", edge),
-                        Span::styled("  ", surface),
-                    ])
-                    .style(surface),
+                    Line::from(vec![Span::styled("┃", edge), Span::styled("  ", surface)])
+                        .style(surface),
                 );
                 anchors.push((
                     lines.len(),
@@ -1272,11 +1269,8 @@ fn transcript_lines(
                     );
                 }
                 lines.push(
-                    Line::from(vec![
-                        Span::styled("┃", edge),
-                        Span::styled("  ", surface),
-                    ])
-                    .style(surface),
+                    Line::from(vec![Span::styled("┃", edge), Span::styled("  ", surface)])
+                        .style(surface),
                 );
             }
             Entry::Context { source, text } => {
@@ -1322,9 +1316,9 @@ fn transcript_lines(
                             // between tool calls does not look like it never
                             // reasoned.
                             inline_run = false;
-                            let has_prose = parts.iter().any(|part| {
-                                matches!(part, Part::Text(text) if !text.trim().is_empty())
-                            });
+                            let has_prose = parts.iter().any(
+                                |part| matches!(part, Part::Text(text) if !text.trim().is_empty()),
+                            );
                             if !has_prose {
                                 lines.push(Line::default());
                                 lines.push(thought_header(reasoning, theme));
@@ -1425,7 +1419,7 @@ pub struct StatusHint {
     pub warning: bool,
 }
 
-fn render_status(frame: &mut Frame, area: Rect, status: &StatusStrip, theme: &Theme) {
+pub fn render_status(frame: &mut Frame, area: Rect, status: &StatusStrip, theme: &Theme) {
     let palette = theme.palette;
     // The TS status line is one left-aligned row two cells in from the edge:
     // the run's hints first, then the model, then what the session has cost.
@@ -1495,10 +1489,7 @@ fn composer_air(composer: &Composer, theme: &Theme) -> Line<'static> {
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut push = |spans: &mut Vec<Span<'static>>, text: String, style: Style| {
         if !spans.is_empty() {
-            spans.push(Span::styled(
-                " · ",
-                Style::new().fg(palette.border),
-            ));
+            spans.push(Span::styled(" · ", Style::new().fg(palette.border)));
         }
         spans.push(Span::styled(text, style));
     };
@@ -1518,11 +1509,7 @@ fn composer_air(composer: &Composer, theme: &Theme) -> Line<'static> {
         );
     }
     if let Some(notice) = &composer.notice {
-        push(
-            &mut spans,
-            notice.clone(),
-            Style::new().fg(palette.warning),
-        );
+        push(&mut spans, notice.clone(), Style::new().fg(palette.warning));
     }
     if composer.mode() == Mode::Shell {
         push(
@@ -1660,7 +1647,11 @@ fn render_composer_in(
         } else {
             &PLACEHOLDERS
         };
-        let verb = if shell { "Run a command…" } else { "Ask anything…" };
+        let verb = if shell {
+            "Run a command…"
+        } else {
+            "Ask anything…"
+        };
         let example = examples[(now_ms() / 30_000) as usize % examples.len()];
         frame.render_widget(
             Paragraph::new(Span::styled(
@@ -3506,7 +3497,11 @@ mod tests {
         // Prose follows one blank row in, under a muted bullet, and the step
         // closes with the check footer naming the agent and the model.
         assert_eq!(text(&lines[6]), "");
-        assert!(text(&lines[7]).starts_with("● answer"), "{:?}", text(&lines[7]));
+        assert!(
+            text(&lines[7]).starts_with("● answer"),
+            "{:?}",
+            text(&lines[7])
+        );
         assert_eq!(text(&lines[8]), "");
         assert_eq!(text(&lines[9]), "  ✓ general · glm-5");
     }
@@ -3532,10 +3527,18 @@ mod tests {
                 agent: None,
                 model: None,
                 parts: vec![
-                    Part::Tool(tool("c1", "webfetch", serde_json::json!({"url": "http://a"}))),
+                    Part::Tool(tool(
+                        "c1",
+                        "webfetch",
+                        serde_json::json!({"url": "http://a"}),
+                    )),
                     Part::Tool(tool("c2", "websearch", serde_json::json!({"query": "q"}))),
                     Part::Text("note".into()),
-                    Part::Tool(tool("c3", "webfetch", serde_json::json!({"url": "http://b"}))),
+                    Part::Tool(tool(
+                        "c3",
+                        "webfetch",
+                        serde_json::json!({"url": "http://b"}),
+                    )),
                 ],
             }],
             ..Transcript::default()
@@ -3562,7 +3565,11 @@ mod tests {
             .position(|line| line.contains("note"))
             .expect("prose");
         assert_eq!(rendered[note - 1], "", "prose opens with a blank row");
-        assert_eq!(rendered[note + 1], "", "and leaves one before the next tool");
+        assert_eq!(
+            rendered[note + 1],
+            "",
+            "and leaves one before the next tool"
+        );
         assert!(rendered[note + 2].contains("http://b"));
     }
 
@@ -3651,8 +3658,11 @@ mod tests {
             .draw(|frame| shell.transcript.render(frame, frame.area()))
             .expect("draw");
         assert!(
-            !text(&terminal).iter().any(|row| row.contains("running bash")),
-            "{:?}", text(&terminal)
+            !text(&terminal)
+                .iter()
+                .any(|row| row.contains("running bash")),
+            "{:?}",
+            text(&terminal)
         );
     }
 
@@ -3695,10 +3705,7 @@ mod tests {
             })
             .collect::<Vec<_>>()
         };
-        let with_prose = rendered(vec![
-            reasoning.clone(),
-            Part::Text("the answer".into()),
-        ]);
+        let with_prose = rendered(vec![reasoning.clone(), Part::Text("the answer".into())]);
         assert!(
             with_prose
                 .iter()

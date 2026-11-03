@@ -200,7 +200,10 @@ fn header(tool: &ToolPart, label: &str, detail: &str, theme: &Theme) -> Line<'st
     };
     let mut spans = vec![
         Span::styled(format!("{glyph} "), glyph_style),
-        Span::styled(label.to_string(), Style::new().fg(palette.text).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            label.to_string(),
+            Style::new().fg(palette.text).add_modifier(Modifier::BOLD),
+        ),
     ];
     if !detail.is_empty() {
         spans.push(Span::styled(
