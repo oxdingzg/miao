@@ -90,6 +90,16 @@ async fn a_policy_rewrite_swaps_the_capability_gates_with_it() {
         .as_array()
         .unwrap()
         .contains(&json!("lsp")));
+    // An agent is resolved at launch and has no origin to re-read, so editing
+    // `agents` cannot take effect until a restart. Saying so is the difference
+    // between a documented limit and a change that appears to apply.
+    assert!(
+        report["unsupported"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("agents")),
+        "a reload must report agents as unsupported: {report}"
+    );
 
     write_config(&file, Mode::Workspace, false);
     let report = runtime.reload_config().await.unwrap();
