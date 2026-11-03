@@ -1156,7 +1156,7 @@ impl App {
             .map(|row| row.id.clone());
         let mut dialog = Dialog::sessions(&self.catalog);
         if let Some(list) = dialog.list_mut() {
-            list.restore_search(&previous.filter.text(), previous.search);
+            list.restore_search(previous.filter.text(), previous.search);
             // `restore_search` refilters, so a hit is looked up in the rows and
             // then mapped to its place in the filtered view.
             if let Some(row) = selected.and_then(|id| list.rows.iter().position(|row| row.id == id))

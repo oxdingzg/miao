@@ -27,16 +27,6 @@ impl Harness {
         Self::spawn_with(label, false, true, false, false, false, &[])
     }
 
-    fn spawn_engine_approval(label: &str) -> Self {
-        Self::spawn_with(label, false, true, true, false, false, &[])
-    }
-
-    /// A workspace with one markdown template command, so the slash path can
-    /// be exercised against the engine wire.
-    fn spawn_engine_with_commands(label: &str) -> Self {
-        Self::spawn_with(label, false, true, false, true, false, &[])
-    }
-
     fn spawn_with(
         label: &str,
         inject_panic: bool,

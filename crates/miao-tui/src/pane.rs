@@ -794,7 +794,7 @@ fn leading_indent(line: &Line<'static>) -> u16 {
 /// survive the split; a wide character never straddles a row.
 #[cfg(test)]
 fn wrap_lines(lines: &[Line<'static>], width: u16) -> Vec<Line<'static>> {
-    let rows: Vec<Row> = lines.to_vec().into_iter().map(Row::plain).collect();
+    let rows: Vec<Row> = lines.iter().cloned().map(Row::plain).collect();
     wrap_rows(&rows, width)
 }
 

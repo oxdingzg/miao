@@ -2002,7 +2002,7 @@ mod tests {
         rebuilt
             .list_mut()
             .expect("list")
-            .restore_search(&previous.filter.text(), previous.search);
+            .restore_search(previous.filter.text(), previous.search);
         let list = rebuilt.list().expect("list");
         assert_eq!(
             list.filter.text(),

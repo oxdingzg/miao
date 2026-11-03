@@ -167,17 +167,15 @@ fn measure_scenario(
         let transcript = until(&harness, "hello from the fixture", Instant::now());
         let mut chord_time = None;
         if transcript.is_some() {
-            if transcript.is_some() {
-                // Leader arm, then the chord key: the clock starts at the arm.
-                let started = Instant::now();
-                harness.write(b"\x18");
-                harness.write(b"g");
-                let needle = match scaled_files {
-                    Some(count) => format!("{count} files"),
-                    None => "3 files".to_string(),
-                };
-                chord_time = until(&harness, &needle, started);
-            }
+            // Leader arm, then the chord key: the clock starts at the arm.
+            let started = Instant::now();
+            harness.write(b"\x18");
+            harness.write(b"g");
+            let needle = match scaled_files {
+                Some(count) => format!("{count} files"),
+                None => "3 files".to_string(),
+            };
+            chord_time = until(&harness, &needle, started);
         }
         samples.push(chord_time.map(|elapsed| elapsed.as_millis()));
         let _ = harness.child.kill();
