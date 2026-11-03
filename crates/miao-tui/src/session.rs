@@ -471,9 +471,19 @@ pub struct ToolPart {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Reasoning {
+    pub text: String,
+    /// Provider timestamps for the part, in epoch milliseconds. The gap is the
+    /// "Thought for Xs" the TS header prints; a part that never closed (an
+    /// interrupted turn, or history written before timestamps) has neither.
+    pub created_ms: Option<u64>,
+    pub completed_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Part {
     Text(String),
-    Reasoning(String),
+    Reasoning(Reasoning),
     Tool(ToolPart),
 }
 
@@ -656,7 +666,16 @@ impl Transcript {
                 }
                 Some("reasoning") => {
                     if let Some(text) = block.get("text").and_then(Value::as_str) {
-                        parts.push(Part::Reasoning(text.to_string()));
+                        let time = block.get("time");
+                        parts.push(Part::Reasoning(Reasoning {
+                            text: text.to_string(),
+                            created_ms: time
+                                .and_then(|time| time.get("created"))
+                                .and_then(Value::as_u64),
+                            completed_ms: time
+                                .and_then(|time| time.get("completed"))
+                                .and_then(Value::as_u64),
+                        }));
                     }
                 }
                 Some("tool_use") => {
@@ -977,7 +996,14 @@ mod tests {
         };
         assert_eq!(agent.as_deref(), Some("build"));
         assert_eq!(model.as_deref(), Some("glm-5.3-flash"));
-        assert_eq!(parts[0], Part::Reasoning("thinking about it".into()));
+        assert_eq!(
+            parts[0],
+            Part::Reasoning(Reasoning {
+                text: "thinking about it".into(),
+                created_ms: None,
+                completed_ms: None,
+            })
+        );
         assert_eq!(parts[1], Part::Text("running the tool".into()));
         let Part::Tool(tool) = &parts[2] else {
             panic!("expected tool part");

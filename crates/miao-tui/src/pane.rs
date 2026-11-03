@@ -11,7 +11,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::dialogs::{Dialog, ListDialog, ListKind, PaletteDialog};
 use crate::editor::{CompletionKind, Composer, Mode};
-use crate::session::{ApprovalView, Entry, Part, QuestionView, SessionSummary, Transcript};
+use crate::session::{ApprovalView, Entry, Part, QuestionView, Reasoning, SessionSummary, Transcript};
 use crate::theme::Theme;
 use crate::{markdown, tool};
 
@@ -568,7 +568,7 @@ impl TranscriptPane {
             return;
         }
         self.draft = match &self.draft_source {
-            Some((text, reasoning)) => draft_lines(text, reasoning, &self.theme),
+            Some((text, reasoning)) => draft_lines(text, reasoning, &self.theme, now_ms()),
             None => Vec::new(),
         };
         self.draft_dirty = false;
@@ -1077,45 +1077,122 @@ pub fn next_relative_change(updated_at_ms: u64, now: u64) -> std::time::Duration
     std::time::Duration::from_millis(until_ms.saturating_sub(delta_ms))
 }
 
+/// The braille frames the TS TUI animates, one step every 160ms.
+const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/// Milliseconds spelled the way the TS Locale spells them: `3.2s`, `1m 20s`.
+fn duration_ms(input: u64) -> String {
+    if input < 1_000 {
+        format!("{input}ms")
+    } else if input < 60_000 {
+        format!("{:.1}s", input as f64 / 1_000.0)
+    } else if input < 3_600_000 {
+        format!("{}m {}s", input / 60_000, (input % 60_000) / 1_000)
+    } else if input < 86_400_000 {
+        format!("{}h {}m", input / 3_600_000, (input % 3_600_000) / 60_000)
+    } else {
+        format!("{}d {}h", input / 86_400_000, (input % 86_400_000) / 3_600_000)
+    }
+}
+
+/// The `**Title**\n\nbody` opener some providers put on reasoning summaries,
+/// which the TS header lifts out so the title can stand alone on the line.
+fn reasoning_title(text: &str) -> Option<String> {
+    let rest = text.trim().strip_prefix("**")?;
+    let end = rest.find("**")?;
+    let title = &rest[..end];
+    if title.is_empty() || title.contains('*') || title.contains('\n') {
+        return None;
+    }
+    let after = &rest[end + 2..];
+    if !(after.is_empty()
+        || after.starts_with("\n\n")
+        || after.starts_with("\r\n\r\n"))
+    {
+        return None;
+    }
+    Some(title.trim().to_string())
+}
+
+/// The one line of reasoning the header names: the provider's title, or the
+/// first line that says anything.
+fn reasoning_summary(text: &str) -> String {
+    match reasoning_title(text) {
+        Some(title) => title,
+        None => text
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .unwrap_or_default()
+            .to_string(),
+    }
+}
+
+/// The settled thinking header: `Thought for 3.2s · summary`, falling back to
+/// `Thought · summary` and then bare `Thought` as the facts it needs drop out.
+fn thought_header(reasoning: &Reasoning, theme: &Theme) -> Line<'static> {
+    let palette = theme.palette;
+    let duration = match (reasoning.created_ms, reasoning.completed_ms) {
+        (Some(created), Some(completed)) if completed > created => {
+            format!("Thought for {} · ", duration_ms(completed - created))
+        }
+        _ => "Thought · ".to_string(),
+    };
+    let summary = reasoning_summary(&reasoning.text);
+    let label = if summary.is_empty() {
+        duration.trim_end_matches(" · ").to_string()
+    } else {
+        format!("{duration}{}", fit(&summary, COMPACT_CELLS))
+    };
+    Line::from(Span::styled(
+        format!("  {label}"),
+        Style::new().fg(palette.text_muted),
+    ))
+}
+
+/// Assistant prose as the TS TextPart paints it: a muted bullet on the first
+/// row and the markdown block indented under that bullet's two cells.
+fn prose_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
+    let palette = theme.palette;
+    let bullet = Style::new().fg(palette.text_muted);
+    markdown::lines(text, theme)
+        .into_iter()
+        .enumerate()
+        .map(|(index, line)| {
+            let mut spans = Vec::with_capacity(line.spans.len() + 1);
+            spans.push(Span::styled(
+                if index == 0 { "● " } else { "  " },
+                bullet,
+            ));
+            spans.extend(line.spans);
+            Line::from(spans).style(line.style)
+        })
+        .collect()
+}
+
 /// The streamed answer, rendered like the assistant entry it will become: the
 /// provisional block gains its header when the committed message arrives.
-fn draft_lines(text: &str, reasoning: &str, theme: &Theme) -> Vec<Line<'static>> {
+fn draft_lines(text: &str, reasoning: &str, theme: &Theme, now_ms: u64) -> Vec<Line<'static>> {
     let palette = theme.palette;
     let mut lines = Vec::new();
     if !reasoning.is_empty() {
-        // Before the first answer token the thinking is the show: the latest
-        // lines stream in verbatim, muted, under a one-line summary that
-        // names the whole — a long reasoning run otherwise tiles the whole
-        // screen with every line it ever produced. Once text starts, the
-        // summary alone stands and the answer takes the screen.
-        if text.is_empty() {
-            let all: Vec<&str> = reasoning.lines().collect();
-            let window = 6usize;
-            let skip = all.len().saturating_sub(window);
-            if skip > 0 {
-                lines.push(Line::from(Span::styled(
-                    format!(
-                        "▸ thinking · {} chars · earlier reasoning folded",
-                        reasoning.chars().count()
-                    ),
-                    Style::new().fg(palette.text_muted),
-                )));
-            }
-            for line in &all[skip..] {
-                lines.push(Line::from(Span::styled(
-                    format!("  {line}"),
-                    Style::new().fg(palette.text_muted),
-                )));
-            }
+        // Thinking streams as one muted header line the TS transcript shows: a
+        // spinner naming where the thought is heading, never the run of text
+        // itself, which would tile the screen with everything it produced.
+        let frame = SPINNER_FRAMES[(now_ms / 160) as usize % SPINNER_FRAMES.len()];
+        let summary = fit(&reasoning_summary(reasoning), COMPACT_CELLS);
+        let label = if summary.is_empty() {
+            "Thinking".to_string()
         } else {
-            lines.push(Line::from(Span::styled(
-                format!("▸ thinking · {} chars", reasoning.chars().count()),
-                Style::new().fg(palette.text_muted),
-            )));
-        }
+            format!("Thinking · {summary}")
+        };
+        lines.push(Line::from(Span::styled(
+            format!("{frame} {label}"),
+            Style::new().fg(palette.text_muted),
+        )));
     }
     if !text.is_empty() {
-        lines.extend(markdown::lines(text, theme));
+        lines.extend(prose_lines(text, theme));
     }
     lines
 }
@@ -1206,29 +1283,27 @@ fn transcript_lines(
                 for part in parts {
                     match part {
                         Part::Text(text) => {
-                            // TS TextPart: one blank row above, a muted bullet,
-                            // and the markdown block indented under it.
+                            // TS TextPart: one blank row above the bullet and
+                            // its markdown block.
                             inline_run = false;
                             lines.push(Line::default());
-                            for (index, line) in
-                                markdown::lines(text, theme).into_iter().enumerate()
-                            {
-                                let mut spans = Vec::with_capacity(line.spans.len() + 1);
-                                spans.push(Span::styled(
-                                    if index == 0 { "● " } else { "  " },
-                                    Style::new().fg(palette.text_muted),
-                                ));
-                                spans.extend(line.spans);
-                                lines.push(Line::from(spans).style(line.style));
-                            }
+                            lines.extend(prose_lines(text, theme));
                         }
-                        Part::Reasoning(text) => {
+                        Part::Reasoning(reasoning) => {
+                            // The TS default ("hide") keeps thinking out of the
+                            // transcript once the step produced prose of its
+                            // own; it keeps one duration header only when the
+                            // step has no text, so a model that narrates
+                            // between tool calls does not look like it never
+                            // reasoned.
                             inline_run = false;
-                            lines.push(Line::default());
-                            lines.push(Line::from(Span::styled(
-                                format!("  ▸ thinking · {} chars", text.chars().count()),
-                                Style::new().fg(palette.text_muted),
-                            )));
+                            let has_prose = parts.iter().any(|part| {
+                                matches!(part, Part::Text(text) if !text.trim().is_empty())
+                            });
+                            if !has_prose {
+                                lines.push(Line::default());
+                                lines.push(thought_header(reasoning, theme));
+                            }
                         }
                         Part::Tool(call) => {
                             let rows = tool::lines(
@@ -3306,7 +3381,7 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(draft.starts_with("▸ thinking · 11 chars"));
+        assert!(draft.contains("Thinking · considering"), "{draft}");
         assert!(draft.contains("streamed words"));
         // A projection, or a run that ends, clears it in one assignment.
         shell.set_draft("", "");
@@ -3314,7 +3389,10 @@ mod tests {
     }
 
     #[test]
-    fn the_draft_streams_the_thinking_verbatim_before_any_answer() {
+    fn the_draft_names_the_thinking_in_one_muted_header() {
+        // The TS transcript shows thinking as one header line while it streams
+        // and keeps that line once the answer starts; the reasoning text itself
+        // never tiles the screen.
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
@@ -3335,8 +3413,9 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert_eq!(draft, "  reading the diff\n  then the tests");
-        // The first answer token folds the thinking back into a summary.
+        assert_eq!(draft.matches("reading the diff").count(), 1, "{draft}");
+        assert!(draft.contains("Thinking · reading the diff"), "{draft}");
+        // The first answer token keeps the header and starts the prose.
         shell.set_draft("partial", "reading the diff\nthen the tests");
         let draft = shell
             .draft()
@@ -3349,8 +3428,8 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(draft.starts_with("▸ thinking · "));
-        assert!(draft.contains("partial"));
+        assert!(draft.contains("Thinking · reading the diff"), "{draft}");
+        assert!(draft.contains("● partial"), "{draft}");
     }
 
     #[test]
@@ -3455,6 +3534,78 @@ mod tests {
     }
 
     #[test]
+    fn thinking_folds_away_once_the_step_has_prose() {
+        // The TS default ("hide") drops reasoning that produced prose; a step
+        // with no text keeps one duration header so a model that narrates
+        // between tools still reads as having thought.
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let reasoning = Part::Reasoning(crate::session::Reasoning {
+            text: "**Plan**\n\nread the files first".into(),
+            created_ms: Some(1_000),
+            completed_ms: Some(4_200),
+        });
+        let rendered = |parts: Vec<Part>| {
+            transcript_lines(
+                &Transcript {
+                    entries: vec![Entry::Assistant {
+                        agent: None,
+                        model: None,
+                        parts,
+                    }],
+                    ..Transcript::default()
+                },
+                &theme,
+                false,
+                None,
+            )
+            .lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+        };
+        let with_prose = rendered(vec![
+            reasoning.clone(),
+            Part::Text("the answer".into()),
+        ]);
+        assert!(
+            with_prose
+                .iter()
+                .all(|line| !line.contains("Thought") && !line.contains("Plan")),
+            "{with_prose:?}"
+        );
+        let without_prose = rendered(vec![reasoning]);
+        let header = without_prose
+            .iter()
+            .find(|line| line.contains("Plan"))
+            .expect("the step without prose keeps its thinking header");
+        assert!(header.contains("Thought for 3.2s"), "{header}");
+    }
+
+    #[test]
+    fn a_reasoning_summary_prefers_the_bold_title() {
+        // OpenAI-style summaries open with a bolded title block; the header
+        // names that instead of the body's first line.
+        assert_eq!(
+            reasoning_title("**Plan**\n\nbody"),
+            Some("Plan".to_string())
+        );
+        assert_eq!(reasoning_title("not closed **"), None);
+        assert_eq!(
+            reasoning_summary("plain first line\nsecond"),
+            "plain first line"
+        );
+    }
+
+    #[test]
     fn a_failed_turn_renders_its_message_as_an_error_line() {
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let theme = Theme {
@@ -3497,7 +3648,11 @@ mod tests {
                     agent: None,
                     model: None,
                     parts: vec![
-                        Part::Reasoning("thinking".into()),
+                        Part::Reasoning(crate::session::Reasoning {
+                            text: "thinking".into(),
+                            created_ms: None,
+                            completed_ms: None,
+                        }),
                         Part::Text("second".into()),
                     ],
                 },

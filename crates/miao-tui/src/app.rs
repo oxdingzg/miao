@@ -1572,8 +1572,11 @@ impl App {
         for part in parts {
             match part {
                 Part::Text(text) => lines.extend(text.lines().map(str::to_string)),
-                Part::Reasoning(text) => {
-                    lines.push(format!("[thinking · {} chars]", text.chars().count()))
+                Part::Reasoning(reasoning) => {
+                    lines.push(format!(
+                        "[thinking · {} chars]",
+                        reasoning.text.chars().count()
+                    ))
                 }
                 Part::Tool(call) => lines.push(format!(
                     "[tool {} · {}]",
@@ -4377,11 +4380,11 @@ mod tests {
         let draft = app.draft.as_ref().expect("a streaming draft");
         assert_eq!(draft.reasoning, "weighing");
         assert!(draft.text.is_empty(), "reasoning is not the answer");
-        // With no answer yet the thinking streams verbatim, muted.
-        assert_eq!(drafted(&mut app), "  weighing");
+        // With no answer yet the thinking is one muted header line.
+        assert!(drafted(&mut app).contains("Thinking · weighing"));
         app.handle(delta_frame("run-1", "text.delta", "the answer"));
         let shown = drafted(&mut app);
-        assert!(shown.starts_with("▸ thinking · 8 chars"));
+        assert!(shown.contains("Thinking · weighing"));
         assert!(shown.contains("the answer"));
     }
 
