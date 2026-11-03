@@ -355,7 +355,7 @@ impl Registry {
         input: Start,
         network: bool,
         _sandbox: bool,
-        _writable_roots: Vec<PathBuf>,
+        writable_roots: Vec<PathBuf>,
     ) -> Result<Value, ToolError> {
         if self.stop.is_cancelled() {
             return Err(ToolError::Interrupted);
