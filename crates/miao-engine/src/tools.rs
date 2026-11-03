@@ -176,6 +176,26 @@ impl Gates {
     }
 }
 
+
+/// `canonicalize` on Windows yields a verbatim path (`\\?\C:\...`) that never
+/// prefix-matches the plain workspace root spelling. Strip it so containment
+/// comparisons see one spelling on every platform.
+fn canonical_plain(path: std::path::PathBuf) -> std::path::PathBuf {
+    // String-level strip: `Path::strip_prefix` matches by components and can
+    // never match the verbatim prefix, which lives inside the first component.
+    #[cfg(windows)]
+    {
+        let text = path.as_os_str().to_string_lossy();
+        if let Some(stripped) = text.strip_prefix(r"\\?\UNC\") {
+            return std::path::PathBuf::from(format!(r"\\{stripped}"));
+        }
+        if let Some(stripped) = text.strip_prefix(r"\\?\") {
+            return std::path::PathBuf::from(stripped.to_string());
+        }
+    }
+    path
+}
+
 #[derive(Clone)]
 pub struct Tools {
     root: PathBuf,
@@ -1061,14 +1081,19 @@ impl Tools {
         self.protect_resource(path)
     }
     pub(crate) fn protect_store(mut self, path: &Path) -> Self {
-        self.private_store = Some(path.to_owned());
+        self.private_store = Some(canonical_plain(path.to_owned()));
         self.protect_resource(path)
     }
     fn protect_resource(mut self, path: &Path) -> Self {
-        self.protected.push(path.to_owned());
-        self.protected.push(path.with_extension("engine-lock"));
+        // Store the plain (verbatim-prefix-stripped) spelling: prepare's
+        // candidates are canonicalized and stripped too, so a verbatim copy
+        // here would never match and the protection would silently lapse on
+        // Windows.
+        let plain = canonical_plain(path.to_owned());
+        self.protected.push(plain.clone());
+        self.protected.push(plain.with_extension("engine-lock"));
         for suffix in ["-wal", "-shm"] {
-            let mut name = path.as_os_str().to_owned();
+            let mut name = plain.as_os_str().to_owned();
             name.push(suffix);
             self.protected.push(name.into());
         }
@@ -1473,7 +1498,8 @@ impl Tools {
         } else {
             Vec::new()
         };
-        Ok(Prepared {
+        eprintln!("[dbg] prepare ok reached name={}", name);
+            Ok(Prepared {
             // Runtime-owned operations cannot run through the local filesystem/LSP executor.
             batchable_read: access == Access::Read
                 && !matches!(
@@ -2137,11 +2163,14 @@ impl Tools {
     }
 
     async fn contained(&self, path: &str) -> Result<PathBuf, ToolError> {
-        let path = tokio::fs::canonicalize(self.root.join(path)).await?;
+        let joined = self.root.join(path);
+        let path = canonical_plain(tokio::fs::canonicalize(&joined).await?);
+        eprintln!("[dbg] contained joined={joined:?} canon={path:?} root={:?}", self.root);
         let roots = self.read_roots();
         if path.starts_with(&self.root) || roots.iter().any(|root| path.starts_with(root)) {
             return Ok(path);
         }
+        eprintln!("[dbg] contained MISS");
         Err(ToolError::OutsideWorkspace)
     }
 
