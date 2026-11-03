@@ -233,6 +233,7 @@ pub fn policy(documents: &[Document], miao_sandbox: Option<&str>) -> permission:
         process_network: true,
         auto: false,
         sandbox: sandbox_enabled(documents, miao_sandbox),
+        writable_roots: writable_roots(documents),
         rules: permission_rules(&merged),
         // Matches the engine's default; the product policy never sets it.
         approval_timeout_ms: 60_000,
@@ -260,6 +261,34 @@ pub fn sandbox_enabled(documents: &[Document], miao_sandbox: Option<&str>) -> bo
             .and_then(Value::as_str),
         Some("off")
     )
+}
+
+/// Extra directories `sandbox.writable_roots` grants the confined command.
+///
+/// The config merges per key, so a later source's array replaces an earlier
+/// one rather than appending, which is why this reads the merged value instead
+/// of walking the documents. Blank entries are dropped: an empty string would
+/// name the process cwd, and granting that silently would be a wider grant
+/// than the operator wrote.
+fn writable_roots(documents: &[Document]) -> Vec<std::path::PathBuf> {
+    let values = documents
+        .iter()
+        .map(|document| document.value.clone())
+        .collect::<Vec<_>>();
+    config_scope::merge_values(&values)
+        .get("sandbox")
+        .and_then(Value::as_object)
+        .and_then(|sandbox| sandbox.get("writable_roots"))
+        .and_then(Value::as_array)
+        .map(|roots| {
+            roots
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|root| !root.trim().is_empty())
+                .map(std::path::PathBuf::from)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn env_switch(value: Option<&str>) -> Option<bool> {
@@ -1283,6 +1312,55 @@ mod tests {
             .into_owned()
     }
 
+    /// `sandbox.writable_roots` used to be validated and dropped: the operator
+    /// could write it, no error appeared, and the sandbox never granted it.
+    /// These cases pin the value reaching the policy.
+    #[test]
+    fn writable_roots_reach_the_policy() {
+        let config = documents(&[serde_json::json!({
+            "sandbox": {"writable_roots": ["/srv/shared", "/tmp/scratch"]}
+        })]);
+        let policy = policy(&config, None);
+        assert_eq!(
+            policy.writable_roots,
+            vec![
+                std::path::PathBuf::from("/srv/shared"),
+                std::path::PathBuf::from("/tmp/scratch")
+            ]
+        );
+    }
+
+    #[test]
+    fn writable_roots_are_empty_when_unset_or_blank() {
+        assert!(policy(&documents(&[]), None).writable_roots.is_empty());
+        // A blank entry would name the process cwd; granting that silently is
+        // wider than what the operator wrote, so it is dropped.
+        let blank = documents(&[serde_json::json!({
+            "sandbox": {"writable_roots": ["", "  "]}
+        })]);
+        assert!(policy(&blank, None).writable_roots.is_empty());
+        // A non-array value is a config error the validator reports; the
+        // policy must still not invent grants from it.
+        let wrong = documents(&[serde_json::json!({
+            "sandbox": {"writable_roots": "/srv"}
+        })]);
+        assert!(policy(&wrong, None).writable_roots.is_empty());
+    }
+
+    #[test]
+    fn a_later_source_replaces_writable_roots_rather_than_appending() {
+        // Keys merge shallowly, the same way `sandbox.mode` does: a project
+        // file that names its own roots must not inherit the global ones.
+        let merged = documents(&[
+            serde_json::json!({"sandbox": {"writable_roots": ["/global"]}}),
+            serde_json::json!({"sandbox": {"writable_roots": ["/project"]}}),
+        ]);
+        assert_eq!(
+            policy(&merged, None).writable_roots,
+            vec![std::path::PathBuf::from("/project")]
+        );
+    }
+
     #[test]
     fn sandbox_environment_overrides_config_in_both_directions() {
         let config = documents(&[serde_json::json!({"sandbox": {"mode": "off"}})]);
@@ -1342,6 +1420,7 @@ mod tests {
                 "allow_cron": true,
                 "process_network": true,
                 "sandbox": false,
+                "writable_roots": [],
                 "rules": [],
                 "approval_timeout_ms": 60_000,
                 "max_provider_turns": null,

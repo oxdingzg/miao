@@ -201,6 +201,10 @@ pub struct Tools {
     directory: Arc<Dir>,
     gate: Arc<RwLock<()>>,
     gates: Arc<StdRwLock<Gates>>,
+    /// `sandbox.writable_roots`: extra directories a confined command may
+    /// write. Kept beside `gates` rather than inside it because `Gates` is
+    /// `Copy` and this is not; a reload replaces both the same way.
+    writable_roots: Arc<StdRwLock<Arc<Vec<PathBuf>>>>,
     product_tools: Arc<StdRwLock<Vec<ToolDefinition>>>,
     runner: Option<Arc<PathBuf>>,
     protected: Vec<PathBuf>,
@@ -293,6 +297,7 @@ impl Tools {
                 wakeup: false,
                 cron: false,
             })),
+            writable_roots: Arc::new(StdRwLock::new(Arc::new(Vec::new()))),
             runner: None,
             protected: vec![],
             private_store: None,
@@ -383,6 +388,7 @@ impl Tools {
                 crate::terminal::Start::parse(prepared.input)?,
                 gates.process_network,
                 gates.process_sandbox,
+                self.writable_roots().as_ref().clone(),
             )
             .await
     }
@@ -395,6 +401,19 @@ impl Tools {
     }
     pub(crate) fn process_sandbox(&self) -> bool {
         self.gates().process_sandbox
+    }
+    /// Directories a confined command may write beyond the sandbox defaults.
+    pub(crate) fn writable_roots(&self) -> Arc<Vec<PathBuf>> {
+        self.writable_roots
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .clone()
+    }
+    pub(crate) fn set_writable_roots(&self, roots: Vec<PathBuf>) {
+        *self
+            .writable_roots
+            .write()
+            .unwrap_or_else(|held| held.into_inner()) = Arc::new(roots);
     }
     /// A product host can supply its resolved aggregate without standalone
     /// discovery reintroducing disabled sources or duplicating instructions.
