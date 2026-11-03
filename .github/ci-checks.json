@@ -32,7 +32,6 @@
     ".github/actions/**"
   ],
   "engine": [
-    "crates/miao-cli/**",
     "crates/miao-engine/**",
     "crates/build-version.rs",
     "crates/miao-sandbox/**",
