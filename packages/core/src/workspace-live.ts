@@ -128,11 +128,22 @@ const layer = Layer.effect(
         timeUsed: Date.now(),
       }
       yield* insert(info)
+      // The row goes in first so a concurrent list sees the workspace being
+      // created; if the worktree then fails, the row is a record of something
+      // that does not exist. Roll it back rather than leaving an orphan the
+      // operator has to find and delete by hand.
       yield* fromWorktree(
         worktrees.createFromInfo(worktreeTarget, {
           name: prepared.name,
           directory: prepared.directory,
         }),
+      ).pipe(
+        // `onError` keeps the original failure: the caller still sees why the
+        // worktree could not be created, and the row that would have described
+        // a workspace nobody can use is gone.
+        Effect.onError(() =>
+          db.delete(WorkspaceTable).where(eq(WorkspaceTable.id, info.id)).run().pipe(Effect.orDie),
+        ),
       )
       setStatus(info.id, "connected")
       return info
