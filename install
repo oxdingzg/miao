@@ -417,7 +417,10 @@ publish_binary() {
     version=$("$stage/${APP}${EXE}" --version)
     build_id=$("$stage/${APP}${EXE}" --build-id)
     [[ "$build_id" =~ ^[0-9a-fA-F-]{36}$ ]] || { print_message error "Invalid build identity"; return 1; }
-    if [[ "$specific_version" != "local" && "$version" != "$specific_version" ]]; then
+    # `--version` prints "<program> <version>"; the program's own name is not
+    # part of the release identity, so compare the version word alone.
+    local binary_version="${version##* }"
+    if [[ "$specific_version" != "local" && "$binary_version" != "$specific_version" ]]; then
         print_message error "Release failed version verification"
         return 1
     fi
