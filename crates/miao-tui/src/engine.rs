@@ -1469,7 +1469,19 @@ async fn run(
                         bus.send(AppEvent::Notice(notice));
                     }
                 }
-                Some(TransportEvent::Resync(_)) => {}
+                // The transport's progress buffer overflowed: at least one
+                // stream delta between the last painted frame and the next
+                // commit is gone, and it will never be re-sent. Ignoring this
+                // left a turn that arrived in two pieces — the head silently
+                // dropped, the tail painted — which reads as an answer that
+                // "piled up" and never showed its steps.
+                //
+                // Re-projecting is the repair: the snapshot plus the durable
+                // journal are the authoritative state, and `dirty` is the
+                // existing 150 ms-debounced path to it.
+                Some(TransportEvent::Resync(_)) => {
+                    dirty.get_or_insert_with(Instant::now);
+                }
             },
             _ = tokio::time::sleep_until(deadline.unwrap_or_else(Instant::now)), if deadline.is_some() => {
                 dirty = None;
