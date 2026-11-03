@@ -625,6 +625,21 @@ impl Pane for TranscriptPane {
                 }
             }
         }
+        // A row that carries its own background is a panel band: padding it to
+        // the pane's edge paints the block the way a box background would,
+        // instead of a grey smear that stops at the last character.
+        let width = content.width as usize;
+        for line in &mut visible {
+            if line.style.bg.is_some() {
+                let used = line.width();
+                if used < width {
+                    line.spans.push(Span::styled(
+                        " ".repeat(width - used),
+                        Style::new().bg(palette.element),
+                    ));
+                }
+            }
+        }
         // Borderless, like the TypeScript layout this mirrors: a frame around
         // the transcript only steals columns from the text.
         frame.render_widget(
@@ -1114,26 +1129,61 @@ fn transcript_lines(
     let palette = theme.palette;
     let mut lines = Vec::new();
     let mut anchors: Vec<(usize, String)> = Vec::new();
+    // The TS scrollbox opens with one blank row above the oldest message.
+    lines.push(Line::default());
+    // Whether the previous assistant part rendered as a single inline row. TS
+    // butts consecutive single-row tools together and separates everything
+    // else with one blank row.
+    let mut inline_run = false;
     for entry in &transcript.entries {
         match entry {
             Entry::User { text, .. } => {
+                inline_run = false;
+                // The TS prompt block: two blank rows above, then a left-edged
+                // panel with one row of padding above and below the text. The
+                // panel background rides each row so the band reads as one
+                // block once `wrap_lines` pads it to the pane's width.
+                let surface = Style::new().bg(palette.element);
+                let edge = Style::new().fg(palette.primary);
+                lines.push(Line::default());
+                lines.push(Line::default());
+                lines.push(
+                    Line::from(vec![
+                        Span::styled("┃", edge),
+                        Span::styled("  ", surface),
+                    ])
+                    .style(surface),
+                );
                 anchors.push((
                     lines.len(),
                     text.lines().next().unwrap_or_default().to_string(),
                 ));
                 for line in text.lines() {
-                    lines.push(Line::from(vec![
-                        Span::styled("❯ ", Style::new().fg(palette.primary)),
-                        Span::styled(line.to_string(), Style::new().fg(palette.text)),
-                    ]));
+                    lines.push(
+                        Line::from(vec![
+                            Span::styled("┃", edge),
+                            Span::styled("  ", surface),
+                            Span::styled("❯ ", Style::new().fg(palette.text_muted)),
+                            Span::styled(line.to_string(), Style::new().fg(palette.text)),
+                        ])
+                        .style(surface),
+                    );
                 }
-                lines.push(Line::default());
+                lines.push(
+                    Line::from(vec![
+                        Span::styled("┃", edge),
+                        Span::styled("  ", surface),
+                    ])
+                    .style(surface),
+                );
             }
             Entry::Context { source, text } => {
                 // Injected context is a history fact, not something the operator
                 // said. Painting it behind `❯` claimed it as input and put words
                 // in their mouth; a quiet labelled block keeps the facts
                 // readable without changing who said what.
+                inline_run = false;
+                lines.push(Line::default());
                 lines.push(Line::from(vec![
                     Span::styled("⋯ ", Style::new().fg(palette.border)),
                     Span::styled(
@@ -1147,43 +1197,74 @@ fn transcript_lines(
                         Style::new().fg(palette.text_muted),
                     )));
                 }
-                lines.push(Line::default());
             }
             Entry::Assistant {
                 agent,
                 model,
                 parts,
             } => {
-                let label = match (agent.as_deref(), model.as_deref()) {
-                    (Some(agent), Some(model)) => format!("✳ {agent} · {model}"),
-                    (Some(agent), None) => format!("✳ {agent}"),
-                    (None, Some(model)) => format!("✳ {model}"),
-                    (None, None) => "✳ assistant".to_string(),
-                };
-                let body = label.trim_start_matches("✳ ").to_string();
-                lines.push(Line::from(vec![
-                    Span::styled("✳ ", Style::new().fg(palette.secondary)),
-                    Span::styled(body, Style::new().fg(palette.text_muted)),
-                ]));
                 for part in parts {
                     match part {
-                        Part::Text(text) => lines.extend(markdown::lines(text, theme)),
-                        Part::Reasoning(text) => lines.push(Line::from(Span::styled(
-                            format!("▸ thinking · {} chars", text.chars().count()),
-                            Style::new().fg(palette.text_muted),
-                        ))),
-                        Part::Tool(call) => lines.extend(tool::lines(
-                            call,
-                            transcript.displays.get(&call.id).map(Vec::as_slice),
-                            theme,
-                            expanded,
-                            toggle,
-                        )),
+                        Part::Text(text) => {
+                            // TS TextPart: one blank row above, a muted bullet,
+                            // and the markdown block indented under it.
+                            inline_run = false;
+                            lines.push(Line::default());
+                            for (index, line) in
+                                markdown::lines(text, theme).into_iter().enumerate()
+                            {
+                                let mut spans = Vec::with_capacity(line.spans.len() + 1);
+                                spans.push(Span::styled(
+                                    if index == 0 { "● " } else { "  " },
+                                    Style::new().fg(palette.text_muted),
+                                ));
+                                spans.extend(line.spans);
+                                lines.push(Line::from(spans).style(line.style));
+                            }
+                        }
+                        Part::Reasoning(text) => {
+                            inline_run = false;
+                            lines.push(Line::default());
+                            lines.push(Line::from(Span::styled(
+                                format!("  ▸ thinking · {} chars", text.chars().count()),
+                                Style::new().fg(palette.text_muted),
+                            )));
+                        }
+                        Part::Tool(call) => {
+                            let rows = tool::lines(
+                                call,
+                                transcript.displays.get(&call.id).map(Vec::as_slice),
+                                theme,
+                                expanded,
+                                toggle,
+                            );
+                            if rows.len() > 1 || !inline_run {
+                                lines.push(Line::default());
+                            }
+                            inline_run = rows.len() == 1;
+                            lines.extend(rows);
+                        }
                     }
                 }
+                // The step footer the TS message ends with: the check names the
+                // agent and the model that answered, and its blank row is the
+                // seam between consecutive assistant messages.
                 lines.push(Line::default());
+                let name = match (agent.as_deref(), model.as_deref()) {
+                    (Some(agent), Some(model)) => format!("{agent} · {model}"),
+                    (Some(agent), None) => agent.to_string(),
+                    (None, Some(model)) => model.to_string(),
+                    (None, None) => "assistant".to_string(),
+                };
+                lines.push(Line::from(vec![
+                    Span::styled("  ", Style::new()),
+                    Span::styled("✓ ", Style::new().fg(palette.success)),
+                    Span::styled(name, Style::new().fg(palette.text_muted)),
+                ]));
             }
             Entry::Error { message } => {
+                inline_run = false;
+                lines.push(Line::default());
                 for (index, line) in message.lines().enumerate() {
                     lines.push(Line::from(vec![
                         Span::styled(
@@ -1193,11 +1274,10 @@ fn transcript_lines(
                         Span::styled(line.to_string(), Style::new().fg(palette.error)),
                     ]));
                 }
-                lines.push(Line::default());
             }
         }
     }
-    if lines.is_empty() {
+    if lines.len() <= 1 {
         lines.push(Line::from(Span::styled(
             "this Session has no messages yet",
             Style::new().fg(palette.text_muted),
@@ -2645,12 +2725,17 @@ mod tests {
             ..Transcript::default()
         };
         shell.set_transcript(&transcript);
+        // One frame fixes the viewport height, so the scroll offset that
+        // follows is measured against the real tail.
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 12)).expect("terminal");
+        terminal
+            .draw(|frame| shell.transcript.render(frame, frame.area()))
+            .expect("draw");
         // Scroll back a few rows from the tail: the viewport now sits inside
         // the second turn, whose question is off-screen above it.
         shell.scroll_transcript(-8);
         assert!(!shell.following(), "a manual scroll reads history");
-        let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 12)).expect("terminal");
         terminal
             .draw(|frame| shell.transcript.render(frame, frame.area()))
             .expect("draw");
@@ -3269,6 +3354,107 @@ mod tests {
     }
 
     #[test]
+    fn the_prompt_block_mirrors_the_typescript_panel() {
+        // packages/tui renders each prompt as a left-edged panel with two blank
+        // rows above it and one row of padding inside; the background band runs
+        // the full row width once the pane pads it.
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let transcript = Transcript {
+            entries: vec![
+                Entry::User {
+                    text: "question".into(),
+                    seq: 1,
+                },
+                Entry::Assistant {
+                    agent: Some("general".into()),
+                    model: Some("glm-5".into()),
+                    parts: vec![Part::Text("answer".into())],
+                },
+            ],
+            ..Transcript::default()
+        };
+        let lines = transcript_lines(&transcript, &theme, false, None).lines;
+        let text = |line: &Line<'static>| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        };
+        assert_eq!(text(&lines[0]), "", "the scrollbox opens with a blank row");
+        assert_eq!(text(&lines[1]), "");
+        assert_eq!(text(&lines[2]), "");
+        assert_eq!(text(&lines[3]), "┃  ", "the panel's top padding row");
+        assert_eq!(text(&lines[4]), "┃  ❯ question");
+        assert_eq!(text(&lines[5]), "┃  ", "the panel's bottom padding row");
+        assert_eq!(lines[4].style.bg, Some(palette.element));
+        // Prose follows one blank row in, under a muted bullet, and the step
+        // closes with the check footer naming the agent and the model.
+        assert_eq!(text(&lines[6]), "");
+        assert!(text(&lines[7]).starts_with("● answer"), "{:?}", text(&lines[7]));
+        assert_eq!(text(&lines[8]), "");
+        assert_eq!(text(&lines[9]), "  ✓ general · glm-5");
+    }
+
+    #[test]
+    fn consecutive_inline_tools_butt_together_like_the_typescript_rows() {
+        // Two single-row tools read as one list; prose reopens the gap the way
+        // the TS sibling margin does.
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let tool = |id: &str, name: &str, input: serde_json::Value| crate::session::ToolPart {
+            id: id.into(),
+            name: name.into(),
+            input,
+            output: None,
+            failed: false,
+        };
+        let transcript = Transcript {
+            entries: vec![Entry::Assistant {
+                agent: None,
+                model: None,
+                parts: vec![
+                    Part::Tool(tool("c1", "webfetch", serde_json::json!({"url": "http://a"}))),
+                    Part::Tool(tool("c2", "websearch", serde_json::json!({"query": "q"}))),
+                    Part::Text("note".into()),
+                    Part::Tool(tool("c3", "webfetch", serde_json::json!({"url": "http://b"}))),
+                ],
+            }],
+            ..Transcript::default()
+        };
+        let lines = transcript_lines(&transcript, &theme, false, None).lines;
+        let text = |line: &Line<'static>| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        };
+        let rendered: Vec<String> = lines.iter().map(&text).collect();
+        let fetch_a = rendered
+            .iter()
+            .position(|line| line.contains("http://a"))
+            .expect("first fetch");
+        assert_eq!(
+            rendered[fetch_a + 1],
+            "● WebSearch  q",
+            "the second inline row follows with no blank row"
+        );
+        let note = rendered
+            .iter()
+            .position(|line| line.contains("note"))
+            .expect("prose");
+        assert_eq!(rendered[note - 1], "", "prose opens with a blank row");
+        assert_eq!(rendered[note + 1], "", "and leaves one before the next tool");
+        assert!(rendered[note + 2].contains("http://b"));
+    }
+
+    #[test]
     fn a_failed_turn_renders_its_message_as_an_error_line() {
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let theme = Theme {
@@ -3282,8 +3468,8 @@ mod tests {
             ..Transcript::default()
         };
         let lines = transcript_lines(&transcript, &theme, false, None).lines;
-        assert_eq!(lines[0].to_string(), "✗ provider unavailable");
-        assert_eq!(lines[0].spans[0].style.fg, Some(theme.palette.error));
+        assert_eq!(lines[2].to_string(), "✗ provider unavailable");
+        assert_eq!(lines[2].spans[0].style.fg, Some(theme.palette.error));
     }
 
     #[test]
