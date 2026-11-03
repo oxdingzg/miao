@@ -57,7 +57,7 @@ impl Harness {
     /// a test that is about what a Session shows does not also re-test how the
     /// launcher gets there.
     fn spawn_in_session(label: &str, session: &str) -> Self {
-        Self::spawn_configured(
+        let harness = Self::spawn_configured(
             label,
             false,
             true,
@@ -67,7 +67,22 @@ impl Harness {
             &[],
             false,
             Some(session),
-        )
+        );
+        // `--session` opens the Session asynchronously, so a test that types
+        // straight away would send its keys into the launcher prompt that is
+        // still on screen. `ses_b` carries the renderer fixture, whose
+        // transcript opens with the markdown document, so the marker has to be
+        // the one that Session actually paints.
+        let marker = match session {
+            "ses_b" => "Fixture Notes",
+            _ => "hello from the fixture",
+        };
+        assert!(
+            wait_for_screen(&harness, marker, Duration::from_secs(10)),
+            "the Session did not open:\n{}",
+            harness.screen()
+        );
+        harness
     }
 
     #[allow(clippy::too_many_arguments)]
