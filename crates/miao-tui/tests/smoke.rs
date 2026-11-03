@@ -1706,3 +1706,45 @@ fn suspend_without_a_controlling_shell_does_not_leave_an_orphaned_job_stopped() 
         .success());
     harness.shutdown();
 }
+
+/// A streamed delta must reach the screen on its own. When the loop only
+/// painted on a keypress, the answer appeared one prompt late: the operator
+/// typed the next question and the previous reply finally showed up.
+#[test]
+fn streamed_deltas_paint_without_a_keypress() {
+    let mut harness = Harness::spawn_with(
+        "stream-paint",
+        false,
+        true,
+        false,
+        false,
+        false,
+        &[("MIAO_TUI_FAKE_DELTA", "25")],
+    );
+    // The landing screen is a prompt now, so the Session is opened by the
+    // prompt itself rather than by picking a row from a list.
+    assert!(
+        wait_for_screen(&harness, "Ask anything", Duration::from_secs(10)),
+        "the landing prompt did not render:\n{}",
+        harness.screen()
+    );
+    harness.write(b"stream please");
+    harness.write(b"\r");
+    // Nothing is typed from here on: every later paint is engine-driven.
+    assert!(
+        wait_for_screen(&harness, "token ", Duration::from_secs(15)),
+        "streamed deltas never painted without a keypress:\n{}",
+        harness.screen()
+    );
+    let before = harness.screen();
+    std::thread::sleep(Duration::from_millis(400));
+    let after = harness.screen();
+    assert_ne!(
+        before, after,
+        "the stream stopped repainting the transcript:\n{after}"
+    );
+    harness.write(b"\x03");
+    harness.write(b"\x03");
+    let _ = wait_exit(&mut harness.child, Duration::from_secs(5));
+    harness.shutdown();
+}

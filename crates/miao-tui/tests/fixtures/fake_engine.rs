@@ -205,7 +205,7 @@ fn main() {
                                 json!({"method":"progress","params":{
                                     "session_id":session,"run_id":"run-stream","step":0,
                                     "kind":"provider.delta","anchor_seq":2,
-                                    "data":{"delta":{"text":format!("token {tick} ")}}
+                                    "data":{"delta":{"kind":"text.delta","text":format!("token {tick} ")}}
                                 }}),
                             );
                             std::thread::sleep(Duration::from_millis(period));
