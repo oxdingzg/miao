@@ -2090,6 +2090,12 @@ impl App {
         // where there is no caret to move. Otherwise typing a long turn and
         // nudging the caret once detached the transcript for the whole run.
         let prompt_empty = self.shell.composer.editor.is_empty();
+        // While a run streams, single-line arrow nudges must not detach the
+        // transcript: an arrow pressed to recall or edit is read by the
+        // operator as "show me history", and one line of scroll silently
+        // detached the whole run's stream. Page-level jumps and the wheel
+        // remain deliberate detaches.
+        let streaming = self.state.active_run.is_some();
         if prompt_empty && action(keybinds::Action::PageUp) {
             self.shell.scroll_transcript(-5);
             return;
@@ -2098,11 +2104,11 @@ impl App {
             self.shell.scroll_transcript(5);
             return;
         }
-        if prompt_empty && action(keybinds::Action::LineUp) {
+        if prompt_empty && !streaming && action(keybinds::Action::LineUp) {
             self.shell.scroll_transcript(-1);
             return;
         }
-        if prompt_empty && action(keybinds::Action::LineDown) {
+        if prompt_empty && !streaming && action(keybinds::Action::LineDown) {
             self.shell.scroll_transcript(1);
             return;
         }
