@@ -3767,6 +3767,16 @@ fn auth_write(rest: &[String]) -> Result<(), String> {
         "set MIAO_ENGINE_CREDENTIAL_DB (the product passes it to the engine)".to_string()
     })?;
     let connection = rusqlite::Connection::open(&db).map_err(|error| format!("{db}: {error}"))?;
+    // A fresh machine has no credential store yet: the single binary has to be
+    // able to bootstrap its first credential through `auth login` alone, or
+    // the first login on a new install fails on a chicken-and-egg (the store
+    // was previously created only by the host's own database setup).
+    connection
+        .execute(
+            "CREATE TABLE IF NOT EXISTS credential(id text primary key, integration_id text, label text, value text, active integer, time_created integer, time_updated integer)",
+            [],
+        )
+        .map_err(|error| error.to_string())?;
     let now = cli_now_ms() as i64;
     match rest.first().map(String::as_str) {
         Some("login") => {
