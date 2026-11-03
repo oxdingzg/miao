@@ -75,6 +75,11 @@ fn main() {
         .ok()
         .and_then(|count| count.parse().ok())
         .unwrap_or(0);
+    // Double-width text with no break opportunities: CJK has no spaces, so a
+    // renderer that measures characters instead of columns overflows the pane
+    // and wraps mid-phrase. The payload mixes a full-width block with ASCII and
+    // an emoji so both the wide and the ambiguous cases are on screen at once.
+    let cjk = std::env::var_os("MIAO_TUI_FAKE_CJK").is_some();
     // The approval scenario keeps one request outstanding until the client
     // resolves it, so the panel has something to show on the first snapshot.
     let mut approval_pending = std::env::var_os("MIAO_TUI_FAKE_APPROVAL").is_some();
@@ -328,6 +333,15 @@ fn main() {
                             ],"identity":{"agent":"build","provider":{"model":"fake/model"}},"checkpoint":null,"recorded_at_ms":null},
                             {"seq":3,"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"{\"text\":\"one\\ntwo\",\"sha256\":\"0\"}","is_error":false}],"checkpoint":null,"recorded_at_ms":null},
                             {"seq":4,"role":"assistant","content":[{"type":"text","text":"elided by context management · recall {\"tool_use_id\":\"call_elided\"}"}],"identity":{"agent":"build","provider":{"model":"fake/model"}},"checkpoint":null,"recorded_at_ms":null}
+                        ])
+                    } else if cjk {
+                        // Deliberately unbreakable: a CJK run has no spaces, so
+                        // wrapping has to happen on column boundaries. The tail
+                        // marker is ASCII so a test can assert the whole string
+                        // survived without depending on how the line broke.
+                        json!([
+                            {"seq":1,"role":"user","content":"用中文问一个问题","checkpoint":null,"recorded_at_ms":null},
+                            {"seq":2,"role":"assistant","content":[{"type":"text","text":"这是一段很长的中文回复用来检验双宽字符在窄窗格里的折行处理是否正确完成😀 cjk-tail-marker"}],"identity":{"agent":"build","provider":{"model":"fake/model"}},"checkpoint":null,"recorded_at_ms":null}
                         ])
                     } else {
                         json!([

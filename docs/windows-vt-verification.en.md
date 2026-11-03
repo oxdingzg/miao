@@ -3,10 +3,18 @@
 **Language:** [English](windows-vt-verification.en.md) | [中文](windows-vt-verification.zh.md)
 
 Background: legacy Windows consoles (old conhost / PowerShell 5.1 / cmd) do not interpret ANSI
-escapes by default, so the UI prints `\x1b[38;5;…m` sequences **literally**. The fix enables
-`ENABLE_VIRTUAL_TERMINAL_PROCESSING` on the stdout/stderr handles at startup
-(`packages/tui/src/terminal-win32.ts`) and falls back to plain text when VT cannot be enabled or
-output is redirected. This page is the on-device verification.
+escapes by default, so the UI prints `\x1b[38;5;…m` sequences **literally**.
+
+**Which client this covers.** The checklist below was written against the TypeScript TUI, where
+`packages/tui/src/terminal-win32.ts` enables `ENABLE_VIRTUAL_TERMINAL_PROCESSING` on the
+stdout/stderr handles itself and falls back to plain text when VT cannot be enabled or output is
+redirected. The shipped product is now the Rust single binary (`crates/miao-cli`), and it has no
+equivalent code because `crossterm` performs the same console-mode setup internally. Rows 1–5 and
+7 still describe useful end-to-end behaviour to confirm on a device; row 6's "clear error telling
+you to use Windows Terminal" is a TypeScript-client behaviour and should not be expected from the
+Rust binary.
+
+This page is the on-device verification. Nothing here has a recorded result yet.
 
 ## Setup
 

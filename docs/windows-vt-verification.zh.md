@@ -2,7 +2,11 @@
 
 **语言 / Language:** [中文](windows-vt-verification.zh.md) | [English](windows-vt-verification.en.md)
 
-背景：老式 Windows 控制台（老 conhost / PowerShell 5.1 / cmd）默认不解释 ANSI 转义，导致界面把 `\x1b[38;5;…m` 之类**按字面打印**成乱码。修复是：启动时对 stdout/stderr 句柄开启 `ENABLE_VIRTUAL_TERMINAL_PROCESSING`（`packages/tui/src/terminal-win32.ts`），并在**无法开启或输出被重定向**时降级为纯文本。下面是在真机上确认这套逻辑的步骤。
+背景：老式 Windows 控制台（老 conhost / PowerShell 5.1 / cmd）默认不解释 ANSI 转义，导致界面把 `\x1b[38;5;…m` 之类**按字面打印**成乱码。
+
+**这份清单覆盖的是哪个客户端。** 下面的步骤最初是针对 TypeScript TUI 写的：由 `packages/tui/src/terminal-win32.ts` 自己在启动时对 stdout/stderr 句柄开启 `ENABLE_VIRTUAL_TERMINAL_PROCESSING`，并在**无法开启或输出被重定向**时降级为纯文本。现在发布的产品是 Rust 单二进制（`crates/miao-cli`），它没有对应代码，因为 `crossterm` 内部做了同样的控制台模式设置。第 1–5 行和第 7 行仍然是在真机上值得确认的端到端行为；第 6 行「给出明确错误提示改用 Windows Terminal」属于 TypeScript 客户端行为，不要指望 Rust 二进制也会这样。
+
+本页是真机验证清单。**目前没有任何一行留有执行结果。**
 
 ## 准备
 
