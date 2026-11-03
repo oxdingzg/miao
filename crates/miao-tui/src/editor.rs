@@ -719,6 +719,11 @@ pub struct Composer {
     /// Inline media sent with the prompt. The composer only shows their
     /// `[Image N]` markers; the bytes travel beside the text.
     attachments: Vec<Value>,
+    /// Pasted blocks too large to show. The composer holds the placeholder
+    /// (`[Pasted ~N lines]`) and the full text waits here until submit, so a
+    /// 2000-line paste costs one line on screen instead of pushing the draft
+    /// out of view. Cleared with the draft.
+    pastes: Vec<(String, String)>,
     history: Vec<String>,
     history_index: Option<usize>,
     draft: String,
@@ -747,6 +752,7 @@ impl Composer {
             phase_alert: false,
             placeholder: random_pick(),
             attachments: Vec::new(),
+            pastes: Vec::new(),
             history: load_history(&history_path),
             history_index: None,
             draft: String::new(),
@@ -960,13 +966,29 @@ impl Composer {
         if self.editor.text().trim().is_empty() {
             return Action::None;
         }
-        let text = self.editor.take();
+        let draft = self.editor.take();
+        let text = self.expand_pastes(&draft);
         let attachments = std::mem::take(&mut self.attachments);
+        self.pastes.clear();
         self.record_history(&text);
         self.history_index = None;
         self.draft.clear();
         self.completion = Completion::default();
         Action::Submit { text, attachments }
+    }
+
+    /// Replace every paste placeholder with the text it stands for.
+    ///
+    /// Substitution is textual because the operator may have moved or edited
+    /// the surrounding draft; a placeholder deleted from the text simply has
+    /// nothing left to expand, which is the behaviour a person expects from
+    /// removing a token.
+    fn expand_pastes(&self, text: &str) -> String {
+        let mut expanded = text.to_string();
+        for (placeholder, content) in &self.pastes {
+            expanded = expanded.replace(placeholder.as_str(), content);
+        }
+        expanded
     }
 
     fn record_history(&mut self, entry: &str) {
@@ -1037,7 +1059,20 @@ impl Composer {
             Some(LocalAttachment::Binary { mime, data, name }) => {
                 self.attach_binary(&mime, &data, &name);
             }
-            None => self.editor.insert_str(&normalize_paste(text)),
+            None => {
+                let normalized = normalize_paste(text);
+                // Three lines or 150 characters is where a paste stops reading
+                // as something the operator typed; it is the same threshold the
+                // TypeScript prompt uses.
+                let lines = normalized.lines().count();
+                if lines >= 3 || normalized.chars().count() > 150 {
+                    let placeholder = format!("[Pasted ~{lines} lines]");
+                    self.pastes.push((placeholder.clone(), normalized));
+                    self.editor.insert_str(&placeholder);
+                } else {
+                    self.editor.insert_str(&normalized);
+                }
+            }
         }
         self.refresh_completion();
     }
@@ -1389,6 +1424,7 @@ mod tests {
             phase_alert: false,
             placeholder: 0,
             attachments: Vec::new(),
+            pastes: Vec::new(),
             history: Vec::new(),
             history_index: None,
             draft: String::new(),
@@ -1705,6 +1741,60 @@ mod tests {
     #[test]
     fn paste_normalizes_crlf_and_cr() {
         assert_eq!(normalize_paste("a\r\nb\rc"), "a\nb\nc");
+    }
+
+    /// A long paste must not push the draft out of view. The composer holds
+    /// one placeholder line; the text waits until submit.
+    #[test]
+    fn a_long_paste_collapses_to_one_placeholder_line() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-paste-{}", std::process::id()));
+        let mut composer = composer(&dir);
+        let pasted = (1..=200)
+            .map(|n| format!("line {n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        composer.paste(&pasted);
+        assert_eq!(composer.editor.text(), "[Pasted ~200 lines]");
+        let Action::Submit { text, .. } = composer.submit() else {
+            panic!("a placeholder keeps the composer non-empty");
+        };
+        assert_eq!(text, pasted, "the full text must reach the prompt");
+    }
+
+    #[test]
+    fn a_short_paste_is_inserted_as_typed() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-paste-short-{}", std::process::id()));
+        let mut composer = composer(&dir);
+        composer.paste("two words");
+        assert_eq!(composer.editor.text(), "two words");
+    }
+
+    /// The threshold is line count or length, matching the TypeScript prompt:
+    /// three lines is where a block stops reading as something typed.
+    #[test]
+    fn three_lines_collapse_but_two_do_not() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-paste-edge-{}", std::process::id()));
+        let mut two = composer(&dir);
+        two.paste("a\nb");
+        assert_eq!(two.editor.text(), "a\nb");
+        let mut three = composer(&dir);
+        three.paste("a\nb\nc");
+        assert_eq!(three.editor.text(), "[Pasted ~3 lines]");
+    }
+
+    /// Deleting the placeholder drops the paste with it: a token the operator
+    /// removed must not reappear at submit.
+    #[test]
+    fn removing_the_placeholder_drops_the_pasted_text() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-paste-drop-{}", std::process::id()));
+        let mut composer = composer(&dir);
+        composer.paste("x\ny\nz");
+        composer.editor.select_all();
+        composer.editor.insert_str("replaced");
+        let Action::Submit { text, .. } = composer.submit() else {
+            panic!("composer is non-empty");
+        };
+        assert_eq!(text, "replaced");
     }
 
     #[test]
