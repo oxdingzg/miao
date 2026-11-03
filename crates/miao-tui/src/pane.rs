@@ -29,11 +29,6 @@ fn composer_column(width: u16) -> u16 {
 /// keeps everything left of it. A capped, centred prose column used to leave a
 /// band of empty cells on both sides of a wide terminal, which read as the
 /// content occupying only the middle of the screen.
-/// The air between the window's edge and the transcript. The prose starting on
-/// column 0 glued every line to the border; a small gutter keeps the text off
-/// the edge the way the editor's own prompt block does. A body too narrow to
-/// hold the sidebar keeps its full width instead.
-const PROSE_MARGIN: u16 = 2;
 
 fn body_columns(area: Rect) -> (Rect, Option<Rect>) {
     if area.width < SIDEBAR_MIN_WIDTH {
@@ -42,8 +37,8 @@ fn body_columns(area: Rect) -> (Rect, Option<Rect>) {
     let split = area.width.saturating_sub(SIDEBAR_WIDTH + 1);
     (
         Rect {
-            x: area.x + PROSE_MARGIN,
-            width: split.saturating_sub(PROSE_MARGIN),
+            x: area.x,
+            width: split,
             ..area
         },
         Some(Rect {
@@ -347,15 +342,10 @@ impl Shell {
         if let Some(panel) = self.panel.as_ref() {
             panel.render(frame, panel_area, &self.transcript.theme);
         }
-        // The input belongs to the prose column, not to the window: centring it
-        // over the whole width put it ~20 columns right of the text it answers
-        // whenever the sidebar was on screen.
-        render_composer(
-            frame,
-            body_columns(composer_area).0,
-            &self.composer,
-            &self.transcript.theme,
-        );
+        // The input spans the whole window width, covering the sidebar's
+        // bottom band the way the TS layout draws it: the sidebar's content
+        // ends high, and a prose-width input left that band looking cut off.
+        render_composer(frame, composer_area, &self.composer, &self.transcript.theme);
         match &self.leader_hint {
             Some(menu) => frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
@@ -3892,8 +3882,8 @@ mod tests {
         let area = Rect::new(0, 0, 200, 20);
         let (prose, sidebar) = body_columns(area);
         let sidebar = sidebar.expect("wide enough for both");
-        assert_eq!(prose.x, PROSE_MARGIN, "the prose starts past the gutter");
-        assert_eq!(prose.width, 200 - SIDEBAR_WIDTH - 1 - PROSE_MARGIN);
+        assert_eq!(prose.x, 0, "the prose starts at the window's edge");
+        assert_eq!(prose.width, 200 - SIDEBAR_WIDTH - 1);
         assert_eq!(sidebar.width, SIDEBAR_WIDTH);
         assert_eq!(
             sidebar.x,
@@ -3912,7 +3902,7 @@ mod tests {
         let sidebar = sidebar.expect("120 columns show it");
         assert_eq!(sidebar.x, prose.right() + 1);
         assert_eq!(sidebar.width, SIDEBAR_WIDTH);
-        assert_eq!(prose.width, 120 - SIDEBAR_WIDTH - 1 - PROSE_MARGIN);
+        assert_eq!(prose.width, 120 - SIDEBAR_WIDTH - 1);
         // A body narrower than the threshold has no sidebar at all.
         let (prose, sidebar) = body_columns(Rect::new(0, 0, 99, 20));
         assert!(sidebar.is_none());
@@ -3920,9 +3910,10 @@ mod tests {
     }
 
     #[test]
-    fn a_wide_frame_paints_the_input_in_the_same_column_as_the_prose() {
-        // The caret should sit under the text it answers, not in a stripe across
-        // a 200-column terminal.
+    fn a_wide_frame_paints_the_input_across_the_whole_window() {
+        // The input covers the window width — the sidebar's bottom band
+        // included — the way the TS layout draws it, instead of stopping at
+        // the prose column and leaving that band looking cut off.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
@@ -3942,28 +3933,12 @@ mod tests {
                     .contains("composer")
             })
             .expect("the composer is painted");
-        // The composer fills the prose column, which now starts past the
-        // window's gutter.
-        let (prose, sidebar) = body_columns(ratatui::layout::Rect::new(0, 0, 200, 20));
-        assert!(sidebar.is_some(), "this frame has a sidebar");
-        let gutter = prose.x as usize;
-        let column = prose.width as usize;
-        assert_eq!(
-            gutter, PROSE_MARGIN as usize,
-            "the prose column starts past the gutter"
-        );
         let symbols = rows[top]
             .iter()
             .map(|cell| cell.symbol())
             .collect::<Vec<_>>();
-        assert_eq!(symbols[gutter], "┌", "the box starts on the column");
-        assert_eq!(symbols[gutter + column - 1], "┐", "and ends on it");
-        for (x, symbol) in symbols.iter().enumerate() {
-            let inside = x >= gutter && x < gutter + column;
-            if !inside {
-                assert_eq!(symbol, &" ", "the input does not reach column {x}");
-            }
-        }
+        assert_eq!(symbols[0], "┌", "the box starts on the window's edge");
+        assert_eq!(symbols[199], "┐", "and ends on the other edge");
     }
 
     /// The composer must start on the same column as the text it answers. It
