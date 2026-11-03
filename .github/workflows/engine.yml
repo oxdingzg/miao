@@ -157,6 +157,39 @@ jobs:
         if: matrix.os == 'ubuntu-24.04'
         run: python3 tests/accuracy/sensitivity.py
 
+  engine-windows-check:
+    name: engine (windows compile)
+    # Compile-only, on the pull-request path. The full Windows suite below takes
+    # most of an hour and runs only on the nightly schedule and the release, so
+    # `#[cfg(windows)]` code had no PR-time coverage at all: #2441 renamed a
+    # parameter in two of three cfg branches, only the Windows one failed, and
+    # Linux and macOS could not see it. The break surfaced at release time, where
+    # `publish` depends on `engine-windows` and the whole 0.3.28 shipment stopped.
+    #
+    # `cargo check --all-targets` compiles the library *and* every test target
+    # for the host Windows toolchain, which is what catches a cfg-only mistake
+    # without paying for a full test run.
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: crates/miao-engine
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/miao-engine
+
+      - name: Compile every target
+        run: cargo check --locked --all-targets
+
   engine-windows:
     name: engine (windows)
     # Windows runner time is expensive and this suite takes most of an hour, so it
