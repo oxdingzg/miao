@@ -349,6 +349,10 @@ impl Shell {
         if let Some(panel) = self.panel.as_ref() {
             panel.render(frame, panel_area, &self.transcript.theme);
         }
+        frame.render_widget(
+            Paragraph::new(composer_air(&self.composer, &self.transcript.theme)),
+            air_above,
+        );
         // The input spans the whole window width, covering the sidebar's
         // bottom band the way the TS layout draws it: the sidebar's content
         // ends high, and a prose-width input left that band looking cut off.
@@ -1502,6 +1506,61 @@ const COMPOSER_COMPLETION_ROWS: usize = 6;
 /// Display cells the `!` shell marker occupies left of the input.
 const SHELL_GUTTER: u16 = 2;
 
+/// The examples an empty composer offers, the TS prompt's own list. The pick
+/// drifts every half minute, the way the TS one re-rolls when it remounts.
+const PLACEHOLDERS: [&str; 3] = [
+    "Fix a TODO in the codebase",
+    "What is the tech stack of this project?",
+    "Fix broken tests",
+];
+const SHELL_PLACEHOLDERS: [&str; 3] = ["ls -la", "git status", "pwd"];
+
+/// The one-line band the TS prompt keeps between the transcript and the input:
+/// what the run is doing, what is waiting, and anything the operator must know.
+fn composer_air(composer: &Composer, theme: &Theme) -> Line<'static> {
+    let palette = theme.palette;
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut push = |spans: &mut Vec<Span<'static>>, text: String, style: Style| {
+        if !spans.is_empty() {
+            spans.push(Span::styled(
+                " · ",
+                Style::new().fg(palette.border),
+            ));
+        }
+        spans.push(Span::styled(text, style));
+    };
+    if let Some(phase) = &composer.phase {
+        let frame = SPINNER_FRAMES[(now_ms() / 160) as usize % SPINNER_FRAMES.len()];
+        push(
+            &mut spans,
+            format!("{frame} {phase}"),
+            Style::new().fg(palette.text_muted),
+        );
+    }
+    if composer.queued > 0 {
+        push(
+            &mut spans,
+            format!("{} queued", composer.queued),
+            Style::new().fg(palette.accent),
+        );
+    }
+    if let Some(notice) = &composer.notice {
+        push(
+            &mut spans,
+            notice.clone(),
+            Style::new().fg(palette.warning),
+        );
+    }
+    if composer.mode() == Mode::Shell {
+        push(
+            &mut spans,
+            "Shell · esc exit".to_string(),
+            Style::new().fg(palette.warning),
+        );
+    }
+    Line::from(spans)
+}
+
 /// The composer's height in rows, widened to the draft: a prompt that wraps or
 /// has several lines is shown whole up to [`COMPOSER_INPUT_ROWS`], so an
 /// operator can read what they are about to send instead of only the line the
@@ -1547,72 +1606,40 @@ fn render_composer_in(
         width: column,
         ..area
     };
-    // The queue count rides the same title line as a transient notice so the
-    // composer answers "is my prompt waiting?" without a second row.
-    let queued = (composer.queued > 0).then(|| {
-        if composer.queued == 1 {
-            "1 queued".to_string()
-        } else {
-            format!("{} queued", composer.queued)
-        }
-    });
-    // Shell mode says so in the title and on the input: a `!` line goes to the
-    // host shell, not the model, and Esc leaves it.
+    // Shell mode says so in colour: a `!` line goes to the host shell, not the
+    // model, and Esc leaves it.
     let shell = composer.mode() == Mode::Shell;
-    // INP-06: the rule that decides whether shell output reaches the model has
-    // to be visible rather than implied. A `!` line runs on the host, records in
-    // this Session (so the next turn's context contains it) and starts no turn
-    // of its own.
-    let name = if shell {
-        "shell · runs locally · output stays in this Session · esc exit"
-    } else {
-        "composer"
-    };
-    // What the run is doing rides beside the input: the answer to "is it
-    // working, queued, or waiting on me?" belongs where the operator types,
-    // not only in the title bar at the top of the screen.
-    let mut parts = composer.phase.iter().cloned().collect::<Vec<_>>();
-    parts.extend(queued);
-    parts.extend(composer.notice.iter().cloned());
-    let title_style = match shell {
-        true => Style::new().fg(palette.warning),
-        false => Style::new().fg(palette.text_muted),
-    };
     let accent = if shell {
         palette.warning
     } else {
         palette.primary
     };
-    let mut title = vec![Span::styled(format!(" {name} "), title_style)];
-    if !parts.is_empty() {
-        title.push(Span::styled("· ", Style::new().fg(palette.border)));
-        title.push(Span::styled(
-            parts.join(" · "),
-            Style::new().fg(if shell {
-                palette.warning
-            } else {
-                palette.accent
-            }),
-        ));
-        title.push(Span::styled(" ", Style::new()));
-    }
-    // The box keeps one border colour in normal mode and the shell warning when
-    // a `!` line is active: the composer is where typing latency lives, and a
-    // border that changes with the draft makes every keystroke repaint the whole
-    // band for decoration.
-    let border = match shell {
-        true => palette.warning,
-        false => palette.border,
+    // The TS prompt is one rule above and below the input, an element
+    // background, two cells of padding on each side, and no title.
+    let set = ratatui::symbols::border::Set {
+        horizontal_top: "─",
+        horizontal_bottom: "─",
+        ..ratatui::symbols::border::EMPTY
     };
-    let block = Block::bordered()
-        .title(Line::from(title))
-        .border_style(Style::new().fg(border))
-        .style(Style::new().bg(palette.background));
+    let block = Block::default()
+        .borders(Borders::TOP | Borders::BOTTOM)
+        .border_set(set)
+        .border_style(Style::new().fg(if shell {
+            palette.warning
+        } else {
+            palette.border
+        }))
+        .style(Style::new().bg(palette.element));
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    if inner.width == 0 || inner.height == 0 {
+    if inner.width <= 4 || inner.height == 0 {
         return;
     }
+    let padded = Rect {
+        x: inner.x + 2,
+        width: inner.width - 4,
+        ..inner
+    };
 
     let completion_rows = composer
         .completion
@@ -1620,8 +1647,8 @@ fn render_composer_in(
         .len()
         .min(COMPOSER_COMPLETION_ROWS) as u16;
     let input_rows = Rect {
-        height: inner.height.saturating_sub(completion_rows),
-        ..inner
+        height: padded.height.saturating_sub(completion_rows),
+        ..padded
     };
     // Shell mode prints a gutter marker and shifts the input right by it, so
     // the operator sees `! ` before the command while the buffer still holds
@@ -1653,11 +1680,18 @@ fn render_composer_in(
     let selection_style = Style::new().fg(palette.background).bg(accent);
     let selection_cells = composer.editor.selection_cells();
     if composer.editor.is_empty() && composer.completion.items.is_empty() {
-        // An empty composer reads as a dead box; a quiet hint names what the
-        // two completions answer for. The caret stays where the typing goes.
+        // An empty composer offers the example the TS prompt cycles through:
+        // one quiet sentence, `Run a command…` on a `!` line.
+        let examples: &[&str] = if shell {
+            &SHELL_PLACEHOLDERS
+        } else {
+            &PLACEHOLDERS
+        };
+        let verb = if shell { "Run a command…" } else { "Ask anything…" };
+        let example = examples[(now_ms() / 30_000) as usize % examples.len()];
         frame.render_widget(
             Paragraph::new(Span::styled(
-                "type a prompt · / for commands · @ for files",
+                format!("{verb} \u{201c}{example}\u{201d}"),
                 Style::new().fg(palette.text_muted),
             )),
             input_area,
@@ -1697,9 +1731,9 @@ fn render_composer_in(
     }
 
     let completion_area = Rect {
-        y: inner.y + input_area.height,
+        y: padded.y + input_rows.height,
         height: completion_rows,
-        ..inner
+        ..padded
     };
     // A command row says what the command does, so the operator does not have
     // to remember which of `status` and `sessions` prints usage. File
@@ -3257,7 +3291,7 @@ mod tests {
             .iter()
             .map(|cell| cell.symbol().to_string())
             .collect::<String>();
-        assert!(painted.contains("type a prompt"), "{painted}");
+        assert!(painted.contains("Ask anything"), "{painted}");
 
         let mut composer = crate::editor::Composer::new(Path::new("."));
         composer.editor.insert_str("hello");
@@ -3279,7 +3313,7 @@ mod tests {
             .map(|cell| cell.symbol().to_string())
             .collect::<String>();
         assert!(painted.contains("hello"), "{painted}");
-        assert!(!painted.contains("type a prompt"), "{painted}");
+        assert!(!painted.contains("Ask anything"), "{painted}");
     }
 
     /// Context the engine injected is a history note. Painting it behind the
@@ -3553,6 +3587,32 @@ mod tests {
         assert_eq!(rendered[note - 1], "", "prose opens with a blank row");
         assert_eq!(rendered[note + 1], "", "and leaves one before the next tool");
         assert!(rendered[note + 2].contains("http://b"));
+    }
+
+    #[test]
+    fn the_composer_air_names_the_run_the_queue_and_notices() {
+        // The band above the input is the TS prompt's compact activity line:
+        // what the run is doing, what is waiting, and anything the operator
+        // must know, and nothing when there is none of those.
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let mut composer = crate::editor::Composer::new(Path::new("."));
+        assert!(
+            composer_air(&composer, &theme).spans.is_empty(),
+            "an idle session paints no band"
+        );
+        composer.phase = Some("running bash · 3s".into());
+        composer.queued = 2;
+        let text: String = composer_air(&composer, &theme)
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert!(text.contains("running bash · 3s"), "{text}");
+        assert!(text.contains("2 queued"), "{text}");
     }
 
     #[test]
@@ -3860,21 +3920,20 @@ mod tests {
         terminal.draw(|frame| shell.render(frame)).expect("draw");
         let buffer = terminal.backend().buffer();
         let rows = buffer.content.chunks(200).collect::<Vec<_>>();
-        let top = rows
+        let placeholder = rows
             .iter()
             .position(|row| {
                 row.iter()
                     .map(|cell| cell.symbol())
                     .collect::<String>()
-                    .contains("composer")
+                    .contains("Ask anything")
             })
             .expect("the composer is painted");
-        let symbols = rows[top]
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<Vec<_>>();
-        assert_eq!(symbols[0], "┌", "the box starts on the window's edge");
-        assert_eq!(symbols[199], "┐", "and ends on the other edge");
+        // The rule above the placeholder spans the whole window: the composer
+        // has no side borders to stop at.
+        let top = &rows[placeholder - 1];
+        assert_eq!(top[0].symbol(), "─", "the rule starts on the window's edge");
+        assert_eq!(top[199].symbol(), "─", "and ends on the other edge");
     }
 
     /// The composer must start on the same column as the text it answers. It
@@ -3914,8 +3973,10 @@ mod tests {
                 })
                 .expect("the row is painted")
         };
-        let input = column_of("composer");
-        let prose = column_of("hello");
+        // The prompt panel and the input band both start at the window's left
+        // edge: the transcript's `┃` and the composer's top rule share it.
+        let input = column_of("─");
+        let prose = column_of("┃");
         assert_eq!(input, prose, "the input shares the transcript's column");
     }
 
