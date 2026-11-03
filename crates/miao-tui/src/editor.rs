@@ -706,6 +706,16 @@ pub struct Composer {
     /// rides the composer title so the phase is visible where the operator is
     /// typing.
     pub phase: Option<String>,
+    /// How long the current phase has run, spelled for the right-aligned slot
+    /// of the TS compact activity row. `None` clears the slot.
+    pub phase_elapsed: Option<String>,
+    /// The wait has gone long enough that the TS row turns its spinner
+    /// warning-colored (30s while waiting for the model).
+    pub phase_alert: bool,
+    /// Which placeholder example the empty composer shows. The TS prompt picks
+    /// one at random when it mounts and re-rolls on a Session change, so this
+    /// is a stored index rather than a clock drift.
+    pub placeholder: usize,
     /// Inline media sent with the prompt. The composer only shows their
     /// `[Image N]` markers; the bytes travel beside the text.
     attachments: Vec<Value>,
@@ -733,6 +743,9 @@ impl Composer {
             notice: None,
             queued: 0,
             phase: None,
+            phase_elapsed: None,
+            phase_alert: false,
+            placeholder: random_pick(),
             attachments: Vec::new(),
             history: load_history(&history_path),
             history_index: None,
@@ -744,6 +757,12 @@ impl Composer {
             workspace: workspace.to_path_buf(),
             history_path,
         }
+    }
+
+    /// Re-roll the placeholder example, the way the TS prompt re-rolls when a
+    /// different Session opens.
+    pub fn reroll_placeholder(&mut self) {
+        self.placeholder = self.placeholder.wrapping_add(1 + random_pick());
     }
 
     /// Names (without the leading `/`) offered by slash completion.
@@ -1326,6 +1345,18 @@ pub fn state_file() -> PathBuf {
     crate::state::file("composer.json")
 }
 
+/// A cheap entropy source for the placeholder pick: wall-clock nanoseconds
+/// scrambled by the golden-ratio multiplier. The TS prompt uses `Math.random`
+/// on mount; this matches the observable behavior — a different example per
+/// launch, stable within it — without pulling in a rand dependency.
+fn random_pick() -> usize {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.subsec_nanos() as usize ^ duration.as_secs() as usize)
+        .unwrap_or(0);
+    now.wrapping_mul(0x9E3779B97F4A7C15).swap_bytes()
+}
+
 fn load_history(path: &Path) -> Vec<String> {
     let Ok(text) = std::fs::read_to_string(path) else {
         return Vec::new();
@@ -1354,6 +1385,9 @@ mod tests {
             notice: None,
             queued: 0,
             phase: None,
+            phase_elapsed: None,
+            phase_alert: false,
+            placeholder: 0,
             attachments: Vec::new(),
             history: Vec::new(),
             history_index: None,

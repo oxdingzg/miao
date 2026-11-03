@@ -76,25 +76,34 @@ impl Live {
         matches!(self.phase, LivePhase::Waiting) && now.duration_since(self.signal) >= LIVE_SILENCE
     }
 
-    fn describe(&self, now: Instant) -> String {
-        let elapsed = waited(now.duration_since(self.since));
+    /// The state half of the TS compact activity row: what the run is doing,
+    /// capitalized the way the TS row spells it. The elapsed time is not part
+    /// of it — the TS row right-aligns that value — and neither is the escape
+    /// hint, which lives in the status strip.
+    fn state(&self, now: Instant) -> String {
+        let elapsed = now.duration_since(self.since);
         match &self.phase {
             LivePhase::Waiting if self.silent(now) => format!(
-                "waiting for model · {elapsed} · no engine signal {}",
-                waited(now.duration_since(self.signal))
+                "Waiting for model · no engine signal {}",
+                crate::pane::duration_ms(now.duration_since(self.signal).as_millis() as u64)
             ),
             // A reasoning model can legitimately think for minutes before the
             // first token; past half a minute of waiting, say so instead of
             // leaving the operator to read the silence as a stall.
-            LivePhase::Waiting if now.duration_since(self.since) >= Duration::from_secs(30) => {
-                format!(
-                    "waiting for model · {elapsed} · the model may reason before the first token"
-                )
+            LivePhase::Waiting if elapsed >= Duration::from_secs(30) => {
+                "Waiting for model · the model may reason before the first token".to_string()
             }
-            LivePhase::Waiting => format!("waiting for model · {elapsed}"),
-            LivePhase::Retrying { attempt } => format!("retrying attempt {attempt} · {elapsed}"),
-            LivePhase::Tool { name } => format!("running {} · {elapsed}", tool_label(name)),
+            LivePhase::Waiting => "Waiting for model".to_string(),
+            LivePhase::Retrying { attempt } => format!("Retrying · attempt {attempt}"),
+            LivePhase::Tool { name } => format!("Running {}", tool_label(name)),
         }
+    }
+
+    /// The wait has gone long enough that the TS row turns its spinner
+    /// warning-colored.
+    fn alert(&self, now: Instant) -> bool {
+        matches!(self.phase, LivePhase::Waiting)
+            && now.duration_since(self.since) >= Duration::from_secs(30)
     }
 }
 
@@ -147,13 +156,10 @@ fn tool_label(name: &str) -> String {
 }
 
 /// Whole seconds under a minute, then minutes and seconds. A count reads as
-/// movement; a rounded-down minute reads as a stuck status.
+/// The wait spelled the way the TS Locale spells it (`2.0s`, `1m 5s`).
+#[cfg(test)]
 fn waited(duration: Duration) -> String {
-    let seconds = duration.as_secs();
-    if seconds < 60 {
-        return format!("{seconds}s");
-    }
-    format!("{}m {:02}s", seconds / 60, seconds % 60)
+    crate::pane::duration_ms(duration.as_millis() as u64)
 }
 
 /// What the process should open once the engine is attached. The launch flags
@@ -637,6 +643,14 @@ impl App {
                 self.swap_draft(summary.as_ref().map(|session| session.id.as_str()));
                 self.shell.set_goal(state.goal.as_ref());
                 self.shell.set_todos(&state.todos);
+                // The TS prompt re-rolls its placeholder example when a
+                // different Session opens; the same Session refreshing must
+                // not change it.
+                if self.session.as_ref().map(|session| session.id.as_str())
+                    != summary.as_ref().map(|session| session.id.as_str())
+                {
+                    self.shell.composer.reroll_placeholder();
+                }
                 self.session = summary;
                 if let Some(summary) = &self.session {
                     match self.catalog.iter_mut().find(|row| row.id == summary.id) {
@@ -2484,12 +2498,21 @@ impl App {
             )),
         };
         let phase_needs_operator = blocking.is_some();
-        let phase = match blocking {
-            Some(blocking) => blocking,
+        // The compact activity row splits into what the TS row splits into:
+        // state text on the left, elapsed time right-aligned, and a spinner
+        // that turns warning-colored once a model wait passes half a minute.
+        let (phase, elapsed, alert) = match blocking {
+            Some(blocking) => (blocking, None, false),
             None => match (self.state.active_run.is_some(), live) {
-                (true, Some(live)) => live.describe(now),
-                (true, None) => "working".to_string(),
-                (false, _) => "idle".to_string(),
+                (true, Some(live)) => (
+                    live.state(now),
+                    Some(crate::pane::duration_ms(
+                        now.duration_since(live.since).as_millis() as u64,
+                    )),
+                    live.alert(now),
+                ),
+                (true, None) => ("Working".to_string(), None, false),
+                (false, _) => ("Idle".to_string(), None, false),
             },
         };
         let status = match (&self.state.active_run, self.state.pending) {
@@ -2510,6 +2533,11 @@ impl App {
                 true => Some(phase.clone()),
                 false => None,
             };
+        self.shell.composer.phase_elapsed = match self.shell.composer.phase.is_some() {
+            true => elapsed,
+            false => None,
+        };
+        self.shell.composer.phase_alert = alert && self.shell.composer.phase.is_some();
         // Which model answers, and what the Session has cost so far. A pin on
         // the Session wins, then the model the newest assistant message ran on,
         // labelled with the catalog's protocol so the strip names the provider
@@ -2571,7 +2599,14 @@ impl App {
         }
         // A blocking approval or question is already the phase line, so
         // repeating it here would say the same thing twice in the one strip the
-        // operator scans.
+        // operator scans. The queued count rides the strip, like the TS status
+        // line's `queued (n)` segment.
+        if self.state.pending > 0 {
+            hints.push(StatusHint {
+                text: format!("queued ({})", self.state.pending),
+                warning: false,
+            });
+        }
         if self.state.active_run.is_some() {
             hints.push(StatusHint {
                 text: "esc interrupt".to_string(),
@@ -4032,7 +4067,7 @@ mod tests {
             transcript: Box::new(Transcript::default()),
             state,
         });
-        assert_eq!(app.shell.composer.phase.as_deref(), Some("working"));
+        assert_eq!(app.shell.composer.phase.as_deref(), Some("Working"));
         app.state.active_run = None;
         app.update_status();
         assert!(
@@ -4189,17 +4224,17 @@ mod tests {
     fn a_waiting_run_counts_the_wait_instead_of_showing_a_static_working() {
         let mut app = running_app("run-1");
         app.update_status();
-        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+        assert_eq!(app.shell.title.status(), Some("Working · Esc interrupt"));
         app.handle(provider_frame("provider.waiting"));
         app.update_status();
         assert_eq!(
             app.shell.title.status(),
-            Some("waiting for model · 0s · Esc interrupt")
+            Some("Waiting for model · Esc interrupt")
         );
         // A token ends the wait; committed content carries the turn from here.
         app.handle(provider_frame("provider.delta"));
         app.update_status();
-        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+        assert_eq!(app.shell.title.status(), Some("Working · Esc interrupt"));
     }
 
     #[test]
@@ -4218,7 +4253,7 @@ mod tests {
         app.update_status();
         assert_eq!(
             app.shell.title.status(),
-            Some("retrying attempt 2 · 0s · Esc interrupt")
+            Some("Retrying · attempt 2 · Esc interrupt")
         );
     }
 
@@ -4235,7 +4270,7 @@ mod tests {
         app.update_status();
         assert_eq!(
             app.shell.title.status(),
-            Some("waiting for model · 40s · no engine signal 20s · Esc interrupt")
+            Some("Waiting for model · no engine signal 20.0s · Esc interrupt")
         );
         assert!(app.shell.title.status_alert());
     }
@@ -4248,7 +4283,7 @@ mod tests {
             "run_id": "run-0",
         })));
         app.update_status();
-        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+        assert_eq!(app.shell.title.status(), Some("Working · Esc interrupt"));
     }
 
     #[test]
@@ -4288,7 +4323,7 @@ mod tests {
             app.update_status();
             let status = app.shell.title.status().unwrap_or_default();
             assert!(
-                status.starts_with(&format!("running {shown}")),
+                status.starts_with(&format!("Running {shown}")),
                 "{name} is named as {shown}, not clipped: {status}"
             );
         }
@@ -4305,14 +4340,14 @@ mod tests {
         app.update_status();
         assert_eq!(
             app.shell.title.status(),
-            Some("running bash · 0s · Esc interrupt")
+            Some("Running bash · Esc interrupt")
         );
         app.handle(AppEvent::Provider(serde_json::json!({
             "kind": "tool.completed",
             "run_id": "run-1",
         })));
         app.update_status();
-        assert_eq!(app.shell.title.status(), Some("working · Esc interrupt"));
+        assert_eq!(app.shell.title.status(), Some("Working · Esc interrupt"));
     }
 
     #[test]
@@ -4335,6 +4370,8 @@ mod tests {
             .iter()
             .map(|cell| cell.symbol())
             .collect();
+        // The transcript tail row keeps its own lowercase spelling; the status
+        // strip's "Running bash" is asserted separately.
         assert!(text.contains("running bash"), "{text}");
         app.handle(AppEvent::Provider(serde_json::json!({
             "kind": "tool.completed",
@@ -4368,7 +4405,7 @@ mod tests {
         app.update_status();
         assert_eq!(
             app.shell.title.status(),
-            Some("running bash · 5m 00s · Esc interrupt")
+            Some("Running bash · Esc interrupt")
         );
         assert!(!app.shell.title.status_alert());
     }
@@ -4383,8 +4420,8 @@ mod tests {
 
     #[test]
     fn a_wait_reads_in_seconds_then_minutes() {
-        assert_eq!(waited(Duration::from_secs(9)), "9s");
-        assert_eq!(waited(Duration::from_secs(65)), "1m 05s");
+        assert_eq!(waited(Duration::from_secs(9)), "9.0s");
+        assert_eq!(waited(Duration::from_secs(65)), "1m 5s");
     }
 
     fn delta_frame(run_id: &str, kind: &str, text: &str) -> AppEvent {
@@ -4400,8 +4437,9 @@ mod tests {
         app.shell
             .draft()
             .iter()
-            .map(|line| {
-                line.spans
+            .map(|row| {
+                row.line
+                    .spans
                     .iter()
                     .map(|span| span.content.as_ref())
                     .collect::<String>()

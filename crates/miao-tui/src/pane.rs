@@ -108,7 +108,7 @@ impl Shell {
                 self.transcript.expanded,
                 self.toggle_chord.as_deref(),
             );
-            self.transcript.set_lines(projected.lines);
+            self.transcript.set_rows(projected.rows);
             self.transcript.user_anchors = projected.anchors;
         }
     }
@@ -120,7 +120,7 @@ impl Shell {
             self.transcript.expanded,
             self.toggle_chord.as_deref(),
         );
-        self.transcript.set_lines(projected.lines);
+        self.transcript.set_rows(projected.rows);
         self.transcript.user_anchors = projected.anchors;
         let max = self.transcript.max_scroll();
         self.transcript.scroll = self.transcript.scroll.min(max);
@@ -146,7 +146,7 @@ impl Shell {
     }
 
     #[cfg(test)]
-    pub fn draft(&mut self) -> &[Line<'static>] {
+    pub fn draft(&mut self) -> &[Row] {
         // A frame would refresh the throttled draft; a test reads it directly.
         self.transcript.refresh_draft(true);
         &self.transcript.draft
@@ -201,7 +201,7 @@ impl Shell {
                 self.transcript.expanded,
                 self.toggle_chord.as_deref(),
             );
-            self.transcript.set_lines(projected.lines);
+            self.transcript.set_rows(projected.rows);
             self.transcript.user_anchors = projected.anchors;
         }
     }
@@ -214,10 +214,11 @@ impl Shell {
     /// states where there is no Session content to render.
     pub fn set_message(&mut self, message: &str) {
         let palette = self.transcript.theme.palette;
-        self.transcript.set_lines(vec![Line::from(Span::styled(
-            message.to_string(),
-            Style::new().fg(palette.error),
-        ))]);
+        self.transcript
+            .set_rows(vec![Row::plain(Line::from(Span::styled(
+                message.to_string(),
+                Style::new().fg(palette.error),
+            )))]);
         self.transcript.user_anchors = Vec::new();
         self.transcript.scroll = 0;
         self.transcript.follow = false;
@@ -235,7 +236,7 @@ impl Shell {
                 self.transcript.expanded,
                 self.toggle_chord.as_deref(),
             );
-            self.transcript.set_lines(projected.lines);
+            self.transcript.set_rows(projected.rows);
             self.transcript.user_anchors = projected.anchors;
         }
         self.transcript.expanded
@@ -338,10 +339,39 @@ impl Shell {
         if let Some(panel) = self.panel.as_ref() {
             panel.render(frame, panel_area, &self.transcript.theme);
         }
-        frame.render_widget(
-            Paragraph::new(composer_air(&self.composer, &self.transcript.theme)),
-            air_above,
-        );
+        // The TS compact activity row is one line above the input: state on
+        // the left, elapsed time right-aligned. The two columns re-create that
+        // space-between split; a narrow band drops the right side, as the TS
+        // row does under 32 columns.
+        if let Some(elapsed) = &self.composer.phase_elapsed {
+            if air_above.width >= 32 {
+                let width = elapsed.width() as u16;
+                let [left, right] =
+                    Layout::horizontal([Constraint::Min(1), Constraint::Length(width)])
+                        .areas(air_above);
+                frame.render_widget(
+                    Paragraph::new(composer_air(&self.composer, &self.transcript.theme)),
+                    left,
+                );
+                frame.render_widget(
+                    Paragraph::new(Line::from(Span::styled(
+                        elapsed.clone(),
+                        Style::new().fg(self.transcript.theme.palette.text_muted),
+                    ))),
+                    right,
+                );
+            } else {
+                frame.render_widget(
+                    Paragraph::new(composer_air(&self.composer, &self.transcript.theme)),
+                    air_above,
+                );
+            }
+        } else {
+            frame.render_widget(
+                Paragraph::new(composer_air(&self.composer, &self.transcript.theme)),
+                air_above,
+            );
+        }
         // The input spans the whole window width, covering the sidebar's
         // bottom band the way the TS layout draws it: the sidebar's content
         // ends high, and a prose-width input left that band looking cut off.
@@ -443,14 +473,14 @@ impl Pane for TitlePane {
 
 pub struct TranscriptPane {
     theme: Theme,
-    /// The projection's lines, unwrapped. A frame wraps them once per width
+    /// The projection's rows, unwrapped. A frame wraps them once per width
     /// into `body` and paints only its viewport, so a keystroke costs the
     /// window rather than the whole Session.
-    lines: Vec<Line<'static>>,
+    rows: Vec<Row>,
     /// The streamed answer that the next projection replaces. Kept apart from
-    /// `lines` so a projection can drop it in one assignment.
+    /// `rows` so a projection can drop it in one assignment.
     draft_source: Option<(String, String)>,
-    draft: Vec<Line<'static>>,
+    draft: Vec<Row>,
     /// A delta arrived and `draft` has not been rebuilt yet.
     draft_dirty: bool,
     draft_built: Option<Instant>,
@@ -496,7 +526,7 @@ impl TranscriptPane {
     fn new(theme: Theme) -> Self {
         Self {
             theme,
-            lines: vec![Line::from("no Session selected")],
+            rows: vec![Row::plain(Line::from("no Session selected"))],
             draft_source: None,
             draft: Vec::new(),
             draft_dirty: false,
@@ -519,10 +549,10 @@ impl TranscriptPane {
         }
     }
 
-    /// Replace the projection's lines. The bump invalidates the wrapped cache,
+    /// Replace the projection's rows. The bump invalidates the wrapped cache,
     /// which is rebuilt on the next frame at that frame's width.
-    fn set_lines(&mut self, lines: Vec<Line<'static>>) {
-        self.lines = lines;
+    fn set_rows(&mut self, rows: Vec<Row>) {
+        self.rows = rows;
         self.body_version += 1;
     }
 
@@ -546,7 +576,7 @@ impl TranscriptPane {
     /// frame.
     fn max_scroll(&self) -> u16 {
         let rows = match self.body.len() + self.draft_rows.len() {
-            0 => self.lines.len(),
+            0 => self.rows.len(),
             rows => rows,
         };
         // `render` parks the tail at `rows - viewport`, so that is the largest
@@ -583,16 +613,22 @@ impl Pane for TranscriptPane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
         self.refresh_draft(false);
-        // The pane is already the prose column, so it fills it: wrapping, not a
-        // narrower measure, is what keeps a long line readable.
-        let content = area;
+        // The TS message column is inset one cell on each side inside its
+        // body row (`paddingLeft=1 paddingRight=1`), which is what keeps the
+        // user panel's `┃` edge off the very screen edge. Mirroring that inset
+        // here moves the whole pane, wrap budget included.
+        let content = Rect {
+            x: area.x + 1,
+            width: area.width.saturating_sub(2),
+            ..area
+        };
         let resized = content.width != self.width;
         if resized || self.body_version != self.body_built {
-            self.body = wrap_lines(&self.lines, content.width);
+            self.body = wrap_rows(&self.rows, content.width);
             self.body_built = self.body_version;
         }
         if resized || self.draft_version != self.draft_rows_built {
-            self.draft_rows = wrap_lines(&self.draft, content.width);
+            self.draft_rows = wrap_rows(&self.draft, content.width);
             self.draft_rows_built = self.draft_version;
         }
         self.width = content.width;
@@ -636,7 +672,7 @@ impl Pane for TranscriptPane {
                         format!("❯ {}", fit(first, width.saturating_sub(2))),
                         Style::new().fg(palette.primary),
                     ))
-                    .style(Style::new().bg(palette.element));
+                    .style(Style::new().bg(palette.surface));
                 }
             }
         }
@@ -650,7 +686,7 @@ impl Pane for TranscriptPane {
                 if used < width {
                     line.spans.push(Span::styled(
                         " ".repeat(width - used),
-                        Style::new().bg(palette.element),
+                        Style::new().bg(palette.surface),
                     ));
                 }
             }
@@ -671,20 +707,95 @@ impl Pane for TranscriptPane {
     }
 }
 
+/// A projected transcript line plus its wrap behavior, mirroring the TS
+/// layout's container model: `hang` is the display-cell width of the leading
+/// prefix (the `● ` bullet, the `┃` user panel edge) that stays painted on
+/// every wrapped row, so the text wraps inside the width that remains — the
+/// way the TS markdown box wraps inside its padded container. `keep` is the
+/// leading slice of that prefix that is structural and survives on every
+/// continuation unchanged (the user panel's `┃` edge); the rest of the prefix
+/// is blanked on continuations, the way the TS `❯` marker leads only the first
+/// row. `wrap: false` is TS `wrapMode="none"`: the row is clipped to the
+/// width, never folded.
+pub(crate) struct Row {
+    pub(crate) line: Line<'static>,
+    pub(crate) hang: u16,
+    pub(crate) keep: u16,
+    pub(crate) wrap: bool,
+}
+
+impl Row {
+    /// A full-width wrapping row with no hanging prefix.
+    pub(crate) fn plain(line: Line<'static>) -> Self {
+        Self {
+            line,
+            hang: 0,
+            keep: 0,
+            wrap: true,
+        }
+    }
+
+    /// A row whose text wraps under a fixed leading prefix that continuations
+    /// blank out (the `● ` bullet, the `❯` marker column).
+    fn hung(line: Line<'static>, hang: u16) -> Self {
+        Self {
+            line,
+            hang,
+            keep: 0,
+            wrap: true,
+        }
+    }
+
+    /// Like [`Row::hung`], but the first `keep` cells of the prefix are
+    /// structural and repeat on every continuation (the `┃` panel edge).
+    fn hung_with_edge(line: Line<'static>, hang: u16, keep: u16) -> Self {
+        Self {
+            line,
+            hang,
+            keep,
+            wrap: true,
+        }
+    }
+
+    /// A row that clips instead of folding (`wrapMode="none"`).
+    fn clipped(line: Line<'static>) -> Self {
+        Self {
+            line,
+            hang: 0,
+            keep: 0,
+            wrap: false,
+        }
+    }
+}
+
+fn plain_rows(lines: Vec<Line<'static>>) -> Vec<Row> {
+    lines.into_iter().map(Row::plain).collect()
+}
+
 /// Split styled lines into rows no wider than `width` display cells, so the
 /// transcript is wrapped once per width instead of once per frame. Breaks
 /// prefer the last blank on the row, like the word wrapping it replaces, and
 /// only a word longer than the row is cut mid-word. Styles and alignment
 /// survive the split; a wide character never straddles a row.
+#[cfg(test)]
 fn wrap_lines(lines: &[Line<'static>], width: u16) -> Vec<Line<'static>> {
+    let rows: Vec<Row> = plain_rows(lines.to_vec());
+    wrap_rows(&rows, width)
+}
+
+/// Wrap projected rows to `width` display cells, honoring each row's hanging
+/// prefix and clip mode.
+fn wrap_rows(rows: &[Row], width: u16) -> Vec<Line<'static>> {
     let width = width.max(1) as usize;
-    let mut rows = Vec::with_capacity(lines.len());
-    for line in lines {
-        if line.spans.is_empty() || line.width() <= width {
-            rows.push(line.clone());
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        // Blank rows are spacing, not content: they pass through untouched.
+        if row.line.spans.is_empty() {
+            out.push(row.line.clone());
             continue;
         }
-        let cells = line
+        let cells = row
+            .line
             .spans
             .iter()
             .flat_map(|span| {
@@ -693,36 +804,116 @@ fn wrap_lines(lines: &[Line<'static>], width: u16) -> Vec<Line<'static>> {
                     .map(move |character| (character, span.style))
             })
             .collect::<Vec<_>>();
-        let mut start = 0;
-        while start < cells.len() {
+        if !row.wrap {
+            // A clipped row keeps its start and drops the overflow, the way
+            // TS `wrapMode="none"` never folds a status line.
             let mut used = 0;
-            let mut blank = None;
-            let mut end = start;
+            let mut end = 0;
             while end < cells.len() {
                 let cell = cells[end].0.width().unwrap_or(0);
-                if used + cell > width && used > 0 {
+                if used + cell > width {
                     break;
                 }
                 used += cell;
                 end += 1;
-                if cells[end - 1].0 == ' ' {
-                    blank = Some(end);
-                }
             }
-            let end = match blank {
-                Some(index) if index > start && index < end => index,
-                _ => end,
+            out.push(row_from(&cells[..end], &row.line));
+            continue;
+        }
+        let hang = (row.hang as usize).min(width.saturating_sub(1));
+        if hang == 0 || cells_width(&cells) <= width {
+            if hang == 0 {
+                out.extend(wrap_cells(&cells, width, &row.line));
+            } else {
+                out.push(row_from(&cells, &row.line));
+            }
+            continue;
+        }
+        // Container model: the prefix stays fixed on every row and the text
+        // wraps inside the width that remains. The first row reuses the
+        // projected prefix verbatim; continuation rows keep the structural
+        // leading slice (`keep`, the `┃` panel edge) and blank the rest to the
+        // prefix's trailing style, which is where the TS text element starts
+        // its wrapped lines.
+        let prefix = &cells[..hang];
+        let text = &cells[hang..];
+        let budget = width - hang;
+        let blank = prefix
+            .last()
+            .map(|(_, style)| (' ', *style))
+            .unwrap_or((' ', Style::new()));
+        let keep = (row.keep as usize).min(hang);
+        let mut first = true;
+        for chunk in chunk_cells(text, budget) {
+            let row = match first {
+                true => {
+                    first = false;
+                    row_from(prefix.iter().chain(chunk.iter()), &row.line)
+                }
+                false => row_from(
+                    prefix[..keep]
+                        .iter()
+                        .chain(std::iter::repeat_n(&blank, hang - keep))
+                        .chain(chunk.iter()),
+                    &row.line,
+                ),
             };
-            rows.push(row_from(&cells[start..end], line));
-            start = end;
+            out.push(row);
         }
     }
-    rows
+    out
+}
+
+fn cells_width(cells: &[(char, Style)]) -> usize {
+    cells
+        .iter()
+        .map(|(character, _)| character.width().unwrap_or(0))
+        .sum()
+}
+
+/// Split cells into chunks of at most `width` display cells, preferring the
+/// last blank of each chunk as the break.
+fn chunk_cells(cells: &[(char, Style)], width: usize) -> Vec<&[(char, Style)]> {
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    while start < cells.len() {
+        let mut used = 0;
+        let mut blank = None;
+        let mut end = start;
+        while end < cells.len() {
+            let cell = cells[end].0.width().unwrap_or(0);
+            if used + cell > width && used > 0 {
+                break;
+            }
+            used += cell;
+            end += 1;
+            if cells[end - 1].0 == ' ' {
+                blank = Some(end);
+            }
+        }
+        let end = match blank {
+            Some(index) if index > start && index < end => index,
+            _ => end,
+        };
+        chunks.push(&cells[start..end]);
+        start = end;
+    }
+    chunks
+}
+
+fn wrap_cells(cells: &[(char, Style)], width: usize, line: &Line<'static>) -> Vec<Line<'static>> {
+    chunk_cells(cells, width)
+        .into_iter()
+        .map(|chunk| row_from(chunk, line))
+        .collect()
 }
 
 /// One wrapped row, with adjacent cells of the same style joined back into a
 /// span.
-fn row_from(cells: &[(char, Style)], line: &Line<'static>) -> Line<'static> {
+fn row_from<'a, I>(cells: I, line: &Line<'static>) -> Line<'static>
+where
+    I: IntoIterator<Item = &'a (char, Style)>,
+{
     let mut spans: Vec<Span<'static>> = Vec::new();
     for (character, style) in cells {
         match spans.last_mut() {
@@ -1094,7 +1285,7 @@ pub fn next_relative_change(updated_at_ms: u64, now: u64) -> std::time::Duration
 const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 /// Milliseconds spelled the way the TS Locale spells them: `3.2s`, `1m 20s`.
-fn duration_ms(input: u64) -> String {
+pub(crate) fn duration_ms(input: u64) -> String {
     if input < 1_000 {
         format!("{input}ms")
     } else if input < 60_000 {
@@ -1165,8 +1356,10 @@ fn thought_header(reasoning: &Reasoning, theme: &Theme) -> Line<'static> {
 }
 
 /// Assistant prose as the TS TextPart paints it: a muted bullet on the first
-/// row and the markdown block indented under that bullet's two cells.
-fn prose_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
+/// row and the markdown block indented under that bullet's two cells. The two
+/// prefix cells hang on every wrapped row, so the text wraps inside the same
+/// width the TS markdown container gets.
+fn prose_lines(text: &str, theme: &Theme) -> Vec<Row> {
     let palette = theme.palette;
     let bullet = Style::new().fg(palette.text_muted);
     markdown::lines(text, theme)
@@ -1176,16 +1369,16 @@ fn prose_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
             let mut spans = Vec::with_capacity(line.spans.len() + 1);
             spans.push(Span::styled(if index == 0 { "● " } else { "  " }, bullet));
             spans.extend(line.spans);
-            Line::from(spans).style(line.style)
+            Row::hung(Line::from(spans).style(line.style), 2)
         })
         .collect()
 }
 
 /// The streamed answer, rendered like the assistant entry it will become: the
 /// provisional block gains its header when the committed message arrives.
-fn draft_lines(text: &str, reasoning: &str, theme: &Theme, now_ms: u64) -> Vec<Line<'static>> {
+fn draft_lines(text: &str, reasoning: &str, theme: &Theme, now_ms: u64) -> Vec<Row> {
     let palette = theme.palette;
-    let mut lines = Vec::new();
+    let mut rows = Vec::new();
     if !reasoning.is_empty() {
         // Thinking streams as one muted header line the TS transcript shows: a
         // spinner naming where the thought is heading, never the run of text
@@ -1197,15 +1390,15 @@ fn draft_lines(text: &str, reasoning: &str, theme: &Theme, now_ms: u64) -> Vec<L
         } else {
             format!("Thinking · {summary}")
         };
-        lines.push(Line::from(Span::styled(
+        rows.push(Row::clipped(Line::from(Span::styled(
             format!("{frame} {label}"),
             Style::new().fg(palette.text_muted),
-        )));
+        ))));
     }
     if !text.is_empty() {
-        lines.extend(prose_lines(text, theme));
+        rows.extend(prose_lines(text, theme));
     }
-    lines
+    rows
 }
 
 fn transcript_lines(
@@ -1215,10 +1408,10 @@ fn transcript_lines(
     toggle: Option<&str>,
 ) -> Projected {
     let palette = theme.palette;
-    let mut lines = Vec::new();
+    let mut rows = Vec::new();
     let mut anchors: Vec<(usize, String)> = Vec::new();
     // The TS scrollbox opens with one blank row above the oldest message.
-    lines.push(Line::default());
+    rows.push(Row::plain(Line::default()));
     // Whether the previous assistant part rendered as a single inline row. TS
     // butts consecutive single-row tools together and separates everything
     // else with one blank row.
@@ -1230,34 +1423,43 @@ fn transcript_lines(
                 // The TS prompt block: two blank rows above, then a left-edged
                 // panel with one row of padding above and below the text. The
                 // panel background rides each row so the band reads as one
-                // block once `wrap_lines` pads it to the pane's width.
-                let surface = Style::new().bg(palette.element);
-                let edge = Style::new().fg(palette.primary);
-                lines.push(Line::default());
-                lines.push(Line::default());
-                lines.push(
+                // block once `wrap_rows` pads it to the pane's width. The
+                // edge takes the agent's color slot (the TS default palette
+                // rotation starts at `secondary`), and the `❯` marker only
+                // leads the first row: wrapped and multi-line continuations
+                // start at the marker column without repeating it.
+                let surface = Style::new().bg(palette.surface);
+                let edge = Style::new().fg(palette.secondary);
+                let marker = Style::new().fg(palette.text_muted);
+                let text_style = Style::new().fg(palette.text);
+                rows.push(Row::plain(Line::default()));
+                rows.push(Row::plain(Line::default()));
+                rows.push(Row::clipped(
                     Line::from(vec![Span::styled("┃", edge), Span::styled("  ", surface)])
                         .style(surface),
-                );
+                ));
                 anchors.push((
-                    lines.len(),
+                    rows.len(),
                     text.lines().next().unwrap_or_default().to_string(),
                 ));
-                for line in text.lines() {
-                    lines.push(
-                        Line::from(vec![
-                            Span::styled("┃", edge),
-                            Span::styled("  ", surface),
-                            Span::styled("❯ ", Style::new().fg(palette.text_muted)),
-                            Span::styled(line.to_string(), Style::new().fg(palette.text)),
-                        ])
-                        .style(surface),
-                    );
+                for (index, line) in text.lines().enumerate() {
+                    let mut spans = vec![Span::styled("┃", edge), Span::styled("  ", surface)];
+                    if index == 0 {
+                        spans.push(Span::styled("❯ ", marker));
+                    } else {
+                        spans.push(Span::styled("  ", marker));
+                    }
+                    spans.push(Span::styled(line.to_string(), text_style));
+                    // The five prefix cells (edge, panel padding, marker) stay
+                    // fixed while the prompt text wraps inside the panel; the
+                    // `┃` edge is structural and repeats on continuations, the
+                    // marker is not.
+                    rows.push(Row::hung_with_edge(Line::from(spans).style(surface), 5, 1));
                 }
-                lines.push(
+                rows.push(Row::clipped(
                     Line::from(vec![Span::styled("┃", edge), Span::styled("  ", surface)])
                         .style(surface),
-                );
+                ));
             }
             Entry::Context { source, text } => {
                 // Injected context is a history fact, not something the operator
@@ -1265,19 +1467,19 @@ fn transcript_lines(
                 // in their mouth; a quiet labelled block keeps the facts
                 // readable without changing who said what.
                 inline_run = false;
-                lines.push(Line::default());
-                lines.push(Line::from(vec![
+                rows.push(Row::plain(Line::default()));
+                rows.push(Row::plain(Line::from(vec![
                     Span::styled("⋯ ", Style::new().fg(palette.border)),
                     Span::styled(
                         format!("context · {source}"),
                         Style::new().fg(palette.text_muted),
                     ),
-                ]));
+                ])));
                 for line in text.lines() {
-                    lines.push(Line::from(Span::styled(
+                    rows.push(Row::plain(Line::from(Span::styled(
                         format!("  {line}"),
                         Style::new().fg(palette.text_muted),
-                    )));
+                    ))));
                 }
             }
             Entry::Assistant {
@@ -1291,8 +1493,8 @@ fn transcript_lines(
                             // TS TextPart: one blank row above the bullet and
                             // its markdown block.
                             inline_run = false;
-                            lines.push(Line::default());
-                            lines.extend(prose_lines(text, theme));
+                            rows.push(Row::plain(Line::default()));
+                            rows.extend(prose_lines(text, theme));
                         }
                         Part::Reasoning(reasoning) => {
                             // The TS default ("hide") keeps thinking out of the
@@ -1306,71 +1508,90 @@ fn transcript_lines(
                                 |part| matches!(part, Part::Text(text) if !text.trim().is_empty()),
                             );
                             if !has_prose {
-                                lines.push(Line::default());
-                                lines.push(thought_header(reasoning, theme));
+                                rows.push(Row::plain(Line::default()));
+                                rows.push(Row::clipped(thought_header(reasoning, theme)));
                             }
                         }
                         Part::Tool(call) => {
-                            let rows = tool::lines(
+                            let tool_rows = tool::lines(
                                 call,
                                 transcript.displays.get(&call.id).map(Vec::as_slice),
                                 theme,
                                 expanded,
                                 toggle,
                             );
-                            if rows.len() > 1 || !inline_run {
-                                lines.push(Line::default());
+                            if tool_rows.len() > 1 || !inline_run {
+                                rows.push(Row::plain(Line::default()));
                             }
-                            inline_run = rows.len() == 1;
-                            lines.extend(rows);
+                            inline_run = tool_rows.len() == 1;
+                            rows.extend(plain_rows(tool_rows));
                         }
                     }
                 }
                 // The step footer the TS message ends with: the check names the
                 // agent and the model that answered, and its blank row is the
                 // seam between consecutive assistant messages.
-                lines.push(Line::default());
+                rows.push(Row::plain(Line::default()));
                 let name = match (agent.as_deref(), model.as_deref()) {
-                    (Some(agent), Some(model)) => format!("{agent} · {model}"),
-                    (Some(agent), None) => agent.to_string(),
+                    (Some(agent), Some(model)) => format!("{} · {model}", titlecase(agent)),
+                    (Some(agent), None) => titlecase(agent),
                     (None, Some(model)) => model.to_string(),
                     (None, None) => "assistant".to_string(),
                 };
-                lines.push(Line::from(vec![
-                    Span::styled("  ", Style::new()),
-                    Span::styled("✓ ", Style::new().fg(palette.success)),
-                    Span::styled(name, Style::new().fg(palette.text_muted)),
-                ]));
+                rows.push(Row::hung(
+                    Line::from(vec![
+                        Span::styled("  ", Style::new()),
+                        Span::styled("✓ ", Style::new().fg(palette.success)),
+                        Span::styled(name, Style::new().fg(palette.text_muted)),
+                    ]),
+                    2,
+                ));
             }
             Entry::Error { message } => {
                 inline_run = false;
-                lines.push(Line::default());
+                rows.push(Row::plain(Line::default()));
                 for (index, line) in message.lines().enumerate() {
-                    lines.push(Line::from(vec![
+                    rows.push(Row::plain(Line::from(vec![
                         Span::styled(
                             if index == 0 { "✗ " } else { "  " },
                             Style::new().fg(palette.error),
                         ),
                         Span::styled(line.to_string(), Style::new().fg(palette.error)),
-                    ]));
+                    ])));
                 }
             }
         }
     }
-    if lines.len() <= 1 {
-        lines.push(Line::from(Span::styled(
+    if rows.len() <= 1 {
+        rows.push(Row::plain(Line::from(Span::styled(
             "this Session has no messages yet",
             Style::new().fg(palette.text_muted),
-        )));
+        ))));
     }
-    Projected { lines, anchors }
+    Projected { rows, anchors }
 }
 
-/// The transcript's painted lines plus where each operator prompt starts in
+/// Capitalize each word like the TS `Locale.titlecase` the footer and live
+/// labels render through.
+fn titlecase(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut boundary = true;
+    for character in text.chars() {
+        if boundary && character.is_alphanumeric() {
+            out.extend(character.to_uppercase());
+        } else {
+            out.push(character);
+        }
+        boundary = !character.is_alphanumeric();
+    }
+    out
+}
+
+/// The transcript's painted rows plus where each operator prompt starts in
 /// that row flow, so a scrolled-back viewport can name the question its top
 /// row belongs to.
 pub(crate) struct Projected {
-    lines: Vec<Line<'static>>,
+    rows: Vec<Row>,
     /// `(first row of the prompt, its first line of text)`, in flow order.
     anchors: Vec<(usize, String)>,
 }
@@ -1459,8 +1680,8 @@ const COMPOSER_COMPLETION_ROWS: usize = 6;
 /// Display cells the `!` shell marker occupies left of the input.
 const SHELL_GUTTER: u16 = 2;
 
-/// The examples an empty composer offers, the TS prompt's own list. The pick
-/// drifts every half minute, the way the TS one re-rolls when it remounts.
+/// The examples an empty composer offers, the TS prompt's own list. One is
+/// picked per mount and re-rolled when a Session opens, like the TS prompt.
 const PLACEHOLDERS: [&str; 3] = [
     "Fix a TODO in the codebase",
     "What is the tech stack of this project?",
@@ -1469,7 +1690,11 @@ const PLACEHOLDERS: [&str; 3] = [
 const SHELL_PLACEHOLDERS: [&str; 3] = ["ls -la", "git status", "pwd"];
 
 /// The one-line band the TS prompt keeps between the transcript and the input:
-/// what the run is doing, what is waiting, and anything the operator must know.
+/// what the run is doing, and anything the operator must know. The TS compact
+/// row is a spinner frame plus the state text on the left and the elapsed time
+/// right-aligned (`justifyContent: space-between`), so the elapsed value is
+/// painted in [`render`] from `composer.phase_elapsed`, not folded into this
+/// line.
 fn composer_air(composer: &Composer, theme: &Theme) -> Line<'static> {
     let palette = theme.palette;
     let mut spans: Vec<Span<'static>> = Vec::new();
@@ -1480,18 +1705,18 @@ fn composer_air(composer: &Composer, theme: &Theme) -> Line<'static> {
         spans.push(Span::styled(text, style));
     };
     if let Some(phase) = &composer.phase {
+        // Past half a minute of waiting the TS spinner turns warning-colored;
+        // the frame carries that tone here.
+        let alert = composer.phase_alert;
+        let tone = match alert {
+            true => palette.warning,
+            false => palette.text_muted,
+        };
         let frame = SPINNER_FRAMES[(now_ms() / 160) as usize % SPINNER_FRAMES.len()];
         push(
             &mut spans,
             format!("{frame} {phase}"),
-            Style::new().fg(palette.text_muted),
-        );
-    }
-    if composer.queued > 0 {
-        push(
-            &mut spans,
-            format!("{} queued", composer.queued),
-            Style::new().fg(palette.accent),
+            Style::new().fg(tone),
         );
     }
     if let Some(notice) = &composer.notice {
@@ -1627,7 +1852,9 @@ fn render_composer_in(
     let selection_cells = composer.editor.selection_cells();
     if composer.editor.is_empty() && composer.completion.items.is_empty() {
         // An empty composer offers the example the TS prompt cycles through:
-        // one quiet sentence, `Run a command…` on a `!` line.
+        // one quiet sentence, `Run a command…` on a `!` line. The pick is the
+        // stored per-mount roll, not a clock drift, so the example stays put
+        // the way the TS one does between Session changes.
         let examples: &[&str] = if shell {
             &SHELL_PLACEHOLDERS
         } else {
@@ -1638,7 +1865,7 @@ fn render_composer_in(
         } else {
             "Ask anything…"
         };
-        let example = examples[(now_ms() / 30_000) as usize % examples.len()];
+        let example = examples[composer.placeholder % examples.len()];
         frame.render_widget(
             Paragraph::new(Span::styled(
                 format!("{verb} \u{201c}{example}\u{201d}"),
@@ -2839,7 +3066,7 @@ mod tests {
             .collect();
         let top = rows[0].trim_end().to_string();
         assert!(
-            top.starts_with('❯') && top.contains("first question"),
+            top.trim_start().starts_with('❯') && top.contains("first question"),
             "the sticky header names the owning prompt: {top:?}"
         );
         // At the tail the transcript follows again, and the marker is gone.
@@ -3290,7 +3517,7 @@ mod tests {
             ..Transcript::default()
         };
         let painted =
-            wrapped_text(&transcript_lines(&transcript, &theme, false, None).lines).join("\n");
+            wrapped_text(&transcript_lines(&transcript, &theme, false, None).rows).join("\n");
         assert!(painted.contains("context · engine"), "{painted}");
         assert!(painted.contains("Task paused: no todo moved."), "{painted}");
         assert!(
@@ -3300,10 +3527,11 @@ mod tests {
         assert!(!painted.contains("<injected-context"), "{painted}");
     }
 
-    fn wrapped_text(rows: &[Line<'static>]) -> Vec<String> {
+    fn wrapped_text(rows: &[Row]) -> Vec<String> {
         rows.iter()
             .map(|row| {
-                row.spans
+                row.line
+                    .spans
                     .iter()
                     .map(|span| span.content.as_ref())
                     .collect::<String>()
@@ -3311,22 +3539,42 @@ mod tests {
             .collect()
     }
 
+    fn line_texts(lines: &[Line<'static>]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
+    fn row_text(row: &Row) -> String {
+        row.line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
+    }
+
     #[test]
     fn wrapped_rows_break_on_the_last_blank() {
         let rows = wrap_lines(&[Line::from("hello world again")], 10);
-        assert_eq!(wrapped_text(&rows), vec!["hello ", "world ", "again"]);
+        assert_eq!(line_texts(&rows), vec!["hello ", "world ", "again"]);
     }
 
     #[test]
     fn a_word_longer_than_the_row_is_cut_at_the_edge() {
         let rows = wrap_lines(&[Line::from("abcdefghijkl")], 10);
-        assert_eq!(wrapped_text(&rows), vec!["abcdefghij", "kl"]);
+        assert_eq!(line_texts(&rows), vec!["abcdefghij", "kl"]);
     }
 
     #[test]
     fn a_wide_character_never_straddles_a_row() {
         let rows = wrap_lines(&[Line::from("中文字符")], 5);
-        assert_eq!(wrapped_text(&rows), vec!["中文", "字符"]);
+        assert_eq!(line_texts(&rows), vec!["中文", "字符"]);
     }
 
     #[test]
@@ -3336,7 +3584,7 @@ mod tests {
             Span::styled("tail", Style::new().fg(ratatui::style::Color::Blue)),
         ]);
         let rows = wrap_lines(&[line], 7);
-        assert_eq!(wrapped_text(&rows), vec!["plain ", "tail"]);
+        assert_eq!(line_texts(&rows), vec!["plain ", "tail"]);
         assert_eq!(rows[1].spans[0].style.fg, Some(ratatui::style::Color::Blue));
     }
 
@@ -3386,8 +3634,9 @@ mod tests {
         let draft = shell
             .draft()
             .iter()
-            .map(|line| {
-                line.spans
+            .map(|row| {
+                row.line
+                    .spans
                     .iter()
                     .map(|span| span.content.as_ref())
                     .collect::<String>()
@@ -3418,8 +3667,9 @@ mod tests {
         let draft = shell
             .draft()
             .iter()
-            .map(|line| {
-                line.spans
+            .map(|row| {
+                row.line
+                    .spans
                     .iter()
                     .map(|span| span.content.as_ref())
                     .collect::<String>()
@@ -3433,8 +3683,9 @@ mod tests {
         let draft = shell
             .draft()
             .iter()
-            .map(|line| {
-                line.spans
+            .map(|row| {
+                row.line
+                    .spans
                     .iter()
                     .map(|span| span.content.as_ref())
                     .collect::<String>()
@@ -3469,20 +3720,15 @@ mod tests {
             ],
             ..Transcript::default()
         };
-        let lines = transcript_lines(&transcript, &theme, false, None).lines;
-        let text = |line: &Line<'static>| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        };
+        let lines = transcript_lines(&transcript, &theme, false, None).rows;
+        let text = row_text;
         assert_eq!(text(&lines[0]), "", "the scrollbox opens with a blank row");
         assert_eq!(text(&lines[1]), "");
         assert_eq!(text(&lines[2]), "");
         assert_eq!(text(&lines[3]), "┃  ", "the panel's top padding row");
         assert_eq!(text(&lines[4]), "┃  ❯ question");
         assert_eq!(text(&lines[5]), "┃  ", "the panel's bottom padding row");
-        assert_eq!(lines[4].style.bg, Some(palette.element));
+        assert_eq!(lines[4].line.style.bg, Some(palette.surface));
         // Prose follows one blank row in, under a muted bullet, and the step
         // closes with the check footer naming the agent and the model.
         assert_eq!(text(&lines[6]), "");
@@ -3492,7 +3738,7 @@ mod tests {
             text(&lines[7])
         );
         assert_eq!(text(&lines[8]), "");
-        assert_eq!(text(&lines[9]), "  ✓ general · glm-5");
+        assert_eq!(text(&lines[9]), "  ✓ General · glm-5");
     }
 
     #[test]
@@ -3532,14 +3778,8 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let lines = transcript_lines(&transcript, &theme, false, None).lines;
-        let text = |line: &Line<'static>| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        };
-        let rendered: Vec<String> = lines.iter().map(&text).collect();
+        let lines = transcript_lines(&transcript, &theme, false, None).rows;
+        let rendered = wrapped_text(&lines);
         let fetch_a = rendered
             .iter()
             .position(|line| line.contains("http://a"))
@@ -3585,7 +3825,38 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect();
         assert!(text.contains("running bash · 3s"), "{text}");
-        assert!(text.contains("2 queued"), "{text}");
+    }
+
+    #[test]
+    fn the_status_strip_carries_the_queued_count_like_the_typescript_hints() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let mut status = StatusStrip::default();
+        status.model = Some("glm-5".into());
+        status.hints.push(StatusHint {
+            text: "queued (2)".to_string(),
+            warning: false,
+        });
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 1)).expect("terminal");
+        terminal
+            .draw(|frame| render_status(frame, frame.area(), &status, &theme))
+            .expect("draw");
+        let text: String = (0..80)
+            .map(|x| {
+                terminal
+                    .backend()
+                    .buffer()
+                    .cell(ratatui::prelude::Position::new(x, 0))
+                    .map(|cell| cell.symbol().to_string())
+                    .unwrap_or_default()
+            })
+            .collect();
+        assert!(text.contains("queued (2)"), "{text}");
+        assert!(text.contains("glm-5"), "{text}");
     }
 
     #[test]
@@ -3642,7 +3913,7 @@ mod tests {
         );
         // Scrolling back detaches from the tail, and the row belongs to the
         // tail: history keeps the rows the run has already produced.
-        shell.scroll_transcript(-3);
+        shell.scroll_transcript(-5);
         terminal
             .draw(|frame| shell.transcript.render(frame, frame.area()))
             .expect("draw");
@@ -3684,10 +3955,11 @@ mod tests {
                 false,
                 None,
             )
-            .lines
+            .rows
             .iter()
-            .map(|line| {
-                line.spans
+            .map(|row| {
+                row.line
+                    .spans
                     .iter()
                     .map(|span| span.content.as_ref())
                     .collect::<String>()
@@ -3737,9 +4009,9 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let lines = transcript_lines(&transcript, &theme, false, None).lines;
-        assert_eq!(lines[2].to_string(), "✗ provider unavailable");
-        assert_eq!(lines[2].spans[0].style.fg, Some(theme.palette.error));
+        let lines = transcript_lines(&transcript, &theme, false, None).rows;
+        assert_eq!(row_text(&lines[2]), "✗ provider unavailable");
+        assert_eq!(lines[2].line.spans[0].style.fg, Some(theme.palette.error));
     }
 
     #[test]
@@ -3923,11 +4195,13 @@ mod tests {
                 })
                 .expect("the row is painted")
         };
-        // The prompt panel and the input band both start at the window's left
-        // edge: the transcript's `┃` and the composer's top rule share it.
+        // The composer's top rule spans the full window the way the TS prompt
+        // border does, while the TS message column is inset one cell on each
+        // side — so the transcript's `┃` edge sits one cell in from the rule.
         let input = column_of("─");
         let prose = column_of("┃");
-        assert_eq!(input, prose, "the input shares the transcript's column");
+        assert_eq!(input, 0, "the composer rule hugs the window edge");
+        assert_eq!(prose, 1, "the prompt edge is inset one cell");
     }
 
     #[test]
@@ -3971,6 +4245,177 @@ mod tests {
         assert!(
             painted.contains("a sentence long enough"),
             "the text is still painted: {painted}"
+        );
+    }
+
+    #[test]
+    fn prose_wrap_continuations_keep_the_bullet_indent() {
+        // The TS TextPart wraps its markdown inside a container indented under
+        // the `● ` bullet: every wrapped row — first and continuation alike —
+        // keeps the text inside the same width, and continuations start at the
+        // bullet column, never at column zero.
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let rows = wrap_rows(&prose_lines("word ".repeat(30).trim_end(), &theme), 30);
+        assert!(rows.len() > 1, "the prose wraps: {:?}", line_texts(&rows));
+        let painted = line_texts(&rows);
+        assert!(painted[0].starts_with("● "), "{painted:?}");
+        for row in &painted[1..] {
+            // The two hanging cells are blank on continuations, so the text
+            // starts at the bullet's text column rather than at column zero.
+            assert!(
+                row.starts_with("  "),
+                "a continuation row hangs under the bullet column: {row:?}"
+            );
+        }
+        // Every row keeps its text inside the container width: the bullet's
+        // two cells plus the wrap budget, never the full row width.
+        let body_width = 30 - 2;
+        for row in &painted {
+            let text: String = row.chars().skip(2).collect();
+            let text = text.trim_end();
+            assert!(
+                UnicodeWidthStr::width(text) <= body_width,
+                "row text exceeds the container budget: {row:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_long_prompt_wraps_under_the_panel_edge_without_repeating_the_marker() {
+        // The TS prompt panel paints `❯ ` once, before the first row; wrapped
+        // and multi-line continuations start at the marker column with the
+        // panel edge and background intact.
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let transcript = Transcript {
+            entries: vec![Entry::User {
+                text: "please check whether ".to_string()
+                    + &"the build ".repeat(12)
+                    + "is reproducible",
+                seq: 1,
+            }],
+            ..Transcript::default()
+        };
+        let rows = transcript_lines(&transcript, &theme, false, None).rows;
+        let wrapped = wrap_rows(&rows, 30);
+        let painted = line_texts(&wrapped);
+        let marker_rows = painted
+            .iter()
+            .filter(|row| row.contains("❯"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            marker_rows.len(),
+            1,
+            "the ❯ marker leads exactly one row: {painted:?}"
+        );
+        let text_rows = painted
+            .iter()
+            .filter(|row| row.contains("build") || row.contains("please"))
+            .collect::<Vec<_>>();
+        assert!(text_rows.len() > 1, "the prompt wraps: {painted:?}");
+        for row in &text_rows[1..] {
+            assert!(
+                row.starts_with("┃    "),
+                "a continuation keeps the panel edge and marker column: {row:?}"
+            );
+        }
+        // The panel background rides every row of the block, continuations
+        // included.
+        let surface_rows = wrapped
+            .iter()
+            .filter(|row| row.style.bg == Some(palette.surface))
+            .count();
+        assert!(
+            surface_rows >= text_rows.len() + 2,
+            "the whole panel band carries the surface: {painted:?}"
+        );
+    }
+
+    #[test]
+    fn the_thought_header_clips_instead_of_folding() {
+        // TS ReasoningHeader is `wrapMode="none"`: a long summary is cut at the
+        // row, never folded into a second line.
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let reasoning = Part::Reasoning(crate::session::Reasoning {
+            text: "a very long thought that will not fit".into(),
+            created_ms: None,
+            completed_ms: None,
+        });
+        let transcript = Transcript {
+            entries: vec![Entry::Assistant {
+                agent: None,
+                model: None,
+                parts: vec![reasoning],
+            }],
+            ..Transcript::default()
+        };
+        let rows = transcript_lines(&transcript, &theme, false, None).rows;
+        let header = rows
+            .iter()
+            .find(|row| {
+                row.line
+                    .spans
+                    .iter()
+                    .any(|span| span.content.contains("Thought"))
+            })
+            .expect("the thought header is projected");
+        assert!(!header.wrap, "the header clips, it never folds");
+        let wrapped = wrap_rows(&rows, 20);
+        assert_eq!(
+            wrapped.len(),
+            rows.len(),
+            "clipping adds no rows: {:?}",
+            line_texts(&wrapped)
+        );
+    }
+
+    #[test]
+    fn the_phase_row_right_aligns_the_elapsed_time_like_the_typescript_row() {
+        // The TS compact activity row is space-between: state on the left,
+        // elapsed on the right edge. The elapsed value is a separate slot, so
+        // it is not folded into the state text.
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        shell.composer.phase = Some("Waiting for model".into());
+        shell.composer.phase_elapsed = Some("2.0s".into());
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 12)).expect("terminal");
+        terminal.draw(|frame| shell.render(frame)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let row_at = |y: u16| {
+            (0..60)
+                .map(|x| {
+                    buffer
+                        .cell(ratatui::prelude::Position::new(x, y))
+                        .map(|cell| cell.symbol().to_string())
+                        .unwrap_or_default()
+                })
+                .collect::<String>()
+        };
+        let air_row = (0..12)
+            .map(row_at)
+            .find(|row| row.contains("Waiting for model"))
+            .expect("the phase row is painted");
+        assert!(
+            air_row.trim_end().ends_with("2.0s"),
+            "the elapsed value hugs the right edge: {air_row:?}"
         );
     }
 
