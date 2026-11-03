@@ -35,6 +35,19 @@ class GateTest(unittest.TestCase):
         ]:
             self.assertTrue(gate.classify([path])["engine"], path)
 
+    def test_the_product_crate_requires_the_cli_check(self):
+        # A release packages `crates/miao-cli` and nothing else (`docs/cli.md`),
+        # so a change to the crate that builds it, or to the pipeline that
+        # packages it, has to run the check that builds and probes that binary.
+        for path in [
+            "crates/miao-cli/src/cli.rs",
+            "crates/miao-cli/Cargo.lock",
+            "docs/cli.md",
+            "packages/miao/script/build.ts",
+            ".github/workflows/engine-artifacts.yml",
+        ]:
+            self.assertTrue(gate.classify([path])["cli"], path)
+
     def test_shared_product_version_inputs_require_both_rust_checks(self):
         for path in ["crates/build-version.rs", "package.json"]:
             flags = gate.classify([path])

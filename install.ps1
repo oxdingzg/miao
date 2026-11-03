@@ -140,7 +140,7 @@ function Install-MiaoEngine {
             Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive -TimeoutSec 300
           } catch {
             if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
-              Write-Host 'This release has no native engine archive; keeping TypeScript sessions.' -ForegroundColor DarkGray
+              Write-Host 'This release has no native engine archive; the TypeScript compatibility CLI keeps its own engine.' -ForegroundColor DarkGray
               return
             }
             throw
@@ -162,7 +162,7 @@ function Install-MiaoEngine {
     $capabilities = Get-MiaoEngineCapabilities $candidate
     if (-not $capabilities) {
       if ($Binary) { throw 'Engine does not support the required protocol (2).' }
-      Write-Host 'This release engine predates the required protocol; keeping TypeScript sessions.' -ForegroundColor DarkGray
+      Write-Host 'This release engine predates the required protocol; the TypeScript compatibility CLI keeps its own engine.' -ForegroundColor DarkGray
       return
     }
     if (-not $fallback -and $capabilities.version -ne $Version) { throw "Engine version does not match miao $Version." }

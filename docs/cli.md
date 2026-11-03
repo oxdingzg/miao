@@ -5,6 +5,22 @@ The TypeScript CLI under `packages/miao/src/cli/` is the compatibility path
 that rides with the product database until the S4 rollback window ends; it is
 not a second product surface to keep feature-parity with forever.
 
+## Release identity
+
+One artifact per platform is published: `miao-<os>-<arch>`, built from
+`crates/miao-cli` (`--bin miao`). The engine and the TUI are linked into that
+binary, so an install needs neither `miao-engine` nor `miao-tui` beside it. Those
+two archives survive as companions for the TypeScript compatibility path: the
+installer drops them next to the binary when a release carries them, and
+`--no-engine` / `--no-tui` skip them. Neither is the product, and no release
+asset may be built from them.
+
+Two files decide which crate is packaged — `packages/miao/script/build.ts`
+(`PRODUCT`) and `.github/workflows/engine-artifacts.yml` (job `native`).
+`packages/miao/test/installation/product-binary.test.ts` fails when either drifts
+from this document, because a release built from the wrong crate ships a binary
+that answers `--version` but not the commands listed below.
+
 This is the RUS-04 inventory of every visible root command, with its
 disposition. The two sides are compared at `main` as of 2026-11-02; the
 inventory is updated when a command lands or retires.

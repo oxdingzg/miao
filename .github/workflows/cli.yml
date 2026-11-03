@@ -1,0 +1,77 @@
+name: cli
+
+# The product is `crates/miao-cli` (`docs/cli.md`), and a release packages exactly
+# that crate. `engine.yml` and `tui.yml` prove the libraries it links; this
+# workflow proves the binary a user installs: it builds with `--locked` (the flag
+# `build.ts` uses), runs the CLI suite, and checks the two answers an installer
+# requires before it trusts a file.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-cli-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  cli:
+    name: cli (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: crates/miao-cli
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/miao-cli
+
+      - name: Clippy
+        # Only this crate is linted; the engine and the TUI are dependencies here,
+        # so their warnings compile through instead of failing the product build.
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        # The CLI suite points `HOME` and the `XDG_*` roots at throwaway trees, so
+        # tests that do it cannot run beside tests that open the ledger through
+        # them: on a 4-core runner the pair raced and failed with
+        # "unable to open database file". One test at a time, which the suite
+        # finishes in well under a second.
+        run: cargo test --locked --release -- --test-threads=1
+
+      - name: Build the product binary
+        # `clippy` only checks and `cargo test` writes `deps/miao-<hash>`: without
+        # this step there is no `target/release/miao` for the probes to run.
+        run: cargo build --locked --release --bin miao
+
+      - name: The installer's probes answer
+        # `install` keeps a build under `--build-id` and refuses anything that is
+        # not a UUID, then reads `--version`. A TUI-only artifact fails both, and
+        # that is how a release once shipped the bare TUI under the product name.
+        run: |
+          set -euo pipefail
+          bin=target/release/miao
+          version=$($bin --version)
+          echo "version: $version"
+          [[ "$version" == miao\ * ]] || { echo "::error::--version does not name the product"; exit 1; }
+          id=$($bin --build-id)
+          echo "build id: $id"
+          [[ "$id" =~ ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$ ]] || { echo "::error::--build-id is not the UUID an installer requires"; exit 1; }
+          # Capture first: with `pipefail`, `grep -q` exiting early sends the
+          # binary a SIGPIPE and fails the step for the wrong reason.
+          help=$($bin --help)
+          [[ "$help" == *"single binary (native)"* ]] || { echo "::error::the artifact is not the product entry point"; exit 1; }

@@ -13,8 +13,25 @@
     ".github/scripts/test_ci_gate.py",
     ".github/actions/**"
   ],
-  "engine": [
+  "cli": [
     "crates/miao-cli/**",
+    "crates/miao-tui/**",
+    "crates/miao-engine/**",
+    "crates/miao-sandbox/**",
+    "crates/miao-credential/**",
+    "crates/build-version.rs",
+    "package.json",
+    "docs/cli.md",
+    "packages/miao/script/build.ts",
+    ".github/workflows/cli.yml",
+    ".github/workflows/engine-artifacts.yml",
+    ".github/workflows/ci.yml",
+    ".github/ci-checks.json",
+    ".github/scripts/ci-gate.py",
+    ".github/scripts/test_ci_gate.py",
+    ".github/actions/**"
+  ],
+  "engine": [
     "crates/miao-engine/**",
     "crates/build-version.rs",
     "crates/miao-sandbox/**",
