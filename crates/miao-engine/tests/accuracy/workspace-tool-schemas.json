@@ -432,6 +432,10 @@
         ],
         "type": "string"
       },
+      "in_reply_to": {
+        "description": "The receipt id a previous send_message returned, when this message answers it. The recipient sees which message it replies to; a reply to an id you were not sent is rejected",
+        "type": "string"
+      },
       "message": {
         "type": "string"
       },
