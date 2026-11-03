@@ -49,3 +49,28 @@ newer record is the one to read.
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
 carries the table of filters that were re-run to keep the earlier records honest.
+
+## When a record stops matching the code
+
+A record is evidence for its own tree, not a promise about today's. When later work
+removes the widget or test a row cites, the row is **annotated in place** rather than
+deleted or silently left to look current:
+
+> **Superseded** / **Not accepted — the claim was wrong.** …what changed, which commit
+> changed it, and what remains true.
+
+Three rows earned that treatment on 2026-11-03, found by checking every test name the
+records cite against the source:
+
+- `2026-11-01-ux-interaction-batch.md` — the list pointer rows cite
+  `a_click_on_the_list` and `a_second_click_on_the_same_row`, which `#2431` removed
+  along with the launcher list they drove.
+- `2026-11-01-tui-batch-2.md` — an animation row argued the TUI paints no animation
+  from a `grep` that returned 0 then and returns 7 now (the running-tool spinner).
+- `2026-11-01-inp05.md` — a row claimed the Zed selection is visible in the composer
+  and removable by editing. `App::zed_context` prepends it during `submit`, so the
+  operator never sees it first.
+
+The rule that follows: **a cited test name has to resolve**, and a claim about what the
+code does has to be true of the code today. Re-verifying a record means running its
+commands on the current tree, not reading its counts.
