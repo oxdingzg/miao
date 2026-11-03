@@ -3926,7 +3926,10 @@ fn auth_write(rest: &[String]) -> Result<(), String> {
     let now = cli_now_ms() as i64;
     match rest.first().map(String::as_str) {
         Some("login") => {
-            let mut args = rest.iter().peekable();
+            // rest[0] is the subcommand word itself ("login"); the options and
+            // positionals start after it — otherwise `miao auth login fixture
+            // sk-key` stores integration "login" with key "fixture".
+            let mut args = rest[1..].iter().peekable();
             let mut integration: Option<String> = None;
             let mut key: Option<String> = None;
             let mut account: Option<String> = None;
