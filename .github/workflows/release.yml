@@ -149,9 +149,10 @@ jobs:
             fi
           } >> "$GITHUB_ENV"
 
-      # One artifact per platform: the Rust binary carries the engine in-process,
-      # so a release ships `miao-<os>-<arch>` and nothing else. The engine and TUI
-      # archives the Bun host used are not produced.
+      # One artifact per platform, built from `crates/miao-cli`: that binary
+      # carries the engine and the TUI in-process, so a release ships
+      # `miao-<os>-<arch>` and nothing else. The engine and TUI archives the Bun
+      # host used are not produced.
       - name: Build and upload this platform
         # The upload inside `build.ts` runs only when MIAO_RELEASE marks this as
         # a release build, and it talks to the release through GH_TOKEN and

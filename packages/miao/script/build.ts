@@ -32,18 +32,27 @@ const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
 
-// A native release ships one artifact. The Rust binary carries the engine
-// in-process, so `miao-<os>-<arch>` is the whole product: no separate engine
-// archive (the code is linked in) and no separate TUI archive (this *is* the
-// TUI). `install` already degrades when those archives are absent.
+// Which crate is the product is decided once, here. `docs/cli.md` names
+// `crates/miao-cli` (`miao`) as the single binary, and this pipeline has to build
+// that same crate: naming another one ships a binary that answers `--version`
+// but not the documented `models`/`auth`/`serve` commands, which is how a
+// release once published the bare TUI under the product's name.
+const PRODUCT = { crate: "miao-cli", binary: "miao" } as const
+
+// A native release ships one artifact. The product binary links the engine and
+// the TUI in-process, so `miao-<os>-<arch>` is the whole product: no separate
+// engine archive (the code is linked in) and no separate TUI archive (the TUI is
+// a library call inside this binary). `install` already degrades when those
+// companions are absent.
 if (process.argv.includes("--native-cli")) {
   await $`rm -rf dist`
   const { archives } = await buildNativeArchives({
-    crate: "miao-tui",
-    binary: "miao-tui",
-    archiveAs: "miao",
+    ...PRODUCT,
     licenses: [path.resolve(dir, "../../LICENSE")],
     env: { MIAO_VERSION: Script.version },
+    // The installer keeps a build under `--build-id` before it trusts the file,
+    // so the artifact this pipeline uploads has to answer it, not just --version.
+    identity: true,
   })
   if (Script.release && archives.length) {
     // Bare executables cannot carry a staple ticket; submitting the zip
@@ -422,9 +431,9 @@ function nativeTargets(): { target: string | undefined; arch: string }[] {
 }
 
 /**
- * Build, sign, and archive one native binary per target. The engine and the
- * Rust TUI ride the same release, so they share the musl, signing, and
- * archiving rules instead of growing two variants that can drift.
+ * Build, sign, and archive one native binary per target. The product binary and
+ * the companion archives ride the same release, so they share the musl, signing,
+ * and archiving rules instead of growing variants that can drift.
  *
  * Build failures fail the release rather than uploading a stale binary or
  * silently omitting an advertised platform asset.
@@ -436,6 +445,8 @@ async function buildNativeArchives(spec: {
   archiveAs?: string
   licenses: string[]
   env?: Record<string, string>
+  /** Assert the installer's `--build-id` probe, not just `--version`. */
+  identity?: boolean
 }): Promise<{ archives: string[]; bins: Record<string, string> }> {
   const os = hostOs()
   if (!os) return { archives: [], bins: {} }
@@ -470,6 +481,11 @@ async function buildNativeArchives(spec: {
       const reported = (await $`${bin} --version`.text()).trim()
       if (reported !== `${spec.binary} ${Script.version}`)
         throw new Error(`${spec.binary} version mismatch: ${reported}; expected ${spec.binary} ${Script.version}`)
+      if (spec.identity) {
+        const id = (await $`${bin} --build-id`.text()).trim()
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+          throw new Error(`${spec.binary} --build-id answered ${JSON.stringify(id)}; an installer requires a UUID`)
+      }
     }
     if (process.platform === "darwin") {
       const identity = await developerIdIdentity()
@@ -523,7 +539,11 @@ async function buildEngineArchive(): Promise<{ archives: string[]; engines: Reco
   return { archives, engines: bins }
 }
 
-/** Build the Rust TUI binary. It is installed next to the CLI by `install`. */
+/**
+ * Build the `miao-tui` companion for the TypeScript compatibility path. The
+ * product binary links the TUI in-process; `install` places this archive beside
+ * it only when a consumer still spawns one.
+ */
 async function buildTuiArchive(): Promise<string[]> {
   // The release build stamps the product version into `miao-tui --version`.
   const { archives } = await buildNativeArchives({
@@ -552,9 +572,9 @@ if (Script.release) {
   // The engine binary rides the same release channel (B5): one archive per
   // platform, built from this commit alongside the CLI.
   archives.push(...(engineBuild ?? (await buildEngineArchive())).archives)
-  // The Rust TUI is a separate binary the installer places next to the CLI.
-  // Building it here keeps that archive on the same commit as the engine the
-  // two are tested against.
+  // The `miao-tui` companion is a separate binary the installer may place next
+  // to the CLI. Building it here keeps that archive on the same commit as the
+  // engine the two are tested against.
   archives.push(...(await buildTuiArchive()))
 
   // Bare executables cannot carry a staple ticket; submitting the zip registers

@@ -34,10 +34,10 @@ Options:
     -h, --help              Display this help message
     -v, --version <version> Install a specific version (e.g., 0.0.1)
     -b, --binary <path>     Install from a local binary instead of downloading
-        --engine-binary <path>  Install a local miao-engine next to the CLI
-        --no-engine         Don't install the native engine
-        --tui-binary <path> Install a local miao-tui next to the CLI
-        --no-tui            Don't install the Rust TUI
+        --engine-binary <path>  Install a local miao-engine companion (the product binary carries its own engine)
+        --no-engine         Don't install the miao-engine companion
+        --tui-binary <path> Install a local miao-tui companion (the product binary carries its own TUI)
+        --no-tui            Don't install the miao-tui companion
         --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
 
 Examples:
@@ -465,9 +465,10 @@ publish_companion() {
     mv -f "$stage/launcher" "$INSTALL_DIR/$name"
 }
 
-# The native engine rides the same release. It is optional: an older product or
-# an incompatible archive leaves miao on TypeScript sessions instead of failing
-# the install.
+# The native engine rides the same release as a companion for the TypeScript
+# compatibility path (the product binary links the engine in-process and never
+# needs this file). It is optional: an older product or an incompatible archive
+# leaves the TypeScript CLI on its own sessions instead of failing the install.
 install_engine() {
     if [ "$no_engine" = true ] || [ "$specific_version" = "local" ]; then
         return 0
@@ -488,7 +489,7 @@ install_engine() {
         # product cannot talk to, so a mismatch degrades to TypeScript sessions
         # exactly like a missing archive.
         if ! curl -f -sS -L -o "$tmp_dir/$file" "https://github.com/oxdingzg/miao/releases/latest/download/${file}"; then
-            print_message info "${MUTED}No native engine archive in this release; miao runs TypeScript sessions.${NC}"
+            print_message info "${MUTED}No native engine archive in this release; the TypeScript compatibility CLI keeps its own engine.${NC}"
             rm -rf "$tmp_dir"
             return 0
         fi
@@ -530,8 +531,9 @@ install_engine_binary() {
     print_message info "${MUTED}Native engine installed: ${NC}$INSTALL_DIR/miao-engine${EXE}"
 }
 
-# The Rust TUI ships beside the CLI so `miao --tui rust` can spawn it. Like the
-# engine it is optional: a release without the archive keeps the TypeScript TUI.
+# The paired TUI ships beside the CLI for the TypeScript compatibility path. The
+# product binary links the TUI in-process and does not need this file; like the
+# engine companion it is optional.
 install_tui() {
     if [ "$no_tui" = true ] || [ "$specific_version" = "local" ]; then
         return 0
@@ -547,7 +549,7 @@ install_tui() {
     mkdir -p "$tmp_dir"
     if ! curl -f -sS -L -o "$tmp_dir/$file" "$url"; then
         if ! curl -f -sS -L -o "$tmp_dir/$file" "https://github.com/oxdingzg/miao/releases/latest/download/${file}"; then
-            print_message info "${MUTED}No Rust TUI archive in this release; miao uses the TypeScript TUI.${NC}"
+            print_message info "${MUTED}No paired TUI archive in this release; the product binary renders the TUI in process.${NC}"
             rm -rf "$tmp_dir"
             return 0
         fi
@@ -559,7 +561,7 @@ install_tui() {
     fi
     tui="$tmp_dir/miao-tui${EXE}"
     if [ ! -f "$tui" ]; then
-        print_message info "${MUTED}TUI archive was not usable; keeping the TypeScript TUI.${NC}"
+        print_message info "${MUTED}Paired TUI archive was not usable; the product binary still renders the TUI in process.${NC}"
         rm -rf "$tmp_dir"
         return 0
     fi
@@ -573,7 +575,7 @@ install_tui() {
         return 0
     fi
     publish_companion "$tui" "miao-tui${EXE}"
-    print_message info "${MUTED}Rust TUI installed: ${NC}$INSTALL_DIR/miao-tui${EXE}"
+    print_message info "${MUTED}TUI companion installed: ${NC}$INSTALL_DIR/miao-tui${EXE}"
     rm -rf "$tmp_dir"
 }
 
@@ -586,7 +588,7 @@ install_tui_binary() {
         return 1
     fi
     publish_companion "$tui_binary" "miao-tui${EXE}"
-    print_message info "${MUTED}Rust TUI installed: ${NC}$INSTALL_DIR/miao-tui${EXE}"
+    print_message info "${MUTED}TUI companion installed: ${NC}$INSTALL_DIR/miao-tui${EXE}"
 }
 
 if [ -n "$binary_path" ]; then
