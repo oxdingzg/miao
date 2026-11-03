@@ -1428,75 +1428,49 @@ pub struct StatusHint {
 
 fn render_status(frame: &mut Frame, area: Rect, status: &StatusStrip, theme: &Theme) {
     let palette = theme.palette;
-    // The bar is a bar: its surface spans the window. What it says lines up with
-    // the body, so the model on the left and the hints on the right are not
-    // anchored to edges the text no longer touches.
-    frame.render_widget(
-        Block::default().style(Style::new().bg(palette.surface)),
-        area,
-    );
-    let area = group_columns(area);
-    let mut spans = Vec::new();
-    if let Some(model) = &status.model {
+    // The TS status line is one left-aligned row two cells in from the edge:
+    // the run's hints first, then the model, then what the session has cost.
+    // Nothing paints a surface behind it; the bar look was this pane's own.
+    let muted = Style::new().fg(palette.text_muted);
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for hint in &status.hints {
+        if !spans.is_empty() {
+            spans.push(Span::styled(" · ", muted));
+        }
         spans.push(Span::styled(
-            format!(" {model} "),
-            Style::new().fg(palette.secondary).bg(palette.surface),
+            match hint.warning {
+                // A warning keeps its glyph, so it still reads on a monochrome
+                // terminal; facts about the run carry the tone alone.
+                true => format!("! {}", hint.text),
+                false => hint.text.clone(),
+            },
+            match hint.warning {
+                true => Style::new().fg(palette.warning),
+                false => muted,
+            },
         ));
+    }
+    if let Some(model) = &status.model {
+        if !spans.is_empty() {
+            spans.push(Span::styled(" · ", muted));
+        }
+        spans.push(Span::styled(model.clone(), Style::new().fg(palette.text)));
     }
     if let Some(usage) = &status.usage {
-        spans.push(Span::styled(
-            format!("· {usage} "),
-            Style::new().fg(palette.text_muted).bg(palette.surface),
-        ));
-    }
-    if spans.is_empty() && status.hints.is_empty() {
-        return;
-    }
-    // A warning is marked with more than a colour: an operator reading a
-    // monochrome or low-colour terminal still has to see that this hint waits on
-    // them rather than describing the run.
-    let hints = status
-        .hints
-        .iter()
-        .map(|hint| match hint.warning {
-            true => format!("! {}", hint.text),
-            false => hint.text.clone(),
-        })
-        .collect::<Vec<_>>()
-        .join(" · ");
-    let width = (UnicodeWidthStr::width(hints.as_str()) as u16 + 2).min(area.width);
-    let [left_area, right_area] =
-        Layout::horizontal([Constraint::Min(0), Constraint::Length(width)]).areas(area);
-    frame.render_widget(
-        Paragraph::new(Line::from(spans)).style(Style::new().bg(palette.surface)),
-        left_area,
-    );
-    if status.hints.is_empty() {
-        return;
-    }
-    let mut spans = Vec::new();
-    for (index, hint) in status.hints.iter().enumerate() {
-        if index > 0 {
-            spans.push(Span::styled(
-                " · ",
-                Style::new().fg(palette.text_muted).bg(palette.surface),
-            ));
+        if !spans.is_empty() {
+            spans.push(Span::styled(" · ", muted));
         }
-        let (text, tone) = match hint.warning {
-            true => (format!("! {}", hint.text), palette.warning),
-            false => (hint.text.clone(), palette.text_muted),
-        };
-        spans.push(Span::styled(
-            text,
-            Style::new().fg(tone).bg(palette.surface),
-        ));
+        spans.push(Span::styled(usage.clone(), muted));
     }
-    frame.render_widget(
-        Paragraph::new(Line::from(spans))
-            .style(Style::new().bg(palette.surface))
-            .alignment(ratatui::layout::Alignment::Right),
-        right_area,
-    );
+    if spans.is_empty() {
+        return;
+    }
+    let area = Rect {
+        x: area.x + 2,
+        width: area.width.saturating_sub(2),
+        ..area
+    };
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 /// Input rows the composer grows to before it scrolls; the border and the
@@ -3196,13 +3170,14 @@ mod tests {
     fn a_status_warning_reads_without_colour() {
         // UX-03: state may not depend on colour alone. A hint that waits on the
         // operator carries a glyph, so it still reads on a monochrome terminal
-        // or in a low-colour profile.
+        // or in a low-colour profile. The TS order keeps the hints at the left
+        // of the row, ahead of the model.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
         };
         let status = StatusStrip {
-            model: None,
+            model: Some("fake/model".into()),
             usage: None,
             hints: vec![
                 StatusHint {
@@ -3230,6 +3205,9 @@ mod tests {
         assert!(painted.contains("! approve or deny"), "{painted}");
         assert!(!painted.contains("! ctrl+c"), "{painted}");
         assert!(painted.contains("ctrl+c to interrupt"), "{painted}");
+        let model = painted.find("fake/model").expect("the model is painted");
+        let warning = painted.find("! approve").expect("the warning is painted");
+        assert!(warning < model, "hints lead the row: {painted}");
     }
 
     /// One routable model paints its label. The 0.3.26 models dialog came up
@@ -3815,8 +3793,8 @@ mod tests {
 
     #[test]
     fn the_status_line_lines_up_with_the_body() {
-        // The surface spans the window, but what it says should start where the
-        // text starts rather than at the window's edge.
+        // The TS status line starts two cells in from the edge, whatever the
+        // body or the sidebar is doing beside it.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
@@ -3828,7 +3806,6 @@ mod tests {
         terminal.draw(|frame| shell.render(frame)).expect("draw");
         let buffer = terminal.backend().buffer();
         let area = buffer.area;
-        let group = group_columns(Rect::new(area.x, area.y + area.height - 1, area.width, 1));
         let status = buffer
             .content
             .chunks(area.width as usize)
@@ -3838,11 +3815,7 @@ mod tests {
             .iter()
             .position(|cell| !cell.symbol().trim().is_empty())
             .expect("the model is painted");
-        assert_eq!(
-            first,
-            group.x as usize + 1,
-            "the model starts one cell into the group"
-        );
+        assert_eq!(first, 2, "the row starts two cells in, as the TS one does");
         assert!(
             status
                 .iter()
