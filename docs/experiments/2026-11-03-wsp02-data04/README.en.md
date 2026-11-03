@@ -18,7 +18,7 @@ modified, 100 staged-then-edited, 20 pure `git mv` renames, 30 deleted,
 the scripted engine, scaled to a 3300-entry answer; leader chord to painted
 file count, plus paint-only and decode-only baselines).
 
-Engine layer, release, macmini (M4, macOS):
+Engine layer, release, the macOS build host (M4, macOS):
 
 | scenario      | engine p50/p95 ms | bare git p50/p95 ms | engine share p50 ms | answer bytes |
 | ------------- | ----------------- | ------------------- | ------------------- | ------------ |

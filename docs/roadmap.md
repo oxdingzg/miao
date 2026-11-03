@@ -590,7 +590,7 @@ input-latency harness now exists (#141) and input-timing is traced (#146).
 ## 6. Released-binary acceptance
 
 **Status:** partial. The released **0.1.4** binary was installed and exercised on three real
-machines on 2026-10-04: macOS ARM64 (macmini), Linux x64 (xx02), and Windows x64 (192.168.3.96).
+machines on 2026-10-04: macOS ARM64, Linux x64, and Windows x64.
 Each returned `0.1.4` from `--version`, initialized a fresh database, and reported `miao doctor`
 findings: none. `db stats`, `db compact --dry-run`, and `db vacuum` ran cleanly on an isolated DB.
 
@@ -600,7 +600,7 @@ Verified on the released binary:
 - [x] Cross-process inbox recovery: one process admitted a durable `queue` input
       (`admitted_seq=1, promoted_seq=null`), a separate later process with no live in-session event
       read it back via `GET /api/session/:id/inputs`, and a third process promoted it
-      (`promoted_seq=17`, projected `session_message` `seq=17`). Exercised on xx02 against an
+      (`promoted_seq=17`, projected `session_message` `seq=17`). Exercised on the Linux build host against an
       isolated database.
 
 Still open or blocked:

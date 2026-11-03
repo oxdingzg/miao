@@ -60,6 +60,6 @@
 
 ## 4. 验证
 
-- xx02：`cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`。
+- the Linux build host：`cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`。
 - pty 冒烟新增：假编辑器回写 composer；空粘贴走文本剪贴板（用假 `pbpaste` 不可行时只测纯函数，冒烟保持确定性）。
 - `specs/phase-3-parity.md` 增补本片各行，剪彩前保持无「未做」。

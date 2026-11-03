@@ -328,8 +328,8 @@ P99 25.4 ms / max 27.3 ms；主 isolate RSS 725.6 MB → 747.9 MB；FD 稳定在
 
 ## 6. 发布二进制验收
 
-**状态：** partial。2026-10-04 在三台真机上安装并演练了已发布的 **0.1.4** 二进制：macOS ARM64
-（macmini）、Linux x64（xx02）、Windows x64（192.168.3.96）。每台机器 `--version` 返回 `0.1.4`，
+**状态：** partial。2026-10-04 在三台真机上安装并演练了已发布的 **0.1.4** 二进制：macOS ARM64、
+Linux x64、Windows x64。每台机器 `--version` 返回 `0.1.4`，
 初始化了全新数据库，`miao doctor` 报告 `findings: none`。在隔离 DB 上 `db stats`、
 `db compact --dry-run`、`db vacuum` 均干净运行。
 
@@ -339,7 +339,7 @@ P99 25.4 ms / max 27.3 ms；主 isolate RSS 725.6 MB → 747.9 MB；FD 稳定在
 - [x] 跨进程 inbox 恢复：一个进程准入一条 durable `queue` 输入
       （`admitted_seq=1, promoted_seq=null`），另一个更晚的进程在无 live 会话事件的情况下通过
       `GET /api/session/:id/inputs` 读回它，第三个进程将其提升（`promoted_seq=17`，投影
-      `session_message` `seq=17`）。在 xx02 上用隔离数据库演练。
+      `session_message` `seq=17`）。在 Linux 构建机 上用隔离数据库演练。
 
 仍未完成或受阻：
 - [ ] 验收已发布的 Windows 产物从 0.1.2 的升级路径（目前只做了全新安装）；对照当前 release
