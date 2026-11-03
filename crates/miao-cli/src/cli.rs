@@ -449,41 +449,44 @@ fn hub(rest: &[String]) -> Result<(), String> {
     #[cfg(not(unix))]
     {
         let _ = rest;
-        return Err("the session hub needs a Unix domain socket and is not available on this platform".into());
+        return Err(
+            "the session hub needs a Unix domain socket and is not available on this platform"
+                .into(),
+        );
     }
     #[cfg(unix)]
     {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-    let mut idle_ms: u64 = 0;
-    let mut index = 0;
-    while index < rest.len() {
-        if rest[index] == "--idle-ms" {
-            idle_ms = rest
-                .get(index + 1)
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(0);
-            index += 2;
-            continue;
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        let mut idle_ms: u64 = 0;
+        let mut index = 0;
+        while index < rest.len() {
+            if rest[index] == "--idle-ms" {
+                idle_ms = rest
+                    .get(index + 1)
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(0);
+                index += 2;
+                continue;
+            }
+            index += 1;
         }
-        index += 1;
-    }
-    let path = hub_socket();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    // Singleton: a live hub answers a connect; a stale socket is replaced.
-    if path.exists() {
-        if std::os::unix::net::UnixStream::connect(&path).is_ok() {
-            println!("hub already running at {}", path.display());
-            return Ok(());
+        let path = hub_socket();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
         }
-        let _ = std::fs::remove_file(&path);
-    }
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| error.to_string())?;
-    runtime.block_on(async move {
+        // Singleton: a live hub answers a connect; a stale socket is replaced.
+        if path.exists() {
+            if std::os::unix::net::UnixStream::connect(&path).is_ok() {
+                println!("hub already running at {}", path.display());
+                return Ok(());
+            }
+            let _ = std::fs::remove_file(&path);
+        }
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| error.to_string())?;
+        runtime.block_on(async move {
         // Binding is the authority on single-instance: a live hub owns the
         // path, and a stale one is removed above after a failed connect. Report
         // "already running" instead of a raw errno, which reads like a bug.
@@ -571,8 +574,8 @@ fn hub(rest: &[String]) -> Result<(), String> {
             let _ = write.write_all(encoded.as_bytes()).await;
         }
     })
-}
     }
+}
 
 /// Run an orchestration script.
 ///
@@ -1088,44 +1091,47 @@ fn hubctl(rest: &[String]) -> Result<(), String> {
     #[cfg(not(unix))]
     {
         let _ = rest;
-        return Err("the session hub needs a Unix domain socket and is not available on this platform".into());
+        return Err(
+            "the session hub needs a Unix domain socket and is not available on this platform"
+                .into(),
+        );
     }
     #[cfg(unix)]
     {
-    use std::io::{BufRead, BufReader, Write};
-    let op = rest
-        .first()
-        .ok_or("usage: miao hubctl register|list|ping")?;
-    let mut request = serde_json::json!({ "op": op });
-    if op == "send" {
-        request["to"] = serde_json::json!(rest.get(1).cloned().unwrap_or_default());
-        request["text"] = serde_json::json!(rest.get(2).cloned().unwrap_or_default());
-        request["from"] = serde_json::json!(rest.get(3).cloned().unwrap_or_default());
+        use std::io::{BufRead, BufReader, Write};
+        let op = rest
+            .first()
+            .ok_or("usage: miao hubctl register|list|ping")?;
+        let mut request = serde_json::json!({ "op": op });
+        if op == "send" {
+            request["to"] = serde_json::json!(rest.get(1).cloned().unwrap_or_default());
+            request["text"] = serde_json::json!(rest.get(2).cloned().unwrap_or_default());
+            request["from"] = serde_json::json!(rest.get(3).cloned().unwrap_or_default());
+        }
+        if let Some(session) = rest.get(1) {
+            request["session"] = serde_json::json!(session);
+        }
+        if let Some(pid) = rest.get(2).and_then(|value| value.parse::<u32>().ok()) {
+            request["pid"] = serde_json::json!(pid);
+        } else if op == "register" {
+            request["pid"] = serde_json::json!(std::process::id());
+        }
+        let stream = std::os::unix::net::UnixStream::connect(hub_socket())
+            .map_err(|error| format!("no hub: {error}"))?;
+        let mut writer = stream.try_clone().map_err(|error| error.to_string())?;
+        let mut line = serde_json::to_string(&request).unwrap_or_default();
+        line.push('\n');
+        writer
+            .write_all(line.as_bytes())
+            .map_err(|error| error.to_string())?;
+        let mut response = String::new();
+        BufReader::new(stream)
+            .read_line(&mut response)
+            .map_err(|error| error.to_string())?;
+        println!("{}", response.trim());
+        Ok(())
     }
-    if let Some(session) = rest.get(1) {
-        request["session"] = serde_json::json!(session);
-    }
-    if let Some(pid) = rest.get(2).and_then(|value| value.parse::<u32>().ok()) {
-        request["pid"] = serde_json::json!(pid);
-    } else if op == "register" {
-        request["pid"] = serde_json::json!(std::process::id());
-    }
-    let stream = std::os::unix::net::UnixStream::connect(hub_socket())
-        .map_err(|error| format!("no hub: {error}"))?;
-    let mut writer = stream.try_clone().map_err(|error| error.to_string())?;
-    let mut line = serde_json::to_string(&request).unwrap_or_default();
-    line.push('\n');
-    writer
-        .write_all(line.as_bytes())
-        .map_err(|error| error.to_string())?;
-    let mut response = String::new();
-    BufReader::new(stream)
-        .read_line(&mut response)
-        .map_err(|error| error.to_string())?;
-    println!("{}", response.trim());
-    Ok(())
 }
-    }
 
 /// Manage git worktrees. Paths are canonicalised before use: a session's
 /// Location is keyed by its real path, so `/tmp/x` and `/private/tmp/x` would
