@@ -66,4 +66,7 @@ jobs:
           id=$($bin --build-id)
           echo "build id: $id"
           [[ "$id" =~ ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$ ]] || { echo "::error::--build-id is not the UUID an installer requires"; exit 1; }
-          $bin --help | grep -q "single binary (native)" || { echo "::error::the artifact is not the product entry point"; exit 1; }
+          # Capture first: with `pipefail`, `grep -q` exiting early sends the
+          # binary a SIGPIPE and fails the step for the wrong reason.
+          help=$($bin --help)
+          [[ "$help" == *"single binary (native)"* ]] || { echo "::error::the artifact is not the product entry point"; exit 1; }
