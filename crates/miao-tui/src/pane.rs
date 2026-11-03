@@ -775,16 +775,40 @@ impl Row {
 /// at column zero and `  ⎿ Read 2 lines` read as two unrelated rows — which is
 /// what made a narrow pane look like the prose wrapped early. The continuation
 /// hangs under the indent the row was projected with instead.
-fn leading_indent(line: &Line<'static>) -> u16 {
+fn tool_row_shape(line: &Line<'static>) -> (u16, u16) {
+    // Every tool row is projected with a fixed prefix: `● ` for a header,
+    // `  │ ` for a result body, `  ⎿ ` for a one-line summary. That prefix is
+    // what continuations must stay inside — and the drawn part of it (`●`, `│`,
+    // `⎿`) is structural, so it repeats instead of being blanked.
+    //
+    // Blanking it turned a wrapped command output into text starting at column
+    // three with no gutter, which is the "all piled into one block" an operator
+    // sees on a long line: the box edges vanished exactly on the rows that
+    // needed them most.
     let Some(first) = line.spans.first() else {
-        return 0;
+        return (0, 0);
     };
-    match first.content.chars().take_while(|c| *c == ' ').count() {
-        // The row opens with the `● ` bullet; its two-cell marker column is
-        // what a continuation hangs under.
-        0 => 2,
-        spaces => spaces as u16,
+    // Display cells, not chars: the gutter glyphs (`│`, `⎿`) are one cell each,
+    // but counting them as chars is how a wide glyph shifted the prefix.
+    let prefix = first.content.as_ref();
+    let spaces = prefix.chars().take_while(|c| *c == ' ').count();
+    if spaces == 0 {
+        // `● ` — the two-cell marker column hangs, and the bullet repeats.
+        return (2, 2);
     }
+    // The whole prefix is drawn again on continuations: the leading blanks,
+    // the gutter glyph, and the blank after it. Tool rows are projected as
+    // `  │ <text>` / `  ⎿ <text>` (and `● <text>`), so the prefix is the
+    // leading blank run plus exactly one glyph plus the blank following it.
+    let leading = prefix.len() - prefix.trim_start().len();
+    let rest = &prefix[leading..];
+    let glyph = rest.chars().next().map(|c| c.len_utf8()).unwrap_or(0);
+    let after_glyph = &rest[glyph..];
+    let separator = after_glyph.len() - after_glyph.trim_start().len();
+    let hang = prefix[..leading + glyph + separator]
+        .width()
+        .min(u16::MAX as usize) as u16;
+    (hang, hang)
 }
 
 /// Split styled lines into rows no wider than `width` display cells, so the
@@ -1403,7 +1427,30 @@ fn prose_lines(text: &str, theme: &Theme) -> Vec<Row> {
             let mut spans = Vec::with_capacity(line.spans.len() + 1);
             spans.push(Span::styled(if index == 0 { "● " } else { "  " }, bullet));
             spans.extend(line.spans);
-            Row::hung(Line::from(spans).style(line.style), 2)
+            let line = Line::from(spans).style(line.style);
+            // A fenced code block is drawn as `  ╭ … │ … ╰`. Its body rows are
+            // the only markdown rows whose own content opens with a drawn
+            // gutter, and a wrapped row that blanked that gutter looked like
+            // the box edge vanished mid-block — the "output piled into one
+            // column" an operator reports on a long line inside a code block.
+            //
+            // The span carries the indent with the glyph (`"  │ "`), so the
+            // test trims before looking, and the hang is the bullet column
+            // plus the whole markdown prefix.
+            let gutter = line
+                .spans
+                .get(1)
+                .map(|span| span.content.trim_start())
+                .filter(|content| {
+                    content.starts_with('╭') || content.starts_with('│') || content.starts_with('╰')
+                });
+            match gutter {
+                Some(_) => {
+                    let hang = 2 + line.spans[1].content.width() as u16;
+                    Row::hung_with_edge(line, hang, hang)
+                }
+                None => Row::hung(line, 2),
+            }
         })
         .collect()
 }
@@ -1566,8 +1613,8 @@ fn transcript_lines(
                             // like the text wrapped early. Hang each row under
                             // the cells it opens with.
                             rows.extend(tool_rows.into_iter().map(|line| {
-                                let hang = leading_indent(&line);
-                                Row::hung(line, hang)
+                                let (hang, keep) = tool_row_shape(&line);
+                                Row::hung_with_edge(line, hang, keep)
                             }));
                         }
                     }
@@ -3593,6 +3640,85 @@ mod tests {
                     .collect::<String>()
             })
             .collect()
+    }
+
+    /// A command's output is projected as `  │ <line>`. When that line is
+    /// longer than the pane it wraps, and the wrapped rows have to keep the
+    /// gutter: blanking the prefix turned real output into text starting at
+    /// column three with no box edge, which is what an operator reads as "the
+    /// whole thing piled into one block".
+    /// A fenced code block is drawn as `  ╭ … │ … ╰`. A body row longer than
+    /// the pane wraps, and every wrapped row has to keep the `│` gutter —
+    /// blanking it makes a long line look like the box fell apart, which is
+    /// what an operator reports as "the output is all piled into one column".
+    #[test]
+    fn a_wrapped_code_block_keeps_its_box_edges() {
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let document = "```\nuname -a 输出是 Darwin host.local 25.5.0 Darwin Kernel Version 25.5.0 RELEASE_ARM64_T8112 arm64\n```";
+        let rows = prose_lines(document, &theme);
+        let wrapped = wrap_rows(&rows, 50);
+        let painted = line_texts(&wrapped);
+        let body = painted
+            .iter()
+            .filter(|row| {
+                row.contains("Darwin") || row.contains("Version") || row.contains("arm64")
+            })
+            .collect::<Vec<_>>();
+        assert!(body.len() > 1, "the body wrapped: {painted:?}");
+        for row in &body {
+            assert!(
+                row.contains("│"),
+                "a wrapped code-block row lost its box edge: {row:?}\n{painted:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_wrapped_tool_output_keeps_its_gutter() {
+        let tool = crate::session::ToolPart {
+            id: "call_1".into(),
+            name: "bash".into(),
+            input: serde_json::json!({"command": "uname -a"}),
+            output: Some(
+                serde_json::json!({
+                    "stdout": "Darwin host.local 25.5.0 Darwin Kernel Version 25.5.0: RELEASE_ARM64_T8112 arm64",
+                    "exit_code": 0
+                })
+                .to_string(),
+            ),
+            failed: false,
+        };
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let lines = crate::tool::lines(&tool, None, &theme, false, None);
+        assert!(lines.len() > 1, "the fixture has a header and a body row");
+
+        // 40 columns forces the body to wrap.
+        let rows = lines
+            .into_iter()
+            .map(|line| {
+                let (hang, keep) = tool_row_shape(&line);
+                Row::hung_with_edge(line, hang, keep)
+            })
+            .collect::<Vec<_>>();
+        let wrapped = wrap_rows(&rows, 40);
+        let painted = line_texts(&wrapped);
+        let body_rows = painted
+            .iter()
+            .filter(|row| row.contains("Darwin") || row.contains("Kernel") || row.contains("arm64"))
+            .collect::<Vec<_>>();
+        assert!(body_rows.len() > 1, "the body wrapped: {painted:?}");
+        for row in &body_rows {
+            assert!(
+                row.starts_with("  │ "),
+                "a wrapped command-output row lost its gutter: {row:?}\n{painted:?}"
+            );
+        }
     }
 
     fn row_text(row: &Row) -> String {
