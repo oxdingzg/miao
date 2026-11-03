@@ -194,6 +194,16 @@ jobs:
               echo "::error::the artifact this leg built does not start: $binary"
               exit 1
             fi
+            # `--version` is a compile-time constant, so it passes for any
+            # binary built in this workspace — including the TUI-only crate,
+            # which is how v0.3.27 shipped an artifact with no management
+            # commands at all. Assert a product surface too: `db path` is a
+            # cheap, offline CLI-0x command that only `crates/miao-cli` answers.
+            if ! "$binary" db path >/dev/null 2>&1; then
+              echo "::error::the artifact is not the product CLI (no 'db path': $binary)"
+              "$binary" --help 2>&1 | head -5 || true
+              exit 1
+            fi
           done
           if [ "$found" -eq 0 ]; then
             echo "::error::this leg produced no artifact for ${os}-${arch}"

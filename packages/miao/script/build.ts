@@ -32,16 +32,21 @@ const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
 
-// A native release ships one artifact. The Rust binary carries the engine
-// in-process, so `miao-<os>-<arch>` is the whole product: no separate engine
-// archive (the code is linked in) and no separate TUI archive (this *is* the
-// TUI). `install` already degrades when those archives are absent.
+// A native release ships one artifact: the product binary, built from
+// `crates/miao-cli`. That crate is the single binary — it declares its bin name
+// as `miao`, carries the engine in-process, and links the TUI in through
+// `miao_tui::run`, so `miao tui` starts it without spawning anything.
+//
+// This used to build the `miao-tui` crate and rename it to `miao`, which was
+// correct when the TUI was the whole product. It is not any more: that binary
+// rejects every management command (`auth`, `session`, `db`, `models`, …) with
+// `miao-tui: unexpected argument`, so the released artifact had none of the
+// surface `docs/cli.md` documents.
 if (process.argv.includes("--native-cli")) {
   await $`rm -rf dist`
   const { archives } = await buildNativeArchives({
-    crate: "miao-tui",
-    binary: "miao-tui",
-    archiveAs: "miao",
+    crate: "miao-cli",
+    binary: "miao",
     licenses: [path.resolve(dir, "../../LICENSE")],
     env: { MIAO_VERSION: Script.version },
   })
