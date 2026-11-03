@@ -11,10 +11,31 @@ use crossterm::terminal::{
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+use std::io::Write;
 
 use crate::config::{Cursor, CursorShape};
 
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
+
+/// Present one frame atomically. Streaming turns repaint the transcript many
+/// times a second, and terminals that apply partial updates mid-frame show
+/// that as full-screen flicker; wrapping the frame in synchronized-update
+/// markers lets capable terminals buffer and present it in one piece.
+/// Terminals without support ignore the markers and behave as before.
+pub fn draw_frame<F>(terminal: &mut Tui, render: F) -> io::Result<()>
+where
+    F: FnOnce(&mut ratatui::Frame),
+{
+    // Writes on a second handle to the same tty keep their order with the
+    // backend's own writes, so the markers bracket the frame on the wire.
+    // CSI 2026 = synchronized update: capable terminals buffer everything
+    // between the markers and present the frame in one piece.
+    let mut stdout = std::io::stdout();
+    stdout.write_all(b"\x1b[?2026h")?;
+    let result = terminal.draw(render).map(|_frame| ());
+    stdout.write_all(b"\x1b[?2026l")?;
+    result
+}
 
 /// Covers normal exit and every error after raw-mode initialization begins.
 pub struct RestoreGuard;

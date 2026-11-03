@@ -170,7 +170,7 @@ async fn drive(
     let mut paint_failures = 0u32;
     loop {
         let _ = title.update(app.terminal_title().as_deref());
-        match terminal.draw(|frame| app.render(frame)) {
+        match crate::terminal::draw_frame(terminal, |frame| app.render(frame)) {
             Ok(_) => paint_failures = 0,
             Err(error) => {
                 paint_failures += 1;
