@@ -25,11 +25,6 @@ fn composer_column(width: u16) -> u16 {
 
 /// Where the body splits between the transcript and the sidebar.
 ///
-/// The body fills the window: the sidebar holds the right edge and the prose
-/// keeps everything left of it. A capped, centred prose column used to leave a
-/// band of empty cells on both sides of a wide terminal, which read as the
-/// content occupying only the middle of the screen.
-
 fn body_columns(area: Rect) -> (Rect, Option<Rect>) {
     if area.width < SIDEBAR_MIN_WIDTH {
         return (area, None);
@@ -840,57 +835,20 @@ fn selection_text(rendered: &[Vec<String>], inner: Rect, a: Position, b: Positio
 }
 
 pub struct Home {
-    pub rows: Vec<SessionSummary>,
-    pub selected: usize,
-    /// How many rows one viewport shows. Measured by the renderer, so the first
-    /// screen comes up full instead of opening at a fixed ten rows in a tall
-    /// terminal and asking for `space` before it has shown anything.
-    capacity: usize,
-    /// Where the last painted frame put each Session: its absolute screen row
-    /// and its index in the visible list. A click names the row it landed on
-    /// instead of the list re-deriving the viewport and the scroll offset from
-    /// the pointer, which would drift as soon as either changed.
-    anchors: Vec<(u16, usize)>,
-    /// Case-insensitive substring the list is narrowed to. Empty shows
-    /// everything, so filtering is a mode of the same list rather than a
-    /// second screen whose selection has to be kept in step.
-    query: String,
-    /// Whether printable keys belong to the filter. An explicit mode keeps
-    /// single-letter commands (`n`, `r`, `p`, `j`, `k`) usable and still lets a
-    /// filter contain those letters.
-    filtering: bool,
-    /// Whether the list, rather than the prompt, owns the keyboard. The footer
-    /// names the place `Tab` reaches next, so it cannot be a fixed promise.
-    list_focus: bool,
-    /// The armed leader's menu. While the leader waits for its chord, the
-    /// footer names what it can reach instead of the usual key hint.
-    leader_hint: Option<String>,
+    /// A transient problem (an engine restart, a failed submit): painted under
+    /// the prompt.
     notice: Option<String>,
-    /// A configuration problem that outlives one load: the catalog arriving is
-    /// not an answer to it, so it is kept apart from the transient notice.
+    /// A configuration problem that outlives one load: painted the same way,
+    /// in the warning colour.
     warning: Option<String>,
-    /// Set once the engine has answered the first `sessions` request. Until
-    /// then an empty list is a load in flight, not an empty catalog.
-    loaded: bool,
     theme: Theme,
 }
 
 impl Home {
     pub fn new(theme: Theme) -> Self {
         Self {
-            rows: Vec::new(),
-            selected: 0,
-            capacity: 0,
-            anchors: Vec::new(),
-            query: String::new(),
-            filtering: false,
-            // The list owns the landing keyboard first; the hint names the
-            // side the next Tab reaches.
-            list_focus: true,
-            leader_hint: None,
             notice: None,
             warning: None,
-            loaded: false,
             theme,
         }
     }
@@ -911,507 +869,111 @@ impl Home {
         self.warning.as_deref()
     }
 
-    /// What an empty list shows: a load still in flight reads differently from
-    /// a catalog that really has nothing in it.
-    fn placeholder(&self) -> &str {
-        if self.loaded {
-            "no sessions yet · tab to type a prompt · n for an empty session"
-        } else {
-            "loading sessions…"
-        }
-    }
-
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
     }
 
-    /// Follow the screen's focus, so the footer can say where `Tab` leads.
-    pub fn set_list_focus(&mut self, focused: bool) {
-        self.list_focus = focused;
-    }
-
-    /// Show the armed leader's menu in place of the key hint.
-    pub fn set_leader_hint(&mut self, hint: Option<String>) {
-        self.leader_hint = hint;
-    }
-
-    pub fn set_rows(&mut self, rows: Vec<SessionSummary>) {
-        self.loaded = true;
-        let selected_id = self.current().map(|row| row.id.clone());
-        self.rows = rows;
-        let visible = self.visible_len();
-        let offset = usize::from(self.show_new_session());
-        self.selected = selected_id
-            .and_then(|id| self.visible().iter().position(|row| row.id == id))
-            .map(|index| index + offset)
-            // Default to the first Session, past the action row: a reload that
-            // loses the previous selection lands on a Session, not the action.
-            .unwrap_or(offset.min(visible.saturating_sub(1)))
-            .min(visible.saturating_sub(1));
-    }
-
-    /// The rows the list shows right now, in list order. Pinning and filtering
-    /// both change this view, so every caller reads it instead of `rows`.
-    /// Move the selection one screenful, the way the space bar pages a pager.
-    ///
-    /// The list used to reveal `limit` rows and hide the rest behind `space`,
-    /// which stopped doing anything visible once the first page became a whole
-    /// viewport: the rows being revealed were already off the top of the same
-    /// window. History is now simply reachable by moving, and `space` moves a
-    /// screenful instead of promising rows the frame cannot show.
-    pub fn page(&mut self) {
-        let step = self.capacity.max(1) as i32;
-        self.move_cursor(step);
-    }
-
-    /// Move the selection one screenful back, the other half of the pager.
-    pub fn page_back(&mut self) {
-        let step = self.capacity.max(1) as i32;
-        self.move_cursor(-step);
-    }
-
-    /// Select the first matching row.
-    pub fn select_first(&mut self) {
-        self.selected = 0;
-    }
-
-    /// Select the last matching row.
-    pub fn select_last(&mut self) {
-        self.selected = self.visible_len().saturating_sub(1);
-    }
-
-    /// Every matching row. The renderer paints the window, so the list itself
-    /// does not need a second notion of how much history is "revealed".
-    fn visible(&self) -> Vec<&SessionSummary> {
-        self.matched()
-    }
-
-    fn matched(&self) -> Vec<&SessionSummary> {
-        if self.query.is_empty() {
-            return self.rows.iter().collect();
-        }
-        let needle = self.query.to_lowercase();
-        self.rows
-            .iter()
-            .filter(|row| {
-                row.label().to_lowercase().contains(&needle)
-                    || row
-                        .directory
-                        .as_deref()
-                        .is_some_and(|directory| directory.to_lowercase().contains(&needle))
-            })
-            .collect()
-    }
-
-    /// Whether the list leads with the "new session" action.
-    ///
-    /// A filter narrows Sessions, so the action steps aside while a query is
-    /// typed: nothing about a search should be able to open a new Session.
-    fn show_new_session(&self) -> bool {
-        self.query.is_empty()
-    }
-
-    /// `index` in the list's display space: 0 is the action row, Sessions follow.
-    fn session_at(&self, index: usize) -> Option<&SessionSummary> {
-        let offset = usize::from(self.show_new_session());
-        self.visible().into_iter().nth(index.checked_sub(offset)?)
-    }
-
-    /// True when the cursor sits on the action row rather than on a Session.
-    pub fn is_new_session(&self) -> bool {
-        self.show_new_session() && self.selected == 0
-    }
-
-    fn visible_len(&self) -> usize {
-        self.visible().len() + usize::from(self.show_new_session())
-    }
-
-    pub fn query(&self) -> &str {
-        &self.query
-    }
-
-    pub fn filtering(&self) -> bool {
-        self.filtering
-    }
-
-    /// Enter filter mode with an empty query, so the next printable key starts
-    /// a search instead of running a command.
-    pub fn start_filter(&mut self) {
-        self.filtering = true;
-        self.query.clear();
-        self.selected = 0;
-    }
-
-    /// Leave filter mode and show the whole list again.
-    pub fn stop_filter(&mut self) {
-        self.filtering = false;
-        self.query.clear();
-        // The action row reappears when the query is empty, so the cursor
-        // moves past it to the first Session.
-        self.selected = usize::from(self.show_new_session());
-    }
-
-    /// Narrow the list one character at a time; the selection goes back to the
-    /// first match so the operator sees the result immediately.
-    pub fn filter(&mut self, c: char) {
-        self.query.push(c);
-        self.selected = 0;
-    }
-
-    pub fn filter_backspace(&mut self) -> bool {
-        if self.query.pop().is_none() {
-            return false;
-        }
-        self.selected = 0;
-        true
-    }
-
-    /// Clearing the filter keeps filter mode but shows the whole list again.
-    pub fn clear_filter(&mut self) -> bool {
-        if self.query.is_empty() {
-            return false;
-        }
-        self.query.clear();
-        self.selected = usize::from(self.show_new_session());
-        true
-    }
-
-    pub fn move_cursor(&mut self, delta: i32) {
-        let visible = self.visible_len();
-        if visible == 0 {
-            self.selected = 0;
-            return;
-        }
-        let next = self.selected as i32 + delta;
-        self.selected = next.clamp(0, visible as i32 - 1) as usize;
-    }
-
-    /// The row a numbered slot opens. Slots follow the list as shown, and the
-    /// first nine are the ones a terminal keyboard can reach without a chord.
-    pub fn slot(&self, index: usize) -> Option<&SessionSummary> {
-        self.visible().into_iter().nth(index)
-    }
-
-    /// Select a row by its index in the visible list, the way a click does.
-    pub fn select(&mut self, index: usize) {
-        self.selected = index.min(self.visible_len().saturating_sub(1));
-    }
-
-    /// The visible row painted on this screen row, if any. The landing list is
-    /// the one place a pointer has something to name, so the answer comes from
-    /// the frame that is on screen rather than from a second copy of the
-    /// viewport arithmetic.
-    pub fn row_at(&self, y: u16) -> Option<usize> {
-        self.anchors
-            .iter()
-            .find(|(line, _)| *line == y)
-            .map(|(_, row)| *row)
-    }
-
-    pub fn current(&self) -> Option<&SessionSummary> {
-        self.session_at(self.selected)
-    }
-
-    fn warning_lines(&self) -> Vec<Line<'static>> {
+    /// The launcher screen, drawn the way the TS home draws it: the wordmark
+    /// banner and the version centred in the vertical leftover, the prompt
+    /// beneath, and any notice under that. There is no session list here —
+    /// history lives in the session dialog, reachable from the prompt.
+    pub fn render(&mut self, frame: &mut Frame, area: Rect, composer: &mut Composer) {
         let palette = self.theme.palette;
-        self.warning
-            .iter()
-            .flat_map(|warning| {
-                [
-                    Line::from(Span::styled(
-                        warning.clone(),
-                        Style::new().fg(palette.error),
-                    )),
-                    Line::default(),
-                ]
-            })
-            .collect()
-    }
-
-    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let palette = self.theme.palette;
-        // A frame that paints no Session must not leave the last frame's
-        // anchors behind to answer a click.
-        self.anchors.clear();
-        // No frame: the list reads as text on the background, the way miao's
-        // TypeScript UI and the agent CLIs it follows do. One dim line names
-        // the screen; the selected row carries the only accent.
-        let header_area = Rect {
-            height: 1.min(area.height),
-            ..area
-        };
-        let list_area = Rect {
-            y: area.y + header_area.height,
-            height: area.height.saturating_sub(header_area.height),
-            x: area.x + 1,
-            width: area.width.saturating_sub(2),
-        };
-        let inner = list_area;
-        // The list uses the transcript's column: same left edge, same measure.
-        // Its own centred measure made the body jump sideways when an operator
-        // opened a Session, which is the difference the two screens showed.
-        // The landing screen has no sidebar, so its list is the whole body: the
-        // split `body_columns` makes is for a Session, and subtracting the
-        // sidebar here left the list 41 columns short of the window.
-        let column = inner.width;
-        // The header names the screen the rows belong to, so it starts on the
-        // column the rows start on instead of at the window's edge.
-        // The rows start one cell in, so the header does too. The label stays
-        // quiet and the count carries the accent: one number on this screen
-        // says how much history it is holding, and that is what an eye should
-        // land on.
-        let mut header = vec![Span::styled(
-            " sessions".to_string(),
-            Style::new().fg(palette.text_muted),
-        )];
-        header.push(Span::styled(" · ", Style::new().fg(palette.border)));
-        match self.query.is_empty() {
-            true => header.push(Span::styled(
-                self.rows.len().to_string(),
-                Style::new()
-                    .fg(palette.primary)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            false => {
-                header.push(Span::styled(
-                    format!("filter \"{}\"", self.query),
-                    Style::new().fg(palette.secondary),
-                ));
-                header.push(Span::styled(
-                    " · esc clear",
-                    Style::new().fg(palette.text_muted),
-                ));
-            }
-        }
-        frame.render_widget(
-            Paragraph::new(Line::from(header)).style(Style::new().bg(palette.background)),
-            header_area,
-        );
-        let mut notice_lines: Vec<Line<'static>> = self.warning_lines();
-        if let Some(notice) = &self.notice {
-            notice_lines.push(Line::from(Span::styled(
-                notice.clone(),
-                Style::new().fg(palette.error),
-            )));
-            notice_lines.push(Line::default());
-        }
-        // The hint owns the bottom row and notices take the top ones, so what
-        // is left over is what one viewport can actually show.
-        self.capacity = inner
-            .height
-            .saturating_sub(1)
-            .saturating_sub(notice_lines.len() as u16) as usize;
-        let visible = self.visible();
-        // The action row leads an empty list only when the frame has nothing
-        // more urgent to say: a startup refusal reads as wrapped text, the way
-        // it did before the action row existed, and an action under it would
-        // sit on an engine that is not there to answer.
-        if visible.is_empty() && !(self.show_new_session() && self.notice.is_none()) {
-            let mut lines = self.warning_lines();
-            let message = self.notice.clone().unwrap_or_else(|| {
-                if self.rows.is_empty() {
-                    self.placeholder().to_string()
-                } else {
-                    format!("nothing matches \"{}\"", self.query)
-                }
-            });
-            lines.push(Line::from(Span::styled(
-                message,
-                Style::new().fg(palette.text_muted),
-            )));
-            frame.render_widget(
-                Paragraph::new(lines)
-                    .style(Style::new().fg(palette.text_muted).bg(palette.background))
-                    .wrap(Wrap { trim: false }),
-                list_area,
-            );
-            return;
-        }
-        // Group by recency, the way comparable session pickers do: a flat wall
-        // of titles stops being scannable once a project has weeks of history.
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|duration| duration.as_millis() as u64)
-            .unwrap_or(0);
-        let mut body: Vec<Line<'static>> = Vec::new();
-        // What each body line holds, so a click can be answered from where the
-        // row was actually painted.
-        let mut lines_to_row: Vec<Option<usize>> = Vec::new();
-        let mut selected_line = 0usize;
-        let mut selected_tail = 0usize;
-        let mut bucket: Option<&'static str> = None;
-        // The landing list opens on the action, not on the newest Session: a
-        // launch that resumes yesterday's conversation is not what "start" means.
-        let offset = usize::from(self.show_new_session());
-        if offset == 1 {
-            let selected = self.selected == 0;
-            let style = match selected {
-                true => Style::new()
-                    .fg(palette.primary)
-                    .bg(palette.element)
-                    .add_modifier(Modifier::BOLD),
-                false => Style::new().fg(palette.secondary),
-            };
-            // The action reads as a list row: same marker column as the
-            // Sessions under it. An indentation gutter once printed its width
-            // as digits ("48 ＋ new session"), so the row never looked
-            // selectable.
-            body.push(Line::from(Span::styled(
-                format!("{}＋ new session", if selected { "▸ " } else { "  " }),
-                style,
-            )));
-            lines_to_row.push(Some(0));
-            if selected {
-                selected_line = notice_lines.len() + body.len() - 1;
-            }
-        }
-        for (index, row) in visible.iter().enumerate() {
-            // Every painted row answers with its display index, so a click and
-            // the action share one numbering.
-            let index = index + offset;
-            let group = match row.updated_at_ms {
-                Some(updated) => session_group(now, updated),
-                None => "Earlier",
-            };
-            if bucket != Some(group) {
-                if !body.is_empty() {
-                    body.push(Line::default());
-                    lines_to_row.push(None);
-                }
-                body.push(Line::from(Span::styled(
-                    group.to_string(),
-                    Style::new()
-                        .fg(palette.secondary)
-                        .add_modifier(Modifier::BOLD),
-                )));
-                lines_to_row.push(None);
-                bucket = Some(group);
-            }
-            let selected = index == self.selected;
-            if selected {
-                selected_line = notice_lines.len() + body.len();
-            }
-            // The selection paints the whole row, so it reads as a band across
-            // the column instead of a highlight under a single word.
-            let style = if selected {
-                Style::new()
-                    .fg(palette.primary)
-                    .bg(palette.element)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::new().fg(palette.text)
-            };
-            let meta_style = match selected {
-                true => Style::new().fg(palette.text_muted).bg(palette.element),
-                false => Style::new().fg(palette.text_muted),
-            };
-            let marker = if selected { "▸ " } else { "  " };
-            let mut meta = row.updated_at_ms.map(relative_time).unwrap_or_default();
-            if row.pinned_at_ms.is_some() {
-                meta = if meta.is_empty() {
-                    "pinned".to_string()
-                } else {
-                    format!("pinned · {meta}")
-                };
-            }
-            // Fit the title so the right edge keeps holding the age: at a
-            // mixed-width font the character count and the cell count differ.
-            let measure = column as usize;
-            let room = measure.saturating_sub(UnicodeWidthStr::width(meta.as_str()) + 3);
-            let title = fit(row.label(), room);
-            let pad = measure.saturating_sub(
-                UnicodeWidthStr::width(marker)
-                    + UnicodeWidthStr::width(title.as_str())
-                    + UnicodeWidthStr::width(meta.as_str()),
-            );
-            body.push(Line::from(vec![
-                Span::styled(format!("{marker}{title}"), style),
-                Span::styled(format!("{}{meta}", " ".repeat(pad)), meta_style),
-            ]));
-            lines_to_row.push(Some(index));
-            // The preview answers "which conversation was this?" for the row
-            // the cursor is on. Under every row it turned the list into a wall
-            // of prose that pushed the titles off the screen; one muted line
-            // under the selection keeps every other row to a single line, and
-            // the engine already bounded the text.
-            if let Some(preview) = row.preview.as_deref().filter(|_| selected) {
-                selected_tail += 1;
-                // A preview answers "which conversation was this?" in a glance.
-                // Spending the whole width on it made one row read as a
-                // paragraph, so it is capped even when there is room left.
-                let room = measure.saturating_sub(4).min(PREVIEW_CELLS);
-                body.push(Line::from(vec![
-                    Span::styled("   ┃ ".to_string(), Style::new().fg(palette.primary)),
-                    Span::styled(fit(preview, room), Style::new().fg(palette.text_muted)),
-                ]));
-                lines_to_row.push(None);
-            }
-        }
-        // Key hints belong at the bottom edge, where every comparable CLI puts
-        // them, instead of permanently occupying the list header.
-        let body_height = inner.height.saturating_sub(1) as usize;
-        let notice_take = notice_lines.len().min(body_height);
-        let list_height = body_height - notice_take;
-        let selected_body = selected_line.saturating_sub(notice_take);
-        // A selected row's preview counts toward the window, so both lines
-        // stay on screen when the selection rides the bottom edge.
-        let offset = if list_height == 0 {
-            0
-        } else {
-            (selected_body + selected_tail)
-                .saturating_sub(list_height.saturating_sub(1))
-                .min(body.len().saturating_sub(list_height))
-        };
-        let body_area = Rect {
-            height: inner.height.saturating_sub(1),
-            ..inner
-        };
-        let hint_area = Rect {
-            y: inner.bottom().saturating_sub(1),
-            height: 1,
-            ..inner
-        };
-        // The painted body starts under the notices and skips the lines the
-        // window scrolled past. Recording the result here keeps the pointer and
-        // the painter from disagreeing about where a row is.
-        for (line, row) in lines_to_row.iter().enumerate().skip(offset) {
-            let Some(row) = row else {
-                continue;
-            };
-            let painted = line - offset;
-            if painted >= list_height {
-                break;
-            }
-            self.anchors
-                .push((body_area.y + notice_take as u16 + painted as u16, *row));
-        }
-        let notice_skip = notice_lines.len() - notice_take;
-        let all: Vec<Line> = notice_lines
-            .into_iter()
-            .skip(notice_skip)
-            .chain(body.into_iter().skip(offset).take(list_height))
+        let width = area.width as usize;
+        // The banner art: cat on the left, the MIAO wordmark beside it.
+        let cat = [r"       ", r" /\/\  ", r"( o.o )", r" > ^ < ", r"       "];
+        let wordmark = [
+            ["█   █", "█", " ███ ", "█████"],
+            ["██ ██", "█", "█   █", "█   █"],
+            ["█ █ █", "█", "█   █", "█████"],
+            ["█   █", "█", "█   █", "█████"],
+            ["█   █", "█", "█   █", "█████"],
+        ];
+        let gap = "  ";
+        let banner_rows: Vec<String> = (0..5)
+            .map(|row| format!("{}  {}", cat[row], wordmark[row].join(gap)))
             .collect();
-        // One Line is one row here: the anchors recorded above, the window
-        // arithmetic and the pointer all assume it. Wrapping turned a long
-        // preview into three or four rows, which pushed titles off the page and
-        // made a click land on a neighbour.
-        frame.render_widget(
-            Paragraph::new(all).style(Style::new().bg(palette.background)),
-            body_area,
-        );
-        // An armed leader replaces the key hint with its menu: those chords
-        // are what the next keystroke can mean.
-        let hint = match &self.leader_hint {
-            Some(menu) => fit_chords(menu, hint_area.width as usize),
-            None => home_hint(self.list_focus, hint_area.width as usize),
+        let banner_width = banner_rows[0].width();
+
+        let version = match option_env!("MIAO_TUI_VERSION") {
+            Some(version) => version,
+            None => env!("CARGO_PKG_VERSION"),
         };
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                hint,
-                Style::new().fg(palette.text_muted),
-            ))),
-            hint_area,
-        );
+
+        let prompt_width = ((area.width as usize) * 7 / 10).max(75).min(width);
+        let prompt_h = crate::pane::composer_height(composer, area.width).max(3);
+        let notice_h = usize::from(self.notice.is_some()) + usize::from(self.warning.is_some());
+
+        // Vertical: the used block (banner + version + gap + prompt + notices)
+        // is centred, riding two-fifths high the way the TS flex layout lands.
+        let used = 5 + 1 + 1 + 1 + prompt_h as usize + notice_h;
+        let free = (area.height as usize).saturating_sub(used);
+        let gap_top = free * 2 / 5;
+        let gap_bottom = free.saturating_sub(gap_top);
+
+        let mut y = area.y as usize;
+        let mut put_lines: Vec<Line<'static>> = Vec::new();
+
+        y += gap_top.min(free);
+        for row in &banner_rows {
+            put_lines.push(Line::from(Span::styled(
+                format!("{:^width$}", row, width = banner_width + 2),
+                Style::new().fg(palette.primary),
+            )));
+        }
+        put_lines.push(Line::from(Span::styled(
+            format!(
+                "{:^width$}",
+                format!("v{version}"),
+                width = banner_width + 2
+            ),
+            Style::new().fg(palette.text_muted),
+        )));
+        y += 1; // the one blank row the TS home keeps between banner and prompt
+        let prompt_x = width.saturating_sub(prompt_width) / 2;
+        let prompt_area = Rect {
+            x: area.x + prompt_x as u16,
+            width: prompt_width as u16,
+            y: area.y + y as u16,
+            height: prompt_h + 1,
+        };
+        render_composer(frame, prompt_area, composer, &self.theme);
+        for (offset, line) in put_lines.iter().enumerate() {
+            frame.render_widget(
+                Paragraph::new(line.clone()),
+                Rect {
+                    y: area.y + offset as u16,
+                    height: 1,
+                    ..area
+                },
+            );
+        }
+        let mut notice_y = area.y + prompt_h + 1;
+        if let Some(warning) = &self.warning {
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    warning.clone(),
+                    Style::new().fg(palette.warning),
+                )),
+                Rect {
+                    y: notice_y,
+                    height: 1,
+                    ..area
+                },
+            );
+            notice_y += 1;
+        }
+        if let Some(notice) = &self.notice {
+            frame.render_widget(
+                Paragraph::new(Span::styled(notice.clone(), Style::new().fg(palette.error))),
+                Rect {
+                    y: notice_y,
+                    height: 1,
+                    ..area
+                },
+            );
+        }
+        let _ = gap_bottom;
     }
 }
 
@@ -1422,30 +984,6 @@ impl Home {
 ///
 /// While the prompt holds the keyboard every other chord on this line reaches
 /// the composer as text — `/`, `p`, `n`, `1-9` and `?` all type themselves — so
-/// the hint lists only what works from there rather than advertising list
-/// chords that are inert until `Tab`.
-///
-/// A hint cut in the middle of a word teaches nothing either, and forty columns
-/// is a layout the product has to hold, so each mode walks down to the widest
-/// variant that fits the row.
-fn home_hint(list_focus: bool, width: usize) -> String {
-    let ladder: &[&str] = match list_focus {
-        true => &[
-            " / filter · p pin · tab prompt · n new · 1-9 open · space page · ? help",
-            " / filter · tab prompt · ? help",
-            " / filter · ? help",
-            " ? help",
-        ],
-        false => &[" tab list · enter send", " tab list · enter", " tab list"],
-    };
-    for hint in ladder {
-        if UnicodeWidthStr::width(*hint) <= width {
-            return hint.to_string();
-        }
-    }
-    fit("tab", width)
-}
-
 /// Trim a which-key menu at a chord boundary.
 ///
 /// `fit` cuts a line at a cell, which turns `n session new` into `n session n…`
@@ -1477,57 +1015,6 @@ fn fit_chords(menu: &str, width: usize) -> String {
     fit(leader, width)
 }
 
-/// The section a Session belongs to in the home list. Days are bucketed on the
-/// local wall clock; "This week" covers the six days before yesterday.
-fn session_group(now_ms: u64, updated_ms: u64) -> &'static str {
-    let day = 86_400_000i64;
-    let offset = local_utc_offset_ms();
-    let local_now = now_ms as i64 + offset;
-    let today = local_now.div_euclid(day) * day - offset;
-    let updated = updated_ms as i64;
-    if updated >= today {
-        "Today"
-    } else if updated >= today - day {
-        "Yesterday"
-    } else if updated >= today - 7 * day {
-        "This week"
-    } else {
-        "Earlier"
-    }
-}
-
-#[cfg(unix)]
-fn local_utc_offset_ms() -> i64 {
-    // SAFETY: localtime_r writes into a caller-owned tm and retains no pointer.
-    unsafe {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|duration| duration.as_secs() as libc::time_t)
-            .unwrap_or(0);
-        let mut tm: libc::tm = std::mem::zeroed();
-        if libc::localtime_r(&now, &mut tm).is_null() {
-            return 0;
-        }
-        (tm.tm_gmtoff as i64) * 1000
-    }
-}
-
-#[cfg(not(unix))]
-fn local_utc_offset_ms() -> i64 {
-    0
-}
-
-fn relative_time(updated_at_ms: u64) -> String {
-    relative_time_at(updated_at_ms, now_ms())
-}
-
-pub fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
-}
-
 fn relative_time_at(updated_at_ms: u64, now: u64) -> String {
     let delta_ms = now.saturating_sub(updated_at_ms);
     let minutes = delta_ms / 60_000;
@@ -1543,6 +1030,13 @@ fn relative_time_at(updated_at_ms: u64, now: u64) -> String {
             }
         }
     }
+}
+
+pub fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 /// How long a painted relative timestamp stays true. A label with minute
@@ -2077,12 +1571,6 @@ fn render_composer_in(
 }
 
 /// Skip `offset` display cells and take at most `width` cells of a line.
-/// One display row of text: newlines and runs of spaces collapse, and an
-/// overlong value is cut with an ellipsis so rows keep their alignment.
-/// How many cells the selected row's preview may use. A list row is a summary,
-/// not a place to read the conversation back.
-const PREVIEW_CELLS: usize = 72;
-
 fn fit(text: &str, width: usize) -> String {
     let single = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if UnicodeWidthStr::width(single.as_str()) <= width {
@@ -4081,22 +3569,6 @@ mod tests {
         assert_eq!(answer["answers"], serde_json::json!([["docs"]]));
     }
 
-    #[test]
-    fn an_empty_home_reads_as_loading_until_the_engine_answers() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
-        let theme = Theme {
-            name: crate::theme::DEFAULT_THEME.to_string(),
-            palette,
-        };
-        let mut home = Home::new(theme);
-        assert_eq!(home.placeholder(), "loading sessions…");
-        home.set_rows(Vec::new());
-        assert_eq!(
-            home.placeholder(),
-            "no sessions yet · tab to type a prompt · n for an empty session"
-        );
-    }
-
     /// The renderer marks exactly the selected cells, and clipping still works
     /// with wide characters and a horizontal offset.
     #[test]
@@ -4125,27 +3597,7 @@ mod tests {
         assert_eq!(line.spans[0].content.to_string(), "好世界");
     }
 
-    #[test]
-    fn the_hint_names_the_place_the_next_tab_reaches() {
-        // The prompt owns the landing screen, so a fixed `tab prompt` pointed at
-        // the keyboard it already had. `Tab` swaps sides, so the hint follows
-        // whoever is waiting for it.
-        assert!(home_hint(false, 120).contains("tab list"));
-        assert!(home_hint(true, 120).contains("tab prompt"));
-        // `space` pages the list, so the hint says what it does rather than
-        // While the prompt has the keyboard the list's chords are text, so the
-        // line must not promise them.
-        let prompt = home_hint(false, 120);
-        for chord in ["filter", "pin", "new", "1-9", "space page", "? help"] {
-            assert!(
-                !prompt.contains(chord),
-                "the prompt-focused hint advertises {chord}: {prompt}"
-            );
-        }
-        assert_eq!(prompt, " tab list · enter send");
-        // `space` pages the list, so the list's own hint says what it does.
-        assert!(home_hint(true, 120).contains("space page"));
-    }
+
 
     #[test]
     fn a_long_menu_is_cut_between_chords_not_inside_one() {
@@ -4174,48 +3626,7 @@ mod tests {
         assert_eq!(fit_chords("ctrl+x · q app exit", 40), "ctrl+x · q app exit");
     }
 
-    #[test]
-    fn the_footer_shows_the_leader_menu_while_it_is_armed() {
-        // The menu replaces the key hint because the next keystroke chooses
-        // from it, not from the usual chords.
-        let mut home = Home::new(home_theme());
-        home.set_rows(vec![home_row("ses_a", "login fix", None)]);
-        let plain = drawn(&mut home, 80, 12)
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .join("");
-        // The list owns the landing keyboard by default, so the hint names
-        // its keys and where Tab hands the keys next.
-        assert!(plain.contains("tab prompt"), "{plain}");
-        home.set_leader_hint(Some("ctrl+x · q app exit · n session new".into()));
-        let armed = drawn(&mut home, 80, 12)
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .join("");
-        assert!(armed.contains("q app exit"), "{armed}");
-        assert!(!armed.contains("tab list"), "{armed}");
-    }
 
-    #[test]
-    fn a_narrow_frame_gets_a_shorter_hint_instead_of_a_clipped_one() {
-        // UX-03: forty columns is a layout the product has to hold. A hint cut
-        // in the middle of a word teaches nothing, so each mode walks down to
-        // the widest variant that fits, and the way to the key list survives.
-        for width in [40usize, 60, 80, 120] {
-            for list_focus in [false, true] {
-                let hint = home_hint(list_focus, width);
-                assert!(
-                    UnicodeWidthStr::width(hint.as_str()) <= width,
-                    "{width} columns must not clip: {hint:?}"
-                );
-            }
-            assert!(home_hint(true, width).contains("help"), "{width}");
-        }
-        assert_eq!(home_hint(true, 8), " ? help");
-        assert_eq!(home_hint(false, 8), "tab");
-    }
 
     #[test]
     fn a_command_completion_row_says_what_the_command_does() {
@@ -4252,112 +3663,9 @@ mod tests {
         assert!(visible.contains("Sessionstatusandusage"), "{visible}");
     }
 
-    #[test]
-    fn an_empty_home_wraps_the_actionable_startup_refusal() {
-        let mut home = Home::new(Theme {
-            name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
-        });
-        home.set_notice(Some("engine engine_closed: miao-engine exited (exit code: 1): miao engine-shim: could not prepare the product engine plan: Native TUI requires default-agent capture support".into()));
-        let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 20)).expect("terminal");
-        terminal
-            .draw(|frame| home.render(frame, frame.area()))
-            .expect("draw");
-        let visible = terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .flat_map(|cell| cell.symbol().chars())
-            .filter(|character| !character.is_whitespace())
-            .collect::<String>();
-        assert!(
-            visible.contains("NativeTUIrequiresdefault-agentcapturesupport"),
-            "{visible}"
-        );
-    }
-
-    #[test]
-    fn a_session_row_shows_its_preview_under_the_label() {
-        let mut home = Home::new(Theme {
-            name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
-        });
-        home.set_rows(vec![SessionSummary {
-            id: "ses_p".into(),
-            title: Some("login fix".into()),
-            parent_id: None,
-            updated_at_ms: Some(10),
-            archived_at_ms: None,
-            pinned_at_ms: None,
-            directory: None,
-            model: None,
-            credential_id: None,
-            preview: Some("it was the stub config".into()),
-        }]);
-        let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).expect("terminal");
-        terminal
-            .draw(|frame| home.render(frame, frame.area()))
-            .expect("draw");
-        let visible = terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .flat_map(|cell| cell.symbol().chars())
-            .filter(|character| !character.is_whitespace())
-            .collect::<String>();
-        assert!(visible.contains("itwasthestubconfig"), "{visible}");
-        assert!(visible.contains("loginfix"), "{visible}");
-    }
-
     /// A long title and a long preview stay on their own rows: the list keeps
     /// one line per row, so the next Session is always two rows below the
     /// selected one instead of wherever the wrapped text ends.
-    #[test]
-    fn a_long_preview_never_wraps_the_list() {
-        let mut home = Home::new(home_theme());
-        let long = "这是一段很长的会话预览".repeat(12);
-        // Both in one day bucket, so no group header sits between them and the
-        // only thing that can separate the rows is a wrapped line.
-        let mut first = home_row("ses_a", &"AAAA".repeat(20), Some(&long));
-        let mut second = home_row("ses_b", "BBBB", None);
-        first.updated_at_ms = Some(10);
-        second.updated_at_ms = Some(10);
-        home.set_rows(vec![first, second]);
-        let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 14)).expect("terminal");
-        terminal
-            .draw(|frame| home.render(frame, frame.area()))
-            .expect("draw");
-        let rows = terminal
-            .backend()
-            .buffer()
-            .content
-            .chunks(40)
-            .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
-            .collect::<Vec<_>>();
-        let a = rows
-            .iter()
-            .position(|row| row.contains("AAAA"))
-            .expect("first row");
-        let b = rows
-            .iter()
-            .position(|row| row.contains("BBBB"))
-            .expect("second row");
-        assert_eq!(
-            b,
-            a + 2,
-            "the selected row owns exactly two lines: {rows:#?}"
-        );
-        assert!(
-            rows[a + 1].contains('…'),
-            "the preview is truncated: {:?}",
-            rows[a + 1]
-        );
-    }
 
     fn home_theme() -> Theme {
         Theme {
@@ -4447,249 +3755,12 @@ mod tests {
     /// One entry per display row, one entry per cell. A row here is a grid
     /// rather than a `String`, because a border cell is three bytes wide in the
     /// buffer and one column wide on screen.
-    fn drawn(home: &mut Home, width: u16, height: u16) -> Vec<Vec<String>> {
-        let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
-                .expect("terminal");
-        terminal
-            .draw(|frame| home.render(frame, frame.area()))
-            .expect("draw");
-        terminal
-            .backend()
-            .buffer()
-            .content
-            .chunks(width as usize)
-            .map(|row| row.iter().map(|cell| cell.symbol().to_string()).collect())
-            .collect()
-    }
 
     /// The painted buffer, so a test can ask what colour a cell carries.
-    fn painted(home: &mut Home, width: u16, height: u16) -> Vec<ratatui::buffer::Cell> {
-        let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
-                .expect("terminal");
-        terminal
-            .draw(|frame| home.render(frame, frame.area()))
-            .expect("draw");
-        terminal.backend().buffer().content.clone()
-    }
 
     /// The screen keeps one accent: the count in the header. Rows are text and
     /// stay neutral, which is what separates a readable list from the flat grey
     /// wall it used to be.
-    #[test]
-    fn the_header_count_carries_the_accent_and_row_titles_stay_neutral() {
-        let theme = home_theme();
-        let mut home = Home::new(theme.clone());
-        // The first row is selected, so the second is what proves the list is
-        // text: only the cursor's row wears the accent band.
-        home.set_rows(vec![
-            home_row("ses_a", "login fix", None),
-            home_row("ses_b", "offset fix", None),
-        ]);
-        let cells = painted(&mut home, 80, 8);
-        assert!(
-            cells
-                .iter()
-                .take(80)
-                .any(|cell| cell.symbol() == "2" && cell.fg == theme.palette.primary),
-            "the header names the count in the accent"
-        );
-        assert!(
-            cells
-                .iter()
-                .any(|cell| cell.symbol() == "l" && cell.fg == theme.palette.primary),
-            "the selected row carries the accent"
-        );
-        assert!(
-            cells
-                .iter()
-                .any(|cell| cell.symbol() == "o" && cell.fg == theme.palette.text),
-            "an unselected row title keeps the body colour"
-        );
-    }
-
-    #[test]
-    fn the_header_starts_on_the_column_the_rows_start_on() {
-        // The list is centred, so a header pinned to the window's edge names a
-        // screen the rows are not on.
-        let mut home = Home::new(home_theme());
-        home.set_rows(vec![home_row("ses_a", "login fix", None)]);
-        // The shell hands the landing screen the prose column; draw into that
-        // same column so the assertion covers the real alignment.
-        let area = body_columns(ratatui::layout::Rect::new(0, 0, 200, 12)).0;
-        let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(200, 12)).expect("terminal");
-        terminal
-            .draw(|frame| home.render(frame, area))
-            .expect("draw");
-        let lines = terminal
-            .backend()
-            .buffer()
-            .content
-            .chunks(200)
-            .map(|row| {
-                row.iter()
-                    .map(|cell| cell.symbol().to_string())
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-        let (prose, _) = body_columns(ratatui::layout::Rect::new(0, 0, 200, 12));
-        // The rows start one cell inside the prose column, so the header does
-        // too; the cells before the prose column are outside the block.
-        let start = 1 + prose.x as usize;
-        let header = lines
-            .iter()
-            .find(|line| {
-                line.iter()
-                    .map(|cell| cell.as_str())
-                    .collect::<String>()
-                    .contains("sessions · ")
-            })
-            .expect("the header is painted");
-        assert_eq!(header[start], "s", "the header starts on the column");
-        assert!(
-            header[1..start].iter().all(|cell| cell.trim().is_empty()),
-            "and nothing is painted before it: {header:?}"
-        );
-    }
-
-    #[test]
-    fn a_wide_home_spans_the_window() {
-        // The landing screen has no sidebar: its list is the whole body. It used
-        // to subtract the Session's sidebar and stop ~41 columns short of the
-        // window, which read as a list floating in the middle of the screen.
-        let mut home = Home::new(home_theme());
-        home.set_rows(vec![
-            home_row("ses_a", "login fix", None),
-            home_row("ses_b", "offset fix", None),
-        ]);
-        let lines = drawn(&mut home, 200, 12);
-        let mut titled = 0;
-        // The list body stops one row short of the border: the bottom row is a
-        // full-width key hint, not a list row.
-        for line in &lines[1..lines.len() - 2] {
-            let text: String = line.iter().map(|cell| cell.as_str()).collect();
-            if text.contains("login fix") || text.contains("offset fix") {
-                titled += 1;
-                // The row's text starts near the left edge, not in a centred band.
-                let first = line
-                    .iter()
-                    .position(|cell| !cell.trim().is_empty())
-                    .expect("the row paints");
-                assert!(first < 6, "a row starts at the window's edge: {line:?}");
-                // The row reaches the window's right side, where the age sits.
-                let last = line
-                    .iter()
-                    .rposition(|cell| !cell.trim().is_empty())
-                    .expect("the row paints");
-                assert!(
-                    last > 150,
-                    "the row spans the window, not a centre: {line:?}"
-                );
-            }
-        }
-        assert_eq!(titled, 2, "both rows are painted");
-    }
-
-    #[test]
-    fn only_the_selected_session_shows_its_preview() {
-        // A preview under every row turned the list into a wall of prose. One
-        // muted line under the cursor answers the same question for the row the
-        // operator is actually reading.
-        let mut home = Home::new(home_theme());
-        home.set_rows(vec![
-            home_row("ses_a", "login fix", Some("it was the stub config")),
-            home_row("ses_b", "offset fix", Some("the clock skipped hours")),
-        ]);
-        let visible = drawn(&mut home, 80, 12)
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .join("");
-        assert!(visible.contains("it was the stub config"), "{visible}");
-        assert!(!visible.contains("the clock skipped hours"), "{visible}");
-    }
-
-    #[test]
-    fn a_screenful_is_a_screenful_and_space_pages_it() {
-        // The page used to be a fixed ten rows with the rest folded behind
-        // `space`, which stopped doing anything visible once the first page
-        // became a whole viewport: the rows it revealed were already past the
-        // bottom of the same window.
-        let mut home = Home::new(home_theme());
-        home.set_rows(
-            (0..40)
-                .map(|index| home_row(&format!("ses_{index}"), &format!("title {index}"), None))
-                .collect(),
-        );
-        // Every match is reachable before a frame has measured anything.
-        assert_eq!(home.visible_len(), 41);
-        drawn(&mut home, 80, 20);
-        // Twenty rows: one of header and one of key hints, so one screenful
-        // is eighteen rows.
-        // Start paging from the action row so the offset doesn't shift every
-        // expected value by one.
-        home.select_first();
-        home.page();
-        assert_eq!(home.selected, 18);
-        home.page();
-        assert_eq!(home.selected, 36);
-        // Paging past the end stops on the last row instead of wrapping: the
-        // last Session sits at display index 40, past the action row.
-        home.page();
-        assert_eq!(home.selected, 40);
-        // And back, one screenful at a time, to the start.
-        home.page_back();
-        assert_eq!(home.selected, 22);
-        home.page_back();
-        assert_eq!(home.selected, 4);
-        home.page_back();
-        assert_eq!(home.selected, 0);
-        // The ends are one keystroke away from anywhere.
-        home.select_last();
-        assert_eq!(home.selected, 40);
-        home.select_first();
-        assert_eq!(home.selected, 0);
-    }
-
-    #[test]
-    fn a_click_names_the_row_that_was_painted_on_that_line() {
-        // The anchor is read back from the frame, so it cannot drift from what
-        // the operator sees — including after the window has scrolled.
-        let mut home = Home::new(home_theme());
-        home.set_rows(
-            (0..40)
-                .map(|index| home_row(&format!("ses_{index}"), &format!("title {index}"), None))
-                .collect(),
-        );
-        // The first frame measures the viewport the selection scrolls inside.
-        drawn(&mut home, 80, 12);
-        home.select(31);
-        let lines = drawn(&mut home, 80, 12);
-        let mut named = 0usize;
-        for (y, line) in lines.iter().enumerate() {
-            let Some(index) = home.row_at(y as u16) else {
-                continue;
-            };
-            // Anchors carry display indexes, and the action row anchors as 0
-            // without painting a Session label under it.
-            let Some(session) = home.session_at(index) else {
-                continue;
-            };
-            named += 1;
-            let label = session.label().to_string();
-            assert!(
-                line.join("").contains(&label),
-                "the anchor at {y} must hold {label}: {line:?}"
-            );
-        }
-        assert!(named > 1, "every painted row is anchored: {named}");
-        // The chrome belongs to no row: the header names the screen and the key
-        // hint owns the last line of the frame.
-        assert_eq!(home.row_at(0), None, "the header line names no Session");
-        assert_eq!(home.row_at(11), None, "the hint owns the last line");
-    }
 
     #[test]
     fn a_multi_select_question_collects_every_toggled_label() {
@@ -4805,4 +3876,7 @@ mod tests {
             ""
         );
     }
+}
+fn relative_time(updated_at_ms: u64) -> String {
+    relative_time_at(updated_at_ms, now_ms())
 }

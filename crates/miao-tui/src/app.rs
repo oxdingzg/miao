@@ -39,11 +39,6 @@ pub enum Screen {
 /// frames is a real gap rather than scheduler jitter.
 const LIVE_SILENCE: Duration = Duration::from_secs(15);
 
-/// How close two clicks on the same landing row have to be to count as one
-/// double click. The window is generous enough for a slow hand and short
-/// enough that selecting two rows in turn never opens either of them.
-const DOUBLE_CLICK: Duration = Duration::from_millis(400);
-
 /// How long a transient notice stays on screen. Long enough to read a
 /// sentence, short enough that it does not outlive its own event.
 const NOTICE_LIFETIME: Duration = Duration::from_secs(5);
@@ -178,7 +173,6 @@ pub struct App {
     /// The prompt owns the keyboard on the landing screen, the way every other
     /// agent CLI behaves: the first thing typed is the first prompt. `Tab`
     /// moves focus to the home list (filter, numbered slots, pin) and back.
-    home_list_focus: bool,
     /// Sessions this client has already named, so a snapshot arriving before the
     /// rename lands does not name them again.
     named_sessions: std::collections::HashSet<String>,
@@ -193,7 +187,6 @@ pub struct App {
     /// The row and moment of the last click on the landing list, so a
     /// second click on the same row is a double click rather than two
     /// selections.
-    last_click: Option<(usize, Instant)>,
     /// When a transient notice stops being true. A notice reports something
     /// that already happened ("copied 120 characters"); leaving it on screen
     /// until the next event turns it into permanent clutter.
@@ -296,14 +289,12 @@ impl App {
             // The list owns the keyboard first: the landing screen opens to
             // pick a Session, so the arrows move the selection instead of
             // walking the prompt's history. Tab hands the keys to the prompt.
-            home_list_focus: true,
             named_sessions: std::collections::HashSet::new(),
             dialog: None,
             permission_generation: 0,
             workspace_changes_generation: 0,
             leader: false,
             leader_since: None,
-            last_click: None,
             notice_until: None,
             leader_timeout: Duration::from_millis(2000),
             keys,
@@ -440,7 +431,6 @@ impl App {
         // discoverable instead of memorised. Both screens carry it: the landing
         // footer and the Session's status row.
         let leader_hint = self.armed_leader_hint();
-        self.home.set_leader_hint(leader_hint.clone());
         self.shell.set_leader_hint(leader_hint);
         match self.screen {
             Screen::Home => {
@@ -450,21 +440,8 @@ impl App {
                 // The landing composer is the same one a Session shows, so it
                 // grows with the draft here too: a multi-line prompt typed
                 // before any Session exists has to stay readable.
-                let [body, composer_area] = ratatui::layout::Layout::vertical([
-                    ratatui::layout::Constraint::Min(1),
-                    ratatui::layout::Constraint::Length(crate::pane::composer_height(
-                        &self.shell.composer,
-                        frame.area().width,
-                    )),
-                ])
-                .areas(frame.area());
-                crate::pane::render_home_composer(
-                    frame,
-                    composer_area,
-                    &self.shell.composer,
-                    &self.shell.theme().clone(),
-                );
-                self.home.render(frame, body);
+                self.home
+                    .render(frame, frame.area(), &mut self.shell.composer);
             }
             Screen::Session => self.shell.render(frame),
         }
@@ -551,7 +528,6 @@ impl App {
             AppEvent::Resize { .. } => {}
             AppEvent::Sessions(rows) => {
                 self.sync_open_session(&rows);
-                self.home.set_rows(rows);
                 self.home.set_notice(None);
             }
             AppEvent::Catalog(rows) => {
@@ -889,61 +865,22 @@ impl App {
                 _ => {}
             }
         }
-        // A click on the landing list names the row it landed on, and the list
-        // keeps the keyboard afterwards so `j`/`k` and the numbered slots
-        // continue from there. It selects rather than opens: opening a Session
-        // is the decision Enter already makes.
-        if self.dialog.is_none()
-            && self.screen == Screen::Home
-            && mouse.kind == MouseEventKind::Down(MouseButton::Left)
-        {
-            if let Some(index) = self.home.row_at(mouse.row) {
-                self.home.select(index);
-                self.home_list_focus = true;
-                // The footer names the side the next `Tab` reaches, so a click
-                // that hands the list the keyboard moves the hint with it.
-                self.home.set_list_focus(true);
-                // A second click on the same row is the pointer's Enter: it
-                // opens the Session the first click selected. Any other click
-                // starts the pair again, so a stray click never opens anything.
-                let repeated = self
-                    .last_click
-                    .is_some_and(|(row, at)| row == index && at.elapsed() <= DOUBLE_CLICK);
-                self.last_click = match repeated {
-                    true => None,
-                    false => Some((index, Instant::now())),
-                };
-                if repeated {
-                    let selected = self.home.current().map(|row| row.id.clone());
-                    if let (Some(id), Some(engine)) = (selected, self.engine.as_ref()) {
-                        engine.open(&id);
-                    }
-                }
-            }
-            return;
-        }
+        // A stray wheel event must not leave the leader armed.
+        self.leader = false;
         let delta = match mouse.kind {
             MouseEventKind::ScrollUp => -1,
             MouseEventKind::ScrollDown => 1,
             _ => return,
         };
-        if self.dialog.is_some() {
-            if let Some(list) = self.dialog.as_mut().and_then(Dialog::list_mut) {
-                list.move_cursor(delta);
-            }
-            self.preview_selected_job();
-            return;
-        }
-        // A stray wheel event must not leave the leader armed.
-        self.leader = false;
         match self.screen {
-            Screen::Home => self.home.move_cursor(delta),
             Screen::Session => {
                 // One notch moves `scroll_speed` rows, or more when the notches
                 // arrive in a burst and acceleration is enabled.
                 let rows = self.scroll.rows(Instant::now(), delta as i8) as i32;
                 self.shell.scroll_transcript(delta * rows);
             }
+            // The launcher has no scrollable surface.
+            Screen::Home => {}
         }
     }
 
@@ -2008,7 +1945,6 @@ impl App {
     fn title_of(&self, id: &str) -> String {
         self.catalog
             .iter()
-            .chain(self.home.rows.iter())
             .find(|row| row.id == id)
             .map(|row| row.label().to_string())
             .unwrap_or_else(|| "untitled".to_string())
@@ -2030,20 +1966,10 @@ impl App {
             self.quit = true;
             return;
         }
-        // Tab moves between the prompt and the list; the prompt owns the rest of
-        // the keys so a first prompt can be typed before any Session exists.
-        if key.code == KeyCode::Tab {
-            self.home_list_focus = !self.home_list_focus;
-            // The footer names where the next `Tab` lands, so it has to follow
-            // the focus instead of repeating the default direction.
-            self.home.set_list_focus(self.home_list_focus);
-            return;
-        }
-        if !self.home_list_focus {
+        {
             // Enter on an empty prompt opens the selected Session: the prompt owns
             // the keyboard on the landing screen, so Enter must still be the way in.
             if key.code == KeyCode::Enter && self.shell.composer.editor.is_empty() {
-                self.open_landing_selection();
                 return;
             }
             match self.shell.composer.handle_key(key, &self.keys) {
@@ -2058,7 +1984,6 @@ impl App {
                         // An empty prompt means "act on what the list has
                         // selected": the keyboard belongs to the prompt, so
                         // Enter has to keep working as the way in.
-                        self.open_landing_selection();
                         return;
                     }
                     // The composer's exit words quit before they can become a
@@ -2072,99 +1997,6 @@ impl App {
                     }
                 }
             }
-            return;
-        }
-        // Filter mode owns the keyboard: printable keys narrow the list, and
-        // Escape leaves the mode before anything else can consume Escape.
-        if self.home.filtering() {
-            match key.code {
-                KeyCode::Esc => {
-                    self.home.stop_filter();
-                    return;
-                }
-                KeyCode::Backspace => {
-                    self.home.filter_backspace();
-                    return;
-                }
-                KeyCode::Up => {
-                    self.home.move_cursor(-1);
-                    return;
-                }
-                KeyCode::Down => {
-                    self.home.move_cursor(1);
-                    return;
-                }
-                KeyCode::Enter => {
-                    // Same act as the unfocused-list Enter: the action row
-                    // starts a Session, a Session row opens it. Sharing one
-                    // path keeps the two Enters from drifting.
-                    self.open_landing_selection();
-                    return;
-                }
-                KeyCode::Char(c) if !c.is_ascii_control() => {
-                    self.home.filter(c);
-                    return;
-                }
-                _ => {}
-            }
-        }
-        // The list's own footer advertises `? help`, so `?` has to reach the
-        // same key list `/help` opens instead of being a hint with nothing
-        // behind it. Filter mode returns above, so a `?` in a query stays a
-        // query character.
-        if self.keys.matches(keybinds::Action::Help, &key) {
-            self.open_help();
-            return;
-        }
-        match (key.code, key.modifiers) {
-            (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
-                self.home.move_cursor(1);
-            }
-            (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Up, _) => {
-                self.home.move_cursor(-1);
-            }
-            (KeyCode::Enter, _) => self.open_landing_selection(),
-            (KeyCode::Char('r'), KeyModifiers::NONE) => {
-                if let Some(engine) = self.engine.as_ref() {
-                    engine.refresh_sessions();
-                }
-            }
-            // Space reveals the next page of history, the way a pager does:
-            // the list opens at ten rows and grows while the operator asks.
-            (KeyCode::Char(' '), KeyModifiers::NONE) => self.home.page(),
-            // The pager's other four keys, so a long list does not require the
-            // space bar and a walk back.
-            (KeyCode::PageDown, _) => self.home.page(),
-            (KeyCode::PageUp, _) => self.home.page_back(),
-            (KeyCode::Home, _) => self.home.select_first(),
-            (KeyCode::End, _) => self.home.select_last(),
-            (KeyCode::Char('n'), KeyModifiers::NONE) => {
-                if let Some(engine) = self.engine.as_ref() {
-                    engine.new_session();
-                }
-            }
-            // Numbered slots open the n-th row of the list as it is shown, so a
-            // pinned Session keeps its number instead of needing a search.
-            (KeyCode::Char(digit @ '1'..='9'), KeyModifiers::NONE) => {
-                let slot = digit as usize - '1' as usize;
-                let selected = self.home.slot(slot).map(|row| row.id.clone());
-                if let (Some(id), Some(engine)) = (selected, self.engine.as_ref()) {
-                    engine.open(&id);
-                }
-            }
-            (KeyCode::Char('/'), KeyModifiers::NONE) => {
-                self.home.start_filter();
-            }
-            (KeyCode::Char('p'), KeyModifiers::NONE) => {
-                let selected = self
-                    .home
-                    .current()
-                    .map(|row| (row.id.clone(), row.pinned_at_ms.is_none()));
-                if let (Some((id, pinned)), Some(engine)) = (selected, self.engine.as_ref()) {
-                    engine.pin(&id, pinned);
-                }
-            }
-            _ => {}
         }
     }
 
@@ -2290,20 +2122,6 @@ impl App {
             Action::Quit => self.quit = true,
             Action::Submit { text, attachments } => self.submit(text, attachments),
             Action::Shell { command } => self.run_shell(command),
-        }
-    }
-
-    /// Enter on the landing list acts on the row under the cursor: the action
-    /// row starts a new Session, a Session row opens it.
-    fn open_landing_selection(&mut self) {
-        let id = self.home.current().map(|row| row.id.clone());
-        let Some(engine) = self.engine.clone() else {
-            return;
-        };
-        match (self.home.is_new_session(), id) {
-            (true, _) => engine.new_session(),
-            (false, Some(id)) => engine.open(&id),
-            (false, None) => {}
         }
     }
 
@@ -2580,12 +2398,7 @@ impl App {
     pub fn next_repaint(&self) -> Option<Duration> {
         let now = crate::pane::now_ms();
         let stamps = match self.screen {
-            Screen::Home => self
-                .home
-                .rows
-                .iter()
-                .filter_map(|row| row.updated_at_ms)
-                .collect::<Vec<_>>(),
+            Screen::Home => Vec::new(),
             Screen::Session => self
                 .session
                 .as_ref()
@@ -3477,36 +3290,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_home_screen_without_timestamps_never_repaints_on_its_own() {
-        let mut app = app();
-        app.home.rows = vec![summary("ses_a", 1)];
-        app.home.rows[0].updated_at_ms = None;
-        assert!(
-            app.next_repaint().is_none(),
-            "nothing on screen is relative, so only events can repaint"
-        );
-    }
-
-    #[test]
-    fn the_wheel_moves_the_home_selection_and_ignores_buttons() {
-        let mut app = app();
-        app.home.rows = vec![summary("a", 2), summary("b", 1)];
-
-        app.handle(wheel(MouseEventKind::ScrollDown));
-        assert_eq!(app.home.selected, 1);
-        app.handle(wheel(MouseEventKind::ScrollDown));
-        assert_eq!(
-            app.home.selected, 2,
-            "the second scroll reaches the second Session"
-        );
-        app.handle(wheel(MouseEventKind::ScrollUp));
-        assert_eq!(app.home.selected, 1);
-
-        app.handle(wheel(MouseEventKind::Moved));
-        assert_eq!(app.home.selected, 1, "only the wheel does anything");
-    }
-
     /// A row that `--continue` must skip.
     fn archived(id: &str, updated_at_ms: u64) -> SessionSummary {
         SessionSummary {
@@ -3912,9 +3695,7 @@ mod tests {
     #[test]
     fn a_prompt_typed_on_home_starts_a_session_with_it() {
         let mut app = app();
-        // The list owns the landing keyboard; Tab hands the keys to the
-        // prompt, and what is typed there starts a Session.
-        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
+        // The prompt owns the landing keyboard; typing starts a Session.
         for character in "hello".chars() {
             app.handle(key(KeyCode::Char(character), KeyModifiers::NONE));
         }
@@ -3923,22 +3704,6 @@ mod tests {
         // The prompt is consumed by the Session it starts, not left on the home
         // screen for the next one.
         assert!(app.shell.composer.editor.is_empty());
-    }
-
-    #[test]
-    fn the_home_list_moves_with_j_and_k_and_clamps() {
-        let mut app = app();
-        app.handle(AppEvent::Sessions(vec![
-            summary("ses_b", 30),
-            summary("ses_a", 10),
-        ]));
-        // The list owns the landing keyboard from the start.
-        // `set_rows` defaults to the first Session past the action row.
-        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_b"));
-        app.handle(key(KeyCode::Char('j'), KeyModifiers::NONE));
-        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
-        app.handle(key(KeyCode::Char('k'), KeyModifiers::NONE));
-        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_b"));
     }
 
     fn approval_state() -> SessionState {
@@ -4659,169 +4424,6 @@ mod tests {
         app
     }
 
-    #[test]
-    fn numbered_slots_open_the_row_the_list_shows() {
-        let mut app = home_with(vec![
-            summary("ses_first", 300),
-            summary("ses_second", 200),
-            summary("ses_third", 100),
-        ]);
-        let (handle, mut requests) = engine::Handle::recording();
-        app.attach_engine(handle);
-        app.handle(key(KeyCode::Char('3'), KeyModifiers::NONE));
-        assert!(matches!(
-            requests.try_recv(),
-            Ok(engine::Request::Open(id)) if id == "ses_third"
-        ));
-        // A slot past the end opens nothing instead of opening the last row.
-        app.handle(key(KeyCode::Char('9'), KeyModifiers::NONE));
-        assert!(requests.try_recv().is_err());
-    }
-
-    #[test]
-    fn arming_the_leader_paints_what_it_can_reach() {
-        // UX-05: the chord keys were invisible until the operator memorised
-        // them. Arming the leader now paints the menu it waits on.
-        let mut app = home_with(vec![summary("ses_a", 100)]);
-        let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 16)).expect("terminal");
-        terminal.draw(|frame| app.render(frame)).expect("draw");
-        let before = terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<String>();
-        assert!(!before.contains("app exit"), "{before}");
-        app.handle(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
-        terminal.draw(|frame| app.render(frame)).expect("draw");
-        let armed = terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<String>();
-        assert!(armed.contains("ctrl+x ·"), "{armed}");
-        assert!(armed.contains("app exit"), "{armed}");
-        // The row is finite, so the tail of a long menu is clipped rather than
-        // wrapped over the list; the keymap test holds the whole line.
-        assert!(!armed.contains("tab list"), "{armed}");
-        // The chord still runs: the menu is a hint, not a mode.
-        let (handle, mut requests) = engine::Handle::recording();
-        app.attach_engine(handle);
-        app.handle(key(KeyCode::Char('n'), KeyModifiers::NONE));
-        assert!(matches!(
-            requests.try_recv(),
-            Ok(engine::Request::NewSession)
-        ));
-    }
-
-    #[test]
-    fn home_and_end_jump_to_the_ends_of_the_list() {
-        // The list is longer than the window, so reaching the last row by
-        // walking is the cost this removes.
-        let mut app = home_with(vec![
-            summary("ses_first", 300),
-            summary("ses_second", 200),
-            summary("ses_third", 100),
-        ]);
-        app.handle(key(KeyCode::End, KeyModifiers::NONE));
-        assert_eq!(
-            app.home.current().map(|row| row.id.as_str()),
-            Some("ses_third")
-        );
-        // Home goes to the action row, which is not a Session.
-        app.handle(key(KeyCode::Home, KeyModifiers::NONE));
-        assert_eq!(app.home.current(), None);
-    }
-
-    #[test]
-    fn a_second_click_on_the_same_row_opens_the_session() {
-        // The pointer's Enter: one click selects and shows what the row is, a
-        // second click on that row opens it. A click on another row in between
-        // starts the pair again, so nothing opens by accident.
-        let mut app = app();
-        app.handle(AppEvent::Sessions(vec![
-            summary("ses_first", 300),
-            summary("ses_second", 200),
-        ]));
-        let (handle, mut requests) = engine::Handle::recording();
-        app.attach_engine(handle);
-        let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).expect("terminal");
-        terminal.draw(|frame| app.render(frame)).expect("draw");
-        let click = |row: u16| {
-            AppEvent::Mouse(MouseEvent::new(
-                MouseEventKind::Down(MouseButton::Left),
-                4,
-                row,
-                KeyModifiers::NONE,
-            ))
-        };
-        // First click: selection only. The action row and the "Today" header
-        // sit above the rows, so ses_second paints on y = 5.
-        app.handle(click(5));
-        assert!(requests.try_recv().is_err(), "one click must not open");
-        // Second click on the same row opens it.
-        app.handle(click(5));
-        assert!(matches!(
-            requests.try_recv(),
-            Ok(engine::Request::Open(id)) if id == "ses_second"
-        ));
-        // A click on a different row starts over instead of opening.
-        app.handle(click(5));
-        app.handle(click(2));
-        assert!(requests.try_recv().is_err(), "different rows must not open");
-    }
-
-    #[test]
-    fn a_click_on_the_list_selects_the_row_it_landed_on() {
-        // UX-02: the wheel already moves the cursor, so a click that lands on a
-        // row must not be a no-op. It selects rather than opens — opening is
-        // the decision Enter already makes — and the list keeps the keyboard
-        // afterwards, so `j`/`k` continue from the row the pointer named.
-        let mut app = app();
-        app.handle(AppEvent::Sessions(vec![
-            summary("ses_first", 300),
-            summary("ses_second", 200),
-            summary("ses_third", 100),
-        ]));
-        let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).expect("terminal");
-        terminal.draw(|frame| app.render(frame)).expect("draw");
-        // Below the border, the action row and the "Today" header the rows are
-        // painted on y = 4, 5, 6; the prompt had the keyboard until this click.
-        app.handle(AppEvent::Mouse(MouseEvent::new(
-            MouseEventKind::Down(MouseButton::Left),
-            4,
-            5,
-            KeyModifiers::NONE,
-        )));
-        assert_eq!(
-            app.home.current().map(|row| row.id.as_str()),
-            Some("ses_second")
-        );
-        app.handle(key(KeyCode::Char('j'), KeyModifiers::NONE));
-        assert_eq!(
-            app.home.current().map(|row| row.id.as_str()),
-            Some("ses_third"),
-            "the list owns the keyboard after a click"
-        );
-        // The footer names the side the next `Tab` reaches, so it has to move
-        // with the keyboard the click just handed over.
-        terminal.draw(|frame| app.render(frame)).expect("draw");
-        let painted = terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<String>();
-        assert!(painted.contains("tab prompt"), "{painted}");
-    }
-
     fn home_with_named(rows: &[(&str, &str, Option<&str>)]) -> App {
         let mut app = app();
         app.handle(AppEvent::Sessions(
@@ -4843,106 +4445,6 @@ mod tests {
         // List behaviour starts from the list, and `set_rows` lands past the
         // action row, so tests interact with Sessions directly.
         app
-    }
-
-    #[test]
-    fn slash_starts_a_filter_and_enter_opens_the_match() {
-        let mut app = home_with_named(&[
-            ("ses_a", "fix the parser", Some("/work/parser")),
-            ("ses_b", "write docs", Some("/work/docs")),
-        ]);
-        let (handle, mut requests) = engine::Handle::recording();
-        app.attach_engine(handle);
-        app.handle(key(KeyCode::Char('/'), KeyModifiers::NONE));
-        assert!(app.home.filtering());
-        for c in ['d', 'o', 'c'] {
-            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
-        }
-        assert_eq!(app.home.query(), "doc");
-        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_b"));
-        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
-        assert!(matches!(
-            requests.try_recv(),
-            Ok(engine::Request::Open(id)) if id == "ses_b"
-        ));
-    }
-
-    #[test]
-    fn a_filter_matches_the_directory_too_and_backspace_widens_it() {
-        let mut app = home_with_named(&[
-            ("ses_a", "fix the parser", Some("/work/parser")),
-            ("ses_b", "write docs", Some("/work/docs")),
-        ]);
-        // `p` and `r` are commands outside filter mode; inside it they are
-        // just letters, which is the whole reason the mode is explicit.
-        app.handle(key(KeyCode::Char('/'), KeyModifiers::NONE));
-        for c in ['p', 'a', 'r'] {
-            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
-        }
-        assert_eq!(app.home.query(), "par");
-        // `par` matches only the parser Session: by title and by directory.
-        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
-        app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
-        assert_eq!(app.home.query(), "pa");
-        app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
-        app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
-        assert_eq!(app.home.query(), "");
-        // Filter cleared: the cursor goes to the action row, which is not a
-        // Session, so current() is None.
-        assert_eq!(app.home.current(), None);
-    }
-
-    #[test]
-    fn escape_leaves_filter_mode_instead_of_leaving_the_list() {
-        let mut app = home_with_named(&[("ses_a", "fix the parser", None)]);
-        app.handle(key(KeyCode::Char('/'), KeyModifiers::NONE));
-        app.handle(key(KeyCode::Char('z'), KeyModifiers::NONE));
-        assert_eq!(app.home.query(), "z");
-        // Nothing matches, so there is no current Session while filtering.
-        assert!(app.home.current().is_none());
-        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
-        assert_eq!(app.home.query(), "");
-        assert!(!app.home.filtering());
-        assert_eq!(app.home.current().map(|row| row.id.as_str()), Some("ses_a"));
-        assert_eq!(app.screen, Screen::Home);
-    }
-
-    #[test]
-    fn commands_still_work_when_no_filter_is_open() {
-        let mut app = home_with_named(&[("ses_a", "fix the parser", None)]);
-        let (handle, mut requests) = engine::Handle::recording();
-        app.attach_engine(handle);
-        // `p` pins rather than typing a filter character.
-        app.handle(key(KeyCode::Char('p'), KeyModifiers::NONE));
-        assert!(matches!(
-            requests.try_recv(),
-            Ok(engine::Request::Pin { pinned: true, .. })
-        ));
-        assert_eq!(app.home.query(), "");
-        assert!(!app.home.filtering());
-    }
-
-    #[test]
-    fn p_toggles_the_pin_of_the_selected_row() {
-        let mut app = home_with(vec![summary("ses_pin", 100)]);
-        let (handle, mut requests) = engine::Handle::recording();
-        app.attach_engine(handle);
-        app.handle(key(KeyCode::Char('p'), KeyModifiers::NONE));
-        assert!(matches!(
-            requests.try_recv(),
-            Ok(engine::Request::Pin { session_id, pinned: true }) if session_id == "ses_pin"
-        ));
-        // A pinned row unpins, so the key is a toggle rather than pin-only.
-        let mut pinned = summary("ses_pinned", 200);
-        pinned.pinned_at_ms = Some(1);
-        let mut app = home_with(vec![pinned]);
-        let (handle, mut requests) = engine::Handle::recording();
-        app.attach_engine(handle);
-        app.handle(key(KeyCode::Char('p'), KeyModifiers::NONE));
-        assert!(matches!(
-            requests.try_recv(),
-            Ok(engine::Request::Pin { session_id, pinned: false }) if session_id == "ses_pinned"
-        ));
     }
 
     #[test]
@@ -4969,29 +4471,6 @@ mod tests {
         assert_eq!(row_for("session_new").as_deref(), Some("ctrl+x+n"));
         // The hand-written summary is gone: no row claims an unknown group.
         assert!(list.rows.iter().all(|row| row.label != "keys"));
-    }
-
-    #[test]
-    fn the_advertised_question_mark_opens_the_key_list() {
-        // The list footer says `? help`, so `?` has to open it. A hint with no
-        // key behind it teaches the operator that the footer cannot be trusted.
-        let mut app = app();
-        app.handle(key(KeyCode::Char('?'), KeyModifiers::SHIFT));
-        assert!(
-            matches!(app.dialog.as_ref(), Some(Dialog::Help(_))),
-            "the list's own footer advertises it"
-        );
-    }
-
-    #[test]
-    fn a_question_mark_typed_into_the_filter_stays_a_query_character() {
-        // Filter mode claims printable keys before the keymap does, or a filter
-        // could never contain the character its hint is written with.
-        let mut app = app();
-        app.handle(key(KeyCode::Char('/'), KeyModifiers::NONE));
-        app.handle(key(KeyCode::Char('?'), KeyModifiers::SHIFT));
-        assert!(app.dialog.is_none(), "the filter is still narrowing");
-        assert_eq!(app.home.query(), "?");
     }
 
     #[test]
@@ -5475,7 +4954,6 @@ mod tests {
     fn ctrl_c_clears_a_landing_draft_instead_of_quitting() {
         let mut app = app();
         assert_eq!(app.screen, Screen::Home);
-        app.handle(key(KeyCode::Tab, KeyModifiers::NONE));
         for c in "draft".chars() {
             app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
         }
