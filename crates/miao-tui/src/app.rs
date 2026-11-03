@@ -2236,19 +2236,24 @@ impl App {
             self.copy_last_response();
             return;
         }
-        if action(keybinds::Action::PageUp) {
+        // With a draft on screen the arrows belong to the prompt (caret and
+        // history); the transcript scroll keys only answer an empty prompt,
+        // where there is no caret to move. Otherwise typing a long turn and
+        // nudging the caret once detached the transcript for the whole run.
+        let prompt_empty = self.shell.composer.editor.is_empty();
+        if prompt_empty && action(keybinds::Action::PageUp) {
             self.shell.scroll_transcript(-5);
             return;
         }
-        if action(keybinds::Action::PageDown) {
+        if prompt_empty && action(keybinds::Action::PageDown) {
             self.shell.scroll_transcript(5);
             return;
         }
-        if action(keybinds::Action::LineUp) {
+        if prompt_empty && action(keybinds::Action::LineUp) {
             self.shell.scroll_transcript(-1);
             return;
         }
-        if action(keybinds::Action::LineDown) {
+        if prompt_empty && action(keybinds::Action::LineDown) {
             self.shell.scroll_transcript(1);
             return;
         }
@@ -2800,6 +2805,10 @@ impl App {
         if self.accept_exit_word(&text) {
             return;
         }
+        // The turn the operator just started is what they want to watch: a
+        // transcript left detached by an earlier scroll re-attaches here,
+        // or the whole run streams by out of sight.
+        self.shell.follow_transcript();
         let Some(session_id) = self.session.as_ref().map(|session| session.id.clone()) else {
             self.shell.composer.restore_with(&text, attachments);
             return;

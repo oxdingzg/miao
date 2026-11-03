@@ -1571,11 +1571,25 @@ fn draft_lines(text: &str, reasoning: &str, theme: &Theme) -> Vec<Line<'static>>
     let palette = theme.palette;
     let mut lines = Vec::new();
     if !reasoning.is_empty() {
-        // Before the first answer token the thinking is the show: stream it
-        // verbatim, muted, so it reads as it arrives. Once text starts, fold
-        // it into a summary line and give the answer the screen.
+        // Before the first answer token the thinking is the show: the latest
+        // lines stream in verbatim, muted, under a one-line summary that
+        // names the whole — a long reasoning run otherwise tiles the whole
+        // screen with every line it ever produced. Once text starts, the
+        // summary alone stands and the answer takes the screen.
         if text.is_empty() {
-            for line in reasoning.lines() {
+            let all: Vec<&str> = reasoning.lines().collect();
+            let window = 6usize;
+            let skip = all.len().saturating_sub(window);
+            if skip > 0 {
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "▸ thinking · {} chars · earlier reasoning folded",
+                        reasoning.chars().count()
+                    ),
+                    Style::new().fg(palette.text_muted),
+                )));
+            }
+            for line in &all[skip..] {
                 lines.push(Line::from(Span::styled(
                     format!("  {line}"),
                     Style::new().fg(palette.text_muted),
