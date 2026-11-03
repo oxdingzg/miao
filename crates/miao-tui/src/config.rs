@@ -53,6 +53,39 @@ pub struct Config {
     /// `keybinds` entries, flattened to action name → strokes. `None` means the
     /// action was explicitly unbound (`false` or `"none"`).
     pub keybinds: BTreeMap<String, Option<Vec<String>>>,
+    /// `prompt.max_width`: the landing prompt's width cap. The TypeScript home
+    /// reads the same key: a positive integer is a fixed cap, `"auto"` scales
+    /// with the terminal, and an absent key uses the TS default of 75 columns.
+    /// Only the landing prompt is capped; the Session's prompt fills its
+    /// column, which is what the TS session route does.
+    pub prompt_max_width: PromptWidth,
+}
+
+/// `prompt.max_width` from `tui.json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptWidth {
+    /// A fixed maximum in columns.
+    Fixed(u16),
+    /// `Math.max(75, floor(width * 0.7))`, the TS `"auto"` rule.
+    Auto,
+}
+
+impl Default for PromptWidth {
+    fn default() -> Self {
+        // The TS schema makes the key optional and the home falls back to 75.
+        Self::Fixed(75)
+    }
+}
+
+impl PromptWidth {
+    /// The width the landing prompt is painted at inside `width` columns.
+    pub fn resolve(self, width: u16) -> u16 {
+        let cap = match self {
+            Self::Fixed(columns) => columns,
+            Self::Auto => ((width as usize * 7 / 10).max(75)).min(u16::MAX as usize) as u16,
+        };
+        cap.max(1).min(width)
+    }
 }
 
 impl Default for Config {
@@ -65,6 +98,7 @@ impl Default for Config {
             leader_timeout_ms: 2000,
             cursor: None,
             keybinds: BTreeMap::new(),
+            prompt_max_width: PromptWidth::default(),
         }
     }
 }
@@ -216,6 +250,9 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
     if let Some(keybinds) = field("keybinds") {
         merge_keybinds(keybinds, path, config, warnings);
     }
+    if let Some(prompt) = field("prompt") {
+        merge_prompt_width(prompt, path, config, warnings);
+    }
     let Some(attention) = field("attention") else {
         return;
     };
@@ -295,6 +332,40 @@ fn merge_scroll_acceleration(
                 path.display()
             )),
         }
+    }
+}
+
+/// `prompt.max_width`: a positive integer cap, or `"auto"` to scale with the
+/// terminal. The TS schema accepts only those two, so anything else is named
+/// and ignored rather than silently rounding into a usable value.
+fn merge_prompt_width(
+    value: &serde_json::Value,
+    path: &Path,
+    config: &mut Config,
+    warnings: &mut Vec<String>,
+) {
+    let Some(object) = value.as_object() else {
+        warnings.push(format!(
+            "tui config {}: prompt must be an object, ignoring",
+            path.display()
+        ));
+        return;
+    };
+    let Some(width) = object.get("max_width") else {
+        return;
+    };
+    if width.as_str() == Some("auto") {
+        config.prompt_max_width = PromptWidth::Auto;
+        return;
+    }
+    match width.as_u64() {
+        Some(columns) if (1..=u16::MAX as u64).contains(&columns) => {
+            config.prompt_max_width = PromptWidth::Fixed(columns as u16)
+        }
+        _ => warnings.push(format!(
+            "tui config {}: prompt.max_width must be a positive integer or \"auto\", ignoring",
+            path.display()
+        )),
     }
 }
 
@@ -553,6 +624,62 @@ mod tests {
             );
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The TS home caps its prompt at `prompt.max_width` (default 75, `"auto"`
+    /// scaling with the terminal) and leaves the Session's prompt full width.
+    /// The Rust home used a hard-coded `70%` and read no config at all, so
+    /// every terminal got a different layout from the one the TS host draws.
+    #[test]
+    fn the_landing_prompt_width_comes_from_the_typescript_key() {
+        let dir = temp_dir("prompt-width");
+
+        let (config, warnings) = merge_at(r#"{"prompt": {"max_width": 100}}"#, &dir);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(config.prompt_max_width, PromptWidth::Fixed(100));
+
+        let (config, warnings) = merge_at(r#"{"prompt": {"max_width": "auto"}}"#, &dir);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(config.prompt_max_width, PromptWidth::Auto);
+
+        // Absent is the TS schema's optional default, not a warning.
+        let (config, warnings) = merge_at(r#"{"prompt": {}}"#, &dir);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(config.prompt_max_width, PromptWidth::Fixed(75));
+
+        for bad in ["0", "-4", "\"wide\"", "true"] {
+            let (config, warnings) =
+                merge_at(&format!(r#"{{"prompt": {{"max_width": {bad}}}}}"#), &dir);
+            assert_eq!(config.prompt_max_width, PromptWidth::Fixed(75), "{bad}");
+            assert!(
+                warnings
+                    .iter()
+                    .any(|warning| warning.contains("prompt.max_width")),
+                "{bad}: {warnings:?}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `"auto"` is `Math.max(75, floor(width * 0.7))` in the TS home, capped by
+    /// the window; a fixed cap is capped the same way.
+    #[test]
+    fn a_prompt_width_never_exceeds_the_window() {
+        assert_eq!(PromptWidth::Auto.resolve(200), 140);
+        assert_eq!(
+            PromptWidth::Auto.resolve(80),
+            75,
+            "the 75 floor wins narrow"
+        );
+        assert_eq!(
+            PromptWidth::Fixed(100).resolve(80),
+            80,
+            "capped by the window"
+        );
+        assert_eq!(PromptWidth::Fixed(100).resolve(200), 100);
+        // A zero-column window has nothing to paint into; the cap never makes
+        // the prompt wider than the window it sits in.
+        assert_eq!(PromptWidth::Fixed(1).resolve(0), 0);
     }
 
     #[test]
