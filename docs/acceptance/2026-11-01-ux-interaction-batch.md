@@ -9,6 +9,15 @@ directory anywhere; the counts below are what those runs printed. The whole
 library suite at this tree is `cargo test --lib -- --test-threads=1` →
 **359 passed, 0 failed**.
 
+> **Superseded in part.** The pointer rows below were measured against the
+> home list. `d5ca52247a` replaced it with a prompt-form launcher that renders no
+> list, and #2431 removed the tests with it (`a_click_on_the_list`,
+> `a_second_click_on_the_same_row`). The pane-level anchor test
+> (`a_click_names_the_row_that_was_painted_on_that_line`) still passes and still
+> covers pointer positioning; list selection and double-click-to-open are gone
+> with the widget, not regressed. The keyboard, colour and discovery rows are
+> unaffected.
+
 ## UX-02 — keyboard-first navigation with optional mouse and selection
 
 | criterion | command | observed |
