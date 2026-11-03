@@ -23,6 +23,8 @@ use portable_pty::{Child, CommandBuilder, MasterPty, PtySize};
 const CATALOG: usize = 200;
 /// A row far enough down that walking is expensive and a query is not.
 const TARGET: usize = 150;
+/// `<leader>l`: the two keystrokes that open the session dialog.
+const ENTRY_KEYS: usize = 2;
 
 struct Harness {
     pty: Box<dyn MasterPty + Send>,
@@ -161,9 +163,15 @@ impl Harness {
 /// screen. `None` means the row never opened inside the budget.
 fn walk() -> Option<(usize, u128)> {
     let mut harness = Harness::spawn();
+    // The launcher is a prompt now (`d5ca52247a`), so history lives in the
+    // session dialog: `<leader>l` opens it and the list owns the keyboard from
+    // there. The chord costs the same in every arm, so the comparison the test
+    // makes is unchanged.
+    harness.write(b"\x18");
+    harness.write(b"l");
     assert!(
-        harness.wait_for("Note session 1", Duration::from_secs(10)),
-        "the catalog never rendered:\n{}",
+        harness.wait_for("enter open", Duration::from_secs(10)),
+        "the session dialog never opened:\n{}",
         harness.text()
     );
     let started = Instant::now();
@@ -182,14 +190,21 @@ fn walk() -> Option<(usize, u128)> {
     let opened = harness.wait_for("fixture answer", Duration::from_secs(20));
     let elapsed = started.elapsed().as_millis();
     harness.shutdown();
-    opened.then_some((keys, elapsed))
+    // The two chord keystrokes that reach the dialog are part of the path.
+    opened.then_some((keys + ENTRY_KEYS, elapsed))
 }
 
 fn filter() -> Option<(usize, u128)> {
     let mut harness = Harness::spawn();
+    // The launcher is a prompt now (`d5ca52247a`), so history lives in the
+    // session dialog: `<leader>l` opens it and the list owns the keyboard from
+    // there. The chord costs the same in every arm, so the comparison the test
+    // makes is unchanged.
+    harness.write(b"\x18");
+    harness.write(b"l");
     assert!(
-        harness.wait_for("Note session 1", Duration::from_secs(10)),
-        "the catalog never rendered:\n{}",
+        harness.wait_for("enter open", Duration::from_secs(10)),
+        "the session dialog never opened:\n{}",
         harness.text()
     );
     let query = format!("session {TARGET}");
@@ -208,7 +223,8 @@ fn filter() -> Option<(usize, u128)> {
     let opened = harness.wait_for("fixture answer", Duration::from_secs(20));
     let elapsed = started.elapsed().as_millis();
     harness.shutdown();
-    opened.then_some((keys, elapsed))
+    // The two chord keystrokes that reach the dialog are part of the path.
+    opened.then_some((keys + ENTRY_KEYS, elapsed))
 }
 
 #[test]

@@ -768,8 +768,23 @@ impl Row {
     }
 }
 
-fn plain_rows(lines: Vec<Line<'static>>) -> Vec<Row> {
-    lines.into_iter().map(Row::plain).collect()
+/// The display width of a line's leading indentation.
+///
+/// Tool rows are indented by design: a header opens with its `● ` bullet and a
+/// result with the `  ⎿ ` gutter. Wrapped as plain text, a continuation started
+/// at column zero and `  ⎿ Read 2 lines` read as two unrelated rows — which is
+/// what made a narrow pane look like the prose wrapped early. The continuation
+/// hangs under the indent the row was projected with instead.
+fn leading_indent(line: &Line<'static>) -> u16 {
+    let Some(first) = line.spans.first() else {
+        return 0;
+    };
+    match first.content.chars().take_while(|c| *c == ' ').count() {
+        // The row opens with the `● ` bullet; its two-cell marker column is
+        // what a continuation hangs under.
+        0 => 2,
+        spaces => spaces as u16,
+    }
 }
 
 /// Split styled lines into rows no wider than `width` display cells, so the
@@ -779,7 +794,7 @@ fn plain_rows(lines: Vec<Line<'static>>) -> Vec<Row> {
 /// survive the split; a wide character never straddles a row.
 #[cfg(test)]
 fn wrap_lines(lines: &[Line<'static>], width: u16) -> Vec<Line<'static>> {
-    let rows: Vec<Row> = plain_rows(lines.to_vec());
+    let rows: Vec<Row> = lines.iter().cloned().map(Row::plain).collect();
     wrap_rows(&rows, width)
 }
 
@@ -1524,7 +1539,17 @@ fn transcript_lines(
                                 rows.push(Row::plain(Line::default()));
                             }
                             inline_run = tool_rows.len() == 1;
-                            rows.extend(plain_rows(tool_rows));
+                            // A tool row carries its own indentation: the
+                            // header's `● ` bullet and the result's `  ⎿ `
+                            // gutter. Folding such a row as plain text broke
+                            // `  ⎿ Read 2 lines` across two rows with no
+                            // indent, which is what made a narrow pane look
+                            // like the text wrapped early. Hang each row under
+                            // the cells it opens with.
+                            rows.extend(tool_rows.into_iter().map(|line| {
+                                let hang = leading_indent(&line);
+                                Row::hung(line, hang)
+                            }));
                         }
                     }
                 }
@@ -4425,6 +4450,7 @@ mod tests {
         QuestionView {
             question_id: "run-1/call_2".into(),
             input_hash: "b".repeat(64),
+            expires_at_ms: None,
             questions: vec![QuestionItem {
                 question: "Which files?".into(),
                 header: "Files".into(),

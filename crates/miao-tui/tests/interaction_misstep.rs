@@ -25,6 +25,8 @@ use portable_pty::{Child, CommandBuilder, MasterPty, PtySize};
 const CATALOG: usize = 200;
 /// A row far enough down that walking is expensive and a query is not.
 const TARGET: usize = 150;
+/// `<leader>l`: the two keystrokes that open the session dialog.
+const ENTRY_KEYS: usize = 2;
 
 struct Harness {
     pty: Box<dyn MasterPty + Send>,
@@ -171,9 +173,15 @@ impl Harness {
 /// correcting with `k`. Returns the keystrokes spent and the time to open.
 fn walk(overshoot: usize) -> Option<(usize, u128)> {
     let mut harness = Harness::spawn();
+    // The launcher is a prompt now (`d5ca52247a`), so history lives in the
+    // session dialog: `<leader>l` opens it and the list owns the keyboard from
+    // there. The chord costs the same in every arm, so the comparison the test
+    // makes is unchanged.
+    harness.write(b"\x18");
+    harness.write(b"l");
     assert!(
-        harness.wait_for("Note session 1", Duration::from_secs(10)),
-        "the catalog never rendered:\n{}",
+        harness.wait_for("enter open", Duration::from_secs(10)),
+        "the session dialog never opened:\n{}",
         harness.text()
     );
     let started = Instant::now();
@@ -192,24 +200,46 @@ fn walk(overshoot: usize) -> Option<(usize, u128)> {
     }
     harness.write(b"\r");
     keys += 1;
-    let opened = harness.wait_for("fixture answer", Duration::from_secs(20));
+    std::thread::sleep(Duration::from_millis(200));
+    let screen = harness.screen();
+    let opened = screen.contains("fixture answer");
+    if !opened {
+        panic!("after enter, keys={keys}\n{screen}");
+    }
     let elapsed = started.elapsed().as_millis();
     harness.shutdown();
-    opened.then_some((keys, elapsed))
+    Some((keys + ENTRY_KEYS, elapsed))
 }
 
 /// Ask for `query`, then apply `corrections` (each a key sequence) before
 /// submitting. Returns the keystrokes spent and the time to open.
 fn filter(query: &str, corrections: Vec<Vec<u8>>) -> Option<(usize, u128)> {
     let mut harness = Harness::spawn();
+    // The launcher is a prompt now (`d5ca52247a`), so history lives in the
+    // session dialog: `<leader>l` opens it and the list owns the keyboard from
+    // there. The chord costs the same in every arm, so the comparison the test
+    // makes is unchanged.
+    harness.write(b"\x18");
+    harness.write(b"l");
     assert!(
-        harness.wait_for("Note session 1", Duration::from_secs(10)),
-        "the catalog never rendered:\n{}",
+        harness.wait_for("enter open", Duration::from_secs(10)),
+        "the session dialog never opened:\n{}",
         harness.text()
     );
     let started = Instant::now();
     // The list holds the keyboard from the start, so `/` arms the filter.
+    // Typing waits for the filter row: a query byte that lands before the
+    // dialog owns the keyboard reaches the launcher prompt instead, and the
+    // session dialog opens empty underneath it.
     harness.write(b"/");
+    // The dialog paints its filter row over an empty query; waiting for the
+    // first matching row proves the dialog already owns the keyboard, so no
+    // query byte can land in the launcher prompt behind it.
+    assert!(
+        harness.wait_for("▸ Note session 1", Duration::from_secs(5)),
+        "the session dialog did not settle:\n{}",
+        harness.screen()
+    );
     let mut keys = 1;
     harness.write(query.as_bytes());
     keys += query.len();
@@ -222,16 +252,21 @@ fn filter(query: &str, corrections: Vec<Vec<u8>>) -> Option<(usize, u128)> {
     keys += 1;
     let opened = harness.wait_for("fixture answer", Duration::from_secs(20));
     let elapsed = started.elapsed().as_millis();
+    if !opened {
+        panic!(
+            "filter {query:?} never opened; keys={keys}\n{}",
+            harness.screen()
+        );
+    }
     harness.shutdown();
-    opened.then_some((keys, elapsed))
+    opened.then_some((keys + ENTRY_KEYS, elapsed))
 }
 #[test]
 fn a_wrong_turn_costs_the_correction_on_top_of_the_intended_path() {
     // Sequential on purpose: the harness reaps every fixture engine on shutdown,
     // so two measurements running in parallel would kill each other's engine.
-    let clean_query =
-        filter("session 150", Vec::new()).expect("the clean query never opened the row");
-    let mistyped = filter("session 15O", vec![vec![0x7f], b"0".to_vec()])
+    let clean_query = filter("150", Vec::new()).expect("the clean query never opened the row");
+    let mistyped = filter("15O", vec![vec![0x7f], b"0".to_vec()])
         .expect("the corrected query never opened the row");
     println!(
         "VAL-03 misstep query-typo: clean={} keys/{} ms, corrected={} keys/{} ms",

@@ -239,6 +239,18 @@ impl ListDialog {
         self.filterable() || self.search
     }
 
+    /// Put back the query and whether the search was armed, then refilter.
+    ///
+    /// The dialog is rebuilt whenever the catalog refreshes; without this the
+    /// rows came back but the query did not, and the list jumped to its full
+    /// history under the operator's cursor.
+    pub(crate) fn restore_search(&mut self, query: &str, armed: bool) {
+        self.search = armed;
+        self.filter.set_text(query);
+        self.refilter();
+        self.selected = self.selected.min(self.visible.len().saturating_sub(1));
+    }
+
     pub(crate) fn refilter(&mut self) {
         let needle = self.filter.text().to_lowercase();
         // A provider header matches when any model under it matches, so a
@@ -1963,6 +1975,45 @@ mod tests {
         assert!(matches!(
             dialog.handle_key(key(KeyCode::Char('3'))),
             Action::None
+        ));
+    }
+
+    /// The catalog refreshes above an open dialog (a rename, a title model,
+    /// a pin). Rebuilding the rows must not throw away what the operator
+    /// typed, or the list jumps back to its full history under the cursor.
+    #[test]
+    fn a_rebuilt_dialog_keeps_the_search_and_its_row() {
+        let rows = [
+            summary("ses_a", None, "/repo/a"),
+            summary("ses_plain", None, "/repo/plain"),
+            summary("ses_checked", None, "/repo/checked"),
+        ];
+        let mut dialog = Dialog::sessions(&rows);
+        dialog.handle_key(key(KeyCode::Char('/')));
+        for c in "check".chars() {
+            dialog.handle_key(key(KeyCode::Char(c)));
+        }
+        let list = dialog.list().expect("list");
+        assert_eq!(list.filter.text(), "check");
+        assert_eq!(list.visible.len(), 1);
+
+        let mut rebuilt = Dialog::sessions(&rows);
+        let previous = dialog.list().expect("list");
+        rebuilt
+            .list_mut()
+            .expect("list")
+            .restore_search(previous.filter.text(), previous.search);
+        let list = rebuilt.list().expect("list");
+        assert_eq!(
+            list.filter.text(),
+            "check",
+            "the query survives the rebuild"
+        );
+        assert!(list.search, "the search stays armed");
+        assert_eq!(list.visible.len(), 1);
+        assert!(matches!(
+            rebuilt.handle_key(key(KeyCode::Enter)),
+            Action::OpenSession(id) if id == "ses_checked"
         ));
     }
 

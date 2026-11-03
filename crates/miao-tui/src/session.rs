@@ -177,6 +177,14 @@ pub struct QuestionView {
     pub question_id: String,
     pub input_hash: String,
     pub questions: Vec<QuestionItem>,
+    /// When the engine stops accepting an answer.
+    ///
+    /// The engine enforces this itself: past the deadline `answer_question`
+    /// and `reject_question` resolve the question as `expired` and refuse.
+    /// Without the deadline here the panel outlived the question it asked —
+    /// a blocking panel whose only two outcomes both failed with
+    /// "question is already resolved", which reads as a frozen TUI.
+    pub expires_at_ms: Option<u64>,
 }
 
 impl QuestionView {
@@ -224,6 +232,7 @@ impl QuestionView {
             question_id: value.get("question_id")?.as_str()?.to_string(),
             input_hash: value.get("input_hash")?.as_str()?.to_string(),
             questions,
+            expires_at_ms: value.get("expires_at_ms").and_then(Value::as_u64),
         })
     }
 

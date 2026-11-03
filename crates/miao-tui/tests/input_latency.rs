@@ -84,6 +84,11 @@ impl Harness {
             env!("CARGO_BIN_EXE_miao-tui-fake-engine"),
         );
         cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
+        // The launcher is a prompt, not a history list: it no longer renders
+        // the Session list to select from and Enter into. `--continue` opens
+        // the newest Session directly, which is the launch path the composer
+        // lives behind now.
+        cmd.arg("--continue");
         if streaming {
             cmd.env("MIAO_TUI_FAKE_STREAM", "1");
         }
@@ -287,7 +292,7 @@ fn json_report(
 fn typing_echo_latency_is_reported_for_the_composer() {
     let mut harness = Harness::spawn_engine("idle-typing");
     assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(30)),
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(30)),
         "the home list did not render:\n{}",
         harness.text()
     );
@@ -349,7 +354,7 @@ fn typing_echo_latency_is_reported_for_multi_byte_input() {
     // UTF-8 sequence and the clock stops when the glyph is rendered.
     let mut harness = Harness::spawn_engine("multi-byte");
     assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(30)),
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(30)),
         "the home list did not render:\n{}",
         harness.text()
     );
@@ -394,16 +399,12 @@ fn typing_echo_latency_is_reported_while_a_large_output_is_on_screen() {
     // PERF-01 also asks for large output: one message far bigger than a screen,
     // so the per-keystroke cost is measured while the renderer holds it.
     let mut harness = Harness::spawn_engine_large_output("large-output", 200_000);
+    // `--continue` opens the Session directly (the launcher no longer lists
+    // Sessions to pick from), so the oversized block is the first surface. The
+    // transcript scrolls to the tail of it, so the marker has to be something
+    // that stays on screen.
     assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(6)),
-        "the home list did not render:\n{}",
-        harness.text()
-    );
-    harness.write(b"\r");
-    // The transcript scrolls to the tail of the oversized block, so the marker
-    // has to be something that stays on screen.
-    assert!(
-        wait_for_plain(&harness, "xxxxxxxxxxxxxxxxxxxx", Duration::from_secs(20)),
+        wait_for_plain(&harness, "xxxxxxxxxxxxxxxxxxxx", Duration::from_secs(30)),
         "the large output did not render:\n{}",
         harness.text()
     );
@@ -442,14 +443,11 @@ fn typing_echo_latency_is_reported_in_a_long_session() {
     // PERF-01 also asks for a 10k-line history: the per-keystroke cost has to
     // hold up in a Session that is not two messages long.
     let mut harness = Harness::spawn_engine_history("long-history", 10_000);
+    // Same direct entry: this fixture's transcript is the generated lines, not
+    // the two-message default, so the last line is the marker that proves the
+    // whole history rendered and the renderer is sitting at its tail.
     assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(6)),
-        "the home list did not render:\n{}",
-        harness.text()
-    );
-    harness.write(b"\r");
-    assert!(
-        wait_for_plain(&harness, "answer 5000", Duration::from_secs(20)),
+        wait_for_plain(&harness, "answer 5000", Duration::from_secs(30)),
         "the long transcript did not render:\n{}",
         harness.text()
     );
@@ -490,7 +488,7 @@ fn typing_echo_latency_is_reported_while_the_turn_streams() {
     // event every 10 ms while the operator types.
     let mut harness = Harness::spawn_engine_mode("streaming-typing", true);
     assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(30)),
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(30)),
         "the home list did not render:\n{}",
         harness.text()
     );
@@ -552,7 +550,7 @@ fn typing_echo_latency_is_reported_while_a_long_session_streams() {
         ],
     );
     assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(30)),
+        wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(30)),
         "the home list did not render:\n{}",
         harness.text()
     );

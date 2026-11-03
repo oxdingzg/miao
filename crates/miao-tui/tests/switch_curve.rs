@@ -22,7 +22,9 @@ use portable_pty::{Child, CommandBuilder, PtySize};
 const SWITCHES: usize = 100;
 
 struct Harness {
-    pty: Box<dyn portable_pty::MasterPty + Send>,
+    /// Held so the pty stays open for the child's lifetime; the reader owns its
+    /// clone and the assertions read the byte stream.
+    _pty: Box<dyn portable_pty::MasterPty + Send>,
     child: Box<dyn Child + Send + Sync>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     output: Arc<Mutex<Vec<u8>>>,
@@ -60,6 +62,10 @@ impl Harness {
         cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
         cmd.arg("--db");
         cmd.arg(&db);
+        // The launcher is a prompt now (`d5ca52247a`); `--session` is its
+        // direct entry point, so these measurements start in the Session.
+        cmd.arg("--session");
+        cmd.arg("ses_a");
         let child = pair.slave.spawn_command(cmd).expect("spawn miao-tui");
         drop(pair.slave);
         let writer = Arc::new(Mutex::new(pair.master.take_writer().expect("take writer")));
@@ -82,7 +88,7 @@ impl Harness {
         });
         let pid = child.process_id().expect("the child has a pid");
         Self {
-            pty: pair.master,
+            _pty: pair.master,
             child,
             writer,
             output,
@@ -101,22 +107,17 @@ impl Harness {
         String::from_utf8_lossy(&self.output.lock().expect("output lock")).into_owned()
     }
 
-    /// The screen, not the byte stream. A repaint writes cell runs separated by
-    /// cursor motions, so a line that is fully on screen is not contiguous in the
-    /// raw stream: which runs a frame repaints depends on what the previous frame
-    /// already drew, and a layout change shifts that split. Reconstructing the
-    /// terminal gives what a person actually sees.
-    fn screen(&self) -> String {
-        let size = self.pty.get_size().expect("pty size");
-        let mut parser = vt100::Parser::new(size.rows, size.cols, 0);
-        parser.process(&self.output.lock().expect("output lock"));
-        parser.screen().contents()
-    }
-
     fn wait_for(&self, needle: &str, timeout: Duration) -> bool {
+        // Compare against everything the process wrote, not only the current
+        // frame: entering and leaving a Session redraws the whole window, so a
+        // marker that was painted and then scrolled away is still evidence the
+        // switch happened.
         let deadline = Instant::now() + timeout;
         loop {
-            if self.screen().contains(needle) {
+            if String::from_utf8_lossy(&self.output.lock().expect("output lock"))
+                .replace('\r', "")
+                .contains(needle)
+            {
                 return true;
             }
             if Instant::now() >= deadline {
@@ -182,8 +183,8 @@ fn a_hundred_session_switches_do_not_grow_the_process() {
         std::thread::sleep(Duration::from_millis(20));
     }
     assert!(
-        harness.wait_for("Project A", Duration::from_secs(10)),
-        "the home list did not render:\n{}",
+        harness.wait_for("hello from the fixture", Duration::from_secs(10)),
+        "the Session did not open:\n{}",
         harness.text()
     );
     // Let the first frames settle so the baseline is not start-up cost.
@@ -192,6 +193,16 @@ fn a_hundred_session_switches_do_not_grow_the_process() {
 
     let mut opened = 0;
     for index in 0..SWITCHES {
+        // The launcher is a prompt, so a Session is opened from its history
+        // dialog: the leader chord names the list, and Enter opens the row it
+        // lands on. This is the same walk an operator makes.
+        harness.send(b"\x18");
+        harness.send(b"l");
+        assert!(
+            harness.wait_for("open · 1-9 pinned", Duration::from_secs(5)),
+            "switch {index}: the session dialog never opened\n{}",
+            harness.text()
+        );
         harness.send(b"\r");
         assert!(
             harness.wait_for("hello from the fixture", Duration::from_secs(5)),
@@ -200,8 +211,8 @@ fn a_hundred_session_switches_do_not_grow_the_process() {
         );
         harness.send(b"\x1b");
         assert!(
-            harness.wait_for("Project A", Duration::from_secs(5)),
-            "switch {index}: the home list never came back\n{}",
+            harness.wait_for("Ask anything", Duration::from_secs(5)),
+            "switch {index}: the launcher never came back\n{}",
             harness.text()
         );
         opened += 1;
