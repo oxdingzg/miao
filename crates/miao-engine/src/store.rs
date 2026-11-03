@@ -3603,6 +3603,22 @@ pub(crate) struct WriteTx<'a> {
 impl<'a> WriteTx<'a> {
     pub(crate) fn commit(self) -> Result<(), Error> {
         self.tx.commit()?;
+        // A serve process holds its WAL open indefinitely; without this the
+        // WAL grows unbounded and independent readers (external `session
+        // list`, `sqlite3` on the ledger, the acceptance harness) see none of
+        // the writes until the process exits. PASSIVE merges committed frames
+        // into the main database without blocking writers or readers.
+        if let Some(path) = self.tx.connection().path().map(Path::to_path_buf) {
+            let _ = rusqlite::Connection::open_with_flags(
+                path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
+            )
+            .and_then(|checkpoint_conn| {
+                checkpoint_conn
+                    .query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |row| Ok(()))
+                    .map_err(|e| e.into())
+            });
+        }
         Ok(())
     }
 }
