@@ -324,13 +324,17 @@ impl Shell {
         // No title row: the workspace, branch and version fold into the status
         // strip at the bottom, so the whole screen above the composer is
         // content. The terminal tab already names the workspace too.
-        let [body_area, panel_area, composer_area, status_area] = Layout::vertical([
+        // One row of air between the composer's bottom border and the status
+        // strip: butted together they read as one cramped block, and both the
+        // TypeScript prompt and the agent CLIs keep a gap there.
+        let [body_area, panel_area, composer_area, gap_area, status_area] = Layout::vertical([
             Constraint::Min(1),
             Constraint::Length(panel_height),
             Constraint::Length(composer_height(
                 &self.composer,
                 composer_column(frame.area().width),
             )),
+            Constraint::Length(1),
             Constraint::Length(1),
         ])
         .areas(frame.area());
