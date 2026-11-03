@@ -154,6 +154,57 @@ async fn job_ownership_and_explicit_cancel_are_separate_from_turn_control() {
     runtime.shutdown().await;
 }
 
+/// `cancel_job` takes one id. An operator who wants everything stopped has no
+/// list to walk from the TUI, so the Session needs a single call that stops all
+/// of its own jobs and reports which ones it stopped.
+#[tokio::test]
+async fn stop_all_jobs_cancels_every_job_the_session_owns() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, next) = setup(dir.path(), 3, false).await;
+    tokio::time::timeout(std::time::Duration::from_secs(3), next.notified())
+        .await
+        .unwrap();
+    let ids: Vec<String> = store
+        .jobs("s")
+        .await
+        .unwrap()
+        .iter()
+        .map(|job| job["job_id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(ids.len(), 3, "{ids:?}");
+
+    let stopped = runtime.stop_all_jobs("s").await.unwrap();
+    assert_eq!(stopped.len(), 3, "stopped {stopped:?} of {ids:?}");
+    for id in &ids {
+        assert_eq!(terminal(&store, id).await["state"], "cancelled", "{id}");
+    }
+    // Nothing is left to stop, so a second call reports nothing rather than
+    // claiming work it did not do.
+    assert!(runtime.stop_all_jobs("s").await.unwrap().is_empty());
+    runtime.shutdown().await;
+}
+
+/// A Session's stop must not reach another Session's jobs.
+#[tokio::test]
+async fn stop_all_jobs_leaves_another_sessions_jobs_running() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, next) = setup(dir.path(), 1, false).await;
+    tokio::time::timeout(std::time::Duration::from_secs(3), next.notified())
+        .await
+        .unwrap();
+    let id = store.jobs("s").await.unwrap()[0]["job_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // `other` owns nothing; stopping it must not touch `s`.
+    assert!(runtime.stop_all_jobs("other").await.unwrap().is_empty());
+    assert_ne!(
+        terminal(&store, &id).await["state"].as_str(),
+        Some("cancelled")
+    );
+    runtime.shutdown().await;
+}
+
 #[tokio::test]
 async fn runtime_shutdown_joins_running_and_queued_jobs() {
     let dir = tempfile::tempdir().unwrap();

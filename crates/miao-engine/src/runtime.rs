@@ -2192,6 +2192,29 @@ impl Runtime {
         cancel_background(&self.inner, session, id).await
     }
 
+    /// Stop every background job this Session owns.
+    ///
+    /// `cancel_job` takes one id at a time; an operator who wants everything to
+    /// stop has no list to walk from the TUI. Returns the ids actually
+    /// cancelled, so the caller can report how many and which, rather than a
+    /// bare `true` that hides whether anything was running.
+    pub async fn stop_all_jobs(&self, session: &str) -> Result<Vec<String>, Error> {
+        let running: Vec<String> = {
+            let jobs = self.inner.jobs.lock().await;
+            jobs.iter()
+                .filter(|(_, job)| job.session == session)
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
+        let mut stopped = Vec::new();
+        for id in running {
+            if cancel_background(&self.inner, session, &id).await? {
+                stopped.push(id);
+            }
+        }
+        Ok(stopped)
+    }
+
     pub async fn cancel_cron(&self, session: &str, id: &str) -> Result<bool, Error> {
         cancel_cron(&self.inner, session, id).await
     }
