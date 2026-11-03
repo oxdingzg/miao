@@ -700,10 +700,7 @@ impl Tools {
         let relative = prepared
             .path
             .strip_prefix(&self.root)
-            .map_err(|_| {
-                eprintln!("[dbg] OutsideWorkspace thrown #1");
-                ToolError::OutsideWorkspace
-            })?
+            .map_err(|_| ToolError::OutsideWorkspace)?
             .to_owned();
         let directory = self.directory.clone();
         let bound = (8 * 1024 * 1024 - *spent).min(1024 * 1024);
@@ -824,10 +821,7 @@ impl Tools {
         let relative = prepared
             .path
             .strip_prefix(&self.root)
-            .map_err(|_| {
-                eprintln!("[dbg] OutsideWorkspace thrown #2");
-                ToolError::OutsideWorkspace
-            })?
+            .map_err(|_| ToolError::OutsideWorkspace)?
             .to_owned();
         let root = self.directory.clone();
         let path = relative.clone();
@@ -1374,10 +1368,7 @@ impl Tools {
             let parent =
                 tokio::fs::canonicalize(candidate.parent().ok_or(ToolError::InvalidInput)?).await?;
             if !parent.starts_with(&self.root) {
-                return {
-                    eprintln!("[dbg] OutsideWorkspace thrown #6");
-                    Err(ToolError::OutsideWorkspace)
-                };
+                return { Err(ToolError::OutsideWorkspace) };
             }
             parent.join(candidate.file_name().ok_or(ToolError::InvalidInput)?)
         } else {
@@ -1506,7 +1497,6 @@ impl Tools {
         } else {
             Vec::new()
         };
-        eprintln!("[dbg] prepare ok reached name={}", name);
         Ok(Prepared {
             // Runtime-owned operations cannot run through the local filesystem/LSP executor.
             batchable_read: access == Access::Read
@@ -1550,10 +1540,7 @@ impl Tools {
                 .components()
                 .any(|part| !matches!(part, std::path::Component::Normal(_)))
         {
-            return {
-                eprintln!("[dbg] OutsideWorkspace thrown #7");
-                Err(ToolError::OutsideWorkspace)
-            };
+            return { Err(ToolError::OutsideWorkspace) };
         }
         let resource = relative
             .components()
@@ -1775,10 +1762,7 @@ impl Tools {
             let relative = prepared
                 .path
                 .strip_prefix(&self.root)
-                .map_err(|_| {
-                    eprintln!("[dbg] OutsideWorkspace thrown #3");
-                    ToolError::OutsideWorkspace
-                })?
+                .map_err(|_| ToolError::OutsideWorkspace)?
                 .to_owned();
             // A started commit is not dropped on cancellation. Its actual result
             // settles durably before the coordinator announces interruption.
@@ -1917,10 +1901,7 @@ impl Tools {
             let relative = prepared
                 .path
                 .strip_prefix(&self.root)
-                .map_err(|_| {
-                    eprintln!("[dbg] OutsideWorkspace thrown #4");
-                    ToolError::OutsideWorkspace
-                })?
+                .map_err(|_| ToolError::OutsideWorkspace)?
                 .to_owned();
             let query = search::Query::parse(&prepared.name, prepared.input)?;
             return tokio::task::spawn_blocking(move || {
@@ -2182,15 +2163,10 @@ impl Tools {
     async fn contained(&self, path: &str) -> Result<PathBuf, ToolError> {
         let joined = self.root.join(path);
         let path = canonical_plain(tokio::fs::canonicalize(&joined).await?);
-        eprintln!(
-            "[dbg] contained joined={joined:?} canon={path:?} root={:?}",
-            self.root
-        );
         let roots = self.read_roots();
         if path.starts_with(&self.root) || roots.iter().any(|root| path.starts_with(root)) {
             return Ok(path);
         }
-        eprintln!("[dbg] contained MISS");
         Err(ToolError::OutsideWorkspace)
     }
 
@@ -2204,15 +2180,11 @@ impl Tools {
         }
         let base = tokio::fs::canonicalize(existing).await?;
         if !base.starts_with(&self.root) {
-            return {
-                eprintln!("[dbg] OutsideWorkspace thrown #8");
-                Err(ToolError::OutsideWorkspace)
-            };
+            return { Err(ToolError::OutsideWorkspace) };
         }
-        let tail = joined.strip_prefix(existing).map_err(|_| {
-            eprintln!("[dbg] OutsideWorkspace thrown #5");
-            ToolError::OutsideWorkspace
-        })?;
+        let tail = joined
+            .strip_prefix(existing)
+            .map_err(|_| ToolError::OutsideWorkspace)?;
         Ok(base.join(tail))
     }
 
