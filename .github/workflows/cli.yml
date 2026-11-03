@@ -45,6 +45,21 @@ jobs:
         # so their warnings compile through instead of failing the product build.
         run: cargo clippy --locked --all-targets -- -D warnings
 
+      - name: Licences
+        # The product binary redistributes every crate in this graph, so a
+        # copyleft dependency would change what miao can be shipped as. MIT is
+        # compatible with a permissive allow-list only; `deny.toml` names the
+        # two entries that need justification (MIT-0, CDLA-Permissive-2.0).
+        #
+        # `cargo deny` is installed rather than assumed: a missing tool must
+        # fail the job, not skip the check. It is small and cached by the
+        # toolchain, and this job already compiles the whole crate.
+        run: |
+          if ! command -v cargo-deny >/dev/null; then
+            cargo install cargo-deny --locked --version 0.20.2
+          fi
+          cargo deny check licenses
+
       - name: Test
         # The CLI suite points `HOME` and the `XDG_*` roots at throwaway trees, so
         # tests that do it cannot run beside tests that open the ledger through

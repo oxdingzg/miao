@@ -4,6 +4,9 @@ version = "0.0.1"
 edition = "2021"
 rust-version = "1.88"
 publish = false
+license = "MIT"
+repository = "https://github.com/oxdingzg/miao"
+homepage = "https://mtty.dev/miao"
 
 [[bin]]
 name = "miao"
