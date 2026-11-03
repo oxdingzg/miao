@@ -24,7 +24,7 @@ use miao_tui::app::{App, Startup};
 use miao_tui::config::AttentionConfig;
 use miao_tui::event::AppEvent;
 use miao_tui::keybinds::Keymap;
-use miao_tui::session::{Entry, Part, SessionState, Transcript};
+use miao_tui::session::{Entry, Part, Reasoning, SessionState, Transcript};
 use miao_tui::theme::{self, Theme, DEFAULT_THEME};
 
 /// One frame at 60 Hz. The gate the evidence is collected against.
@@ -65,9 +65,11 @@ fn transcript(entries: usize) -> Transcript {
             agent: None,
             model: None,
             parts: vec![
-                Part::Reasoning(
-                    "the offset lives in the lexer, so the error has to carry it out".into(),
-                ),
+                Part::Reasoning(Reasoning {
+                    text: "the offset lives in the lexer, so the error has to carry it out".into(),
+                    created_ms: None,
+                    completed_ms: None,
+                }),
                 Part::Text(
                     "Done: the parser now names the offset.\n\n```rust\nfn stop(&self) -> usize \
                      { self.at }\n```\n\nThat is the whole change; the tests cover the boundary."

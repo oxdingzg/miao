@@ -4179,16 +4179,6 @@ mod tests {
         }
     }
 
-    /// One entry per display row, one entry per cell. A row here is a grid
-    /// rather than a `String`, because a border cell is three bytes wide in the
-    /// buffer and one column wide on screen.
-
-    /// The painted buffer, so a test can ask what colour a cell carries.
-
-    /// The screen keeps one accent: the count in the header. Rows are text and
-    /// stay neutral, which is what separates a readable list from the flat grey
-    /// wall it used to be.
-
     #[test]
     fn a_multi_select_question_collects_every_toggled_label() {
         let mut panel = Panel::question(question(true));
