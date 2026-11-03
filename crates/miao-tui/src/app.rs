@@ -4517,8 +4517,6 @@ mod tests {
         assert!(app.shell.draft().is_empty());
     }
 
-
-
     #[test]
     fn help_lists_the_bindings_the_keymap_actually_uses() {
         let mut overrides = BTreeMap::new();
