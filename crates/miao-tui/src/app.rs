@@ -2470,7 +2470,10 @@ impl App {
         // own run id is then the first evidence of the run, and dropping the
         // frame here swallowed the first tokens of every turn until the
         // committed events replays them in one batch.
-        let frame_run = frame.get("run_id").and_then(Value::as_str).map(str::to_owned);
+        let frame_run = frame
+            .get("run_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         let run_id = match (self.state.active_run.clone(), frame_run) {
             (Some(active), Some(id)) if active != id => return,
             (Some(active), _) => active,
