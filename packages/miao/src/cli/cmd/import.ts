@@ -1,10 +1,11 @@
+import { eq } from "drizzle-orm"
 import { SessionV1 } from "@miao/core/v1/session"
 import { CliError, effectCmd, fail } from "../effect-cmd"
 import { Database } from "@miao/core/database/database"
 import { SessionBackfill } from "@miao/core/session/backfill"
 import { SessionMessage } from "@miao/core/session/message"
 import { SessionSchema } from "@miao/core/session/schema"
-import { SessionTable } from "@miao/core/session/sql"
+import { SessionMessageTable, SessionTable } from "@miao/core/session/sql"
 import { SessionV1Read } from "@miao/core/session/v1-read"
 import { projectContext, type ProjectContext } from "../project-context"
 import { EOL } from "os"
@@ -48,8 +49,20 @@ export const ImportCommand = effectCmd({
     const imported = yield* importArchive(archive, ctx).pipe(
       Effect.catchDefect((error) => fail(`Invalid session archive: ${error instanceof Error ? error.message : error}`)),
     )
+    // Reading the result back is the only check that the archive arrived:
+    // `importArchive` reports the id it wrote, not whether every message
+    // landed. A projection that silently drops rows in the middle looks
+    // identical to a complete one from the outside.
+    const verified = yield* verifyImported(imported)
     process.stdout.write(`Imported session: ${imported}`)
     process.stdout.write(EOL)
+    process.stdout.write(`  ${verified.messages} message(s), seq ${verified.firstSeq}..${verified.lastSeq}`)
+    process.stdout.write(EOL)
+    if (verified.gaps.length > 0) {
+      process.stderr.write(`the projection has a gap in its sequence: ${verified.gaps.join(", ")}`)
+      process.stderr.write(EOL)
+      process.exitCode = 1
+    }
   }),
 })
 
@@ -60,6 +73,44 @@ export const ImportCommand = effectCmd({
  * backfill maps legacy history, keeping what V2 has no field for under
  * `metadata.v1`. Nothing is written to the legacy tables.
  */
+/**
+ * Read an imported Session back and report what the projection actually holds.
+ *
+ * `importArchive` returns the id it wrote, which says nothing about whether
+ * every message landed. A projection that drops rows in the middle looks
+ * identical to a complete one from outside, so this counts them and reports a
+ * gap in the sequence — the shape a partial write leaves behind.
+ *
+ * It does not compare contents against the archive. Detecting a row that landed
+ * with the wrong body needs a per-message digest, which this change does not
+ * add and does not claim.
+ */
+const verifyImported = (sessionID: string) =>
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    const rows = yield* db
+      .select({ id: SessionMessageTable.id, seq: SessionMessageTable.seq })
+      .from(SessionMessageTable)
+      .where(eq(SessionMessageTable.session_id, SessionSchema.ID.make(sessionID)))
+      .orderBy(SessionMessageTable.seq)
+      .all()
+      .pipe(Effect.orDie)
+    const seqs = rows.map((row) => row.seq)
+    const gaps: string[] = []
+    for (let index = 1; index < seqs.length; index++) {
+      const step = seqs[index] - seqs[index - 1]
+      // Event-less projection rows sit at negative sequences and are not part
+      // of the aggregate, so only a forward jump is a gap.
+      if (step > 1 && seqs[index] > 0) gaps.push(`${seqs[index - 1]}->${seqs[index]}`)
+    }
+    return {
+      messages: rows.length,
+      firstSeq: seqs[0] ?? 0,
+      lastSeq: seqs.at(-1) ?? 0,
+      gaps,
+    }
+  })
+
 export const importArchive = Effect.fn("Cli.import.archive")(function* (input: unknown, ctx: ProjectContext) {
   const { db } = yield* Database.Service
   const archive = (typeof input === "object" && input !== null ? input : {}) as {
