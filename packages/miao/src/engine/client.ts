@@ -143,18 +143,6 @@ export interface EngineOptions {
    * `{ deny }` blocks, `{ args }` transforms the before input, `{ output }`
    * replaces the after result; a rejection fails the call closed.
    */
-  onHookTool?: (call: {
-    sessionID: string
-    kind: "before" | "after" | "definition"
-    /** Aborted when this hook is cancelled, the connection fails or the client closes. */
-    signal?: AbortSignal
-    tool: string
-    callID: string
-    args?: unknown
-    output?: unknown
-    /** The tool definition under review, for the `definition` family. */
-    definition?: unknown
-  }) => Promise<unknown>
   /**
    * Explicit prefix-cache policy for the first model turn's stable prefix.
    * Absent leaves each provider's own caching behavior untouched.
@@ -370,7 +358,6 @@ interface Pending {
 export class EngineClient {
   private next = 1
   private readonly pending = new Map<number, Pending>()
-  private readonly hookCalls = new Map<number, { sessionID: string; controller: AbortController }>()
   /**
    * Cancellation for the product calls the engine is waiting on. A native
    * permission ask parks inside such a call, so the settle or cancel notice has
@@ -390,7 +377,6 @@ export class EngineClient {
     private readonly child: Bun.Subprocess<"pipe", "pipe", "pipe">,
     private readonly cleanup = () => {},
     private readonly onProductTool?: EngineOptions["onProductTool"],
-    private readonly onHookTool?: EngineOptions["onHookTool"],
     private readonly onProductToolCancel?: EngineOptions["onProductToolCancel"],
     private readonly ephemeral: boolean = false,
     private readonly requestTimeoutMs = 60_000,
@@ -450,7 +436,6 @@ export class EngineClient {
         child,
         undefined,
         options.onProductTool,
-        options.onHookTool,
         options.onProductToolCancel,
         options.ephemeral ?? false,
         options.requestTimeoutMs,
@@ -488,7 +473,14 @@ export class EngineClient {
         env: permissionEnvironment(),
       },
     )
-    return new EngineClient(child, undefined, undefined, undefined, undefined, false, options.requestTimeoutMs)
+    return new EngineClient(
+      child,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      options.requestTimeoutMs,
+    )
   }
 
   static startPermissionSource(options: {
@@ -512,7 +504,14 @@ export class EngineClient {
       ],
       { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: permissionEnvironment() },
     )
-    return new EngineClient(child, undefined, undefined, undefined, undefined, false, options.requestTimeoutMs)
+    return new EngineClient(
+      child,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      options.requestTimeoutMs,
+    )
   }
 
   onEvent(handler: (event: EngineEvent) => void) {
@@ -719,15 +718,9 @@ export class EngineClient {
     this.pending.clear()
     for (const call of this.productCalls.values()) call.abort(error)
     this.productCalls.clear()
-    for (const call of this.hookCalls.values()) call.controller.abort(error)
-    this.hookCalls.clear()
   }
 
   private fail(error: Error, terminal = false) {
-    if (terminal) {
-      for (const call of this.hookCalls.values()) call.controller.abort(error)
-      this.hookCalls.clear()
-    }
     const notify = terminal && !this.failure && !this.closed
     if (terminal) this.failure ??= error
     for (const pending of this.pending.values()) pending.reject(this.failure ?? error)
@@ -809,69 +802,6 @@ export class EngineClient {
         this.productCalls.get(bridgeID)?.abort()
         this.onProductToolCancel?.({ sessionID: params?.session_id ?? "", bridgeID })
       }
-      return
-    }
-    if (message.method === "hook_tool") {
-      const bridgeID = message.bridge_id
-      const params = message.params as
-        | {
-            session_id?: string
-            kind?: string
-            tool?: string
-            call_id?: string
-            args?: unknown
-            output?: unknown
-            definition?: unknown
-          }
-        | undefined
-      const controller = new AbortController()
-      const reply = (value: Record<string, unknown>) => {
-        if (this.available && !controller.signal.aborted)
-          void this.writeInput(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL).catch(() => this.inputClosed())
-      }
-      const execute = this.onHookTool
-      if (typeof bridgeID !== "number" || !params?.kind || !execute) {
-        reply({ error: "tool hooks are not available on this host" })
-        return
-      }
-      if (!this.available || this.hookCalls.has(bridgeID)) return
-      const active = { sessionID: params.session_id ?? "", controller }
-      this.hookCalls.set(bridgeID, active)
-      const call = {
-        sessionID: active.sessionID,
-        signal: controller.signal,
-        kind:
-          params.kind === "after"
-            ? ("after" as const)
-            : params.kind === "definition"
-              ? ("definition" as const)
-              : ("before" as const),
-        tool: params.tool ?? "",
-        callID: params.call_id ?? "",
-        args: params.args,
-        output: params.output,
-        definition: params.definition,
-      }
-      void Promise.resolve()
-        .then(() => execute(call))
-        .then(
-          (result) => reply({ result }),
-          (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
-        )
-        .catch(() => this.inputClosed())
-        .finally(() => {
-          if (this.hookCalls.get(bridgeID) === active) this.hookCalls.delete(bridgeID)
-        })
-      return
-    }
-    if (message.method === "hook_tool.cancel") {
-      const bridgeID = message.bridge_id
-      const params = message.params as { session_id?: string } | undefined
-      if (typeof bridgeID !== "number") return
-      const active = this.hookCalls.get(bridgeID)
-      if (!active || active.sessionID !== params?.session_id) return
-      this.hookCalls.delete(bridgeID)
-      active.controller.abort()
       return
     }
     if (message.method === "event") for (const handler of this.eventHandlers) handler(message.params as EngineEvent)
