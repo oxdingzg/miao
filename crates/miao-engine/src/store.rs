@@ -3181,11 +3181,82 @@ impl Store {
                     json!({"run_id":run,"reason":"interrupted","recovered":true}),
                 )?);
             }
+            // A background subagent whose process died never wrote its
+            // `subagent_stop`, so `subagents()` — which rebuilds status purely
+            // from those two events — reported it as `running` forever. Jobs
+            // reconcile at startup through `recover_jobs_unowned`; this is the
+            // same obligation for the subagent rows, expressed as the stop
+            // event the reader already understands.
+            for (owner, subagent) in stale_subagents(&tx, session.as_deref())? {
+                events.push(append(
+                    &tx,
+                    &owner,
+                    "subagent_stop",
+                    json!({
+                        "subagent_id": subagent,
+                        "reason": "interrupted",
+                        "text": "",
+                        "recovered": true,
+                    }),
+                )?);
+            }
             tx.commit()?;
             Ok(events)
         })
         .await
     }
+}
+
+/// Background subagents that started and never stopped, as
+/// `(owning session, subagent id)` pairs.
+///
+/// `subagents()` treats a `subagent_start` without a matching `subagent_stop`
+/// as `running`. That is right while the process lives and wrong the moment it
+/// dies, so recovery closes them. Scoped to one Session when `session` names
+/// one, which is the `recover_session` path; a whole-store recovery walks all
+/// of them.
+fn stale_subagents(
+    tx: &Transaction<'_>,
+    session: Option<&str>,
+) -> Result<Vec<(String, String)>, Error> {
+    let mut stmt = tx.prepare(
+        "SELECT session_id, data FROM engine_event \
+         WHERE kind='subagent_start' AND (?1 IS NULL OR session_id=?1) ORDER BY seq",
+    )?;
+    let rows = stmt.query_map([session], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut open: Vec<(String, String)> = Vec::new();
+    for row in rows {
+        let (owner, data) = row?;
+        let data: Value = serde_json::from_str(&data)?;
+        if data["background"] != true {
+            continue;
+        }
+        let Some(id) = data["subagent_id"].as_str() else {
+            continue;
+        };
+        open.push((owner, id.to_string()));
+    }
+    if open.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut stopped = tx.prepare(
+        "SELECT data FROM engine_event WHERE kind='subagent_stop' AND (?1 IS NULL OR session_id=?1)",
+    )?;
+    let closed: std::collections::HashSet<String> = stopped
+        .query_map([session], |row| row.get::<_, String>(0))?
+        .filter_map(Result::ok)
+        .filter_map(|data| {
+            serde_json::from_str::<Value>(&data)
+                .ok()
+                .and_then(|data| data["subagent_id"].as_str().map(str::to_string))
+        })
+        .collect();
+    Ok(open
+        .into_iter()
+        .filter(|(_, id)| !closed.contains(id))
+        .collect())
 }
 
 fn promote_tx(tx: &Transaction<'_>, session: &str, idle: bool) -> Result<Vec<Event>, Error> {

@@ -1448,3 +1448,82 @@ async fn cancelling_a_later_parent_run_preserves_an_older_background_child() {
     );
     runtime.shutdown().await;
 }
+
+/// A background subagent whose process died never wrote `subagent_stop`, so
+/// `subagents()` — which rebuilds status from those two events alone — reported
+/// it as `running` forever. Jobs reconcile at startup; subagents now do too.
+#[tokio::test]
+async fn a_subagent_that_never_stopped_is_closed_by_recovery() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("engine.db");
+    let store = Store::open(&path).await.unwrap();
+    store
+        .initialize("parent", "parent", dir.path().to_str().unwrap())
+        .await
+        .unwrap();
+    // Stand in for the crash: the start event is durable, the stop is not.
+    store
+        .record(
+            "parent",
+            "subagent_start",
+            serde_json::json!({
+                "subagent_id": "child",
+                "description": "a long task",
+                "background": true
+            }),
+        )
+        .await
+        .unwrap();
+    let before = store.subagents("parent").await.unwrap();
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0]["status"], "running");
+
+    let recovered = store.recover().await.unwrap();
+    assert!(
+        recovered
+            .iter()
+            .any(|event| event.kind == "subagent_stop" && event.data["recovered"] == true),
+        "recovery should close the orphaned subagent"
+    );
+
+    let after = store.subagents("parent").await.unwrap();
+    assert_eq!(after.len(), 1);
+    assert_ne!(
+        after[0]["status"], "running",
+        "a subagent whose process died must not read as running after restart"
+    );
+    assert_eq!(after[0]["status"], "interrupted");
+}
+
+/// The reconcile must not touch a subagent that did stop, and must not invent
+/// a status for one that never started.
+#[tokio::test]
+async fn recovery_leaves_finished_subagents_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store
+        .initialize("parent", "parent", dir.path().to_str().unwrap())
+        .await
+        .unwrap();
+    store
+        .record(
+            "parent",
+            "subagent_start",
+            serde_json::json!({"subagent_id":"child","description":"done","background":true}),
+        )
+        .await
+        .unwrap();
+    store
+        .record(
+            "parent",
+            "subagent_stop",
+            serde_json::json!({"subagent_id":"child","reason":"completed","text":"ok"}),
+        )
+        .await
+        .unwrap();
+    store.recover().await.unwrap();
+    let after = store.subagents("parent").await.unwrap();
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0]["status"], "completed");
+    assert_eq!(after[0]["text"], "ok");
+}
