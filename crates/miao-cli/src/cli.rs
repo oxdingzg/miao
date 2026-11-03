@@ -4076,11 +4076,9 @@ fn list_models() -> Result<(), String> {
         Err(_) => {
             // Same layered stack the engine start reads; the workspace is the
             // invocation directory because this command has no other anchor.
-            let layers = config_layers(
-                std::path::Path::new("."),
-                None,
-                &|name| std::env::var(name).ok(),
-            );
+            let layers = config_layers(std::path::Path::new("."), None, &|name| {
+                std::env::var(name).ok()
+            });
             model_routes(&layers, "")?
                 .iter()
                 .filter_map(|route| route["id"].as_str().map(str::to_string))
@@ -5691,6 +5689,43 @@ mod tests {
         std::fs::write(dir.join("miao.jsonc"), "{ \"model\": \"a/b\" }").expect("config");
         assert!(plugin_entries(Some(&dir)).expect("parses").is_empty());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn every_management_command_named_in_the_inventory_is_reachable() {
+        // CLI-06 item 3: each command either has a Rust owner or a stated
+        // deferral in docs/cli.md. This pins the Rust-owned set so a command
+        // cannot silently disappear from the binary while the inventory still
+        // claims it lives here.
+        let owned = [
+            "auth",
+            "models",
+            "agent",
+            "db",
+            "doctor",
+            "remote",
+            "upgrade",
+            "uninstall",
+            "session",
+        ];
+        let usage: Vec<&str> = super::USAGE.lines().collect();
+        for command in owned {
+            assert!(
+                usage
+                    .iter()
+                    .any(|line| line.contains(&format!("miao {command}"))),
+                "docs/cli.md owns `{command}` in Rust but USAGE never names it"
+            );
+        }
+        // The deferrals must stay visible rather than silently absent: the
+        // inventory's ts-only and rust-todo rows are the contract for what is
+        // NOT here.
+        for deferred in ["config", "mcp", "skill", "runtime"] {
+            assert!(
+                !usage.iter().any(|line| line.contains(&format!("miao {deferred} "))),
+                "`{deferred}` is deferred in the inventory and must not appear as a Rust command yet"
+            );
+        }
     }
 
     #[test]
