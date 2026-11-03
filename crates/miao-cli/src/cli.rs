@@ -4070,10 +4070,19 @@ fn list_models() -> Result<(), String> {
             collect_ids(&manifest, &mut ids);
             ids
         }
-        Err(_) => model_routes(product_config_dir(None).as_deref(), "")?
-            .iter()
-            .filter_map(|route| route["id"].as_str().map(str::to_string))
-            .collect(),
+        Err(_) => {
+            // Same layered stack the engine start reads; the workspace is the
+            // invocation directory because this command has no other anchor.
+            let layers = config_layers(
+                std::path::Path::new("."),
+                None,
+                &|name| std::env::var(name).ok(),
+            );
+            model_routes(&layers, "")?
+                .iter()
+                .filter_map(|route| route["id"].as_str().map(str::to_string))
+                .collect()
+        }
     };
     ids.sort();
     ids.dedup();
