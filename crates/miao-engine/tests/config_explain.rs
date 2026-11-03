@@ -181,3 +181,48 @@ fn malformed_utf8_reports_a_safe_error_instead_of_debugging_input_bytes() {
     assert!(!error.contains("private-input-value"));
     assert!(!error.contains("bytes"));
 }
+
+/// EXT-05's other half: a disabled hook has to be *identifiable* in the
+/// effective configuration, not just skipped at runtime. `config explain` is
+/// the command that answers "what is in effect", so the entry has to appear
+/// there with its `enabled: false` intact.
+#[test]
+fn explain_reports_a_disabled_hook_with_its_flag() {
+    let root = tempfile::tempdir().unwrap();
+    let config = root.path().join("miao.json");
+    std::fs::write(
+        &config,
+        r#"{"hooks":{"entries":[{"event":"pre_tool_use","tool":"read_file","command":["true"],"enabled":false}]}}"#,
+    )
+    .unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args(["config", "explain", "--config-sources", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(json!([{"file":config}]).to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_str(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    let hooks = value["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["path"][0] == "hooks")
+        .unwrap_or_else(|| panic!("hooks missing from explain: {value}"));
+    assert!(
+        hooks.to_string().contains("false"),
+        "the disabled flag has to survive into the explanation: {hooks}"
+    );
+}
