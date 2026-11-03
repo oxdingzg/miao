@@ -2402,10 +2402,9 @@ impl App {
         let draft = self.draft.as_mut().expect("draft just ensured");
         draft.append(delta);
         self.shell.set_draft(&draft.text, &draft.reasoning);
-        // A delta is a token the operator is watching land: repaint now, not
-        // on the next one-second busy tick, so the answer streams instead of
-        // appearing in bursts.
-        self.redraw_requested = true;
+        // Deltas wake the render loop themselves, and its draw is a diff: the
+        // streamed rows update in place. A forced full repaint per token
+        // (resize-based redraw) flashed the whole screen on every token.
     }
 
     /// Whether the status line has something to count, which is also when the
