@@ -46,7 +46,12 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --locked --release
+        # The CLI suite points `HOME` and the `XDG_*` roots at throwaway trees, so
+        # tests that do it cannot run beside tests that open the ledger through
+        # them: on a 4-core runner the pair raced and failed with
+        # "unable to open database file". One test at a time, which the suite
+        # finishes in well under a second.
+        run: cargo test --locked --release -- --test-threads=1
 
       - name: The installer's probes answer
         # `install` keeps a build under `--build-id` and refuses anything that is
