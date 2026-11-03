@@ -954,43 +954,42 @@ impl Home {
         let gap_bottom = free.saturating_sub(gap_top);
 
         let mut y = area.y as usize;
+        // Every block centres across the full window width, and the whole
+        // group sits in the vertical leftover — banner, version, one blank
+        // row, then the prompt, exactly the stack the TS home draws.
+        let centre = |text: &str, style: Style| -> Line<'static> {
+            let pad = (width.saturating_sub(text.width())) / 2;
+            Line::from(Span::styled(format!("{}{}", " ".repeat(pad), text), style))
+        };
         let mut put_lines: Vec<Line<'static>> = Vec::new();
-
-        y += gap_top.min(free);
         for row in &banner_rows {
-            put_lines.push(Line::from(Span::styled(
-                format!("{:^width$}", row, width = banner_width + 2),
-                Style::new().fg(palette.primary),
-            )));
+            put_lines.push(centre(row, Style::new().fg(palette.primary)));
         }
-        put_lines.push(Line::from(Span::styled(
-            format!(
-                "{:^width$}",
-                format!("v{version}"),
-                width = banner_width + 2
-            ),
+        put_lines.push(centre(
+            &format!("v{version}"),
             Style::new().fg(palette.text_muted),
-        )));
-        y += 1; // the one blank row the TS home keeps between banner and prompt
+        ));
+        put_lines.push(Line::default()); // the blank row between banner and prompt
+        y += gap_top.min(free);
         let prompt_x = width.saturating_sub(prompt_width) / 2;
         let prompt_area = Rect {
             x: area.x + prompt_x as u16,
             width: prompt_width as u16,
-            y: area.y + gap_top as u16 + 5 + 1 + 1,
+            y: (y + put_lines.len() as usize) as u16,
             height: prompt_h + 1,
         };
         for (offset, line) in put_lines.iter().enumerate() {
             frame.render_widget(
                 Paragraph::new(line.clone()),
                 Rect {
-                    y: area.y + gap_top as u16 + offset as u16,
+                    y: y as u16 + offset as u16,
                     height: 1,
                     ..area
                 },
             );
         }
         render_composer(frame, prompt_area, composer, &self.theme);
-        let mut notice_y = area.y + gap_top as u16 + 5 + 1 + 1 + prompt_h + 1;
+        let mut notice_y = prompt_area.y + prompt_h + 1;
         if let Some(warning) = &self.warning {
             frame.render_widget(
                 Paragraph::new(Span::styled(
