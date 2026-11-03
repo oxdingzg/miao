@@ -33,6 +33,10 @@ export class Entry extends Schema.Class<Entry>("ConfigV2.Hooks.Entry")({
     .annotate({
       description: "Hook time budget in milliseconds (default 10000).",
     }),
+  enabled: Schema.Boolean.pipe(Schema.optional).annotate({
+    description:
+      "Set false to keep the entry in configuration without running it. Defaults to true; absent means enabled, so a hook written before this field existed still fires.",
+  }),
 }) {}
 
 export class Info extends Schema.Class<Info>("ConfigV2.Hooks")({

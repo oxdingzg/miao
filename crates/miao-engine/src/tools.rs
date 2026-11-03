@@ -474,6 +474,12 @@ impl Tools {
         serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)
     }
     pub fn with_hooks(self, hooks: Vec<crate::hooks::Hook>) -> Result<Self, ToolError> {
+        // A disabled entry stays in configuration so it can be re-enabled
+        // without rewriting it, but it must not run. Filtering here rather than
+        // at each call site means one place decides, and `config explain` still
+        // reports the entry.
+        let hooks: Vec<crate::hooks::Hook> =
+            hooks.into_iter().filter(|hook| hook.enabled).collect();
         crate::hooks::validate(&hooks)?;
         self.set_hooks(hooks);
         Ok(self)
