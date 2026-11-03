@@ -5223,6 +5223,9 @@ async fn send_peer_message(
 ) -> Result<Value, ToolError> {
     /// Bounded so one caller cannot flood a peer's inbox.
     const MAX_INBOUND_QUEUE: usize = 16;
+    /// How many replies one message may receive. Two Sessions answering each
+    /// other is the loop this bounds; one answer per request ends it.
+    const MAX_REPLIES_PER_MESSAGE: usize = 1;
     let input = prepared.input();
     let to = input.get("to").and_then(Value::as_str).unwrap_or_default();
     let message = input
@@ -5296,6 +5299,32 @@ async fn send_peer_message(
         {
             return Err(ToolError::External(format!(
                 "no message {receipt} was sent to this Session by {target}; a reply must answer a real receipt"
+            )));
+        }
+        // A loop is two Sessions answering each other forever. The cheapest
+        // honest bound is per message: one request is answered once. A second
+        // reply to the same receipt is refused with the reason, so the pair
+        // stops instead of ping-ponging until a token budget runs out — and the
+        // operator sees why rather than watching the cost climb.
+        let already: usize = {
+            use rusqlite::params;
+            let target = target.clone();
+            let receipt = receipt.to_string();
+            inner
+                .store
+                .call(move |conn| {
+                    Ok(conn.query_row(
+                        "SELECT count(*) FROM engine_input WHERE session_id=?1 AND prompt LIKE ?2",
+                        params![target, format!("%(reply to {receipt})%")],
+                        |row| row.get::<_, u64>(0),
+                    )?)
+                })
+                .await
+                .map_err(external)? as usize
+        };
+        if already >= MAX_REPLIES_PER_MESSAGE {
+            return Err(ToolError::External(format!(
+                "{receipt} already has {already} reply; a second one is how two Sessions loop.                  Send a new message without in_reply_to if the thread has moved on"
             )));
         }
     }
