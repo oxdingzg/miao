@@ -435,6 +435,7 @@ async fn runtime_permission_denial_prevents_wire_dispatch_and_allowed_error_is_d
                         "import sys;sys.exit(2)".into(),
                     ],
                     timeout_ms: 30000,
+                    enabled: true,
                 }])
                 .unwrap()
         } else {

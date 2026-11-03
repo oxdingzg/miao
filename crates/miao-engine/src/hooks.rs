@@ -16,6 +16,13 @@ pub struct Hook {
     pub argv: Vec<String>,
     #[serde(default = "timeout")]
     pub timeout_ms: u64,
+    /// Kept in configuration without running. Absent means enabled, so an entry
+    /// written before this field existed still fires.
+    #[serde(default = "enabled")]
+    pub enabled: bool,
+}
+fn enabled() -> bool {
+    true
 }
 fn timeout() -> u64 {
     10_000

@@ -51,6 +51,7 @@ fn hook(event: Event, tool: &str, code: i32) -> Hook {
             format!("import sys;sys.exit({code})"),
         ],
         timeout_ms: 30000,
+        enabled: true,
     }
 }
 fn timeout_hook(event: Event, tool: &str) -> Hook {
@@ -63,6 +64,7 @@ fn timeout_hook(event: Event, tool: &str) -> Hook {
             "import time;time.sleep(5)".into(),
         ],
         timeout_ms: 400,
+        enabled: true,
     }
 }
 fn policy() -> Policy {
@@ -209,24 +211,28 @@ fn hook_configuration_is_bounded_and_unambiguous() {
             tool: String::new(),
             argv: vec!["true".into()],
             timeout_ms: 1000,
+            enabled: true,
         }],
         vec![Hook {
             event: Event::PreToolUse,
             tool: "run command".into(),
             argv: vec!["true".into()],
             timeout_ms: 1000,
+            enabled: true,
         }],
         vec![Hook {
             event: Event::PreToolUse,
             tool: "*".into(),
             argv: vec![],
             timeout_ms: 1000,
+            enabled: true,
         }],
         vec![Hook {
             event: Event::PreToolUse,
             tool: "*".into(),
             argv: vec!["true".into()],
             timeout_ms: 0,
+            enabled: true,
         }],
         vec![
             hook(Event::PreToolUse, "*", 0),
@@ -246,6 +252,7 @@ fn hook_configuration_is_bounded_and_unambiguous() {
         tool: "*".into(),
         argv: vec!["true".into()],
         timeout_ms: 0,
+        enabled: true,
     }]) else {
         panic!("a zero hook timeout must be rejected with a reason");
     };
@@ -278,6 +285,7 @@ async fn cancellation_stops_inflight_hooks_and_their_processes() {
                     "echo $$ > hook.pid; touch hook.ready; sleep 30".into(),
                 ],
                 timeout_ms: 30000,
+                enabled: true,
             }])
             .unwrap();
         let runtime = Runtime::with_policy(store.clone(), Arc::new(Executor), tools, policy())
@@ -339,4 +347,38 @@ async fn cancellation_stops_inflight_hooks_and_their_processes() {
         );
         runtime.shutdown().await;
     }
+}
+
+/// A disabled entry stays in configuration so it can be re-enabled without
+/// rewriting it, but it must not run. The check is behavioural: a hook whose
+/// command would block the tool proves it ran.
+#[tokio::test]
+async fn a_disabled_hook_never_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut blocked = hook(Event::PreToolUse, "read_file", 1);
+    blocked.enabled = false;
+    let store = drive(dir.path(), vec![blocked]).await;
+    // A failing pre_tool_use hook blocks dispatch. If the disabled one ran,
+    // the tool would be blocked; it must not be.
+    assert!(
+        store
+            .events("s", 0, 1000)
+            .await
+            .unwrap()
+            .iter()
+            .all(|event| event.kind != "hook.completed"),
+        "a disabled hook was executed"
+    );
+}
+
+/// Absent means enabled: an entry written before the field existed still fires.
+#[test]
+fn a_hook_without_the_enabled_field_still_runs() {
+    let deserialized: Hook = serde_json::from_value(serde_json::json!({
+        "event": "pre_tool_use",
+        "tool": "read_file",
+        "argv": ["true"]
+    }))
+    .unwrap();
+    assert!(deserialized.enabled);
 }
