@@ -671,8 +671,13 @@ pub(crate) async fn execute_with_progress(
     }
     readers.abort_all();
     while readers.join_next().await.is_some() {}
-    stdout.truncate(32768);
-    stderr.truncate(32768);
+    // Cut on a character boundary, not a byte offset. The old
+    // `truncate(32768)` could split a multi-byte sequence, and the
+    // `from_utf8_lossy` that followed replaced the orphan bytes with U+FFFD —
+    // so a CJK or emoji block that happened to straddle the limit came back
+    // with a replacement character the command never wrote.
+    let stdout = truncate_utf8(stdout, 32768);
+    let stderr = truncate_utf8(stderr, 32768);
     #[cfg(unix)]
     let signal = {
         use std::os::unix::process::ExitStatusExt;
@@ -694,6 +699,37 @@ async fn read_pipe(
     let mut bytes = Vec::new();
     stream.take(32769).read_to_end(&mut bytes).await?;
     Ok((is_stdout, bytes))
+}
+
+/// Cut `bytes` to at most `limit` bytes without splitting a UTF-8 character.
+///
+/// A limit that lands inside a multi-byte sequence shortens to the start of
+/// that sequence instead, so the caller's `from_utf8_lossy` has nothing to
+/// replace: every byte it sees still spell the text the command wrote. Input
+/// that is not valid UTF-8 at all keeps the plain byte cut, because there is no
+/// boundary to preserve and the lossy conversion is going to replace it anyway.
+fn truncate_utf8(mut bytes: Vec<u8>, limit: usize) -> Vec<u8> {
+    if bytes.len() <= limit {
+        return bytes;
+    }
+    match std::str::from_utf8(&bytes) {
+        Ok(_) => {
+            // Whole buffer is valid, so a boundary exists at or below `limit`:
+            // back up over the continuation bytes of the character it splits.
+            let mut end = limit;
+            while end > 0 && (bytes[end] & 0xC0) == 0x80 {
+                end -= 1;
+            }
+            bytes.truncate(end);
+        }
+        Err(error) if error.valid_up_to() >= limit => {
+            // The cut falls inside the first invalid sequence, so the valid
+            // prefix already ends at or before the limit.
+            bytes.truncate(error.valid_up_to());
+        }
+        Err(_) => bytes.truncate(limit),
+    }
+    bytes
 }
 
 /// Shared confined spawn for foreground commands and Session-owned terminals.
@@ -830,4 +866,53 @@ pub(crate) async fn spawn(
         _lifeline: lifeline,
     };
     Ok((group, master, temp))
+}
+
+#[cfg(test)]
+mod truncate_utf8_tests {
+    use super::truncate_utf8;
+
+    /// A limit that lands inside a CJK character must back up to its start
+    /// rather than leave a partial sequence for `from_utf8_lossy` to turn into
+    /// U+FFFD. Each CJK glyph is three bytes.
+    #[test]
+    fn a_cut_inside_a_multibyte_character_lands_on_its_boundary() {
+        let text = "中文输出";
+        let bytes = text.as_bytes();
+        // 4 bytes falls inside the second glyph (bytes 3..6).
+        let cut = truncate_utf8(bytes.to_vec(), 4);
+        assert_eq!(cut, "中".as_bytes());
+        assert_eq!(String::from_utf8(cut).unwrap(), "中");
+    }
+
+    #[test]
+    fn a_cut_on_a_boundary_keeps_the_whole_prefix() {
+        let bytes = "中文输出".as_bytes().to_vec();
+        let cut = truncate_utf8(bytes, 6);
+        assert_eq!(String::from_utf8(cut).unwrap(), "中文");
+    }
+
+    #[test]
+    fn a_cut_at_a_four_byte_emoji_starts_before_it() {
+        // The emoji is four bytes; limit 1 leaves only the ASCII prefix.
+        let text = "a😀b";
+        let cut = truncate_utf8(text.as_bytes().to_vec(), 2);
+        assert_eq!(String::from_utf8(cut).unwrap(), "a");
+    }
+
+    #[test]
+    fn a_buffer_within_the_limit_is_untouched() {
+        let bytes = "short".as_bytes().to_vec();
+        assert_eq!(truncate_utf8(bytes.clone(), 32), bytes);
+        // Exactly at the limit is still untouched, not shortened.
+        assert_eq!(truncate_utf8(bytes.clone(), 5), bytes);
+    }
+
+    /// Binary output has no boundary to preserve; the byte cut stays as it was
+    /// so the lossy conversion behaves exactly as before.
+    #[test]
+    fn invalid_utf8_keeps_the_plain_byte_cut() {
+        let bytes = vec![0xff, 0xfe, 0xfd, 0xfc, 0xfb];
+        assert_eq!(truncate_utf8(bytes.clone(), 3), &bytes[..3]);
+    }
 }
