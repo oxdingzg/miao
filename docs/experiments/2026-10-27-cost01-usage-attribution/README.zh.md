@@ -36,4 +36,4 @@
 
 ## 本轮测试
 
-- macmini：`cargo test --test auxiliary_usage` 2/2（含新增缺席轴断言）；`cargo fmt` 干净。
+- macOS 构建机：`cargo test --test auxiliary_usage` 2/2（含新增缺席轴断言）；`cargo fmt` 干净。

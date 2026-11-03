@@ -131,7 +131,7 @@ CLI 同时在子进程环境里设置 `MIAO_TOOL_BIN=<Global.Path.bin>`，并继
 ## 7. 验证
 
 - Rust：`cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`
-  （xx02）。
+  （the Linux build host）。
 - TS：`bun typecheck` 与 `bun test test/cli`（在 `packages/miao`）。
 - 端到端：`MIAO_TUI=rust miao-dev --db <tmp> --prompt "hi"` 起 Rust TUI、
   引擎被拉起、会话可创建；`--tui legacy` 仍起 TS TUI。

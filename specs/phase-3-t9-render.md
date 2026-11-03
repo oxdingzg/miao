@@ -95,4 +95,4 @@ schedule_wakeup/cancel_wakeup/cron_* → schedule   lsp_* → lsp
   shell 结果投影（stdout+stderr+exit/timeout/error）；todo 解析与渲染；read 摘要；
   file diff 渲染与预览上限。
 - pty 冒烟：沿用 T4/T5 的假引擎 transcript fixture，断言 markdown 与工具行出现在屏幕上。
-- `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`（xx02）。
+- `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`（the Linux build host）。

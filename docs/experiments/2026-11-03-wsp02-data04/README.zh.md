@@ -13,7 +13,7 @@ Harness：`crates/miao-engine/tests/vcs_scale.rs`（engine 层，合成 5000 文
 `crates/miao-tui/tests/vcs_latency.rs`（真 TUI 走真 wire 对脚本 engine，
 答案放大到 3300 条；leader 和弦到文件数上屏为端到端样本，paint/decode 单列基线）。
 
-Engine 层，release，macmini（M4，macOS）：
+Engine 层，release，macOS 构建机（M4，macOS）：
 
 | 场景          | engine p50/p95 ms | 裸 git p50/p95 ms | engine 份额 p50 ms | 答案字节 |
 | ------------- | ----------------- | ------------------ | ------------------- | -------- |

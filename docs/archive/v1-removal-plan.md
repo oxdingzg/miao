@@ -18,11 +18,11 @@
 7. **`--mini`**：迁到 V2 并保持现有体验。
 8. **app 的每轮 DiffSummary 与 inline comment**：在 V2 实现每轮 DiffSummary；inline comment 若 V2 无对应模型则删除（实施前单独确认）。
 9. **Copilot / Azure / Bedrock / Vertex**：删 V1 之前在 V2 补齐，避免能力倒退。
-10. **旧库文件**：P3 在副本上验证通过、真库压缩并观察一周后，再删除 `miao.db.bak-20261001`、`*.compacted-*` 等（删除前确认）；macmini 等其他机器上的 miao 库纳入迁移清单。
+10. **旧库文件**：P3 在副本上验证通过、真库压缩并观察一周后，再删除 `miao.db.bak-20261001`、`*.compacted-*` 等（删除前确认）；macOS 构建机 等其他机器上的 miao 库纳入迁移清单。
 11. **`packages/web` 文档**：迁到 mtty.dev 后删除；`sdks/vscode` 删除。
 12. **CI**：typecheck CI 在 main 上运行，作为每个删除阶段的硬门槛。
 
-执行约束：编译、打包、全量测试在构建机上进行（macmini：macOS；xx02/xx01：Ubuntu；192.168.3.96：Windows），不在开发者本机进行；全量测试以 CI 为准。优先项：先修 MCP 工具调用不再询问权限的安全退步（P1 第一项）。
+执行约束：编译、打包、全量测试在构建机上进行（macOS 构建机：macOS；Linux 构建机：Ubuntu；Windows 构建机：Windows），不在开发者本机进行；全量测试以 CI 为准。优先项：先修 MCP 工具调用不再询问权限的安全退步（P1 第一项）。
 
 进展（2026-10-02）：P4 第 1 步的客户端回退已移除——TUI 源码中全部 `Flag.MIAO_TUI_V2` 分支删除，`MIAO_TUI_V2` 开关从 `core` 移除；app 的 `?protocol=v1`、`createV1Api` 运行时与 `CompatibleApi` 的 legacy 类型全部删除（`CompatibleApi = ServerApi`，调用点去掉 V2 不支持的 `agent`/`model`/`variant`/`legacyParts`），API 选择不再依赖协议探测；`run.ts`/`pr.ts`/`session.ts` 的开关引用清理。TUI 测试夹具已迁到 V2，`packages/tui` 366 pass/0 fail，`core`/`tui`/`app`/`miao` typecheck 通过。
 注意：app 里仍有一批 `protocol === "v1"` 守护的 V1 专属功能路径（terminal `pty.shells`、custom provider、`project.update`、legacy `session.update` 归档、`path.get` 兜底等）。它们用的是 legacy client，而对应 `/api/*` 路由尚未迁移，因此本轮**不能**删除，留到 P7 非会话旧路由迁移后处理。服务端 V1 路由与 `packages/miao/src/session|tool` 同样待 P3 压缩与 R1 soak 之后删除。
@@ -327,7 +327,7 @@ transform / reload，`aisdk.sdk` / `aisdk.language`，以及 `tool.before` / `to
 - `miao-local.db`（dev 通道）：已经没有 `message` 表，即已压缩；
 - 另有 `miao.db.bak-20261001`、多个 `*.compacted-*` 旧文件，共约 3.5 GB，可清理（需用户确认）。
 
-其他机器（如 macmini）上是否有 miao 库【未核实】。
+其他机器（如 macOS 构建机）上是否有 miao 库【未核实】。
 
 ### 3.2 克隆上实跑（0.0.33）
 
@@ -563,7 +563,7 @@ miao db compact --yes        → before 2609.7 MB → after 438.8 MB; deleted 16
 9. **Copilot、Azure、Bedrock、Vertex。** 它们在 V2 runner 里还不支持（没配 `api.url` 时）。删 V1 之前要不要补齐，
    还是接受只支持现有 provider？
 10. **旧库文件。** `miao.db.bak-20261001`、`*.compacted-*`、`miao-main.db` 的处置（约 5.6 GB），
-    以及其他机器（macmini 等）上的 miao 库要不要纳入迁移。
+    以及其他机器（macOS 构建机 等）上的 miao 库要不要纳入迁移。
 11. **`packages/web` 的文档内容。** 要不要保留或搬到 mtty.dev 之后再删？
     `sdks/vscode` 是做成 miao 扩展还是删除？
 12. **CI。** 是否让 typecheck CI 在 main 上运行，并把它作为每个删除阶段的硬门槛（建议是）？

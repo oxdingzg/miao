@@ -92,7 +92,7 @@ Definition of Done. Run in `miao-dev` only.
 - [x] Retire V1 tables and the legacy event range — `miao db compact` (batched delete of the `message.*` events, drop `message` / `part`, reset only the `event_sequence` rows it emptied, checkpoint + vacuum); the V1 readers and `miao import` explain the retirement instead of failing on a missing table
   - [x] Compact only after a release carries the legacy fallback — `miao.db` compacted 2026-10-02 (2746 MB → 574 MB) and read by release 0.0.34
   - [ ] Compact `miao-main.db` (preview channel; 2.3 GB on 2026-10-03, still uncompacted)
-  - [ ] Delete the old `miao*.db.bak-*` / `*.compacted-*` copies (~15 GB in `~/.local/share/miao`) after a week of clean running — needs owner confirmation; also migrate databases on other machines (macmini)
+  - [ ] Delete the old `miao*.db.bak-*` / `*.compacted-*` copies (~15 GB in `~/.local/share/miao`) after a week of clean running — needs owner confirmation; also migrate databases on other machines (macOS 构建机)
   - [ ] Measure `miao.db` against the <200 MB acceptance — 666 MB on 2026-10-03
 - [ ] Event-log retention/compaction (snapshot-then-truncate)
 - [ ] Per-project blob GC (refcount or mark-and-sweep)
