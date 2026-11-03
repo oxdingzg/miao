@@ -74,6 +74,10 @@ impl Harness {
         cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
         cmd.arg("--db");
         cmd.arg(&db);
+        // The launcher is a prompt now (`d5ca52247a`); `--session` is its
+        // direct entry point, so these measurements start in the Session.
+        cmd.arg("--session");
+        cmd.arg("ses_a");
         let child = pair.slave.spawn_command(cmd).expect("spawn miao-tui");
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().expect("clone reader");
@@ -171,10 +175,11 @@ fn measure(dir: PathBuf, fresh: bool, rounds: usize) -> Vec<Sample> {
             }
             std::thread::sleep(Duration::from_millis(2));
         }
-        let ready_to_type = until(&harness, "Project A", spawned);
-        let opened = Instant::now();
-        harness.write(b"\r");
-        let ready_to_submit = until(&harness, "hello from the fixture", opened);
+        let ready_to_type = until(&harness, "hello from the fixture", spawned);
+        // The Session is entered by `--session`, so there is no list to open:
+        // the transcript arriving is the same milestone the two-step launch
+        // measured.
+        let ready_to_submit = ready_to_type;
         samples.push(Sample {
             first_frame_ms: first_frame.unwrap_or(BUDGET).as_millis(),
             ready_to_type_ms: ready_to_type.unwrap_or(BUDGET).as_millis(),

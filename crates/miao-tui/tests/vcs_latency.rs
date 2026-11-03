@@ -77,6 +77,10 @@ impl Harness {
         }
         cmd.arg("--db");
         cmd.arg(&db);
+        // The launcher is a prompt now (`d5ca52247a`); `--session` is its
+        // direct entry point, so these measurements start in the Session.
+        cmd.arg("--session");
+        cmd.arg("ses_a");
         let child = pair.slave.spawn_command(cmd).expect("spawn miao-tui");
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().expect("clone reader");
@@ -160,11 +164,9 @@ fn measure_scenario(
     let mut samples = Vec::new();
     for _ in 0..repeats {
         let mut harness = Harness::spawn(dir.clone(), scaled_files);
-        let home = until(&harness, "Project A", Instant::now());
+        let transcript = until(&harness, "hello from the fixture", Instant::now());
         let mut chord_time = None;
-        if home.is_some() {
-            harness.write(b"\r");
-            let transcript = until(&harness, "hello from the fixture", Instant::now());
+        if transcript.is_some() {
             if transcript.is_some() {
                 // Leader arm, then the chord key: the clock starts at the arm.
                 let started = Instant::now();

@@ -55,6 +55,28 @@ impl Harness {
             launch_prefix,
             environment,
             false,
+            None,
+        )
+    }
+
+    /// Boot straight into a Session, skipping the launcher's navigation.
+    ///
+    /// The launcher is a prompt now, not a history list (`d5ca52247a`): there
+    /// is no row to select, and Enter submits the draft instead of opening the
+    /// first Session. `--session` is the launcher's own direct entry point, so
+    /// a test that is about what a Session shows does not also re-test how the
+    /// launcher gets there.
+    fn spawn_in_session(label: &str, session: &str) -> Self {
+        Self::spawn_configured(
+            label,
+            false,
+            true,
+            false,
+            false,
+            false,
+            &[],
+            false,
+            Some(session),
         )
     }
 
@@ -68,6 +90,7 @@ impl Harness {
         launch_prefix: bool,
         environment: &[(&str, &str)],
         shell: bool,
+        session: Option<&str>,
     ) -> Self {
         let dir = workspace(label);
         std::fs::create_dir_all(&dir).expect("workspace dir");
@@ -143,6 +166,12 @@ impl Harness {
                 cmd.arg(&db);
             }
         }
+        if !shell {
+            if let Some(session) = session {
+                cmd.arg("--session");
+                cmd.arg(session);
+            }
+        }
         for (key, value) in environment {
             cmd.env(key, value);
         }
@@ -202,7 +231,16 @@ impl Harness {
                 .iter()
                 .any(|(key, value)| *key == "MIAO_TUI_TEST_BACKGROUND" && *value == "1");
             if background {
-                harness.write(b"set -b\r\"$MIAO_TUI_TEST_PROGRAM\" --workspace \"$PWD\" --db \"$MIAO_TUI_TEST_DB\" &\r");
+                let line = match session {
+                    Some(session) => format!(
+                        "set -b\r\"$MIAO_TUI_TEST_PROGRAM\" --workspace \"$PWD\" --db \"$MIAO_TUI_TEST_DB\" --session {session} &\r"
+                    ),
+                    None => {
+                        "set -b\r\"$MIAO_TUI_TEST_PROGRAM\" --workspace \"$PWD\" --db \"$MIAO_TUI_TEST_DB\" &\r"
+                            .to_string()
+                    }
+                };
+                harness.write(line.as_bytes());
                 assert!(
                     wait_for(&harness, "Stopped", Duration::from_secs(2)),
                     "background startup did not wait for fg: {}",
@@ -217,6 +255,11 @@ impl Harness {
                     "background UI started an engine before foreground admission"
                 );
                 harness.write(b"fg\r");
+            } else if let Some(session) = session {
+                let line = format!(
+                    "\"$MIAO_TUI_TEST_PROGRAM\" --workspace \"$PWD\" --db \"$MIAO_TUI_TEST_DB\" --session {session}\r"
+                );
+                harness.write(line.as_bytes());
             } else {
                 harness.write(
                     b"\"$MIAO_TUI_TEST_PROGRAM\" --workspace \"$PWD\" --db \"$MIAO_TUI_TEST_DB\"\r",
@@ -258,18 +301,14 @@ impl Harness {
         parser.screen().contents()
     }
 
-    /// Move the home list onto its second row.
+    /// Move the cursor one row down in the dialog that currently owns the
+    /// keyboard.
     ///
-    /// The landing list owns the keyboard from the start, so the rows only
-    /// have to be painted first: a Down that arrives before they exist is
-    /// dropped, and without the wait the test opened the first Session and
-    /// then waited for text only the second one has.
+    /// The landing screen is a prompt now, not a list, so this is used by the
+    /// theme and account dialogs; their rows are already painted when the test
+    /// asks.
     fn select_second_row(&mut self) {
-        assert!(
-            wait_for_plain(self, "Project B", Duration::from_secs(5)),
-            "the second row never rendered:\n{}",
-            plain(&self.text())
-        );
+        std::thread::sleep(Duration::from_millis(100));
         self.write(b"\x1b[B");
     }
 
@@ -384,23 +423,7 @@ fn wait_exit(child: &mut Box<dyn Child + Send + Sync>, timeout: Duration) -> Opt
 
 #[test]
 fn boots_renders_panes_and_quits_on_ctrl_c() {
-    let mut harness = Harness::spawn_engine("start");
-    assert!(
-        wait_for(&harness, "sessions", Duration::from_secs(2)),
-        "the home list did not render in time:\n{}",
-        harness.text()
-    );
-    assert!(
-        wait_for(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render the Session titles:\n{}",
-        harness.text()
-    );
-    let rendered = harness.text();
-    assert!(
-        rendered.contains("sessions"),
-        "home pane missing:\n{rendered}"
-    );
-    harness.write(b"\r");
+    let mut harness = Harness::spawn_in_session("start", "ses_a");
     assert!(
         wait_for(&harness, "hello from the fixture", Duration::from_secs(2)),
         "the transcript did not render the Session messages:\n{}",
@@ -413,7 +436,7 @@ fn boots_renders_panes_and_quits_on_ctrl_c() {
         "transcript pane missing:\n{rendered}"
     );
     assert!(
-        rendered.contains("composer"),
+        rendered.contains("Ask anything"),
         "composer pane missing:\n{rendered}"
     );
     harness.write(b"\x03");
@@ -425,14 +448,7 @@ fn boots_renders_panes_and_quits_on_ctrl_c() {
 
 #[test]
 fn tag_sets_the_label_from_its_argument() {
-    let mut harness = Harness::spawn_engine("tag");
-    assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        plain(&harness.text())
-    );
-    harness.select_second_row();
-    harness.write(b"\r");
+    let mut harness = Harness::spawn_in_session("tag", "ses_b");
     // The transcript is drawn through incremental frame diffs, so the raw
     // output stream holds fragments of a line across redraws; assert on the
     // reconstructed screen, which is what an operator reads.
@@ -461,14 +477,7 @@ fn tag_sets_the_label_from_its_argument() {
 
 #[test]
 fn recall_restores_an_elided_tool_output() {
-    let mut harness = Harness::spawn_engine("recall");
-    assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        plain(&harness.text())
-    );
-    harness.select_second_row();
-    harness.write(b"\r");
+    let mut harness = Harness::spawn_in_session("recall", "ses_b");
     assert!(
         wait_for_plain(
             &harness,
@@ -506,14 +515,7 @@ fn recall_restores_an_elided_tool_output() {
 
 #[test]
 fn recall_reports_a_handle_the_archive_cannot_resolve() {
-    let mut harness = Harness::spawn_engine("recall-missing");
-    assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        plain(&harness.text())
-    );
-    harness.select_second_row();
-    harness.write(b"\r");
+    let mut harness = Harness::spawn_in_session("recall-missing", "ses_b");
     assert!(wait_for_plain(
         &harness,
         "elided by context management",
@@ -544,13 +546,17 @@ fn recall_reports_a_handle_the_archive_cannot_resolve() {
 
 #[test]
 fn a_literal_launcher_prefix_reaches_the_child_without_shell_parsing() {
-    let mut harness = Harness::spawn_with("launch-prefix", false, true, false, false, true, &[]);
-    assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(3)),
-        "{}",
-        plain(&harness.text())
+    let mut harness = Harness::spawn_configured(
+        "launch-prefix",
+        false,
+        true,
+        false,
+        false,
+        true,
+        &[],
+        false,
+        Some("ses_a"),
     );
-    harness.write(b"\r");
     assert!(
         wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(3)),
         "{}",
@@ -565,16 +571,9 @@ fn a_literal_launcher_prefix_reaches_the_child_without_shell_parsing() {
 
 #[test]
 fn the_transcript_renders_markdown_and_tool_rows() {
-    let mut harness = Harness::spawn_engine("render");
-    assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        plain(&harness.text())
-    );
-    // Rows sort by recency: ses_a is first, and ses_b carries the renderer
-    // fixture (markdown document plus one completed read).
-    harness.select_second_row();
-    harness.write(b"\r");
+    // `ses_b` carries the renderer fixture: a markdown document plus one
+    // completed read.
+    let mut harness = Harness::spawn_in_session("render", "ses_b");
     // Same as tag_sets: the fixture arrives across frame diffs, so wait for
     // the reconstructed screen rather than the raw stream.
     assert!(
@@ -585,13 +584,13 @@ fn the_transcript_renders_markdown_and_tool_rows() {
     assert!(
         wait_for_screen(&harness, "Read 2 lines", Duration::from_secs(2)),
         "the tool summary did not render:\n{}",
-        plain(&harness.text())
+        harness.screen()
     );
     let rendered = harness.screen();
     for expected in [
         "• bold and code",
         "name │ value",
-        "✓ read  src/lib.rs",
+        "● read  src/lib.rs",
         "⎿ Read 2 lines",
     ] {
         assert!(
@@ -608,13 +607,7 @@ fn the_transcript_renders_markdown_and_tool_rows() {
 
 #[test]
 fn redraw_preserves_the_open_transcript_and_unsent_draft() {
-    let mut harness = Harness::spawn_engine("redraw");
-    assert!(wait_for_screen(
-        &harness,
-        "Project A",
-        Duration::from_secs(3)
-    ));
-    harness.write(b"\r");
+    let mut harness = Harness::spawn_in_session("redraw", "ses_a");
     assert!(wait_for_screen(
         &harness,
         "hello from the fixture",
@@ -687,8 +680,8 @@ fn redraw_preserves_the_open_transcript_and_unsent_draft() {
 fn resize_keeps_process_alive() {
     let mut harness = Harness::spawn_engine("resize");
     assert!(
-        wait_for(&harness, "sessions", Duration::from_secs(2)),
-        "the home list did not render in time:\n{}",
+        wait_for(&harness, "Ask anything", Duration::from_secs(5)),
+        "the launcher did not render in time:\n{}",
         harness.text()
     );
     for (rows, cols) in [(12, 60), (40, 120), (10, 40)] {
@@ -709,13 +702,7 @@ fn resize_keeps_process_alive() {
 #[test]
 fn multiline_paste_reaches_the_engine_verbatim() {
     for (label, separator) in [("lf", "\n"), ("crlf", "\r\n"), ("cr", "\r")] {
-        let mut harness = Harness::spawn_engine(&format!("paste-{label}"));
-        assert!(
-            wait_for(&harness, "Project A", Duration::from_secs(2)),
-            "the home list did not render:\n{}",
-            harness.text()
-        );
-        harness.write(b"\r");
+        let mut harness = Harness::spawn_in_session(&format!("paste-{label}"), "ses_a");
         assert!(
             wait_for(&harness, "hello from the fixture", Duration::from_secs(2)),
             "the Session did not open:\n{}",
@@ -765,13 +752,7 @@ fn multiline_paste_reaches_the_engine_verbatim() {
 
 #[test]
 fn ctrl_c_clears_a_draft_before_it_quits() {
-    let mut harness = Harness::spawn_engine("draft");
-    assert!(
-        wait_for(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        harness.text()
-    );
-    harness.write(b"\r");
+    let mut harness = Harness::spawn_in_session("draft", "ses_a");
     assert!(
         wait_for(&harness, "hello from the fixture", Duration::from_secs(2)),
         "the Session did not open:\n{}",
@@ -801,14 +782,18 @@ fn ctrl_c_clears_a_draft_before_it_quits() {
 /// human is needed without hunting. Measure it rather than assume it.
 #[test]
 fn a_blocking_approval_is_readable_within_a_three_second_scan() {
-    let mut harness = Harness::spawn_engine_approval("approval-scan");
-    let spawned = Instant::now();
-    assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        plain(&harness.text())
+    let mut harness = Harness::spawn_configured(
+        "approval-scan",
+        false,
+        true,
+        true,
+        false,
+        false,
+        &[],
+        false,
+        Some("ses_a"),
     );
-    harness.write(b"\r");
+    let spawned = Instant::now();
     assert!(
         wait_for_plain(&harness, "always allow", Duration::from_secs(3)),
         "the approval panel did not render:\n{}",
@@ -843,13 +828,17 @@ fn a_blocking_approval_is_readable_within_a_three_second_scan() {
 
 #[test]
 fn an_approval_is_answered_from_the_panel() {
-    let mut harness = Harness::spawn_engine_approval("approval");
-    assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        plain(&harness.text())
+    let mut harness = Harness::spawn_configured(
+        "approval",
+        false,
+        true,
+        true,
+        false,
+        false,
+        &[],
+        false,
+        Some("ses_a"),
     );
-    harness.write(b"\r");
     assert!(
         wait_for_plain(&harness, "always allow", Duration::from_secs(3)),
         "the approval panel did not render:\n{}",
@@ -902,13 +891,7 @@ fn an_approval_is_answered_from_the_panel() {
 
 #[test]
 fn the_leader_opens_the_model_dialog_and_selects_a_binding() {
-    let mut harness = Harness::spawn_engine("models");
-    assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        plain(&harness.text())
-    );
-    harness.write(b"\r");
+    let mut harness = Harness::spawn_in_session("models", "ses_a");
     assert!(
         wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(2)),
         "the Session did not open:\n{}",
@@ -949,12 +932,7 @@ fn the_leader_opens_the_model_dialog_and_selects_a_binding() {
 
 #[test]
 fn the_leader_opens_the_theme_dialog_and_saves_the_choice() {
-    let mut harness = Harness::spawn_engine("theme");
-    assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        plain(&harness.text())
-    );
+    let mut harness = Harness::spawn_in_session("theme", "ses_a");
     harness.write(b"\x18t");
     // The menu holds every built-in theme and opens around the active one; the
     // hint belongs to the dialog only, and the active row proves the window
@@ -995,13 +973,7 @@ fn the_leader_opens_the_theme_dialog_and_saves_the_choice() {
 
 #[test]
 fn the_status_dialog_shows_the_usage_report_and_the_debug_view() {
-    let mut harness = Harness::spawn_engine("status");
-    assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        plain(&harness.text())
-    );
-    harness.write(b"\r");
+    let mut harness = Harness::spawn_in_session("status", "ses_a");
     assert!(
         wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(2)),
         "the Session did not open:\n{}",
@@ -1041,13 +1013,7 @@ fn the_status_dialog_shows_the_usage_report_and_the_debug_view() {
 
 #[test]
 fn ctrl_o_switches_the_pinned_account() {
-    let mut harness = Harness::spawn_engine("accounts");
-    assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        plain(&harness.text())
-    );
-    harness.write(b"\r");
+    let mut harness = Harness::spawn_in_session("accounts", "ses_a");
     assert!(
         wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(2)),
         "the Session did not open:\n{}",
@@ -1085,13 +1051,7 @@ fn ctrl_o_switches_the_pinned_account() {
 
 #[test]
 fn a_stashed_draft_comes_back_into_the_composer() {
-    let mut harness = Harness::spawn_engine("stash");
-    assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        plain(&harness.text())
-    );
-    harness.write(b"\r");
+    let mut harness = Harness::spawn_in_session("stash", "ses_a");
     assert!(
         wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(2)),
         "the Session did not open:\n{}",
@@ -1159,13 +1119,17 @@ fn a_stashed_draft_comes_back_into_the_composer() {
 
 #[test]
 fn the_palette_runs_actions_and_a_template_command_reaches_the_engine() {
-    let mut harness = Harness::spawn_engine_with_commands("commands");
-    assert!(
-        wait_for_plain(&harness, "Project A", Duration::from_secs(2)),
-        "the home list did not render:\n{}",
-        plain(&harness.text())
+    let mut harness = Harness::spawn_configured(
+        "commands",
+        false,
+        true,
+        false,
+        true,
+        false,
+        &[],
+        false,
+        Some("ses_a"),
     );
-    harness.write(b"\r");
     assert!(
         wait_for_plain(&harness, "hello from the fixture", Duration::from_secs(2)),
         "the Session did not open:\n{}",
@@ -1230,8 +1194,8 @@ fn panic_restores_terminal() {
     // Windows still verifies the panic status and diagnostic below.
     #[cfg(not(windows))]
     assert!(
-        wait_for(&harness, "sessions", Duration::from_secs(2)),
-        "the home list did not render in time:\n{}",
+        wait_for(&harness, "Ask anything", Duration::from_secs(5)),
+        "the launcher did not render in time:\n{}",
         harness.text()
     );
     let status = wait_exit(&mut harness.child, Duration::from_secs(5))
@@ -1274,7 +1238,11 @@ fn panic_restores_terminal() {
 fn exit_signals_restore_the_terminal() {
     for signal in ["TERM", "HUP", "INT"] {
         let mut harness = Harness::spawn(&format!("signal-{signal}"), false);
-        assert!(wait_for_plain(&harness, "sessions", Duration::from_secs(3)));
+        assert!(wait_for_plain(
+            &harness,
+            "Ask anything",
+            Duration::from_secs(5)
+        ));
         let pid = harness.child.process_id().expect("child pid").to_string();
         assert!(std::process::Command::new("kill")
             .args([&format!("-{signal}"), &pid])
@@ -1297,13 +1265,7 @@ fn exit_signals_restore_the_terminal() {
 
 #[test]
 fn saved_permissions_review_and_revoke_through_the_engine_wire() {
-    let mut harness = Harness::spawn_engine("saved-permissions");
-    assert!(wait_for_plain(
-        &harness,
-        "Project A",
-        Duration::from_secs(3)
-    ));
-    harness.write(b"\r");
+    let mut harness = Harness::spawn_in_session("saved-permissions", "ses_a");
     assert!(wait_for_plain(
         &harness,
         "hello from the fixture",
@@ -1359,7 +1321,11 @@ fn terminal_title_toggle_persists_across_restart_and_an_environment_disable_wins
     )
     .unwrap();
     let mut first = Harness::spawn_engine("title-toggle");
-    assert!(wait_for_screen(&first, "Project A", Duration::from_secs(3)));
+    assert!(wait_for_screen(
+        &first,
+        "Ask anything",
+        Duration::from_secs(3)
+    ));
     assert!(wait_for(&first, "\x1b]0;miao\x07", Duration::from_secs(2)));
     first.write(b"\x14");
     assert!(wait_for_screen(
@@ -1378,7 +1344,7 @@ fn terminal_title_toggle_persists_across_restart_and_an_environment_disable_wins
     let mut second = Harness::spawn_engine("title-toggle");
     assert!(wait_for_screen(
         &second,
-        "Project A",
+        "Ask anything",
         Duration::from_secs(3)
     ));
     assert!(!second.text().contains("\x1b]0;miao\x07"));
@@ -1414,7 +1380,7 @@ fn terminal_title_toggle_persists_across_restart_and_an_environment_disable_wins
     );
     assert!(wait_for_screen(
         &disabled,
-        "Project A",
+        "Ask anything",
         Duration::from_secs(3)
     ));
     assert!(!disabled.text().contains("\x1b]0;miao\x07"));
@@ -1443,7 +1409,7 @@ fn title_payloads_cannot_satisfy_visible_text_assertions() {
 #[test]
 fn external_editor_exclusively_reads_stdin_then_returns_the_saved_draft() {
     let editor = format!("{} --editor", env!("CARGO_BIN_EXE_miao-tui-fake-engine"));
-    let mut harness = Harness::spawn_with(
+    let mut harness = Harness::spawn_configured(
         "editor-input",
         false,
         true,
@@ -1451,13 +1417,9 @@ fn external_editor_exclusively_reads_stdin_then_returns_the_saved_draft() {
         false,
         false,
         &[("VISUAL", &editor)],
+        false,
+        Some("ses_a"),
     );
-    assert!(wait_for_screen(
-        &harness,
-        "Project A",
-        Duration::from_secs(10)
-    ));
-    harness.write(b"\r");
     assert!(wait_for_screen(
         &harness,
         "hello from the fixture",
@@ -1517,12 +1479,6 @@ fn editor_interrupt_returns_to_the_ui_and_exit_signals_cancel_the_editor() {
             false,
             &[("VISUAL", &editor)],
         );
-        assert!(wait_for_screen(
-            &harness,
-            "Project A",
-            Duration::from_secs(10)
-        ));
-        harness.write(b"\r");
         assert!(wait_for_screen(
             &harness,
             "hello from the fixture",
@@ -1593,14 +1549,17 @@ fn editor_interrupt_returns_to_the_ui_and_exit_signals_cancel_the_editor() {
 #[cfg(unix)]
 #[test]
 fn shell_job_control_restores_the_terminal_and_preserves_the_draft() {
-    let mut harness =
-        Harness::spawn_configured("job-control", false, true, false, false, false, &[], true);
-    assert!(wait_for_screen(
-        &harness,
-        "Project A",
-        Duration::from_secs(2)
-    ));
-    harness.write(b"\r");
+    let mut harness = Harness::spawn_configured(
+        "job-control",
+        false,
+        true,
+        false,
+        false,
+        false,
+        &[],
+        true,
+        Some("ses_a"),
+    );
     assert!(wait_for_screen(
         &harness,
         "hello from the fixture",
@@ -1694,10 +1653,11 @@ fn background_startup_waits_for_foreground_before_taking_the_terminal() {
         false,
         &[("MIAO_TUI_TEST_BACKGROUND", "1")],
         true,
+        Some("ses_a"),
     );
     assert!(
-        wait_for_screen(&harness, "Project A", Duration::from_secs(2)),
-        "foreground UI did not render: {}",
+        wait_for_screen(&harness, "hello from the fixture", Duration::from_secs(5)),
+        "foreground UI did not open the Session: {}",
         harness.screen()
     );
     let offset = harness.text().len();
@@ -1719,18 +1679,7 @@ fn background_startup_waits_for_foreground_before_taking_the_terminal() {
 #[cfg(unix)]
 #[test]
 fn suspend_without_a_controlling_shell_does_not_leave_an_orphaned_job_stopped() {
-    let mut harness = Harness::spawn_engine("orphaned-job");
-    assert!(wait_for_screen(
-        &harness,
-        "Project A",
-        Duration::from_secs(2)
-    ));
-    harness.write(b"\r");
-    assert!(wait_for_screen(
-        &harness,
-        "hello from the fixture",
-        Duration::from_secs(2)
-    ));
+    let mut harness = Harness::spawn_in_session("orphaned-job", "ses_a");
     harness.write(b"orphan draft");
     assert!(wait_for_screen(
         &harness,

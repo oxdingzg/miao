@@ -932,6 +932,33 @@ mod tests {
         }
     }
 
+    /// A completed `read_file` puts its result on its own indented row, and
+    /// that row has to survive a narrow pane: `wrap_rows` folds a plain row at
+    /// the pane width, so a 44-column transcript used to break `  ⎿ Read 2
+    /// lines` in half with no hanging indent. The row is short by design — it
+    /// is a one-line summary — so it hangs under its own `⎿` column instead of
+    /// folding mid-phrase.
+    #[test]
+    fn a_short_read_summary_does_not_fold_mid_phrase() {
+        let lines = lines(
+            &tool(
+                "read_file",
+                json!({"path": "src/lib.rs"}),
+                Some(json!({"text": "one\ntwo", "sha256": "0"})),
+                false,
+            ),
+            None,
+            &theme(),
+            false,
+            None,
+        );
+        let rendered = rendered(&lines);
+        assert!(
+            rendered.iter().any(|line| line.contains("⎿ Read 2 lines")),
+            "{rendered:?}"
+        );
+    }
+
     fn rendered(lines: &[Line<'_>]) -> Vec<String> {
         lines
             .iter()

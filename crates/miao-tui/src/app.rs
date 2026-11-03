@@ -1139,15 +1139,31 @@ impl App {
         self.dialog = Some(dialog);
     }
 
+    /// Rebuild the open Session dialog around a refreshed catalog.
+    ///
+    /// The rows are replaced, but what the operator typed is not: a catalog
+    /// refresh mid-search — a rename landing, a title model answering, a pin —
+    /// would otherwise wipe the query and jump the list back to the full
+    /// history under the cursor the operator was reading.
     fn reopen_sessions_dialog(&mut self) {
-        let selected = match self.dialog.take() {
-            Some(Dialog::Sessions(list)) => list.rows.get(list.selected).map(|row| row.id.clone()),
-            _ => None,
+        let Some(Dialog::Sessions(previous)) = self.dialog.take() else {
+            self.dialog = Some(Dialog::sessions(&self.catalog));
+            return;
         };
+        let selected = previous
+            .rows
+            .get(previous.selected)
+            .map(|row| row.id.clone());
         let mut dialog = Dialog::sessions(&self.catalog);
-        if let (Some(list), Some(id)) = (dialog.list_mut(), selected) {
-            if let Some(index) = list.rows.iter().position(|row| row.id == id) {
-                list.selected = index;
+        if let Some(list) = dialog.list_mut() {
+            list.restore_search(&previous.filter.text(), previous.search);
+            // `restore_search` refilters, so a hit is looked up in the rows and
+            // then mapped to its place in the filtered view.
+            if let Some(row) = selected.and_then(|id| list.rows.iter().position(|row| row.id == id))
+            {
+                if let Some(index) = list.visible.iter().position(|visible| *visible == row) {
+                    list.selected = index;
+                }
             }
         }
         self.dialog = Some(dialog);
@@ -2043,6 +2059,15 @@ impl App {
                 self.shell.composer.set_mode(Mode::Normal);
                 return;
             }
+            // A question the engine already resolved — it expired, the run was
+            // interrupted, the process restarted — cannot be rejected either:
+            // the refusal is what left a blocking panel with no way out. Drop
+            // the stale prompt locally and let Escape mean what it means
+            // everywhere else. This runs before the rejection so a stale
+            // question never sends one the engine will refuse.
+            if self.dismiss_stale_question() {
+                return;
+            }
             if self.reject_question() {
                 return;
             }
@@ -2280,7 +2305,58 @@ impl App {
         true
     }
 
+    /// Clear a question panel whose question the engine no longer holds.
+    ///
+    /// This is the difference between "Esc declined it" and "there is nothing
+    /// left to decline": once the deadline passed, the engine refuses both
+    /// answers, so only dropping the panel locally can end the block.
+    fn dismiss_stale_question(&mut self) -> bool {
+        let Some(question_id) = self.shell.panel.as_ref().and_then(|panel| {
+            matches!(panel.kind, crate::pane::PanelKind::Question(_))
+                .then(|| panel.request_id().to_string())
+        }) else {
+            return false;
+        };
+        let now = crate::pane::now_ms();
+        let expired = self
+            .state
+            .questions
+            .iter()
+            .find(|question| question.question_id == question_id)
+            .is_some_and(|question| {
+                question
+                    .expires_at_ms
+                    .is_some_and(|deadline| now >= deadline)
+            });
+        if !expired {
+            return false;
+        }
+        self.state
+            .questions
+            .retain(|question| question.question_id != question_id);
+        self.shell.panel = None;
+        self.notice("the question expired before it was answered");
+        self.update_status();
+        true
+    }
+
+    /// Drop questions the engine has already stopped accepting.
+    ///
+    /// The engine resolves a question as `expired` once `expires_at_ms` passes,
+    /// and both `answer_question` and `reject_question` then fail with "question
+    /// is already resolved". A panel that outlived its deadline therefore had
+    /// two outcomes, both errors, and looked like a hung UI. A snapshot taken
+    /// before the expiry carried the question, so the deadline has to be read
+    /// here rather than only from the events that resolve it.
+    fn expire_questions(&mut self) {
+        let now = crate::pane::now_ms();
+        self.state
+            .questions
+            .retain(|question| question.expires_at_ms.is_none_or(|deadline| now < deadline));
+    }
+
     fn sync_panel(&mut self) {
+        self.expire_questions();
         let next = self
             .state
             .approvals
@@ -3839,6 +3915,84 @@ mod tests {
         assert!(app.state.approvals.is_empty());
     }
 
+    /// The engine refuses an answer past the deadline and resolves the
+    /// question as `expired`, so a panel kept on screen would have two
+    /// outcomes — answer and reject — and both would fail. Escape has to be
+    /// able to end the block.
+    #[test]
+    fn a_question_past_its_deadline_cannot_hold_the_screen() {
+        let deadline = crate::pane::now_ms().saturating_sub(1);
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: SessionState {
+                questions: vec![crate::session::QuestionView {
+                    question_id: "run-1/q1".into(),
+                    input_hash: "b".repeat(64),
+                    questions: vec![crate::session::QuestionItem {
+                        question: "Ship it?".into(),
+                        header: "confirm".into(),
+                        options: Vec::new(),
+                        multi_select: false,
+                        custom: true,
+                    }],
+                    expires_at_ms: Some(deadline),
+                }],
+                ..SessionState::default()
+            },
+        });
+        assert!(
+            app.shell.panel.is_none(),
+            "an expired question must not open a panel"
+        );
+        assert!(
+            app.state.questions.is_empty(),
+            "the projection is dropped too"
+        );
+    }
+
+    /// A question that expires while its panel is open: Escape clears it
+    /// instead of messaging the engine with a rejection it will refuse.
+    #[test]
+    fn escape_clears_a_question_that_expired_while_it_was_open() {
+        let mut app = session_app();
+        let question = |deadline: u64| crate::session::QuestionView {
+            question_id: "run-1/q1".into(),
+            input_hash: "b".repeat(64),
+            questions: vec![crate::session::QuestionItem {
+                question: "Ship it?".into(),
+                header: "confirm".into(),
+                options: Vec::new(),
+                multi_select: false,
+                custom: true,
+            }],
+            expires_at_ms: Some(deadline),
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: SessionState {
+                questions: vec![question(crate::pane::now_ms().saturating_add(60_000))],
+                ..SessionState::default()
+            },
+        });
+        assert!(app.shell.panel.is_some(), "a live question opens the panel");
+
+        // The engine's own clock moved past the deadline while the panel sat
+        // on screen.
+        app.state.questions = vec![question(crate::pane::now_ms().saturating_sub(1))];
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(
+            requests.try_recv().is_err(),
+            "a rejection the engine would refuse is not sent"
+        );
+        assert!(app.shell.panel.is_none(), "the panel is gone");
+        assert!(app.state.questions.is_empty());
+    }
+
     #[test]
     fn a_blocking_prompt_outranks_a_running_phase() {
         let mut app = session_app();
@@ -3868,6 +4022,7 @@ mod tests {
             questions: vec![crate::session::QuestionView {
                 question_id: "run-1/q1".into(),
                 input_hash: "b".repeat(64),
+                expires_at_ms: None,
                 questions: vec![crate::session::QuestionItem {
                     question: "Ship it?".into(),
                     header: "confirm".into(),
@@ -3974,6 +4129,7 @@ mod tests {
         let question = |id: &str| crate::session::QuestionView {
             question_id: id.into(),
             input_hash: "b".repeat(64),
+            expires_at_ms: None,
             questions: vec![crate::session::QuestionItem {
                 question: "Ship it?".into(),
                 header: "confirm".into(),
@@ -5138,9 +5294,11 @@ mod tests {
         assert!(!app.suspend_requested, "undo is not a suspend");
     }
 
-    /// `ctrl+z` keeps its page meaning even with a draft: job control has to
+    /// `Ctrl+Z` keeps its page meaning even with a draft: job control has to
     /// stay reachable while a prompt is half typed, and the draft survives the
-    /// round trip to the shell.
+    /// round trip to the shell. Windows has no job control to suspend to, so
+    /// the stroke exists only where suspending means something.
+    #[cfg(unix)]
     #[test]
     fn ctrl_z_still_suspends_with_a_draft() {
         let mut app = session_app();

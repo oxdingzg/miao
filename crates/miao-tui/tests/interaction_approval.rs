@@ -64,6 +64,12 @@ impl Harness {
         cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
         cmd.arg("--db");
         cmd.arg(&db);
+        // The launcher is a prompt now (`d5ca52247a`): it has no history list
+        // to select from, and Enter submits the draft. `--session` is its own
+        // direct entry point, so this suite measures the Session, not the way
+        // the launcher navigates to it.
+        cmd.arg("--session");
+        cmd.arg("ses_a");
         let child = pair.slave.spawn_command(cmd).expect("spawn miao-tui");
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().expect("clone reader");
@@ -179,13 +185,6 @@ impl Harness {
 #[test]
 fn a_blocking_approval_costs_one_keystroke() {
     let mut harness = Harness::spawn();
-    assert!(
-        harness.wait_for("Project A", Duration::from_secs(30)),
-        "the home list did not render:\n{}",
-        harness.text()
-    );
-    // Opening the session is the walk to the decision, so it counts.
-    harness.write(b"\r");
     assert!(
         harness.wait_for("hello from the fixture", Duration::from_secs(30)),
         "the session did not open:\n{}",

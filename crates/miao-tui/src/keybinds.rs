@@ -232,7 +232,15 @@ const ACTIONS: &[Action] = &[
 /// intended state rather than a mouse-only gap. Every other action must have a
 /// default, which `every_action_is_reachable_without_a_mouse` enforces.
 #[cfg(test)]
-const UNBOUND_BY_DEFAULT: &[Action] = &[Action::TerminalTitleToggle];
+const UNBOUND_BY_DEFAULT: &[Action] = &[
+    Action::TerminalTitleToggle,
+    // Suspending to a shell is a Unix job-control concept; Windows has no
+    // equivalent, so the stroke has no default there. Without this entry the
+    // reachability check failed on Windows for an action that is bound
+    // everywhere it can work.
+    #[cfg(not(unix))]
+    Action::TerminalSuspend,
+];
 
 /// Defaults for the actions above. `messages_copy` keeps miao's `ctrl+y` and
 /// adds the TypeScript `<leader>y`; `debug_view` is miao-only.
