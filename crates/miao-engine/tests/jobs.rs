@@ -443,6 +443,32 @@ impl Provider for Observer {
     }
 }
 
+/// `{job_id, state}` alone cannot answer the question the list exists for:
+/// which of my commands is still running, and what is it saying. The row now
+/// carries the owner, the command, and the tail of its output.
+#[tokio::test]
+async fn the_job_list_names_the_owner_and_the_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, next) = setup(dir.path(), 1, false).await;
+    tokio::time::timeout(std::time::Duration::from_secs(3), next.notified())
+        .await
+        .unwrap();
+    let jobs = store.jobs("s").await.unwrap();
+    assert_eq!(jobs.len(), 1, "{jobs:?}");
+    let job = &jobs[0];
+    assert_eq!(job["session_id"], "s", "the owner must be named: {job}");
+    assert!(
+        job["command"]
+            .as_str()
+            .is_some_and(|command| !command.is_empty()),
+        "the command that started the job must be visible: {job}"
+    );
+    // `output` is a tail, not the full log; it may legitimately be empty while
+    // the process has not written yet, so only its presence is asserted.
+    assert!(job.get("output").is_some(), "{job}");
+    runtime.shutdown().await;
+}
+
 #[tokio::test]
 async fn job_list_and_wait_observe_a_completed_job() {
     let dir = tempfile::tempdir().unwrap();

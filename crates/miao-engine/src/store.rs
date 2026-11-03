@@ -1568,14 +1568,56 @@ impl Store {
         }).await
     }
 
+    /// The jobs this Session owns, newest first.
+    ///
+    /// Each row carries the owner, the command that started it and the tail of
+    /// whatever it has produced. `{job_id, state}` alone could not answer the
+    /// question the list exists for — *which* of my commands is still running,
+    /// and what is it saying — so the operator had to open each one.
     pub async fn jobs(&self, session: &str) -> Result<Vec<Value>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT id,state FROM engine_job WHERE session_id=?1 ORDER BY rowid DESC LIMIT 100",
+                "SELECT id,state,input,result FROM engine_job WHERE session_id=?1 ORDER BY rowid DESC LIMIT 100",
             )?;
-            let rows = stmt.query_map([session], |r| {
-                Ok(json!({"job_id":r.get::<_,String>(0)?,"state":r.get::<_,String>(1)?}))
+            let rows = stmt.query_map([session.as_str()], |r| {
+                let id: String = r.get(0)?;
+                let state: String = r.get(1)?;
+                let input: String = r.get(2)?;
+                let result: Option<String> = r.get(3)?;
+                let command = serde_json::from_str::<Value>(&input)
+                    .ok()
+                    .and_then(|value| {
+                        value["argv"]
+                            .as_array()
+                            .map(|argv| {
+                                argv.iter()
+                                    .filter_map(Value::as_str)
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            })
+                            .or_else(|| value["command"].as_str().map(str::to_string))
+                    })
+                    .unwrap_or_default();
+                // Only the tail: the point is "is it saying something", not the
+                // whole log, which is what `job` returns.
+                let output = result
+                    .as_deref()
+                    .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                    .and_then(|value| {
+                        value["stdout"]
+                            .as_str()
+                            .or_else(|| value["result"]["stdout"].as_str())
+                            .map(|stdout| tail(stdout, 200))
+                    })
+                    .unwrap_or_default();
+                Ok(json!({
+                    "job_id": id,
+                    "session_id": session,
+                    "state": state,
+                    "command": command,
+                    "output": output,
+                }))
             })?;
             Ok(rows.collect::<Result<_, _>>()?)
         })
@@ -3718,6 +3760,15 @@ pub(crate) fn write_tx(conn: &mut Connection) -> Result<WriteTx<'_>, Error> {
             Err(error.into())
         }
     }
+}
+
+/// The last `limit` characters of `text`, for a one-line preview.
+fn tail(text: &str, limit: usize) -> String {
+    let count = text.chars().count();
+    if count <= limit {
+        return text.to_string();
+    }
+    text.chars().skip(count - limit).collect()
 }
 
 pub(crate) fn append(
