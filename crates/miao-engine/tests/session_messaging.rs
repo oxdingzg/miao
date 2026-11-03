@@ -161,6 +161,155 @@ async fn a_message_lands_in_the_peer_inbox_without_waking_it() {
     runtime.shutdown().await;
 }
 
+/// A reply names the message it answers, and the receipt has to be real: the
+/// id lives in the recipient's inbox, so a fabricated one would read as a
+/// thread that never happened.
+#[tokio::test]
+async fn a_reply_to_a_real_receipt_names_it_in_the_delivered_prompt() {
+    let (_dir, store, runtime, _turns) = setup(json!({
+        "type": "tool_use",
+        "id": "call_reply",
+        "name": "send_message",
+        "input": {
+            "to": "b",
+            "message": "follow-up on the migration",
+            "wake": "never",
+            "in_reply_to": "msg_first"
+        }
+    }))
+    .await;
+    // Seed the receipt the sender is answering, as target `b` received it.
+    store
+        .admit(Input {
+            agent_references: Default::default(),
+            command: None,
+            session_id: "b".into(),
+            input_id: "msg_first".into(),
+            prompt: "Message from Session a:\nthe original question".into(),
+            delivery: Delivery::Steer,
+        })
+        .await
+        .unwrap();
+
+    runtime.admit(prompt("a", "reply"), true).await.unwrap();
+    wait_for_turn(&store, "a").await;
+
+    let mail = pending(&store, "b").await;
+    let reply = mail
+        .iter()
+        .find(|row| {
+            row["prompt"]
+                .as_str()
+                .is_some_and(|text| text.contains("follow-up on the migration"))
+        })
+        .unwrap_or_else(|| panic!("the reply was admitted: {mail:?}"));
+    let delivered = reply["prompt"].as_str().unwrap_or_default();
+    assert!(
+        delivered.contains("(reply to msg_first)"),
+        "the recipient sees which message it answers: {delivered}"
+    );
+    runtime.shutdown().await;
+}
+
+/// An id this Session never received is refused rather than written into the
+/// prompt. A fabricated receipt would read as a thread that never happened.
+#[tokio::test]
+async fn a_reply_to_an_unknown_receipt_is_refused() {
+    let (_dir, store, runtime, _turns) = setup(json!({
+        "type": "tool_use",
+        "id": "call_bad_reply",
+        "name": "send_message",
+        "input": {
+            "to": "b",
+            "message": "answering nothing",
+            "wake": "never",
+            "in_reply_to": "msg_never_sent"
+        }
+    }))
+    .await;
+    runtime.admit(prompt("a", "bad reply"), true).await.unwrap();
+    wait_for_turn(&store, "a").await;
+
+    let mail = pending(&store, "b").await;
+    assert!(
+        mail.is_empty(),
+        "nothing may be delivered for an unverifiable receipt: {mail:?}"
+    );
+    let events = store.events("a", 0, 1000).await.unwrap();
+    let trace = events
+        .iter()
+        .map(|event| format!("{} {}", event.kind, event.data))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        trace.contains("a reply must answer a real receipt"),
+        "the refusal is explained: {trace}"
+    );
+    runtime.shutdown().await;
+}
+
+/// Two Sessions answering each other forever is the loop this bounds. One
+/// request is answered once; a second reply to the same receipt is refused
+/// with the reason, so the pair stops instead of ping-ponging until a token
+/// budget runs out.
+#[tokio::test]
+async fn a_second_reply_to_the_same_message_is_refused() {
+    let (_dir, store, runtime, _turns) = setup(json!({
+        "type": "tool_use",
+        "id": "call_loop",
+        "name": "send_message",
+        "input": {
+            "to": "b",
+            "message": "second answer",
+            "wake": "never",
+            "in_reply_to": "msg_q"
+        }
+    }))
+    .await;
+    // The receipt `a` is answering, and the one reply the budget allows.
+    for (id, prompt) in [
+        ("msg_q", "Message from Session a:\nthe original question"),
+        (
+            "msg_r1",
+            "Message from Session a (reply to msg_q):\nfirst answer",
+        ),
+    ] {
+        store
+            .admit(Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "b".into(),
+                input_id: id.into(),
+                prompt: prompt.into(),
+                delivery: Delivery::Steer,
+            })
+            .await
+            .unwrap();
+    }
+
+    runtime.admit(prompt("a", "second"), true).await.unwrap();
+    wait_for_turn(&store, "a").await;
+
+    let events = store.events("a", 0, 1000).await.unwrap();
+    let trace = events
+        .iter()
+        .map(|event| format!("{} {}", event.kind, event.data))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        trace.contains("is how two Sessions loop"),
+        "the second reply is refused with the reason: {trace}"
+    );
+    let mail = pending(&store, "b").await;
+    assert!(
+        !mail.iter().any(|row| row["prompt"]
+            .as_str()
+            .is_some_and(|text| text.contains("second answer"))),
+        "nothing was delivered for the refused reply: {mail:?}"
+    );
+    runtime.shutdown().await;
+}
+
 /// Authorisation is per target, so a rule can allow one neighbour and deny
 /// another. The denial must keep the mail out of the peer's inbox rather than
 /// admit it and hope the caller behaves.
