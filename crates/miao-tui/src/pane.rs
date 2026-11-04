@@ -31,22 +31,31 @@ fn body_columns(area: Rect) -> (Rect, Option<Rect>) {
     if area.width < SIDEBAR_MIN_WIDTH {
         return (area, None);
     }
-    let split = area.width.saturating_sub(SIDEBAR_WIDTH + 1);
+    // The sidebar owns its rule, so its rectangle starts on the divider column
+    // rather than one past it. Leaving that column to neither pane let it keep
+    // the terminal's default background — a hairline of a different colour
+    // running down the middle of the window, next to text on both sides.
+    let split = area.width.saturating_sub(SIDEBAR_WIDTH);
     (
         Rect {
             x: area.x,
-            width: split,
+            width: split.saturating_sub(1),
             ..area
         },
         Some(Rect {
-            x: area.x + split + 1,
-            width: SIDEBAR_WIDTH,
+            x: area.x + split.saturating_sub(1),
+            width: SIDEBAR_WIDTH + 1,
             ..area
         }),
     )
 }
 
-const SIDEBAR_WIDTH: u16 = 40;
+/// The sidebar's width, matching the TypeScript layout's `width={42}`.
+///
+/// One of those columns is the hairline this layout draws to separate the two
+/// columns; the TypeScript sidebar has no rule and spends the column on
+/// content instead, so the same number here gives one column less to read.
+const SIDEBAR_WIDTH: u16 = 42;
 
 pub trait Pane {
     fn render(&mut self, frame: &mut Frame, area: Rect);
@@ -319,24 +328,21 @@ impl Shell {
 
     pub fn render(&mut self, frame: &mut Frame) {
         let panel_height = self.panel.as_ref().map_or(0, Panel::height);
-        // Air around the composer on both sides: the TypeScript prompt and the
-        // agent CLIs keep a gap between the last streamed block, the prompt
-        // box, and the status strip — butted together they read as one cramped
-        // block. The run's state lives in the composer's own title, so this
-        // band stays empty rather than repeating it.
-        let [body_area, panel_area, _air_above, composer_area, _air_below, status_area] =
-            Layout::vertical([
-                Constraint::Min(1),
-                Constraint::Length(panel_height),
-                Constraint::Length(1),
-                Constraint::Length(composer_height(
-                    &self.composer,
-                    composer_column(frame.area().width),
-                )),
-                Constraint::Length(1),
-                Constraint::Length(1),
-            ])
-            .areas(frame.area());
+        // No air bands around the composer. The box draws its own rules above
+        // and below, so a spare row on either side was a second gap for a
+        // boundary the border already marks — three rows of dead space between
+        // the transcript, the input, and the status strip on a short window.
+        // The status strip is one row and sits straight under the box.
+        let [body_area, panel_area, composer_area, status_area] = Layout::vertical([
+            Constraint::Min(1),
+            Constraint::Length(panel_height),
+            Constraint::Length(composer_height(
+                &self.composer,
+                composer_column(frame.area().width),
+            )),
+            Constraint::Length(1),
+        ])
+        .areas(frame.area());
         let (transcript_area, sidebar_area) = body_columns(body_area);
         self.transcript.render(frame, transcript_area);
         if let (Some(sidebar), Some(sidebar_area)) = (self.sidebar.as_mut(), sidebar_area) {
@@ -1761,15 +1767,16 @@ pub fn render_status(frame: &mut Frame, area: Rect, status: &StatusStrip, theme:
         }
         spans.push(Span::styled(usage.clone(), muted));
     }
-    if spans.is_empty() {
-        return;
-    }
-    let area = Rect {
-        x: area.x + 2,
-        width: area.width.saturating_sub(2),
-        ..area
-    };
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    // The strip carries the page background across its whole width, empty or
+    // not: this row is the window's last, and a paragraph that paints only its
+    // text — or returns early with no text at all — leaves the rest of the row
+    // at the terminal's default colour, a band that matches nothing above it.
+    frame.render_widget(
+        Paragraph::new(Line::from(spans))
+            .style(Style::new().bg(palette.background))
+            .block(Block::new().padding(ratatui::widgets::Padding::left(2))),
+        area,
+    );
 }
 
 /// Input rows the composer grows to before it scrolls; the border and the
@@ -2160,11 +2167,30 @@ impl Pane for SidebarPane {
         // A single hairline, the way the TypeScript layout separates this column
         // from the transcript: no frame around it, but the edge is visible.
         let outer = area;
+        // The whole column carries the page background, the rule included. A
+        // `Block` only writes its border cells and a `Paragraph` only its own
+        // area, so painting the rule on its own left the indent and the rows
+        // past the last line at the terminal's default colour — a strip beside
+        // the divider that did not match the page on either side of it.
         let edge = Block::new()
             .borders(Borders::LEFT)
-            .border_style(Style::new().fg(palette.text_muted));
-        let area = edge.inner(outer);
+            .border_style(Style::new().fg(palette.text_muted).bg(palette.background))
+            .style(Style::new().bg(palette.background))
+            .padding(ratatui::widgets::Padding::left(2));
+        let inner = edge.inner(outer);
+        // Fill the column first, then draw the rule over it: `Block` writes
+        // only its border cells and `Paragraph` only its own area, so without
+        // the fill the indent, the rows past the last line, and the rule's own
+        // cell stay at the terminal's default colour — a strip beside the
+        // divider that matched the page on neither side.
+        frame.render_widget(
+            Block::new().style(Style::new().bg(palette.background)),
+            outer,
+        );
         frame.render_widget(edge, outer);
+        // `paddingLeft={2}` comes from the block above, so the text never
+        // touches the rule and the indent carries the page colour with it.
+        let area = inner;
         // The column never wraps, so a title or path longer than it is cut with
         // an ellipsis instead of pushing the rest of the column down.
         let text_width = area.width as usize;
@@ -2373,9 +2399,22 @@ impl Pane for SidebarPane {
         // No wrapping: a long title or todo would otherwise split into several
         // rows, pushing the rest of the column off the screen and reading as one
         // character per line for CJK.
+        // One background for the whole window. A panel tone behind this column
+        // read as a stripe against the transcript's page, and the hairline
+        // already separates the two columns — a second, near-identical dark
+        // shade drew attention to the boundary instead of the content.
+        //
+        // The paragraph paints over `outer`, not over the inset `area`: `Block`
+        // writes only its border cells, so a paragraph confined to `area` would
+        // leave the indent and every row past the last line in the terminal's
+        // own default colour — a block of reset background hugging the rule on
+        // one side while the transcript beside it was the page colour.
+        let pad = area.x - inner.x;
         frame.render_widget(
-            Paragraph::new(lines).style(Style::new().bg(palette.background)),
-            area,
+            Paragraph::new(lines)
+                .style(Style::new().bg(palette.background))
+                .block(Block::new().padding(ratatui::widgets::Padding::left(pad))),
+            inner,
         );
     }
 }
@@ -4334,11 +4373,11 @@ mod tests {
         let sidebar = sidebar.expect("wide enough for both");
         assert_eq!(prose.x, 0, "the prose starts at the window's edge");
         assert_eq!(prose.width, 200 - SIDEBAR_WIDTH - 1);
-        assert_eq!(sidebar.width, SIDEBAR_WIDTH);
+        assert_eq!(sidebar.width, SIDEBAR_WIDTH + 1);
         assert_eq!(
             sidebar.x,
-            prose.right() + 1,
-            "one column of air between them"
+            prose.right(),
+            "the sidebar starts on the divider column"
         );
         assert_eq!(sidebar.right(), area.right(), "and it holds the right edge");
     }
@@ -4350,8 +4389,12 @@ mod tests {
         let area = Rect::new(0, 0, 120, 20);
         let (prose, sidebar) = body_columns(area);
         let sidebar = sidebar.expect("120 columns show it");
-        assert_eq!(sidebar.x, prose.right() + 1);
-        assert_eq!(sidebar.width, SIDEBAR_WIDTH);
+        // The sidebar starts on the divider column and owns it: a column
+        // belonging to neither pane kept the terminal's default background.
+        assert_eq!(sidebar.x, prose.right());
+        // The divider column is the sidebar's, so its rectangle is one wider
+        // than the content column it holds.
+        assert_eq!(sidebar.width, SIDEBAR_WIDTH + 1);
         assert_eq!(prose.width, 120 - SIDEBAR_WIDTH - 1);
         // A body narrower than the threshold has no sidebar at all.
         let (prose, sidebar) = body_columns(Rect::new(0, 0, 99, 20));
@@ -5221,5 +5264,41 @@ mod interleave_tests {
             first < one && one < second && second < two,
             "the turn keeps its arrival order:\n{joined}"
         );
+    }
+}
+
+#[cfg(test)]
+mod final_layout_check {
+    use super::*;
+    /// Assert every cell in the window carries a page background. A cell left
+    /// at the terminal default is a band of the terminal's own colour showing
+    /// through the layout.
+    #[test]
+    fn no_cell_falls_back_to_the_terminal_default() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: "t".into(),
+            palette,
+        };
+        for (w, h) in [(120u16, 20u16), (200, 40), (100, 12), (80, 10)] {
+            let mut shell = Shell::new(std::path::Path::new("."), theme.clone());
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).expect("terminal");
+            terminal.draw(|f| shell.render(f)).expect("draw");
+            let buf = terminal.backend().buffer();
+            let holes: Vec<(u16, u16)> = (0..h)
+                .flat_map(|y| (0..w).map(move |x| (x, y)))
+                .filter(|(x, y)| {
+                    buf.cell(ratatui::prelude::Position::new(*x, *y))
+                        .is_some_and(|c| c.bg == ratatui::style::Color::Reset)
+                })
+                .collect();
+            assert!(
+                holes.is_empty(),
+                "{w}x{h}: {} cell(s) kept the terminal's default background: {:?}",
+                holes.len(),
+                &holes[..holes.len().min(10)]
+            );
+        }
     }
 }
