@@ -101,28 +101,22 @@ fn window_index() -> &'static std::collections::BTreeMap<String, u64> {
         let mut index = std::collections::BTreeMap::new();
         if let Some(document) = models_snapshot() {
             if let Some(entries) = document.as_object() {
-                for (_provider_id, provider) in entries {
-                    let Some(models) = provider.get("models").and_then(Value::as_object) else {
-                        continue;
-                    };
-                    for (model_id, info) in models {
-                        let Some(window) = info
-                            .get("limit")
-                            .and_then(|limit| limit.get("context"))
-                            .and_then(Value::as_u64)
-                        else {
-                            continue;
-                        };
-                        // Several providers serve one id with different declared
-                        // windows; the smallest is what every caller must assume.
-                        index
-                            .entry(model_id.clone())
-                            .and_modify(|known: &mut u64| {
-                                if window < *known {
-                                    *known = window;
-                                }
-                            })
-                            .or_insert(window);
+                for provider in entries.values() {
+                    for model_id in provider
+                        .get("models")
+                        .and_then(|models| models.as_object())
+                        .into_iter()
+                        .flat_map(|models| models.keys().cloned())
+                    {
+                        if let Some(window) = context_window_in(&document, &model_id) {
+                            index.entry(model_id)
+                                .and_modify(|known| {
+                                    if window < *known {
+                                        *known = window;
+                                    }
+                                })
+                                .or_insert(window);
+                        }
                     }
                 }
             }
