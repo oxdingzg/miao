@@ -321,7 +321,9 @@ impl Provider for Catalog {
     ) -> Result<Reply, ProviderError> {
         self.primary.stream(request, progress, cancel).await
     }
-}/// The full provider directory the install ships (`models.json`, the same
+}
+
+/// The full provider directory the install ships (`models.json`, the same
 /// file the TS catalog service reads): an explicit path, a snapshot beside the
 /// engine binary, the installer's shipped copy, then the user cache.
 pub(crate) fn models_snapshot() -> Option<serde_json::Value> {
@@ -350,6 +352,3 @@ pub(crate) fn models_snapshot() -> Option<serde_json::Value> {
         .find_map(|path| std::fs::read(path).ok())
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
 }
-
-
-
