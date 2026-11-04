@@ -3023,11 +3023,9 @@ fn db_backup(rest: &[String]) -> Result<(), String> {
         return Err(format!("no database at {}", path.display()));
     }
     let target = match rest.iter().position(|argument| argument == "--to") {
-        Some(index) => std::path::PathBuf::from(
-            rest.get(index + 1)
-                .ok_or("--to needs a value")?
-                .to_string(),
-        ),
+        Some(index) => {
+            std::path::PathBuf::from(rest.get(index + 1).ok_or("--to needs a value")?.to_string())
+        }
         None => {
             let stamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -5572,12 +5570,12 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        anchored_sessions, carry_uncommitted_changes, config_layers, db_file_bytes, db_read_only,
-        db_backup, db_report, db_vacuum, default_db, engine_argv_with, event_line,
-        git_worktree_main_checkout, serve_database,
-        launch, lsp_servers, mcp_servers, merged_config, model_routes, parsed_session_location,
-        plugin_entries, project_copy_apply, project_copy_plan, retention_plan, strip_comments,
-        tree_bytes, uninstall_targets, worktree_remove_apply, worktree_remove_plan,
+        anchored_sessions, carry_uncommitted_changes, config_layers, db_backup, db_file_bytes,
+        db_read_only, db_report, db_vacuum, default_db, engine_argv_with, event_line,
+        git_worktree_main_checkout, launch, lsp_servers, mcp_servers, merged_config, model_routes,
+        parsed_session_location, plugin_entries, project_copy_apply, project_copy_plan,
+        retention_plan, serve_database, strip_comments, tree_bytes, uninstall_targets,
+        worktree_remove_apply, worktree_remove_plan,
     };
     use std::io::Write;
     use std::path::PathBuf;
@@ -5728,7 +5726,11 @@ mod tests {
         assert_eq!(integrity, "ok", "the copy reads back clean");
         drop(copy);
         assert!(
-            dir.join("backups").join("blobs").join(&digest[0..2]).join(&digest).exists(),
+            dir.join("backups")
+                .join("blobs")
+                .join(&digest[0..2])
+                .join(&digest)
+                .exists(),
             "a blob the ledger references has to travel with it"
         );
         assert_eq!(
