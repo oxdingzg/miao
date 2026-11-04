@@ -3396,7 +3396,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert_eq!(app.screen, Screen::Session);
         app
@@ -3489,7 +3489,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(forty_messages()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         draw(&mut app);
         let tail = app.shell.transcript_scroll();
@@ -3547,7 +3547,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(forty_messages()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         draw(&mut app);
         let says = |app: &App| {
@@ -3572,7 +3572,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(forty_messages()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         draw(&mut app);
         let tail = app.shell.transcript_scroll();
@@ -3959,7 +3959,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_new", 1)),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(matches!(
             requests.try_recv(),
@@ -3970,7 +3970,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_other", 2)),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(requests.try_recv().is_err());
     }
@@ -3990,7 +3990,7 @@ mod tests {
                 }],
                 ..Default::default()
             }),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert_eq!(app.terminal_title().as_deref(), Some("repair this test"));
         app.configure_terminal_title(false, true);
@@ -4199,7 +4199,7 @@ mod tests {
             // nowhere to go.
             summary: Some(summary("ses_open", 1)),
             transcript: Box::new(Transcript::default()),
-            state: approval_state(),
+            state: Box::new(approval_state()),
         });
         assert!(app.shell.panel.is_some(), "the approval is on screen");
         app
@@ -4299,10 +4299,10 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState {
+            state: Box::new(SessionState {
                 questions: vec![question(crate::pane::now_ms().saturating_add(60_000))],
                 ..SessionState::default()
-            },
+            }),
         });
         assert!(app.shell.panel.is_some(), "a live question opens the panel");
 
@@ -4330,7 +4330,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         app.update_status();
         // A stale "working" or a tool phase would hide the only thing the
@@ -4363,7 +4363,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         app.update_status();
         assert_eq!(app.shell.title.status(), Some("needs an answer"));
@@ -4396,7 +4396,7 @@ mod tests {
                 }],
                 ..Transcript::default()
             }),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         app.update_status();
         assert_eq!(app.shell.status.model.as_deref(), Some("glm-5.3-flash"));
@@ -4493,7 +4493,7 @@ mod tests {
             app.handle(AppEvent::SessionOpened {
                 summary: None,
                 transcript: Box::new(Transcript::default()),
-                state,
+                state: Box::new(state),
             });
             app.update_status();
             assert_eq!(app.shell.title.status(), Some(expected));
@@ -4510,7 +4510,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: approval_state(),
+            state: Box::new(approval_state()),
         });
         assert!(app.shell.panel.is_some());
         app.handle(key(KeyCode::Char('x'), KeyModifiers::NONE));
@@ -4527,7 +4527,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         assert_eq!(app.shell.composer.queued, 0);
         app.state.pending = 3;
@@ -4548,7 +4548,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         assert_eq!(app.shell.composer.phase.as_deref(), Some("Working"));
         app.state.active_run = None;
@@ -4627,7 +4627,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         app.update_status();
         let hints = app
@@ -4709,7 +4709,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(app.shell.following(), "a fresh Session follows");
         // Scrolling up detaches, which is how reading history works. It needs
@@ -4724,7 +4724,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(long),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         app.shell.scroll_transcript(-3);
         assert!(!app.shell.following(), "scrolling up detaches");
@@ -4732,7 +4732,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(app.shell.following(), "opening follows again");
     }
@@ -4768,7 +4768,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(app.screen, Screen::Session);
@@ -5149,7 +5149,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_shell", 10)),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         let session = app.session.as_ref().expect("session").id.clone();
         let (handle, mut requests) = engine::Handle::recording();
@@ -5190,7 +5190,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_queue", 10)),
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         let (handle, mut requests) = engine::Handle::recording();
         app.attach_engine(handle);
@@ -5242,7 +5242,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_promoted", 10)),
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         let (handle, mut requests) = engine::Handle::recording();
         app.attach_engine(handle);
@@ -5324,7 +5324,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_vcs", 1)),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         let (engine, mut requests) = engine::Handle::recording();
         app.attach_engine(engine);
@@ -5432,7 +5432,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_a", 10)),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         app.handle(key(KeyCode::Char('r'), KeyModifiers::CONTROL));
         let Some(Dialog::Rename(rename)) = &app.dialog else {
@@ -5446,7 +5446,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary(id, 10)),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
     }
 
@@ -5643,7 +5643,7 @@ mod tests {
                 }],
                 ..Transcript::default()
             }),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         // Without a selection the copy falls back to the response.
         assert_eq!(
@@ -5665,7 +5665,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert_eq!(app.copy_target(), None);
     }
@@ -5825,7 +5825,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(named.clone()),
             transcript: transcript(),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(matches!(
             requests.try_recv(),
@@ -5836,7 +5836,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(named),
             transcript: transcript(),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(requests.try_recv().is_err(), "named twice");
     }
@@ -5858,7 +5858,7 @@ mod tests {
                 }],
                 ..Transcript::default()
             }),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(requests.try_recv().is_err(), "renamed an operator's title");
     }
@@ -5876,7 +5876,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(opened),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         app.submit("fix the parser".into(), Vec::new());
         assert!(matches!(
@@ -5903,7 +5903,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(opened),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         let mut renamed = summary("ses_a", 99);
         renamed.title = Some("auth refactor".into());
@@ -5973,7 +5973,7 @@ mod tests {
                 ],
                 ..Transcript::default()
             }),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         let (handle, requests) = engine::Handle::recording();
         app.attach_engine(handle);
