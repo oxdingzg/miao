@@ -312,13 +312,12 @@ impl Shell {
 
     pub fn render(&mut self, frame: &mut Frame) {
         let panel_height = self.panel.as_ref().map_or(0, Panel::height);
-        // No title row: the workspace, branch and version fold into the status
-        // strip at the bottom, so the whole screen above the composer is
-        // content. The terminal tab already names the workspace too.
-        // Air above the composer: the TS prompt keeps one band there for the
-        // run's phase, the queue, and notices (`composer_air`). The row below
-        // is only spacing.
-        let [body_area, panel_area, air_above, composer_area, _air_below, status_area] =
+        // Air around the composer on both sides: the TypeScript prompt and the
+        // agent CLIs keep a gap between the last streamed block, the prompt
+        // box, and the status strip — butted together they read as one cramped
+        // block. The run's state lives in the composer's own title, so this
+        // band stays empty rather than repeating it.
+        let [body_area, panel_area, _air_above, composer_area, _air_below, status_area] =
             Layout::vertical([
                 Constraint::Min(1),
                 Constraint::Length(panel_height),
@@ -339,42 +338,9 @@ impl Shell {
         if let Some(panel) = self.panel.as_ref() {
             panel.render(frame, panel_area, &self.transcript.theme);
         }
-        // The TS compact activity row is one line above the input: state on
-        // the left, elapsed time right-aligned. The two columns re-create that
-        // space-between split; a narrow band drops the right side, as the TS
-        // row does under 32 columns.
-        if let Some(elapsed) = &self.composer.phase_elapsed {
-            if air_above.width >= 32 {
-                let width = elapsed.width() as u16;
-                let [left, right] =
-                    Layout::horizontal([Constraint::Min(1), Constraint::Length(width)])
-                        .areas(air_above);
-                frame.render_widget(
-                    Paragraph::new(composer_air(&self.composer, &self.transcript.theme)),
-                    left,
-                );
-                frame.render_widget(
-                    Paragraph::new(Line::from(Span::styled(
-                        elapsed.clone(),
-                        Style::new().fg(self.transcript.theme.palette.text_muted),
-                    ))),
-                    right,
-                );
-            } else {
-                frame.render_widget(
-                    Paragraph::new(composer_air(&self.composer, &self.transcript.theme)),
-                    air_above,
-                );
-            }
-        } else {
-            frame.render_widget(
-                Paragraph::new(composer_air(&self.composer, &self.transcript.theme)),
-                air_above,
-            );
-        }
-        // The input spans the whole window width, covering the sidebar's
-        // bottom band the way the TS layout draws it: the sidebar's content
-        // ends high, and a prose-width input left that band looking cut off.
+        // The input spans the whole window width, covering the sidebar's bottom
+        // band the way the layout draws it: the sidebar's content ends high, and
+        // a prose-width input left that band looking cut off.
         render_composer(frame, composer_area, &self.composer, &self.transcript.theme);
         match &self.leader_hint {
             Some(menu) => frame.render_widget(
@@ -1788,49 +1754,6 @@ const PLACEHOLDERS: [&str; 3] = [
 ];
 const SHELL_PLACEHOLDERS: [&str; 3] = ["ls -la", "git status", "pwd"];
 
-/// The one-line band the TS prompt keeps between the transcript and the input:
-/// what the run is doing, and anything the operator must know. The TS compact
-/// row is a spinner frame plus the state text on the left and the elapsed time
-/// right-aligned (`justifyContent: space-between`), so the elapsed value is
-/// painted in [`render`] from `composer.phase_elapsed`, not folded into this
-/// line.
-fn composer_air(composer: &Composer, theme: &Theme) -> Line<'static> {
-    let palette = theme.palette;
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    let push = |spans: &mut Vec<Span<'static>>, text: String, style: Style| {
-        if !spans.is_empty() {
-            spans.push(Span::styled(" · ", Style::new().fg(palette.border)));
-        }
-        spans.push(Span::styled(text, style));
-    };
-    if let Some(phase) = &composer.phase {
-        // Past half a minute of waiting the TS spinner turns warning-colored;
-        // the frame carries that tone here.
-        let alert = composer.phase_alert;
-        let tone = match alert {
-            true => palette.warning,
-            false => palette.text_muted,
-        };
-        let frame = SPINNER_FRAMES[(now_ms() / 160) as usize % SPINNER_FRAMES.len()];
-        push(
-            &mut spans,
-            format!("{frame} {phase}"),
-            Style::new().fg(tone),
-        );
-    }
-    if let Some(notice) = &composer.notice {
-        push(&mut spans, notice.clone(), Style::new().fg(palette.warning));
-    }
-    if composer.mode() == Mode::Shell {
-        push(
-            &mut spans,
-            "Shell · esc exit".to_string(),
-            Style::new().fg(palette.warning),
-        );
-    }
-    Line::from(spans)
-}
-
 /// The composer's height in rows, widened to the draft: a prompt that wraps or
 /// has several lines is shown whole up to [`COMPOSER_INPUT_ROWS`], so an
 /// operator can read what they are about to send instead of only the line the
@@ -1884,30 +1807,75 @@ fn render_composer_in(
     } else {
         palette.primary
     };
-    // The TS prompt is one rule above and below the input, an element
-    // background, two cells of padding on each side, and no title.
-    let set = ratatui::symbols::border::Set {
-        horizontal_top: "─",
-        horizontal_bottom: "─",
-        ..ratatui::symbols::border::EMPTY
-    };
-    let block = Block::default()
-        .borders(Borders::TOP | Borders::BOTTOM)
-        .border_set(set)
-        .border_style(Style::new().fg(if shell {
-            palette.warning
+    // The box carries a title, and the title is where the run's state lives:
+    // the phase, the queue depth, and any notice, joined with separators. That
+    // keeps "is it working, queued, or waiting on me?" beside the input the
+    // operator is typing into instead of only in the status strip at the foot
+    // of the screen, and it gives the phase a colour of its own.
+    let queued = (composer.queued > 0).then(|| {
+        if composer.queued == 1 {
+            "1 queued".to_string()
         } else {
-            palette.border
-        }))
-        .style(Style::new().bg(palette.element));
+            format!("{} queued", composer.queued)
+        }
+    });
+    let name = if shell {
+        "shell · runs locally · output stays in this Session · esc exit"
+    } else {
+        "composer"
+    };
+    let mut parts = composer.phase.iter().cloned().collect::<Vec<_>>();
+    // The elapsed time rides the phase it measures: "Waiting for model · 2.0s"
+    // reads as one fact, and the title has room for it once the box carries the
+    // state instead of a band above the box.
+    if composer.phase.is_some() {
+        parts.extend(composer.phase_elapsed.iter().cloned());
+    }
+    parts.extend(queued);
+    parts.extend(composer.notice.iter().cloned());
+    let title_style = match shell {
+        true => Style::new().fg(palette.warning),
+        false => Style::new().fg(palette.text_muted),
+    };
+    let mut title = vec![Span::styled(format!(" {name} "), title_style)];
+    if !parts.is_empty() {
+        title.push(Span::styled("· ", Style::new().fg(palette.border)));
+        // A run in flight gets the braille spinner beside its phase, so the box
+        // reads as moving even while the phase name stays the same. Past half a
+        // minute of waiting the tone turns warning, which is the one signal
+        // that separates "thinking" from "wedged" without reading the words.
+        let tone = match (shell, composer.phase_alert) {
+            (true, _) => palette.warning,
+            (false, true) => palette.warning,
+            (false, false) => palette.accent,
+        };
+        if composer.phase.is_some() {
+            let frame = SPINNER_FRAMES[(now_ms() / 160) as usize % SPINNER_FRAMES.len()];
+            title.push(Span::styled(format!("{frame} "), Style::new().fg(tone)));
+        }
+        title.push(Span::styled(parts.join(" · "), Style::new().fg(tone)));
+        title.push(Span::styled(" ", Style::new()));
+    }
+    // The box keeps one border colour in normal mode and the shell warning when
+    // a `!` line is active: the composer is where typing latency lives, and a
+    // border that changes with the draft makes every keystroke repaint the whole
+    // band for decoration.
+    let border = match shell {
+        true => palette.warning,
+        false => palette.border,
+    };
+    let block = Block::bordered()
+        .title(Line::from(title))
+        .border_style(Style::new().fg(border))
+        .style(Style::new().bg(palette.background));
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    if inner.width <= 4 || inner.height == 0 {
+    if inner.width == 0 || inner.height == 0 {
         return;
     }
     let padded = Rect {
-        x: inner.x + 2,
-        width: inner.width - 4,
+        x: inner.x + 1,
+        width: inner.width.saturating_sub(2),
         ..inner
     };
 
@@ -3964,7 +3932,7 @@ mod tests {
             .expect("first fetch");
         assert_eq!(
             rendered[fetch_a + 1],
-            "● WebSearch  q",
+            "· WebSearch  q",
             "the second inline row follows with no blank row"
         );
         let note = rendered
@@ -3981,28 +3949,68 @@ mod tests {
     }
 
     #[test]
-    fn the_composer_air_names_the_run_the_queue_and_notices() {
-        // The band above the input is the TS prompt's compact activity line:
-        // what the run is doing, what is waiting, and anything the operator
-        // must know, and nothing when there is none of those.
+    fn the_composer_title_names_the_run_the_queue_and_notices() {
+        // The box's title is where the run's state lives: what the run is
+        // doing, what is waiting, and anything the operator must know. An idle
+        // Session says only the box's own name.
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
         };
         let mut composer = crate::editor::Composer::new(Path::new("."));
-        assert!(
-            composer_air(&composer, &theme).spans.is_empty(),
-            "an idle session paints no band"
+        assert_eq!(
+            draw_composer(&mut composer, &theme),
+            "┌ composer ────────────────────────────┐",
+            "an idle session names the box"
         );
-        composer.phase = Some("running bash · 3s".into());
+
+        composer.phase = Some("Running bash".into());
         composer.queued = 2;
-        let text: String = composer_air(&composer, &theme)
-            .spans
-            .iter()
-            .map(|span| span.content.as_ref())
-            .collect();
-        assert!(text.contains("running bash · 3s"), "{text}");
+        let titled = draw_composer(&mut composer, &theme);
+        assert!(titled.contains("Running bash"), "{titled}");
+        assert!(titled.contains("2 queued"), "{titled}");
+    }
+
+    #[test]
+    fn a_waiting_run_in_the_composer_title_turns_warning_colored() {
+        // The tone is the only signal that separates a model still thinking
+        // from one that has gone quiet; a monochrome title left the operator to
+        // read the words every frame.
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let mut composer = crate::editor::Composer::new(Path::new("."));
+        composer.phase = Some("Waiting for model".into());
+        composer.phase_alert = true;
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 3)).expect("terminal");
+        terminal
+            .draw(|frame| render_composer(frame, frame.area(), &composer, &theme))
+            .expect("draw");
+        let warning = theme.palette.warning;
+        let painted = (0..40).any(|x| terminal.backend().buffer()[(x, 0)].fg == warning);
+        assert!(painted, "the alerting title uses the warning tone");
+    }
+
+    /// Paint the composer at a fixed width and return its top border row,
+    /// trimmed, so a test can read the title the box carries.
+    fn draw_composer(composer: &mut crate::editor::Composer, theme: &Theme) -> String {
+        let width = 40u16;
+        let height = 3u16;
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
+                .expect("terminal");
+        terminal
+            .draw(|frame| render_composer(frame, frame.area(), composer, theme))
+            .expect("draw");
+        (0..width)
+            .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
+            .collect::<String>()
+            .trim_end()
+            .to_string()
     }
 
     #[test]
@@ -4309,9 +4317,10 @@ mod tests {
 
     #[test]
     fn a_wide_frame_paints_the_input_across_the_whole_window() {
-        // The input covers the window width — the sidebar's bottom band
-        // included — the way the TS layout draws it, instead of stopping at
-        // the prose column and leaving that band looking cut off.
+        // The composer is a named box spanning the window, so its top edge
+        // starts at the first column and ends at the last: the sidebar's bottom
+        // band is covered rather than left looking cut off beside a
+        // prose-width input.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
@@ -4331,11 +4340,10 @@ mod tests {
                     .contains("Ask anything")
             })
             .expect("the composer is painted");
-        // The rule above the placeholder spans the whole window: the composer
-        // has no side borders to stop at.
+        // The top border spans the whole window, corner to corner.
         let top = &rows[placeholder - 1];
-        assert_eq!(top[0].symbol(), "─", "the rule starts on the window's edge");
-        assert_eq!(top[199].symbol(), "─", "and ends on the other edge");
+        assert_eq!(top[0].symbol(), "┌", "the box opens on the window's edge");
+        assert_eq!(top[199].symbol(), "┐", "and closes on the other edge");
     }
 
     /// The composer must start on the same column as the text it answers. It
@@ -4375,13 +4383,16 @@ mod tests {
                 })
                 .expect("the row is painted")
         };
-        // The composer's top rule spans the full window the way the TS prompt
-        // border does, while the TS message column is inset one cell on each
-        // side — so the transcript's `┃` edge sits one cell in from the rule.
-        let input = column_of("─");
+        // The composer's box spans the window, and the transcript's message
+        // column is inset one cell on each side. So the box's left border sits
+        // one cell left of the transcript's `┃` edge — the same relationship
+        // the TS layout has between its prompt border and its message column,
+        // which is what keeps the input reading as the same column as the text
+        // it answers rather than floating off to one side.
+        let input = column_of("┌");
         let prose = column_of("┃");
-        assert_eq!(input, 0, "the composer rule hugs the window edge");
-        assert_eq!(prose, 1, "the prompt edge is inset one cell");
+        assert_eq!(input, 0, "the composer box opens on the window edge");
+        assert_eq!(prose, 1, "the transcript edge is inset one cell");
     }
 
     #[test]
@@ -4562,9 +4573,8 @@ mod tests {
 
     #[test]
     fn the_phase_row_right_aligns_the_elapsed_time_like_the_typescript_row() {
-        // The TS compact activity row is space-between: state on the left,
-        // elapsed on the right edge. The elapsed value is a separate slot, so
-        // it is not folded into the state text.
+        // The elapsed time rides the phase it measures, inside the composer's
+        // title: one fact on one line, in the box the operator is typing into.
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
@@ -4589,13 +4599,13 @@ mod tests {
                 })
                 .collect::<String>()
         };
-        let air_row = (0..12)
+        let phase_row = (0..12)
             .map(row_at)
             .find(|row| row.contains("Waiting for model"))
             .expect("the phase row is painted");
         assert!(
-            air_row.trim_end().ends_with("2.0s"),
-            "the elapsed value hugs the right edge: {air_row:?}"
+            phase_row.contains("2.0s"),
+            "the elapsed time rides the phase: {phase_row:?}"
         );
     }
 

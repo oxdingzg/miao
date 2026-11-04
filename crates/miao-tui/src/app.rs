@@ -268,6 +268,14 @@ pub struct App {
     themes: theme::Catalog,
     /// Live provider activity for the open Session.
     live: Option<Live>,
+    /// When the current run was first seen active, and which run it was.
+    ///
+    /// A run can be active before any `provider.*` frame arrives — the engine
+    /// admits the input, the snapshot reports the run, and the first frame is
+    /// still in flight. Without this the status fell back to a bare "Working"
+    /// with no clock and no colour, so a run that was demonstrably moving
+    /// looked exactly like one that had wedged.
+    run_since: Option<(String, Instant)>,
     /// The answer streaming in ahead of its committed message.
     draft: Option<Draft>,
     /// Assistant entries in the last projection, so a draft can name the
@@ -348,6 +356,7 @@ impl App {
             startup,
             themes,
             live: None,
+            run_since: None,
             draft: None,
             committed: 0,
         }
@@ -2594,21 +2603,47 @@ impl App {
             )),
         };
         let phase_needs_operator = blocking.is_some();
+        // Time the run from the moment it was first seen active, so a run that
+        // has announced no phase yet still shows a clock. Without an anchor the
+        // status had nothing to count from and fell back to a bare, colourless
+        // "Working" for as long as the first frame took — which reads the same
+        // as a stuck turn.
+        let run_id = self.state.active_run.clone();
+        self.run_since = match (&run_id, self.run_since.take()) {
+            (Some(current), Some((tracked, since))) if &tracked == current => {
+                Some((tracked, since))
+            }
+            (Some(current), _) => Some((current.clone(), now)),
+            (None, _) => None,
+        };
+        let run_elapsed = self
+            .run_since
+            .as_ref()
+            .map(|(_, since)| now.duration_since(*since));
         // The compact activity row splits into what the TS row splits into:
         // state text on the left, elapsed time right-aligned, and a spinner
         // that turns warning-colored once a model wait passes half a minute.
         let (phase, elapsed, alert) = match blocking {
             Some(blocking) => (blocking, None, false),
-            None => match (self.state.active_run.is_some(), live) {
-                (true, Some(live)) => (
+            None => match (self.state.active_run.as_ref(), live) {
+                (Some(_), Some(live)) => (
                     live.state(now),
                     Some(crate::pane::duration_ms(
                         now.duration_since(live.since).as_millis() as u64,
                     )),
                     live.alert(now),
                 ),
-                (true, None) => ("Working".to_string(), None, false),
-                (false, _) => ("Idle".to_string(), None, false),
+                // No frame yet, but the run is admitted and moving. Say what is
+                // true — it is starting — and keep the clock, so a turn that is
+                // demonstrably working does not look like one that has wedged.
+                // The alert tone follows the same half-minute threshold as a
+                // real phase wait.
+                (Some(_), None) => (
+                    "Working".to_string(),
+                    run_elapsed.map(|waited| crate::pane::duration_ms(waited.as_millis() as u64)),
+                    run_elapsed.is_some_and(|waited| waited >= Duration::from_secs(30)),
+                ),
+                (None, _) => ("Idle".to_string(), None, false),
             },
         };
         let status = match (&self.state.active_run, self.state.pending) {
@@ -4261,6 +4296,54 @@ mod tests {
         assert!(
             app.shell.composer.phase.is_none(),
             "an idle Session keeps the composer title quiet"
+        );
+    }
+
+    /// A run can be admitted and moving before any `provider.*` frame arrives.
+    /// The status used to fall back to a bare, colourless "Working" for that
+    /// whole window, which reads exactly like a wedged turn: no clock, no tone,
+    /// nothing to show the engine is alive.
+    #[test]
+    fn a_run_with_no_frame_yet_still_shows_a_clock() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: SessionState {
+                active_run: Some("run-1".into()),
+                ..SessionState::default()
+            },
+        });
+        assert_eq!(app.shell.composer.phase.as_deref(), Some("Working"));
+        // The very first status frame anchors the clock, so the elapsed value
+        // starts at zero rather than staying absent.
+        assert!(
+            app.shell.composer.phase_elapsed.is_some(),
+            "a run with no frame yet still has a clock: {:?}",
+            app.shell.composer.phase
+        );
+        assert!(
+            !app.shell.composer.phase_alert,
+            "a fresh run is not alerting"
+        );
+
+        // The clock is re-read on every frame, so a wait that crosses the
+        // half-minute mark turns the title warning-colored even though the
+        // engine has still said nothing.
+        app.run_since = Some(("run-1".into(), Instant::now() - Duration::from_secs(31)));
+        app.update_status();
+        assert!(
+            app.shell.composer.phase_alert,
+            "a silent 31-second run is alerting"
+        );
+
+        // A new run restarts the clock rather than inheriting the old wait.
+        app.state.active_run = Some("run-2".into());
+        app.update_status();
+        assert!(
+            !app.shell.composer.phase_alert,
+            "a new run starts its own clock: {:?}",
+            app.shell.composer.phase_elapsed
         );
     }
 
