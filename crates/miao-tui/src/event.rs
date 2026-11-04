@@ -200,6 +200,15 @@ impl Bus {
 ///
 /// Everything not listed here repeats: a later projection, status frame, or
 /// catalog reply replaces it before the loop could have drawn twice.
+///
+/// `Provider` is not one of those. Each frame carries one streamed delta and
+/// the next frame carries the next piece of text, not the whole transcript, so
+/// dropping one leaves a hole nothing replaces. Dropping a burst of them left
+/// the screen frozen on an older paint — the operator saw nothing appear until
+/// their next keystroke produced a fresh event, which is exactly the "the
+/// answer only shows up after I type again" report. Waiting for a slot is the
+/// right trade here: the render loop is the only consumer and it drains every
+/// queued event before painting.
 fn requires_delivery(event: &AppEvent) -> bool {
     matches!(
         event,
@@ -211,6 +220,7 @@ fn requires_delivery(event: &AppEvent) -> bool {
             | AppEvent::InputRetrieved { .. }
             | AppEvent::ShellFailed { .. }
             | AppEvent::Attention { .. }
+            | AppEvent::Provider(_)
     )
 }
 

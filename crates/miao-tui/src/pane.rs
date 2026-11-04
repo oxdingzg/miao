@@ -129,8 +129,15 @@ impl Shell {
 
     /// Show what the model is streaming before its message commits. Empty
     /// strings clear it.
-    pub fn set_draft(&mut self, text: &str, reasoning: &str) {
-        self.transcript.set_draft(text, reasoning);
+    pub fn set_draft(&mut self, parts: &[DraftPart]) {
+        self.transcript.set_draft(parts);
+    }
+
+    /// Whether a newer draft is waiting for its paint slot. The drive loop uses
+    /// this to schedule the wake that `set_draft`'s throttle would otherwise
+    /// leave unscheduled.
+    pub fn draft_pending(&self) -> bool {
+        self.transcript.draft_dirty
     }
 
     /// Name the tool call the run is waiting on; `None` clears it.
@@ -445,7 +452,7 @@ pub struct TranscriptPane {
     rows: Vec<Row>,
     /// The streamed answer that the next projection replaces. Kept apart from
     /// `rows` so a projection can drop it in one assignment.
-    draft_source: Option<(String, String)>,
+    draft_source: Option<Vec<DraftPart>>,
     draft: Vec<Row>,
     /// A delta arrived and `draft` has not been rebuilt yet.
     draft_dirty: bool,
@@ -486,7 +493,7 @@ pub struct TranscriptPane {
 /// How long a streamed draft may lag the deltas that arrived. Re-parsing a long
 /// answer per token is quadratic; 20 refreshes a second are indistinguishable
 /// from more.
-const DRAFT_REFRESH: Duration = Duration::from_millis(50);
+pub(crate) const DRAFT_REFRESH: Duration = Duration::from_millis(50);
 
 impl TranscriptPane {
     fn new(theme: Theme) -> Self {
@@ -524,8 +531,8 @@ impl TranscriptPane {
 
     /// Record what the model is streaming. The lines are rendered on the next
     /// frame at most `DRAFT_REFRESH` apart instead of once per delta.
-    fn set_draft(&mut self, text: &str, reasoning: &str) {
-        if text.is_empty() && reasoning.is_empty() {
+    fn set_draft(&mut self, parts: &[DraftPart]) {
+        if parts.is_empty() {
             self.draft_source = None;
             self.draft.clear();
             self.draft_rows.clear();
@@ -533,7 +540,7 @@ impl TranscriptPane {
             self.draft_version += 1;
             return;
         }
-        self.draft_source = Some((text.to_string(), reasoning.to_string()));
+        self.draft_source = Some(parts.to_vec());
         self.draft_dirty = true;
     }
 
@@ -565,10 +572,7 @@ impl TranscriptPane {
         {
             return;
         }
-        self.draft = match &self.draft_source {
-            Some((text, reasoning)) => draft_lines(text, reasoning, &self.theme, now_ms()),
-            None => Vec::new(),
-        };
+        self.draft = draft_lines(self.draft_source.as_deref().unwrap_or(&[]), &self.theme, now_ms());
         self.draft_dirty = false;
         self.draft_built = Some(Instant::now());
         self.draft_version += 1;
@@ -579,15 +583,11 @@ impl Pane for TranscriptPane {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let palette = self.theme.palette;
         self.refresh_draft(false);
-        // The TS message column is inset one cell on each side inside its
-        // body row (`paddingLeft=1 paddingRight=1`), which is what keeps the
-        // user panel's `┃` edge off the very screen edge. Mirroring that inset
-        // here moves the whole pane, wrap budget included.
-        let content = Rect {
-            x: area.x + 1,
-            width: area.width.saturating_sub(2),
-            ..area
-        };
+        // The transcript fills its column edge to edge: the composer below it
+        // starts on the window's first column and the sidebar's rule sits on
+        // this column's last one, so an inset here left the text floating
+        // between two edges that the rows around it touch.
+        let content = area;
         let resized = content.width != self.width;
         if resized || self.body_version != self.body_built {
             self.body = wrap_rows(&self.rows, content.width);
@@ -671,6 +671,18 @@ impl Pane for TranscriptPane {
             self.paint_selection(frame, content);
         }
     }
+}
+
+/// One piece of the streaming answer, in the order the engine produced it.
+///
+/// A provider turn interleaves prose and tool calls; keeping them in separate
+/// fields painted every call after every paragraph, which is not the order the
+/// work happened in and is not the order the committed message will show.
+#[derive(Debug, Clone)]
+pub enum DraftPart {
+    Reasoning(String),
+    Text(String),
+    Call { name: String, arguments: String },
 }
 
 /// A projected transcript line plus its wrap behavior, mirroring the TS
@@ -1431,27 +1443,66 @@ fn prose_lines(text: &str, theme: &Theme) -> Vec<Row> {
 
 /// The streamed answer, rendered like the assistant entry it will become: the
 /// provisional block gains its header when the committed message arrives.
-fn draft_lines(text: &str, reasoning: &str, theme: &Theme, now_ms: u64) -> Vec<Row> {
+/// The answer being streamed, painted in the order the engine produced it.
+///
+/// A provider turn interleaves prose and tool calls. Rendering them as two
+/// groups (all prose, then all calls) is neither the order the work happened in
+/// nor the order the committed message will show, so the transcript rearranged
+/// itself the moment the turn committed. Claude Code and codex both paint the
+/// turn in arrival order; this does the same.
+fn draft_lines(parts: &[DraftPart], theme: &Theme, now_ms: u64) -> Vec<Row> {
     let palette = theme.palette;
     let mut rows = Vec::new();
-    if !reasoning.is_empty() {
-        // Thinking streams as one muted header line the TS transcript shows: a
-        // spinner naming where the thought is heading, never the run of text
-        // itself, which would tile the screen with everything it produced.
-        let frame = SPINNER_FRAMES[(now_ms / 160) as usize % SPINNER_FRAMES.len()];
-        let summary = fit(&reasoning_summary(reasoning), COMPACT_CELLS);
-        let label = if summary.is_empty() {
-            "Thinking".to_string()
-        } else {
-            format!("Thinking · {summary}")
-        };
-        rows.push(Row::clipped(Line::from(Span::styled(
-            format!("{frame} {label}"),
-            Style::new().fg(palette.text_muted),
-        ))));
-    }
-    if !text.is_empty() {
-        rows.extend(prose_lines(text, theme));
+    let mut opened = false;
+    for part in parts {
+        match part {
+            DraftPart::Reasoning(text) => {
+                // One muted header line names where the thought is heading; the
+                // run of text itself would tile the screen with everything the
+                // model produced before it answered.
+                if text.is_empty() {
+                    continue;
+                }
+                let frame = SPINNER_FRAMES[(now_ms / 160) as usize % SPINNER_FRAMES.len()];
+                let summary = fit(&reasoning_summary(text), COMPACT_CELLS);
+                let label = if summary.is_empty() {
+                    "Thinking".to_string()
+                } else {
+                    format!("Thinking · {summary}")
+                };
+                rows.push(Row::clipped(Line::from(Span::styled(
+                    format!("{frame} {label}"),
+                    Style::new().fg(palette.text_muted),
+                ))));
+                opened = true;
+            }
+            DraftPart::Text(text) => {
+                if text.is_empty() {
+                    continue;
+                }
+                if opened {
+                    rows.push(Row::plain(Line::default()));
+                }
+                rows.extend(prose_lines(text, theme));
+                opened = true;
+            }
+            DraftPart::Call { name, arguments } => {
+                if opened {
+                    rows.push(Row::plain(Line::default()));
+                }
+                let part = crate::session::ToolPart {
+                    id: String::new(),
+                    name: name.clone(),
+                    input: serde_json::from_str(arguments).unwrap_or(serde_json::Value::Null),
+                    output: Some(String::new()),
+                    failed: false,
+                };
+                for line in crate::tool::lines(&part, None, theme, false, None) {
+                    rows.push(Row::hung(line, 2));
+                }
+                opened = true;
+            }
+        }
     }
     rows
 }
@@ -1475,46 +1526,25 @@ fn transcript_lines(
         match entry {
             Entry::User { text, .. } => {
                 inline_run = false;
-                // The TS prompt block: two blank rows above, then a left-edged
-                // panel with one row of padding above and below the text. The
-                // panel background rides each row so the band reads as one
-                // block once `wrap_rows` pads it to the pane's width. The
-                // edge takes the agent's color slot (the TS default palette
-                // rotation starts at `secondary`), and the `❯` marker only
-                // leads the first row: wrapped and multi-line continuations
-                // start at the marker column without repeating it.
-                let surface = Style::new().bg(palette.surface);
-                let edge = Style::new().fg(palette.secondary);
-                let marker = Style::new().fg(palette.text_muted);
-                let text_style = Style::new().fg(palette.text);
-                rows.push(Row::plain(Line::default()));
-                rows.push(Row::plain(Line::default()));
-                rows.push(Row::clipped(
-                    Line::from(vec![Span::styled("┃", edge), Span::styled("  ", surface)])
-                        .style(surface),
-                ));
+                // The operator's own words as one quiet line per row: an accent
+                // `❯` and the text. No panel, no background band, no rules above
+                // and below — the prompt is a line the person typed, not a box
+                // something was put into, and framing it made a short question
+                // take five rows of screen.
                 anchors.push((
                     rows.len(),
                     text.lines().next().unwrap_or_default().to_string(),
                 ));
-                for (index, line) in text.lines().enumerate() {
-                    let mut spans = vec![Span::styled("┃", edge), Span::styled("  ", surface)];
-                    if index == 0 {
-                        spans.push(Span::styled("❯ ", marker));
-                    } else {
-                        spans.push(Span::styled("  ", marker));
-                    }
-                    spans.push(Span::styled(line.to_string(), text_style));
-                    // The five prefix cells (edge, panel padding, marker) stay
-                    // fixed while the prompt text wraps inside the panel; the
-                    // `┃` edge is structural and repeats on continuations, the
-                    // marker is not.
-                    rows.push(Row::hung_with_edge(Line::from(spans).style(surface), 5, 1));
+                for line in text.lines() {
+                    rows.push(Row::hung(
+                        Line::from(vec![
+                            Span::styled("❯ ", Style::new().fg(palette.primary)),
+                            Span::styled(line.to_string(), Style::new().fg(palette.text)),
+                        ]),
+                        2,
+                    ));
                 }
-                rows.push(Row::clipped(
-                    Line::from(vec![Span::styled("┃", edge), Span::styled("  ", surface)])
-                        .style(surface),
-                ));
+                rows.push(Row::plain(Line::default()));
             }
             Entry::Context { source, text } => {
                 // Injected context is a history fact, not something the operator
@@ -3112,7 +3142,7 @@ mod tests {
             .expect("draw");
         // Scroll back a few rows from the tail: the viewport now sits inside
         // the second turn, whose question is off-screen above it.
-        shell.scroll_transcript(-8);
+        shell.scroll_transcript(-5);
         assert!(!shell.following(), "a manual scroll reads history");
         terminal
             .draw(|frame| shell.transcript.render(frame, frame.area()))
@@ -3744,7 +3774,7 @@ mod tests {
                 palette,
             },
         );
-        shell.set_draft("streamed words", "");
+        shell.set_draft(&[DraftPart::Text("streamed words".into())]);
         assert!(
             shell.transcript.draft.is_empty(),
             "a delta must not re-parse the whole draft"
@@ -3776,7 +3806,7 @@ mod tests {
                 palette,
             },
         );
-        shell.set_draft("streamed words", "considering");
+        shell.set_draft(&[DraftPart::Text("streamed words".into()), DraftPart::Reasoning("considering".into())]);
         let draft = shell
             .draft()
             .iter()
@@ -3792,7 +3822,7 @@ mod tests {
         assert!(draft.contains("Thinking · considering"), "{draft}");
         assert!(draft.contains("streamed words"));
         // A projection, or a run that ends, clears it in one assignment.
-        shell.set_draft("", "");
+        shell.set_draft(&[]);
         assert!(shell.draft().is_empty());
     }
 
@@ -3809,7 +3839,7 @@ mod tests {
                 palette,
             },
         );
-        shell.set_draft("", "reading the diff\nthen the tests");
+        shell.set_draft(&[DraftPart::Reasoning("reading the diff\nthen the tests".into())]);
         let draft = shell
             .draft()
             .iter()
@@ -3825,7 +3855,7 @@ mod tests {
         assert_eq!(draft.matches("reading the diff").count(), 1, "{draft}");
         assert!(draft.contains("Thinking · reading the diff"), "{draft}");
         // The first answer token keeps the header and starts the prose.
-        shell.set_draft("partial", "reading the diff\nthen the tests");
+        shell.set_draft(&[DraftPart::Text("partial".into()), DraftPart::Reasoning("reading the diff\nthen the tests".into())]);
         let draft = shell
             .draft()
             .iter()
@@ -3843,10 +3873,11 @@ mod tests {
     }
 
     #[test]
-    fn the_prompt_block_mirrors_the_typescript_panel() {
-        // packages/tui renders each prompt as a left-edged panel with two blank
-        // rows above it and one row of padding inside; the background band runs
-        // the full row width once the pane pads it.
+    fn the_prompt_renders_as_one_marked_line() {
+        // The operator's own words are a line, not a panel: an accent `❯`, the
+        // text, and nothing framing it. The panel it used to be drew a rule
+        // above and below plus a background band, so a one-line question took
+        // five rows of screen and read as a box something had been put into.
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
@@ -3869,22 +3900,23 @@ mod tests {
         let lines = transcript_lines(&transcript, &theme, false, None).rows;
         let text = row_text;
         assert_eq!(text(&lines[0]), "", "the scrollbox opens with a blank row");
-        assert_eq!(text(&lines[1]), "");
-        assert_eq!(text(&lines[2]), "");
-        assert_eq!(text(&lines[3]), "┃  ", "the panel's top padding row");
-        assert_eq!(text(&lines[4]), "┃  ❯ question");
-        assert_eq!(text(&lines[5]), "┃  ", "the panel's bottom padding row");
-        assert_eq!(lines[4].line.style.bg, Some(palette.surface));
-        // Prose follows one blank row in, under a muted bullet, and the step
-        // closes with the check footer naming the agent and the model.
-        assert_eq!(text(&lines[6]), "");
-        assert!(
-            text(&lines[7]).starts_with("● answer"),
-            "{:?}",
-            text(&lines[7])
+        assert_eq!(text(&lines[1]), "❯ question", "the prompt is one line");
+        assert_eq!(
+            lines[1].line.style.bg, None,
+            "and carries no background band"
         );
-        assert_eq!(text(&lines[8]), "");
-        assert_eq!(text(&lines[9]), "  ✓ General · glm-5");
+        // Prose opens below the prompt's trailing blank row, under a muted
+        // bullet, and the step closes with the check footer naming the agent
+        // and the model.
+        assert_eq!(text(&lines[2]), "");
+        assert_eq!(text(&lines[3]), "");
+        assert!(
+            text(&lines[4]).starts_with("● answer"),
+            "{:?}",
+            text(&lines[4])
+        );
+        assert_eq!(text(&lines[5]), "");
+        assert_eq!(text(&lines[6]), "  ✓ General · glm-5");
     }
 
     #[test]
@@ -4066,7 +4098,7 @@ mod tests {
                 Entry::Assistant {
                     agent: None,
                     model: None,
-                    parts: vec![Part::Text("answer. ".repeat(30).trim_end().into())],
+                    parts: vec![Part::Text("answer. ".repeat(90).trim_end().into())],
                 },
             ],
             ..Transcript::default()
@@ -4383,16 +4415,13 @@ mod tests {
                 })
                 .expect("the row is painted")
         };
-        // The composer's box spans the window, and the transcript's message
-        // column is inset one cell on each side. So the box's left border sits
-        // one cell left of the transcript's `┃` edge — the same relationship
-        // the TS layout has between its prompt border and its message column,
-        // which is what keeps the input reading as the same column as the text
-        // it answers rather than floating off to one side.
+        // The transcript and the composer share their left edge: the box opens
+        // on the window's first column and so does the transcript's `❯`, so the
+        // text an operator typed sits directly above the box they type into.
         let input = column_of("┌");
-        let prose = column_of("┃");
+        let marker = column_of("❯");
         assert_eq!(input, 0, "the composer box opens on the window edge");
-        assert_eq!(prose, 1, "the transcript edge is inset one cell");
+        assert_eq!(marker, 0, "and the transcript starts on that same column");
     }
 
     #[test]
@@ -4513,20 +4542,10 @@ mod tests {
         assert!(text_rows.len() > 1, "the prompt wraps: {painted:?}");
         for row in &text_rows[1..] {
             assert!(
-                row.starts_with("┃    "),
-                "a continuation keeps the panel edge and marker column: {row:?}"
+                row.starts_with("  "),
+                "a continuation hangs under the marker column: {row:?}"
             );
         }
-        // The panel background rides every row of the block, continuations
-        // included.
-        let surface_rows = wrapped
-            .iter()
-            .filter(|row| row.style.bg == Some(palette.surface))
-            .count();
-        assert!(
-            surface_rows >= text_rows.len() + 2,
-            "the whole panel band carries the surface: {painted:?}"
-        );
     }
 
     #[test]
@@ -4971,3 +4990,238 @@ mod tests {
         );
     }
 }
+
+
+
+
+#[cfg(test)]
+mod draft_gap_tests {
+    use super::*;
+
+    /// The header naming what is being thought and the answer that follows are
+    /// two different things, so a blank row has to separate them. Without it a
+    /// reasoning model's stream read as one wall of prose: the summary line and
+    /// the first line of the answer sat on adjacent rows.
+    #[test]
+    fn the_thinking_header_is_separated_from_the_answer() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme { name: "t".into(), palette };
+        let rows = draft_lines(&[DraftPart::Reasoning("a thought".into()), DraftPart::Text("the answer".into())], &theme, 0);
+        let text: Vec<String> = rows
+            .iter()
+            .map(|row| row.line.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect();
+        assert!(text[0].contains("Thinking"), "{text:?}");
+        assert_eq!(text[1], "", "a blank row separates header from answer: {text:?}");
+        assert!(text[2].starts_with("● the answer"), "{text:?}");
+    }
+
+    /// An answer with no reasoning keeps its first row: the separator belongs
+    /// between two things, not above the only one.
+    #[test]
+    fn an_answer_without_thinking_starts_on_the_first_row() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme { name: "t".into(), palette };
+        let rows = draft_lines(&[DraftPart::Text("the answer".into())], &theme, 0);
+        let text: Vec<String> = rows
+            .iter()
+            .map(|row| row.line.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect();
+        assert!(text[0].starts_with("● the answer"), "{text:?}");
+    }
+}
+
+#[cfg(test)]
+mod layout_alignment_tests {
+    use super::*;
+
+    /// The three columns have to agree on their edges: the transcript's text,
+    /// the composer's box, and the sidebar's rule. An inset on the transcript
+    /// alone left its text floating a cell inside the box below it, which is
+    /// what the operator sees as "the left column does not line up".
+    #[test]
+    fn the_transcript_the_composer_and_the_sidebar_share_their_edges() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let mut shell = Shell::new(
+            std::path::Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        shell.set_transcript(&Transcript {
+            entries: vec![Entry::User {
+                text: "hello".into(),
+                seq: 1,
+            }],
+            ..Transcript::default()
+        });
+        let width = 200u16;
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 24)).expect("terminal");
+        terminal.draw(|frame| shell.render(frame)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let rows: Vec<String> = (0..24)
+            .map(|y| {
+                (0..width)
+                    .map(|x| {
+                        buffer
+                            .cell(ratatui::prelude::Position::new(x, y))
+                            .map(|cell| cell.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect()
+            })
+            .collect();
+        let first_painted = |needle: &str| {
+            rows.iter()
+                .find(|row| row.contains(needle))
+                .and_then(|row| row.find(needle))
+                .unwrap_or_else(|| panic!("{needle} is painted: {rows:?}"))
+        };
+        let marker = first_painted("❯");
+        let input = first_painted("┌");
+        assert_eq!(marker, input, "the transcript starts on the composer's column");
+        assert_eq!(marker, 0, "and that column is the window's first");
+
+        // The sidebar's rule divides the body. The transcript's text must not
+        // run past it, and the sidebar's content must start after it.
+        let rule = rows
+            .iter()
+            .find_map(|row| row.find('│').or_else(|| row.find('┃')))
+            .expect("the sidebar rule is painted");
+        assert!(rule > 0, "the rule sits between the two columns: {rule}");
+        // The transcript's column ends where the rule begins, so no transcript
+        // glyph is painted on or past it.
+        for row in &rows {
+            if let Some(index) = row.find("hello") {
+                let end = row[..index].len() + "hello".len();
+                assert!(
+                    end <= rule,
+                    "transcript text ends before the rule: {row:?} rule={rule}"
+                );
+            }
+        }
+    }
+}
+
+
+#[cfg(test)]
+mod probe_now {
+    use super::*;
+    #[test]
+    fn probe_real2() {
+        let raw = std::fs::read_to_string("/tmp/snap2.json").expect("snap");
+        let snap: serde_json::Value = serde_json::from_str(&raw).expect("json");
+        let t = crate::session::Transcript::from_snapshot(&snap);
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme { name: "t".into(), palette };
+        for (i, r) in transcript_lines(&t, &theme, false, None).rows.iter().enumerate().take(30) {
+            let s: String = r.line.spans.iter().map(|x| x.content.as_ref()).collect();
+            println!("R[{i:02}] |{s}|");
+        }
+    }
+}
+
+#[cfg(test)]
+mod probe_full {
+    use super::*;
+    #[test]
+    fn probe_full_snapshot() {
+        let raw = std::fs::read_to_string("/tmp/snap3.json").expect("snap");
+        let snap: serde_json::Value = serde_json::from_str(&raw).expect("json");
+        let t = crate::session::Transcript::from_snapshot(&snap);
+        println!("entries: {}", t.entries.len());
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme { name: "t".into(), palette };
+        let rows = transcript_lines(&t, &theme, false, None).rows;
+        println!("rows: {}", rows.len());
+        for (i, r) in rows.iter().enumerate().rev().take(12).collect::<Vec<_>>().into_iter().rev() {
+            let s: String = r.line.spans.iter().map(|x| x.content.as_ref()).collect();
+            println!("F[{i:03}] |{s}|");
+        }
+    }
+}
+
+
+#[cfg(test)]
+mod draft_tool_tests {
+    use super::*;
+
+    /// A tool call that runs mid-stream is work the turn did, so the draft
+    /// paints it as a `✓ bash …` row instead of waiting for the commit. Without
+    /// this the operator saw the answer's paragraphs with no sign of the calls
+    /// between them.
+    #[test]
+    fn a_streamed_tool_call_paints_a_tool_row() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let tools = vec![(
+            "run_command".to_string(),
+            r#"{"argv":["echo","hi"]}"#.to_string(),
+        )];
+        let rows = draft_lines(&[DraftPart::Text("done".into()), DraftPart::Call { name: tools[0].0.clone(), arguments: tools[0].1.clone() }], &theme, 0);
+        let text: Vec<String> = rows
+            .iter()
+            .map(|row| row.line.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect();
+        let joined = text.join("\n");
+        assert!(
+            joined.contains("bash"),
+            "the tool row names the tool: {joined}"
+        );
+        assert!(
+            joined.contains("echo hi"),
+            "and the command it ran: {joined}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod interleave_tests {
+    use super::*;
+
+    /// A provider turn is prose, a call, more prose, another call. The draft
+    /// must paint that arrival order: grouping the text and then the calls put
+    /// every `bash` row after the whole answer, which is neither what happened
+    /// nor what the committed message shows — the transcript rearranged itself
+    /// when the turn committed.
+    #[test]
+    fn a_streamed_turn_keeps_its_arrival_order() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let parts = vec![
+            DraftPart::Text("first paragraph".into()),
+            DraftPart::Call {
+                name: "run_command".into(),
+                arguments: r#"{"argv":["echo","one"]}"#.into(),
+            },
+            DraftPart::Text("second paragraph".into()),
+            DraftPart::Call {
+                name: "run_command".into(),
+                arguments: r#"{"argv":["echo","two"]}"#.into(),
+            },
+        ];
+        let rows = draft_lines(&parts, &theme, 0);
+        let text: Vec<String> = rows
+            .iter()
+            .map(|row| row.line.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect();
+        let joined = text.join("\n");
+        let first = joined.find("first paragraph").expect("first paragraph");
+        let one = joined.find("echo one").expect("first call");
+        let second = joined.find("second paragraph").expect("second paragraph");
+        let two = joined.find("echo two").expect("second call");
+        assert!(
+            first < one && one < second && second < two,
+            "the turn keeps its arrival order:\n{joined}"
+        );
+    }
+}
+
