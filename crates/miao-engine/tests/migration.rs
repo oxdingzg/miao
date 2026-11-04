@@ -332,3 +332,50 @@ async fn migration_refuses_pending_inputs_and_upgrades_original_retry_identity()
     reopened.admit(input("s", "new-authority")).await.unwrap();
     reopened.close().await.unwrap();
 }
+
+/// An interrupted migration leaves the old `user_version` behind. Reopening has
+/// to finish it, and a second reopen must change nothing (DATA-01: repeatable
+/// and resumable). The column repair itself is covered by
+/// `migration_refuses_pending_inputs_and_upgrades_original_retry_identity`, which
+/// rewinds to schema 17 and re-stages.
+#[tokio::test]
+async fn a_downgraded_version_finishes_the_migration_on_reopen_and_stays_idempotent() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let opened = store(dir.path()).await;
+        opened
+            .initialize("s", "t", dir.path().to_str().unwrap())
+            .await
+            .unwrap();
+        opened.close().await.unwrap();
+    }
+    let path = dir.path().join("engine.db");
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.pragma_update(None, "user_version", 17).unwrap();
+    }
+
+    for attempt in 0..2 {
+        let reopened = store(dir.path()).await;
+        assert_eq!(
+            reopened.sessions().await.unwrap(),
+            vec!["s".to_string()],
+            "attempt {attempt}: the session survives the repair"
+        );
+        reopened.close().await.unwrap();
+    }
+
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let version: u32 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, miao_engine::store::SCHEMA_VERSION);
+    let columns: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('engine_run') WHERE name='lease_epoch'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(columns, 1, "the migrated column stays in place");
+}
