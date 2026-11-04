@@ -324,6 +324,11 @@ pub struct App {
     pending_models: bool,
     /// The provider the model picker is narrowed to; `None` lists everything.
     models_filter: Option<String>,
+    /// Elapsed time captured the moment the provider stream ended. Claude
+    /// Code and Codex tie the spinner to the local stream lifecycle, so the
+    /// clock stops the instant the answer finishes instead of counting until
+    /// a durable projection (which can stall) retires the run.
+    stream_ended: Option<Duration>,
     /// Providers the snapshot knows but this engine does not serve yet, as
     /// (id, display name). Fed to the model picker's needs-auth tail.
     providers_needing_auth: Vec<(String, String)>,
@@ -425,6 +430,7 @@ impl App {
             catalog: Vec::new(),
             pending_models: false,
             models_filter: None,
+            stream_ended: None,
             providers_needing_auth: Vec::new(),
             pending_accounts: false,
             scroll: Scroll::default(),
@@ -786,6 +792,7 @@ impl App {
                     }
                 }
                 self.state = *state;
+                self.stream_ended = None;
                 // A Session that already holds prompts may still be unnamed —
                 // resuming one must not leave the sidebar reading "New session".
                 if let Some((id, first)) = self
@@ -2633,23 +2640,42 @@ impl App {
                 // `Draft::append` matches.
                 let envelope = frame.get("data").unwrap_or(&Value::Null);
                 let delta = envelope.get("delta").unwrap_or(envelope);
+                // A finished provider stream (the engine's end-of-stream
+                // marker) freezes the elapsed clock here, before the durable
+                // projection retires the run: the operator sees the total
+                // time the moment the answer completes.
+                if delta.get("kind").and_then(Value::as_str) == Some("stream.done") {
+                    self.stream_ended = self
+                        .run_since
+                        .as_ref()
+                        .map(|(_, since)| now.duration_since(*since));
+                    return;
+                }
                 self.stream(&run_id, delta);
                 return;
             }
             // The engine repeats this while it has no first token.
-            "provider.waiting" => LivePhase::Waiting,
+            "provider.waiting" => {
+                self.stream_ended = None;
+                LivePhase::Waiting
+            }
             "provider.retry" => LivePhase::Retrying {
                 attempt: frame.get("attempt").and_then(Value::as_u64).unwrap_or(0) + 1,
             },
             // An attempt announcement proves the request is in flight, even
             // before the first heartbeat or right after a previous step.
-            "provider.attempt" => match self.live.as_ref().map(|live| live.phase.clone()) {
-                Some(phase) => phase,
-                None => LivePhase::Waiting,
-            },
+            "provider.attempt" => {
+                self.stream_ended = None;
+                let phase = match self.live.as_ref().map(|live| live.phase.clone()) {
+                    Some(phase) => phase,
+                    None => LivePhase::Waiting,
+                };
+                phase
+            }
             // A committed tool call names the work the run is doing, and the
             // transcript keeps one spinner row for it while it lasts.
             "tool.planned" => {
+                self.stream_ended = None;
                 let label = tool_label(
                     frame
                         .get("name")
@@ -2841,11 +2867,18 @@ impl App {
                 // demonstrably working does not look like one that has wedged.
                 // The alert tone follows the same half-minute threshold as a
                 // real phase wait.
-                (Some(_), None) => (
-                    "Working".to_string(),
-                    run_elapsed.map(|waited| crate::pane::duration_ms(waited.as_millis() as u64)),
-                    run_elapsed.is_some_and(|waited| waited >= Duration::from_secs(30)),
-                ),
+                (Some(_), None) => {
+                    // A finished stream freezes the clock at the answer's
+                    // total; the label keeps "Working" only until the durable
+                    // projection retires the run.
+                    let elapsed = self.stream_ended.or(run_elapsed);
+                    (
+                        "Working".to_string(),
+                        elapsed.map(|waited| crate::pane::duration_ms(waited.as_millis() as u64)),
+                        self.stream_ended.is_none()
+                            && run_elapsed.is_some_and(|waited| waited >= Duration::from_secs(30)),
+                    )
+                }
                 (None, _) => ("Idle".to_string(), None, false),
             },
         };
