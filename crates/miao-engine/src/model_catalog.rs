@@ -109,7 +109,8 @@ fn window_index() -> &'static std::collections::BTreeMap<String, u64> {
                         .flat_map(|models| models.keys().cloned())
                     {
                         if let Some(window) = context_window_in(&document, &model_id) {
-                            index.entry(model_id)
+                            index
+                                .entry(model_id)
                                 .and_modify(|known| {
                                     if window < *known {
                                         *known = window;
