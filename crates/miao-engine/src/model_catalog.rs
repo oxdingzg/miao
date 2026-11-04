@@ -55,7 +55,7 @@ pub(crate) fn models_snapshot() -> Option<serde_json::Value> {
 /// assume.
 pub(crate) fn context_window_in(document: &serde_json::Value, model: &str) -> Option<u64> {
     let mut smallest: Option<u64> = None;
-    let mut scan = |probe: &str, smallest: &mut Option<u64>| {
+    let scan = |probe: &str, smallest: &mut Option<u64>| {
         for provider in document
             .as_object()
             .into_iter()
