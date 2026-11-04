@@ -9,11 +9,10 @@ not a second product surface to keep feature-parity with forever.
 
 One artifact per platform is published: `miao-<os>-<arch>`, built from
 `crates/miao-cli` (`--bin miao`). The engine and the TUI are linked into that
-binary, so an install needs neither `miao-engine` nor `miao-tui` beside it. Those
-two archives survive as companions for the TypeScript compatibility path: the
-installer drops them next to the binary when a release carries them, and
-`--no-engine` / `--no-tui` skip them. Neither is the product, and no release
-asset may be built from them.
+binary, so an install needs neither `miao-engine` nor `miao-tui` beside it, and
+the installer writes only `miao`. The `engine-artifacts` workflow still builds
+`miao-engine` archives on `engine-v*` tags for development and testing; those are
+Actions artifacts, not release assets, and no product install consumes them.
 
 Two files decide which crate is packaged — `packages/miao/script/build.ts`
 (`PRODUCT`) and `.github/workflows/engine-artifacts.yml` (job `native`).
