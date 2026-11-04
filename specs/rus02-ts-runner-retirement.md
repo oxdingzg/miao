@@ -50,6 +50,39 @@
 在 TS drain 仍被 `miao-dev`（`bun run ./src/index.ts`）启动的前提下，第 1 步会同时决定
 开发入口的去向：要么开发入口改用 Rust engine，要么这一批删除必须等它退役。
 
+### 1.2 复核后的更正（2026-11-04）
+
+上面那段前提已经过时：`miao-dev` 现在是 Rust 启动器（直接运行
+`$HOME/.local/share/miao/native/miao`，TUI 与 engine 同进程），发行版同样是
+`crates/miao-cli` 一个二进制。TS drain 在产品与开发路径上都没有消费者了，它的装配方
+只剩 TS 产品栈自己：
+
+| 装配方      | 位置                                                     |
+| ----------- | -------------------------------------------------------- |
+| Location DI | `packages/core/src/location-services.ts:39`、`:167`       |
+| runtime     | `packages/miao/src/runtime/host.ts:70`                    |
+| TS server   | `packages/miao/src/server/server.ts:9`、`:166`            |
+| TS CLI      | `packages/miao/src/cli/cli-runtime.ts:24`、`:58`          |
+| HTTP routes | `packages/server/src/routes.ts:23`                        |
+
+所以 RUS-02 的真实范围不是「删 `session/runner/` 目录」，而是「退役整套 TS 产品栈」：
+`packages/cli`、`packages/miao`、`packages/server`，以及 `packages/core` 的执行路径。
+在这个范围里还有一处产品外依赖必须先解开——CI 仍用 TS 入口做沙箱验收：
+
+- `.github/workflows/native.yml:73`、`:124`、`:197` 运行
+  `bun src/index.ts __sandbox-run`。沙箱实现本身已在 `crates/miao-native` 与
+  `crates/miao-sandbox`，所以这一步是换载体，不是改行为。
+
+修订后的顺序：
+
+1. 把 `native.yml` 的沙箱验收从 `bun src/index.ts __sandbox-run` 换到 `crates/miao-native`
+   的 `miao-run`。
+2. 删除 TS 产品栈的入口与装配（`packages/cli`、`packages/miao`、`packages/server`），
+   `location-services.ts` 的 `SessionExecution.node` 装配随之下线。
+3. 前两步完成后，`execution/local.ts → runner/index.ts` 与
+   `location-services.ts → runner/llm.ts` 两条边自动消失；`llm.ts` 与 8 个叶子文件作为一个
+   整体删除。每批单独开 PR，跑 `bun typecheck` 与相关 `bun test`。
+
 
 ```sh
 bun docs/experiments/2026-10-28-ts-runner-retirement/generate.cjs
