@@ -2867,18 +2867,24 @@ impl App {
                 // demonstrably working does not look like one that has wedged.
                 // The alert tone follows the same half-minute threshold as a
                 // real phase wait.
-                (Some(_), None) => {
-                    // A finished stream freezes the clock at the answer's
-                    // total; the label keeps "Working" only until the durable
-                    // projection retires the run.
-                    let elapsed = self.stream_ended.or(run_elapsed);
-                    (
+                (Some(_), None) => match self.stream_ended {
+                    // The answer is on screen: the turn is done, so the label
+                    // retires with the frozen total instead of claiming the
+                    // run is still working (Claude Code drops the spinner at
+                    // stream end; the frozen total is miao's extra honesty
+                    // while a stalled projection holds the run open).
+                    Some(frozen) => (
+                        "Done".to_string(),
+                        Some(crate::pane::duration_ms(frozen.as_millis() as u64)),
+                        false,
+                    ),
+                    None => (
                         "Working".to_string(),
-                        elapsed.map(|waited| crate::pane::duration_ms(waited.as_millis() as u64)),
-                        self.stream_ended.is_none()
-                            && run_elapsed.is_some_and(|waited| waited >= Duration::from_secs(30)),
-                    )
-                }
+                        run_elapsed
+                            .map(|waited| crate::pane::duration_ms(waited.as_millis() as u64)),
+                        run_elapsed.is_some_and(|waited| waited >= Duration::from_secs(30)),
+                    ),
+                },
                 (None, _) => ("Idle".to_string(), None, false),
             },
         };
