@@ -125,7 +125,7 @@ async fn run(runtime: &Runtime, store: &Store, op: Value) -> Value {
             tokio::select! {
                 _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {},
                 event = progress.recv() => {
-                    if let Ok(event) = event {
+                    if let Some(event) = event {
                         if event["session_id"] == session {
                             let failed = event["kind"] == "runtime.error";
                             observed.push(event);

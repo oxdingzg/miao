@@ -195,7 +195,12 @@ async fn turn(runtime: &Runtime, store: &Store, input_id: &str) {
         )
         .await
         .unwrap();
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+    // The wait is for a run to settle, not a performance assertion: a loaded
+    // CI runner runs this file's 18 tests concurrently and has taken ~20s for
+    // the whole file, so 10s per turn was a flake waiting to happen rather than
+    // a bound on anything the test can observe. It still fails fast if the run
+    // genuinely never settles.
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
         loop {
             let events = store.events("s", 0, 500).await.unwrap();
             // A drain journals its terminal `stop`/`stop_failure` in a

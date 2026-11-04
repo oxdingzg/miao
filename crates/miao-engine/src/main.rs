@@ -704,9 +704,8 @@ async fn serve(runtime: Runtime, product_tools: Option<String>) -> io::Result<()
                     }
                 },
                 notice=progress.recv()=>match notice {
-                    Ok(notice)=>{if notice["session_id"].as_str().is_some_and(|s|host.subscribed(s)) {send(&output,json!({"method":"progress","params":notice})).await?;}},
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>send(&output,json!({"method":"resync","params":{"reason":"ephemeral_progress_lagged"}})).await?,
-                    Err(tokio::sync::broadcast::error::RecvError::Closed)=>break,
+                    Some(notice)=>{if notice["session_id"].as_str().is_some_and(|s|host.subscribed(s)) {send(&output,json!({"method":"progress","params":notice})).await?;}},
+                    None=>break,
                 },
                 report=config_events.recv()=>match report {
                     // A reloaded configuration is process-wide, not
