@@ -117,8 +117,32 @@ pub struct Draft {
     /// Assistant entries committed when the stream started. A projection that
     /// commits one more is the message this draft was standing in for.
     committed: usize,
-    text: String,
-    reasoning: String,
+    /// The turn's parts in the order the engine produced them. A provider turn
+    /// is prose, a call, more prose, another call — interleaved, not grouped —
+    /// so keeping text and calls in separate fields painted every call after
+    /// every paragraph. Both Claude Code and codex show the transcript in the
+    /// order the work happened; this is the same order the committed message
+    /// carries, which is why the draft has to match it or the screen rearranges
+    /// itself the moment the turn commits.
+    parts: Vec<DraftPart>,
+}
+
+/// One piece of the streaming answer, in arrival order.
+#[derive(Debug)]
+enum DraftPart {
+    Reasoning(String),
+    Text(String),
+    Call(DraftCall),
+}
+
+/// One tool call opening during the stream.
+#[derive(Debug, Default)]
+struct DraftCall {
+    name: String,
+    /// The `arguments` fragments as they arrived. They are a JSON string split
+    /// at arbitrary byte boundaries, so the caller re-reads the field it wants
+    /// from the joined text rather than parsing a fragment.
+    arguments: String,
 }
 
 impl Draft {
@@ -128,12 +152,67 @@ impl Draft {
             .and_then(Value::as_str)
             .unwrap_or_default();
         match delta.get("kind").and_then(Value::as_str) {
-            Some("text.delta") => self.text.push_str(text),
-            Some("reasoning.delta") => self.reasoning.push_str(text),
-            // Tool arguments stream too, but they belong to a call the
-            // transcript renders once it is committed.
+            Some("text.delta") => match self.parts.last_mut() {
+                Some(DraftPart::Text(open)) => open.push_str(text),
+                _ => self.parts.push(DraftPart::Text(text.to_string())),
+            },
+            Some("reasoning.delta") => match self.parts.last_mut() {
+                Some(DraftPart::Reasoning(open)) => open.push_str(text),
+                _ => self.parts.push(DraftPart::Reasoning(text.to_string())),
+            },
+            Some("tool.start") => self.parts.push(DraftPart::Call(DraftCall {
+                name: delta
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                arguments: String::new(),
+            })),
+            Some("tool.input.delta") => {
+                // The arguments belong to the call the engine just opened, so
+                // they attach to the newest call rather than to whatever part
+                // happens to be last.
+                let fragment = delta
+                    .get("delta")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if let Some(DraftPart::Call(call)) = self
+                    .parts
+                    .iter_mut()
+                    .rev()
+                    .find(|part| matches!(part, DraftPart::Call(_)))
+                {
+                    call.arguments.push_str(fragment);
+                }
+            }
             _ => {}
         }
+    }
+
+    /// The reasoning this draft has, joined, for the status/thinking header.
+    #[cfg(test)]
+    fn reasoning(&self) -> String {
+        self.parts
+            .iter()
+            .filter_map(|part| match part {
+                DraftPart::Reasoning(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Whether any text has arrived, so the commit check can tell an answer
+    /// from a reasoning-only step.
+    /// The visible answer text, joined, for tests and the commit check.
+    #[cfg(test)]
+    fn text(&self) -> String {
+        self.parts
+            .iter()
+            .filter_map(|part| match part {
+                DraftPart::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
     }
 }
 
@@ -711,7 +790,7 @@ impl App {
                     committed > draft.committed || self.state.active_run.is_none()
                 }) {
                     self.draft = None;
-                    self.shell.set_draft("", "");
+                    self.shell.set_draft(&[]);
                     self.shell.set_running_tool(None);
                 }
                 self.committed = committed;
@@ -2450,7 +2529,14 @@ impl App {
             "provider.delta" => {
                 self.live = None;
                 self.shell.set_running_tool(None);
-                self.stream(&run_id, frame.get("data").unwrap_or(&Value::Null));
+                // `data` is the engine's delta envelope: `{"kind":"delta",
+                // "delta":{...},"raw":{...}}`, so the normalized delta the draft
+                // reads sits one level down. Captured from a real turn: `data`
+                // alone carries `kind:"delta"` and `raw`, neither of which
+                // `Draft::append` matches.
+                let envelope = frame.get("data").unwrap_or(&Value::Null);
+                let delta = envelope.get("delta").unwrap_or(envelope);
+                self.stream(&run_id, delta);
                 return;
             }
             // The engine repeats this while it has no first token.
@@ -2500,8 +2586,7 @@ impl App {
 
     /// Append one normalized provider delta to the draft the next projection
     /// will replace.
-    fn stream(&mut self, run_id: &str, frame: &Value) {
-        let delta = frame.get("delta").unwrap_or(&Value::Null);
+    fn stream(&mut self, run_id: &str, delta: &Value) {
         // A delta for a run other than the draft's starts a new draft; frames
         // for a finished run are filtered above, so this is a newer turn.
         if self
@@ -2517,7 +2602,19 @@ impl App {
         }
         let draft = self.draft.as_mut().expect("draft just ensured");
         draft.append(delta);
-        self.shell.set_draft(&draft.text, &draft.reasoning);
+        let parts: Vec<crate::pane::DraftPart> = draft
+            .parts
+            .iter()
+            .map(|part| match part {
+                DraftPart::Reasoning(text) => crate::pane::DraftPart::Reasoning(text.clone()),
+                DraftPart::Text(text) => crate::pane::DraftPart::Text(text.clone()),
+                DraftPart::Call(call) => crate::pane::DraftPart::Call {
+                    name: call.name.clone(),
+                    arguments: call.arguments.clone(),
+                },
+            })
+            .collect();
+        self.shell.set_draft(&parts);
         // Deltas wake the render loop themselves, and its draw is a diff: the
         // streamed rows update in place. A forced full repaint per token
         // (resize-based redraw) flashed the whole screen on every token.
@@ -2533,6 +2630,15 @@ impl App {
     /// when a label would actually change instead of once a minute. `None` means
     /// nothing on screen is time-relative, so the loop may wait for events alone.
     pub fn next_repaint(&self) -> Option<Duration> {
+        // A draft that is dirty but was skipped by the paint throttle still has
+        // to be drawn. The throttle exists so a token stream does not repaint
+        // sixty times a second, but a skipped paint that schedules nothing
+        // leaves the newest text on screen nowhere: the next paint waits for an
+        // event that may never come, and the transcript freezes until the
+        // operator types again. Wake for the remainder of the throttle window.
+        if self.shell.draft_pending() {
+            return Some(crate::pane::DRAFT_REFRESH);
+        }
         let now = crate::pane::now_ms();
         let stamps = match self.screen {
             Screen::Home => Vec::new(),
@@ -3023,7 +3129,7 @@ impl App {
         self.live = None;
         self.draft = None;
         self.committed = 0;
-        self.shell.set_draft("", "");
+        self.shell.set_draft(&[]);
         self.usage = None;
         self.shell.set_usage(None);
         self.pending_accounts = false;
@@ -3201,6 +3307,62 @@ mod tests {
 
     fn key(code: KeyCode, modifiers: KeyModifiers) -> AppEvent {
         AppEvent::Key(KeyEvent::new(code, modifiers))
+    }
+
+    /// End-to-end: the exact frame shapes the engine publishes must reach the
+    /// draft the transcript paints. The earlier tests shared a helper that
+    /// wrapped the delta one level deeper than the engine does, so they passed
+    /// against a contract no provider honoured and a real turn painted nothing.
+    #[test]
+    fn engine_shaped_deltas_reach_the_painted_draft() {
+        let mut app = session_app();
+        for frame in [
+            serde_json::json!({"kind":"provider.delta","session_id":"ses_1","run_id":"run-1",
+                "data":{"kind":"delta","delta":{"kind":"reasoning.delta","text":"让我想想"}}}),
+            serde_json::json!({"kind":"provider.delta","session_id":"ses_1","run_id":"run-1",
+                "data":{"kind":"delta","delta":{"kind":"text.delta","text":"答案第一段。"}}}),
+            serde_json::json!({"kind":"provider.delta","session_id":"ses_1","run_id":"run-1",
+                "data":{"kind":"delta","delta":{"kind":"text.delta","text":"答案第二段。"}}}),
+        ] {
+            app.handle(AppEvent::Provider(frame));
+        }
+        let painted = drafted(&mut app);
+        assert!(
+            painted.contains("答案第一段。"),
+            "the streamed text reaches the transcript: {painted:?}"
+        );
+        assert!(
+            painted.contains("答案第二段。"),
+            "and every later delta appends: {painted:?}"
+        );
+        assert!(
+            painted.contains("Thinking"),
+            "the reasoning shows as its one header line: {painted:?}"
+        );
+    }
+
+    /// A streamed delta that lands inside the paint throttle must still get a
+    /// frame. The throttle skips the paint, so without a scheduled wake the
+    /// loop waits for an event that never comes: the transcript froze on an
+    /// older paint until the operator's next keystroke produced one, which is
+    /// the "the answer only appears after I type again" report.
+    #[test]
+    fn a_pending_draft_asks_the_loop_to_come_back() {
+        let mut app = session_app();
+        // An idle Session has nothing time-relative on screen, so the loop is
+        // content to wait for events.
+        assert_eq!(app.next_repaint(), None, "an idle screen waits on events");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.delta",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "data": { "kind": "text.delta", "text": "a token" },
+        })));
+        assert!(
+            app.next_repaint().is_some(),
+            "a pending delta schedules its own paint; otherwise the text sits \
+             unpainted until the next keystroke"
+        );
     }
 
     fn summary(id: &str, updated_at_ms: u64) -> SessionSummary {
@@ -4741,6 +4903,12 @@ mod tests {
         assert_eq!(waited(Duration::from_secs(65)), "1m 5s");
     }
 
+    /// The frame shape the engine actually publishes, copied from a logged
+    /// turn: `data` is a delta *envelope* — `{"kind":"delta","delta":{…},
+    /// "raw":{…}}` — and the normalized delta sits under `data.delta`. A
+    /// helper that put it directly on `data` made the reader look one level
+    /// too high, which is exactly how a real turn's text went missing while
+    /// the tests stayed green.
     fn delta_frame(run_id: &str, kind: &str, text: &str) -> AppEvent {
         AppEvent::Provider(serde_json::json!({
             "kind": "provider.delta",
@@ -4782,7 +4950,7 @@ mod tests {
         app.handle(delta_frame("run-1", "text.delta", "Hel"));
         app.handle(delta_frame("run-1", "text.delta", "lo"));
         let draft = app.draft.as_ref().expect("a streaming draft");
-        assert_eq!(draft.text, "Hello");
+        assert_eq!(draft.text(), "Hello");
         assert!(
             drafted(&mut app).contains("Hello"),
             "the transcript shows the streamed answer: {:?}",
@@ -4795,8 +4963,8 @@ mod tests {
         let mut app = running_app("run-1");
         app.handle(delta_frame("run-1", "reasoning.delta", "weighing"));
         let draft = app.draft.as_ref().expect("a streaming draft");
-        assert_eq!(draft.reasoning, "weighing");
-        assert!(draft.text.is_empty(), "reasoning is not the answer");
+        assert_eq!(draft.reasoning(), "weighing");
+        assert!(draft.text().is_empty(), "reasoning is not the answer");
         // With no answer yet the thinking is one muted header line.
         assert!(drafted(&mut app).contains("Thinking · weighing"));
         app.handle(delta_frame("run-1", "text.delta", "the answer"));
@@ -4815,7 +4983,7 @@ mod tests {
         assert!(app
             .draft
             .as_ref()
-            .is_some_and(|draft| draft.text == "Hello"));
+            .is_some_and(|draft| draft.text() == "Hello"));
         assert!(drafted(&mut app).contains("Hello"));
         let committed = Transcript::from_snapshot(&serde_json::json!({
             "messages": [{"role": "assistant", "content": [{"type": "text", "text": "Hello"}]}],

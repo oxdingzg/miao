@@ -170,12 +170,34 @@ async fn drive(
     // until the operator comes back; the loop skips those frames and keeps the
     // engine tasks, the session, and the process alive.
     let mut paint_failures = 0u32;
+    // ratatui writes only what differs from its previous buffer. A frame the
+    // terminal dropped leaves that buffer believing the text is already on
+    // screen, so nothing re-sends it and the transcript freezes until an
+    // unrelated full repaint (a keystroke, a resize) repairs it. `clear`
+    // resets the back buffer so the next draw repaints everything.
+    let mut repaint_all = false;
     loop {
         let _ = title.update(app.terminal_title().as_deref());
+        if repaint_all {
+            // A paint failed, so the terminal is missing cells ratatui believes
+            // it already wrote. Emptying both diff buffers makes the next draw
+            // resend every cell — including the ones that were lost — without
+            // touching the visible screen. `Terminal::clear` would send
+            // Clear(All), wiping the screen to blank before the repaint lands:
+            // under streaming backpressure a write fails often, and each
+            // failure flashed the whole transcript (the "constant flicker"
+            // report). Repainting identical cells over what is already shown
+            // is byte-heavy but visually seamless. Two swaps reset both
+            // buffers and leave `current` where it started.
+            repaint_all = false;
+            terminal.swap_buffers();
+            terminal.swap_buffers();
+        }
         match crate::terminal::draw_frame(terminal, |frame| app.render(frame)) {
             Ok(_) => paint_failures = 0,
             Err(error) => {
                 paint_failures += 1;
+                repaint_all = true;
                 if paint_failures == 1 {
                     app.warn(&format!(
                         "paint failed ({error}); holding frames until output drains"
@@ -204,7 +226,15 @@ async fn drive(
         // engine events repaint immediately; clock ticks are never replayed after
         // an editor.
         let after = match app.busy() {
-            true => Some(Duration::from_secs(1)),
+            // A running turn repaints at least once a second so its elapsed
+            // clock and its engine-silence warning stay true. A pending draft
+            // is a reason to come back sooner: the stream writes far more often
+            // than once a second, and waiting for the clock tick let the newest
+            // text sit unpainted until the next event arrived.
+            true => Some(match app.next_repaint() {
+                Some(sooner) => sooner.min(Duration::from_secs(1)),
+                None => Duration::from_secs(1),
+            }),
             false => app.next_repaint(),
         };
         let repaint = async {
