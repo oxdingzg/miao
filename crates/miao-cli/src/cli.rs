@@ -2998,6 +2998,17 @@ fn db_vacuum(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// The ledger `serve` and `web` run on when no `--db` was given.
+///
+/// A process-enabled runtime refuses a ledger inside its own workspace
+/// (`runtime.rs`), so the default cannot sit beside the workspace: it did, and
+/// the first run of `miao serve` failed with "requires its database outside the
+/// workspace". The default is the Location-scoped ledger the rest of the product
+/// uses, which is the path `miao db path` prints.
+fn serve_database(db: Option<PathBuf>, workspace: &std::path::Path) -> PathBuf {
+    db.unwrap_or_else(|| default_db(workspace))
+}
+
 /// Copy the ledger and its blobs into a backup that has been read back.
 ///
 /// `VACUUM INTO` writes a consistent snapshot in one statement, so a live
@@ -3809,7 +3820,7 @@ fn serve_forever(rest: &[String]) -> Result<(), String> {
     }
     let workspace =
         workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    let db = db.unwrap_or_else(|| workspace.join(".miao-serve.db"));
+    let db = serve_database(db, &workspace);
     let model = model
         .or_else(|| std::env::var("MIAO_ENGINE_MODEL").ok())
         .unwrap_or_else(|| "unavailable/model".into());
@@ -5563,7 +5574,7 @@ mod tests {
     use super::{
         anchored_sessions, carry_uncommitted_changes, config_layers, db_file_bytes, db_read_only,
         db_backup, db_report, db_vacuum, default_db, engine_argv_with, event_line,
-        git_worktree_main_checkout,
+        git_worktree_main_checkout, serve_database,
         launch, lsp_servers, mcp_servers, merged_config, model_routes, parsed_session_location,
         plugin_entries, project_copy_apply, project_copy_plan, retention_plan, strip_comments,
         tree_bytes, uninstall_targets, worktree_remove_apply, worktree_remove_plan,
@@ -5655,6 +5666,25 @@ mod tests {
         assert_eq!(rows, 2, "vacuum keeps every row");
         drop(connection);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_serve_default_database_is_outside_the_workspace() {
+        let workspace = std::env::temp_dir().join(format!("miao-cli-serve-{}", std::process::id()));
+        std::fs::create_dir_all(&workspace).expect("workspace");
+        // The runtime refuses a process-enabled database inside its workspace, so
+        // a default beside the workspace makes `miao serve` fail on first run.
+        assert!(
+            !serve_database(None, &workspace).starts_with(&workspace),
+            "the default ledger must stay outside the workspace"
+        );
+        let chosen = workspace.join("chosen.db");
+        assert_eq!(
+            serve_database(Some(chosen.clone()), &workspace),
+            chosen,
+            "an explicit --db is used as given"
+        );
+        let _ = std::fs::remove_dir_all(&workspace);
     }
 
     #[test]
