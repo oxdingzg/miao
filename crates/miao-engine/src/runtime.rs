@@ -1940,6 +1940,71 @@ impl Runtime {
         self.inner.provider().model_catalog()
     }
 
+    /// Every provider the shipped snapshot names, marked with whether this
+    /// engine already serves one of its models. A picker shows the rest as
+    /// "needs auth" so an operator can see the whole road, not only the paved
+    /// part.
+    pub fn provider_catalog(&self) -> serde_json::Value {
+        use serde_json::json;
+        let served = self.model_catalog();
+        let mut configured: Vec<String> = Vec::new();
+        for info in &served {
+            let named = info
+                .route_id
+                .as_deref()
+                .and_then(|id| id.split_once('/'))
+                .map(|(provider, _)| provider.to_string())
+                .or_else(|| {
+                    info.model_key
+                        .as_deref()
+                        .and_then(|key| key.split_once('/'))
+                        .map(|(provider, _)| provider.to_string())
+                });
+            if let Some(named) = named {
+                if !configured.iter().any(|known| known == &named) {
+                    configured.push(named);
+                }
+            }
+        }
+        let Some(document) = crate::model_catalog::models_snapshot() else {
+            return json!({ "providers": [] });
+        };
+        let Some(entries) = document.as_object() else {
+            return json!({ "providers": [] });
+        };
+        let mut providers: Vec<serde_json::Value> = entries
+            .iter()
+            .map(|(id, entry)| {
+                let configured = configured.iter().any(|known| known == id);
+                json!({
+                    "id": id,
+                    "name": entry.get("name").and_then(|name| name.as_str()).unwrap_or(id),
+                    "models": entry.get("models").and_then(|models| models.as_object()).map(|models| models.len()).unwrap_or(0),
+                    "configured": configured,
+                })
+            })
+            .collect();
+        providers.sort_by(|a, b| {
+            let configured = |value: &serde_json::Value| {
+                !value
+                    .get("configured")
+                    .and_then(|flag| flag.as_bool())
+                    .unwrap_or(false)
+            };
+            configured(a).cmp(&configured(b)).then_with(|| {
+                let name = |value: &serde_json::Value| -> String {
+                    value
+                        .get("name")
+                        .and_then(|name| name.as_str())
+                        .unwrap_or_default()
+                        .to_string()
+                };
+                name(a).cmp(&name(b))
+            })
+        });
+        json!({ "providers": providers })
+    }
+
     pub async fn inject(
         &self,
         session: &str,

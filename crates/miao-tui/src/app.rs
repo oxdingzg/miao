@@ -322,6 +322,16 @@ pub struct App {
     workspaces: Vec<(String, String, String)>,
     /// The model dialog waits for the catalog when nothing is cached yet.
     pending_models: bool,
+    /// The provider the model picker is narrowed to; `None` lists everything.
+    models_filter: Option<String>,
+    /// Elapsed time captured the moment the provider stream ended. Claude
+    /// Code and Codex tie the spinner to the local stream lifecycle, so the
+    /// clock stops the instant the answer finishes instead of counting until
+    /// a durable projection (which can stall) retires the run.
+    stream_ended: Option<Duration>,
+    /// Providers the snapshot knows but this engine does not serve yet, as
+    /// (id, display name). Fed to the model picker's needs-auth tail.
+    providers_needing_auth: Vec<(String, String)>,
     /// Same for the account dialog.
     pending_accounts: bool,
     /// Wheel speed and acceleration, from `tui.json`.
@@ -419,6 +429,9 @@ impl App {
             history_index: 0,
             catalog: Vec::new(),
             pending_models: false,
+            models_filter: None,
+            stream_ended: None,
+            providers_needing_auth: Vec::new(),
             pending_accounts: false,
             scroll: Scroll::default(),
             templates,
@@ -662,14 +675,35 @@ impl App {
                 if self.pending_models {
                     self.pending_models = false;
                     if self.dialog.is_none() {
-                        self.open_dialog(Dialog::models(
-                            &self.models,
-                            self.session
-                                .as_ref()
-                                .and_then(|summary| summary.model.as_deref()),
-                        ));
+                        self.open_models_dialog();
                     }
                 }
+            }
+            AppEvent::ProviderCatalog(catalog) => {
+                self.providers_needing_auth = catalog
+                    .get("providers")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter(|item| {
+                                !item
+                                    .get("configured")
+                                    .and_then(Value::as_bool)
+                                    .unwrap_or(false)
+                            })
+                            .filter_map(|item| {
+                                let id = item.get("id")?.as_str()?.to_string();
+                                let name = item
+                                    .get("name")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or(&id)
+                                    .to_string();
+                                Some((id, name))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
             }
             AppEvent::Accounts(accounts) => {
                 self.accounts = accounts;
@@ -757,7 +791,8 @@ impl App {
                         None => self.catalog.push(summary.clone()),
                     }
                 }
-                self.state = state;
+                self.state = *state;
+                self.stream_ended = None;
                 // A Session that already holds prompts may still be unnamed —
                 // resuming one must not leave the sidebar reading "New session".
                 if let Some((id, first)) = self
@@ -797,6 +832,7 @@ impl App {
                 self.shell.set_session(self.session.as_ref());
                 self.shell.set_usage(self.usage.as_ref());
                 self.shell.set_transcript(&transcript);
+                self.shell.set_pending_prompts(&self.state.pending_prompts);
                 // Opening a Session shows its newest turn: `follow` survives
                 // from whatever was scrolled before.
                 self.shell.follow_transcript();
@@ -1014,6 +1050,30 @@ impl App {
     }
 
     fn handle_dialog_key(&mut self, key: KeyEvent) {
+        // ctrl+o narrows the model picker to one provider and backs out of the
+        // provider list; Esc on that list returns to the models too.
+        if key.kind == KeyEventKind::Press
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.code == KeyCode::Char('o')
+        {
+            match self.dialog.as_ref() {
+                Some(Dialog::Models(_)) => {
+                    self.open_model_provider_filter();
+                    return;
+                }
+                Some(Dialog::ModelProviders(_)) => {
+                    self.reopen_models_dialog();
+                    return;
+                }
+                _ => {}
+            }
+        }
+        if let Some(Dialog::ModelProviders(_)) = self.dialog.as_ref() {
+            if key.kind == KeyEventKind::Press && key.code == KeyCode::Esc {
+                self.reopen_models_dialog();
+                return;
+            }
+        }
         let Some(dialog) = self.dialog.as_mut() else {
             return;
         };
@@ -1157,12 +1217,7 @@ impl App {
             self.pending_models = true;
             return;
         }
-        self.open_dialog(Dialog::models(
-            &self.models,
-            self.session
-                .as_ref()
-                .and_then(|summary| summary.model.as_deref()),
-        ));
+        self.open_models_dialog();
     }
 
     fn open_theme(&mut self) {
@@ -1266,6 +1321,33 @@ impl App {
             }
         }
         self.dialog = Some(dialog);
+    }
+
+    /// The ctrl+o provider list over the current catalog.
+    fn open_model_provider_filter(&mut self) {
+        let providers = ModelInfo::providers(&self.models);
+        self.open_dialog(Dialog::model_provider_filter(&providers));
+    }
+
+    /// Back to the model picker, narrowed to the remembered provider.
+    fn reopen_models_dialog(&mut self) {
+        self.open_models_dialog();
+    }
+
+    /// The model picker over the current catalog, narrowed to the remembered
+    /// provider and carrying the needs-auth tail from the last catalog.
+    fn open_models_dialog(&mut self) {
+        let current = self
+            .session
+            .as_ref()
+            .and_then(|summary| summary.model.as_deref());
+        let needs_auth = self.providers_needing_auth.clone();
+        self.open_dialog(Dialog::models_with_needs_auth(
+            &self.models,
+            current,
+            self.models_filter.as_deref(),
+            &needs_auth,
+        ));
     }
 
     fn dialog_action(&mut self, action: DialogAction) {
@@ -1461,7 +1543,29 @@ impl App {
                     self.apply_theme(&name);
                 }
             }
+            Some(Dialog::ModelProviders(list)) => {
+                // Row "all" restores the unfiltered picker; any other row names
+                // the provider to narrow to.
+                let provider = list.rows.get(index).map(|row| row.id.clone());
+                self.models_filter = match provider.as_deref() {
+                    Some("all") | None => None,
+                    Some(named) => Some(named.to_string()),
+                };
+                self.reopen_models_dialog();
+            }
             Some(Dialog::Models(list)) => {
+                // A needs-auth row names a provider this engine does not serve
+                // yet; selecting it surfaces the way in instead of failing the
+                // parse silently.
+                if let Some(row) = list.rows.get(index) {
+                    if let Some(provider) = row.id.strip_prefix("auth:") {
+                        self.dialog = None;
+                        self.shell.composer.notice = Some(format!(
+                            "this provider is not configured yet: run `miao auth login {provider} <key>`, add a model for it in miao.json, then reopen /models"
+                        ));
+                        return;
+                    }
+                }
                 // The chosen row's id is its position in the catalog; a
                 // provider header never reaches here because the cursor
                 // skips headers, so an unparseable id is simply ignored.
@@ -2536,23 +2640,42 @@ impl App {
                 // `Draft::append` matches.
                 let envelope = frame.get("data").unwrap_or(&Value::Null);
                 let delta = envelope.get("delta").unwrap_or(envelope);
+                // A finished provider stream (the engine's end-of-stream
+                // marker) freezes the elapsed clock here, before the durable
+                // projection retires the run: the operator sees the total
+                // time the moment the answer completes.
+                if delta.get("kind").and_then(Value::as_str) == Some("stream.done") {
+                    self.stream_ended = self
+                        .run_since
+                        .as_ref()
+                        .map(|(_, since)| now.duration_since(*since));
+                    return;
+                }
                 self.stream(&run_id, delta);
                 return;
             }
             // The engine repeats this while it has no first token.
-            "provider.waiting" => LivePhase::Waiting,
+            "provider.waiting" => {
+                self.stream_ended = None;
+                LivePhase::Waiting
+            }
             "provider.retry" => LivePhase::Retrying {
                 attempt: frame.get("attempt").and_then(Value::as_u64).unwrap_or(0) + 1,
             },
             // An attempt announcement proves the request is in flight, even
             // before the first heartbeat or right after a previous step.
-            "provider.attempt" => match self.live.as_ref().map(|live| live.phase.clone()) {
-                Some(phase) => phase,
-                None => LivePhase::Waiting,
-            },
+            "provider.attempt" => {
+                self.stream_ended = None;
+                let phase = match self.live.as_ref().map(|live| live.phase.clone()) {
+                    Some(phase) => phase,
+                    None => LivePhase::Waiting,
+                };
+                phase
+            }
             // A committed tool call names the work the run is doing, and the
             // transcript keeps one spinner row for it while it lasts.
             "tool.planned" => {
+                self.stream_ended = None;
                 let label = tool_label(
                     frame
                         .get("name")
@@ -2744,11 +2867,18 @@ impl App {
                 // demonstrably working does not look like one that has wedged.
                 // The alert tone follows the same half-minute threshold as a
                 // real phase wait.
-                (Some(_), None) => (
-                    "Working".to_string(),
-                    run_elapsed.map(|waited| crate::pane::duration_ms(waited.as_millis() as u64)),
-                    run_elapsed.is_some_and(|waited| waited >= Duration::from_secs(30)),
-                ),
+                (Some(_), None) => {
+                    // A finished stream freezes the clock at the answer's
+                    // total; the label keeps "Working" only until the durable
+                    // projection retires the run.
+                    let elapsed = self.stream_ended.or(run_elapsed);
+                    (
+                        "Working".to_string(),
+                        elapsed.map(|waited| crate::pane::duration_ms(waited.as_millis() as u64)),
+                        self.stream_ended.is_none()
+                            && run_elapsed.is_some_and(|waited| waited >= Duration::from_secs(30)),
+                    )
+                }
                 (None, _) => ("Idle".to_string(), None, false),
             },
         };
@@ -3299,7 +3429,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert_eq!(app.screen, Screen::Session);
         app
@@ -3392,7 +3522,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(forty_messages()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         draw(&mut app);
         let tail = app.shell.transcript_scroll();
@@ -3450,7 +3580,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(forty_messages()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         draw(&mut app);
         let says = |app: &App| {
@@ -3475,7 +3605,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(forty_messages()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         draw(&mut app);
         let tail = app.shell.transcript_scroll();
@@ -3862,7 +3992,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_new", 1)),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(matches!(
             requests.try_recv(),
@@ -3873,7 +4003,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_other", 2)),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(requests.try_recv().is_err());
     }
@@ -3893,7 +4023,7 @@ mod tests {
                 }],
                 ..Default::default()
             }),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert_eq!(app.terminal_title().as_deref(), Some("repair this test"));
         app.configure_terminal_title(false, true);
@@ -4079,6 +4209,7 @@ mod tests {
             goal: None,
             active_run: None,
             pending: 0,
+            pending_prompts: Vec::new(),
             approvals: vec![crate::session::ApprovalView {
                 request_id: "run-1/call_1".into(),
                 tool: "bash".into(),
@@ -4101,7 +4232,7 @@ mod tests {
             // nowhere to go.
             summary: Some(summary("ses_open", 1)),
             transcript: Box::new(Transcript::default()),
-            state: approval_state(),
+            state: Box::new(approval_state()),
         });
         assert!(app.shell.panel.is_some(), "the approval is on screen");
         app
@@ -4155,7 +4286,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState {
+            state: Box::new(SessionState {
                 questions: vec![crate::session::QuestionView {
                     question_id: "run-1/q1".into(),
                     input_hash: "b".repeat(64),
@@ -4169,7 +4300,7 @@ mod tests {
                     expires_at_ms: Some(deadline),
                 }],
                 ..SessionState::default()
-            },
+            }),
         });
         assert!(
             app.shell.panel.is_none(),
@@ -4201,10 +4332,10 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState {
+            state: Box::new(SessionState {
                 questions: vec![question(crate::pane::now_ms().saturating_add(60_000))],
                 ..SessionState::default()
-            },
+            }),
         });
         assert!(app.shell.panel.is_some(), "a live question opens the panel");
 
@@ -4232,7 +4363,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         app.update_status();
         // A stale "working" or a tool phase would hide the only thing the
@@ -4265,7 +4396,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         app.update_status();
         assert_eq!(app.shell.title.status(), Some("needs an answer"));
@@ -4298,7 +4429,7 @@ mod tests {
                 }],
                 ..Transcript::default()
             }),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         app.update_status();
         assert_eq!(app.shell.status.model.as_deref(), Some("glm-5.3-flash"));
@@ -4395,7 +4526,7 @@ mod tests {
             app.handle(AppEvent::SessionOpened {
                 summary: None,
                 transcript: Box::new(Transcript::default()),
-                state,
+                state: Box::new(state),
             });
             app.update_status();
             assert_eq!(app.shell.title.status(), Some(expected));
@@ -4412,7 +4543,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: approval_state(),
+            state: Box::new(approval_state()),
         });
         assert!(app.shell.panel.is_some());
         app.handle(key(KeyCode::Char('x'), KeyModifiers::NONE));
@@ -4429,7 +4560,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         assert_eq!(app.shell.composer.queued, 0);
         app.state.pending = 3;
@@ -4450,7 +4581,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         assert_eq!(app.shell.composer.phase.as_deref(), Some("Working"));
         app.state.active_run = None;
@@ -4471,10 +4602,10 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState {
+            state: Box::new(SessionState {
                 active_run: Some("run-1".into()),
                 ..SessionState::default()
-            },
+            }),
         });
         assert_eq!(app.shell.composer.phase.as_deref(), Some("Working"));
         // The very first status frame anchors the clock, so the elapsed value
@@ -4529,7 +4660,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         app.update_status();
         let hints = app
@@ -4611,7 +4742,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(app.shell.following(), "a fresh Session follows");
         // Scrolling up detaches, which is how reading history works. It needs
@@ -4626,7 +4757,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(long),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         app.shell.scroll_transcript(-3);
         assert!(!app.shell.following(), "scrolling up detaches");
@@ -4634,7 +4765,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(app.shell.following(), "opening follows again");
     }
@@ -4670,7 +4801,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(app.screen, Screen::Session);
@@ -4681,10 +4812,10 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState {
+            state: Box::new(SessionState {
                 active_run: Some(run_id.into()),
                 ..SessionState::default()
-            },
+            }),
         });
         app
     }
@@ -4773,10 +4904,10 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState {
+            state: Box::new(SessionState {
                 active_run: Some("run-2".into()),
                 ..SessionState::default()
-            },
+            }),
         });
         assert!(app.live.is_none());
     }
@@ -4937,10 +5068,10 @@ mod tests {
         AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(transcript),
-            state: SessionState {
+            state: Box::new(SessionState {
                 active_run: active_run.map(str::to_string),
                 ..SessionState::default()
-            },
+            }),
         }
     }
 
@@ -5051,7 +5182,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_shell", 10)),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         let session = app.session.as_ref().expect("session").id.clone();
         let (handle, mut requests) = engine::Handle::recording();
@@ -5092,7 +5223,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_queue", 10)),
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         let (handle, mut requests) = engine::Handle::recording();
         app.attach_engine(handle);
@@ -5144,7 +5275,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_promoted", 10)),
             transcript: Box::new(Transcript::default()),
-            state,
+            state: Box::new(state),
         });
         let (handle, mut requests) = engine::Handle::recording();
         app.attach_engine(handle);
@@ -5226,7 +5357,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_vcs", 1)),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         let (engine, mut requests) = engine::Handle::recording();
         app.attach_engine(engine);
@@ -5334,7 +5465,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary("ses_a", 10)),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         app.handle(key(KeyCode::Char('r'), KeyModifiers::CONTROL));
         let Some(Dialog::Rename(rename)) = &app.dialog else {
@@ -5348,7 +5479,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(summary(id, 10)),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
     }
 
@@ -5545,7 +5676,7 @@ mod tests {
                 }],
                 ..Transcript::default()
             }),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         // Without a selection the copy falls back to the response.
         assert_eq!(
@@ -5567,7 +5698,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert_eq!(app.copy_target(), None);
     }
@@ -5727,7 +5858,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(named.clone()),
             transcript: transcript(),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(matches!(
             requests.try_recv(),
@@ -5738,7 +5869,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(named),
             transcript: transcript(),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(requests.try_recv().is_err(), "named twice");
     }
@@ -5760,7 +5891,7 @@ mod tests {
                 }],
                 ..Transcript::default()
             }),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         assert!(requests.try_recv().is_err(), "renamed an operator's title");
     }
@@ -5778,7 +5909,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(opened),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         app.submit("fix the parser".into(), Vec::new());
         assert!(matches!(
@@ -5805,7 +5936,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: Some(opened),
             transcript: Box::new(Transcript::default()),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         let mut renamed = summary("ses_a", 99);
         renamed.title = Some("auth refactor".into());
@@ -5875,7 +6006,7 @@ mod tests {
                 ],
                 ..Transcript::default()
             }),
-            state: SessionState::default(),
+            state: Box::new(SessionState::default()),
         });
         let (handle, requests) = engine::Handle::recording();
         app.attach_engine(handle);

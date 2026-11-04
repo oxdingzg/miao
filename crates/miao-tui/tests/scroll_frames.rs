@@ -98,7 +98,7 @@ fn app(label: &str, entries: usize) -> (App, PathBuf) {
     app.handle(AppEvent::SessionOpened {
         summary: None,
         transcript: Box::new(transcript(entries)),
-        state: SessionState::default(),
+        state: Box::new(SessionState::default()),
     });
     (app, dir)
 }

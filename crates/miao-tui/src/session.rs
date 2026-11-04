@@ -22,7 +22,9 @@ pub struct SessionSummary {
     /// every client sorts the same shared catalog the same way.
     pub pinned_at_ms: Option<u64>,
     pub directory: Option<String>,
-    /// The Session's explicit model pin, as `model · protocol[ · variant]`.
+    /// The Session's explicit model pin. A route id names the provider that
+    /// serves the model, so the status reads `provider/model[ · variant]`;
+    /// without a route it falls back to `model · protocol[ · variant]`.
     /// `None` means the engine's default.
     pub model: Option<String>,
     /// The account every turn of this Session runs on, when one is pinned.
@@ -37,12 +39,22 @@ impl SessionSummary {
         let id = snapshot.get("session_id")?.as_str()?.to_string();
         let selection = snapshot.get("model_selection");
         let model = selection.and_then(|selection| {
-            let protocol = selection.get("protocol")?.as_str()?;
             let model = selection.get("model")?.as_str()?;
             let variant = selection.get("variant").and_then(Value::as_str);
+            let head = selection
+                .get("route_id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    let protocol = selection
+                        .get("protocol")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    format!("{model} · {protocol}")
+                });
             Some(match variant {
-                Some(variant) => format!("{model} · {protocol} · {variant}"),
-                None => format!("{model} · {protocol}"),
+                Some(variant) => format!("{head} · {variant}"),
+                None => head,
             })
         });
         Some(Self {
@@ -299,6 +311,11 @@ pub struct SessionState {
     pub goal: Option<GoalView>,
     pub active_run: Option<String>,
     pub pending: usize,
+    /// What the operator typed that the engine still holds un-promoted, in
+    /// admission order. The snapshot caps each preview at 200 characters; a
+    /// longer prompt keeps its ellipsis. Without this the submitted text is
+    /// invisible for as long as a busy turn holds it in the queue.
+    pub pending_prompts: Vec<String>,
     pub approvals: Vec<ApprovalView>,
     pub questions: Vec<QuestionView>,
     /// Messages a redo would restore. The engine keeps reverted rows in its
@@ -343,6 +360,25 @@ impl SessionState {
                 .and_then(Value::as_array)
                 .map(Vec::len)
                 .unwrap_or(0),
+            pending_prompts: snapshot
+                .get("pending")
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| {
+                            let preview = item.get("preview")?.as_str()?;
+                            let suffix =
+                                if item.get("truncated").and_then(Value::as_bool) == Some(true) {
+                                    "…"
+                                } else {
+                                    ""
+                                };
+                            Some(format!("{preview}{suffix}"))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             approvals: snapshot
                 .get("approvals")
                 .and_then(Value::as_array)
@@ -1071,7 +1107,10 @@ mod tests {
         let snapshot = json!({
             "session_id": "ses_a",
             "active_run": "run-1",
-            "pending": [{"input_id": "in_1", "delivery": "steer"}],
+            "pending": [
+                {"input_id": "in_1", "delivery": "steer", "preview": "继续", "truncated": false},
+                {"input_id": "in_2", "delivery": "queued", "preview": "a long prompt that the snapshot capped", "truncated": true},
+            ],
             "approvals": [{
                 "request_id": "run-1/call_1",
                 "tool": "bash",
@@ -1095,7 +1134,13 @@ mod tests {
         });
         let state = SessionState::from_snapshot(&snapshot);
         assert_eq!(state.active_run.as_deref(), Some("run-1"));
-        assert_eq!(state.pending, 1);
+        assert_eq!(state.pending, 2);
+        assert_eq!(state.pending_prompts[0], "继续");
+        assert!(
+            state.pending_prompts[1].ends_with('…'),
+            "a truncated preview keeps its ellipsis: {:?}",
+            state.pending_prompts[1]
+        );
         assert_eq!(state.approvals.len(), 1, "malformed approvals are skipped");
         assert_eq!(state.approvals[0].tool, "bash");
         assert_eq!(state.questions[0].questions[0].header, "Confirm");
@@ -1116,6 +1161,30 @@ mod tests {
     fn a_snapshot_without_blocking_state_is_idle() {
         let state = SessionState::from_snapshot(&json!({"session_id": "ses_a"}));
         assert_eq!(state, SessionState::default());
+    }
+
+    #[test]
+    fn the_session_model_names_the_provider_when_a_route_does() {
+        let summary = SessionSummary::from_snapshot(&json!({
+            "session_id": "ses_a",
+            "model_selection": {
+                "protocol": "openai-chat",
+                "model": "deepseek-v4-1-flash-261017",
+                "route_id": "zhipuai-coding-plan/deepseek-v4-1-flash-261017",
+            },
+        }))
+        .expect("summary");
+        assert_eq!(
+            summary.model.as_deref(),
+            Some("zhipuai-coding-plan/deepseek-v4-1-flash-261017"),
+            "the strip names the provider as well"
+        );
+        let summary = SessionSummary::from_snapshot(&json!({
+            "session_id": "ses_a",
+            "model_selection": {"protocol": "anthropic", "model": "claude-x"},
+        }))
+        .expect("summary");
+        assert_eq!(summary.model.as_deref(), Some("claude-x · anthropic"));
     }
 
     #[test]

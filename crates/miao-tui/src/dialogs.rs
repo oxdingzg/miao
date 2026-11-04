@@ -40,7 +40,17 @@ impl ModelInfo {
                             .get("model_key")
                             .and_then(Value::as_str)
                             .and_then(|key| key.split_once('/'))
-                            .map(|(provider, _)| provider.to_string());
+                            .map(|(provider, _)| provider.to_string())
+                            // The catalog does not always name the model_key;
+                            // the route id still does, and grouping collapses
+                            // without it.
+                            .or_else(|| {
+                                entry
+                                    .get("route_id")
+                                    .and_then(Value::as_str)
+                                    .and_then(|id| id.split_once('/'))
+                                    .map(|(provider, _)| provider.to_string())
+                            });
                         let route_id = entry
                             .get("route_id")
                             .and_then(Value::as_str)
@@ -87,6 +97,20 @@ impl ModelInfo {
             Some(variant) => format!("{} · {} · {variant}", self.model, self.protocol),
             None => format!("{} · {}", self.model, self.protocol),
         }
+    }
+
+    /// Distinct providers the catalog names, in first-appearance order. The
+    /// ctrl+o filter list and the picker's groups share it.
+    pub fn providers(models: &[ModelInfo]) -> Vec<String> {
+        let mut providers: Vec<String> = Vec::new();
+        for model in models {
+            if let Some(provider) = &model.provider {
+                if !providers.iter().any(|named| named == provider) {
+                    providers.push(provider.clone());
+                }
+            }
+        }
+        providers
     }
 
     pub fn binding(&self) -> Value {
@@ -388,6 +412,8 @@ impl ConfirmDialog {
 pub enum Dialog {
     SavedPermissions(crate::saved_permissions::Dialog),
     WorkspaceChanges(crate::workspace_changes::Dialog),
+    /// ctrl+o inside the model picker: one provider to narrow the list to.
+    ModelProviders(ListDialog),
     Models(ListDialog),
     Theme(ListDialog),
     Sessions(ListDialog),
@@ -486,6 +512,28 @@ pub struct TagDialog {
 
 impl Dialog {
     pub fn models(models: &[ModelInfo], current: Option<&str>) -> Self {
+        Self::models_with_filter(models, current, None)
+    }
+
+    /// One provider only: ctrl+o inside the picker narrows the catalog the way
+    /// the product's dialog does, so a provider with many models stays usable.
+    pub fn models_with_filter(
+        models: &[ModelInfo],
+        current: Option<&str>,
+        provider: Option<&str>,
+    ) -> Self {
+        Self::models_with_needs_auth(models, current, provider, &[])
+    }
+
+    /// The picker plus a tail section naming providers the snapshot knows but
+    /// this engine does not serve yet: visible on the road, one `miao auth
+    /// login` away.
+    pub fn models_with_needs_auth(
+        models: &[ModelInfo],
+        current: Option<&str>,
+        provider: Option<&str>,
+        needs_auth: &[(String, String)],
+    ) -> Self {
         // The picker groups by provider the way the product's does: a muted
         // header row names each provider and the models beneath it belong to
         // it. Rows carry their position in `models` as their id, so the app
@@ -496,6 +544,9 @@ impl Dialog {
         // separate runs, so a provider names itself once.
         let mut groups: Vec<(Option<String>, Vec<usize>)> = Vec::new();
         for (index, model) in models.iter().enumerate() {
+            if provider.is_some_and(|named| model.provider.as_deref() != Some(named)) {
+                continue;
+            }
             match groups
                 .iter_mut()
                 .find(|(provider, _)| *provider == model.provider)
@@ -529,11 +580,47 @@ impl Dialog {
                 });
             }
         }
-        Dialog::Models(ListDialog::new(
-            "models",
+        if !needs_auth.is_empty() && provider.is_none() {
+            rows.push(Row {
+                id: "group:needs-auth".into(),
+                label: "more providers · needs auth".into(),
+                detail: String::new(),
+            });
+            for (id, name) in needs_auth {
+                rows.push(Row {
+                    id: format!("auth:{id}"),
+                    label: name.clone(),
+                    detail: format!("miao auth login {id} <key>"),
+                });
+            }
+        }
+        let hint = match provider {
+            Some(_) => "one provider · ctrl+o widen · type to filter · esc close",
+            None => "type to filter · ctrl+o pick provider · esc close",
+        };
+        Dialog::Models(ListDialog::new("models", rows, ListKind::Plain, hint))
+    }
+
+    /// The ctrl+o list: every provider the catalog names, plus the "all"
+    /// escape hatch that restores the unfiltered picker.
+    pub fn model_provider_filter(providers: &[String]) -> Self {
+        let mut rows = vec![Row {
+            id: "all".into(),
+            label: "all providers".into(),
+            detail: String::new(),
+        }];
+        for provider in providers {
+            rows.push(Row {
+                id: provider.clone(),
+                label: provider.clone(),
+                detail: String::new(),
+            });
+        }
+        Dialog::ModelProviders(ListDialog::new(
+            "model providers",
             rows,
             ListKind::Plain,
-            "type to filter · ↑↓ move · enter select · esc close",
+            "enter narrow · esc back to all models",
         ))
     }
 
@@ -908,6 +995,7 @@ impl Dialog {
             Dialog::SavedPermissions(dialog) => dialog.handle_key(key),
             Dialog::WorkspaceChanges(dialog) => dialog.handle_key(key),
             Dialog::Models(list)
+            | Dialog::ModelProviders(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
             | Dialog::Accounts(list)
@@ -943,6 +1031,7 @@ impl Dialog {
             | Dialog::Timeline(list)
             | Dialog::Status(list)
             | Dialog::Debug(list)
+            | Dialog::ModelProviders(list)
             | Dialog::Help(list) => list.title,
             Dialog::Mcp(list) => list.title,
             Dialog::Providers(list) => list.title,

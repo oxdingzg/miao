@@ -146,6 +146,9 @@ impl Host {
             Command::ModelCatalog => {
                 serde_json::to_value(runtime.model_catalog()).map_err(Error::from)
             }
+            Command::ProviderCatalog => {
+                serde_json::to_value(runtime.provider_catalog()).map_err(Error::from)
+            }
             Command::SelectModel {
                 session_id,
                 binding,

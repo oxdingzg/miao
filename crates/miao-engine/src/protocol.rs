@@ -312,6 +312,10 @@ pub enum Command {
         prompt: String,
     },
     ModelCatalog,
+    /// The full provider directory the models snapshot names, merged with the
+    /// configured-route status, so a picker can offer providers this engine
+    /// does not serve yet.
+    ProviderCatalog,
     SelectModel {
         session_id: String,
         binding: Option<crate::session_model::Binding>,

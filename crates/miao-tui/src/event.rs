@@ -50,6 +50,9 @@ pub enum AppEvent {
     Catalog(Vec<SessionSummary>),
     /// The engine's model catalog, one entry per selectable binding.
     Models(Vec<ModelInfo>),
+    /// The engine's full provider directory; the picker lists the
+    /// un-configured rest as "needs auth" rows under the served models.
+    ProviderCatalog(serde_json::Value),
     SavedPermissions {
         generation: u64,
         result: Result<Vec<crate::saved_permissions::Rule>, String>,
@@ -109,7 +112,7 @@ pub enum AppEvent {
     SessionOpened {
         summary: Option<SessionSummary>,
         transcript: Box<Transcript>,
-        state: SessionState,
+        state: Box<SessionState>,
     },
     /// A control action (cancel, approve, answer) the engine refused. Shown as
     /// a composer notice; it never ends the transport.
