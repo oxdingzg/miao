@@ -5204,7 +5204,7 @@ mod draft_tool_tests {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
         };
-        let tools = vec![(
+        let tools = [(
             "run_command".to_string(),
             r#"{"argv":["echo","hi"]}"#.to_string(),
         )];
