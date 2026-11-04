@@ -112,7 +112,7 @@ pub enum AppEvent {
     SessionOpened {
         summary: Option<SessionSummary>,
         transcript: Box<Transcript>,
-        state: SessionState,
+        state: Box<SessionState>,
     },
     /// A control action (cancel, approve, answer) the engine refused. Shown as
     /// a composer notice; it never ends the transport.

@@ -785,7 +785,7 @@ impl App {
                         None => self.catalog.push(summary.clone()),
                     }
                 }
-                self.state = state;
+                self.state = *state;
                 // A Session that already holds prompts may still be unnamed —
                 // resuming one must not leave the sidebar reading "New session".
                 if let Some((id, first)) = self
@@ -4569,10 +4569,10 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState {
+            state: Box::new(SessionState {
                 active_run: Some("run-1".into()),
                 ..SessionState::default()
-            },
+            }),
         });
         assert_eq!(app.shell.composer.phase.as_deref(), Some("Working"));
         // The very first status frame anchors the clock, so the elapsed value
@@ -4779,10 +4779,10 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState {
+            state: Box::new(SessionState {
                 active_run: Some(run_id.into()),
                 ..SessionState::default()
-            },
+            }),
         });
         app
     }
@@ -4871,10 +4871,10 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState {
+            state: Box::new(SessionState {
                 active_run: Some("run-2".into()),
                 ..SessionState::default()
-            },
+            }),
         });
         assert!(app.live.is_none());
     }
@@ -5035,10 +5035,10 @@ mod tests {
         AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(transcript),
-            state: SessionState {
+            state: Box::new(SessionState {
                 active_run: active_run.map(str::to_string),
                 ..SessionState::default()
-            },
+            }),
         }
     }
 

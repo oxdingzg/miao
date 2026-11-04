@@ -1035,9 +1035,8 @@ async fn run(
                             bus.send(AppEvent::ActionFailed(format!("models failed: {error}")))
                         }
                     }
-                    match client.command("provider_catalog").await {
-                        Ok(value) => bus.send(AppEvent::ProviderCatalog(value)),
-                        Err(_) => {}
+                    if let Ok(value) = client.command("provider_catalog").await {
+                        bus.send(AppEvent::ProviderCatalog(value));
                     }
                 }
                 Request::SelectModel {
@@ -1797,7 +1796,7 @@ async fn project(client: &EngineClient, bus: &Bus, state: &mut Opened) {
     bus.send(AppEvent::SessionOpened {
         summary: SessionSummary::from_snapshot(&snapshot),
         transcript: Box::new(transcript),
-        state: SessionState::from_snapshot(&snapshot),
+        state: Box::new(SessionState::from_snapshot(&snapshot)),
     });
 }
 
