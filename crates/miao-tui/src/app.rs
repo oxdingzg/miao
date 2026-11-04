@@ -190,6 +190,7 @@ impl Draft {
     }
 
     /// The reasoning this draft has, joined, for the status/thinking header.
+    #[cfg(test)]
     fn reasoning(&self) -> String {
         self.parts
             .iter()
@@ -203,6 +204,7 @@ impl Draft {
     /// Whether any text has arrived, so the commit check can tell an answer
     /// from a reasoning-only step.
     /// The visible answer text, joined, for tests and the commit check.
+    #[cfg(test)]
     fn text(&self) -> String {
         self.parts
             .iter()
@@ -211,12 +213,6 @@ impl Draft {
                 _ => None,
             })
             .collect()
-    }
-
-    fn has_text(&self) -> bool {
-        self.parts
-            .iter()
-            .any(|part| matches!(part, DraftPart::Text(text) if !text.is_empty()))
     }
 }
 
