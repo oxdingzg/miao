@@ -61,7 +61,7 @@ export interface ArgsInput {
   readonly compat?: boolean
 }
 
-/** Build the runner arguments shared by `miao-run` and `miao __sandbox-run`. */
+/** Build the runner arguments every `miao-run` invocation shares. */
 export function args(input: ArgsInput, allowPaths: readonly string[], reportPath: string) {
   return [
     ...input.workdirs.flatMap((workdir) => ["--workdir", workdir]),

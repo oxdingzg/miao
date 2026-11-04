@@ -10,8 +10,6 @@ export * as SandboxRunner from "./runner"
  *
  * Entry points, in resolution order:
  * - `MIAO_RUN` or a `miao-run` binary next to the executable (dev override);
- * - a released single-file build re-executing itself through the hidden
- *   `miao __sandbox-run` command, which keeps the release a single signed file;
  * - a source checkout running `bun src/sandbox/main.ts` when the native addon
  *   is built, so `miao-dev` can sandbox without a separate binary.
  */
@@ -19,9 +17,6 @@ import { existsSync, writeFileSync } from "fs"
 import path from "path"
 import { native as addon } from "@miao/native"
 import { SandboxPolicy } from "./policy"
-
-// Defined by `packages/miao/script/build.ts` for compiled single-file builds.
-declare const MIAO_PACKAGED: boolean | undefined
 
 export interface Runner {
   readonly program: string
@@ -49,8 +44,6 @@ export function resolve(): Runner | undefined {
   )
   if (existsSync(sibling)) return { program: sibling, prefix: [] }
   if (!addon?.sandboxSupported()) return undefined
-  if (typeof MIAO_PACKAGED !== "undefined" && MIAO_PACKAGED)
-    return { program: InstallationExecutable.executable, prefix: ["__sandbox-run"] }
   // A compiled build without the define cannot re-execute a source file.
   if (!path.basename(InstallationExecutable.executable).startsWith("bun")) return undefined
   // The runner inherits the command's cwd; ignore any bunfig.toml (and its
