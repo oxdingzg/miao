@@ -47,6 +47,7 @@ newer record is the one to read.
 | `2026-11-01-perf04.md` | `2cc8d13342` | PERF-04 (and a re-verification of every command the earlier records cite) |
 | `2026-11-01-inp05.md` | `bc4dc86fcc` | INP-05 |
 | `2026-11-04-config-ext-retry.md` | `04dc191a01` | CFG-02, CFG-03, MOD-05, EXT-01, EXT-04, EXT-05, EXT-06, EXT-07 |
+| `2026-11-04-data-migration-transfer.md` | `04dc191a01` | DATA-01, DATA-02 |
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
 carries the table of filters that were re-run to keep the earlier records honest.
