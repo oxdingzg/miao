@@ -595,7 +595,7 @@ fn the_transcript_renders_markdown_and_tool_rows() {
     for expected in [
         "• bold and code",
         "name │ value",
-        "● read  src/lib.rs",
+        "✓ read  src/lib.rs",
         "⎿ Read 2 lines",
     ] {
         assert!(
