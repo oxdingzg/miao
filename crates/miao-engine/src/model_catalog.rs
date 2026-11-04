@@ -17,6 +17,125 @@ use tokio_util::sync::CancellationToken;
 
 pub const MAX_ROUTES: usize = 1024;
 
+/// The full provider directory the install ships (`models.json`, the same
+/// file the TS catalog service reads): an explicit path, a snapshot beside the
+/// engine binary, the installer's shipped copy, then the user cache.
+pub(crate) fn models_snapshot() -> Option<serde_json::Value> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(path) = std::env::var_os("MIAO_MODELS_PATH") {
+        candidates.push(std::path::PathBuf::from(path));
+    }
+    if let Ok(executable) = std::env::current_exe() {
+        if let Some(directory) = executable.parent() {
+            candidates.push(directory.join("models.json"));
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = std::path::PathBuf::from(home);
+        candidates.push(home.join(".miao/bin/models.json"));
+        candidates.push(home.join(".local/share/miao/bin/models.json"));
+        let cache = std::env::var_os("XDG_CACHE_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| home.join(".cache"));
+        // The newest copy the TS catalog service keeps, and the one it
+        // actually serves from once it has fetched at least once.
+        candidates.push(cache.join("miao/models.json"));
+    }
+    candidates
+        .iter()
+        .find_map(|path| std::fs::read(path).ok())
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+}
+/// The context window every catalog entry declares for one model id.
+///
+/// `models.json` is megabytes and the compaction trigger consults it every
+/// turn, so the lookups run against an index built once from the shipped
+/// snapshot. The same model id is often served by many providers with
+/// different declared windows; the smallest is the one every caller must
+/// assume.
+pub(crate) fn context_window_in(document: &serde_json::Value, model: &str) -> Option<u64> {
+    let mut smallest: Option<u64> = None;
+    let mut scan = |probe: &str, smallest: &mut Option<u64>| {
+        for provider in document
+            .as_object()
+            .into_iter()
+            .flat_map(|entries| entries.values())
+        {
+            for (model_id, info) in provider
+                .get("models")
+                .and_then(|models| models.as_object())
+                .into_iter()
+                .flatten()
+            {
+                if model_id != probe {
+                    continue;
+                }
+                let window = info
+                    .get("limit")
+                    .and_then(|limit| limit.get("context"))
+                    .and_then(serde_json::Value::as_u64);
+                if let Some(window) = window {
+                    *smallest = Some(smallest.map_or(window, |known| known.min(window)));
+                }
+            }
+        }
+    };
+    scan(model, &mut smallest);
+    // Date-suffixed variants (…-261017) share the base model's window: the
+    // snapshot indexes the unsuffixed id, so a miss on the pinned id falls
+    // back to the family.
+    if smallest.is_none() {
+        if let Some((base, tail)) = model.rsplit_once('-') {
+            if !tail.is_empty() && tail.bytes().all(|byte| byte.is_ascii_digit()) {
+                scan(base, &mut smallest);
+            }
+        }
+    }
+    smallest
+}
+
+fn window_index() -> &'static std::collections::BTreeMap<String, u64> {
+    static INDEX: std::sync::OnceLock<std::collections::BTreeMap<String, u64>> =
+        std::sync::OnceLock::new();
+    INDEX.get_or_init(|| {
+        let mut index = std::collections::BTreeMap::new();
+        if let Some(document) = models_snapshot() {
+            if let Some(entries) = document.as_object() {
+                for (_provider_id, provider) in entries {
+                    let Some(models) = provider.get("models").and_then(Value::as_object) else {
+                        continue;
+                    };
+                    for (model_id, info) in models {
+                        let Some(window) = info
+                            .get("limit")
+                            .and_then(|limit| limit.get("context"))
+                            .and_then(Value::as_u64)
+                        else {
+                            continue;
+                        };
+                        // Several providers serve one id with different declared
+                        // windows; the smallest is what every caller must assume.
+                        index
+                            .entry(model_id.clone())
+                            .and_modify(|known: &mut u64| {
+                                if window < *known {
+                                    *known = window;
+                                }
+                            })
+                            .or_insert(window);
+                    }
+                }
+            }
+        }
+        index
+    })
+}
+
+/// The context window the shipped snapshot declares for one model id.
+pub(crate) fn context_window_for(model: &str) -> Option<u64> {
+    window_index().get(model).copied()
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Info {
     pub route_id: Option<String>,
@@ -323,32 +442,34 @@ impl Provider for Catalog {
     }
 }
 
-/// The full provider directory the install ships (`models.json`, the same
-/// file the TS catalog service reads): an explicit path, a snapshot beside the
-/// engine binary, the installer's shipped copy, then the user cache.
-pub(crate) fn models_snapshot() -> Option<serde_json::Value> {
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-    if let Some(path) = std::env::var_os("MIAO_MODELS_PATH") {
-        candidates.push(std::path::PathBuf::from(path));
+#[cfg(test)]
+mod window_tests {
+    use super::context_window_in;
+
+    #[test]
+    fn context_windows_are_indexed_per_model_id() {
+        let document = serde_json::json!({
+            "alpha": {"models": {
+                "m-big": {"limit": {"context": 200000}},
+                "m-small": {"limit": {"context": 64000}},
+                "m-none": {}
+            }},
+            "beta": {"models": {
+                "m-big": {"limit": {"context": 100000}}
+            }}
+        });
+        let window = |model: &str| context_window_in(&document, model);
+        assert_eq!(
+            window("m-big"),
+            Some(100000),
+            "the smallest declared window wins"
+        );
+        assert_eq!(window("m-small"), Some(64000));
+        assert_eq!(window("m-none"), None);
+        assert_eq!(window("unknown"), None);
+        // A date-suffixed pin falls back to the base model's window.
+        assert_eq!(window("m-big-261017"), Some(100000));
+        // A date-suffixed pin falls back to the base model's window.
+        assert_eq!(window("m-big-261017"), Some(100000));
     }
-    if let Ok(executable) = std::env::current_exe() {
-        if let Some(directory) = executable.parent() {
-            candidates.push(directory.join("models.json"));
-        }
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = std::path::PathBuf::from(home);
-        candidates.push(home.join(".miao/bin/models.json"));
-        candidates.push(home.join(".local/share/miao/bin/models.json"));
-        let cache = std::env::var_os("XDG_CACHE_HOME")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| home.join(".cache"));
-        // The newest copy the TS catalog service keeps, and the one it
-        // actually serves from once it has fetched at least once.
-        candidates.push(cache.join("miao/models.json"));
-    }
-    candidates
-        .iter()
-        .find_map(|path| std::fs::read(path).ok())
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
 }
