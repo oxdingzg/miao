@@ -5134,62 +5134,6 @@ mod layout_alignment_tests {
 }
 
 #[cfg(test)]
-mod probe_now {
-    use super::*;
-    #[test]
-    fn probe_real2() {
-        let raw = std::fs::read_to_string("/tmp/snap2.json").expect("snap");
-        let snap: serde_json::Value = serde_json::from_str(&raw).expect("json");
-        let t = crate::session::Transcript::from_snapshot(&snap);
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
-        let theme = Theme {
-            name: "t".into(),
-            palette,
-        };
-        for (i, r) in transcript_lines(&t, &theme, false, None)
-            .rows
-            .iter()
-            .enumerate()
-            .take(30)
-        {
-            let s: String = r.line.spans.iter().map(|x| x.content.as_ref()).collect();
-            println!("R[{i:02}] |{s}|");
-        }
-    }
-}
-
-#[cfg(test)]
-mod probe_full {
-    use super::*;
-    #[test]
-    fn probe_full_snapshot() {
-        let raw = std::fs::read_to_string("/tmp/snap3.json").expect("snap");
-        let snap: serde_json::Value = serde_json::from_str(&raw).expect("json");
-        let t = crate::session::Transcript::from_snapshot(&snap);
-        println!("entries: {}", t.entries.len());
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
-        let theme = Theme {
-            name: "t".into(),
-            palette,
-        };
-        let rows = transcript_lines(&t, &theme, false, None).rows;
-        println!("rows: {}", rows.len());
-        for (i, r) in rows
-            .iter()
-            .enumerate()
-            .rev()
-            .take(12)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-        {
-            let s: String = r.line.spans.iter().map(|x| x.content.as_ref()).collect();
-            println!("F[{i:03}] |{s}|");
-        }
-    }
-}
-
-#[cfg(test)]
 mod draft_tool_tests {
     use super::*;
 
