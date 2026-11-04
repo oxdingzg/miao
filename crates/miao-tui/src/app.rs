@@ -4176,6 +4176,7 @@ mod tests {
             goal: None,
             active_run: None,
             pending: 0,
+            pending_prompts: Vec::new(),
             approvals: vec![crate::session::ApprovalView {
                 request_id: "run-1/call_1".into(),
                 tool: "bash".into(),
