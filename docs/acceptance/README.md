@@ -49,6 +49,7 @@ newer record is the one to read.
 | `2026-11-04-config-ext-retry.md` | `04dc191a01` | CFG-02, CFG-03, MOD-05, EXT-01, EXT-04, EXT-05, EXT-06, EXT-07 |
 | `2026-11-04-data-migration-transfer.md` | `04dc191a01` | DATA-01, DATA-02 |
 | `2026-11-04-cli-entry-point.md` | `04dc191a01` and `2c35372277` | RUS-04 |
+| `2026-11-05-rel04-completion-gate.md` | `4a5f9a9e0f` | REL-04 (audit and capability ledger; deletion blocked by the observation window) |
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
 carries the table of filters that were re-run to keep the earlier records honest.
