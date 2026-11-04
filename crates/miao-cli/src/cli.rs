@@ -79,7 +79,7 @@ Usage:
   miao attach URL       probe a running miao server
   miao remote           show this machine's pairing state
   miao pr [NUMBER]      show the current branch and working tree
-  miao upgrade          show the installed version and how it upgrades
+  miao upgrade          update to the newest release (--check only reports)
   miao uninstall        list install artifacts to remove (--apply to remove)
   miao report TO TEXT   hand a conclusion back to another session
   miao hub              run the local session hub (single instance)
@@ -388,14 +388,160 @@ fn pr(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Version and how this build upgrades. A locally built binary has no feed.
-fn upgrade() -> Result<(), String> {
-    println!("version   {VERSION}");
-    match std::env::var("MIAO_UPGRADE_FEED") {
-        Ok(feed) => println!("feed      {feed} (run the installer for that feed to upgrade)"),
-        Err(_) => println!("feed      none configured; reinstall the build to upgrade"),
+/// Upgrade this installation to the newest release.
+///
+/// The download, the platform asset name, the checksum check and the rollback
+/// all live in the published `install` script, and that is the only path CI
+/// exercises. Re-implementing them here would be a second copy that can drift,
+/// so this command reads the newest version, decides whether an update is
+/// needed, and then runs that script the same way a person would.
+///
+/// `--check` stops after the comparison, which is what a script or a CI job
+/// wants: an exit code that says whether an update exists without touching the
+/// installed build.
+fn upgrade(rest: &[String]) -> Result<(), String> {
+    let check_only = rest.iter().any(|argument| argument == "--check");
+    let feed = std::env::var("MIAO_UPGRADE_FEED").ok();
+    println!("Current version: {VERSION}");
+    println!("Checking for updates…");
+    let latest = latest_version(feed.as_deref())?;
+    if !is_newer(&latest, VERSION) {
+        println!("miao {VERSION} is up to date");
+        return Ok(());
+    }
+    if check_only {
+        println!("Update available: {VERSION} → {latest}");
+        return Ok(());
+    }
+    println!("Updating to {latest}…");
+    run_installer(feed.as_deref())?;
+    // The installer repoints `~/.miao/bin/miao` at a new build; this process
+    // keeps running the old image, so the operator has to start it again.
+    println!("Updated: {VERSION} → {latest}");
+    println!("Restart miao to use the new build.");
+    Ok(())
+}
+
+/// The newest published version, read from the release redirect.
+///
+/// `releases/latest` answers with a 302 whose `Location` ends in the tag, and
+/// following it costs one request. The REST API would answer the same question
+/// but allows only 60 unauthenticated calls an hour per IP — a budget an
+/// update check must not spend. `feed` overrides the host for installations
+/// that track an internal mirror.
+fn latest_version(feed: Option<&str>) -> Result<String, String> {
+    let base = feed
+        .unwrap_or("https://github.com/oxdingzg/miao")
+        .trim_end_matches('/');
+    let output = std::process::Command::new("curl")
+        .args([
+            "-fsSL",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{url_effective}",
+            &format!("{base}/releases/latest"),
+        ])
+        .output()
+        .map_err(|error| format!("curl: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "could not read the latest release: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let url = String::from_utf8_lossy(&output.stdout);
+    url.rsplit('/')
+        .next()
+        .map(|tag| tag.trim().trim_start_matches('v').to_string())
+        .filter(|tag| !tag.is_empty())
+        .ok_or_else(|| format!("could not read a version from {url}"))
+}
+
+/// Whether `candidate` is a newer release than `current`.
+///
+/// Compared numerically field by field: a plain string comparison would call
+/// `0.3.9` newer than `0.3.29`. A pre-release suffix is ignored, because the
+/// release feed only publishes full releases.
+fn is_newer(candidate: &str, current: &str) -> bool {
+    let parse = |version: &str| -> Vec<u64> {
+        version
+            .split(['.', '-', '+'])
+            .map_while(|field| field.parse::<u64>().ok())
+            .collect()
+    };
+    let (candidate, current) = (parse(candidate), parse(current));
+    if candidate.is_empty() || current.is_empty() {
+        return false;
+    }
+    candidate > current
+}
+
+/// Run the published installer, which replaces this installation in place.
+fn run_installer(feed: Option<&str>) -> Result<(), String> {
+    let base = feed.unwrap_or("https://github.com/oxdingzg/miao");
+    let script = format!("{}/main/install", base.trim_end_matches('/'));
+    // `sh` rather than `bash` so the same command works on the minimal
+    // images a container install runs in; the script itself is bash-flavoured
+    // but every interpreter it meets resolves `bash` through `sh`.
+    let status = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!("curl -fsSL {script} | bash"))
+        .status()
+        .map_err(|error| format!("could not run the installer: {error}"))?;
+    if !status.success() {
+        return Err(format!(
+            "the installer exited with {status}; the previous build is still installed"
+        ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod upgrade_tests {
+    use super::{is_newer, latest_version};
+
+    #[test]
+    fn a_newer_release_is_detected_numerically_not_lexically() {
+        // The comparison that matters: `0.3.9` sorts after `0.3.29` as text and
+        // before it as a version, so a string compare would refuse the update.
+        assert!(is_newer("0.3.29", "0.3.9"));
+        assert!(is_newer("0.3.30", "0.3.29"));
+        assert!(is_newer("0.4.0", "0.3.29"));
+        assert!(is_newer("1.0.0", "0.9.9"));
+        assert!(!is_newer("0.3.29", "0.3.29"));
+        assert!(!is_newer("0.3.28", "0.3.29"));
+        // A shorter version is not newer than a longer one that matches it.
+        assert!(!is_newer("0.3", "0.3.0"));
+    }
+
+    #[test]
+    fn a_prerelease_suffix_is_ignored() {
+        assert!(is_newer("0.3.30-beta.1", "0.3.29"));
+        assert!(!is_newer("0.3.29-rc.1", "0.3.29"));
+    }
+
+    #[test]
+    fn an_unreadable_version_never_reports_an_update() {
+        assert!(!is_newer("", "0.3.29"));
+        assert!(!is_newer("not-a-version", "0.3.29"));
+    }
+
+    #[test]
+    fn the_version_comes_from_the_release_redirect() {
+        // The redirect ends in the tag; `latest_version` keeps only that part.
+        // Exercised against the real endpoint so a change to how GitHub answers
+        // shows up here rather than in an operator's failed upgrade.
+        let version = latest_version(None).expect("the latest release is readable");
+        assert!(
+            version.split('.').count() >= 2,
+            "expected a dotted version, got {version:?}"
+        );
+        assert!(
+            version.chars().all(|c| c.is_ascii_digit() || c == '.'),
+            "expected a bare version, got {version:?}"
+        );
+    }
 }
 
 /// Milliseconds since the epoch, for queue entry stamps.
@@ -4741,7 +4887,7 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                 std::process::ExitCode::from(1)
             }
         },
-        Some("upgrade") => match upgrade() {
+        Some("upgrade") => match upgrade(&args.collect::<Vec<_>>()) {
             Ok(()) => std::process::ExitCode::SUCCESS,
             Err(message) => {
                 eprintln!("miao upgrade: {message}");
