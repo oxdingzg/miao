@@ -5133,8 +5133,6 @@ mod layout_alignment_tests {
     }
 }
 
-
-
 #[cfg(test)]
 mod draft_tool_tests {
     use super::*;
