@@ -1986,7 +1986,10 @@ impl Runtime {
             .collect();
         providers.sort_by(|a, b| {
             let configured = |value: &serde_json::Value| {
-                !value.get("configured").and_then(|flag| flag.as_bool()).unwrap_or(false)
+                !value
+                    .get("configured")
+                    .and_then(|flag| flag.as_bool())
+                    .unwrap_or(false)
             };
             configured(a).cmp(&configured(b)).then_with(|| {
                 let name = |value: &serde_json::Value| -> String {

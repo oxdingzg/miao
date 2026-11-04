@@ -46,7 +46,10 @@ impl SessionSummary {
                 .and_then(Value::as_str)
                 .map(str::to_string)
                 .unwrap_or_else(|| {
-                    let protocol = selection.get("protocol").and_then(Value::as_str).unwrap_or("");
+                    let protocol = selection
+                        .get("protocol")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
                     format!("{model} · {protocol}")
                 });
             Some(match variant {
@@ -365,12 +368,12 @@ impl SessionState {
                         .iter()
                         .filter_map(|item| {
                             let preview = item.get("preview")?.as_str()?;
-                            let suffix = if item.get("truncated").and_then(Value::as_bool) == Some(true)
-                            {
-                                "…"
-                            } else {
-                                ""
-                            };
+                            let suffix =
+                                if item.get("truncated").and_then(Value::as_bool) == Some(true) {
+                                    "…"
+                                } else {
+                                    ""
+                                };
                             Some(format!("{preview}{suffix}"))
                         })
                         .collect()

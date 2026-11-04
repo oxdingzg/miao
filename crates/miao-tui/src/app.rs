@@ -680,7 +680,12 @@ impl App {
                     .map(|items| {
                         items
                             .iter()
-                            .filter(|item| !item.get("configured").and_then(Value::as_bool).unwrap_or(false))
+                            .filter(|item| {
+                                !item
+                                    .get("configured")
+                                    .and_then(Value::as_bool)
+                                    .unwrap_or(false)
+                            })
                             .filter_map(|item| {
                                 let id = item.get("id")?.as_str()?.to_string();
                                 let name = item
@@ -1325,7 +1330,10 @@ impl App {
     /// The model picker over the current catalog, narrowed to the remembered
     /// provider and carrying the needs-auth tail from the last catalog.
     fn open_models_dialog(&mut self) {
-        let current = self.session.as_ref().and_then(|summary| summary.model.as_deref());
+        let current = self
+            .session
+            .as_ref()
+            .and_then(|summary| summary.model.as_deref());
         let needs_auth = self.providers_needing_auth.clone();
         self.open_dialog(Dialog::models_with_needs_auth(
             &self.models,
