@@ -32,16 +32,6 @@ if (args[0] === "__worker-host") {
   process.exit(0)
 }
 
-// A released single-file binary cannot ship a separate `miao-run` executable, so
-// it re-executes itself through this hidden command to run a sandboxed child.
-// Intercept here before yargs so the runner stays cheap and does not load the
-// command graph.
-const sandboxIndex = process.argv.indexOf("__sandbox-run")
-if (sandboxIndex !== -1) {
-  const { sandboxRun } = await import("./sandbox-runner")
-  process.exit(await sandboxRun(process.argv.slice(sandboxIndex + 1)))
-}
-
 // A single-file build can carry its engine; materialize it before dispatch so
 // the first launch finds it through normal candidate discovery.
 {
