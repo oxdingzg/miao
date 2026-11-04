@@ -1,6 +1,6 @@
 # RUS-02：TS runner 退役边界与调用方清点
 
-状态：**清点已产出，执行路径尚未退役**。冻结源码为 `4fbd5f01341206de1d29a5af58dac7185466ac97`（2026-10-28）。本清单不把 S2/S3/S4 已合入等同于旧数据、真实客户端和回滚窗口已验收。
+状态：**清点已产出，执行路径尚未退役**。冻结源码为 `8caccb41452f87afa0944e2a9e869745325fe5d6`（2026-11-04 复算；上一版冻结于 `4fbd5f0134`，2026-10-28）。本清单不把 S2/S3/S4 已合入等同于旧数据、真实客户端和回滚窗口已验收。
 
 ## 1. 可复核清单
 
@@ -10,14 +10,46 @@
 
 | 边界       | 源码依赖条数 | 验证依赖条数 | 定义范围                                                        |
 | ---------- | -----------: | -----------: | --------------------------------------------------------------- |
-| runner     |           25 |           33 | `session/runner/` 的 15 个文件                                  |
-| execution  |           22 |           29 | `session/execution.ts` 与 `session/execution/`                  |
+| runner     |           11 |           15 | `session/runner/` 的 10 个文件                                  |
+| execution  |           22 |           30 | `session/execution.ts` 与 `session/execution/`                  |
 | scheduling |           17 |           10 | `run-coordinator`、`schedule`、`delegation`、`delegation-store` |
 | inbox      |           26 |           17 | `session/input`、`session/admission`                            |
-| permission |           44 |           38 | `permission.ts` 与 `permission/`，不包括 V1 permission          |
-| placement  |           23 |           12 | `session/routing.ts`、`engine-placement.ts`                     |
+| permission |           64 |           66 | `permission.ts` 与 `permission/`，不包括 V1 permission          |
+| placement  |           25 |           16 | `session/routing.ts`、`engine-placement.ts`                     |
 
-合计 296 条导入边界，其中 157 条源码依赖、139 条验证依赖。一份文件可以落入多个边界，因此这些数字不是独立调用方数量。重新清点时在仓库根目录运行：
+合计 319 条导入边界（2026-11-04 复算；10-28 为 296 条）。`runner` 的入边减少最多（源码 25 → 11、验证 33 → 15），说明这个目录已经收缩成叶子；`permission` 的入边增长（44 → 64），是因为更多产品路径改从它就位而不是从 runner。数字变化本身不是退役，只是把「还连着谁」重新算对。一份文件可以落入多个边界，因此这些数字不是独立调用方数量。重新清点时在仓库根目录运行：
+
+### 1.1 生产耦合只剩两处
+
+按目标文件统计 runner 目录的入边（同一份清单，2026-11-04）：
+
+| runner 文件            | runner 外的源码引用 | runner 外的测试引用 |
+| ---------------------- | ------------------: | ------------------: |
+| `llm.ts`               |                   1 |                   3 |
+| `index.ts`             |                   1 |                   3 |
+| `first-byte-guard.ts`  |                   0 |                   1 |
+| `max-steps.ts`         |                   0 |                   0 |
+| `metrics.ts`           |                   0 |                   1 |
+| `model-io.ts`          |                   0 |                   1 |
+| `output-guard.ts`      |                   0 |                   2 |
+| `provider-retry.ts`    |                   0 |                   1 |
+| `publish-llm-event.ts` |                   0 |                   2 |
+| `tool-input-guard.ts`  |                   0 |                   1 |
+
+唯一的两个生产引用是 `packages/core/src/location-services.ts:36 → runner/llm.ts` 和
+`packages/core/src/session/execution/local.ts:7 → runner/index.ts`。其余 8 个文件只被
+`llm.ts` 内部使用或被测试引用。
+
+因此删除顺序只能从这两条边入手，而不是从叶子文件开始：
+
+1. 先让 `execution/local.ts` 不再需要 `runner/index.ts` 的类型（错误契约迁到
+   `session/error`），再删除 TS drain 本身。
+2. 再拆 `location-services.ts` 对 `runner/llm.ts` 的装配。
+3. 这两条边断掉之后，`llm.ts` 与它的 8 个叶子文件才成为可删的整体。
+
+在 TS drain 仍被 `miao-dev`（`bun run ./src/index.ts`）启动的前提下，第 1 步会同时决定
+开发入口的去向：要么开发入口改用 Rust engine，要么这一批删除必须等它退役。
+
 
 ```sh
 bun docs/experiments/2026-10-28-ts-runner-retirement/generate.cjs
