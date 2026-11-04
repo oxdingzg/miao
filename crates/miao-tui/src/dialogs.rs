@@ -99,6 +99,20 @@ impl ModelInfo {
         }
     }
 
+    /// Distinct providers the catalog names, in first-appearance order. The
+    /// ctrl+o filter list and the picker's groups share it.
+    pub fn providers(models: &[ModelInfo]) -> Vec<String> {
+        let mut providers: Vec<String> = Vec::new();
+        for model in models {
+            if let Some(provider) = &model.provider {
+                if !providers.iter().any(|named| named == provider) {
+                    providers.push(provider.clone());
+                }
+            }
+        }
+        providers
+    }
+
     pub fn binding(&self) -> Value {
         let mut binding = serde_json::json!({
             "protocol": self.protocol,
