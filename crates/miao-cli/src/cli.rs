@@ -72,6 +72,7 @@ Usage:
   miao db stats|vacuum  report or reclaim space (--db PATH, --apply for vacuum)
   miao db retention     report events a snapshot-then-truncate could drop (report-only)
   miao db blob-gc       report or remove blob files nothing references (--db PATH, --apply)
+  miao db backup        copy the ledger and its blobs into a verified backup (--db PATH, --to PATH)
   miao completion SHELL print a completion script (bash or zsh)
   miao debug paths|info|mcp|lsp|routes
                         read-only diagnostics
@@ -2997,6 +2998,126 @@ fn db_vacuum(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Copy the ledger and its blobs into a backup that has been read back.
+///
+/// `VACUUM INTO` writes a consistent snapshot in one statement, so a live
+/// write-ahead database is copied without stopping the engine that owns it. The
+/// copy is then opened read-only and put through `PRAGMA integrity_check`: a
+/// copy that does not read back is not a backup, so the command fails instead of
+/// reporting one. An existing target is refused rather than replaced, because
+/// this is the copy an upgrade falls back to (DATA-01).
+fn db_backup(rest: &[String]) -> Result<(), String> {
+    let path = db_argument(rest)?;
+    if !path.exists() {
+        return Err(format!("no database at {}", path.display()));
+    }
+    let target = match rest.iter().position(|argument| argument == "--to") {
+        Some(index) => std::path::PathBuf::from(
+            rest.get(index + 1)
+                .ok_or("--to needs a value")?
+                .to_string(),
+        ),
+        None => {
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_secs())
+                .unwrap_or(0);
+            let stem = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("engine");
+            path.with_file_name(format!("backups/{stem}-{stamp}.db"))
+        }
+    };
+    if target.exists() {
+        return Err(format!(
+            "{} already exists; a backup never replaces one",
+            target.display()
+        ));
+    }
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let connection = rusqlite::Connection::open(&path).map_err(|error| error.to_string())?;
+    // The engine that owns the ledger may hold the write lock; a backup waits
+    // for it instead of failing the operator's attempt.
+    connection
+        .busy_timeout(std::time::Duration::from_secs(30))
+        .map_err(|error| error.to_string())?;
+    let destination = target
+        .to_str()
+        .ok_or_else(|| format!("{} is not a valid path", target.display()))?
+        .to_string();
+    connection
+        .execute("VACUUM INTO ?1", [destination])
+        .map_err(|error| format!("copy {}: {error}", path.display()))?;
+    drop(connection);
+
+    let copy =
+        rusqlite::Connection::open_with_flags(&target, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|error| format!("read back {}: {error}", target.display()))?;
+    let integrity: String = copy
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .map_err(|error| error.to_string())?;
+    if integrity != "ok" {
+        return Err(format!(
+            "the copy at {} failed integrity_check: {integrity}",
+            target.display()
+        ));
+    }
+    let version: u32 = copy
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|error| error.to_string())?;
+    drop(copy);
+
+    let blobs = copy_blobs(
+        &miao_engine::blob::root_for(&path),
+        &miao_engine::blob::root_for(&target),
+    )?;
+    let bytes = std::fs::metadata(&target)
+        .map(|meta| meta.len())
+        .unwrap_or(0);
+    println!("backup · {}", target.display());
+    println!("database · {} · schema {version}", human_bytes(bytes));
+    println!("verified · integrity_check ok");
+    println!("blobs · {blobs} files");
+    Ok(())
+}
+
+/// Copy the content-addressed blob tree beside the ledger. Digests are the file
+/// names, so a destination that already holds a digest holds the same bytes and
+/// does not need rewriting.
+fn copy_blobs(from: &std::path::Path, to: &std::path::Path) -> Result<usize, String> {
+    if !from.is_dir() {
+        return Ok(0);
+    }
+    let mut copied = 0;
+    let mut pending = vec![from.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(&directory).map_err(|error| error.to_string())? {
+            let source = entry.map_err(|error| error.to_string())?.path();
+            let relative = source
+                .strip_prefix(from)
+                .map_err(|error| error.to_string())?;
+            let destination = to.join(relative);
+            if source.is_dir() {
+                std::fs::create_dir_all(&destination).map_err(|error| error.to_string())?;
+                pending.push(source);
+                continue;
+            }
+            if destination.exists() {
+                continue;
+            }
+            if let Some(parent) = destination.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            std::fs::copy(&source, &destination).map_err(|error| error.to_string())?;
+            copied += 1;
+        }
+    }
+    Ok(copied)
+}
+
 /// Reclaim blob files no surviving row references, but only when the operator
 /// asked for it in words: a dry run counts the orphans and states that nothing
 /// was written. The live set is read through one read-only snapshot, so the
@@ -5020,6 +5141,13 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                         std::process::ExitCode::from(1)
                     }
                 },
+                Some("backup") => match db_backup(&rest[1..]) {
+                    Ok(()) => std::process::ExitCode::SUCCESS,
+                    Err(message) => {
+                        eprintln!("miao db backup: {message}");
+                        std::process::ExitCode::from(1)
+                    }
+                },
                 Some("blob-gc") => match db_blob_gc(&rest[1..]) {
                     Ok(()) => std::process::ExitCode::SUCCESS,
                     Err(message) => {
@@ -5434,7 +5562,8 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 mod tests {
     use super::{
         anchored_sessions, carry_uncommitted_changes, config_layers, db_file_bytes, db_read_only,
-        db_report, db_vacuum, default_db, engine_argv_with, event_line, git_worktree_main_checkout,
+        db_backup, db_report, db_vacuum, default_db, engine_argv_with, event_line,
+        git_worktree_main_checkout,
         launch, lsp_servers, mcp_servers, merged_config, model_routes, parsed_session_location,
         plugin_entries, project_copy_apply, project_copy_plan, retention_plan, strip_comments,
         tree_bytes, uninstall_targets, worktree_remove_apply, worktree_remove_plan,
@@ -5525,6 +5654,67 @@ mod tests {
             .expect("count");
         assert_eq!(rows, 2, "vacuum keeps every row");
         drop(connection);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn backup_reads_the_copy_back_and_never_replaces_one() {
+        let dir = std::env::temp_dir().join(format!("miao-cli-backup-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("engine.db");
+        let connection = rusqlite::Connection::open(&path).expect("create database");
+        connection
+            .execute_batch(
+                "PRAGMA journal_mode=WAL; \
+                 CREATE TABLE session (id TEXT); \
+                 INSERT INTO session VALUES ('a'), ('b');",
+            )
+            .expect("seed");
+        drop(connection);
+        let digest = "a".repeat(64);
+        let blob = dir.join("blobs").join(&digest[0..2]).join(&digest);
+        std::fs::create_dir_all(blob.parent().expect("blob dir")).expect("blob dir");
+        std::fs::write(&blob, b"payload").expect("blob");
+
+        let before = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+        let target = dir.join("backups").join("copy.db");
+        db_backup(&[
+            "--db".into(),
+            path.display().to_string(),
+            "--to".into(),
+            target.display().to_string(),
+        ])
+        .expect("backup");
+
+        assert!(target.exists(), "the copy has to exist");
+        let copy = rusqlite::Connection::open(&target).expect("open copy");
+        let rows: i64 = copy
+            .query_row("SELECT count(*) FROM session", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(rows, 2, "every committed row reaches the copy");
+        let integrity: String = copy
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .expect("integrity_check");
+        assert_eq!(integrity, "ok", "the copy reads back clean");
+        drop(copy);
+        assert!(
+            dir.join("backups").join("blobs").join(&digest[0..2]).join(&digest).exists(),
+            "a blob the ledger references has to travel with it"
+        );
+        assert_eq!(
+            before,
+            std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0),
+            "a backup reads the source and never writes it"
+        );
+
+        let refused = db_backup(&[
+            "--db".into(),
+            path.display().to_string(),
+            "--to".into(),
+            target.display().to_string(),
+        ])
+        .expect_err("an existing backup must not be replaced");
+        assert!(refused.contains("already exists"), "{refused}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
