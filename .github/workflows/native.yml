@@ -66,13 +66,13 @@ jobs:
           MIAO_NATIVE_REQUIRED: "1"
 
       - name: Self-exec sandbox smoke (seatbelt)
-        working-directory: packages/miao
+        working-directory: crates/miao-native
         run: |
           set -euo pipefail
           D=$(mktemp -d)
-          bun src/index.ts __sandbox-run --workdir "$D" -- sh -c "echo ok > $D/ok.txt"
+          ./target/release/miao-run --workdir "$D" -- sh -c "echo ok > $D/ok.txt"
           test -f "$D/ok.txt"
-          if bun src/index.ts __sandbox-run --workdir "$D" -- sh -c "echo x > $HOME/miao-escape.txt"; then
+          if ./target/release/miao-run --workdir "$D" -- sh -c "echo x > $HOME/miao-escape.txt"; then
             echo "outside write unexpectedly succeeded"
             exit 1
           fi
@@ -117,19 +117,23 @@ jobs:
         run: bun run build.ts
         working-directory: packages/native
 
+      - name: Build miao-run
+        run: cargo build --release --bin miao-run
+        working-directory: crates/miao-native
+
       - name: Self-exec sandbox smoke (Landlock)
+        working-directory: crates/miao-native
         run: |
           set -euo pipefail
           D=$(mktemp -d)
-          bun src/index.ts __sandbox-run --workdir "$D" -- sh -c "echo ok > $D/ok.txt"
+          ./target/release/miao-run --workdir "$D" -- sh -c "echo ok > $D/ok.txt"
           test -f "$D/ok.txt"
-          if bun src/index.ts __sandbox-run --workdir "$D" -- sh -c "echo x > $HOME/miao-escape.txt"; then
+          if ./target/release/miao-run --workdir "$D" -- sh -c "echo x > $HOME/miao-escape.txt"; then
             echo "outside write unexpectedly succeeded"
             exit 1
           fi
           test ! -f "$HOME/miao-escape.txt"
           rm -rf "$D"
-        working-directory: packages/miao
 
   sandbox-windows:
     name: sandbox-windows
@@ -188,19 +192,23 @@ jobs:
         run: bun run build.ts
         working-directory: packages/native
 
+      - name: Build miao-run
+        run: cargo build --release --bin miao-run
+        working-directory: crates/miao-native
+
       - name: Self-exec sandbox smoke (AppContainer)
         shell: pwsh
+        working-directory: crates/miao-native
         run: |
-          # Arguments after the source file are forwarded; exactly one separator starts the command.
+          # The sandbox binary takes the workdir, then `--`, then the command.
           $D = Join-Path $env:TEMP ("miao-wd-" + [guid]::NewGuid())
           New-Item -ItemType Directory -Path $D -Force | Out-Null
-          bun src/index.ts __sandbox-run --workdir "$D" -- cmd /c "echo ok > `"$D\ok.txt`""
+          .\target\release\miao-run.exe --workdir "$D" -- cmd /c "echo ok > `"$D\ok.txt`""
           if ($LASTEXITCODE -ne 0) { throw "sandbox workdir command failed" }
           if (-not (Test-Path "$D\ok.txt")) { throw "workdir write did not happen" }
-          bun src/index.ts __sandbox-run --workdir "$D" -- cmd /c "echo x > `"$env:USERPROFILE\miao-escape.txt`""
+          .\target\release\miao-run.exe --workdir "$D" -- cmd /c "echo x > `"$env:USERPROFILE\miao-escape.txt`""
           if ($LASTEXITCODE -ne 1) { throw "expected cmd access-denied exit status" }
           if (Test-Path "$env:USERPROFILE\miao-escape.txt") { throw "outside write unexpectedly succeeded" }
           Remove-Item -Recurse -Force $D
           # The expected negative command left LASTEXITCODE=1; this step passed.
           exit 0
-        working-directory: packages/miao
