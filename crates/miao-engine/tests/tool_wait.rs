@@ -110,7 +110,7 @@ async fn a_tool_that_has_not_settled_yet_announces_the_wait() {
     runtime.shutdown().await;
 }
 
-async fn next_frame(progress: &mut tokio::sync::broadcast::Receiver<Value>, kind: &str) -> Value {
+async fn next_frame(progress: &mut miao_engine::progress::Subscriber, kind: &str) -> Value {
     let mut seen = Vec::new();
     tokio::time::timeout(std::time::Duration::from_secs(20), async {
         loop {

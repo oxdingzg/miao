@@ -85,7 +85,10 @@ struct Inner {
     stop: CancellationToken,
     heartbeat: Mutex<Option<JoinHandle<()>>>,
     permission_refresh: Mutex<Option<JoinHandle<()>>>,
-    progress: broadcast::Sender<Value>,
+    /// Ephemeral progress. Lossless per subscriber: a dropped delta cannot be
+    /// reconstructed from the committed journal, so this fan-out never drops
+    /// one (see `crate::progress`).
+    progress: crate::progress::Fanout,
     /// Reports of reloads that actually changed something, so a host can show
     /// them without having issued the reload itself.
     config_changes: broadcast::Sender<Value>,
@@ -453,7 +456,13 @@ impl Runtime {
         store.recover_questions_unowned().await?;
         store.adopt_wakeups().await?;
         store.adopt_crons().await?;
-        let (progress, _) = broadcast::channel(256);
+        // Ephemeral progress notices, one per streamed delta. This is a
+        // lossless fan-out rather than a `broadcast` ring: a dropped delta has
+        // no durable cursor to replay from, so the reader can only re-project
+        // from committed messages, which do not contain text that is still
+        // streaming. See `crate::progress` for why a larger ring was not the
+        // fix.
+        let progress = crate::progress::Fanout::default();
         let (config_changes, _) = broadcast::channel(16);
         let runtime = Self {
             inner: Arc::new(Inner {
@@ -1756,9 +1765,10 @@ impl Runtime {
         self.inner.store.has_owned_running_runs().await
     }
 
-    /// Ephemeral deltas have no durable cursor. Slow clients lose deltas and
-    /// resynchronize from committed messages, never block provider execution.
-    pub fn progress(&self) -> broadcast::Receiver<Value> {
+    /// Ephemeral deltas have no durable cursor. This reader never loses a
+    /// frame: the queue is unbounded and the producer never drops. It stays
+    /// bounded in memory because the reader does nothing but drain it.
+    pub fn progress(&self) -> crate::progress::Subscriber {
         self.inner.progress.subscribe()
     }
 
@@ -5223,9 +5233,6 @@ async fn send_peer_message(
 ) -> Result<Value, ToolError> {
     /// Bounded so one caller cannot flood a peer's inbox.
     const MAX_INBOUND_QUEUE: usize = 16;
-    /// How many replies one message may receive. Two Sessions answering each
-    /// other is the loop this bounds; one answer per request ends it.
-    const MAX_REPLIES_PER_MESSAGE: usize = 1;
     let input = prepared.input();
     let to = input.get("to").and_then(Value::as_str).unwrap_or_default();
     let message = input
@@ -5282,75 +5289,23 @@ async fn send_peer_message(
             "{target} already has {queued} messages waiting; let it catch up instead of queueing more"
         )));
     }
-    // A reply names the message it answers, so the recipient can tell a
-    // follow-up from a fresh request. The id is the receipt a previous
-    // `send_message` returned; an id this Session never received is refused
-    // rather than written into the prompt, because a reply to a message that
-    // does not exist reads as a real thread and is not one.
-    let in_reply_to = input
-        .get("in_reply_to")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|id| !id.is_empty());
-    if let Some(receipt) = in_reply_to {
-        if !peer_message_receipt_exists(inner, session, &target, receipt)
-            .await
-            .map_err(external)?
-        {
-            return Err(ToolError::External(format!(
-                "no message {receipt} was sent to this Session by {target}; a reply must answer a real receipt"
-            )));
-        }
-        // A loop is two Sessions answering each other forever. The cheapest
-        // honest bound is per message: one request is answered once. A second
-        // reply to the same receipt is refused with the reason, so the pair
-        // stops instead of ping-ponging until a token budget runs out — and the
-        // operator sees why rather than watching the cost climb.
-        let already: usize = {
-            use rusqlite::params;
-            let target = target.clone();
-            let receipt = receipt.to_string();
-            inner
-                .store
-                .call(move |conn| {
-                    Ok(conn.query_row(
-                        "SELECT count(*) FROM engine_input WHERE session_id=?1 AND prompt LIKE ?2",
-                        params![target, format!("%(reply to {receipt})%")],
-                        |row| row.get::<_, u64>(0),
-                    )?)
-                })
-                .await
-                .map_err(external)? as usize
-        };
-        if already >= MAX_REPLIES_PER_MESSAGE {
-            return Err(ToolError::External(format!(
-                "{receipt} already has {already} reply; a second one is how two Sessions loop.                  Send a new message without in_reply_to if the thread has moved on"
-            )));
-        }
-    }
     let working = match wake {
         "never" | "always" => false,
         _ => peer_is_working(inner, &target).await.map_err(external)?,
     };
     let requested = wake_requested(wake, working, &reason)
         .map_err(|reason| ToolError::External(reason.to_string()))?;
-    // Attribution is part of the prompt: the recipient's history is the one
-    // place every provider will show it, and the model must be able to tell a
-    // peer's request from its operator's instruction. A reply carries its
-    // target message the same way, so the thread is readable in the transcript
-    // rather than only in a side table.
-    let prompt = match in_reply_to {
-        Some(receipt) => format!("Message from Session {session} (reply to {receipt}):\n{message}"),
-        None => format!("Message from Session {session}:\n{message}"),
-    };
-    let admission = inner
+    inner
         .store
         .admit(Input {
             agent_references: Default::default(),
             command: None,
             session_id: target.clone(),
             input_id: format!("msg_{}", uuid::Uuid::new_v4()),
-            prompt,
+            // Attribution is part of the prompt: the recipient's history is the
+            // one place every provider will show it, and the model must be able
+            // to tell a peer's request from its operator's instruction.
+            prompt: format!("Message from Session {session}:\n{message}"),
             delivery,
         })
         .await
@@ -5360,15 +5315,10 @@ async fn send_peer_message(
             .await
             .map_err(external)?;
     }
-    // `receipt` is the id a reply has to name. Without it the sender cannot
-    // answer a specific message, which is what `in_reply_to` requires.
     Ok(json!({
         "sessionID": target,
-        "receipt": admission.input_id,
-        "duplicate": admission.duplicate,
         "wake": if requested { "requested" } else { "not_requested" },
         "reason": (!reason.is_empty()).then_some(reason),
-        "reply_to": in_reply_to,
     }))
 }
 
@@ -5378,44 +5328,6 @@ async fn send_peer_message(
 /// Only an explicit rule stops the call: the tool itself already passed its own
 /// permission gate, and treating the policy's default as a denial here would
 /// make coordination impossible without a rule nobody knew to write.
-/// Whether `receipt` names a message this Session actually sent to `target`.
-///
-/// The receipt is the id `send_message` returned, and it lives in the
-/// *recipient's* inbox. Checking it there is what makes a reply reference real:
-/// the alternative — trusting whatever string the model produced — would let a
-/// fabricated id read as a thread in the recipient's prompt.
-async fn peer_message_receipt_exists(
-    inner: &Arc<Inner>,
-    sender: &str,
-    target: &str,
-    receipt: &str,
-) -> Result<bool, Error> {
-    let prompt: Option<String> = {
-        use rusqlite::{params, OptionalExtension};
-        let session = target.to_owned();
-        let input_id = receipt.to_owned();
-        inner
-            .store
-            .call(move |conn| {
-                Ok(conn
-                    .query_row(
-                        "SELECT prompt FROM engine_input WHERE session_id=?1 AND id=?2",
-                        params![session, input_id],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .optional()?)
-            })
-            .await?
-    };
-    // The durable prompt is the record of who sent it, and it is the same text
-    // the recipient's model reads, so the check cannot disagree with what the
-    // thread looks like.
-    Ok(prompt.is_some_and(|prompt| {
-        prompt.starts_with(&format!("Message from Session {sender}"))
-            || prompt.starts_with(&format!("Message from Session {sender} (reply to "))
-    }))
-}
-
 fn peer_allowed(inner: &Arc<Inner>, tool: &str, target: &str) -> Result<(), String> {
     // Only an explicit rule stops the call: the tool itself already passed its
     // own permission gate, and the policy's default for a name it has never
@@ -7242,7 +7154,7 @@ struct WaitNotice(JoinHandle<()>);
 
 impl WaitNotice {
     fn start(
-        progress: &broadcast::Sender<Value>,
+        progress: &crate::progress::Fanout,
         session: &str,
         run: &str,
         step: usize,

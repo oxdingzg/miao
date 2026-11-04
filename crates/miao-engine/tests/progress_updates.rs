@@ -236,7 +236,7 @@ async fn a_provider_that_has_not_answered_yet_announces_the_wait() {
     runtime.shutdown().await;
 }
 
-async fn next_waiting(progress: &mut tokio::sync::broadcast::Receiver<Value>) -> Value {
+async fn next_waiting(progress: &mut miao_engine::progress::Subscriber) -> Value {
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             let frame = progress.recv().await.unwrap();

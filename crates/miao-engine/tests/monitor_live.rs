@@ -9,7 +9,7 @@ use miao_engine::{
 };
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 struct Submitter {
@@ -42,7 +42,7 @@ async fn start(
 ) -> (
     Runtime,
     Store,
-    broadcast::Receiver<Value>,
+    miao_engine::progress::Subscriber,
     tempfile::TempDir,
 ) {
     let dir = tempfile::tempdir().unwrap();

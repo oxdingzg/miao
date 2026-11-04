@@ -123,6 +123,7 @@ pub mod native_routes;
 pub mod product;
 pub mod product_permission;
 pub mod product_permission_request;
+pub mod progress;
 
 pub mod permission_source_transaction;
 

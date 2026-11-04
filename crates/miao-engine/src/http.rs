@@ -9,9 +9,9 @@
 //! `GET /events?session_id=..&after=..` is the streaming half: Server-Sent
 //! Events for the same committed `event` notifications and ephemeral `progress`
 //! frames as stdio, keyed by the durable `seq` cursor. Each connection reads the
-//! authoritative ledger and a private broadcast receiver, so a slow client lags
-//! its own stream (getting a `resync` frame) and can never apply backpressure to
-//! the provider or the run loop.
+//! authoritative ledger and a private lossless queue, so a slow client can
+//! never apply backpressure to the provider or the run loop, and never loses a
+//! delta it would have no way to replay.
 //!
 //! Authority: the caller binds a loopback listener and supplies a bearer token.
 //! Only an authenticated request reaches the controller capability inside
@@ -39,10 +39,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::{
-    net::TcpListener,
-    sync::{broadcast, Mutex},
-};
+use tokio::{net::TcpListener, sync::Mutex};
 
 /// Wire revision for this transport: echoed in the `miao-engine-protocol`
 /// response header and accepted from clients in the same header.
@@ -252,7 +249,7 @@ struct Stream {
     session: String,
     cursor: u64,
     pending: VecDeque<Event>,
-    progress: broadcast::Receiver<Value>,
+    progress: crate::progress::Subscriber,
     stop: tokio_util::sync::CancellationToken,
 }
 
@@ -284,18 +281,12 @@ async fn next_event(mut stream: Stream) -> Option<(Result<Event, Infallible>, St
             continue;
         }
         match tokio::time::timeout(Duration::from_millis(500), stream.progress.recv()).await {
-            Ok(Ok(notice)) if notice["session_id"].as_str() == Some(stream.session.as_str()) => {
+            Ok(Some(notice)) if notice["session_id"].as_str() == Some(stream.session.as_str()) => {
                 if let Ok(frame) = Event::default().event("progress").json_data(&notice) {
                     return Some((Ok(frame), stream));
                 }
             }
-            Ok(Err(broadcast::error::RecvError::Lagged(_))) => {
-                let frame = Event::default()
-                    .event("resync")
-                    .json_data(json!({ "reason": "ephemeral_progress_lagged" }));
-                return Some((Ok(frame.ok()?), stream));
-            }
-            Ok(Err(broadcast::error::RecvError::Closed)) => return None,
+            Ok(None) => return None,
             // Timeout or another Session's frame: loop to re-poll the ledger.
             _ => {}
         }
