@@ -229,8 +229,12 @@ impl Inner {
     async fn learned_window_for(&self, model: Option<&str>) -> Option<u64> {
         let learned = self.learned_window.lock().await;
         model
-            .and_then(|model| learned.get(model).copied())
+            .and_then(|name| learned.get(name).copied())
             .or_else(|| learned.get("*").copied())
+            // No refusal has named a window yet: the shipped catalog declares
+            // one for known models, which arms the compaction trigger on
+            // first use instead of never.
+            .or_else(|| model.and_then(crate::model_catalog::context_window_for))
     }
 
     /// Automatic-compaction limits for a Session the product never described.
