@@ -1035,6 +1035,10 @@ async fn run(
                             bus.send(AppEvent::ActionFailed(format!("models failed: {error}")))
                         }
                     }
+                    match client.command("provider_catalog").await {
+                        Ok(value) => bus.send(AppEvent::ProviderCatalog(value)),
+                        Err(_) => {}
+                    }
                 }
                 Request::SelectModel {
                     session_id,

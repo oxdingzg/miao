@@ -322,6 +322,11 @@ pub struct App {
     workspaces: Vec<(String, String, String)>,
     /// The model dialog waits for the catalog when nothing is cached yet.
     pending_models: bool,
+    /// The provider the model picker is narrowed to; `None` lists everything.
+    models_filter: Option<String>,
+    /// Providers the snapshot knows but this engine does not serve yet, as
+    /// (id, display name). Fed to the model picker's needs-auth tail.
+    providers_needing_auth: Vec<(String, String)>,
     /// Same for the account dialog.
     pending_accounts: bool,
     /// Wheel speed and acceleration, from `tui.json`.
@@ -419,6 +424,8 @@ impl App {
             history_index: 0,
             catalog: Vec::new(),
             pending_models: false,
+            models_filter: None,
+            providers_needing_auth: Vec::new(),
             pending_accounts: false,
             scroll: Scroll::default(),
             templates,
@@ -662,14 +669,30 @@ impl App {
                 if self.pending_models {
                     self.pending_models = false;
                     if self.dialog.is_none() {
-                        self.open_dialog(Dialog::models(
-                            &self.models,
-                            self.session
-                                .as_ref()
-                                .and_then(|summary| summary.model.as_deref()),
-                        ));
+                        self.open_models_dialog();
                     }
                 }
+            }
+            AppEvent::ProviderCatalog(catalog) => {
+                self.providers_needing_auth = catalog
+                    .get("providers")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter(|item| !item.get("configured").and_then(Value::as_bool).unwrap_or(false))
+                            .filter_map(|item| {
+                                let id = item.get("id")?.as_str()?.to_string();
+                                let name = item
+                                    .get("name")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or(&id)
+                                    .to_string();
+                                Some((id, name))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
             }
             AppEvent::Accounts(accounts) => {
                 self.accounts = accounts;
@@ -797,6 +820,7 @@ impl App {
                 self.shell.set_session(self.session.as_ref());
                 self.shell.set_usage(self.usage.as_ref());
                 self.shell.set_transcript(&transcript);
+                self.shell.set_pending_prompts(&self.state.pending_prompts);
                 // Opening a Session shows its newest turn: `follow` survives
                 // from whatever was scrolled before.
                 self.shell.follow_transcript();
@@ -1014,6 +1038,30 @@ impl App {
     }
 
     fn handle_dialog_key(&mut self, key: KeyEvent) {
+        // ctrl+o narrows the model picker to one provider and backs out of the
+        // provider list; Esc on that list returns to the models too.
+        if key.kind == KeyEventKind::Press
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.code == KeyCode::Char('o')
+        {
+            match self.dialog.as_ref() {
+                Some(Dialog::Models(_)) => {
+                    self.open_model_provider_filter();
+                    return;
+                }
+                Some(Dialog::ModelProviders(_)) => {
+                    self.reopen_models_dialog();
+                    return;
+                }
+                _ => {}
+            }
+        }
+        if let Some(Dialog::ModelProviders(_)) = self.dialog.as_ref() {
+            if key.kind == KeyEventKind::Press && key.code == KeyCode::Esc {
+                self.reopen_models_dialog();
+                return;
+            }
+        }
         let Some(dialog) = self.dialog.as_mut() else {
             return;
         };
@@ -1157,12 +1205,7 @@ impl App {
             self.pending_models = true;
             return;
         }
-        self.open_dialog(Dialog::models(
-            &self.models,
-            self.session
-                .as_ref()
-                .and_then(|summary| summary.model.as_deref()),
-        ));
+        self.open_models_dialog();
     }
 
     fn open_theme(&mut self) {
@@ -1266,6 +1309,30 @@ impl App {
             }
         }
         self.dialog = Some(dialog);
+    }
+
+    /// The ctrl+o provider list over the current catalog.
+    fn open_model_provider_filter(&mut self) {
+        let providers = ModelInfo::providers(&self.models);
+        self.open_dialog(Dialog::model_provider_filter(&providers));
+    }
+
+    /// Back to the model picker, narrowed to the remembered provider.
+    fn reopen_models_dialog(&mut self) {
+        self.open_models_dialog();
+    }
+
+    /// The model picker over the current catalog, narrowed to the remembered
+    /// provider and carrying the needs-auth tail from the last catalog.
+    fn open_models_dialog(&mut self) {
+        let current = self.session.as_ref().and_then(|summary| summary.model.as_deref());
+        let needs_auth = self.providers_needing_auth.clone();
+        self.open_dialog(Dialog::models_with_needs_auth(
+            &self.models,
+            current,
+            self.models_filter.as_deref(),
+            &needs_auth,
+        ));
     }
 
     fn dialog_action(&mut self, action: DialogAction) {
@@ -1461,7 +1528,29 @@ impl App {
                     self.apply_theme(&name);
                 }
             }
+            Some(Dialog::ModelProviders(list)) => {
+                // Row "all" restores the unfiltered picker; any other row names
+                // the provider to narrow to.
+                let provider = list.rows.get(index).map(|row| row.id.clone());
+                self.models_filter = match provider.as_deref() {
+                    Some("all") | None => None,
+                    Some(named) => Some(named.to_string()),
+                };
+                self.reopen_models_dialog();
+            }
             Some(Dialog::Models(list)) => {
+                // A needs-auth row names a provider this engine does not serve
+                // yet; selecting it surfaces the way in instead of failing the
+                // parse silently.
+                if let Some(row) = list.rows.get(index) {
+                    if let Some(provider) = row.id.strip_prefix("auth:") {
+                        self.dialog = None;
+                        self.shell.composer.notice = Some(format!(
+                            "this provider is not configured yet: run `miao auth login {provider} <key>`, add a model for it in miao.json, then reopen /models"
+                        ));
+                        return;
+                    }
+                }
                 // The chosen row's id is its position in the catalog; a
                 // provider header never reaches here because the cursor
                 // skips headers, so an unparseable id is simply ignored.

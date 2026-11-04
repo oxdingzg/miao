@@ -142,6 +142,15 @@ impl Shell {
         self.transcript.set_draft(parts);
     }
 
+    /// Mirror the engine's un-promoted input queue into the transcript tail, so
+    /// a submitted prompt is visible for exactly as long as it is queued.
+    pub fn set_pending_prompts(&mut self, prompts: &[String]) {
+        if self.transcript.pending_prompts == prompts {
+            return;
+        }
+        self.transcript.pending_prompts = prompts.to_vec();
+    }
+
     /// Whether a newer draft is waiting for its paint slot. The drive loop uses
     /// this to schedule the wake that `set_draft`'s throttle would otherwise
     /// leave unscheduled.
@@ -472,6 +481,11 @@ pub struct TranscriptPane {
     body_built: u64,
     draft_version: u64,
     draft_rows_built: u64,
+    /// What the operator typed that the engine still holds un-promoted, in
+    /// admission order. Rendered as prompt rows past the draft: while a busy
+    /// turn holds an input in its queue the only signal used to be the "1
+    /// queued" count, which reads as a lost message.
+    pending_prompts: Vec<String>,
     scroll: u16,
     /// Follow the tail while new projections arrive. Any manual scroll clears
     /// it, so reading history is not interrupted by committed events.
@@ -517,6 +531,7 @@ impl TranscriptPane {
             body_built: 0,
             draft_version: 0,
             draft_rows_built: 0,
+            pending_prompts: Vec::new(),
             scroll: 0,
             follow: true,
             user_anchors: Vec::new(),
@@ -554,7 +569,7 @@ impl TranscriptPane {
     /// the viewport scrolls; the logical lines are a fallback before the first
     /// frame.
     fn max_scroll(&self) -> u16 {
-        let rows = match self.body.len() + self.draft_rows.len() {
+        let rows = match self.body.len() + self.draft_rows.len() + self.pending_prompts.len() {
             0 => self.rows.len(),
             rows => rows,
         };
@@ -609,16 +624,33 @@ impl Pane for TranscriptPane {
         }
         self.width = content.width;
         let viewport = area.height as usize;
-        let rows = self.body.len() + self.draft_rows.len();
+        let pending_lines: Vec<Line<'static>> = self
+            .pending_prompts
+            .iter()
+            .map(|prompt| {
+                Line::from(vec![
+                    Span::styled("❯ ", Style::new().fg(palette.primary)),
+                    Span::styled(prompt.clone(), Style::new().fg(palette.text)),
+                    Span::styled(" · queued", Style::new().fg(palette.text_muted)),
+                ])
+            })
+            .collect();
+        let draft_end = self.body.len() + self.draft_rows.len();
+        let rows = draft_end + pending_lines.len();
         if self.follow {
             self.scroll = rows.saturating_sub(viewport) as u16;
         }
         let start = (self.scroll as usize).min(rows.saturating_sub(1));
         let mut visible = (start..rows)
             .take(viewport)
-            .map(|row| match row < self.body.len() {
-                true => self.body[row].clone(),
-                false => self.draft_rows[row - self.body.len()].clone(),
+            .map(|row| {
+                if row < self.body.len() {
+                    self.body[row].clone()
+                } else if row < draft_end {
+                    self.draft_rows[row - self.body.len()].clone()
+                } else {
+                    pending_lines[row - draft_end].clone()
+                }
             })
             .collect::<Vec<_>>();
         // The call in flight rides the tail as one spinner row. It takes the
@@ -1180,7 +1212,7 @@ impl Home {
         // sits centred and never higher than half a screen down. The previous
         // rule (`free * 2 / 5`) pushed it slightly below centre on every
         // height, which is why nothing could reproduce the TS layout.
-        let used = 5 + 1 + 1 + 1 + prompt_h as usize + notice_h;
+        let used = 5 + 1 + 1 + 2 + prompt_h as usize + notice_h;
         let free = (area.height as usize).saturating_sub(used);
         let gap_top = free / 2;
         let gap_bottom = free.saturating_sub(gap_top);
@@ -1208,7 +1240,10 @@ impl Home {
             x: area.x + prompt_x as u16,
             width: prompt_width as u16,
             y: (y + put_lines.len()) as u16,
-            height: prompt_h + 1,
+            // +2 over the content height: the borders plus a symmetric interior,
+            // so a single-line prompt sits in the middle of the box instead of
+            // hanging from its top border with an empty row under it.
+            height: prompt_h + 2,
         };
         for (offset, line) in put_lines.iter().enumerate() {
             frame.render_widget(
@@ -1933,10 +1968,25 @@ fn render_composer_in(
     // the operator sees `! ` before the command while the buffer still holds
     // only the command and the cursor keeps its cell offset.
     let gutter = if shell { SHELL_GUTTER } else { 0 };
+    // A roomy box reads top-hung: the input sits in the vertical middle of
+    // the space it has, so a one-line prompt does not hug the top border
+    // while an empty row sits under it. The Session composer is sized to its
+    // content exactly, so this offset is zero there and only the roomier
+    // launcher box moves.
+    let content_rows = if composer.editor.is_empty() && composer.completion.items.is_empty() {
+        1
+    } else {
+        composer
+            .editor
+            .display_rows(input_rows.width.saturating_sub(gutter) as usize)
+            .clamp(1, input_rows.height as usize) as u16
+    };
+    let vertical_offset = input_rows.height.saturating_sub(content_rows) / 2;
     let input_area = Rect {
         x: input_rows.x.saturating_add(gutter),
+        y: input_rows.y + vertical_offset,
         width: input_rows.width.saturating_sub(gutter),
-        ..input_rows
+        height: input_rows.height.saturating_sub(vertical_offset),
     };
     if shell && input_rows.width >= SHELL_GUTTER {
         frame.render_widget(
