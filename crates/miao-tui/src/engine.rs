@@ -30,6 +30,13 @@ use crate::transport::{self, Connection, EngineClient, EngineSpawn, TransportEve
 /// assistant turn does not trigger a snapshot per event. The first pending
 /// event fixes the deadline; sustained activity must not postpone progress.
 const REFRESH_DELAY: Duration = Duration::from_millis(150);
+
+/// Silence that triggers a request-path re-projection, and the ceiling its
+/// backoff grows to. The status line starts saying "no engine signal" after
+/// 15 seconds (`app.rs`), so by the time the first re-projection lands the
+/// operator has already been told the stream went quiet.
+const RESYNC_AFTER: Duration = Duration::from_secs(30);
+const RESYNC_CEILING: Duration = Duration::from_secs(300);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const EVENTS_PAGE: usize = 100;
 /// Inputs read per `pending_inputs` page while looking for the newest one.
@@ -784,6 +791,16 @@ async fn run(
 ) {
     let mut open: Option<Opened> = None;
     let mut dirty: Option<Instant> = None;
+    // The event channel can die without either side noticing: a forwarding task
+    // that panicked leaves requests flowing (they take another path) while no
+    // frame ever reaches this loop again, and the composer waits forever. When
+    // the frames go quiet for this long, re-project through the request path —
+    // request/response does not depend on the stream — so the composer shows
+    // the durable truth (the run finished, failed, or is still running) instead
+    // of an unbounded "no engine signal". Back off so a session that is truly
+    // between frames is not hammered, and reset as soon as any frame arrives.
+    let mut last_frame = Instant::now();
+    let mut resync_backoff = RESYNC_AFTER;
     crate::transport::wire_note("run", "startup refresh begin");
     if let Ok(client) = connection.connect().await {
         refresh_sessions(client, &bus).await;
@@ -791,6 +808,7 @@ async fn run(
     }
     loop {
         let deadline = dirty.map(|start| start + REFRESH_DELAY);
+        let quiet = open.is_some().then(|| last_frame + resync_backoff);
         tokio::select! {
             request = requests.recv() => {
                 let Some(request) = request else {
@@ -1384,7 +1402,10 @@ async fn run(
                 }
                 }
             },
-            event = events.recv() => match event {
+            event = events.recv() => {
+                last_frame = Instant::now();
+                resync_backoff = RESYNC_AFTER;
+                match event {
                 None => {
                     bus.send(AppEvent::EngineFailure("engine transport closed".into()));
                     return;
@@ -1485,12 +1506,28 @@ async fn run(
                 Some(TransportEvent::Resync(_)) => {
                     dirty.get_or_insert_with(Instant::now);
                 }
-            },
+                }
+            }
             _ = tokio::time::sleep_until(deadline.unwrap_or_else(Instant::now)), if deadline.is_some() => {
                 dirty = None;
                 if let Some(state) = open.as_mut() {
                     if let Ok(client) = connection.connect().await {
                         project(client, &bus, state).await;
+                    }
+                }
+            }
+            _ = tokio::time::sleep_until(quiet.unwrap_or_else(Instant::now)), if quiet.is_some() => {
+                // The frames have been quiet past the threshold. One re-projection
+                // through the request path, then back off — the next projection
+                // lands when a frame finally arrives or the backoff elapses again.
+                last_frame = Instant::now();
+                resync_backoff = (resync_backoff * 2).min(RESYNC_CEILING);
+                if let Some(state) = open.as_mut() {
+                    if let Ok(client) = connection.connect().await {
+                        project(client, &bus, state).await;
+                        bus.send(AppEvent::Notice(
+                            "engine frames went quiet · recovered state from the journal".into(),
+                        ));
                     }
                 }
             }
