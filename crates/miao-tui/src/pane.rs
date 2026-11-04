@@ -572,7 +572,11 @@ impl TranscriptPane {
         {
             return;
         }
-        self.draft = draft_lines(self.draft_source.as_deref().unwrap_or(&[]), &self.theme, now_ms());
+        self.draft = draft_lines(
+            self.draft_source.as_deref().unwrap_or(&[]),
+            &self.theme,
+            now_ms(),
+        );
         self.draft_dirty = false;
         self.draft_built = Some(Instant::now());
         self.draft_version += 1;
@@ -3806,7 +3810,10 @@ mod tests {
                 palette,
             },
         );
-        shell.set_draft(&[DraftPart::Text("streamed words".into()), DraftPart::Reasoning("considering".into())]);
+        shell.set_draft(&[
+            DraftPart::Text("streamed words".into()),
+            DraftPart::Reasoning("considering".into()),
+        ]);
         let draft = shell
             .draft()
             .iter()
@@ -3839,7 +3846,9 @@ mod tests {
                 palette,
             },
         );
-        shell.set_draft(&[DraftPart::Reasoning("reading the diff\nthen the tests".into())]);
+        shell.set_draft(&[DraftPart::Reasoning(
+            "reading the diff\nthen the tests".into(),
+        )]);
         let draft = shell
             .draft()
             .iter()
@@ -3855,7 +3864,10 @@ mod tests {
         assert_eq!(draft.matches("reading the diff").count(), 1, "{draft}");
         assert!(draft.contains("Thinking · reading the diff"), "{draft}");
         // The first answer token keeps the header and starts the prose.
-        shell.set_draft(&[DraftPart::Text("partial".into()), DraftPart::Reasoning("reading the diff\nthen the tests".into())]);
+        shell.set_draft(&[
+            DraftPart::Text("partial".into()),
+            DraftPart::Reasoning("reading the diff\nthen the tests".into()),
+        ]);
         let draft = shell
             .draft()
             .iter()
@@ -4991,9 +5003,6 @@ mod tests {
     }
 }
 
-
-
-
 #[cfg(test)]
 mod draft_gap_tests {
     use super::*;
@@ -5005,14 +5014,27 @@ mod draft_gap_tests {
     #[test]
     fn the_thinking_header_is_separated_from_the_answer() {
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
-        let theme = Theme { name: "t".into(), palette };
-        let rows = draft_lines(&[DraftPart::Reasoning("a thought".into()), DraftPart::Text("the answer".into())], &theme, 0);
+        let theme = Theme {
+            name: "t".into(),
+            palette,
+        };
+        let rows = draft_lines(
+            &[
+                DraftPart::Reasoning("a thought".into()),
+                DraftPart::Text("the answer".into()),
+            ],
+            &theme,
+            0,
+        );
         let text: Vec<String> = rows
             .iter()
             .map(|row| row.line.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect();
         assert!(text[0].contains("Thinking"), "{text:?}");
-        assert_eq!(text[1], "", "a blank row separates header from answer: {text:?}");
+        assert_eq!(
+            text[1], "",
+            "a blank row separates header from answer: {text:?}"
+        );
         assert!(text[2].starts_with("● the answer"), "{text:?}");
     }
 
@@ -5021,7 +5043,10 @@ mod draft_gap_tests {
     #[test]
     fn an_answer_without_thinking_starts_on_the_first_row() {
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
-        let theme = Theme { name: "t".into(), palette };
+        let theme = Theme {
+            name: "t".into(),
+            palette,
+        };
         let rows = draft_lines(&[DraftPart::Text("the answer".into())], &theme, 0);
         let text: Vec<String> = rows
             .iter()
@@ -5057,8 +5082,8 @@ mod layout_alignment_tests {
             ..Transcript::default()
         });
         let width = 200u16;
-        let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 24)).expect("terminal");
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 24))
+            .expect("terminal");
         terminal.draw(|frame| shell.render(frame)).expect("draw");
         let buffer = terminal.backend().buffer();
         let rows: Vec<String> = (0..24)
@@ -5081,7 +5106,10 @@ mod layout_alignment_tests {
         };
         let marker = first_painted("❯");
         let input = first_painted("┌");
-        assert_eq!(marker, input, "the transcript starts on the composer's column");
+        assert_eq!(
+            marker, input,
+            "the transcript starts on the composer's column"
+        );
         assert_eq!(marker, 0, "and that column is the window's first");
 
         // The sidebar's rule divides the body. The transcript's text must not
@@ -5105,7 +5133,6 @@ mod layout_alignment_tests {
     }
 }
 
-
 #[cfg(test)]
 mod probe_now {
     use super::*;
@@ -5115,8 +5142,16 @@ mod probe_now {
         let snap: serde_json::Value = serde_json::from_str(&raw).expect("json");
         let t = crate::session::Transcript::from_snapshot(&snap);
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
-        let theme = Theme { name: "t".into(), palette };
-        for (i, r) in transcript_lines(&t, &theme, false, None).rows.iter().enumerate().take(30) {
+        let theme = Theme {
+            name: "t".into(),
+            palette,
+        };
+        for (i, r) in transcript_lines(&t, &theme, false, None)
+            .rows
+            .iter()
+            .enumerate()
+            .take(30)
+        {
             let s: String = r.line.spans.iter().map(|x| x.content.as_ref()).collect();
             println!("R[{i:02}] |{s}|");
         }
@@ -5133,16 +5168,26 @@ mod probe_full {
         let t = crate::session::Transcript::from_snapshot(&snap);
         println!("entries: {}", t.entries.len());
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
-        let theme = Theme { name: "t".into(), palette };
+        let theme = Theme {
+            name: "t".into(),
+            palette,
+        };
         let rows = transcript_lines(&t, &theme, false, None).rows;
         println!("rows: {}", rows.len());
-        for (i, r) in rows.iter().enumerate().rev().take(12).collect::<Vec<_>>().into_iter().rev() {
+        for (i, r) in rows
+            .iter()
+            .enumerate()
+            .rev()
+            .take(12)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+        {
             let s: String = r.line.spans.iter().map(|x| x.content.as_ref()).collect();
             println!("F[{i:03}] |{s}|");
         }
     }
 }
-
 
 #[cfg(test)]
 mod draft_tool_tests {
@@ -5163,7 +5208,17 @@ mod draft_tool_tests {
             "run_command".to_string(),
             r#"{"argv":["echo","hi"]}"#.to_string(),
         )];
-        let rows = draft_lines(&[DraftPart::Text("done".into()), DraftPart::Call { name: tools[0].0.clone(), arguments: tools[0].1.clone() }], &theme, 0);
+        let rows = draft_lines(
+            &[
+                DraftPart::Text("done".into()),
+                DraftPart::Call {
+                    name: tools[0].0.clone(),
+                    arguments: tools[0].1.clone(),
+                },
+            ],
+            &theme,
+            0,
+        );
         let text: Vec<String> = rows
             .iter()
             .map(|row| row.line.spans.iter().map(|s| s.content.as_ref()).collect())
@@ -5224,4 +5279,3 @@ mod interleave_tests {
         );
     }
 }
-

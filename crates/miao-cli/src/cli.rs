@@ -430,7 +430,9 @@ fn upgrade(rest: &[String]) -> Result<(), String> {
 /// update check must not spend. `feed` overrides the host for installations
 /// that track an internal mirror.
 fn latest_version(feed: Option<&str>) -> Result<String, String> {
-    let base = feed.unwrap_or("https://github.com/oxdingzg/miao").trim_end_matches('/');
+    let base = feed
+        .unwrap_or("https://github.com/oxdingzg/miao")
+        .trim_end_matches('/');
     let output = std::process::Command::new("curl")
         .args([
             "-fsSL",

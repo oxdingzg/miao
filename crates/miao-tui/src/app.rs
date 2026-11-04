@@ -172,7 +172,10 @@ impl Draft {
                 // The arguments belong to the call the engine just opened, so
                 // they attach to the newest call rather than to whatever part
                 // happens to be last.
-                let fragment = delta.get("delta").and_then(Value::as_str).unwrap_or_default();
+                let fragment = delta
+                    .get("delta")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 if let Some(DraftPart::Call(call)) = self
                     .parts
                     .iter_mut()
