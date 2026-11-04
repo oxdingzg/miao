@@ -160,8 +160,18 @@ jobs:
       # AppContainer needs a container profile (the runner is admin). If the host
       # forbids it, the integration tests print an explicit SKIP and record why —
       # they never silently pass a broken sandbox.
+      #
+      # Serialize: every test in `windows-sandbox.rs` probes AppContainer and
+      # then starts its own `miao-run` + child process, and each one waits for
+      # that process to produce a file within ten seconds. Twelve of them at
+      # once contend for the same container profile, and the two that start last
+      # miss their deadline — `first lease never became ready` and `child
+      # heartbeat never appeared` — on a run where every other sandbox test
+      # passed. The waits measure whether a sandboxed child can start at all,
+      # not how fast it does, so serializing is what makes them honest. The file
+      # takes ~20s that way, well inside the job's budget.
       - name: Rust tests and AppContainer enforcement (Windows)
-        run: cargo test --release
+        run: cargo test --release -- --test-threads=1
         working-directory: crates/miao-native
         env:
           MIAO_SANDBOX_NET: "1"
