@@ -173,7 +173,6 @@ impl EngineClient {
         };
         tokio::spawn(async move {
             use miao_engine::host::Host;
-            use tokio::sync::broadcast::error::RecvError;
             // Hold the sender for the runner's lifetime: dropping it would make
             // the client read the watch channel as "the engine exited".
             let _alive = exited;
@@ -186,36 +185,20 @@ impl EngineClient {
             let mut config_events = runtime.config_events();
             // Move progress off the `select!` below and onto its own task.
             //
-            // A `broadcast` receiver that falls behind by more than its ring
-            // (256 slots) reports `Lagged` and the missed values are gone; the
-            // engine emits one notice per streamed delta, so a single long
-            // answer overruns it. Sharing the loop let a `dispatch` that runs
-            // for the whole provider turn hold the receiver, and the answer
-            // then painted as a tail with no head. This task does nothing but
-            // drain, so the ring stays empty however long a command blocks.
+            // The runtime's fan-out is lossless per subscriber, so this task
+            // cannot miss a delta no matter how long the main loop is busy: the
+            // queue holds every frame until this task drains it. Keeping the
+            // receiver on the shared loop would still work, but a `dispatch`
+            // that runs for a whole provider turn would delay each frame until
+            // the turn ended — the transcript would arrive as one block rather
+            // than streaming. This task does nothing but drain.
             let (notices, mut notice_rx) = mpsc::unbounded_channel::<Value>();
             {
                 let notices = notices.clone();
                 tokio::spawn(async move {
-                    loop {
-                        match progress.recv().await {
-                            Ok(notice) => {
-                                if notices.send(notice).is_err() {
-                                    return;
-                                }
-                            }
-                            Err(RecvError::Lagged(skipped)) => {
-                                // Nothing to replay; tell the client to
-                                // re-project from the snapshot instead.
-                                let resync = json!({
-                                    "method": "resync",
-                                    "params": { "reason": "ephemeral_progress_lagged", "skipped": skipped }
-                                });
-                                if notices.send(resync).is_err() {
-                                    return;
-                                }
-                            }
-                            Err(RecvError::Closed) => return,
+                    while let Some(notice) = progress.recv().await {
+                        if notices.send(notice).is_err() {
+                            return;
                         }
                     }
                 });
@@ -273,8 +256,8 @@ impl EngineClient {
                                 reap.dispatch(&line);
                             }
                         }
-                        Err(RecvError::Lagged(_)) => {}
-                        Err(RecvError::Closed) => break,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     },
                 }
             }

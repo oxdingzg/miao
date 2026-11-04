@@ -353,7 +353,7 @@ async fn run_command_emits_started_and_progress_events() {
         {
             break;
         }
-        if let Ok(Ok(event)) =
+        if let Ok(Some(event)) =
             tokio::time::timeout(std::time::Duration::from_millis(50), progress.recv()).await
         {
             match event["kind"].as_str() {

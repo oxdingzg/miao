@@ -146,8 +146,16 @@ async fn repeated_identical_calls_are_refused_with_a_corrective_error() {
     runtime.shutdown().await;
 }
 
+/// A reader that attaches and does not drain until the turn is over must still
+/// see every frame the turn produced.
+///
+/// This used to assert `Lagged`: the channel kept a fixed ring per reader and
+/// dropped the oldest frame, so a reader that stalled through a long answer
+/// received only its tail and had nothing to replay it from — the transcript
+/// painted as one block with its head missing. A larger ring moved that cliff
+/// without removing it, so the channel is now a lossless fan-out.
 #[tokio::test]
-async fn lagging_progress_subscriber_does_not_block_completion() {
+async fn a_reader_that_stalls_through_a_turn_still_sees_every_frame() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     let runtime = Runtime::new(
@@ -159,13 +167,19 @@ async fn lagging_progress_subscriber_does_not_block_completion() {
     )
     .await
     .unwrap();
-    let mut lagging = runtime.progress();
+    let mut stalled = runtime.progress();
     runtime.admit(input("s", "progress"), true).await.unwrap();
     assert_eq!(terminal(&store, "s").await, "completed");
-    assert!(matches!(
-        lagging.recv().await,
-        Err(tokio::sync::broadcast::error::RecvError::Lagged(_))
-    ));
+    let frames: Vec<Value> = std::iter::from_fn(|| stalled.try_recv().ok()).collect();
+    // The fixture streams 600 deltas — more than twice the old ring — so a lossy
+    // channel would have handed this reader roughly the last 256 and nothing to
+    // replay them from. Every one of them has to be here, in order.
+    let deltas: Vec<u64> = frames
+        .iter()
+        .filter(|frame| frame["kind"] == "provider.delta")
+        .map(|frame| frame["data"]["index"].as_u64().unwrap())
+        .collect();
+    assert_eq!(deltas, (0..600).collect::<Vec<_>>(), "{deltas:?}");
     assert_eq!(
         store.history("s").await.unwrap().last().unwrap().content[0]["text"],
         "done"
