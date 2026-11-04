@@ -22,18 +22,22 @@ pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 /// that as full-screen flicker; wrapping the frame in synchronized-update
 /// markers lets capable terminals buffer and present it in one piece.
 /// Terminals without support ignore the markers and behave as before.
+///
+/// Both markers are written through the *backend's* stdout, the same handle
+/// `terminal.draw` writes to. Writing them on a second handle reordered them
+/// against the frame: the closing marker could reach the terminal before the
+/// cells did, which left a capable terminal holding an update it had been told
+/// to begin and never told to end — the screen stopped repainting while the
+/// status clock kept ticking. One handle, one order.
 pub fn draw_frame<F>(terminal: &mut Tui, render: F) -> io::Result<()>
 where
     F: FnOnce(&mut ratatui::Frame),
 {
-    // Writes on a second handle to the same tty keep their order with the
-    // backend's own writes, so the markers bracket the frame on the wire.
-    // CSI 2026 = synchronized update: capable terminals buffer everything
-    // between the markers and present the frame in one piece.
-    let mut stdout = std::io::stdout();
-    stdout.write_all(b"\x1b[?2026h")?;
-    let result = terminal.draw(render).map(|_frame| ());
-    stdout.write_all(b"\x1b[?2026l")?;
+    terminal.backend_mut().write_all(b"\x1b[?2026h")?;
+    let drawn = terminal.draw(render);
+    let result = drawn.map(|_frame| ());
+    terminal.backend_mut().write_all(b"\x1b[?2026l")?;
+    terminal.backend_mut().flush()?;
     result
 }
 
