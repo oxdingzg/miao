@@ -396,3 +396,4 @@ mod tests {
         assert_eq!(deltas[0].as_object().map(|object| object.len()), Some(3));
     }
 }
+
