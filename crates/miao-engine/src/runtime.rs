@@ -2276,7 +2276,7 @@ async fn refuse_shell_queue(
             .refuse_pending_shell(session, &invocation.call_id)
             .await
         {
-            let _=inner.progress.send(json!({"session_id":session,"kind":"runtime.error","code":error.code(),"message":error.to_string()}));
+            inner.progress.send(json!({"session_id":session,"kind":"runtime.error","code":error.code(),"message":error.to_string()}));
         }
     }
 }
@@ -2382,12 +2382,12 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                 active_shell=None;
                 match result {
                     Some(Ok(Ok(()))) => {},
-                    Some(Ok(Err(error))) => { let _=inner.progress.send(json!({"session_id":session,"kind":"runtime.error","code":error.code(),"message":error.to_string()})); },
+                    Some(Ok(Err(error))) => { inner.progress.send(json!({"session_id":session,"kind":"runtime.error","code":error.code(),"message":error.to_string()})); },
                     Some(Err(_)) => {
                         // Panics do not become silent hung actors. The durable
                         // active execution is reconciled before another wake.
                         let _=inner.store.recover_session(Some(&session)).await;
-                        let _=inner.progress.send(json!({"session_id":session,"kind":"runtime.error","code":"task_panicked"}));
+                        inner.progress.send(json!({"session_id":session,"kind":"runtime.error","code":"task_panicked"}));
                     }
                     None => {},
                 }
@@ -3011,7 +3011,7 @@ async fn execute(
                         "before_bytes": stats.before_bytes, "after_bytes": stats.after_bytes,
                         "saved_bytes": saved,
                     }), lease).await?;
-                    let _ = inner.progress.send(json!({
+                    inner.progress.send(json!({
                         "session_id": session, "run_id": run, "step": step,
                         "kind": "context.pruned", "payloads": stats.payloads, "characters": saved,
                         "unit": "utf8_bytes", "before_bytes": stats.before_bytes,
@@ -3078,7 +3078,7 @@ async fn execute(
                         lease,
                     )
                     .await?;
-                let _ = inner.progress.send(json!({
+                inner.progress.send(json!({
                     "session_id": session, "run_id": run, "step": step,
                     "kind": "context.trimmed", "messages": stats.messages,
                     "window": window, "budget": target, "saved_bytes": saved,
@@ -3268,7 +3268,7 @@ async fn execute(
                     _=cancel.cancelled()=>return Ok(()),
                     reply=&mut response=>break reply,
                     _=waiting.tick(), if !produced => {
-                        let _=inner.progress.send(json!({
+                        inner.progress.send(json!({
                             "session_id":session,"run_id":run,"step":step,"kind":"provider.waiting",
                             "attempt":attempts,"elapsed_ms":attempt_started.elapsed().as_millis() as u64,
                         }));
@@ -3291,13 +3291,13 @@ async fn execute(
                             // observe every attempt. It is not provider output, so it
                             // never counts as `produced` and never disarms the
                             // pre-output transport retry.
-                            let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.attempt","protocol":delta["protocol"],"attempt":delta["attempt"],"status":delta["status"],"outcome":delta["outcome"],"detail":delta["detail"]}));
+                            inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.attempt","protocol":delta["protocol"],"attempt":delta["attempt"],"status":delta["status"],"outcome":delta["outcome"],"detail":delta["detail"]}));
                         } else {
                             if !produced {
                                 ttft_ms = Some(attempt_started.elapsed().as_millis() as u64);
                             }
                             produced |= crate::first_event::semantic_event(delta.get("raw").unwrap_or(&delta));
-                            let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","anchor_seq":started.seq,"recorded_at_ms":started.recorded_at_ms,"data":delta}));
+                            inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","anchor_seq":started.seq,"recorded_at_ms":started.recorded_at_ms,"data":delta}));
                         }
                     },
                 }
@@ -3312,17 +3312,16 @@ async fn execute(
                         "delay_ms":delta["delay_ms"],
                     })).await?;
                 } else if delta["kind"] == "provider.attempt" {
-                    let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.attempt","protocol":delta["protocol"],"attempt":delta["attempt"],"status":delta["status"],"outcome":delta["outcome"],"detail":delta["detail"]}));
+                    inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.attempt","protocol":delta["protocol"],"attempt":delta["attempt"],"status":delta["status"],"outcome":delta["outcome"],"detail":delta["detail"]}));
                 } else {
                     if !produced {
                         ttft_ms = Some(attempt_started.elapsed().as_millis() as u64);
                     }
                     produced |=
                         crate::first_event::semantic_event(delta.get("raw").unwrap_or(&delta));
-                    let _ =
-                        inner
-                            .progress
-                            .send(json!({"session_id":session,"run_id":run,"step":step,
+                    inner
+                        .progress
+                        .send(json!({"session_id":session,"run_id":run,"step":step,
                         "kind":"provider.delta","anchor_seq":started.seq,
                         "recorded_at_ms":started.recorded_at_ms,"data":delta}));
                 }
@@ -3588,7 +3587,7 @@ command: None,
                 .store
                 .record_timing(session, run, step as u64, ttft_ms)
                 .await;
-            let _ = inner.progress.send(
+            inner.progress.send(
                 json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.ttft","ttft_ms":ttft_ms}),
             );
         }
@@ -3834,7 +3833,7 @@ command: None,
                                     replayed_call = true;
                                     (Ok(output), Some(is_error))
                                 } else {
-                                    let _ = inner.progress.send(json!({
+                                    inner.progress.send(json!({
                                         "session_id": session, "run_id": run, "step": step,
                                         "kind": "tool.started", "tool": name,
                                         "resource": prepared.resource(),
@@ -4074,7 +4073,7 @@ command: None,
                                             let run = run.to_owned();
                                             tokio::spawn(async move {
                                                 while let Some(chunk) = rx.recv().await {
-                                                    let _ = sink.send(json!({
+                                                    sink.send(json!({
                                                         "session_id": session, "run_id": run,
                                                         "step": step, "kind": "tool.progress",
                                                         "output": chunk,
@@ -4320,7 +4319,7 @@ command: None,
                 }
             };
             let mut notify = |notice: Value| {
-                let _ = inner.progress.send(notice);
+                inner.progress.send(notice);
             };
             // Gate ②: the runtime owns the provider, so the counter that prices
             // the messages appended since the anchor is bound here.
@@ -6703,7 +6702,7 @@ async fn emit_monitor_notice(inner: &Inner, session: &str, job: &str, notice: Va
             return;
         }
     };
-    let _ = inner.progress.send(notice);
+    inner.progress.send(notice);
     let _ = notify_admission(
         inner,
         session,
@@ -6727,7 +6726,7 @@ async fn finish_monitor_job(
     result: Value,
 ) {
     if let Some(notice) = &notice {
-        let _ = inner.progress.send(notice.clone());
+        inner.progress.send(notice.clone());
     }
     // A completed run that matched nothing since its last notice has nothing
     // new to say: the match already woke the session once, and a second
@@ -6938,7 +6937,7 @@ async fn start_background(
             }
         };
         if let Err(error) = result {
-            let _=task_inner.progress.send(json!({"session_id":task_owner,"kind":"job.error","job_id":task_id,"message":error.to_string()}));
+            task_inner.progress.send(json!({"session_id":task_owner,"kind":"job.error","job_id":task_id,"message":error.to_string()}));
         }
         task_inner.jobs.lock().await.remove(&task_id);
     });
@@ -7178,7 +7177,7 @@ impl WaitNotice {
                 }
                 let mut frame = payload.clone();
                 frame["elapsed_ms"] = json!(started.elapsed().as_millis() as u64);
-                let _ = progress.send(frame);
+                progress.send(frame);
             }
         }))
     }
