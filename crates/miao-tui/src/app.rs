@@ -4253,7 +4253,7 @@ mod tests {
         app.handle(AppEvent::SessionOpened {
             summary: None,
             transcript: Box::new(Transcript::default()),
-            state: SessionState {
+            state: Box::new(SessionState {
                 questions: vec![crate::session::QuestionView {
                     question_id: "run-1/q1".into(),
                     input_hash: "b".repeat(64),
@@ -4267,7 +4267,7 @@ mod tests {
                     expires_at_ms: Some(deadline),
                 }],
                 ..SessionState::default()
-            },
+            }),
         });
         assert!(
             app.shell.panel.is_none(),
