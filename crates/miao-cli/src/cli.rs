@@ -3507,6 +3507,7 @@ fn doctor(rest: &[String]) -> Result<(), String> {
     }
     let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let db = db.unwrap_or_else(|| default_db(&workspace));
+    println!("miao      {VERSION}");
     println!(
         "engine    protocol {} schema {}",
         miao_engine::PROTOCOL,
@@ -3560,7 +3561,52 @@ fn doctor(rest: &[String]) -> Result<(), String> {
     }
     let plugins = plugin_entries(config_dir.as_deref()).unwrap_or_default();
     println!("plugins   {} configured", plugins.len());
+    let layers = config_layers(&workspace, None, &|name| std::env::var(name).ok());
+    // A doctor that names only the engine cannot answer "which model will this
+    // machine use", and routing is the first thing a user asks about.
+    let routes = model_routes(&layers, "").unwrap_or_default();
+    let primary = routes
+        .iter()
+        .find(|route| route["primary"] == true)
+        .and_then(|route| route["id"].as_str());
+    println!(
+        "routes    {} configured, {}",
+        routes.len(),
+        primary
+            .map(|id| format!("primary {id}"))
+            .unwrap_or_else(|| "no primary route".into())
+    );
+    // The mode that is in effect, not the mode the platform could support: a
+    // machine can have the feature and the user has turned it off.
+    let documents = miao_engine::config_derive::load(&config_sources(&layers)).unwrap_or_default();
+    println!(
+        "sandbox   {}",
+        if miao_engine::config_derive::sandbox_enabled(&documents, None) {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    // Programs the product shells out to. Missing ones degrade a feature, so a
+    // support report has to show which, not only that something is missing.
+    println!(
+        "deps      {}",
+        ["git", "pdftotext", "pdftoppm"]
+            .iter()
+            .map(|name| format!("{name} {}", if on_path(name) { "ok" } else { "missing" }))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     Ok(())
+}
+
+fn on_path(name: &str) -> bool {
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path).any(|directory| {
+        directory.join(name).is_file() || directory.join(format!("{name}.exe")).is_file()
+    })
 }
 
 /// Summarise token usage recorded in the engine database. Usage lives in the
