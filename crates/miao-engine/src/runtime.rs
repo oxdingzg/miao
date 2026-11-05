@@ -96,6 +96,9 @@ struct Inner {
     context: Mutex<Option<ContextLimits>>,
     roles: Mutex<crate::roles::Bindings>,
     route_limits: Mutex<crate::model_routes::RouteLimits>,
+    /// What the configuration charges per million tokens, keyed by the logical
+    /// `provider/model` family a turn was served from.
+    prices: Mutex<crate::pricing::Table>,
     /// Where LSP servers were derived from at startup, so a reload re-reads the
     /// same sources instead of guessing at them.
     lsp_origin: Mutex<Option<crate::config_derive::LspOrigin>>,
@@ -499,6 +502,7 @@ impl Runtime {
                 context: Mutex::new(None),
                 roles: Mutex::new(crate::roles::Bindings::default()),
                 route_limits: Mutex::new(crate::model_routes::RouteLimits::default()),
+                prices: Mutex::new(crate::pricing::Table::default()),
                 lsp_origin: Mutex::new(None),
                 mcp_origin: Mutex::new(None),
                 context_origin: Mutex::new(None),
@@ -1258,7 +1262,10 @@ impl Runtime {
         // effect until the Session restarts. Reporting it as unsupported is the
         // difference between a documented limit and a change that appears to
         // apply and does not.
-        let mut unsupported = vec!["tools", "agents"];
+        // `cost` is derived once, from the same configuration: the rates a turn
+        // is priced against are fixed at startup, so an edited price needs a
+        // restart instead of quietly mispricing the rest of the Session.
+        let mut unsupported = vec!["tools", "agents", "cost"];
         // The LSP registry only exists when startup found at least one server;
         // a plan that starts empty cannot grow without rebuilding Tools, so
         // that case is reported rather than silently accepted. The MCP
@@ -1475,6 +1482,11 @@ impl Runtime {
     /// role-bound request is attempted.
     pub async fn set_route_limits(&self, limits: crate::model_routes::RouteLimits) {
         *self.inner.route_limits.lock().await = limits;
+    }
+
+    /// Replace the rates every later turn's spend is priced against.
+    pub async fn set_prices(&self, prices: crate::pricing::Table) {
+        *self.inner.prices.lock().await = prices;
     }
 
     /// An explicit operator `compact` is the automatic trigger's breaker reset:
@@ -3635,12 +3647,24 @@ command: None,
                 return Err(Error::Invalid(message));
             }
         };
+        // Price the turn before it is recorded. The route says whose rates
+        // apply and the reported tokens are what a provider bills; an unpriced
+        // route stores no cost rather than a zero that reads as free.
+        let route = price_route(inner, binding.as_ref());
+        let cost = match route.as_deref() {
+            Some(route) => inner
+                .prices
+                .lock()
+                .await
+                .charge(route, crate::pricing::Tokens::from_usage(&reply.usage)),
+            None => None,
+        };
         inner
             .store
             .record(
                 session,
                 "usage",
-                json!({"run_id":run,"step":step,"usage":reply.usage,"model":binding.as_ref().map(|binding|binding.model.as_str()),"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
+                json!({"run_id":run,"step":step,"usage":reply.usage,"model":binding.as_ref().map(|binding|binding.model.as_str()),"route":route,"cost":cost.as_ref().map(|cost|json!({"amount":cost.amount,"currency":cost.currency})),"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
             )
             .await?;
         budget_spent = budget_spent.saturating_add(billed_tokens(&reply.usage));
@@ -6357,6 +6381,33 @@ fn billed_tokens(usage: &Value) -> u64 {
         .as_u64()
         .unwrap_or_default()
         .saturating_add(usage["outputTokens"].as_u64().unwrap_or_default())
+}
+
+/// The configured `provider/model` family a turn was served from, which is what
+/// the price table is keyed by. A route id names one credential of that family,
+/// so the catalog's `model_key` is authoritative for it; a Session that inherits
+/// the engine's default model carries no route, so the served identity picks the
+/// family out of the catalog instead.
+fn price_route(inner: &Inner, binding: Option<&crate::session_model::Binding>) -> Option<String> {
+    let catalog = inner.provider().model_catalog();
+    let family = |info: &crate::model_catalog::Info| {
+        info.model_key.clone().or_else(|| {
+            info.route_id
+                .clone()
+                .filter(|id| !id.starts_with("account/"))
+        })
+    };
+    if let Some(route) = binding.and_then(|binding| binding.route_id.as_deref()) {
+        return catalog
+            .iter()
+            .find(|info| info.route_id.as_deref() == Some(route))
+            .and_then(family);
+    }
+    let identity = inner.provider().identity()?;
+    catalog
+        .iter()
+        .filter(|info| info.protocol == identity.protocol && info.model == identity.model)
+        .find_map(family)
 }
 
 /// Immutable authority chosen at the provider-turn boundary, shared by every

@@ -1273,6 +1273,14 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     // The origin is recorded even when it names no file: the context section
     // is then supported and simply has nothing to derive.
     runtime.set_context_origin(context_origin.clone()).await;
+    // The rates are derived once here, from the same configuration the agent
+    // and MCP sections come from, so a turn only prices its own tokens.
+    if let Some(sources) = config_sources(&options)? {
+        let normalized = miao_engine::config_derive::normalized_from_sources(&sources)?;
+        runtime
+            .set_prices(miao_engine::pricing::Table::from_config(&normalized))
+            .await;
+    }
     if let Some(origin) = &model_origin {
         runtime.set_model_origin(origin.clone()).await?;
     }

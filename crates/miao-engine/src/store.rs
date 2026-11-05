@@ -4333,6 +4333,14 @@ impl Store {
             let mut retry_detail: Vec<Value> = Vec::new();
             let mut retried_turns = std::collections::BTreeSet::<(String, String)>::new();
             let mut provider_usage=crate::usage::Totals::default();
+            // Spend keeps one bucket per currency: rates are declared in the
+            // provider's own money, so adding CNY to USD would report a total
+            // whose unit is a guess. A turn nobody priced is counted, never
+            // folded in as free.
+            let mut spend = std::collections::BTreeMap::<String, f64>::new();
+            let mut priced_turns = 0u64;
+            let mut unpriced_turns = 0u64;
+            let mut unpriced_routes = std::collections::BTreeMap::<String, u64>::new();
             let mut auxiliary_usage=crate::usage::Totals::default();
             let mut auxiliary_detail=Vec::new();
             let mut provider_detail=Vec::new();
@@ -4466,6 +4474,21 @@ impl Store {
                                 .entry((provider.clone(), model.clone()))
                                 .or_insert(0) += 1;
                         }
+                        match (
+                            data["cost"]["amount"].as_f64(),
+                            data["cost"]["currency"].as_str(),
+                        ) {
+                            (Some(amount), Some(currency)) => {
+                                *spend.entry(currency.to_owned()).or_default() += amount;
+                                priced_turns += 1;
+                            }
+                            _ => {
+                                unpriced_turns += 1;
+                                if let Some(route) = data["route"].as_str() {
+                                    *unpriced_routes.entry(route.to_owned()).or_default() += 1;
+                                }
+                            }
+                        }
                         {
                             // Per-turn rows keep each turn's own context size so
                             // the product can price tiered rates per turn instead
@@ -4527,6 +4550,7 @@ impl Store {
             let mut subagent_attempts = 0u64;
             let mut subagent_failed_attempts = 0u64;
             let mut subagent_retried_turns = std::collections::BTreeSet::<(String, String)>::new();
+            let mut subagent_spend = std::collections::BTreeMap::<String, f64>::new();
             for child in &children {
                 let mut stmt = conn.prepare(
                     "SELECT kind,data FROM engine_event WHERE session_id=?1 \
@@ -4574,6 +4598,12 @@ impl Store {
                                         json!(subagent_tokens[key].as_u64().unwrap_or(0) + value);
                                 }
                             }
+                            if let (Some(amount), Some(currency)) = (
+                                data["cost"]["amount"].as_f64(),
+                                data["cost"]["currency"].as_str(),
+                            ) {
+                                *subagent_spend.entry(currency.to_owned()).or_default() += amount;
+                            }
                         }
                     }
                 }
@@ -4593,6 +4623,16 @@ impl Store {
                     "max": ttft.iter().max(),
                 })
             };
+            // Amounts keep six decimals, the rounding the price table already
+            // applied to each turn, so a sum never shows float dust.
+            let money = |amounts: &std::collections::BTreeMap<String, f64>| {
+                amounts
+                    .iter()
+                    .map(|(currency, amount)| {
+                        json!({"currency":currency,"amount":(amount*1_000_000.0).round()/1_000_000.0})
+                    })
+                    .collect::<Vec<_>>()
+            };
             Ok(json!({
                 "providerUsage":provider_usage.report(),
                 "providerDetail":provider_detail,
@@ -4600,6 +4640,12 @@ impl Store {
                 "turns": turns,
                 "partialTurns": partial_turns,
                 "tokens": tokens,
+                "cost": {
+                    "byCurrency": money(&spend),
+                    "pricedTurns": priced_turns,
+                    "unpricedTurns": unpriced_turns,
+                    "unpricedRoutes": unpriced_routes.iter().map(|(route, turns)| json!({"route":route,"turns":turns})).collect::<Vec<_>>(),
+                },
                 "cacheDiagnostics": {
                     "observedRequests":requests, "usageObservations":turns + partial_turns,
                     "coverage":coverage, "observedChanges":changes, "historyStates":histories,
@@ -4616,6 +4662,7 @@ impl Store {
                     "sessions": children.len(),
                     "turns": subagent_turns,
                     "tokens": subagent_tokens,
+                    "cost": {"byCurrency": money(&subagent_spend)},
                     "attempts": subagent_attempts,
                     "failedAttempts": subagent_failed_attempts,
                     "replayedTurns": subagent_retried_turns.len(),
