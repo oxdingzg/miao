@@ -774,3 +774,32 @@ async fn repeated_worker_asks_require_a_new_answer() {
 async fn changed_worker_asks_require_a_new_answer() {
     sequential_worker_asks("ask-twice-different").await;
 }
+
+#[tokio::test]
+async fn an_older_worker_protocol_is_refused_at_the_handshake() {
+    let workspace = tempfile::tempdir().unwrap();
+    let (client, server) = tokio::io::duplex(1024);
+    let peer = tokio::spawn(async move {
+        let (read, mut write) = tokio::io::split(server);
+        let mut read = BufReader::new(read);
+        let hello = recv(&mut read).await.unwrap();
+        // An older worker answers with revision 1.
+        send(
+            &mut write,
+            &json!({"id": hello["id"], "result": {"protocol": 1}}),
+        )
+        .await;
+    });
+    let (read, write) = tokio::io::split(client);
+    let error = match Registry::connect_io(read, write, workspace.path()).await {
+        Ok(_) => panic!("a revision-1 worker must not be admitted"),
+        Err(error) => error,
+    };
+    // The refusal names the mismatch, so an operator can tell an incompatible
+    // worker from a broken one instead of watching its tools silently vanish.
+    assert!(
+        error.to_string().contains("worker protocol mismatch"),
+        "{error}"
+    );
+    peer.await.unwrap();
+}
