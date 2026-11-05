@@ -774,6 +774,43 @@ impl Row {
 /// result with the `  ⎿ ` gutter. Wrapped as plain text, a continuation started
 /// at column zero and `  ⎿ Read 2 lines` read as two unrelated rows — which is
 /// what made a narrow pane look like the prose wrapped early. The continuation
+#[allow(dead_code)]
+/// hangs under the indent the row was projected with instead.
+fn tool_row_shape(line: &Line<'static>) -> (u16, u16) {
+    // Every tool row is projected with a fixed prefix: `● ` for a header,
+    // `  │ ` for a result body, `  ⎿ ` for a one-line summary. That prefix is
+    // what continuations must stay inside — and the drawn part of it (`●`, `│`,
+    // `⎿`) is structural, so it repeats instead of being blanked.
+    //
+    // Blanking it turned a wrapped command output into text starting at column
+    // three with no gutter, which is the "all piled into one block" an operator
+    // sees on a long line: the box edges vanished exactly on the rows that
+    // needed them most.
+    let Some(first) = line.spans.first() else {
+        return (0, 0);
+    };
+    // Display cells, not chars: the gutter glyphs (`│`, `⎿`) are one cell each,
+    // but counting them as chars is how a wide glyph shifted the prefix.
+    let prefix = first.content.as_ref();
+    let spaces = prefix.chars().take_while(|c| *c == ' ').count();
+    if spaces == 0 {
+        // `● ` — the two-cell marker column hangs, and the bullet repeats.
+        return (2, 2);
+    }
+    // The whole prefix is drawn again on continuations: the leading blanks,
+    // the gutter glyph, and the blank after it. Tool rows are projected as
+    // `  │ <text>` / `  ⎿ <text>` (and `● <text>`), so the prefix is the
+    // leading blank run plus exactly one glyph plus the blank following it.
+    let leading = prefix.len() - prefix.trim_start().len();
+    let rest = &prefix[leading..];
+    let glyph = rest.chars().next().map(|c| c.len_utf8()).unwrap_or(0);
+    let after_glyph = &rest[glyph..];
+    let separator = after_glyph.len() - after_glyph.trim_start().len();
+    let hang = prefix[..leading + glyph + separator]
+        .width()
+        .min(u16::MAX as usize) as u16;
+    (hang, hang)
+}
 
 /// Split styled lines into rows no wider than `width` display cells, so the
 /// transcript is wrapped once per width instead of once per frame. Breaks
@@ -1336,10 +1373,8 @@ pub(crate) fn duration_ms(input: u64) -> String {
     }
 }
 
-
-
 /// The `**Title**\n\nbody` opener some providers put on reasoning summaries,
-/// which the draft header lifts out so the title can stand alone on the line.
+/// which the TS header lifts out so the title can stand alone on the line.
 fn reasoning_title(text: &str) -> Option<String> {
     let rest = text.trim().strip_prefix("**")?;
     let end = rest.find("**")?;
@@ -1365,6 +1400,15 @@ fn reasoning_summary(text: &str) -> String {
             .find(|line| !line.is_empty())
             .unwrap_or_default()
             .to_string(),
+    }
+}
+
+/// `s` when a count is not one — the summary counts read as English.
+fn plural(count: u64) -> &'static str {
+    if count == 1 {
+        ""
+    } else {
+        "s"
     }
 }
 
@@ -1415,19 +1459,19 @@ fn turn_summary_line(parts: &[Part], theme: &Theme) -> Option<Line<'static>> {
         segments.push(format!("Thought for {word}"));
     }
     if patterns > 0 {
-        segments.push(format!("searched for {patterns} patterns"));
+        segments.push(format!("searched for {patterns} pattern{}", plural(patterns)));
     }
     if read_files > 0 {
-        segments.push(format!("read {read_files} files"));
+        segments.push(format!("read {read_files} file{}", plural(read_files)));
     }
     if edited_files > 0 {
-        segments.push(format!("edited {edited_files} files"));
+        segments.push(format!("edited {edited_files} file{}", plural(edited_files)));
     }
     if shells > 0 {
-        segments.push(format!("ran {shells} shell commands"));
+        segments.push(format!("ran {shells} shell command{}", plural(shells)));
     }
     if others > 0 {
-        segments.push(format!("ran {others} tools"));
+        segments.push(format!("ran {others} tool{}", plural(others)));
     }
     let text = segments.join(", ");
     (!text.is_empty()).then(|| {
@@ -1441,11 +1485,11 @@ fn image_marks(text: &str) -> Vec<String> {
     let mut rest = text;
     while let Some(start) = rest.find("[Image #") {
         let after = &rest[start..];
-        let Some(end) = after.find(']') else { break };
+        let Some(end) = after.find(']') else {
+            break;
+        };
         let token = &after[..=end];
-        let digits = token
-            .trim_start_matches("[Image #")
-            .trim_end_matches(']');
+        let digits = token.trim_start_matches("[Image #").trim_end_matches(']');
         if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
             marks.push(token.to_string());
             rest = &after[end + 1..];
@@ -1456,6 +1500,28 @@ fn image_marks(text: &str) -> Vec<String> {
     marks
 }
 
+/// The settled thinking header: `Thought for 3.2s · summary`, falling back to
+/// `Thought · summary` and then bare `Thought` as the facts it needs drop out.
+#[allow(dead_code)]
+fn thought_header(reasoning: &Reasoning, theme: &Theme) -> Line<'static> {
+    let palette = theme.palette;
+    let duration = match (reasoning.created_ms, reasoning.completed_ms) {
+        (Some(created), Some(completed)) if completed > created => {
+            format!("Thought for {} · ", duration_ms(completed - created))
+        }
+        _ => "Thought · ".to_string(),
+    };
+    let summary = reasoning_summary(&reasoning.text);
+    let label = if summary.is_empty() {
+        duration.trim_end_matches(" · ").to_string()
+    } else {
+        format!("{duration}{}", fit(&summary, COMPACT_CELLS))
+    };
+    Line::from(Span::styled(
+        format!("  {label}"),
+        Style::new().fg(palette.text_muted),
+    ))
+}
 
 /// Assistant prose as the TS TextPart paints it: a muted bullet on the first
 /// row and the markdown block indented under that bullet's two cells. The two
@@ -1598,11 +1664,7 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Projected {
                 // receipt of what actually attached.
                 let marks = image_marks(text);
                 for (index, mark) in marks.iter().enumerate() {
-                    let branch = if index + 1 == marks.len() {
-                        "└─ "
-                    } else {
-                        "├─ "
-                    };
+                    let branch = if index + 1 == marks.len() { "└─ " } else { "├─ " };
                     rows.push(Row::hung(
                         Line::from(Span::styled(
                             format!("{branch}{mark}"),
@@ -3813,6 +3875,50 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_wrapped_tool_output_keeps_its_gutter() {
+        let tool = crate::session::ToolPart {
+            id: "call_1".into(),
+            name: "bash".into(),
+            input: serde_json::json!({"command": "uname -a"}),
+            output: Some(
+                serde_json::json!({
+                    "stdout": "Darwin host.local 25.5.0 Darwin Kernel Version 25.5.0: RELEASE_ARM64_T8112 arm64",
+                    "exit_code": 0
+                })
+                .to_string(),
+            ),
+            failed: false,
+        };
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let lines = crate::tool::lines(&tool, None, &theme, false, None);
+        assert!(lines.len() > 1, "the fixture has a header and a body row");
+
+        // 40 columns forces the body to wrap.
+        let rows = lines
+            .into_iter()
+            .map(|line| {
+                let (hang, keep) = tool_row_shape(&line);
+                Row::hung_with_edge(line, hang, keep)
+            })
+            .collect::<Vec<_>>();
+        let wrapped = wrap_rows(&rows, 40);
+        let painted = line_texts(&wrapped);
+        let body_rows = painted
+            .iter()
+            .filter(|row| row.contains("Darwin") || row.contains("Kernel") || row.contains("arm64"))
+            .collect::<Vec<_>>();
+        assert!(body_rows.len() > 1, "the body wrapped: {painted:?}");
+        for row in &body_rows {
+            assert!(
+                row.starts_with("  │ "),
+                "a wrapped command-output row lost its gutter: {row:?}\n{painted:?}"
+            );
+        }
+    }
 
     fn row_text(row: &Row) -> String {
         row.line
@@ -4015,64 +4121,63 @@ mod tests {
     }
 
     #[test]
-    fn consecutive_inline_tools_butt_together_like_the_typescript_rows() {
-        // Two single-row tools read as one list; prose reopens the gap the way
-        // the TS sibling margin does.
+    fn a_turn_summary_counts_its_tools_by_family() {
+        // The fold counts tools by family: two fetches and a search name no
+        // shell, so they read as one generic tools count.
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
         };
-        let tool = |id: &str, name: &str, input: serde_json::Value| crate::session::ToolPart {
+        let tool = |id: &str, name: &str| crate::session::ToolPart {
             id: id.into(),
             name: name.into(),
-            input,
+            input: serde_json::Value::Null,
             output: None,
             failed: false,
         };
-        let transcript = Transcript {
-            entries: vec![Entry::Assistant {
-                agent: None,
-                model: None,
-                parts: vec![
-                    Part::Tool(tool(
-                        "c1",
-                        "webfetch",
-                        serde_json::json!({"url": "http://a"}),
-                    )),
-                    Part::Tool(tool("c2", "websearch", serde_json::json!({"query": "q"}))),
-                    Part::Text("note".into()),
-                    Part::Tool(tool(
-                        "c3",
-                        "webfetch",
-                        serde_json::json!({"url": "http://b"}),
-                    )),
-                ],
-            }],
-            ..Transcript::default()
+        let rendered = |parts: Vec<Part>| {
+            transcript_lines(
+                &Transcript {
+                    entries: vec![Entry::Assistant {
+                        agent: None,
+                        model: None,
+                        parts,
+                    }],
+                    ..Transcript::default()
+                },
+                &theme,
+            )
+            .rows
+            .iter()
+            .map(|row| {
+                row.line
+                    .spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
         };
-        let lines = transcript_lines(&transcript, &theme).rows;
-        let rendered = wrapped_text(&lines);
-        let fetch_a = rendered
+        let lines = rendered(vec![
+            Part::Tool(tool("c1", "webfetch")),
+            Part::Tool(tool("c2", "webfetch")),
+            Part::Tool(tool("c3", "websearch")),
+            Part::Text("note".into()),
+        ]);
+        let summary = lines
             .iter()
-            .position(|line| line.contains("http://a"))
-            .expect("first fetch");
-        assert_eq!(
-            rendered[fetch_a + 1],
-            "· WebSearch  q",
-            "the second inline row follows with no blank row"
+            .find(|line| line.contains("ran"))
+            .expect("the turn carries its tool count");
+        assert_eq!(summary.trim(), "ran 3 tools", "{summary}");
+        assert!(
+            lines.iter().any(|line| line.contains("note")),
+            "the prose keeps its place"
         );
-        let note = rendered
-            .iter()
-            .position(|line| line.contains("note"))
-            .expect("prose");
-        assert_eq!(rendered[note - 1], "", "prose opens with a blank row");
-        assert_eq!(
-            rendered[note + 1],
-            "",
-            "and leaves one before the next tool"
+        assert!(
+            !lines.iter().any(|line| line.contains("http://")),
+            "no per-tool rows survive the fold: {lines:?}"
         );
-        assert!(rendered[note + 2].contains("http://b"));
     }
 
     #[test]
@@ -4276,10 +4381,10 @@ mod tests {
     }
 
     #[test]
-    fn thinking_folds_away_once_the_step_has_prose() {
-        // The TS default ("hide") drops reasoning that produced prose; a step
-        // with no text keeps one duration header so a model that narrates
-        // between tools still reads as having thought.
+    fn a_settled_turn_folds_into_the_step_summary() {
+        // The Claude Code fold: a finished turn paints one line — its
+        // reasoning time and its tool counts — above the prose, instead of a
+        // row per tool with its own thinking header.
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
@@ -4290,6 +4395,15 @@ mod tests {
             created_ms: Some(1_000),
             completed_ms: Some(4_200),
         });
+        let bash = |id: &str| {
+            Part::Tool(crate::session::ToolPart {
+                id: id.into(),
+                name: "bash".into(),
+                input: serde_json::json!({"command": "ls"}),
+                output: None,
+                failed: false,
+            })
+        };
         let rendered = |parts: Vec<Part>| {
             transcript_lines(
                 &Transcript {
@@ -4313,19 +4427,26 @@ mod tests {
             })
             .collect::<Vec<_>>()
         };
-        let with_prose = rendered(vec![reasoning.clone(), Part::Text("the answer".into())]);
-        assert!(
-            with_prose
-                .iter()
-                .all(|line| !line.contains("Thought") && !line.contains("Plan")),
-            "{with_prose:?}"
-        );
-        let without_prose = rendered(vec![reasoning]);
-        let header = without_prose
+        let lines = rendered(vec![
+            reasoning.clone(),
+            bash("c1"),
+            Part::Text("the answer".into()),
+        ]);
+        let summary = lines
             .iter()
-            .find(|line| line.contains("Plan"))
-            .expect("the step without prose keeps its thinking header");
-        assert!(header.contains("Thought for 3.2s"), "{header}");
+            .find(|line| line.contains("Thought for"))
+            .expect("the turn carries its summary");
+        assert!(summary.contains("Thought for 3s"), "{summary}");
+        assert!(summary.contains("ran 1 shell command"), "{summary}");
+        assert!(
+            lines.iter().any(|line| line.contains("the answer")),
+            "the prose keeps its place after the summary"
+        );
+        let two = rendered(vec![bash("c1"), bash("c2"), Part::Text("x".into())]);
+        assert!(
+            two.iter().any(|line| line.contains("ran 2 shell commands")),
+            "{two:?}"
+        );
     }
 
     #[test]
@@ -4679,6 +4800,47 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_thought_header_clips_instead_of_folding() {
+        // TS ReasoningHeader is `wrapMode="none"`: a long summary is cut at the
+        // row, never folded into a second line.
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let reasoning = Part::Reasoning(crate::session::Reasoning {
+            text: "a very long thought that will not fit".into(),
+            created_ms: None,
+            completed_ms: None,
+        });
+        let transcript = Transcript {
+            entries: vec![Entry::Assistant {
+                agent: None,
+                model: None,
+                parts: vec![reasoning],
+            }],
+            ..Transcript::default()
+        };
+        let rows = transcript_lines(&transcript, &theme).rows;
+        let header = rows
+            .iter()
+            .find(|row| {
+                row.line
+                    .spans
+                    .iter()
+                    .any(|span| span.content.contains("Thought"))
+            })
+            .expect("the thought header is projected");
+        assert!(!header.wrap, "the header clips, it never folds");
+        let wrapped = wrap_rows(&rows, 20);
+        assert_eq!(
+            wrapped.len(),
+            rows.len(),
+            "clipping adds no rows: {:?}",
+            line_texts(&wrapped)
+        );
+    }
 
     #[test]
     fn the_phase_row_right_aligns_the_elapsed_time_like_the_typescript_row() {
