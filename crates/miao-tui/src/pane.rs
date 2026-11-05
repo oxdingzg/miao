@@ -1439,9 +1439,7 @@ fn turn_summary_line(parts: &[Part], theme: &Theme) -> Option<Line<'static>> {
             Part::Tool(call) => match call.name.as_str() {
                 "grep" | "search" | "find" => patterns += 1,
                 "read" => read_files += 1,
-                "edit" | "write" | "apply_patch" | "edit_file" | "multiedit" => {
-                    edited_files += 1
-                }
+                "edit" | "write" | "apply_patch" | "edit_file" | "multiedit" => edited_files += 1,
                 "bash" | "shell" => shells += 1,
                 _ => others += 1,
             },
@@ -1459,13 +1457,19 @@ fn turn_summary_line(parts: &[Part], theme: &Theme) -> Option<Line<'static>> {
         segments.push(format!("Thought for {word}"));
     }
     if patterns > 0 {
-        segments.push(format!("searched for {patterns} pattern{}", plural(patterns)));
+        segments.push(format!(
+            "searched for {patterns} pattern{}",
+            plural(patterns)
+        ));
     }
     if read_files > 0 {
         segments.push(format!("read {read_files} file{}", plural(read_files)));
     }
     if edited_files > 0 {
-        segments.push(format!("edited {edited_files} file{}", plural(edited_files)));
+        segments.push(format!(
+            "edited {edited_files} file{}",
+            plural(edited_files)
+        ));
     }
     if shells > 0 {
         segments.push(format!("ran {shells} shell command{}", plural(shells)));
@@ -1474,9 +1478,7 @@ fn turn_summary_line(parts: &[Part], theme: &Theme) -> Option<Line<'static>> {
         segments.push(format!("ran {others} tool{}", plural(others)));
     }
     let text = segments.join(", ");
-    (!text.is_empty()).then(|| {
-        Line::from(Span::styled(text, Style::new().fg(palette.text_muted)))
-    })
+    (!text.is_empty()).then(|| Line::from(Span::styled(text, Style::new().fg(palette.text_muted))))
 }
 
 /// The `[Image #N]` marks a message text carries inline, in order.
@@ -1664,7 +1666,11 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Projected {
                 // receipt of what actually attached.
                 let marks = image_marks(text);
                 for (index, mark) in marks.iter().enumerate() {
-                    let branch = if index + 1 == marks.len() { "└─ " } else { "├─ " };
+                    let branch = if index + 1 == marks.len() {
+                        "└─ "
+                    } else {
+                        "├─ "
+                    };
                     rows.push(Row::hung(
                         Line::from(Span::styled(
                             format!("{branch}{mark}"),
@@ -3806,8 +3812,7 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let painted =
-            wrapped_text(&transcript_lines(&transcript, &theme).rows).join("\n");
+        let painted = wrapped_text(&transcript_lines(&transcript, &theme).rows).join("\n");
         assert!(painted.contains("context · engine"), "{painted}");
         assert!(painted.contains("Task paused: no todo moved."), "{painted}");
         assert!(
