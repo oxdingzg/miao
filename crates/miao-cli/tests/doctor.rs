@@ -37,7 +37,7 @@ fn doctor_reports_version_routing_sandbox_and_dependencies() {
     );
     for dependency in ["git ", "pdftotext ", "pdftoppm "] {
         assert!(
-            stdout.contains(&format!("{dependency}")),
+            stdout.contains(dependency),
             "a support report names each program it shells out to: {stdout}"
         );
     }
