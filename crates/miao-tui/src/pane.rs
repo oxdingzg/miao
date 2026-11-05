@@ -11,11 +11,11 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::dialogs::{Dialog, ListDialog, ListKind, PaletteDialog};
 use crate::editor::{CompletionKind, Composer, Mode};
+use crate::markdown;
 use crate::session::{
     ApprovalView, Entry, Part, QuestionView, Reasoning, SessionSummary, Transcript,
 };
 use crate::theme::Theme;
-use crate::{markdown, tool};
 
 const SIDEBAR_MIN_WIDTH: u16 = 100;
 
