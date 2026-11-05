@@ -244,11 +244,15 @@ fn waited(duration: Duration) -> String {
 /// What the process should open once the engine is attached. The launch flags
 /// are intents rather than commands: each one is consumed at the point the
 /// engine answers, so a failed `--session` never swallows a later `--prompt`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Startup {
     pub session: Option<String>,
     pub continue_last: bool,
     pub prompt: Option<String>,
+    /// Media that rode the landing prompt: the composer shows `[Image N]`
+    /// markers in the text, and the bytes they stand for travel beside it into
+    /// the Session the landing screen starts.
+    pub attachments: Vec<Value>,
     /// `--fork`: the resolved Session (named, or the newest for `--continue`)
     /// is copied into a fresh Session before it opens, so the resumed work
     /// never appends onto the original.
@@ -597,15 +601,16 @@ impl App {
                     dialog.paste(&text);
                     return;
                 }
-                if self.screen == Screen::Session {
-                    // Windows Terminal can surface an image-only clipboard as an
-                    // empty bracketed paste; reading the clipboard is the only
-                    // way to find out what it held.
-                    if text.is_empty() {
-                        self.read_clipboard();
-                    } else {
-                        self.shell.composer.paste(&text);
-                    }
+                // The landing screen paints the same composer, so a paste that
+                // arrives before any Session exists still belongs in the draft
+                // the operator can submit from there.
+                // Windows Terminal can surface an image-only clipboard as an
+                // empty bracketed paste; reading the clipboard is the only way
+                // to find out what it held.
+                if text.is_empty() {
+                    self.read_clipboard();
+                } else {
+                    self.shell.composer.paste(&text);
                 }
             }
             AppEvent::Focus(focused) => self.attention.set_focus(focused),
@@ -992,6 +997,12 @@ impl App {
         }
         if self.keys.matches(keybinds::Action::CommandList, &key) {
             self.open_palette();
+            return;
+        }
+        // Both screens paint the same composer, so the clipboard keystroke
+        // belongs to it on either one: the landing screen used to ignore it.
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('v') {
+            self.read_clipboard();
             return;
         }
         match self.screen {
@@ -2229,7 +2240,7 @@ impl App {
                 Action::Shell { .. } => {
                     self.notice("open a Session to run a shell command");
                 }
-                Action::Submit { text, .. } => {
+                Action::Submit { text, attachments } => {
                     if text.trim().is_empty() {
                         // An empty prompt means "act on what the list has
                         // selected": the keyboard belongs to the prompt, so
@@ -2242,6 +2253,7 @@ impl App {
                         return;
                     }
                     self.startup.prompt = Some(text);
+                    self.startup.attachments = attachments;
                     if let Some(engine) = self.engine.as_ref() {
                         engine.new_session();
                     }
@@ -2317,10 +2329,6 @@ impl App {
         }
         if action(keybinds::Action::Accounts) {
             self.open_accounts();
-            return;
-        }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('v') {
-            self.read_clipboard();
             return;
         }
         if action(keybinds::Action::CopyMessage) {
@@ -3052,7 +3060,8 @@ impl App {
         let Some(text) = self.startup.prompt.take() else {
             return;
         };
-        self.submit(text, Vec::new());
+        let attachments = std::mem::take(&mut self.startup.attachments);
+        self.submit(text, attachments);
     }
 
     /// The composer's exit words (`exit`, `quit`, with or without the slash)
@@ -4209,6 +4218,47 @@ mod tests {
         assert!(app.shell.composer.editor.is_empty());
     }
 
+    #[test]
+    fn a_paste_on_the_landing_screen_reaches_the_prompt() {
+        let mut app = app();
+        assert_eq!(app.screen, Screen::Home);
+        app.handle(AppEvent::Paste("first prompt".into()));
+        assert_eq!(app.shell.composer.editor.text(), "first prompt");
+    }
+
+    #[test]
+    fn an_image_pasted_on_the_landing_screen_rides_into_the_new_session() {
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(AppEvent::Clipboard(Some(clipboard::Content::Image {
+            mime: "image/png".into(),
+            data: "iVBORw0KGgo=".into(),
+        })));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::NewSession)
+        ));
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_new", 1)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState::default()),
+        });
+        let Ok(engine::Request::Prompt {
+            session_id,
+            text,
+            attachments,
+        }) = requests.try_recv()
+        else {
+            panic!("the landing prompt must reach the Session it opened");
+        };
+        assert_eq!(session_id, "ses_new");
+        assert_eq!(text, "[Image 1] ");
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0]["mime"], "image/png");
+    }
+
     fn approval_state() -> SessionState {
         SessionState {
             todos: Vec::new(),
@@ -4706,6 +4756,7 @@ mod tests {
             prompt: None,
             fork: false,
             auto: true,
+            ..Startup::default()
         });
         app.update_status();
         let hints: Vec<&str> = app
@@ -4730,6 +4781,7 @@ mod tests {
             prompt: None,
             fork: false,
             auto: false,
+            ..Startup::default()
         });
         app.update_status();
         let hints: Vec<&str> = app
