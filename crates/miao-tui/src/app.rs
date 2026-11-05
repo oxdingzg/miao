@@ -3579,7 +3579,7 @@ mod tests {
             "and every later delta appends: {painted:?}"
         );
         assert!(
-            painted.contains("Thinking"),
+            painted.contains("thinking"),
             "the reasoning shows as its one header line: {painted:?}"
         );
     }
@@ -5252,11 +5252,11 @@ mod tests {
         let draft = app.draft.as_ref().expect("a streaming draft");
         assert_eq!(draft.reasoning(), "weighing");
         assert!(draft.text().is_empty(), "reasoning is not the answer");
-        // With no answer yet the thinking is one muted header line.
-        assert!(drafted(&mut app).contains("Thinking · weighing"));
+        // With no answer yet the thinking is the fold's count line.
+        assert!(drafted(&mut app).contains("1 thinking"));
         app.handle(delta_frame("run-1", "text.delta", "the answer"));
         let shown = drafted(&mut app);
-        assert!(shown.contains("Thinking · weighing"));
+        assert!(shown.contains("1 thinking"));
         assert!(shown.contains("the answer"));
     }
 
