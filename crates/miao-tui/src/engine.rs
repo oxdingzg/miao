@@ -1443,16 +1443,29 @@ async fn run(
                         }
                     }
                     // Anything that changes run status, the transcript, or a
-                    // pending decision settles into the next snapshot.
+                    // pending decision settles into the next snapshot. The list
+                    // is the transcript's arrival contract: every kind the
+                    // snapshot projection consumes must name itself here, or
+                    // its effect sits unpainted until some other event
+                    // happens to refresh — the queued prompt that never left
+                    // the composer, the user message that showed up late.
                     if watched
                         && matches!(
                             event.kind.as_str(),
                             "message.committed"
                                 | "tool.completed"
+                                | "tool.dispatched"
+                                | "tool.started"
                                 | "run.started"
                                 | "run.finished"
+                                | "run.usage"
                                 | "stop_failure"
                                 | "run.cancel_requested"
+                                | "input.admitted"
+                                | "input.promoted"
+                                | "compaction.started"
+                                | "compaction.finished"
+                                | "provider.failed"
                                 | "approval.requested"
                                 | "approval.resolved"
                                 | "question.requested"
