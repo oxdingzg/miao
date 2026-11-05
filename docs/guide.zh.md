@@ -108,12 +108,12 @@ miao
 | `skills` / `commands` / `instructions` / `references` / `plugins` | 技能、命令、指令、引用、插件                                                                                                                      |
 | `watcher` / `attachments` / `tool_output` / `snapshots`           | 文件监听、附件、工具输出阈值、快照                                                                                                                |
 | `providers`                                                       | 自定义 provider / 模型（含本币单价 `cost`）                                                                                                       |
-| `engine`                                                          | 原生引擎设置（仅全局配置）：`storage` 让新会话落在 Rust 引擎；详见[启用原生引擎](native-engine-enablement.zh.md)                                  |
+| `engine`                                                          | 旧版配置里的引擎选择，仅为兼容保留；引擎始终在进程内运行，此项不再改变放置                                                  |
 | `experimental`                                                    | 实验开关（如 Code Mode）                                                                                                                          |
 
 **本币计价**：`providers.<id>.models.<m>.cost` 用 provider 官方本币单价（如 DeepSeek 的 CNY），成本按配置费率估算；TUI 内 `/currency` 可切换显示货币（默认 USD，未声明本币的 provider 按静态汇率换算）。
 
-**原生引擎（可选开启）**：在全局配置里设置 `engine.storage`，新会话就会落在 Rust 引擎上；`MIAO_ENGINE_STORAGE` 优先于它。release 会把 `miao-engine` 装在 CLI 旁边，不需要手写二进制路径；已有会话保留原来的引擎。`miao doctor` 会显示引擎版本、协议，以及是否已开启放置。原生存储与 TypeScript 存储相互独立，已有会话可用 `miao session migrate` 离线迁移。
+**引擎**：引擎就在 `miao` 二进制里运行，没有需要单独安装或指定路径的引擎；`MIAO_ENGINE_STORAGE` 可改写它的存储位置（默认 `~/.local/share/miao-engine/storage`），`miao doctor` 会显示协议、schema 版本与将要打开的数据库。开发构建可用 `MIAO_ENGINE_BIN` 指定单独构建的引擎。
 
 ## 5. 日常使用
 
