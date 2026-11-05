@@ -108,10 +108,49 @@ real(
 )
 
 real(
+  "a reply cut without a terminal frame continues instead of failing the turn",
+  async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "miao-engine-outcome-"))
+    // The first body streams text and then closes with neither `[DONE]` nor a
+    // `finish_reason`: the gateway cut the reply. That is a truncation, not a
+    // finished turn, so the engine keeps the streamed text and asks again.
+    const peer = await endpoint([{ body: partial }, { body: complete }])
+    try {
+      const result = await runEnginePrompt({
+        binary: binary!,
+        db: path.join(root, "engine.db"),
+        workspace: root,
+        model: "fixture",
+        provider: "openai-chat",
+        endpoint: peer.url,
+        env: { OPENAI_API_KEY: "fixture" },
+        prompt: "answer",
+        timeoutMs: 30_000,
+      })
+      expect(result.text).toContain("PARTIAL")
+      expect(result.text).toContain("RECOVERED")
+      expect(result.events.find((event) => event.kind === "run.finished")?.data).toMatchObject({ reason: "completed" })
+      expect(peer.requests).toHaveLength(2)
+    } finally {
+      await peer.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+  60_000,
+)
+
+real(
   "reused sessions scope outcomes to the admitted input and exact retries do not execute again",
   async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "miao-engine-outcome-"))
-    const peer = await endpoint([{ body: partial }, { body: complete }])
+    // A turn that ends in a genuine failure: the reply is cut three times, which
+    // exhausts the continuation allowance. A single cut now continues instead
+    // (covered by the test below), so the failure sample must be one the engine
+    // stops on rather than one it salvages.
+    const peer = await endpoint([
+      ...Array.from({ length: 3 }, () => ({ body: partial, broken: true })),
+      { body: complete },
+    ])
     const options = {
       binary: binary!,
       db: path.join(root, "engine.db"),
@@ -127,12 +166,13 @@ real(
       await expect(runEnginePrompt({ ...options, inputId: "first", prompt: "first" })).rejects.toMatchObject({
         code: "provider_failed",
       })
+      expect(peer.requests).toHaveLength(3)
       const next = await runEnginePrompt({ ...options, inputId: "second", prompt: "second" })
       expect(next.text).toBe("RECOVERED")
-      expect(peer.requests).toHaveLength(2)
+      expect(peer.requests).toHaveLength(4)
       const retry = await runEnginePrompt({ ...options, inputId: "second", prompt: "second" })
       expect(retry.text).toBe("RECOVERED")
-      expect(peer.requests).toHaveLength(2)
+      expect(peer.requests).toHaveLength(4)
     } finally {
       await peer.close()
       await rm(root, { recursive: true, force: true })
