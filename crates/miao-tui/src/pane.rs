@@ -1812,6 +1812,18 @@ pub fn render_status(frame: &mut Frame, area: Rect, status: &StatusStrip, theme:
             .block(Block::new().padding(ratatui::widgets::Padding::left(2))),
         area,
     );
+    // The running build sits at the row's right edge: an operator verifying an
+    // upgrade reads it without leaving the TUI for `miao --version`.
+    let version = format!("miao {}", crate::VERSION);
+    let version_width = version.chars().count() as u16;
+    if area.width > version_width {
+        let cell = version_width + 2;
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(version, muted)))
+                .style(Style::new().bg(palette.background)),
+            Rect::new(area.x + area.width - cell, area.y, cell, 1),
+        );
+    }
 }
 
 /// Input rows the composer grows to before it scrolls; the border and the
@@ -2427,23 +2439,26 @@ impl Pane for SidebarPane {
             }
             let width = area.width.saturating_sub(3) as usize;
             for todo in &self.todos {
-                let (glyph, style) = match todo.status.as_str() {
-                    "completed" => ("✓ ", Style::new().fg(palette.success)),
-                    "in_progress" => ("▸ ", Style::new().fg(palette.primary)),
-                    "cancelled" => ("✗ ", Style::new().fg(palette.text_muted)),
-                    "waiting" | "blocked" => ("· ", Style::new().fg(palette.warning)),
-                    _ => ("· ", Style::new().fg(palette.text_muted)),
+                // The same bracket glyphs the transcript's todowrite row paints,
+                // so a task reads identically in both columns.
+                let glyph = match todo.status.as_str() {
+                    "completed" => "✓",
+                    "in_progress" => "•",
+                    "cancelled" => "×",
+                    "waiting" => "…",
+                    "blocked" => "!",
+                    _ => " ",
                 };
-                // The glyph takes two cells, so the text gets the rest of the
-                // row measured the way the terminal draws it.
-                let text = fit(&todo.content, width.saturating_sub(2));
-                // The text stays at the muted weight the transcript uses for
-                // tool output, so the sidebar reads as a summary rather than
-                // competing with the conversation for attention.
-                lines.push(Line::from(vec![
-                    Span::styled(glyph, style),
-                    Span::styled(text, Style::new().fg(palette.text_muted)),
-                ]));
+                let color = if todo.status == "in_progress" {
+                    palette.warning
+                } else {
+                    palette.text_muted
+                };
+                let text = fit(&todo.content, width.saturating_sub(4));
+                lines.push(Line::from(Span::styled(
+                    format!("[{glyph}] {text}"),
+                    Style::new().fg(color),
+                )));
             }
         }
         // No wrapping: a long title or todo would otherwise split into several
@@ -3527,7 +3542,7 @@ mod tests {
             "a finished item still reads as done: {text}"
         );
         assert!(
-            text.contains('▸'),
+            text.contains('•'),
             "the running item still reads as running: {text}"
         );
         assert!(text.contains("wire the parser") && text.contains("measure the window"));
@@ -4178,6 +4193,40 @@ mod tests {
             .collect();
         assert!(text.contains("queued (2)"), "{text}");
         assert!(text.contains("glm-5"), "{text}");
+    }
+
+    #[test]
+    fn the_status_strip_pins_the_running_build_at_its_right_edge() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let status = StatusStrip {
+            model: Some("glm-5".into()),
+            ..StatusStrip::default()
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 1)).expect("terminal");
+        terminal
+            .draw(|frame| render_status(frame, frame.area(), &status, &theme))
+            .expect("draw");
+        let text: String = (0..80)
+            .map(|x| {
+                terminal
+                    .backend()
+                    .buffer()
+                    .cell(ratatui::prelude::Position::new(x, 0))
+                    .map(|cell| cell.symbol().to_string())
+                    .unwrap_or_default()
+            })
+            .collect();
+        let version = format!("miao {}", crate::VERSION);
+        assert!(text.contains(&version), "the strip names the build: {text}");
+        assert!(
+            text.trim_end().ends_with(&version),
+            "the build sits at the right edge: {text}"
+        );
     }
 
     #[test]
