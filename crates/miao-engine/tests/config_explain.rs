@@ -226,3 +226,32 @@ fn explain_reports_a_disabled_hook_with_its_flag() {
         "the disabled flag has to survive into the explanation: {hooks}"
     );
 }
+
+#[test]
+fn an_unknown_top_level_key_is_warned_about_without_failing_the_read() {
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("miao.json");
+    std::fs::write(
+        &file,
+        r#"{"model":"fixture/model","provvider":{"timeout":1}}"#,
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args(["config", "explain", "--config-dir"])
+        .arg(root.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "an unknown key must not fail the read: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let warnings = value["warnings"].as_array().unwrap();
+    let typo = warnings
+        .iter()
+        .find(|warning| warning["key"] == "provvider")
+        .unwrap_or_else(|| panic!("the dropped key is missing from {value}"));
+    assert_eq!(typo["hint"], "provider");
+    assert_eq!(typo["origin"], file.to_str().unwrap());
+}

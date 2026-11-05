@@ -53,6 +53,7 @@ newer record is the one to read.
 | `2026-11-05-val03-review-changes.md` | `a1239dff43` | VAL-03 (the reviewing-changes row `2026-11-01-offline.md` left unaccepted) |
 | `2026-11-05-tool04-diagnostics-version.md` | `097e6717ee` | TOOL-04 (versions and staleness in the diagnostics payload, and the completion check's repair path) |
 | `2026-11-05-tool07-web.md` | `37db1dc9c3` | TOOL-07 (source URL, body bound, redirects, credentials, cancellation) |
+| `2026-11-05-cfg02-unknown-keys.md` | `82d4e77eae` | CFG-02 (unknown keys warned about with their source and closest known key; the managed scope stays open) |
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
 carries the table of filters that were re-run to keep the earlier records honest.
