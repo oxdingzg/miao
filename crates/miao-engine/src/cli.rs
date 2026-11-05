@@ -21,11 +21,10 @@ pub struct Configured {
     pub acp: bool,
 }
 
-/// Where the product keeps credentials when the operator names no source. The
-/// single-binary start has no host to pass `--credential-db`, so the engine
-/// looks where the product installs write.
-fn stored_default() -> Option<std::path::PathBuf> {
-    let root = std::env::var_os("MIAO_DATA_HOME")
+/// The product's data root: the same directory every channel and install
+/// writes, so anything the engine records lands where the rest looks.
+pub fn data_home() -> Option<std::path::PathBuf> {
+    std::env::var_os("MIAO_DATA_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| {
             std::env::var_os("XDG_DATA_HOME").map(|dir| std::path::PathBuf::from(dir).join("miao"))
@@ -33,8 +32,14 @@ fn stored_default() -> Option<std::path::PathBuf> {
         .or_else(|| {
             std::env::var_os("HOME")
                 .map(|home| std::path::PathBuf::from(home).join(".local/share/miao"))
-        })?;
-    let path = root.join("miao.db");
+        })
+}
+
+/// Where the product keeps credentials when the operator names no source. The
+/// single-binary start has no host to pass `--credential-db`, so the engine
+/// looks where the product installs write.
+fn stored_default() -> Option<std::path::PathBuf> {
+    let path = data_home()?.join("miao.db");
     path.is_file().then_some(path)
 }
 
