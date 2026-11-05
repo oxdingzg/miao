@@ -4508,27 +4508,59 @@ impl Store {
             let mut subagent_tokens =
                 json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"nonCached":0});
             let mut subagent_turns = 0u64;
+            // A delegated Session pays for its own retries. Counting only its
+            // settled turns answers "what did the child cost" with the work that
+            // succeeded and hides the attempts that were billed anyway.
+            let mut subagent_attempts = 0u64;
+            let mut subagent_failed_attempts = 0u64;
+            let mut subagent_retried_turns = std::collections::BTreeSet::<(String, String)>::new();
             for child in &children {
                 let mut stmt = conn.prepare(
-                    "SELECT data FROM engine_event WHERE session_id=?1 AND kind='usage' ORDER BY seq",
+                    "SELECT kind,data FROM engine_event WHERE session_id=?1 \
+                     AND kind IN ('usage','provider.attempt','provider.retry') ORDER BY seq",
                 )?;
                 let mut rows = stmt.query(params![child])?;
                 while let Some(row) = rows.next()? {
-                    let data: Value = serde_json::from_str(&row.get::<_, String>(0)?)?;
-                    if data["partial"] == true {
-                        continue;
-                    }
-                    subagent_turns += 1;
-                    for (field, key) in [
-                        ("inputTokens", "input"),
-                        ("outputTokens", "output"),
-                        ("cacheReadInputTokens", "cacheRead"),
-                        ("cacheWriteInputTokens", "cacheWrite"),
-                        ("nonCachedInputTokens", "nonCached"),
-                    ] {
-                        if let Some(value) = data["usage"][field].as_u64() {
-                            subagent_tokens[key] =
-                                json!(subagent_tokens[key].as_u64().unwrap_or(0) + value);
+                    let kind: String = row.get(0)?;
+                    let data: Value = serde_json::from_str(&row.get::<_, String>(1)?)?;
+                    match kind.as_str() {
+                        "provider.attempt" => {
+                            subagent_attempts += 1;
+                            let failed = data["status"]
+                                .as_u64()
+                                .map(|status| status >= 400)
+                                .unwrap_or_else(|| {
+                                    data["outcome"]
+                                        .as_str()
+                                        .is_some_and(|outcome| outcome.ends_with("unknown"))
+                                });
+                            if failed {
+                                subagent_failed_attempts += 1;
+                            }
+                        }
+                        "provider.retry" => {
+                            subagent_retried_turns.insert((
+                                data["run_id"].as_str().unwrap_or_default().to_owned(),
+                                data["step"].as_u64().unwrap_or_default().to_string(),
+                            ));
+                        }
+                        _ => {
+                            if data["partial"] == true {
+                                continue;
+                            }
+                            subagent_turns += 1;
+                            for (field, key) in [
+                                ("inputTokens", "input"),
+                                ("outputTokens", "output"),
+                                ("cacheReadInputTokens", "cacheRead"),
+                                ("cacheWriteInputTokens", "cacheWrite"),
+                                ("nonCachedInputTokens", "nonCached"),
+                            ] {
+                                if let Some(value) = data["usage"][field].as_u64() {
+                                    subagent_tokens[key] =
+                                        json!(subagent_tokens[key].as_u64().unwrap_or(0) + value);
+                                }
+                            }
                         }
                     }
                 }
@@ -4571,6 +4603,9 @@ impl Store {
                     "sessions": children.len(),
                     "turns": subagent_turns,
                     "tokens": subagent_tokens,
+                    "attempts": subagent_attempts,
+                    "failedAttempts": subagent_failed_attempts,
+                    "replayedTurns": subagent_retried_turns.len(),
                 },
                 "interventions": {
                     "approvals": approvals,
