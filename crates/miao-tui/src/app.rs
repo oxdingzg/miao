@@ -10,7 +10,8 @@ use serde_json::Value;
 
 use crate::commands::{self, Builtin};
 use crate::dialogs::{
-    AccountInfo, Action as DialogAction, ConfirmKind, Dialog, ModelInfo, Row, TextDialog,
+    AccountInfo, Action as DialogAction, ConfirmKind, Dialog, ModelInfo, ProviderEntry, Row,
+    TextDialog,
 };
 use crate::editor::{Action, Mode};
 use crate::engine;
@@ -315,8 +316,8 @@ pub struct App {
     catalog: Vec<SessionSummary>,
     /// MCP servers the host exported for this workspace (name, transport).
     mcp: Vec<(String, String)>,
-    /// Integrations the host reported a stored credential for (name, label).
-    providers: Vec<(String, String)>,
+    /// Every provider the engine's catalog names, ready ones first.
+    providers: Vec<ProviderEntry>,
     /// Skills the host discovered (name, description).
     skills: Vec<(String, String)>,
     /// Remote-control devices the engine serves, with the identity an approve
@@ -328,6 +329,9 @@ pub struct App {
     pending_models: bool,
     /// The provider the model picker is narrowed to; `None` lists everything.
     models_filter: Option<String>,
+    /// The provider the account list is narrowed to; `None` lists every
+    /// credential, the flat list ctrl+o showed before it had a provider level.
+    accounts_filter: Option<String>,
     /// Elapsed time captured the moment the provider stream ended. Claude
     /// Code and Codex tie the spinner to the local stream lifecycle, so the
     /// clock stops the instant the answer finishes instead of counting until
@@ -338,6 +342,8 @@ pub struct App {
     providers_needing_auth: Vec<(String, String)>,
     /// Same for the account dialog.
     pending_accounts: bool,
+    /// Same for the provider list: it opens when the catalog answers.
+    pending_providers: bool,
     /// Wheel speed and acceleration, from `tui.json`.
     scroll: Scroll,
     /// Template commands discovered at startup; a slash prompt naming one is
@@ -421,7 +427,7 @@ impl App {
             settings: None,
             models: Vec::new(),
             mcp: parse_pairs(std::env::var("MIAO_TUI_MCP_JSON").ok().as_deref()),
-            providers: parse_pairs(std::env::var("MIAO_TUI_PROVIDERS_JSON").ok().as_deref()),
+            providers: seed_providers(std::env::var("MIAO_TUI_PROVIDERS_JSON").ok().as_deref()),
             skills: parse_pairs(std::env::var("MIAO_TUI_SKILLS_JSON").ok().as_deref()),
             workspaces: Vec::new(),
             devices: Vec::new(),
@@ -434,9 +440,11 @@ impl App {
             catalog: Vec::new(),
             pending_models: false,
             models_filter: None,
+            accounts_filter: None,
             stream_ended: None,
             providers_needing_auth: Vec::new(),
             pending_accounts: false,
+            pending_providers: false,
             scroll: Scroll::default(),
             templates,
             attention: Attention::new(attention_config),
@@ -685,37 +693,33 @@ impl App {
                 }
             }
             AppEvent::ProviderCatalog(catalog) => {
-                self.providers_needing_auth = catalog
-                    .get("providers")
-                    .and_then(Value::as_array)
-                    .map(|items| {
-                        items
-                            .iter()
-                            .filter(|item| {
-                                !item
-                                    .get("configured")
-                                    .and_then(Value::as_bool)
-                                    .unwrap_or(false)
-                            })
-                            .filter_map(|item| {
-                                let id = item.get("id")?.as_str()?.to_string();
-                                let name = item
-                                    .get("name")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or(&id)
-                                    .to_string();
-                                Some((id, name))
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                // The same answer feeds the picker's `needs auth` tail and the
+                // provider list, so one request serves both.
+                self.providers = ProviderEntry::catalog(&catalog);
+                self.providers_needing_auth = self
+                    .providers
+                    .iter()
+                    .filter(|provider| !provider.configured)
+                    .map(|provider| (provider.id.clone(), provider.name.clone()))
+                    .collect();
+                if self.pending_providers {
+                    self.pending_providers = false;
+                    if self.dialog.is_none() {
+                        self.open_dialog(Dialog::providers(&self.providers));
+                    }
+                }
+                // An already-open list catches up to the answer instead of
+                // keeping the host's seed rows on screen.
+                if matches!(self.dialog, Some(Dialog::Providers(_))) {
+                    self.open_dialog(Dialog::providers(&self.providers));
+                }
             }
             AppEvent::Accounts(accounts) => {
                 self.accounts = accounts;
                 if self.pending_accounts {
                     self.pending_accounts = false;
                     if self.dialog.is_none() {
-                        self.open_dialog(Dialog::accounts(&self.accounts));
+                        self.open_provider_accounts();
                     }
                 }
             }
@@ -1077,6 +1081,14 @@ impl App {
                     return;
                 }
                 _ => {}
+            }
+        }
+        if let Some(Dialog::Accounts(_)) = self.dialog.as_ref() {
+            // The account list is one level below the provider list, so Esc
+            // steps back there instead of closing both.
+            if key.kind == KeyEventKind::Press && key.code == KeyCode::Esc {
+                self.open_provider_accounts();
+                return;
             }
         }
         if let Some(Dialog::ModelProviders(_)) = self.dialog.as_ref() {
@@ -1617,13 +1629,29 @@ impl App {
                     engine.move_session(&session_id, &directory);
                 }
             }
-            Some(Dialog::Accounts(_)) => {
-                let Some(account) = self.accounts.get(index) else {
+            Some(Dialog::ProviderAccounts(list)) => {
+                // Row "all" keeps the flat list; any other row names the
+                // provider whose accounts it lists.
+                let provider = list.rows.get(index).map(|row| row.id.clone());
+                self.accounts_filter = match provider.as_deref() {
+                    Some("all") | None => None,
+                    Some(named) => Some(named.to_string()),
+                };
+                self.open_account_list();
+            }
+            Some(Dialog::Accounts(list)) => {
+                // The row id is the credential, so a narrowed list still picks
+                // the account the operator pointed at.
+                let Some(credential_id) = list
+                    .rows
+                    .get(index)
+                    .map(|row| row.id.clone())
+                    .filter(|id| !id.is_empty())
+                else {
                     return;
                 };
-                let credential_id = account.credential_id.clone();
                 let Some(session_id) = self.session_id() else {
-                    self.shell.composer.notice = Some("open a Session to switch accounts".into());
+                    self.notice("open a Session to switch accounts");
                     return;
                 };
                 self.pin_account(&session_id, Some(credential_id.clone()));
@@ -1717,7 +1745,16 @@ impl App {
         self.open_dialog(Dialog::mcp(&self.mcp));
     }
 
+    /// The full provider catalog, ready ones first and the rest marked as
+    /// needing auth. The engine owns the list; the TUI only renders it.
     fn open_providers(&mut self) {
+        if let Some(engine) = self.engine.as_ref() {
+            engine.catalog();
+        }
+        if self.providers.is_empty() {
+            self.pending_providers = true;
+            return;
+        }
         self.open_dialog(Dialog::providers(&self.providers));
     }
 
@@ -1933,11 +1970,10 @@ impl App {
         rows
     }
 
+    /// ctrl+o: the providers that hold an account, the level `provider.accounts`
+    /// opens in the TypeScript UI. Reading the catalog needs no Session;
+    /// switching an account still does.
     fn open_accounts(&mut self) {
-        if self.session_id().is_none() {
-            self.notice("open a Session to switch accounts");
-            return;
-        }
         if let Some(engine) = self.engine.as_ref() {
             engine.catalog();
         }
@@ -1945,7 +1981,59 @@ impl App {
             self.pending_accounts = true;
             return;
         }
-        self.open_dialog(Dialog::accounts(&self.accounts));
+        self.open_provider_accounts();
+    }
+
+    fn open_provider_accounts(&mut self) {
+        self.accounts_filter = None;
+        let mut providers: Vec<(String, usize)> = Vec::new();
+        for account in &self.accounts {
+            let Some(provider) = account.provider.as_deref() else {
+                continue;
+            };
+            match providers
+                .iter_mut()
+                .find(|(known, _)| known.as_str() == provider)
+            {
+                Some((_, count)) => *count += 1,
+                None => providers.push((provider.to_string(), 1)),
+            }
+        }
+        // `all` keeps every credential reachable in one flat list, which is
+        // what ctrl+o opened before it grew a provider level.
+        let mut rows = vec![Row {
+            id: "all".to_string(),
+            label: "all accounts".to_string(),
+            detail: accounts_label(self.accounts.len()),
+        }];
+        rows.extend(providers.iter().map(|(provider, count)| {
+            Row {
+                id: provider.clone(),
+                label: self
+                    .providers
+                    .iter()
+                    .find(|entry| &entry.id == provider)
+                    .map(|entry| entry.name.clone())
+                    .unwrap_or_else(|| provider.clone()),
+                detail: accounts_label(*count),
+            }
+        }));
+        self.open_dialog(Dialog::provider_accounts(rows));
+    }
+
+    /// The accounts of the provider the ctrl+o list narrowed to; no filter means
+    /// the flat list.
+    fn open_account_list(&mut self) {
+        let accounts = match self.accounts_filter.as_deref() {
+            Some(provider) => self
+                .accounts
+                .iter()
+                .filter(|account| account.provider.as_deref() == Some(provider))
+                .cloned()
+                .collect::<Vec<_>>(),
+            None => self.accounts.clone(),
+        };
+        self.open_dialog(Dialog::accounts(&accounts));
     }
 
     fn open_debug(&mut self) {
@@ -2225,6 +2313,16 @@ impl App {
         }
         if self.keys.matches(keybinds::Action::AppExit, &key) {
             self.quit = true;
+            return;
+        }
+        // Switching an account needs a Session, but listing the providers does
+        // not: the landing screen used to swallow ctrl+o entirely.
+        if self.keys.matches(keybinds::Action::Accounts, &key) {
+            self.open_accounts();
+            return;
+        }
+        if self.keys.matches(keybinds::Action::ProviderList, &key) {
+            self.open_providers();
             return;
         }
         {
@@ -5578,7 +5676,7 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_o_waits_for_the_catalog_and_picks_an_account() {
+    fn ctrl_o_lists_the_providers_that_hold_an_account_then_their_accounts() {
         let mut app = session_app();
         open_session(&mut app, "ses_a");
         app.handle(key(KeyCode::Char('o'), KeyModifiers::CONTROL));
@@ -5586,14 +5684,50 @@ mod tests {
         app.handle(AppEvent::Accounts(vec![
             AccountInfo {
                 credential_id: "cred_a".into(),
+                provider: Some("zhipu".into()),
                 detail: "glm-5".into(),
             },
             AccountInfo {
                 credential_id: "cred_b".into(),
+                provider: Some("openai".into()),
                 detail: "gpt-5".into(),
             },
+            AccountInfo {
+                credential_id: "cred_c".into(),
+                provider: Some("openai".into()),
+                detail: "gpt-5-mini".into(),
+            },
         ]));
-        assert!(matches!(app.dialog, Some(Dialog::Accounts(_))));
+        let list = app.dialog.as_ref().and_then(Dialog::list).expect("list");
+        assert_eq!(list.title, "provider accounts");
+        assert!(list
+            .rows
+            .iter()
+            .any(|row| row.label == "all accounts" && row.detail == "3 accounts"));
+        assert!(list
+            .rows
+            .iter()
+            .any(|row| row.label == "openai" && row.detail == "2 accounts"));
+        assert!(list
+            .rows
+            .iter()
+            .any(|row| row.label == "zhipu" && row.detail == "1 account"));
+        // Down from the `all` row lands on the first provider holding an
+        // account; Enter narrows to that provider's accounts.
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        let list = app.dialog.as_ref().and_then(Dialog::list).expect("list");
+        assert_eq!(list.title, "accounts");
+        assert_eq!(
+            list.rows
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["cred_b", "cred_c"]
+        );
+        // The narrowed list starts on its first account, so one step down
+        // lands on the second one.
         app.handle(key(KeyCode::Down, KeyModifiers::NONE));
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         assert!(app.dialog.is_none());
@@ -5601,7 +5735,53 @@ mod tests {
             app.session
                 .as_ref()
                 .and_then(|s| s.credential_id.as_deref()),
-            Some("cred_b")
+            Some("cred_c")
+        );
+    }
+
+    #[test]
+    fn ctrl_o_opens_the_provider_list_on_the_landing_screen() {
+        let mut app = app();
+        app.handle(key(KeyCode::Char('o'), KeyModifiers::CONTROL));
+        assert!(app.pending_accounts);
+        app.handle(AppEvent::Accounts(vec![AccountInfo {
+            credential_id: "cred_a".into(),
+            provider: Some("openai".into()),
+            detail: "gpt-5".into(),
+        }]));
+        // The landing screen has no Session to switch, so the list is all it
+        // shows; the notice arrives only when an account is chosen.
+        assert!(matches!(app.dialog, Some(Dialog::ProviderAccounts(_))));
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.home.notice(), Some("open a Session to switch accounts"));
+    }
+
+    #[test]
+    fn the_provider_list_renders_the_engine_catalog() {
+        let mut app = app();
+        leader(&mut app, 'a');
+        assert!(app.pending_providers);
+        app.handle(AppEvent::ProviderCatalog(serde_json::json!({
+            "providers": [
+                { "id": "openai", "name": "OpenAI", "models": 12, "configured": true },
+                { "id": "zhipu", "name": "Zhipu", "models": 4, "configured": false }
+            ]
+        })));
+        let list = app.dialog.as_ref().and_then(Dialog::list).expect("list");
+        assert_eq!(list.title, "providers");
+        assert!(list
+            .rows
+            .iter()
+            .any(|row| row.label == "OpenAI" && row.detail == "12 models · ready"));
+        assert!(list
+            .rows
+            .iter()
+            .any(|row| row.label == "Zhipu" && row.detail == "4 models · needs auth"));
+        assert_eq!(
+            app.providers_needing_auth,
+            vec![("zhipu".to_string(), "Zhipu".to_string())]
         );
     }
 
@@ -6379,6 +6559,28 @@ mod command_notice_tests {
     #[test]
     fn an_unknown_command_is_named_in_the_notice() {
         assert_eq!(unknown_command_notice("nope"), "unknown command: /nope");
+    }
+}
+
+/// The host's own credential export, used until the engine's catalog answers.
+/// The TS host passes one row per active credential (`integrationID`, label),
+/// so the list is never empty on a machine that already has accounts.
+fn seed_providers(raw: Option<&str>) -> Vec<ProviderEntry> {
+    parse_pairs(raw)
+        .into_iter()
+        .map(|(name, detail)| ProviderEntry {
+            id: name.clone(),
+            name,
+            detail,
+            configured: true,
+        })
+        .collect()
+}
+
+fn accounts_label(count: usize) -> String {
+    match count {
+        1 => "1 account".to_string(),
+        count => format!("{count} accounts"),
     }
 }
 

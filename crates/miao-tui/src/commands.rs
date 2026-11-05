@@ -119,7 +119,7 @@ impl Builtin {
             Builtin::Rename => "Rename this session",
             Builtin::Tag => "Tag this session",
             Builtin::Status => "Session status and usage",
-            Builtin::Accounts => "Switch account",
+            Builtin::Accounts => "Provider accounts",
             Builtin::Debug => "Engine and workspace details",
             Builtin::Stash => "Restore a stashed prompt",
             Builtin::StashDraft => "Stash the current prompt",
