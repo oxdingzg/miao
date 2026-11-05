@@ -4311,6 +4311,10 @@ impl Store {
             let mut hook_calls = 0u64;
             let mut hook_failures = 0u64;
             let mut hook_ms = 0u64;
+            // Per-call rows, like `retries.details`: an operator troubleshooting
+            // a slow or blocking hook needs to know which phase, which tool and
+            // which exit it came from, not only that some hook failed.
+            let mut hook_detail: Vec<Value> = Vec::new();
             let mut tool_calls = 0u64;
             let mut tool_failures = 0u64;
             let mut turn_detail: Vec<Value> = Vec::new();
@@ -4428,6 +4432,16 @@ impl Store {
                             hook_failures += 1;
                         }
                         hook_ms = hook_ms.saturating_add(data["duration_ms"].as_u64().unwrap_or(0));
+                        if hook_detail.len() < 64 {
+                            hook_detail.push(json!({
+                                "phase": data["phase"],
+                                "tool": data["tool"],
+                                "outcome": data["outcome"],
+                                "exitCode": data["exit_code"],
+                                "reason": data["reason"],
+                                "durationMs": data["duration_ms"],
+                            }));
+                        }
                     }
                     "tool.completed" => {
                         tool_calls += 1;
@@ -4624,6 +4638,8 @@ impl Store {
                     "calls": hook_calls,
                     "failed": hook_failures,
                     "timeMs": hook_ms,
+                    "detail": hook_detail,
+                    "detailLimit": 64,
                 },
                 "interventions": {
                     "approvals": approvals,
