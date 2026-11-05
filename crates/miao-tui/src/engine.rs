@@ -1442,36 +1442,10 @@ async fn run(
                             _ => {}
                         }
                     }
-                    // Anything that changes run status, the transcript, or a
-                    // pending decision settles into the next snapshot. The list
-                    // is the transcript's arrival contract: every kind the
-                    // snapshot projection consumes must name itself here, or
-                    // its effect sits unpainted until some other event
-                    // happens to refresh — the queued prompt that never left
-                    // the composer, the user message that showed up late.
-                    if watched
-                        && matches!(
-                            event.kind.as_str(),
-                            "message.committed"
-                                | "tool.completed"
-                                | "tool.dispatched"
-                                | "tool.started"
-                                | "run.started"
-                                | "run.finished"
-                                | "run.usage"
-                                | "stop_failure"
-                                | "run.cancel_requested"
-                                | "input.admitted"
-                                | "input.promoted"
-                                | "compaction.started"
-                                | "compaction.finished"
-                                | "provider.failed"
-                                | "approval.requested"
-                                | "approval.resolved"
-                                | "question.requested"
-                                | "question.resolved"
-                        )
-                    {
+                    // Anything that changes run status, the transcript, a
+                    // pending decision, or the Session's own state settles into
+                    // the next snapshot.
+                    if watched && settles_into_snapshot(event.kind.as_str()) {
                         dirty.get_or_insert_with(Instant::now);
                     }
                 }
@@ -1546,6 +1520,44 @@ async fn run(
             }
         }
     }
+}
+
+/// The kinds whose effect arrives through the next snapshot rather than the
+/// frame itself. Two families are named here: the transcript's arrival contract
+/// (a message, a tool row, a run boundary) and the Session's own state — the
+/// checklist written by `todowrite` (`session.state.updated`), the goal beside
+/// it, the selected model/agent/account, the title and a revert. A state event
+/// used to sit outside this list, so the sidebar kept the snapshot it read when
+/// the Session opened and a live checklist rendered as `Todo 0/0`.
+fn settles_into_snapshot(kind: &str) -> bool {
+    matches!(
+        kind,
+        "message.committed"
+            | "tool.completed"
+            | "tool.dispatched"
+            | "tool.started"
+            | "run.started"
+            | "run.finished"
+            | "run.usage"
+            | "stop_failure"
+            | "run.cancel_requested"
+            | "input.admitted"
+            | "input.promoted"
+            | "compaction.started"
+            | "compaction.finished"
+            | "provider.failed"
+            | "approval.requested"
+            | "approval.resolved"
+            | "question.requested"
+            | "question.resolved"
+            | "session.state.updated"
+            | "session.model.selected"
+            | "session.agent.selected"
+            | "session.account.selected"
+            | "session.renamed"
+            | "session.reverted"
+            | "session.unreverted"
+    )
 }
 
 /// What a `config` frame means for the user: the sections that moved, or why
@@ -2006,6 +2018,17 @@ mod tests {
             unrouted_notice(&routed, "google/gemini-3.8-flash", false),
             None
         );
+    }
+
+    #[test]
+    fn a_todo_update_settles_into_the_session_view() {
+        // The sidebar reads the checklist from the snapshot, so the event that
+        // writes it has to mark the view dirty. Without this the panel kept the
+        // list it read when the Session opened: a live todo list rendered as
+        // "Todo 0/0 no todo list" until something else forced a refresh.
+        assert!(settles_into_snapshot("session.state.updated"));
+        assert!(settles_into_snapshot("message.committed"));
+        assert!(!settles_into_snapshot("progress.delta"));
     }
 
     #[test]
