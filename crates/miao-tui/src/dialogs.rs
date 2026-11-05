@@ -874,8 +874,8 @@ impl Dialog {
         Dialog::Providers(ListDialog::new(
             "providers",
             rows,
-            ListKind::ReadOnly,
-            "esc close",
+            ListKind::Plain,
+            "enter pick provider · type to filter · esc close",
         ))
     }
 
