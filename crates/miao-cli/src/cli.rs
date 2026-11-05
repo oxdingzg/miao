@@ -481,12 +481,15 @@ fn is_newer(candidate: &str, current: &str) -> bool {
 /// Run the published installer, which replaces this installation in place.
 fn run_installer(feed: Option<&str>) -> Result<(), String> {
     let base = feed.unwrap_or("https://github.com/oxdingzg/miao");
-    let script = format!("{}/main/install", base.trim_end_matches('/'));
+    // The `/raw/` path is the one GitHub answers: `/main/install` without it
+    // is a 404 on every request, which is what every upgrade since this
+    // command learned to download has died on. `-L` follows the redirect to
+    // the raw host, and the retries absorb the transient failures a proxied
+    // link throws off mid-TLS.
+    let script = format!("{}/raw/main/install", base.trim_end_matches('/'));
     // Download first, then run: a `curl | bash` pipe reports the tail's exit
     // code, so a failed download would pipe an empty script into bash, exit 0,
-    // and announce an update it never installed. The retries absorb the
-    // transient failures a proxied link to the raw host throws off — without
-    // them a single reset reads as "no update for you today".
+    // and announce an update it never installed.
     let staged = std::env::temp_dir().join("miao-install.sh");
     let downloaded = std::process::Command::new("curl")
         .args([
