@@ -153,6 +153,17 @@ pub fn runnable_state(state: &Value) -> Result<Vec<String>, Error> {
         .collect())
 }
 
+/// The task-list protocol the system prompt carries, mirroring the
+/// instructions in the TypeScript `SessionTodo.context` block
+/// (`packages/core/src/session/todo.ts`).
+///
+/// It is constant text, so it costs the Session one context epoch no matter how
+/// many turns run: only Anthropic personas name `todowrite`, and a model loaded
+/// with any other persona asset never learned the tool exists, so nothing wrote
+/// the first checklist and the sidebar stayed empty. The recorded list itself
+/// keeps travelling in the per-turn `<session-state>` note.
+pub const TASK_LIST_PROTOCOL: &str = "\n\n<session-task-list>\n# Current session task list\nThe persisted todo list is shown to the user beside the transcript, and `<session-state>` carries its current contents. It supersedes older todo lists in the conversation.\nUse todowrite to track multi-step work. Keep the list synchronized with actual progress: mark work in_progress when starting, completed immediately after finishing and verifying it, and cancelled when it is no longer required. Update it before a final response or handoff; do not leave finished work pending or mark unfinished work completed. If blocked, leave the task open and explain the blocker. Do not infer completion merely from an idle session or a successful tool call.\nA background wait blocks only its dependent task. Give related tasks stable ids and depends_on links; keep not-started dependent tasks pending, and mark external job waits waiting. Continue pending or in_progress tasks only when every depends_on task is completed. Mark tasks needing a human decision blocked. End the Session only when no runnable task remains or its execution budget is exhausted.\n</session-task-list>";
+
 pub struct Mutation {
     pub(crate) kind: &'static str,
     pub(crate) value: Value,
@@ -264,4 +275,32 @@ pub(crate) fn projection(conn: &Connection, session: &str, through: u64) -> Resu
         }
     }
     Ok(state)
+}
+
+#[cfg(test)]
+mod tests {
+    /// Only Anthropic personas name `todowrite`, so every other model learns
+    /// the tool exists only from the protocol the system prompt carries.
+    #[test]
+    fn the_task_list_protocol_teaches_todowrite_and_its_rules() {
+        let protocol = super::TASK_LIST_PROTOCOL;
+        assert!(
+            protocol.starts_with("\n\n<session-task-list>"),
+            "{protocol}"
+        );
+        assert!(protocol.ends_with("\n</session-task-list>"), "{protocol}");
+        assert!(
+            protocol.contains("Use todowrite to track multi-step work"),
+            "{protocol}"
+        );
+        // The rules that keep a long list honest: status timing, prerequisites,
+        // and what a blocker means.
+        assert!(protocol.contains("in_progress when starting"), "{protocol}");
+        assert!(protocol.contains("completed immediately"), "{protocol}");
+        assert!(protocol.contains("depends_on"), "{protocol}");
+        assert!(protocol.contains("no runnable task remains"), "{protocol}");
+        // Nothing session-specific rides it: a list that changed every turn
+        // would churn the context epoch the system prompt is keyed by.
+        assert!(!protocol.contains("Runnable tasks"), "{protocol}");
+    }
 }

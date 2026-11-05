@@ -673,6 +673,11 @@ pub(crate) async fn assemble_for_agent(
         }
     }
     append_read_sources(tools, policy, cancel, reads, &mut system, &mut sources).await?;
+    // The task-list protocol closes the system prompt. It is constant text, so
+    // it costs one context epoch rather than one per turn, and it is what tells
+    // a model on a non-Anthropic persona that `todowrite` exists: without it
+    // nothing wrote the first checklist and the sidebar stayed empty.
+    system.push_str(crate::state::TASK_LIST_PROTOCOL);
     let fingerprint = context_digest(&system, &sources).map_err(|_| ToolError::InvalidInput)?;
     Ok(ContextBundle {
         system,
