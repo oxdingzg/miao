@@ -587,12 +587,17 @@ fn the_transcript_renders_markdown_and_tool_rows() {
         plain(&harness.text())
     );
     assert!(
-        wait_for_screen(&harness, "ran 1 tool", Duration::from_secs(2)),
-        "the turn summary did not render:\n{}",
+        wait_for_screen(&harness, "Read 2 lines", Duration::from_secs(2)),
+        "the tool summary did not render:\n{}",
         harness.screen()
     );
     let rendered = harness.screen();
-    for expected in ["• bold and code", "name │ value"] {
+    for expected in [
+        "• bold and code",
+        "name │ value",
+        "✓ read  src/lib.rs",
+        "⎿ Read 2 lines",
+    ] {
         assert!(
             rendered.contains(expected),
             "transcript is missing {expected:?}:\n{rendered}"

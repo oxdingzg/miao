@@ -11,11 +11,11 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::dialogs::{Dialog, ListDialog, ListKind, PaletteDialog};
 use crate::editor::{CompletionKind, Composer, Mode};
-use crate::markdown;
 use crate::session::{
     ApprovalView, Entry, Part, QuestionView, Reasoning, SessionSummary, Transcript,
 };
 use crate::theme::Theme;
+use crate::{markdown, tool};
 
 const SIDEBAR_MIN_WIDTH: u16 = 100;
 
@@ -111,14 +111,24 @@ impl Shell {
         }
         self.toggle_chord = chord;
         if let Some(last) = &self.last {
-            let projected = transcript_lines(last, &self.transcript.theme);
+            let projected = transcript_lines(
+                last,
+                &self.transcript.theme,
+                self.transcript.expanded,
+                self.toggle_chord.as_deref(),
+            );
             self.transcript.set_rows(projected.rows);
             self.transcript.user_anchors = projected.anchors;
         }
     }
 
     pub fn set_transcript(&mut self, transcript: &Transcript) {
-        let projected = transcript_lines(transcript, &self.transcript.theme);
+        let projected = transcript_lines(
+            transcript,
+            &self.transcript.theme,
+            self.transcript.expanded,
+            self.toggle_chord.as_deref(),
+        );
         self.transcript.set_rows(projected.rows);
         self.transcript.user_anchors = projected.anchors;
         let max = self.transcript.max_scroll();
@@ -210,7 +220,12 @@ impl Shell {
             sidebar.theme = theme.clone();
         }
         if let Some(last) = &self.last {
-            let projected = transcript_lines(last, &theme);
+            let projected = transcript_lines(
+                last,
+                &theme,
+                self.transcript.expanded,
+                self.toggle_chord.as_deref(),
+            );
             self.transcript.set_rows(projected.rows);
             self.transcript.user_anchors = projected.anchors;
         }
@@ -240,7 +255,12 @@ impl Shell {
     pub fn toggle_tool_expansion(&mut self) -> bool {
         self.transcript.expanded = !self.transcript.expanded;
         if let Some(last) = &self.last {
-            let projected = transcript_lines(last, &self.transcript.theme);
+            let projected = transcript_lines(
+                last,
+                &self.transcript.theme,
+                self.transcript.expanded,
+                self.toggle_chord.as_deref(),
+            );
             self.transcript.set_rows(projected.rows);
             self.transcript.user_anchors = projected.anchors;
         }
@@ -774,7 +794,6 @@ impl Row {
 /// result with the `  ⎿ ` gutter. Wrapped as plain text, a continuation started
 /// at column zero and `  ⎿ Read 2 lines` read as two unrelated rows — which is
 /// what made a narrow pane look like the prose wrapped early. The continuation
-#[allow(dead_code)]
 /// hangs under the indent the row was projected with instead.
 fn tool_row_shape(line: &Line<'static>) -> (u16, u16) {
     // Every tool row is projected with a fixed prefix: `● ` for a header,
@@ -1403,108 +1422,8 @@ fn reasoning_summary(text: &str) -> String {
     }
 }
 
-/// `s` when a count is not one — the summary counts read as English.
-fn plural(count: u64) -> &'static str {
-    if count == 1 {
-        ""
-    } else {
-        "s"
-    }
-}
-
-/// The step summary a settled turn folds into, in the Claude Code shape:
-/// `Thought for 1m 43s, searched for 2 patterns, ran 11 shell commands`.
-/// Reasoning time sums across the turn's thinking parts; tools count by
-/// family, ordered patterns, files, shells, then anything else. A turn with
-/// neither thinking nor tools summarizes to nothing.
-fn turn_summary_line(parts: &[Part], theme: &Theme) -> Option<Line<'static>> {
-    let palette = theme.palette;
-    let mut reasoning_ms: u64 = 0;
-    let mut thought = false;
-    let mut patterns = 0u64;
-    let mut read_files = 0u64;
-    let mut edited_files = 0u64;
-    let mut shells = 0u64;
-    let mut others = 0u64;
-    for part in parts {
-        match part {
-            Part::Reasoning(reasoning) => {
-                thought = true;
-                if let (Some(created), Some(completed)) =
-                    (reasoning.created_ms, reasoning.completed_ms)
-                {
-                    reasoning_ms += completed.saturating_sub(created);
-                }
-            }
-            Part::Tool(call) => match call.name.as_str() {
-                "grep" | "search" | "find" => patterns += 1,
-                "read" => read_files += 1,
-                "edit" | "write" | "apply_patch" | "edit_file" | "multiedit" => edited_files += 1,
-                "bash" | "shell" => shells += 1,
-                _ => others += 1,
-            },
-            Part::Text(_) => {}
-        }
-    }
-    let mut segments: Vec<String> = Vec::new();
-    if thought {
-        let seconds = (reasoning_ms / 1_000).max(1);
-        let word = if seconds >= 60 {
-            format!("{}m {}s", seconds / 60, seconds % 60)
-        } else {
-            format!("{seconds}s")
-        };
-        segments.push(format!("Thought for {word}"));
-    }
-    if patterns > 0 {
-        segments.push(format!(
-            "searched for {patterns} pattern{}",
-            plural(patterns)
-        ));
-    }
-    if read_files > 0 {
-        segments.push(format!("read {read_files} file{}", plural(read_files)));
-    }
-    if edited_files > 0 {
-        segments.push(format!(
-            "edited {edited_files} file{}",
-            plural(edited_files)
-        ));
-    }
-    if shells > 0 {
-        segments.push(format!("ran {shells} shell command{}", plural(shells)));
-    }
-    if others > 0 {
-        segments.push(format!("ran {others} tool{}", plural(others)));
-    }
-    let text = segments.join(", ");
-    (!text.is_empty()).then(|| Line::from(Span::styled(text, Style::new().fg(palette.text_muted))))
-}
-
-/// The `[Image #N]` marks a message text carries inline, in order.
-fn image_marks(text: &str) -> Vec<String> {
-    let mut marks = Vec::new();
-    let mut rest = text;
-    while let Some(start) = rest.find("[Image #") {
-        let after = &rest[start..];
-        let Some(end) = after.find(']') else {
-            break;
-        };
-        let token = &after[..=end];
-        let digits = token.trim_start_matches("[Image #").trim_end_matches(']');
-        if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
-            marks.push(token.to_string());
-            rest = &after[end + 1..];
-        } else {
-            rest = &after["[Image #".len()..];
-        }
-    }
-    marks
-}
-
 /// The settled thinking header: `Thought for 3.2s · summary`, falling back to
 /// `Thought · summary` and then bare `Thought` as the facts it needs drop out.
-#[allow(dead_code)]
 fn thought_header(reasoning: &Reasoning, theme: &Theme) -> Line<'static> {
     let palette = theme.palette;
     let duration = match (reasoning.created_ms, reasoning.completed_ms) {
@@ -1633,15 +1552,25 @@ fn draft_lines(parts: &[DraftPart], theme: &Theme, now_ms: u64) -> Vec<Row> {
     rows
 }
 
-fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Projected {
+fn transcript_lines(
+    transcript: &Transcript,
+    theme: &Theme,
+    expanded: bool,
+    toggle: Option<&str>,
+) -> Projected {
     let palette = theme.palette;
     let mut rows = Vec::new();
     let mut anchors: Vec<(usize, String)> = Vec::new();
     // The TS scrollbox opens with one blank row above the oldest message.
     rows.push(Row::plain(Line::default()));
+    // Whether the previous assistant part rendered as a single inline row. TS
+    // butts consecutive single-row tools together and separates everything
+    // else with one blank row.
+    let mut inline_run = false;
     for entry in &transcript.entries {
         match entry {
             Entry::User { text, .. } => {
+                inline_run = false;
                 // The operator's own words as one quiet line per row: an accent
                 // `❯` and the text. No panel, no background band, no rules above
                 // and below — the prompt is a line the person typed, not a box
@@ -1660,25 +1589,6 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Projected {
                         2,
                     ));
                 }
-                // The message's image attachments as the tree Claude paints
-                // under the text: `├─` for every mark but the last, `└─` for
-                // it. The prose keeps its inline marks; the tree reads as the
-                // receipt of what actually attached.
-                let marks = image_marks(text);
-                for (index, mark) in marks.iter().enumerate() {
-                    let branch = if index + 1 == marks.len() {
-                        "└─ "
-                    } else {
-                        "├─ "
-                    };
-                    rows.push(Row::hung(
-                        Line::from(Span::styled(
-                            format!("{branch}{mark}"),
-                            Style::new().fg(palette.text_muted),
-                        )),
-                        3,
-                    ));
-                }
                 rows.push(Row::plain(Line::default()));
             }
             Entry::Context { source, text } => {
@@ -1686,6 +1596,7 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Projected {
                 // said. Painting it behind `❯` claimed it as input and put words
                 // in their mouth; a quiet labelled block keeps the facts
                 // readable without changing who said what.
+                inline_run = false;
                 rows.push(Row::plain(Line::default()));
                 rows.push(Row::plain(Line::from(vec![
                     Span::styled("⋯ ", Style::new().fg(palette.border)),
@@ -1706,24 +1617,55 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Projected {
                 model,
                 parts,
             } => {
-                // A settled turn folds its reasoning and tool work into one
-                // summary line above the prose, the way Claude Code paints a
-                // finished step: the wall of per-tool rows collapses to
-                // `Thought for 1m 43s, ran 2 shell commands`, and the prose
-                // keeps its place after it.
-                if let Some(summary) = turn_summary_line(parts, theme) {
-                    rows.push(Row::plain(Line::default()));
-                    rows.push(Row::clipped(summary));
-                }
                 for part in parts {
                     match part {
                         Part::Text(text) => {
                             // TS TextPart: one blank row above the bullet and
                             // its markdown block.
+                            inline_run = false;
                             rows.push(Row::plain(Line::default()));
                             rows.extend(prose_lines(text, theme));
                         }
-                        Part::Reasoning(_) | Part::Tool(_) => {}
+                        Part::Reasoning(reasoning) => {
+                            // The TS default ("hide") keeps thinking out of the
+                            // transcript once the step produced prose of its
+                            // own; it keeps one duration header only when the
+                            // step has no text, so a model that narrates
+                            // between tool calls does not look like it never
+                            // reasoned.
+                            inline_run = false;
+                            let has_prose = parts.iter().any(
+                                |part| matches!(part, Part::Text(text) if !text.trim().is_empty()),
+                            );
+                            if !has_prose {
+                                rows.push(Row::plain(Line::default()));
+                                rows.push(Row::clipped(thought_header(reasoning, theme)));
+                            }
+                        }
+                        Part::Tool(call) => {
+                            let tool_rows = tool::lines(
+                                call,
+                                transcript.displays.get(&call.id).map(Vec::as_slice),
+                                theme,
+                                expanded,
+                                toggle,
+                            );
+                            if tool_rows.len() > 1 || !inline_run {
+                                rows.push(Row::plain(Line::default()));
+                            }
+                            inline_run = tool_rows.len() == 1;
+                            // A tool row carries its own indentation: the
+                            // header's `● ` bullet and the result's `  ⎿ `
+                            // gutter. Folding such a row as plain text broke
+                            // `  ⎿ Read 2 lines` across two rows with no
+                            // indent, which is what made a narrow pane look
+                            // like the text wrapped early. Hang each row under
+                            // the cells it opens with.
+                            rows.extend(tool_rows.into_iter().map(|line| {
+                                let (hang, keep) = tool_row_shape(&line);
+                                Row::hung_with_edge(line, hang, keep)
+                            }));
+                        }
                     }
                 }
                 // The step footer the TS message ends with: the check names the
@@ -1746,6 +1688,7 @@ fn transcript_lines(transcript: &Transcript, theme: &Theme) -> Projected {
                 ));
             }
             Entry::Error { message } => {
+                inline_run = false;
                 rows.push(Row::plain(Line::default()));
                 for (index, line) in message.lines().enumerate() {
                     rows.push(Row::plain(Line::from(vec![
@@ -3812,7 +3755,8 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let painted = wrapped_text(&transcript_lines(&transcript, &theme).rows).join("\n");
+        let painted =
+            wrapped_text(&transcript_lines(&transcript, &theme, false, None).rows).join("\n");
         assert!(painted.contains("context · engine"), "{painted}");
         assert!(painted.contains("Task paused: no todo moved."), "{painted}");
         assert!(
@@ -4103,7 +4047,7 @@ mod tests {
             ],
             ..Transcript::default()
         };
-        let lines = transcript_lines(&transcript, &theme).rows;
+        let lines = transcript_lines(&transcript, &theme, false, None).rows;
         let text = row_text;
         assert_eq!(text(&lines[0]), "", "the scrollbox opens with a blank row");
         assert_eq!(text(&lines[1]), "❯ question", "the prompt is one line");
@@ -4126,63 +4070,64 @@ mod tests {
     }
 
     #[test]
-    fn a_turn_summary_counts_its_tools_by_family() {
-        // The fold counts tools by family: two fetches and a search name no
-        // shell, so they read as one generic tools count.
+    fn consecutive_inline_tools_butt_together_like_the_typescript_rows() {
+        // Two single-row tools read as one list; prose reopens the gap the way
+        // the TS sibling margin does.
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
         };
-        let tool = |id: &str, name: &str| crate::session::ToolPart {
+        let tool = |id: &str, name: &str, input: serde_json::Value| crate::session::ToolPart {
             id: id.into(),
             name: name.into(),
-            input: serde_json::Value::Null,
+            input,
             output: None,
             failed: false,
         };
-        let rendered = |parts: Vec<Part>| {
-            transcript_lines(
-                &Transcript {
-                    entries: vec![Entry::Assistant {
-                        agent: None,
-                        model: None,
-                        parts,
-                    }],
-                    ..Transcript::default()
-                },
-                &theme,
-            )
-            .rows
-            .iter()
-            .map(|row| {
-                row.line
-                    .spans
-                    .iter()
-                    .map(|span| span.content.as_ref())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>()
+        let transcript = Transcript {
+            entries: vec![Entry::Assistant {
+                agent: None,
+                model: None,
+                parts: vec![
+                    Part::Tool(tool(
+                        "c1",
+                        "webfetch",
+                        serde_json::json!({"url": "http://a"}),
+                    )),
+                    Part::Tool(tool("c2", "websearch", serde_json::json!({"query": "q"}))),
+                    Part::Text("note".into()),
+                    Part::Tool(tool(
+                        "c3",
+                        "webfetch",
+                        serde_json::json!({"url": "http://b"}),
+                    )),
+                ],
+            }],
+            ..Transcript::default()
         };
-        let lines = rendered(vec![
-            Part::Tool(tool("c1", "webfetch")),
-            Part::Tool(tool("c2", "webfetch")),
-            Part::Tool(tool("c3", "websearch")),
-            Part::Text("note".into()),
-        ]);
-        let summary = lines
+        let lines = transcript_lines(&transcript, &theme, false, None).rows;
+        let rendered = wrapped_text(&lines);
+        let fetch_a = rendered
             .iter()
-            .find(|line| line.contains("ran"))
-            .expect("the turn carries its tool count");
-        assert_eq!(summary.trim(), "ran 3 tools", "{summary}");
-        assert!(
-            lines.iter().any(|line| line.contains("note")),
-            "the prose keeps its place"
+            .position(|line| line.contains("http://a"))
+            .expect("first fetch");
+        assert_eq!(
+            rendered[fetch_a + 1],
+            "· WebSearch  q",
+            "the second inline row follows with no blank row"
         );
-        assert!(
-            !lines.iter().any(|line| line.contains("http://")),
-            "no per-tool rows survive the fold: {lines:?}"
+        let note = rendered
+            .iter()
+            .position(|line| line.contains("note"))
+            .expect("prose");
+        assert_eq!(rendered[note - 1], "", "prose opens with a blank row");
+        assert_eq!(
+            rendered[note + 1],
+            "",
+            "and leaves one before the next tool"
         );
+        assert!(rendered[note + 2].contains("http://b"));
     }
 
     #[test]
@@ -4386,10 +4331,10 @@ mod tests {
     }
 
     #[test]
-    fn a_settled_turn_folds_into_the_step_summary() {
-        // The Claude Code fold: a finished turn paints one line — its
-        // reasoning time and its tool counts — above the prose, instead of a
-        // row per tool with its own thinking header.
+    fn thinking_folds_away_once_the_step_has_prose() {
+        // The TS default ("hide") drops reasoning that produced prose; a step
+        // with no text keeps one duration header so a model that narrates
+        // between tools still reads as having thought.
         let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
@@ -4400,15 +4345,6 @@ mod tests {
             created_ms: Some(1_000),
             completed_ms: Some(4_200),
         });
-        let bash = |id: &str| {
-            Part::Tool(crate::session::ToolPart {
-                id: id.into(),
-                name: "bash".into(),
-                input: serde_json::json!({"command": "ls"}),
-                output: None,
-                failed: false,
-            })
-        };
         let rendered = |parts: Vec<Part>| {
             transcript_lines(
                 &Transcript {
@@ -4420,6 +4356,8 @@ mod tests {
                     ..Transcript::default()
                 },
                 &theme,
+                false,
+                None,
             )
             .rows
             .iter()
@@ -4432,26 +4370,19 @@ mod tests {
             })
             .collect::<Vec<_>>()
         };
-        let lines = rendered(vec![
-            reasoning.clone(),
-            bash("c1"),
-            Part::Text("the answer".into()),
-        ]);
-        let summary = lines
+        let with_prose = rendered(vec![reasoning.clone(), Part::Text("the answer".into())]);
+        assert!(
+            with_prose
+                .iter()
+                .all(|line| !line.contains("Thought") && !line.contains("Plan")),
+            "{with_prose:?}"
+        );
+        let without_prose = rendered(vec![reasoning]);
+        let header = without_prose
             .iter()
-            .find(|line| line.contains("Thought for"))
-            .expect("the turn carries its summary");
-        assert!(summary.contains("Thought for 3s"), "{summary}");
-        assert!(summary.contains("ran 1 shell command"), "{summary}");
-        assert!(
-            lines.iter().any(|line| line.contains("the answer")),
-            "the prose keeps its place after the summary"
-        );
-        let two = rendered(vec![bash("c1"), bash("c2"), Part::Text("x".into())]);
-        assert!(
-            two.iter().any(|line| line.contains("ran 2 shell commands")),
-            "{two:?}"
-        );
+            .find(|line| line.contains("Plan"))
+            .expect("the step without prose keeps its thinking header");
+        assert!(header.contains("Thought for 3.2s"), "{header}");
     }
 
     #[test]
@@ -4482,7 +4413,7 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let lines = transcript_lines(&transcript, &theme).rows;
+        let lines = transcript_lines(&transcript, &theme, false, None).rows;
         assert_eq!(row_text(&lines[2]), "✗ provider unavailable");
         assert_eq!(lines[2].line.spans[0].style.fg, Some(theme.palette.error));
     }
@@ -4780,7 +4711,7 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let rows = transcript_lines(&transcript, &theme).rows;
+        let rows = transcript_lines(&transcript, &theme, false, None).rows;
         let wrapped = wrap_rows(&rows, 30);
         let painted = line_texts(&wrapped);
         let marker_rows = painted
@@ -4827,7 +4758,7 @@ mod tests {
             }],
             ..Transcript::default()
         };
-        let rows = transcript_lines(&transcript, &theme).rows;
+        let rows = transcript_lines(&transcript, &theme, false, None).rows;
         let header = rows
             .iter()
             .find(|row| {
