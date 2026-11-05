@@ -23,6 +23,7 @@ pub mod context_trigger;
 mod copilot;
 pub mod credential;
 pub mod cron;
+pub mod diagnostics;
 pub mod doctor;
 mod edit_recovery;
 pub mod embed;

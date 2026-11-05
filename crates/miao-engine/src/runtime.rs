@@ -2659,6 +2659,18 @@ async fn drain(
             json!({"run_id":run,"reason":reason,"message":message}),
         )
         .await?;
+    // Until now this failure existed only in the TUI's bounded stderr ring, so
+    // a failed drain left nothing behind once the window closed.
+    if reason == "failed" {
+        crate::diagnostics::error(
+            "run failed",
+            &[
+                ("session", session.to_string()),
+                ("run", run.to_string()),
+                ("error", message.clone().unwrap_or_default()),
+            ],
+        );
+    }
     // A settled run must not leave the host executing product-tool calls for a
     // parent that is gone: cancel, failure, and clean end each notify every
     // call still pending on the bridge.
@@ -3421,7 +3433,18 @@ async fn execute(
             Err(ProviderError::Interrupted) => return Ok(()),
             Err(error) => {
                 let detail = provider_failure_detail(&inner.store, session, run, step as u64).await;
-                let mut failure = json!({"run_id":run,"step":step,"message":error.to_string(),"routing":error.routing()});
+                let text = error.to_string();
+                crate::diagnostics::warn(
+                    "provider failed",
+                    &[
+                        ("session", session.to_string()),
+                        ("run", run.to_string()),
+                        ("step", step.to_string()),
+                        ("error", text.clone()),
+                    ],
+                );
+                let mut failure =
+                    json!({"run_id":run,"step":step,"message":text,"routing":error.routing()});
                 if let Some(detail) = &detail {
                     failure["provider"] = detail.clone();
                 }

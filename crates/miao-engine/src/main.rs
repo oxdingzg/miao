@@ -12,6 +12,13 @@ use tokio::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // A panic is the one failure the TUI cannot report: the process aborts
+    // before its stderr ring is read, so record it while the hook still runs.
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic| {
+        miao_engine::diagnostics::error("engine panic", &[("panic", panic.to_string())]);
+        default(panic);
+    }));
     let mut args = std::env::args().skip(1);
     let mode = args.next();
     if matches!(
