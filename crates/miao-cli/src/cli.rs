@@ -484,10 +484,20 @@ fn run_installer(feed: Option<&str>) -> Result<(), String> {
     let script = format!("{}/main/install", base.trim_end_matches('/'));
     // Download first, then run: a `curl | bash` pipe reports the tail's exit
     // code, so a failed download would pipe an empty script into bash, exit 0,
-    // and announce an update it never installed.
+    // and announce an update it never installed. The retries absorb the
+    // transient failures a proxied link to the raw host throws off — without
+    // them a single reset reads as "no update for you today".
     let staged = std::env::temp_dir().join("miao-install.sh");
     let downloaded = std::process::Command::new("curl")
-        .args(["-fsSL", "-o"])
+        .args([
+            "-fsSL",
+            "--retry",
+            "4",
+            "--retry-all-errors",
+            "--retry-delay",
+            "2",
+            "-o",
+        ])
         .arg(&staged)
         .arg(&script)
         .status()
