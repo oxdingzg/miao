@@ -638,10 +638,15 @@ impl Parser for ChatState {
         }
     }
     fn finish(self) -> Result<Reply, ProviderError> {
-        if !self.done {
-            return Err(ProviderError::Stream(
-                "Chat stream ended before DONE".into(),
-            ));
+        // Two frames can end a Chat reply: the `[DONE]` sentinel and the
+        // choice's `finish_reason`. Some gateways emit only one of them, and
+        // either is the provider declaring the reply over, so neither may be
+        // required alone. A stream that ends with neither was cut mid-reply:
+        // that is the same loss a transport interruption causes, so keep the
+        // text the user already watched stream and let the runtime continue
+        // from durable history. Unfinished calls never execute.
+        if !self.done && self.finish.is_none() {
+            return Err(self.interrupted());
         }
         let needs_tools = !self.calls.is_empty();
         // A `length` stop means the provider truncated the reply. Partial tool

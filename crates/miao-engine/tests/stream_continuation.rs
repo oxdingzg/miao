@@ -317,27 +317,76 @@ async fn three_transport_interruptions_stop_without_refilling_the_allowance() {
 }
 
 #[tokio::test]
-async fn clean_eof_with_an_incomplete_message_remains_a_terminal_protocol_failure() {
-    for backend in 0..2 {
-        let (_dir, runtime, store, mut requests, server) =
-            run(backend, vec![(fixture(backend, "partial"), false)]).await;
-        let events = store.events("s", 0, 1000).await.unwrap();
-        assert_eq!(
-            events
-                .iter()
-                .find(|event| event.kind == "run.finished")
-                .unwrap()
-                .data["reason"],
-            "failed"
-        );
-        assert!(!events
+async fn chat_clean_eof_without_a_terminal_frame_continues_from_the_streamed_text() {
+    // The `partial` body streams text and one unfinished call, then closes with
+    // neither `[DONE]` nor a `finish_reason`. That is a cut reply, not a
+    // complete one: the text the user already watched stays, the call is never
+    // dispatched, and the run continues from durable history instead of failing
+    // the whole turn.
+    let (dir, runtime, store, mut requests, server) = run(
+        1,
+        vec![
+            (fixture(1, "partial"), false),
+            (fixture(1, "answer"), false),
+        ],
+    )
+    .await;
+    let events = store.events("s", 0, 1000).await.unwrap();
+    assert_eq!(
+        events
             .iter()
-            .any(|event| event.kind == "provider.recovery.continuation"));
-        server.await.unwrap();
-        assert!(requests.recv().await.is_some());
-        assert!(requests.recv().await.is_none());
-        runtime.shutdown().await;
-    }
+            .find(|event| event.kind == "run.finished")
+            .unwrap()
+            .data["reason"],
+        "completed"
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "provider.recovery.continuation")
+            .count(),
+        1
+    );
+    assert!(events
+        .iter()
+        .any(|event| event.kind == "provider.interrupted" && event.data["unexecuted_calls"] == 1));
+    assert!(!events.iter().any(|event| event.kind == "tool.planned"));
+    assert!(!dir.path().join("do-not-retain").exists());
+    let history = store.history("s").await.unwrap();
+    assert!(history
+        .iter()
+        .any(|message| message.content[0]["text"] == "PARTIAL"));
+    assert_eq!(history.last().unwrap().content[0]["text"], "RECOVERED");
+    server.await.unwrap();
+    assert!(requests.recv().await.is_some());
+    assert!(requests.recv().await.is_some());
+    assert!(requests.recv().await.is_none());
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn anthropic_clean_eof_with_an_incomplete_message_remains_a_terminal_protocol_failure() {
+    // The Messages protocol ends on `message_stop` alone, so a body that stops
+    // short of it stays a terminal protocol failure until that parser has its
+    // own field evidence for salvaging a partial reply.
+    let (_dir, runtime, store, mut requests, server) =
+        run(0, vec![(fixture(0, "partial"), false)]).await;
+    let events = store.events("s", 0, 1000).await.unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .find(|event| event.kind == "run.finished")
+            .unwrap()
+            .data["reason"],
+        "failed"
+    );
+    assert!(!events
+        .iter()
+        .any(|event| event.kind == "provider.recovery.continuation"));
+    server.await.unwrap();
+    assert!(requests.recv().await.is_some());
+    assert!(requests.recv().await.is_none());
+    runtime.shutdown().await;
 }
 
 #[tokio::test]

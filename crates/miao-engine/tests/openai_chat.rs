@@ -229,12 +229,54 @@ async fn tool_call_text_for_another_function_is_not_borrowed() {
 }
 
 #[tokio::test]
-async fn truncation_refusal_and_invalid_shapes_never_complete_or_retry() {
+async fn a_finish_reason_completes_a_stream_that_never_sent_done() {
+    // Gateways routinely close a Chat stream after the choice's terminal
+    // `finish_reason` without the `[DONE]` sentinel. Either frame ends the
+    // reply, so this is a finished answer and not a truncated one.
+    let body = frames(
+        vec![chunk(json!({"content":"partial"}), json!("stop"))],
+        false,
+    );
+    let (url, mut requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(reply.content[0]["text"], "partial");
+    server.await.unwrap();
+    assert!(requests.recv().await.is_some());
+    assert!(requests.recv().await.is_none());
+}
+
+#[tokio::test]
+async fn an_unterminated_stream_continues_instead_of_failing_the_turn() {
+    // Neither frame arrived: the body stopped mid-reply. What streamed stays
+    // durable and the run continues, but a cut reply is never reported as a
+    // finished one.
+    let body = frames(
+        vec![chunk(json!({"content":"partial"}), json!(null))],
+        false,
+    );
+    let (url, mut requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let result = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await;
+    assert!(
+        matches!(result, Err(ProviderError::ContinuableTransport { .. })),
+        "{result:?}"
+    );
+    server.await.unwrap();
+    assert!(requests.recv().await.is_some());
+    assert!(requests.recv().await.is_none());
+}
+
+#[tokio::test]
+async fn invalid_shapes_never_complete_or_retry() {
     let bodies = [
-        frames(
-            vec![chunk(json!({"content":"partial"}), json!("stop"))],
-            false,
-        ),
         frames(vec![chunk(json!({"refusal":"no"}), json!("stop"))], true),
         frames(
             vec![chunk(

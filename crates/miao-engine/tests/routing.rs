@@ -127,14 +127,15 @@ async fn accepted_body_transport_semantic_and_auth_failures_do_not_switch_model(
         };
         assert_eq!(selection["route"], "primary");
         assert_eq!(selection["http_attempts"], 1);
-        if truncated {
-            assert!(
+        match status {
+            // Both accepted-body cases stopped before the reply ended: one cut
+            // the transport body short, the other closed cleanly without a
+            // terminal frame. Either way the streamed text stays and the run
+            // continues, so neither may be reported as a finished reply.
+            200 => assert!(
                 matches!(*source, ProviderError::ContinuableTransport { ref partial, unexecuted_calls: 0 } if partial.content[0]["text"] == "partial")
-            );
-        } else if status == 401 {
-            assert!(matches!(*source, ProviderError::Http(401, _)));
-        } else {
-            assert!(matches!(*source, ProviderError::Stream(_)));
+            ),
+            _ => assert!(matches!(*source, ProviderError::Http(401, _))),
         }
         captured.recv().await.unwrap();
         task.await.unwrap();
