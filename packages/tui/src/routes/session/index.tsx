@@ -1718,6 +1718,21 @@ function AssistantMessage(props: { message: TranscriptAssistantMessage; sessionI
   const { theme } = useTheme()
   const sync = useSync()
   const model = createMemo(() => Model.name(ctx.providers(), props.message.model?.providerID, props.message.model?.id))
+  // The footer used to repeat the agent and model under every settled message.
+  // The status line already carries both for the session being read, so the
+  // label only earns its place when this step used something else: a model
+  // switched mid-session, or a message from another agent.
+  const label = createMemo(() => {
+    const session = sync.session.get(props.sessionID)
+    return [
+      props.message.agent === null || props.message.agent === session?.agent
+        ? undefined
+        : Locale.titlecase(props.message.agent),
+      props.message.model?.id === session?.model?.id ? undefined : model(),
+    ]
+      .filter((item) => item !== undefined)
+      .join(" · ")
+  })
   // V2 errors are untyped `{ type: "unknown", message }`; an aborted turn is
   // recognized by its abort message text.
   const aborted = createMemo(() => props.message.error?.message.toLowerCase().includes("abort") ?? false)
@@ -1847,9 +1862,10 @@ function AssistantMessage(props: { message: TranscriptAssistantMessage; sessionI
               when={running()}
               fallback={
                 <text marginTop={1} fg={theme.textMuted}>
-                  <span style={{ fg: aborted() ? theme.warning : theme.success }}>{aborted() ? "✗" : "✓"}</span>{" "}
-                  {Locale.titlecase(props.message.agent)}
-                  <span style={{ fg: theme.textMuted }}> · {model()}</span>
+                  <span style={{ fg: aborted() ? theme.warning : theme.success }}>{aborted() ? "✗" : "✓"}</span>
+                  <Show when={label()}>
+                    <span style={{ fg: theme.textMuted }}> {label()}</span>
+                  </Show>
                   <Show when={ctx.showTimestamps() && props.message.time.completed !== undefined}>
                     <span style={{ fg: theme.textMuted }}>
                       {" · "}
@@ -1865,7 +1881,7 @@ function AssistantMessage(props: { message: TranscriptAssistantMessage; sessionI
                 </text>
               }
             >
-              <AssistantRunning agent={props.message.agent} model={model()} created={props.message.time.created} waiting={waiting()} />
+              <AssistantRunning label={label()} created={props.message.time.created} waiting={waiting()} />
             </Show>
           </box>
         </Match>
@@ -1881,8 +1897,7 @@ function AssistantMessage(props: { message: TranscriptAssistantMessage; sessionI
  * last message and a settled one render identically until the turn ends.
  */
 function AssistantRunning(props: {
-  agent: string | null
-  model: string
+  label: string
   created: number | null
   waiting: boolean
 }) {
@@ -1895,10 +1910,11 @@ function AssistantRunning(props: {
   return (
     <text marginTop={1} fg={theme.textMuted}>
       <span style={{ fg: props.waiting ? theme.warning : theme.accent }}>{props.waiting ? "◐" : "✳"}</span>{" "}
-      {Locale.titlecase(props.agent)}
+      <Show when={props.label}>
+        <span style={{ fg: theme.textMuted }}>{props.label} · </span>
+      </Show>
       <span style={{ fg: theme.textMuted }}>
-        {" · "}
-        {props.model} · {props.waiting ? "waiting for model" : "working"} · {Locale.duration(elapsed())}
+        {props.waiting ? "waiting for model" : "working"} · {Locale.duration(elapsed())}
       </span>
     </text>
   )
