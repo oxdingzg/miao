@@ -50,7 +50,7 @@ inventory is updated when a command lands or retires.
 | `attach` | `attach <url>` | `attach URL` | rust | |
 | `auth` | `auth login/logout [provider]` | `auth login/logout/list INTEGRATION` | rust | |
 | `db` | `db ...` | `db path/stats/vacuum/retention` | see below | |
-| `debug` | `debug <name>` | `debug paths/info/mcp/lsp/routes` | rust | read-only diagnostics |
+| `debug` | `debug <name>` | `debug paths/info/mcp/lsp/routes/config` | rust | read-only diagnostics |
 | `doctor` | `doctor` | `doctor` | rust | engine diagnostics |
 | `export` | `export [sessionID]` | `export SESSION` | rust | committed events as JSONL |
 | `import` | `import <file>` | `session import BUNDLE` | rust | same operation, Rust spelling |
@@ -78,7 +78,7 @@ inventory is updated when a command lands or retires.
 | command | TS | Rust | disposition |
 |---|---|---|---|
 | `auth` | `auth login/logout [provider]` | `auth login/logout/list` | rust |
-| `config` | `debug config` | — | rust-todo; `miao-engine config explain` already carries the resolution, the CLI surface forwards to it |
+| `config` | `debug config` | `debug config` | rust | resolved values with their source, plus a warning for a top-level key the schema drops |
 | `models` | `models [provider]` | `models` | rust |
 | `agent` | `agent` | `agent list` | rust |
 | `mcp` | `mcp` | — | rust-todo; the connection-management surface (EXT-03's home) |

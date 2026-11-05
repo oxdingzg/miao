@@ -81,6 +81,16 @@ pub fn is_v1(input: &Value) -> bool {
     map.keys().any(|key| V1_KEYS.contains(&key.as_str())) || is_v1_mcp(map.get("mcp"))
 }
 
+/// Every top-level key either shape recognizes. A V1 key is known because it
+/// migrates into a V2 one, so a diagnostic warning about a dropped key must not
+/// name a key the reader understands.
+pub fn known_top_level_keys() -> Vec<&'static str> {
+    let mut keys: Vec<&'static str> = V1_KEYS.iter().chain(V2_KEYS.iter()).copied().collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
+}
+
 /// Both shapes have `mcp`: V2 nests servers under `servers`. A document whose
 /// only V1 field is keyed MCP servers would otherwise decode as V2 and lose
 /// them.

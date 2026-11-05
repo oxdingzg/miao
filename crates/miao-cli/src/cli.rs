@@ -2811,8 +2811,73 @@ fn debug(rest: &[String]) -> Result<(), String> {
             println!("plugins   {} configured", plugins.len());
             Ok(())
         }
-        _ => Err("usage: miao debug paths | miao debug info".into()),
+        Some("config") => {
+            let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let layers = config_layers(&workspace, None, &|name| std::env::var(name).ok());
+            let report = miao_engine::config_explain::report(&config_sources(&layers))?;
+            for source in report["sources"].as_array().into_iter().flatten() {
+                println!("config   {}", source["origin"].as_str().unwrap_or_default());
+            }
+            for key in report["keys"].as_array().into_iter().flatten() {
+                let path = key["path"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|part| part.as_str())
+                    .collect::<Vec<_>>()
+                    .join(".");
+                println!(
+                    "{path} = {}  ({})",
+                    key["value"],
+                    key["origin"].as_str().unwrap_or_default()
+                );
+            }
+            let warnings = report["warnings"].as_array().cloned().unwrap_or_default();
+            if warnings.is_empty() {
+                println!("keys     every top-level key is known");
+            }
+            for warning in warnings {
+                println!(
+                    "warning  unknown top-level key `{}` in {}{}",
+                    warning["key"].as_str().unwrap_or_default(),
+                    warning["origin"].as_str().unwrap_or_default(),
+                    warning["hint"]
+                        .as_str()
+                        .map(|hint| format!("; did you mean `{hint}`?"))
+                        .unwrap_or_default()
+                );
+            }
+            Ok(())
+        }
+        _ => Err("usage: miao debug paths | miao debug info | miao debug config".into()),
     }
+}
+
+/// The ordered document set the engine reads, built from the same layers the
+/// launcher forwards, so the diagnostic names the files that actually
+/// configure the product rather than a guess at them.
+fn config_sources(layers: &[PathBuf]) -> Vec<miao_engine::config_derive::Source> {
+    let mut sources: Vec<miao_engine::config_derive::Source> = layers
+        .iter()
+        .map(|layer| {
+            if layer.is_dir() {
+                miao_engine::config_derive::Source::Dir(layer.clone())
+            } else {
+                miao_engine::config_derive::Source::File(layer.clone())
+            }
+        })
+        .collect();
+    if let Some(file) = std::env::var_os("MIAO_CONFIG") {
+        sources.push(miao_engine::config_derive::Source::File(PathBuf::from(
+            file,
+        )));
+    }
+    if let Some(content) = std::env::var_os("MIAO_CONFIG_CONTENT") {
+        sources.push(miao_engine::config_derive::Source::Content(
+            content.to_string_lossy().into_owned(),
+        ));
+    }
+    sources
 }
 
 /// The command words this binary understands, in one place so the usage text
