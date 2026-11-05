@@ -134,6 +134,9 @@ impl ModelInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountInfo {
     pub credential_id: String,
+    /// The provider the credential serves, when the catalog names one. The
+    /// account list groups by it, the way `provider.accounts` does.
+    pub provider: Option<String>,
     pub detail: String,
 }
 
@@ -146,6 +149,7 @@ impl AccountInfo {
         // models it can serve without repeating one.
         let mut ids: Vec<String> = Vec::new();
         let mut models: Vec<Vec<String>> = Vec::new();
+        let mut providers: Vec<Option<String>> = Vec::new();
         for entry in entries {
             let Some(credential_id) = entry.get("credential_id").and_then(Value::as_str) else {
                 continue;
@@ -155,6 +159,7 @@ impl AccountInfo {
                 None => {
                     ids.push(credential_id.to_string());
                     models.push(Vec::new());
+                    providers.push(None);
                     ids.len() - 1
                 }
             };
@@ -162,12 +167,78 @@ impl AccountInfo {
             if !model.is_empty() && !models[index].iter().any(|item| item == model) {
                 models[index].push(model.to_string());
             }
+            if providers[index].is_none() {
+                providers[index] = provider_of(entry);
+            }
         }
         ids.into_iter()
             .zip(models)
-            .map(|(credential_id, models)| Self {
+            .zip(providers)
+            .map(|((credential_id, models), provider)| Self {
                 credential_id,
+                provider,
                 detail: models.join(", "),
+            })
+            .collect()
+    }
+}
+
+/// The provider a catalog entry belongs to. The model key names it outright;
+/// the route id still does when the served catalog omits the key.
+fn provider_of(entry: &Value) -> Option<String> {
+    entry
+        .get("model_key")
+        .and_then(Value::as_str)
+        .and_then(|key| key.split_once('/'))
+        .map(|(provider, _)| provider.to_string())
+        .or_else(|| {
+            entry
+                .get("route_id")
+                .and_then(Value::as_str)
+                .and_then(|id| id.split_once('/'))
+                .map(|(provider, _)| provider.to_string())
+        })
+}
+
+/// One provider the engine's catalog names, with the two facts a picker needs:
+/// how many models it offers and whether this engine already serves one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderEntry {
+    pub id: String,
+    pub name: String,
+    pub detail: String,
+    /// Whether this engine already serves a model of the provider. The model
+    /// picker marks the rest as needing auth instead of hiding them.
+    pub configured: bool,
+}
+
+impl ProviderEntry {
+    pub fn catalog(value: &Value) -> Vec<Self> {
+        let Some(entries) = value.get("providers").and_then(Value::as_array) else {
+            return Vec::new();
+        };
+        entries
+            .iter()
+            .filter_map(|entry| {
+                let id = entry.get("id").and_then(Value::as_str)?;
+                let models = entry.get("models").and_then(Value::as_u64).unwrap_or(0);
+                let configured = entry
+                    .get("configured")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                Some(Self {
+                    id: id.to_string(),
+                    name: entry
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or(id)
+                        .to_string(),
+                    detail: format!(
+                        "{models} models · {}",
+                        if configured { "ready" } else { "needs auth" }
+                    ),
+                    configured,
+                })
             })
             .collect()
     }
@@ -417,6 +488,8 @@ pub enum Dialog {
     Models(ListDialog),
     Theme(ListDialog),
     Sessions(ListDialog),
+    /// ctrl+o: providers that hold an account, one step above `Accounts`.
+    ProviderAccounts(ListDialog),
     Accounts(ListDialog),
     Stash(ListDialog),
     Timeline(ListDialog),
@@ -779,20 +852,22 @@ impl Dialog {
         ))
     }
 
-    pub fn providers(providers: &[(String, String)]) -> Self {
+    /// Every provider the engine's catalog names, ready ones first, with the
+    /// ones that still need auth marked instead of hidden.
+    pub fn providers(providers: &[ProviderEntry]) -> Self {
         let rows = if providers.is_empty() {
             vec![Row {
                 id: String::new(),
-                label: "no providers configured".to_string(),
+                label: "no providers in the catalog".to_string(),
                 detail: String::new(),
             }]
         } else {
             providers
                 .iter()
-                .map(|(name, detail)| Row {
-                    id: name.clone(),
-                    label: name.clone(),
-                    detail: detail.clone(),
+                .map(|provider| Row {
+                    id: provider.id.clone(),
+                    label: provider.name.clone(),
+                    detail: provider.detail.clone(),
                 })
                 .collect()
         };
@@ -801,6 +876,27 @@ impl Dialog {
             rows,
             ListKind::ReadOnly,
             "esc close",
+        ))
+    }
+
+    /// Providers that already hold a stored account, the list `provider.accounts`
+    /// opens in the TypeScript UI. Selecting one narrows to its accounts; the
+    /// `all` row keeps every credential reachable in a single flat list.
+    pub fn provider_accounts(rows: Vec<Row>) -> Self {
+        let rows = if rows.is_empty() {
+            vec![Row {
+                id: String::new(),
+                label: "no stored provider accounts".to_string(),
+                detail: "run `miao auth login <provider> <key>`".to_string(),
+            }]
+        } else {
+            rows
+        };
+        Dialog::ProviderAccounts(ListDialog::new(
+            "provider accounts",
+            rows,
+            ListKind::Plain,
+            "enter narrow · type to filter · esc close",
         ))
     }
 
@@ -998,6 +1094,7 @@ impl Dialog {
             | Dialog::ModelProviders(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
+            | Dialog::ProviderAccounts(list)
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
             | Dialog::Timeline(list)
@@ -1026,6 +1123,7 @@ impl Dialog {
             Dialog::Models(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
+            | Dialog::ProviderAccounts(list)
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
             | Dialog::Timeline(list)
@@ -1053,6 +1151,7 @@ impl Dialog {
             Dialog::Models(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
+            | Dialog::ProviderAccounts(list)
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
             | Dialog::Timeline(list)
@@ -1074,6 +1173,7 @@ impl Dialog {
             Dialog::Models(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
+            | Dialog::ProviderAccounts(list)
             | Dialog::Accounts(list)
             | Dialog::Stash(list)
             | Dialog::Timeline(list)
@@ -1798,15 +1898,57 @@ mod tests {
     #[test]
     fn the_account_catalog_names_each_credential_once() {
         let accounts = AccountInfo::catalog(&serde_json::json!([
-            {"protocol": "chat", "model": "glm-5", "credential_id": "cred_a"},
-            {"protocol": "chat", "model": "glm-5", "variant": "high", "credential_id": "cred_a"},
-            {"protocol": "responses", "model": "gpt-5", "credential_id": "cred_b"},
+            {"protocol": "chat", "model": "glm-5", "model_key": "zhipu/glm-5", "credential_id": "cred_a"},
+            {"protocol": "chat", "model": "glm-5", "model_key": "zhipu/glm-5", "variant": "high", "credential_id": "cred_a"},
+            {"protocol": "responses", "model": "gpt-5", "route_id": "openai/gpt-5", "credential_id": "cred_b"},
             {"protocol": "responses", "model": "gpt-5"}
         ]));
         assert_eq!(accounts.len(), 2);
         assert_eq!(accounts[0].credential_id, "cred_a");
         assert_eq!(accounts[0].detail, "glm-5");
+        assert_eq!(accounts[0].provider.as_deref(), Some("zhipu"));
         assert_eq!(accounts[1].credential_id, "cred_b");
+        // The route id still names the provider when the catalog omits the key.
+        assert_eq!(accounts[1].provider.as_deref(), Some("openai"));
+    }
+
+    #[test]
+    fn the_provider_catalog_names_ready_and_unconfigured_providers() {
+        let providers = ProviderEntry::catalog(&serde_json::json!({
+            "providers": [
+                {"id": "openai", "name": "OpenAI", "models": 12, "configured": true},
+                {"id": "zhipu", "models": 4, "configured": false},
+                {"models": 1}
+            ]
+        }));
+        assert_eq!(providers.len(), 2);
+        assert_eq!(providers[0].id, "openai");
+        assert_eq!(providers[0].name, "OpenAI");
+        assert_eq!(providers[0].detail, "12 models · ready");
+        // An entry without a name falls back to its id, never to a blank row.
+        assert_eq!(providers[1].name, "zhipu");
+        assert_eq!(providers[1].detail, "4 models · needs auth");
+        assert!(!providers[1].configured);
+    }
+
+    #[test]
+    fn the_provider_accounts_list_keeps_the_flat_list_reachable() {
+        let dialog = Dialog::provider_accounts(vec![
+            Row {
+                id: "all".into(),
+                label: "all accounts".into(),
+                detail: "3 accounts".into(),
+            },
+            Row {
+                id: "openai".into(),
+                label: "OpenAI".into(),
+                detail: "2 accounts".into(),
+            },
+        ]);
+        assert_eq!(dialog.title(), "provider accounts");
+        let list = dialog.list().expect("list");
+        assert_eq!(list.rows.len(), 2);
+        assert_eq!(list.rows[0].id, "all");
     }
 
     #[test]
