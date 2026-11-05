@@ -12,6 +12,20 @@
 /// Config file names read from each config directory, lowest to highest.
 pub const FILE_NAMES: [&str; 4] = ["miao.json", "miao.jsonc", "opencode.json", "opencode.jsonc"];
 
+/// The system-wide directory an administrator owns, the lowest of the four
+/// scopes. Nothing is read from it unless it exists, so an undeployed machine
+/// resolves exactly the layers it resolved before.
+pub fn managed_dir() -> Option<std::path::PathBuf> {
+    if cfg!(target_os = "windows") {
+        return std::env::var_os("ProgramData")
+            .map(|root| std::path::PathBuf::from(root).join("miao"));
+    }
+    if cfg!(target_os = "macos") {
+        return Some("/Library/Application Support/miao".into());
+    }
+    Some("/etc/miao".into())
+}
+
 /// Strip JSONC comments and trailing commas so `serde_json` can read the rest.
 ///
 /// Comment markers inside strings are content, not syntax, so the scanner tracks

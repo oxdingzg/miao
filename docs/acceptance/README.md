@@ -55,6 +55,7 @@ newer record is the one to read.
 | `2026-11-05-tool04-diagnostics-version.md` | `097e6717ee` | TOOL-04 (versions and staleness in the diagnostics payload, and the completion check's repair path) |
 | `2026-11-05-tool05-output-budgets.md` | `9b3aca3eb1` | TOOL-05 (size/timeout/long-line bounds per tool family, bounded previews with handle retrieval, oversized payload externalization; a runaway-command case stays untested) |
 | `2026-11-05-job02-background-tasks.md` | `db0b250ae6` | JOB-02 (job/shell/child listing, scoped cancel and stop, crash reconciliation; a subagent-suite flake is recorded as open) |
+| `2026-11-05-cfg02-managed-scope.md` | `db0b250ae6` | CFG-02 (the managed scope: platform paths, lowest priority, only when deployed) |
 | `2026-11-05-tool01-bounded-retrieval.md` | `e943537ff2` | TOOL-01 (read windows, read batches, grep/glob filters and ignore rules; the LSP result budget and the retrieval measurement stay open) |
 | `2026-11-05-cost03-cache-health.md` | `82d4e77eae` | COST-03 (recommendations for every unhealthy cache state; the TUI cache line stays open) |
 | `2026-11-05-tool06-malformed-input-and-loops.md` | `e67cfe8664` | TOOL-06 (bounded correction for malformed calls, loop detection that halts before a late tool call, provider-only neutralization; the cross-provider matrix stays open) |

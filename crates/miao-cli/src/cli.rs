@@ -2026,6 +2026,28 @@ fn config_layers(
     explicit: Option<&Path>,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<PathBuf> {
+    config_layers_with(
+        workspace,
+        explicit,
+        env,
+        env("MIAO_MANAGED_CONFIG_DIR")
+            .map(PathBuf::from)
+            .or_else(miao_engine::config_scope::managed_dir)
+            .as_deref(),
+    )
+}
+
+/// The four scopes in precedence order: an administrator's system-wide
+/// directory, the user's global directory, then the project layers a walk up
+/// from the workspace finds. The managed layer is only a layer when an
+/// administrator actually deployed one, so an ordinary machine keeps exactly
+/// the stack it had.
+fn config_layers_with(
+    workspace: &Path,
+    explicit: Option<&Path>,
+    env: &dyn Fn(&str) -> Option<String>,
+    managed: Option<&Path>,
+) -> Vec<PathBuf> {
     if let Some(dir) = explicit {
         return vec![dir.to_path_buf()];
     }
@@ -2033,6 +2055,9 @@ fn config_layers(
         .map(PathBuf::from)
         .or_else(|| env("HOME").map(|home| PathBuf::from(home).join(".config").join("miao")));
     let mut layers = Vec::new();
+    if let Some(dir) = managed.filter(|dir| dir.is_dir()) {
+        layers.push(dir.to_path_buf());
+    }
     if let Some(dir) = global.as_ref() {
         layers.push(dir.clone());
     }
@@ -5662,12 +5687,12 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        anchored_sessions, carry_uncommitted_changes, config_layers, db_backup, db_file_bytes,
-        db_read_only, db_report, db_vacuum, default_db, engine_argv_with, event_line,
-        git_worktree_main_checkout, launch, lsp_servers, mcp_servers, merged_config, model_routes,
-        parsed_session_location, plugin_entries, project_copy_apply, project_copy_plan,
-        retention_plan, serve_database, strip_comments, tree_bytes, uninstall_targets,
-        worktree_remove_apply, worktree_remove_plan,
+        anchored_sessions, carry_uncommitted_changes, config_layers, config_layers_with, db_backup,
+        db_file_bytes, db_read_only, db_report, db_vacuum, default_db, engine_argv_with,
+        event_line, git_worktree_main_checkout, launch, lsp_servers, mcp_servers, merged_config,
+        model_routes, parsed_session_location, plugin_entries, project_copy_apply,
+        project_copy_plan, retention_plan, serve_database, strip_comments, tree_bytes,
+        uninstall_targets, worktree_remove_apply, worktree_remove_plan,
     };
     use std::io::Write;
     use std::path::PathBuf;
@@ -5966,15 +5991,54 @@ mod tests {
         let home = root.join("home").display().to_string();
         move |name: &str| match name {
             "HOME" => Some(home.clone()),
-            "MIAO_CONFIG_DIR" | "MIAO_DISABLE_PROJECT_CONFIG" => None,
+            "MIAO_CONFIG_DIR" | "MIAO_MANAGED_CONFIG_DIR" | "MIAO_DISABLE_PROJECT_CONFIG" => None,
             _ => std::env::var(name).ok(),
         }
+    }
+
+    /// A machine where an administrator deployed a system-wide document: it
+    /// loads first and still loses to every user and project key.
+    #[test]
+    fn a_managed_layer_loads_first_and_only_when_it_exists() {
+        let (root, global, workspace) = layered_fixture("layer-managed");
+        let managed = root.join("etc/miao");
+        std::fs::create_dir_all(&managed).expect("managed dir");
+        std::fs::write(
+            managed.join("miao.json"),
+            r#"{ "providers": { "vendor": { "api": { "type": "openai", "url": "https://managed.test/v1" } } } }"#,
+        )
+        .expect("managed config");
+        let env = fixture_env(&root);
+        let layers = config_layers_with(&workspace, None, &env, Some(&managed));
+        assert_eq!(
+            layers.first(),
+            Some(&managed),
+            "the managed layer comes first: {layers:?}"
+        );
+        assert_eq!(
+            layers.get(1),
+            Some(&global),
+            "the user's global layer follows it: {layers:?}"
+        );
+        let merged = merged_config(&layers).expect("merges every layer");
+        assert_eq!(
+            merged["providers"]["vendor"]["api"]["url"], "https://project.test/v1",
+            "a nearer layer still wins key for key"
+        );
+        let absent = root.join("etc/absent");
+        let layers = config_layers_with(&workspace, None, &env, Some(&absent));
+        assert_eq!(
+            layers.first(),
+            Some(&global),
+            "an undeployed managed directory is not a layer: {layers:?}"
+        );
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
     fn a_project_layer_overrides_the_global_one() {
         let (root, global, workspace) = layered_fixture("layer-win");
-        let layers = config_layers(&workspace, None, &fixture_env(&root));
+        let layers = config_layers_with(&workspace, None, &fixture_env(&root), None);
         assert_eq!(
             layers.first(),
             Some(&global),
@@ -6011,7 +6075,7 @@ mod tests {
                 _ => std::env::var(name).ok(),
             }
         };
-        let layers = config_layers(&workspace, None, &env);
+        let layers = config_layers_with(&workspace, None, &env, None);
         assert_eq!(layers, vec![global], "only the global layer survives");
         std::fs::remove_dir_all(&root).ok();
     }

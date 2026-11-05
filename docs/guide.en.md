@@ -86,8 +86,12 @@ Replace `<provider>/<model>` with an entry from `miao models`. A typical config 
 
 ## 4. Configuration
 
-Config files merge by precedence: project `.miao/` > global `~/.config/miao/`; `MIAO_CONFIG`
-overrides the path. Main fields:
+Config files merge by precedence: project `.miao/` > global `~/.config/miao/` > managed
+`/etc/miao/` (Linux), `/Library/Application Support/miao/` (macOS), `%ProgramData%\miao\`
+(Windows). The managed layer only exists when an administrator deployed one, and it never
+wins against a user or project key; `MIAO_MANAGED_CONFIG_DIR` relocates it and
+`MIAO_CONFIG` overrides the whole path. `miao debug config` prints each resolved key with
+the file that won it. Main fields:
 
 | Field                                                             | Purpose                                                                                                                                              |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
