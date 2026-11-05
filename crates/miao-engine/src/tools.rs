@@ -440,8 +440,17 @@ impl Tools {
     }
 
     pub fn with_web(self, client: crate::web::Client) -> Self {
-        *self.web_mut() = Some(Arc::new(client));
+        *self.web_mut() = Some(Arc::new(self.catalogue(client)));
         self
+    }
+    /// Hand the attached catalogue to a web client. An `mcp` search backend
+    /// answers through the same registry as the MCP tools, so the client is
+    /// built with it whichever attachment happens first.
+    fn catalogue(&self, client: crate::web::Client) -> crate::web::Client {
+        match &self.mcp {
+            Some(registry) => client.with_mcp(registry.clone()),
+            None => client,
+        }
     }
     fn web(&self) -> Option<Arc<crate::web::Client>> {
         self.web
@@ -464,7 +473,7 @@ impl Tools {
             return Ok(());
         }
         let client = crate::web::Client::new(crate::web::SearchConfig::from_env()?)?;
-        *self.web_mut() = Some(Arc::new(client));
+        *self.web_mut() = Some(Arc::new(self.catalogue(client)));
         Ok(())
     }
     fn patch_input(name: &str, input: Value) -> Result<crate::patch::Input, ToolError> {
@@ -613,7 +622,13 @@ impl Tools {
     }
 
     pub fn with_mcp(mut self, registry: Arc<mcp::Registry>) -> Self {
-        self.mcp = Some(registry);
+        self.mcp = Some(registry.clone());
+        // A web client built before the catalogue arrived still has to answer
+        // an `mcp` search backend through it, so attaching the registry also
+        // hands it to the client already in place.
+        if let Some(web) = self.web() {
+            *self.web_mut() = Some(Arc::new(self.catalogue((*web).clone())));
+        }
         self
     }
 

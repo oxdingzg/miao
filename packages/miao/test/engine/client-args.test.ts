@@ -80,6 +80,7 @@ test("the child inherits the engine's own surface and nothing else", () => {
     PARALLEL_API_KEY: "parallel-parent",
     MIAO_WEB_SEARCH_PROVIDER: "exa",
     MIAO_WEB_SEARCH_ENDPOINT: "https://search.example.test/search",
+    MIAO_WEB_SEARCH_MCP_TOOL: "fixture_search",
     MIAO_TOOL_INPUT_MAX_BYTES: "4096",
     AWS_SECRET_ACCESS_KEY: "aws-parent",
     AWS_ACCESS_KEY_ID: "aws-id-parent",
@@ -99,6 +100,7 @@ test("the child inherits the engine's own surface and nothing else", () => {
   expect(child.PARALLEL_API_KEY).toBe("parallel-parent")
   expect(child.MIAO_WEB_SEARCH_PROVIDER).toBe("exa")
   expect(child.MIAO_WEB_SEARCH_ENDPOINT).toBe("https://search.example.test/search")
+  expect(child.MIAO_WEB_SEARCH_MCP_TOOL).toBe("fixture_search")
   expect(child.MIAO_TOOL_INPUT_MAX_BYTES).toBe("4096")
   expect(child.OPENAI_API_KEY).toBe("explicit")
   // The AWS default chain is part of the supported Bedrock surface.
