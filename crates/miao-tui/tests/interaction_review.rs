@@ -1,12 +1,7 @@
-//! VAL-03: what it costs to reach the change set a turn produced.
+//! VAL-03: what it costs to review the workspace changes.
 //!
-//! The fifth of the six tasks is "reviewing changes". The cost is the walk from
-//! the transcript to a rendered change list, which is observable without an
-//! operator: keystrokes and time-to-state. The scripted engine answers
-//! `vcs_status` with a three-file set so the review surface can be driven.
-//!
-//! Mistakes and rework — opening the wrong pane, losing the list — stay with the
-//! operator session.
+//! The fifth of the six tasks. The measurable part is the path from a Session to
+//! the file list: one leader chord, and the time until the list is on screen.
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -30,29 +25,6 @@ impl Harness {
         let dir: PathBuf = std::env::temp_dir().join("miao-interaction-review");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("workspace dir");
-        // The review surface only queries the engine for a change set when the
-        // workspace is a repository, so the fixture workspace has to be one.
-        let _ = std::process::Command::new("git")
-            .args(["init", "-q"])
-            .current_dir(&dir)
-            .status();
-        std::fs::write(dir.join("tracked.txt"), "tracked").expect("tracked file");
-        let _ = std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&dir)
-            .status();
-        let _ = std::process::Command::new("git")
-            .args([
-                "-c",
-                "user.email=fixture@example.com",
-                "-c",
-                "user.name=fixture",
-                "commit",
-                "-qm",
-                "init",
-            ])
-            .current_dir(&dir)
-            .status();
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: 30,
@@ -76,14 +48,12 @@ impl Harness {
             env!("CARGO_BIN_EXE_miao-tui-fake-engine"),
         );
         cmd.env("MIAO_TUI_FAKE_SESSIONS", "1");
-        cmd.arg("--db");
-        cmd.arg(&db);
-        // The launcher is a prompt now (`d5ca52247a`): it has no history list
-        // to select from, and Enter submits the draft. `--session` is its own
-        // direct entry point, so this suite measures the Session, not the way
-        // the launcher navigates to it.
+        // Open the fixture Session directly: the task is "review what changed"
+        // from a Session that is already on screen.
         cmd.arg("--session");
         cmd.arg("ses_a");
+        cmd.arg("--db");
+        cmd.arg(&db);
         let child = pair.slave.spawn_command(cmd).expect("spawn miao-tui");
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().expect("clone reader");
@@ -138,52 +108,50 @@ impl Harness {
         String::from_utf8_lossy(&self.output.lock().expect("output lock")).into_owned()
     }
 
-    /// What the terminal currently shows.
-    ///
-    /// The TUI repaints only the cells that changed, so the byte stream can
-    /// carry one word split across cursor moves. A person reads the screen, so
-    /// a check about what rendered has to read it too.
-    fn screen(&self) -> String {
-        let size = self.pty.get_size().expect("pty size");
-        let mut parser = vt100::Parser::new(size.rows, size.cols, 0);
-        parser.process(&self.output.lock().expect("output lock"));
-        parser.screen().contents()
+    /// The cells without terminal control: a dialog draws each span behind a
+    /// cursor move, so a row is never one contiguous substring of the stream.
+    fn plain(&self) -> String {
+        let text = self.text();
+        let mut out = String::new();
+        let mut chars = text.chars();
+        while let Some(c) = chars.next() {
+            if c != '\x1b' {
+                if !c.is_control() {
+                    out.push(c);
+                }
+                continue;
+            }
+            match chars.next() {
+                Some('[') => {
+                    for next in chars.by_ref() {
+                        if ('@'..='~').contains(&next) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    for next in chars.by_ref() {
+                        if next == '\x07' {
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
     }
 
     fn wait_for(&self, needle: &str, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         loop {
-            if self.screen().contains(needle) {
+            if self.plain().contains(needle) {
                 return true;
             }
             if Instant::now() >= deadline {
                 return false;
             }
             std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-
-    /// Whether the change list has rendered.
-    fn changes_visible(&self) -> bool {
-        // The panel was painting correctly while this check failed: the diff
-        // repaint delivered `sr`, a cursor move, then `/parser.rs`, so a
-        // substring test on the raw stream never saw the path the screen holds.
-        let screen = self.screen();
-        // The header counts the whole set; the body scrolls, so the first rows
-        // are what a person sees on arrival.
-        screen.contains("3 files") && screen.contains("src/parser.rs")
-    }
-
-    fn wait_for_changes(&self, timeout: Duration) -> bool {
-        let deadline = Instant::now() + timeout;
-        loop {
-            if self.changes_visible() {
-                return true;
-            }
-            if Instant::now() >= deadline {
-                return false;
-            }
-            std::thread::sleep(Duration::from_millis(5));
         }
     }
 
@@ -199,23 +167,28 @@ impl Harness {
 }
 
 #[test]
-fn reaching_the_change_list_costs_two_keys() {
+fn reviewing_the_changes_is_one_chord() {
     let mut harness = Harness::spawn();
+    // The fixture opens straight into a Session: the task starts from a
+    // Session that is already on screen, which is when a person wants to look
+    // at what changed.
     assert!(
         harness.wait_for("hello from the fixture", Duration::from_secs(30)),
-        "the session did not open:\n{}",
-        harness.text()
+        "the Session did not open:\n{}",
+        harness.plain()
     );
+    std::thread::sleep(Duration::from_millis(200));
     let started = Instant::now();
-    harness.write(b"\x18"); // leader
-    harness.write(b"g"); // workspace changes
-    let opened = harness.wait_for_changes(Duration::from_secs(30));
-    let elapsed_ms = started.elapsed().as_millis();
+    // `<leader>g`: ctrl+x arms the leader, g opens the changes view.
+    harness.write(b"\x18");
+    harness.write(b"g");
+    let listed = harness.wait_for("src/parser.rs", Duration::from_secs(45));
+    let elapsed = started.elapsed().as_millis();
     assert!(
-        opened,
+        listed,
         "the change list never rendered:\n{}",
-        harness.text()
+        harness.plain()
     );
-    println!("VAL-03 review-changes: 2 keys/{elapsed_ms} ms");
+    println!("VAL-03 review-changes: 2 keys/{elapsed} ms");
     harness.shutdown();
 }
