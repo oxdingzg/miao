@@ -547,3 +547,56 @@ async fn an_oversized_input_drops_the_state_note_instead_of_failing() {
     assert_eq!(started.data["state_selection"]["status"], "skipped");
     assert_eq!(started.data["state_selection"]["reason"], "input_budget");
 }
+
+/// A Session that has never written a checklist still carries the task-list
+/// protocol, so a model whose persona never names `todowrite` learns it exists.
+/// Before this, only Anthropic personas mentioned the tool and the sidebar
+/// stayed empty for whole Sessions.
+#[tokio::test]
+async fn a_session_without_a_list_is_still_told_how_to_keep_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = setup(&dir.path().join("engine.db")).await;
+    let (send, mut receive) = tokio::sync::mpsc::channel(4);
+    let runtime = miao_engine::runtime::Runtime::new(
+        store.clone(),
+        std::sync::Arc::new(Capture { send }),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "s".into(),
+                input_id: "two".into(),
+                prompt: "continue".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let request = receive.recv().await.unwrap();
+    finished(&store, 1).await;
+    assert!(
+        request.system.contains("<session-task-list>"),
+        "{}",
+        request.system
+    );
+    assert!(
+        request
+            .system
+            .contains("Use todowrite to track multi-step work"),
+        "{}",
+        request.system
+    );
+    // The protocol is constant: nothing session-specific rides the system
+    // prompt, which is what keeps the context epoch stable across turns.
+    assert!(
+        !request.system.contains("Runnable tasks"),
+        "{}",
+        request.system
+    );
+}
