@@ -49,6 +49,7 @@ newer record is the one to read.
 | `2026-11-04-config-ext-retry.md` | `04dc191a01` | CFG-02, CFG-03, MOD-05, EXT-01, EXT-04, EXT-05, EXT-06, EXT-07 |
 | `2026-11-04-data-migration-transfer.md` | `04dc191a01` | DATA-01, DATA-02 |
 | `2026-11-04-cli-entry-point.md` | `04dc191a01` and `2c35372277` | RUS-04 |
+| `2026-11-05-ux04-terminal-restore.md` | `9d8ac06104` | UX-04 (restore on panic/exit/suspend, title toggle and payload safety; clearing redraws and the tmux/SSH/Windows matrix stay open) |
 | `2026-11-05-tool02-versioned-edits.md` | `80c316cad3` | TOOL-02 (fingerprint refusal and anchored rebase, whole-or-nothing patches, BOM/EOL preservation; renames, large files and edit Unicode stay open) |
 | `2026-11-05-cost05-doctor-report.md` | `d13b75a3ee` | COST-05 (doctor reports version, routing, sandbox mode in effect and each external program; log export and tracing overhead stay open) |
 | `2026-11-05-his03-undo-and-snapshots.md` | `9b3aca3eb1` | HIS-03 (stage/clear/commit with undo and redo, history-only vs file rollback boundaries, outside-modification preview; the shell-side-effect disclaimer stays open) |
