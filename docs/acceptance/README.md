@@ -53,6 +53,7 @@ newer record is the one to read.
 | `2026-11-05-val03-review-changes.md` | `a1239dff43` | VAL-03 (the reviewing-changes row `2026-11-01-offline.md` left unaccepted) |
 | `2026-11-05-tool04-diagnostics-version.md` | `097e6717ee` | TOOL-04 (versions and staleness in the diagnostics payload, and the completion check's repair path) |
 | `2026-11-05-cost03-cache-health.md` | `82d4e77eae` | COST-03 (recommendations for every unhealthy cache state; the TUI cache line stays open) |
+| `2026-11-05-tool06-malformed-input-and-loops.md` | `e67cfe8664` | TOOL-06 (bounded correction for malformed calls, loop detection that halts before a late tool call, provider-only neutralization; the cross-provider matrix stays open) |
 | `2026-11-05-tool07-web.md` | `37db1dc9c3` | TOOL-07 (source URL, body bound, redirects, credentials, cancellation) |
 | `2026-11-05-cfg02-unknown-keys.md` | `82d4e77eae` | CFG-02 (unknown keys warned about with their source and closest known key; the managed scope stays open) |
 
