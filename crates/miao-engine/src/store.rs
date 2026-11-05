@@ -4305,6 +4305,12 @@ impl Store {
                 std::collections::HashMap::new();
             let mut per_identity: std::collections::HashMap<(String, String), u64> =
                 std::collections::HashMap::new();
+            // Hooks are shell processes the Session waited on: their wall time
+            // is part of what the task cost, and a hook that failed or timed out
+            // is a fact the report has to keep instead of swallowing.
+            let mut hook_calls = 0u64;
+            let mut hook_failures = 0u64;
+            let mut hook_ms = 0u64;
             let mut tool_calls = 0u64;
             let mut tool_failures = 0u64;
             let mut turn_detail: Vec<Value> = Vec::new();
@@ -4335,7 +4341,7 @@ impl Store {
             let mut auxiliary_rejected=0u64;
             let mut role_starts=std::collections::HashMap::<u64,Option<u64>>::new();
             let mut stmt = conn.prepare(
-                "SELECT seq,kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','provider.request','provider.attempt','provider.retry','tool.completed','role.provider.started','role.provider.completed','permission.approved','permission.saved_allowed','question.resolved','input.cancelled','input.edited','tool.input_error','tool.input_recovery.stopped') ORDER BY seq",
+                "SELECT seq,kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','provider.request','provider.attempt','provider.retry','tool.completed','role.provider.started','role.provider.completed','permission.approved','permission.saved_allowed','question.resolved','input.cancelled','input.edited','tool.input_error','tool.input_recovery.stopped','hook.completed') ORDER BY seq",
             )?;
             let mut rows = stmt.query(params![session])?;
             while let Some(row) = rows.next()? {
@@ -4415,6 +4421,13 @@ impl Store {
                                 ),
                             );
                         }
+                    }
+                    "hook.completed" => {
+                        hook_calls += 1;
+                        if data["outcome"].as_str() != Some("ok") {
+                            hook_failures += 1;
+                        }
+                        hook_ms = hook_ms.saturating_add(data["duration_ms"].as_u64().unwrap_or(0));
                     }
                     "tool.completed" => {
                         tool_calls += 1;
@@ -4606,6 +4619,11 @@ impl Store {
                     "attempts": subagent_attempts,
                     "failedAttempts": subagent_failed_attempts,
                     "replayedTurns": subagent_retried_turns.len(),
+                },
+                "hooks": {
+                    "calls": hook_calls,
+                    "failed": hook_failures,
+                    "timeMs": hook_ms,
                 },
                 "interventions": {
                     "approvals": approvals,
