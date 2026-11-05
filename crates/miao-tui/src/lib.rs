@@ -226,17 +226,32 @@ async fn drive(
         // from repainting sixty times an hour to redraw identical text. Input and
         // engine events repaint immediately; clock ticks are never replayed after
         // an editor.
-        let after = match app.busy() {
-            // A running turn repaints at least once a second so its elapsed
-            // clock and its engine-silence warning stay true. A pending draft
-            // is a reason to come back sooner: the stream writes far more often
-            // than once a second, and waiting for the clock tick let the newest
-            // text sit unpainted until the next event arrived.
-            true => Some(match app.next_repaint() {
-                Some(sooner) => sooner.min(Duration::from_secs(1)),
-                None => Duration::from_secs(1),
-            }),
-            false => app.next_repaint(),
+        //
+        // A zero-sized frame paints nothing: a pty whose window size was not
+        // set by the time the TUI drew its first frame leaves the screen blank,
+        // and the loop parks waiting for an event — an operator sees a dead
+        // process. A resize repairs it, but a resize may never come. When the
+        // frame has no cells, poll for a real size every 200 ms and paint the
+        // moment one arrives.
+        let sized = terminal
+            .size()
+            .map(|size| size.width > 0 && size.height > 0)
+            .unwrap_or(false);
+        let after = if !sized {
+            Some(Duration::from_millis(200))
+        } else {
+            match app.busy() {
+                // A running turn repaints at least once a second so its elapsed
+                // clock and its engine-silence warning stay true. A pending draft
+                // is a reason to come back sooner: the stream writes far more often
+                // than once a second, and waiting for the clock tick let the newest
+                // text sit unpainted until the next event arrived.
+                true => Some(match app.next_repaint() {
+                    Some(sooner) => sooner.min(Duration::from_secs(1)),
+                    None => Duration::from_secs(1),
+                }),
+                false => app.next_repaint(),
+            }
         };
         let repaint = async {
             match after {
