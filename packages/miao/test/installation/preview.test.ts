@@ -13,7 +13,10 @@ test.skipIf(process.platform === "win32")("preview installation and rollback ret
     const id = crypto.randomUUID()
     const cli = path.join(tmp.path, id)
     const engine = cli + "-engine"
-    await Bun.write(cli, `#!/bin/sh\ncase "$1" in --version) echo 9.9.9;; --build-id) echo ${id};; *) exit 1;; esac\n`)
+    // install-local.sh parses the version as the second field of `--version`
+    // output (the real binary prints `miao <version>`), so the fake prints the
+    // same two-field shape.
+    await Bun.write(cli, `#!/bin/sh\ncase "$1" in --version) echo "miao 9.9.9";; --build-id) echo ${id};; *) exit 1;; esac\n`)
     await Bun.write(engine, `#!/bin/sh\ncase "$1" in --version) echo 'miao-engine ${version}';; --capabilities) echo '{"name":"miao-engine","version":"${version}","protocol":2,"schema":12,"routes_schema":2,"build":"${id}"}';; *) exit 1;; esac\n`)
     await chmod(cli, 0o755)
     await chmod(engine, 0o755)

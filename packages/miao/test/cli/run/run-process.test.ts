@@ -175,7 +175,12 @@ describe("opencode run (non-interactive subprocess)", () => {
           expect(typeof evt.type).toBe("string")
           expect(typeof evt.sessionID).toBe("string")
         }
-        expect(events.map((event) => event.type)).toEqual(["step_start", "text", "step_finish"])
+        expect(events.map((event) => event.type)).toEqual([
+          "step_start",
+          "text",
+          "step_finish",
+          "usage_total",
+        ])
         expect(events.map(({ timestamp: _, sessionID: __, ...event }) => event)).toEqual([
           { type: "step_start", part: expect.objectContaining({ type: "step-start" }) },
           {
@@ -183,6 +188,14 @@ describe("opencode run (non-interactive subprocess)", () => {
             part: expect.objectContaining({ type: "text", text: "structured output" }),
           },
           { type: "step_finish", part: expect.objectContaining({ type: "step-finish" }) },
+          {
+            type: "usage_total",
+            part: expect.objectContaining({
+              cost: expect.any(Number),
+              delegated: expect.any(Number),
+              total: expect.any(Number),
+            }),
+          },
         ])
         expect(result.stdout.endsWith("\n")).toBe(true)
         expect(
@@ -246,6 +259,7 @@ describe("opencode run (non-interactive subprocess)", () => {
           "step_start",
           "text",
           "step_finish",
+          "usage_total",
         ])
         expect(events.find((event) => event.type === "reasoning")?.part).toEqual(
           expect.objectContaining({ type: "reasoning", text: "reasoning" }),
