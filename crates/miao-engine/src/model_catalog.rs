@@ -46,89 +46,76 @@ pub(crate) fn models_snapshot() -> Option<serde_json::Value> {
         .find_map(|path| std::fs::read(path).ok())
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
 }
-/// The context window every catalog entry declares for one model id.
+/// The smallest context window each model id declares, across every provider in
+/// the shipped snapshot. The same id is often served by many providers with
+/// different declared windows; the smallest is the one every caller must assume.
 ///
-/// `models.json` is megabytes and the compaction trigger consults it every
-/// turn, so the lookups run against an index built once from the shipped
-/// snapshot. The same model id is often served by many providers with
-/// different declared windows; the smallest is the one every caller must
-/// assume.
-pub(crate) fn context_window_in(document: &serde_json::Value, model: &str) -> Option<u64> {
-    let mut smallest: Option<u64> = None;
-    let scan = |probe: &str, smallest: &mut Option<u64>| {
-        for provider in document
-            .as_object()
-            .into_iter()
-            .flat_map(|entries| entries.values())
-        {
-            for (model_id, info) in provider
-                .get("models")
-                .and_then(|models| models.as_object())
-                .into_iter()
-                .flatten()
-            {
-                if model_id != probe {
-                    continue;
-                }
-                let window = info
-                    .get("limit")
-                    .and_then(|limit| limit.get("context"))
-                    .and_then(serde_json::Value::as_u64);
-                if let Some(window) = window {
-                    *smallest = Some(smallest.map_or(window, |known| known.min(window)));
-                }
-            }
-        }
-    };
-    scan(model, &mut smallest);
-    // Date-suffixed variants (…-261017) share the base model's window: the
-    // snapshot indexes the unsuffixed id, so a miss on the pinned id falls
-    // back to the family.
-    if smallest.is_none() {
-        if let Some((base, tail)) = model.rsplit_once('-') {
-            if !tail.is_empty() && tail.bytes().all(|byte| byte.is_ascii_digit()) {
-                scan(base, &mut smallest);
-            }
+/// Built in one pass: the compaction trigger consults the result every turn, so
+/// a per-id rescan of the whole document would be quadratic in an eight-thousand
+/// model file.
+fn index_windows(document: &Value) -> BTreeMap<String, u64> {
+    let mut index = BTreeMap::new();
+    for provider in document
+        .as_object()
+        .into_iter()
+        .flat_map(|entries| entries.values())
+    {
+        let Some(models) = provider.get("models").and_then(Value::as_object) else {
+            continue;
+        };
+        for (model_id, info) in models {
+            let Some(window) = info
+                .get("limit")
+                .and_then(|limit| limit.get("context"))
+                .and_then(Value::as_u64)
+            else {
+                continue;
+            };
+            index
+                .entry(model_id.clone())
+                .and_modify(|known: &mut u64| {
+                    if window < *known {
+                        *known = window;
+                    }
+                })
+                .or_insert(window);
         }
     }
-    smallest
+    index
 }
 
-fn window_index() -> &'static std::collections::BTreeMap<String, u64> {
-    static INDEX: std::sync::OnceLock<std::collections::BTreeMap<String, u64>> =
-        std::sync::OnceLock::new();
+fn window_index() -> &'static BTreeMap<String, u64> {
+    static INDEX: std::sync::OnceLock<BTreeMap<String, u64>> = std::sync::OnceLock::new();
     INDEX.get_or_init(|| {
-        let mut index = std::collections::BTreeMap::new();
-        if let Some(document) = models_snapshot() {
-            if let Some(entries) = document.as_object() {
-                for provider in entries.values() {
-                    for model_id in provider
-                        .get("models")
-                        .and_then(|models| models.as_object())
-                        .into_iter()
-                        .flat_map(|models| models.keys().cloned())
-                    {
-                        if let Some(window) = context_window_in(&document, &model_id) {
-                            index
-                                .entry(model_id)
-                                .and_modify(|known| {
-                                    if window < *known {
-                                        *known = window;
-                                    }
-                                })
-                                .or_insert(window);
-                        }
-                    }
-                }
-            }
-        }
-        index
+        models_snapshot()
+            .as_ref()
+            .map(index_windows)
+            .unwrap_or_default()
     })
 }
 
-/// The context window the shipped snapshot declares for one model id.
+/// A model id with a trailing date pin (`…-261017`) shares its family's window:
+/// the snapshot indexes the unsuffixed id, and a route that pins a dated build
+/// must not lose the trigger because of the suffix.
+fn family_id(model: &str) -> Option<&str> {
+    let (base, tail) = model.rsplit_once('-')?;
+    (!tail.is_empty() && tail.bytes().all(|byte| byte.is_ascii_digit())).then_some(base)
+}
+
+/// The window one id resolves to in an already-built index: the exact id first,
+/// then its undated family id.
+fn window_in_index(index: &BTreeMap<String, u64>, model: &str) -> Option<u64> {
+    index
+        .get(model)
+        .copied()
+        .or_else(|| family_id(model).and_then(|base| index.get(base).copied()))
+}
+
+/// The context window the shipped snapshot declares for one model id, falling
+/// back to the undated family id. This is the window the compaction trigger
+/// seeds from before any endpoint has refused a request.
 pub(crate) fn context_window_for(model: &str) -> Option<u64> {
-    window_index().get(model).copied()
+    window_in_index(window_index(), model)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -439,32 +426,45 @@ impl Provider for Catalog {
 
 #[cfg(test)]
 mod window_tests {
-    use super::context_window_in;
+    use super::{index_windows, window_in_index};
 
-    #[test]
-    fn context_windows_are_indexed_per_model_id() {
-        let document = serde_json::json!({
+    fn document() -> serde_json::Value {
+        serde_json::json!({
             "alpha": {"models": {
                 "m-big": {"limit": {"context": 200000}},
                 "m-small": {"limit": {"context": 64000}},
                 "m-none": {}
             }},
             "beta": {"models": {
-                "m-big": {"limit": {"context": 100000}}
+                "m-big": {"limit": {"context": 100000}},
+                "m-big-261017": {"limit": {"context": 50000}}
+            }},
+            "gamma": {"models": {
+                "m-big": {"limit": {}}
             }}
-        });
-        let window = |model: &str| context_window_in(&document, model);
-        assert_eq!(
-            window("m-big"),
-            Some(100000),
-            "the smallest declared window wins"
+        })
+    }
+
+    #[test]
+    fn the_index_keeps_the_smallest_window_each_id_declares() {
+        let index = index_windows(&document());
+        assert_eq!(index.get("m-big"), Some(&100000));
+        assert_eq!(index.get("m-small"), Some(&64000));
+        assert!(
+            !index.contains_key("m-none"),
+            "an entry that declares no window is not a window"
         );
-        assert_eq!(window("m-small"), Some(64000));
-        assert_eq!(window("m-none"), None);
-        assert_eq!(window("unknown"), None);
-        // A date-suffixed pin falls back to the base model's window.
-        assert_eq!(window("m-big-261017"), Some(100000));
-        // A date-suffixed pin falls back to the base model's window.
-        assert_eq!(window("m-big-261017"), Some(100000));
+    }
+
+    #[test]
+    fn a_dated_pin_falls_back_to_its_family_window() {
+        let index = index_windows(&document());
+        // An exact dated id wins over the family.
+        assert_eq!(window_in_index(&index, "m-big-261017"), Some(50000));
+        // A dated id the snapshot never indexed still arms the trigger with the
+        // family window instead of leaving it off until an endpoint refuses.
+        assert_eq!(window_in_index(&index, "m-small-261017"), Some(64000));
+        assert_eq!(window_in_index(&index, "m-unknown-261017"), None);
+        assert_eq!(window_in_index(&index, "m-small"), Some(64000));
     }
 }
