@@ -220,6 +220,9 @@ const INHERITED_ENVIRONMENT = [
   "MIAO_WEBSEARCH_PROVIDER",
   "MIAO_WEB_SEARCH_PROVIDER",
   "MIAO_WEB_SEARCH_ENDPOINT",
+  // The alias that selects an MCP server's own search tool, so setting
+  // `MIAO_WEB_SEARCH_PROVIDER=mcp` reaches an engine that can resolve it.
+  "MIAO_WEB_SEARCH_MCP_TOOL",
   // The engine deployment knobs. `MIAO_SANDBOX` is the operator's OS-sandbox
   // switch the engine reads itself now that it derives the product policy.
   "MIAO_SANDBOX",

@@ -14,12 +14,14 @@ use miao_engine::{
     tools::Tools,
 };
 use miao_engine::{
-    permission::{Config, Decision, Policy, Rule},
+    mcp::Registry,
+    permission::{Access, Config, Decision, Policy, Rule},
     tools::ToolError,
     web::{Client, SearchConfig, SearchProvider},
 };
 use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -466,4 +468,197 @@ async fn runtime_fetch_waits_for_bound_controller_approval_before_any_http_reque
     .unwrap();
     runtime.shutdown().await;
     task.abort();
+}
+
+// A wire-level MCP peer whose search tool declares its own arguments, so the
+// test can tell a forwarded contract from a translated one.
+async fn search_peer(
+    text: String,
+) -> (
+    Arc<Registry>,
+    Arc<tokio::sync::Mutex<Vec<Value>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    let (client, server) = tokio::io::duplex(262144);
+    let (read, mut write) = tokio::io::split(server);
+    let calls = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let log = calls.clone();
+    let task = tokio::spawn(async move {
+        let mut lines = BufReader::new(read).lines();
+        while let Some(line) = lines.next_line().await.unwrap() {
+            let request: Value = serde_json::from_str(&line).unwrap();
+            let Some(id) = request.get("id") else {
+                continue;
+            };
+            let result = match request["method"].as_str().unwrap() {
+                "initialize" => {
+                    json!({"protocolVersion":request["params"]["protocolVersion"],"capabilities":{"tools":{}},"serverInfo":{"name":"fixture","version":"1"}})
+                }
+                "tools/list" => {
+                    json!({"tools":[{"name":"search","description":"Fixture search","inputSchema":{"type":"object","properties":{"query":{"type":"string"},"max_results":{"type":"integer","minimum":1,"maximum":5}},"required":["query"],"additionalProperties":false}}]})
+                }
+                "tools/call" => {
+                    log.lock().await.push(request["params"].clone());
+                    json!({"content":[{"type":"text","text":text}],"isError":false})
+                }
+                _ => panic!("unexpected request {request}"),
+            };
+            let mut bytes =
+                serde_json::to_vec(&json!({"jsonrpc":"2.0","id":id,"result":result})).unwrap();
+            bytes.push(b'\n');
+            if write.write_all(&bytes).await.is_err() {
+                break;
+            }
+        }
+    });
+    let (read, write) = tokio::io::split(client);
+    let registry = Registry::connect_io("fixture".into(), read, write)
+        .await
+        .unwrap();
+    (Arc::new(registry), calls, task)
+}
+
+#[tokio::test]
+async fn mcp_search_forwards_the_servers_own_schema_and_arguments() {
+    let (registry, calls, task) = search_peer("first result\nsecond result".into()).await;
+    let alias = registry.definitions()[0].name.clone();
+    let client = Client::new(Some(SearchConfig::mcp(&alias).unwrap()))
+        .unwrap()
+        .with_mcp(registry.clone());
+    let definition = client
+        .definitions()
+        .into_iter()
+        .find(|definition| definition.name == "websearch")
+        .unwrap();
+    assert_eq!(
+        definition.input_schema,
+        registry.definitions()[0].input_schema
+    );
+    let policy = policy(vec![Rule {
+        tool: "*".into(),
+        path: "@mcp/**".into(),
+        decision: Decision::Allow,
+    }]);
+    let input = json!({"query":"中国","max_results":3});
+    let answer = client
+        .execute(
+            "websearch",
+            input.clone(),
+            &policy,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(answer["backend"], "mcp");
+    assert_eq!(answer["server"], "fixture");
+    assert_eq!(answer["tool"], "search");
+    assert_eq!(
+        answer["output"]["content"][0]["text"],
+        "first result\nsecond result"
+    );
+    assert_eq!(answer["output"]["isError"], false);
+    assert_eq!(calls.lock().await[0]["arguments"], input);
+    // The answering tool is what a decision names, so a rule written for the
+    // REST endpoint's `@web/**` identity cannot silently authorize it.
+    let resource = client.prepare("websearch", input.clone()).unwrap();
+    assert_eq!(resource, format!("@mcp/fixture/{alias}"));
+    assert_eq!(
+        allow().evaluate("websearch", &resource, Access::Web),
+        Decision::Ask
+    );
+    // A rejected schema never reaches the server.
+    assert!(matches!(
+        client
+            .execute(
+                "websearch",
+                json!({"query":7}),
+                &policy,
+                CancellationToken::new()
+            )
+            .await,
+        Err(ToolError::InvalidInput)
+    ));
+    assert_eq!(calls.lock().await.len(), 1);
+    registry.shutdown().await;
+    task.await.unwrap();
+}
+
+#[tokio::test]
+async fn an_over_budget_mcp_answer_is_refused_rather_than_returned_in_part() {
+    let (registry, _calls, task) = search_peer("x".repeat(70000)).await;
+    let alias = registry.definitions()[0].name.clone();
+    let client = Client::new(Some(SearchConfig::mcp(&alias).unwrap()))
+        .unwrap()
+        .with_mcp(registry.clone());
+    let error = client
+        .execute(
+            "websearch",
+            json!({"query":"test"}),
+            &allow(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+    // The catalogue's own output budget decides this, and it fails closed: the
+    // web tool never reports a truncated MCP answer it did not receive.
+    assert!(error.contains("exceeds output budget"), "{error}");
+    registry.shutdown().await;
+    task.await.unwrap();
+}
+
+#[tokio::test]
+async fn an_mcp_search_backend_without_its_catalogue_is_unusable_not_redirected() {
+    let client = Client::new(Some(SearchConfig::mcp("fixture_search").unwrap())).unwrap();
+    assert!(client
+        .definitions()
+        .iter()
+        .all(|definition| definition.name != "websearch"));
+    assert!(matches!(
+        client.prepare("websearch", json!({"query":"test"})),
+        Err(ToolError::Unsupported)
+    ));
+    assert!(matches!(
+        client
+            .execute(
+                "websearch",
+                json!({"query":"test"}),
+                &allow(),
+                CancellationToken::new()
+            )
+            .await,
+        Err(ToolError::Unsupported)
+    ));
+    for alias in ["", "  ", "line\nbreak"] {
+        assert!(matches!(
+            SearchConfig::mcp(alias),
+            Err(ToolError::InvalidInput)
+        ));
+    }
+}
+
+#[tokio::test]
+async fn tools_hand_a_late_catalogue_to_the_web_client_that_already_exists() {
+    let (registry, _calls, task) = search_peer("result".into()).await;
+    let alias = registry.definitions()[0].name.clone();
+    let dir = tempfile::tempdir().unwrap();
+    let tools = Tools::new(dir.path())
+        .await
+        .unwrap()
+        .with_web(Client::new(Some(SearchConfig::mcp(&alias).unwrap())).unwrap());
+    assert!(matches!(
+        tools.prepare("websearch", json!({"query":"test"})).await,
+        Err(ToolError::Unsupported)
+    ));
+    let tools = tools.with_mcp(registry.clone());
+    assert_eq!(
+        tools
+            .prepare("websearch", json!({"query":"test"}))
+            .await
+            .unwrap()
+            .resource(),
+        format!("@mcp/fixture/{alias}")
+    );
+    registry.shutdown().await;
+    task.await.unwrap();
 }

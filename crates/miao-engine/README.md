@@ -655,6 +655,18 @@ titles, excerpts and truncation flags. Permission resources are namespaced as
 `@web/<host>[:port]/<path>`; normal once-only controller approval is supported
 when rules ask rather than allow.
 
+An attached MCP server can answer search instead of a REST provider:
+`MIAO_WEB_SEARCH_PROVIDER=mcp` with `MIAO_WEB_SEARCH_MCP_TOOL=<catalogue alias>`
+selects that server's own search tool. The server owns the request and the result
+shape, so `websearch` advertises the tool's own input schema and forwards the
+model's arguments unchanged; `query`/`numResults` belong to the REST providers
+and are not translated into it. The answer is labelled with `backend: "mcp"` plus
+the answering `server` and `tool`, and its text is bounded to 64 KiB with the
+server's structure intact. Permission resources are the MCP tool's own, so a rule
+must allow `@mcp/<server>/<alias>`: a `@web/**` rule never authorizes an MCP
+search. Without an attached catalogue the configured `mcp` backend is not
+disclosed and calls fail rather than falling back to another provider.
+
 ## Explicit Context Sources
 
 `--context-config /absolute/path/context.json` selects additional instruction/persona files:
