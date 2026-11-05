@@ -52,6 +52,7 @@ newer record is the one to read.
 | `2026-11-05-rel04-completion-gate.md` | `4a5f9a9e0f` | REL-04 (audit and capability ledger; deletion blocked by the observation window) |
 | `2026-11-05-val03-review-changes.md` | `a1239dff43` | VAL-03 (the reviewing-changes row `2026-11-01-offline.md` left unaccepted) |
 | `2026-11-05-tool04-diagnostics-version.md` | `097e6717ee` | TOOL-04 (versions and staleness in the diagnostics payload, and the completion check's repair path) |
+| `2026-11-05-tool05-output-budgets.md` | `9b3aca3eb1` | TOOL-05 (size/timeout/long-line bounds per tool family, bounded previews with handle retrieval, oversized payload externalization; a runaway-command case stays untested) |
 | `2026-11-05-job02-background-tasks.md` | `db0b250ae6` | JOB-02 (job/shell/child listing, scoped cancel and stop, crash reconciliation; a subagent-suite flake is recorded as open) |
 | `2026-11-05-tool01-bounded-retrieval.md` | `e943537ff2` | TOOL-01 (read windows, read batches, grep/glob filters and ignore rules; the LSP result budget and the retrieval measurement stay open) |
 | `2026-11-05-cost03-cache-health.md` | `82d4e77eae` | COST-03 (recommendations for every unhealthy cache state; the TUI cache line stays open) |
