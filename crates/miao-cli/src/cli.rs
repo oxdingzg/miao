@@ -482,14 +482,28 @@ fn is_newer(candidate: &str, current: &str) -> bool {
 fn run_installer(feed: Option<&str>) -> Result<(), String> {
     let base = feed.unwrap_or("https://github.com/oxdingzg/miao");
     let script = format!("{}/main/install", base.trim_end_matches('/'));
-    // `sh` rather than `bash` so the same command works on the minimal
-    // images a container install runs in; the script itself is bash-flavoured
-    // but every interpreter it meets resolves `bash` through `sh`.
-    let status = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(format!("curl -fsSL {script} | bash"))
+    // Download first, then run: a `curl | bash` pipe reports the tail's exit
+    // code, so a failed download would pipe an empty script into bash, exit 0,
+    // and announce an update it never installed.
+    let staged = std::env::temp_dir().join("miao-install.sh");
+    let downloaded = std::process::Command::new("curl")
+        .args(["-fsSL", "-o"])
+        .arg(&staged)
+        .arg(&script)
         .status()
-        .map_err(|error| format!("could not run the installer: {error}"))?;
+        .map_err(|error| format!("could not run curl: {error}"))?;
+    if !downloaded.success() {
+        let _ = std::fs::remove_file(&staged);
+        return Err(format!(
+            "could not download the installer ({downloaded}); the previous build is still installed"
+        ));
+    }
+    let status = std::process::Command::new("bash")
+        .arg(&staged)
+        .status()
+        .map_err(|error| format!("could not run the installer: {error}"));
+    let _ = std::fs::remove_file(&staged);
+    let status = status?;
     if !status.success() {
         return Err(format!(
             "the installer exited with {status}; the previous build is still installed"
