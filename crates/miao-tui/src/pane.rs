@@ -342,12 +342,18 @@ impl Shell {
         // boundary the border already marks — three rows of dead space between
         // the transcript, the input, and the status strip on a short window.
         // The status strip is one row and sits straight under the box.
-        let [body_area, panel_area, composer_area, status_area] = Layout::vertical([
+        // Prompts the engine still holds un-promoted sit straight above the
+        // input: the queue depth in the title says how many, these rows say
+        // what they are, where the operator typed them.
+        let queued_height = queued_rows(&self.transcript.pending_prompts) as u16;
+        let [body_area, panel_area, queued_area, composer_area, status_area] = Layout::vertical([
             Constraint::Min(1),
             Constraint::Length(panel_height),
+            Constraint::Length(queued_height),
             Constraint::Length(composer_height(
                 &self.composer,
                 composer_column(frame.area().width),
+                frame.area().height,
             )),
             Constraint::Length(1),
         ])
@@ -360,6 +366,12 @@ impl Shell {
         if let Some(panel) = self.panel.as_ref() {
             panel.render(frame, panel_area, &self.transcript.theme);
         }
+        render_queued(
+            frame,
+            queued_area,
+            &self.transcript.pending_prompts,
+            &self.transcript.theme,
+        );
         // The input spans the whole window width, covering the sidebar's bottom
         // band the way the layout draws it: the sidebar's content ends high, and
         // a prose-width input left that band looking cut off.
@@ -482,9 +494,9 @@ pub struct TranscriptPane {
     draft_version: u64,
     draft_rows_built: u64,
     /// What the operator typed that the engine still holds un-promoted, in
-    /// admission order. Rendered as prompt rows past the draft: while a busy
-    /// turn holds an input in its queue the only signal used to be the "1
-    /// queued" count, which reads as a lost message.
+    /// admission order. The shell paints these as rows right above the input:
+    /// while a busy turn holds an input in its queue the only signal used to be
+    /// the "1 queued" count, which reads as a lost message.
     pending_prompts: Vec<String>,
     scroll: u16,
     /// Follow the tail while new projections arrive. Any manual scroll clears
@@ -569,7 +581,7 @@ impl TranscriptPane {
     /// the viewport scrolls; the logical lines are a fallback before the first
     /// frame.
     fn max_scroll(&self) -> u16 {
-        let rows = match self.body.len() + self.draft_rows.len() + self.pending_prompts.len() {
+        let rows = match self.body.len() + self.draft_rows.len() {
             0 => self.rows.len(),
             rows => rows,
         };
@@ -624,33 +636,17 @@ impl Pane for TranscriptPane {
         }
         self.width = content.width;
         let viewport = area.height as usize;
-        let pending_lines: Vec<Line<'static>> = self
-            .pending_prompts
-            .iter()
-            .map(|prompt| {
-                Line::from(vec![
-                    Span::styled("❯ ", Style::new().fg(palette.primary)),
-                    Span::styled(prompt.clone(), Style::new().fg(palette.text)),
-                    Span::styled(" · queued", Style::new().fg(palette.text_muted)),
-                ])
-            })
-            .collect();
         let draft_end = self.body.len() + self.draft_rows.len();
-        let rows = draft_end + pending_lines.len();
+        let rows = draft_end;
         if self.follow {
             self.scroll = rows.saturating_sub(viewport) as u16;
         }
         let start = (self.scroll as usize).min(rows.saturating_sub(1));
         let mut visible = (start..rows)
             .take(viewport)
-            .map(|row| {
-                if row < self.body.len() {
-                    self.body[row].clone()
-                } else if row < draft_end {
-                    self.draft_rows[row - self.body.len()].clone()
-                } else {
-                    pending_lines[row - draft_end].clone()
-                }
+            .map(|row| match row < self.body.len() {
+                true => self.body[row].clone(),
+                false => self.draft_rows[row - self.body.len()].clone(),
             })
             .collect::<Vec<_>>();
         // The call in flight rides the tail as one spinner row. It takes the
@@ -1195,8 +1191,11 @@ impl Home {
             None => env!("CARGO_PKG_VERSION"),
         };
 
-        let prompt_width = self.prompt_width.resolve(area.width) as usize;
-        let prompt_h = crate::pane::composer_height(composer, area.width).max(3);
+        let prompt_width = self.prompt_width.resolve(area.width);
+        // The box wraps at the landing prompt's own width, so a long draft
+        // grows it the same way it grows the Session composer; sizing it from
+        // the whole window left it one row tall and clipped.
+        let prompt_h = crate::pane::composer_height(composer, prompt_width, area.height).max(3);
         let notice_h = usize::from(self.notice.is_some()) + usize::from(self.warning.is_some());
 
         // Vertical, following the TS home's flex stack
@@ -1212,7 +1211,7 @@ impl Home {
         // sits centred and never higher than half a screen down. The previous
         // rule (`free * 2 / 5`) pushed it slightly below centre on every
         // height, which is why nothing could reproduce the TS layout.
-        let used = 5 + 1 + 1 + 2 + prompt_h as usize + notice_h;
+        let used = 5 + 1 + 1 + 1 + prompt_h as usize + notice_h;
         let free = (area.height as usize).saturating_sub(used);
         let gap_top = free / 2;
         let gap_bottom = free.saturating_sub(gap_top);
@@ -1235,15 +1234,15 @@ impl Home {
         ));
         put_lines.push(Line::default()); // the blank row between banner and prompt
         y += gap_top.min(free);
-        let prompt_x = width.saturating_sub(prompt_width) / 2;
+        let prompt_x = width.saturating_sub(prompt_width as usize) / 2;
         let prompt_area = Rect {
             x: area.x + prompt_x as u16,
-            width: prompt_width as u16,
-            y: (y + put_lines.len()) as u16,
-            // +2 over the content height: the borders plus a symmetric interior,
-            // so a single-line prompt sits in the middle of the box instead of
-            // hanging from its top border with an empty row under it.
-            height: prompt_h + 2,
+            width: prompt_width,
+            // One blank row above the box, the TypeScript prompt's padding.
+            y: (y + put_lines.len() + 1) as u16,
+            // The height already carries the borders, so adding them again
+            // left an empty row under a one-line prompt.
+            height: prompt_h,
         };
         for (offset, line) in put_lines.iter().enumerate() {
             frame.render_widget(
@@ -1256,7 +1255,7 @@ impl Home {
             );
         }
         render_composer(frame, prompt_area, composer, &self.theme);
-        let mut notice_y = prompt_area.y + prompt_h + 1;
+        let mut notice_y = prompt_area.y + prompt_h;
         if let Some(warning) = &self.warning {
             frame.render_widget(
                 Paragraph::new(Span::styled(
@@ -1826,9 +1825,6 @@ pub fn render_status(frame: &mut Frame, area: Rect, status: &StatusStrip, theme:
     }
 }
 
-/// Input rows the composer grows to before it scrolls; the border and the
-/// completion list live outside this budget.
-const COMPOSER_INPUT_ROWS: usize = 8;
 const COMPOSER_COMPLETION_ROWS: usize = 6;
 /// Display cells the `!` shell marker occupies left of the input.
 const SHELL_GUTTER: u16 = 2;
@@ -1842,22 +1838,80 @@ const PLACEHOLDERS: [&str; 3] = [
 ];
 const SHELL_PLACEHOLDERS: [&str; 3] = ["ls -la", "git status", "pwd"];
 
+/// The tallest the input grows before it scrolls, the TypeScript prompt's
+/// default `max_height` of `max(6, height / 3)`: on a tall window a long draft
+/// stays readable instead of being squeezed into a fixed eight rows.
+fn composer_input_cap(height: u16) -> usize {
+    (height as usize / 3).max(6)
+}
+
 /// The composer's height in rows, widened to the draft: a prompt that wraps or
-/// has several lines is shown whole up to [`COMPOSER_INPUT_ROWS`], so an
+/// has several lines is shown whole up to [`composer_input_cap`], so an
 /// operator can read what they are about to send instead of only the line the
 /// cursor happens to sit on.
-pub fn composer_height(composer: &Composer, width: u16) -> u16 {
-    let usable = width.saturating_sub(2).max(1) as usize;
+pub fn composer_height(composer: &Composer, width: u16, height: u16) -> u16 {
+    // The box spends two columns on borders and one blank column on each side
+    // of the text, so the draft wraps four cells narrower than the box.
+    let usable = width.saturating_sub(4).max(1) as usize;
     let input = composer
         .editor
         .display_rows(usable)
-        .clamp(1, COMPOSER_INPUT_ROWS);
+        .clamp(1, composer_input_cap(height));
     let completion = composer
         .completion
         .items
         .len()
         .min(COMPOSER_COMPLETION_ROWS);
     (2 + input + completion) as u16
+}
+
+/// Waiting prompts the queue band shows before it collapses the older ones
+/// into a count. Claude Code and Codex print each queued message above the
+/// input; the operator needs the newest ones, and a queue deeper than this is
+/// read from its count.
+const QUEUED_ROWS: usize = 3;
+
+/// Rows the queue band above the input needs: one per waiting prompt, and one
+/// more when older prompts do not fit.
+fn queued_rows(prompts: &[String]) -> usize {
+    prompts.len().min(QUEUED_ROWS) + usize::from(prompts.len() > QUEUED_ROWS)
+}
+
+/// What the operator sent that the engine still holds un-promoted, drawn
+/// straight above the input: the title says how deep the queue is, these rows
+/// say what is in it, so a submitted prompt does not look lost.
+fn render_queued(frame: &mut Frame, area: Rect, prompts: &[String], theme: &Theme) {
+    if area.height == 0 || prompts.is_empty() {
+        return;
+    }
+    let palette = theme.palette;
+    let hidden = prompts.len().saturating_sub(QUEUED_ROWS);
+    let mut lines = (hidden > 0)
+        .then(|| {
+            Line::from(Span::styled(
+                match hidden {
+                    1 => "1 older prompt still queued".to_string(),
+                    hidden => format!("{hidden} older prompts still queued"),
+                },
+                Style::new().fg(palette.text_muted),
+            ))
+        })
+        .into_iter()
+        .collect::<Vec<_>>();
+    let room = (area.width as usize).saturating_sub(4);
+    lines.extend(prompts.iter().skip(hidden).map(|prompt| {
+        Line::from(vec![
+            Span::styled("❯ ", Style::new().fg(palette.primary)),
+            Span::styled(fit(prompt, room), Style::new().fg(palette.text)),
+            Span::styled(" · queued", Style::new().fg(palette.text_muted)),
+        ])
+    }));
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(Style::new().bg(palette.background))
+            .block(Block::new().padding(ratatui::widgets::Padding::left(2))),
+        area,
+    );
 }
 
 /// The home screen shows the same composer as a Session, so a prompt can be
@@ -2012,9 +2066,8 @@ fn render_composer_in(
             },
         );
     }
-    let (cursor_line, cursor_cell) = composer.editor.cursor_position();
-    let row_offset = cursor_line.saturating_sub(input_area.height.saturating_sub(1) as usize);
-    let cell_offset = cursor_cell.saturating_sub(input_area.width.saturating_sub(1) as usize);
+    let (cursor_row, cursor_cell) = composer.editor.display_cursor(input_area.width as usize);
+    let row_offset = cursor_row.saturating_sub(input_area.height.saturating_sub(1) as usize);
     let text_color = if shell { accent } else { palette.text };
     // The selection is painted in the accent on the composer's own background,
     // so the text stays readable while the covered cells read as chosen.
@@ -2046,19 +2099,18 @@ fn render_composer_in(
     } else {
         let lines = composer
             .editor
-            .lines()
-            .enumerate()
+            .display_lines(input_area.width as usize)
+            .into_iter()
             .skip(row_offset)
             .take(input_area.height as usize)
-            .map(|(index, line)| {
+            .map(|(index, start, line)| {
                 let selection = selection_cells
                     .iter()
                     .find(|(line_index, _, _)| *line_index == index)
                     .map(|(_, start, end)| (*start, *end));
                 composer_line(
                     &line,
-                    cell_offset,
-                    input_area.width,
+                    start,
                     selection,
                     Style::new().fg(text_color),
                     selection_style,
@@ -2068,11 +2120,10 @@ fn render_composer_in(
         frame.render_widget(Paragraph::new(lines), input_area);
     }
 
-    let cursor_row = cursor_line - row_offset;
-    let cursor_column = cursor_cell - cell_offset;
-    if cursor_row < input_area.height as usize && cursor_column < input_area.width as usize {
+    let cursor_row = cursor_row - row_offset;
+    if cursor_row < input_area.height as usize && cursor_cell < input_area.width as usize {
         frame.set_cursor_position(Position::new(
-            input_area.x + cursor_column as u16,
+            input_area.x + cursor_cell as u16,
             input_area.y + cursor_row as u16,
         ));
     }
@@ -2138,33 +2189,23 @@ fn fit(text: &str, width: usize) -> String {
     format!("{}…", clip_cells(&single, 0, room))
 }
 
-/// One composer line as spans, with the selected cells carrying the highlight.
-/// Clipping and scrolling happen on display cells, exactly as they do for the
-/// cursor, so a selection over CJK text covers the width the terminal shows and
-/// the horizontal offset stays consistent with the caret.
+/// One wrapped display row of the draft as spans, with the selected cells
+/// carrying the highlight. `start` is the cell of the logical line the row
+/// begins at, so a selection over CJK text covers exactly the cells the
+/// terminal shows for it.
 fn composer_line(
     line: &str,
-    offset: usize,
-    width: u16,
+    start: usize,
     selection: Option<(usize, usize)>,
     text: ratatui::style::Style,
     highlighted: ratatui::style::Style,
 ) -> ratatui::text::Line<'static> {
-    let limit = width as usize;
     let mut spans: Vec<ratatui::text::Span<'static>> = Vec::new();
     let mut current = String::new();
     let mut current_highlighted = false;
-    let mut cell = 0usize;
+    let mut cell = start;
     for c in line.chars() {
-        let cells = UnicodeWidthChar::width(c).unwrap_or(0);
-        if cell < offset {
-            cell += cells;
-            continue;
-        }
-        if cell + cells > offset + limit {
-            break;
-        }
-        let highlighted_cell = selection.is_some_and(|(start, end)| cell >= start && cell < end);
+        let highlighted_cell = selection.is_some_and(|(from, to)| cell >= from && cell < to);
         if highlighted_cell != current_highlighted && !current.is_empty() {
             let style = if current_highlighted {
                 highlighted
@@ -2178,7 +2219,7 @@ fn composer_line(
         }
         current_highlighted = highlighted_cell;
         current.push(c);
-        cell += cells;
+        cell += UnicodeWidthChar::width(c).unwrap_or(0);
     }
     if !current.is_empty() {
         let style = if current_highlighted {
@@ -4177,6 +4218,96 @@ mod tests {
         assert!(painted, "the alerting title uses the warning tone");
     }
 
+    /// A draft wider than the box wraps onto the next input row instead of
+    /// sliding its head out of view, so the operator can read what they typed
+    /// rather than only its tail.
+    #[test]
+    fn a_long_draft_wraps_inside_the_box() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let mut composer = crate::editor::Composer::new(Path::new("."));
+        composer.editor.set_text(&"abcdefghij".repeat(8));
+        let rows = paint_composer(&composer, &theme, 40, 8);
+        assert!(rows[2].contains("abcdefghij"), "the head stays visible");
+        assert!(
+            rows[3].trim_end().chars().count() > 2,
+            "the draft continues on the next row: {:?}",
+            rows
+        );
+    }
+
+    /// The landing prompt grows with its draft the way the Session composer
+    /// does, up to the TypeScript prompt's `max_height` of `max(6, height/3)`.
+    #[test]
+    fn the_landing_prompt_grows_with_its_draft() {
+        let mut composer = crate::editor::Composer::new(Path::new("."));
+        assert_eq!(composer_height(&composer, 75, 40), 3, "one row and borders");
+        composer.editor.set_text(&"x".repeat(200));
+        // 200 cells wrap at the 71 columns the box leaves for text.
+        assert_eq!(composer_height(&composer, 75, 40), 2 + 3);
+        // A tall draft stops at the cap the TS prompt uses, not a fixed eight.
+        composer.editor.set_text(&"x".repeat(2000));
+        assert_eq!(composer_height(&composer, 75, 12), 2 + 6);
+    }
+
+    /// A queued prompt names itself above the input: the title only carried a
+    /// count, which read as a lost message.
+    #[test]
+    fn a_queued_prompt_is_named_above_the_input() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let mut shell = Shell::new(Path::new("."), theme);
+        shell.set_pending_prompts(&["finish every issue".to_string()]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 24)).expect("terminal");
+        terminal.draw(|frame| shell.render(frame)).expect("draw");
+        let rows = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(120)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let queued = rows
+            .iter()
+            .position(|row| row.contains("finish every issue"))
+            .expect("the queued prompt is painted");
+        assert!(rows[queued].contains("· queued"), "{}", rows[queued]);
+        let input = rows
+            .iter()
+            .position(|row| row.contains("composer"))
+            .expect("the input is painted");
+        assert!(queued < input, "the queue sits above the input");
+    }
+
+    /// Paint the composer into a fixed frame and read its rows back as strings.
+    fn paint_composer(
+        composer: &crate::editor::Composer,
+        theme: &Theme,
+        width: u16,
+        height: u16,
+    ) -> Vec<String> {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
+                .expect("terminal");
+        terminal
+            .draw(|frame| render_composer(frame, frame.area(), composer, theme))
+            .expect("draw");
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(width as usize)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect()
+    }
+
     /// Paint the composer at a fixed width and return its top border row,
     /// trimmed, so a test can read the title the box carries.
     fn draw_composer(composer: &mut crate::editor::Composer, theme: &Theme) -> String {
@@ -4850,13 +4981,14 @@ mod tests {
         assert_eq!(answer["answers"], serde_json::json!([["docs"]]));
     }
 
-    /// The renderer marks exactly the selected cells, and clipping still works
-    /// with wide characters and a horizontal offset.
+    /// The renderer marks exactly the selected cells, and a row that starts
+    /// partway into the logical line highlights by the logical cell rather than
+    /// by its position on the row.
     #[test]
     fn the_composer_line_highlights_only_the_selected_cells() {
         let text = Style::new().fg(ratatui::style::Color::Reset);
         let highlighted = Style::new().bg(ratatui::style::Color::Indexed(4));
-        let line = composer_line("ab cd", 0, 10, Some((1, 3)), text, highlighted);
+        let line = composer_line("ab cd", 0, Some((1, 3)), text, highlighted);
         let spans = line
             .spans
             .iter()
@@ -4868,14 +5000,22 @@ mod tests {
         assert_eq!(spans[1].1, highlighted);
         assert_eq!(spans[2], ("cd".to_string(), text));
 
-        // Two CJK characters are four cells: the selection covers both, and an
-        // offset of one cell drops the first character entirely.
-        let line = composer_line("你好世界", 0, 20, Some((0, 4)), text, highlighted);
+        // Two CJK characters are four cells, so the selection covers both.
+        let line = composer_line("你好世界", 0, Some((0, 4)), text, highlighted);
         assert_eq!(line.spans.len(), 2);
         assert_eq!(line.spans[0].content.to_string(), "你好");
-        let line = composer_line("你好世界", 2, 20, None, text, highlighted);
-        assert_eq!(line.spans.len(), 1);
-        assert_eq!(line.spans[0].content.to_string(), "好世界");
+        // A wrapped row carries the cells it starts at, so the highlight still
+        // lands on the character the operator selected.
+        let line = composer_line("好世界", 2, Some((2, 4)), text, highlighted);
+        let spans = line
+            .spans
+            .iter()
+            .map(|span| (span.content.to_string(), span.style))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            spans,
+            vec![("好".to_string(), highlighted), ("世界".to_string(), text)]
+        );
     }
 
     #[test]

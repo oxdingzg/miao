@@ -525,21 +525,43 @@ impl Editor {
         true
     }
 
-    /// Line index (zero-based) and display column of the cursor, in cells.
-    /// How many display rows the draft needs inside `width` cells. A long line
-    /// wraps, and every logical line takes at least one row, so the composer can
-    /// size itself to show the whole prompt instead of the cursor's line.
-    pub fn display_rows(&self, width: usize) -> usize {
-        if width == 0 {
-            return self.line_count();
-        }
-        self.buffer
-            .split('\n')
-            .map(|line| {
-                let cells: usize = line.chars().map(cell_width).sum();
-                cells.div_ceil(width).max(1)
+    /// The draft as display rows inside `width` cells, each one
+    /// `(line, first cell, text)`. A logical line longer than the width hard
+    /// wraps, and every logical line takes at least one row, so the composer
+    /// paints the rows it sized itself from instead of clipping the line the
+    /// cursor happens to sit on.
+    pub fn display_lines(&self, width: usize) -> Vec<(usize, usize, String)> {
+        let width = width.max(1);
+        let (caret_line, caret_cell) = self.cursor_position();
+        self.lines()
+            .enumerate()
+            .flat_map(|(line, text)| {
+                let caret = (line == caret_line).then_some(caret_cell);
+                wrap_cells(&text, width, line, caret)
             })
-            .sum()
+            .collect()
+    }
+
+    /// How many display rows the draft needs inside `width` cells.
+    pub fn display_rows(&self, width: usize) -> usize {
+        self.display_lines(width).len()
+    }
+
+    /// Where the cursor sits among the wrapped rows: the display row and the
+    /// cell within it, so a tall draft scrolls vertically instead of dragging
+    /// the line sideways under a caret that never leaves the first row.
+    pub fn display_cursor(&self, width: usize) -> (usize, usize) {
+        let (line, column) = self.cursor_position();
+        let mut cursor = (0, column);
+        for (row, (index, start, _)) in self.display_lines(width).into_iter().enumerate() {
+            if index > line {
+                break;
+            }
+            if index == line && start <= column {
+                cursor = (row, column - start);
+            }
+        }
+        cursor
     }
 
     pub fn cursor_position(&self) -> (usize, usize) {
@@ -642,6 +664,38 @@ fn cell_width(c: char) -> usize {
         return TAB_CELLS;
     }
     UnicodeWidthChar::width(c).unwrap_or(0)
+}
+
+/// Split one logical line into display rows of at most `width` cells. A
+/// double-width character that would straddle the edge moves whole onto the
+/// next row, so no row is painted as half a glyph. `caret` is the cell the
+/// cursor sits at on this line: a draft that ends exactly on the row boundary
+/// continues onto an empty row so the caret keeps a cell to stand in.
+fn wrap_cells(
+    text: &str,
+    width: usize,
+    line: usize,
+    caret: Option<usize>,
+) -> Vec<(usize, usize, String)> {
+    let mut rows = Vec::new();
+    let mut row = String::new();
+    let mut start = 0usize;
+    let mut cell = 0usize;
+    for c in text.chars() {
+        let cells = cell_width(c);
+        if cell > 0 && cell + cells > width {
+            rows.push((line, start, std::mem::take(&mut row)));
+            start += cell;
+            cell = 0;
+        }
+        row.push(c);
+        cell += cells;
+    }
+    rows.push((line, start, row));
+    if caret == Some(start + cell) && cell == width {
+        rows.push((line, start + cell, String::new()));
+    }
+    rows
 }
 
 /// Move to the last char boundary whose display column does not exceed `goal`.
@@ -1669,10 +1723,34 @@ mod tests {
         assert_eq!(editor.display_rows(20), 2);
         editor.set_text("x");
         assert_eq!(editor.display_rows(20), 1);
-        // Ten CJK characters are twenty cells, so they fill a twenty-cell row
-        // and spill onto a second one.
+        // Ten CJK characters are twenty cells, so they fill a twenty-one-cell
+        // row and spill onto a second one.
         editor.set_text("你好世界你好世界你好世界你好世界你好世界");
-        assert_eq!(editor.display_rows(20), 2, "wide text wraps by cells");
+        assert_eq!(editor.display_rows(21), 2, "wide text wraps by cells");
+    }
+
+    /// A draft that fills its row exactly keeps a cell for the caret on the
+    /// next row, so the caret never disappears at the wrap point.
+    #[test]
+    fn a_full_row_leaves_the_caret_a_row_of_its_own() {
+        let mut editor = Editor::new();
+        editor.set_text("abcd");
+        assert_eq!(editor.display_rows(4), 2);
+        assert_eq!(editor.display_cursor(4), (1, 0));
+    }
+
+    /// The composer scrolls the wrapped rows and puts the caret where the
+    /// terminal shows it, so a long draft reads instead of sliding sideways.
+    #[test]
+    fn display_cursor_follows_the_wrapped_rows() {
+        let mut editor = Editor::new();
+        editor.set_text(&"x".repeat(30));
+        assert_eq!(editor.display_cursor(20), (1, 10));
+        // A wide character that would straddle the edge moves whole onto the
+        // next row, and the caret counts from where that row starts.
+        editor.set_text(&format!("{}你", "x".repeat(19)));
+        assert_eq!(editor.display_lines(20)[1], (0, 19, "你".to_string()));
+        assert_eq!(editor.display_cursor(20), (1, 2));
     }
 
     /// CJK and emoji are edited by grapheme, not by byte: undo takes back the
