@@ -49,6 +49,7 @@ newer record is the one to read.
 | `2026-11-04-config-ext-retry.md` | `04dc191a01` | CFG-02, CFG-03, MOD-05, EXT-01, EXT-04, EXT-05, EXT-06, EXT-07 |
 | `2026-11-04-data-migration-transfer.md` | `04dc191a01` | DATA-01, DATA-02 |
 | `2026-11-04-cli-entry-point.md` | `04dc191a01` and `2c35372277` | RUS-04 |
+| `2026-11-05-his03-undo-and-snapshots.md` | `9b3aca3eb1` | HIS-03 (stage/clear/commit with undo and redo, history-only vs file rollback boundaries, outside-modification preview; the shell-side-effect disclaimer stays open) |
 | `2026-11-05-rel04-completion-gate.md` | `4a5f9a9e0f` | REL-04 (audit and capability ledger; deletion blocked by the observation window) |
 | `2026-11-05-val03-review-changes.md` | `a1239dff43` | VAL-03 (the reviewing-changes row `2026-11-01-offline.md` left unaccepted) |
 | `2026-11-05-tool04-diagnostics-version.md` | `097e6717ee` | TOOL-04 (versions and staleness in the diagnostics payload, and the completion check's repair path) |
