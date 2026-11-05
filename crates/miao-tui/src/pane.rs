@@ -1566,6 +1566,10 @@ fn transcript_lines(
     // butts consecutive single-row tools together and separates everything
     // else with one blank row.
     let mut inline_run = false;
+    // The pair the previous step closed with. The footer names the agent and
+    // the model only when this step's pair differs from it, so a session that
+    // never switches does not print the same label under every turn.
+    let mut previous_identity: Option<(Option<String>, Option<String>)> = None;
     for entry in &transcript.entries {
         match entry {
             Entry::User { text, .. } => {
@@ -1667,24 +1671,32 @@ fn transcript_lines(
                         }
                     }
                 }
-                // The step footer the TS message ends with: the check names the
-                // agent and the model that answered, and its blank row is the
-                // seam between consecutive assistant messages.
+                // The step footer the TS message ends with: the check marks the
+                // settled step, and its blank row is the seam between
+                // consecutive assistant messages. The agent and the model are
+                // named only when they differ from the step before, because a
+                // session that never switches printed the same label under
+                // every turn while the status line already showed both.
                 rows.push(Row::plain(Line::default()));
-                let name = match (agent.as_deref(), model.as_deref()) {
-                    (Some(agent), Some(model)) => format!("{} · {model}", titlecase(agent)),
-                    (Some(agent), None) => titlecase(agent),
-                    (None, Some(model)) => model.to_string(),
-                    (None, None) => "assistant".to_string(),
-                };
-                rows.push(Row::hung(
-                    Line::from(vec![
-                        Span::styled("  ", Style::new()),
-                        Span::styled("✓ ", Style::new().fg(palette.success)),
-                        Span::styled(name, Style::new().fg(palette.text_muted)),
-                    ]),
-                    2,
-                ));
+                let identity = (agent.clone(), model.clone());
+                let mut spans = vec![
+                    Span::styled("  ", Style::new()),
+                    Span::styled("✓", Style::new().fg(palette.success)),
+                ];
+                if previous_identity.as_ref() != Some(&identity) {
+                    let name = match (agent.as_deref(), model.as_deref()) {
+                        (Some(agent), Some(model)) => format!("{} · {model}", titlecase(agent)),
+                        (Some(agent), None) => titlecase(agent),
+                        (None, Some(model)) => model.to_string(),
+                        (None, None) => "assistant".to_string(),
+                    };
+                    spans.push(Span::styled(
+                        format!(" {name}"),
+                        Style::new().fg(palette.text_muted),
+                    ));
+                }
+                rows.push(Row::hung(Line::from(spans), 2));
+                previous_identity = Some(identity);
             }
             Entry::Error { message } => {
                 inline_run = false;
@@ -4108,6 +4120,43 @@ mod tests {
         );
         assert_eq!(text(&lines[5]), "");
         assert_eq!(text(&lines[6]), "  ✓ General · glm-5");
+    }
+
+    /// The footer names the agent and the model only when the step differs from
+    /// the one before it. Repeating the same label under every turn said
+    /// nothing the status line did not already show, which is why a transcript
+    /// read `✓ Miao · deepseek-v4-1-flash-261017` down the whole pane.
+    #[test]
+    fn the_step_footer_names_the_identity_only_when_it_changes() {
+        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let step = |model: &str, text: &str| Entry::Assistant {
+            agent: Some("miao".into()),
+            model: Some(model.into()),
+            parts: vec![Part::Text(text.into())],
+        };
+        let transcript = Transcript {
+            entries: vec![
+                step("deepseek-v4", "first"),
+                step("deepseek-v4", "second"),
+                step("glm-5", "third"),
+                step("glm-5", "fourth"),
+            ],
+            ..Transcript::default()
+        };
+        let lines = transcript_lines(&transcript, &theme, false, None).rows;
+        let footers = lines
+            .iter()
+            .map(row_text)
+            .filter(|text| text.contains('✓'))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            footers,
+            ["  ✓ Miao · deepseek-v4", "  ✓", "  ✓ Miao · glm-5", "  ✓"]
+        );
     }
 
     #[test]
