@@ -1579,29 +1579,47 @@ fn prose_lines(text: &str, theme: &Theme) -> Vec<Row> {
 fn draft_lines(parts: &[DraftPart], theme: &Theme, now_ms: u64) -> Vec<Row> {
     let palette = theme.palette;
     let mut rows = Vec::new();
-    let mut opened = false;
-    for part in parts {
+    // The live fold, in the Claude Code shape: every thinking part and every
+    // tool call but the newest collapses into one spinner line with the
+    // counts — the wall of bash rows a long turn used to tile is one line —
+    // and the newest call, the one running right now, keeps its full row with
+    // its live output. When the turn settles, the whole thing folds again
+    // into the committed summary.
+    let mut thoughts = 0usize;
+    let mut calls = 0usize;
+    let mut last_call: Option<usize> = None;
+    for (index, part) in parts.iter().enumerate() {
         match part {
-            DraftPart::Reasoning(text) => {
-                // One muted header line names where the thought is heading; the
-                // run of text itself would tile the screen with everything the
-                // model produced before it answered.
-                if text.is_empty() {
-                    continue;
-                }
-                let frame = SPINNER_FRAMES[(now_ms / 160) as usize % SPINNER_FRAMES.len()];
-                let summary = fit(&reasoning_summary(text), COMPACT_CELLS);
-                let label = if summary.is_empty() {
-                    "Thinking".to_string()
-                } else {
-                    format!("Thinking · {summary}")
-                };
-                rows.push(Row::clipped(Line::from(Span::styled(
-                    format!("{frame} {label}"),
-                    Style::new().fg(palette.text_muted),
-                ))));
-                opened = true;
+            DraftPart::Reasoning(text) if !text.is_empty() => thoughts += 1,
+            DraftPart::Call { .. } => {
+                calls += 1;
+                last_call = Some(index);
             }
+            _ => {}
+        }
+    }
+    let mut opened = false;
+    // A lone thinking part still names itself — a turn that is only thinking
+    // would otherwise paint nothing while the model works. A lone call does
+    // not need the fold: its own row is the whole story.
+    if thoughts + calls > 1 || (thoughts >= 1 && calls == 0) {
+        let frame = SPINNER_FRAMES[(now_ms / 160) as usize % SPINNER_FRAMES.len()];
+        let mut counts: Vec<String> = Vec::new();
+        if calls > 0 {
+            counts.push(format!("{} tool call{}", calls, plural(calls as u64)));
+        }
+        if thoughts > 0 {
+            counts.push(format!("{thoughts} thinking"));
+        }
+        rows.push(Row::clipped(Line::from(Span::styled(
+            format!("{} {}", frame, counts.join(" · ")),
+            Style::new().fg(palette.text_muted),
+        ))));
+        opened = true;
+    }
+    for (index, part) in parts.iter().enumerate() {
+        match part {
+            DraftPart::Reasoning(_) => {}
             DraftPart::Text(text) => {
                 if text.is_empty() {
                     continue;
@@ -1613,6 +1631,9 @@ fn draft_lines(parts: &[DraftPart], theme: &Theme, now_ms: u64) -> Vec<Row> {
                 opened = true;
             }
             DraftPart::Call { name, arguments } => {
+                if last_call != Some(index) {
+                    continue;
+                }
                 if opened {
                     rows.push(Row::plain(Line::default()));
                 }
@@ -4020,7 +4041,7 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(draft.contains("Thinking · considering"), "{draft}");
+        assert!(draft.contains("1 thinking"), "{draft}");
         assert!(draft.contains("streamed words"));
         // A projection, or a run that ends, clears it in one assignment.
         shell.set_draft(&[]);
@@ -4055,9 +4076,12 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert_eq!(draft.matches("reading the diff").count(), 1, "{draft}");
-        assert!(draft.contains("Thinking · reading the diff"), "{draft}");
-        // The first answer token keeps the header and starts the prose.
+        assert!(draft.contains("1 thinking"), "{draft}");
+        assert!(
+            !draft.contains("reading the diff"),
+            "the reasoning text stays folded: {draft}"
+        );
+        // The first answer token keeps the fold and starts the prose.
         shell.set_draft(&[
             DraftPart::Text("partial".into()),
             DraftPart::Reasoning("reading the diff\nthen the tests".into()),
@@ -4074,7 +4098,7 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(draft.contains("Thinking · reading the diff"), "{draft}");
+        assert!(draft.contains("1 thinking"), "{draft}");
         assert!(draft.contains("● partial"), "{draft}");
     }
 
@@ -5275,10 +5299,10 @@ mod draft_gap_tests {
             .iter()
             .map(|row| row.line.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect();
-        assert!(text[0].contains("Thinking"), "{text:?}");
+        assert!(text[0].contains("1 thinking"), "{text:?}");
         assert_eq!(
             text[1], "",
-            "a blank row separates header from answer: {text:?}"
+            "a blank row separates fold from answer: {text:?}"
         );
         assert!(text[2].starts_with("● the answer"), "{text:?}");
     }
@@ -5458,13 +5482,19 @@ mod interleave_tests {
             .map(|row| row.line.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect();
         let joined = text.join("\n");
+        // The live fold: one spinner line counts both calls, and only the
+        // newest call keeps its row with its command.
+        assert!(joined.contains("2 tool calls"), "{joined}");
         let first = joined.find("first paragraph").expect("first paragraph");
-        let one = joined.find("echo one").expect("first call");
         let second = joined.find("second paragraph").expect("second paragraph");
-        let two = joined.find("echo two").expect("second call");
+        let two = joined.find("echo two").expect("newest call");
         assert!(
-            first < one && one < second && second < two,
+            first < second && second < two,
             "the turn keeps its arrival order:\n{joined}"
+        );
+        assert!(
+            !joined.contains("echo one"),
+            "the folded call does not keep its row: {joined}"
         );
     }
 }
