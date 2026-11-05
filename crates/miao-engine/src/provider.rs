@@ -1504,6 +1504,63 @@ mod retry_tests {
     }
 
     #[tokio::test]
+    async fn a_cancel_during_the_retry_pause_returns_without_waiting_it_out() {
+        // A 429 with a long Retry-After sets a pause a person can feel. The
+        // operator must be able to stop the turn inside that pause instead of
+        // watching a spinner until the provider is willing to answer again.
+        let (endpoint, _state, _server) = serve(vec![
+            Scripted {
+                status: 429,
+                retry_after: Some("5"),
+            },
+            Scripted {
+                status: 200,
+                retry_after: None,
+            },
+        ])
+        .await;
+        let client = reqwest::Client::new();
+        let request = client.post(&endpoint).body("{}").build().unwrap();
+        let cancel = CancellationToken::new();
+        let (progress, mut received) = mpsc::channel::<Value>(32);
+        let stop = cancel.clone();
+        let watcher = tokio::spawn(async move {
+            while let Some(notice) = received.recv().await {
+                if notice["kind"] == "provider.retry" && notice["delay_ms"] == 5_000 {
+                    break;
+                }
+            }
+            stop.cancel();
+        });
+        let started = std::time::Instant::now();
+        let outcome = RETRY_SCOPE
+            .scope(
+                RetryScope {
+                    budget: Budget::with_deadline(Duration::from_secs(30)),
+                    limit: 3,
+                    cap: MAX_REQUEST_ATTEMPTS,
+                    requests: MAX_REQUEST_ATTEMPTS,
+                },
+                async {
+                    request_with_retry("fixture", &client, request, &progress, &cancel)
+                        .await
+                        .map(|_| ())
+                },
+            )
+            .await;
+        watcher.await.unwrap();
+        assert!(
+            matches!(outcome, Err(ProviderError::Interrupted)),
+            "a cancelled pause reports the interrupt: {outcome:?}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "the cancel waited out the pause: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[tokio::test]
     async fn a_rate_limit_pause_is_honoured_instead_of_the_short_backoff() {
         let (endpoint, state, server) = serve(vec![
             Scripted {
