@@ -1,12 +1,12 @@
-//! Native, bounded web reads and provider-backed search. The host selects any
-//! search credentials; model arguments can never replace the search endpoint.
+//! Native, bounded web reads, and search answered by whichever backend the host
+//! selected; model arguments can never replace that choice.
 //!
 //! `websearch` has two kinds of backend. A REST provider (Exa, Parallel) answers
-//! one request with its own per-result rows. An MCP server answers through its
-//! own search tool, with that tool's own arguments and its own output. The two
-//! stay distinguishable on purpose: a row count is not recall, so the engine
-//! bounds and labels each answer instead of reshaping one backend into the
-//! other's vocabulary.
+//! one request with its own per-result rows and needs host-held credentials. An
+//! MCP server answers through its own search tool, with that tool's own
+//! arguments and its own output. The two stay distinguishable on purpose: a row
+//! count is not recall, so the engine bounds and labels each answer instead of
+//! reshaping one backend into the other's vocabulary.
 use crate::{
     mcp::Registry,
     permission::{Access, Decision, Policy},
