@@ -4647,6 +4647,35 @@ impl Store {
                     })
                     .collect::<Vec<_>>()
             };
+            // A ratio nobody can act on is not health. Name what is missing and
+            // what would fix it, so a reading of "0%" comes with a next step
+            // instead of an invitation to guess.
+            let measured = turns + partial_turns;
+            let reported = coverage["cacheRead"].as_u64().unwrap_or(0);
+            let mut cache_recommendations: Vec<Value> = Vec::new();
+            if invalid_cache_rows > 0 {
+                cache_recommendations.push(json!({
+                    "code": "invalidBreakdown",
+                    "message": format!("{invalid_cache_rows} usage report(s) counted more cache tokens than input tokens; the hit ratio stays withheld until those turns are read again"),
+                }));
+            }
+            if measured > 0 && reported < measured {
+                cache_recommendations.push(json!({
+                    "code": "unreportedCacheReads",
+                    "message": format!("the provider reported cache reads on {reported} of {measured} turns, so prompt caching cannot be measured on this route"),
+                }));
+            }
+            if invalid_cache_rows == 0
+                && measured > 0
+                && reported == measured
+                && tokens["cacheRead"].as_u64() == Some(0)
+                && tokens["input"].as_u64().unwrap_or(0) > 0
+            {
+                cache_recommendations.push(json!({
+                    "code": "noCacheReads",
+                    "message": format!("no cache reads across {measured} turns; a route that supports prompt caching needs a stable prompt prefix and a supported cache key (prompt_cache_key)"),
+                }));
+            }
             Ok(json!({
                 "providerUsage":provider_usage.report(),
                 "providerDetail":provider_detail,
@@ -4665,6 +4694,7 @@ impl Store {
                     "coverage":coverage, "observedChanges":changes, "historyStates":histories,
                     "invalidBreakdowns":invalid_cache_rows,
                     "serverCacheState":"unknown",
+                    "recommendations":cache_recommendations,
                     "hitRatio": if turns + partial_turns > 0 && invalid_cache_rows == 0
                         && coverage["input"].as_u64() == Some(turns + partial_turns)
                         && coverage["cacheRead"].as_u64() == Some(turns + partial_turns)
