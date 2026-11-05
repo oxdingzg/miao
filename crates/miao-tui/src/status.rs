@@ -51,6 +51,11 @@ pub struct UsageSummary {
     /// three attempts where the parent spent one was billed for three.
     pub subagent_attempts: u64,
     pub subagent_replayed_turns: u64,
+    /// Hooks are shell processes the Session waited on: their wall time is part
+    /// of what the task cost, and a hook that failed is a fact worth seeing.
+    pub hook_calls: u64,
+    pub hook_failed: u64,
+    pub hook_ms: u64,
     /// Decisions a person had to make for this Session to keep going.
     pub approvals: u64,
     pub answers: u64,
@@ -140,6 +145,9 @@ impl UsageSummary {
                 .unwrap_or(0),
             subagent_attempts: u64_at(value, &["subagents", "attempts"]).unwrap_or(0),
             subagent_replayed_turns: u64_at(value, &["subagents", "replayedTurns"]).unwrap_or(0),
+            hook_calls: u64_at(value, &["hooks", "calls"]).unwrap_or(0),
+            hook_failed: u64_at(value, &["hooks", "failed"]).unwrap_or(0),
+            hook_ms: u64_at(value, &["hooks", "timeMs"]).unwrap_or(0),
             approvals: u64_at(value, &["interventions", "approvals"]).unwrap_or(0),
             answers: u64_at(value, &["interventions", "answers"]).unwrap_or(0),
             rejections: u64_at(value, &["interventions", "rejections"]).unwrap_or(0),
@@ -186,6 +194,7 @@ mod tests {
                 "replayedTurns": 2,
                 "tokens": {"input": 900, "cacheRead": 700}
             },
+            "hooks": {"calls": 3, "failed": 1, "timeMs": 1550},
             "interventions": {"approvals": 2, "answers": 1, "rejections": 1, "cancels": 0, "inputEdits": 3},
             "rework": {"toolInputErrors": 4},
             "auxiliary": {"usage": {"observations": 9, "tokens": {"input": 1524, "output": 3433}}},
@@ -210,6 +219,10 @@ mod tests {
         // A child's retried attempts are billed work of its own.
         assert_eq!(usage.subagent_attempts, 6);
         assert_eq!(usage.subagent_replayed_turns, 2);
+        // A hook the Session waited on costs it time, and a failed one is kept.
+        assert_eq!(usage.hook_calls, 3);
+        assert_eq!(usage.hook_failed, 1);
+        assert_eq!(usage.hook_ms, 1550);
         // Supervision cost: what a person had to decide, and what the model had
         // to redo without asking.
         assert_eq!(usage.approvals, 2);

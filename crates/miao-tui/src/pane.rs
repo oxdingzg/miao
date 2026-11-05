@@ -2336,6 +2336,23 @@ impl Pane for SidebarPane {
                             Style::new().fg(palette.text_muted),
                         )));
                     }
+                    // A hook is a process the Session waited on before a tool
+                    // could run: its time is cost too, and a failure is not a
+                    // quiet detail.
+                    if usage.hook_calls > 0 {
+                        let failed = if usage.hook_failed > 0 {
+                            format!("  ·  {} failed", usage.hook_failed)
+                        } else {
+                            String::new()
+                        };
+                        lines.push(Line::from(Span::styled(
+                            format!(
+                                "hooks {}  ·  {} ms{}",
+                                usage.hook_calls, usage.hook_ms, failed
+                            ),
+                            Style::new().fg(palette.text_muted),
+                        )));
+                    }
                     // What a person had to decide, and what the model had to
                     // redo: supervision cost and rework, in one glance.
                     let decisions =
