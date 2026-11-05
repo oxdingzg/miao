@@ -70,3 +70,70 @@ async fn a_session_without_children_reports_no_subagents() {
     assert_eq!(report["subagents"]["turns"], 0);
     assert_eq!(report["subagents"]["tokens"]["input"], 0);
 }
+
+#[tokio::test]
+async fn a_parent_report_rolls_up_its_child_retries() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store.ensure("parent").await.unwrap();
+    store.fork("parent", "child", None).await.unwrap();
+    // The child spent three attempts on its only turn: a 500, a transport that
+    // died before any status, then the attempt that settled. Every one of them
+    // is billed work, so the parent's report has to show them.
+    store
+        .record(
+            "child",
+            "provider.attempt",
+            json!({"run_id":"c","step":0,"attempt":1,"status":500}),
+        )
+        .await
+        .unwrap();
+    store
+        .record(
+            "child",
+            "provider.attempt",
+            json!({"run_id":"c","step":0,"attempt":2,"outcome":"transport-unknown"}),
+        )
+        .await
+        .unwrap();
+    store
+        .record(
+            "child",
+            "provider.retry",
+            json!({"run_id":"c","step":0,"attempt":1,"status":500,"reason":"status 500","delay_ms":10}),
+        )
+        .await
+        .unwrap();
+    store
+        .record(
+            "child",
+            "provider.attempt",
+            json!({"run_id":"c","step":0,"attempt":3,"status":200}),
+        )
+        .await
+        .unwrap();
+    store
+        .record(
+            "child",
+            "usage",
+            json!({"run_id":"c","step":0,"usage":{"inputTokens":10,"outputTokens":1}}),
+        )
+        .await
+        .unwrap();
+    // The parent's own attempt stays in the parent's retry block, not the child's.
+    store
+        .record(
+            "parent",
+            "provider.attempt",
+            json!({"run_id":"p","step":0,"attempt":1,"status":200}),
+        )
+        .await
+        .unwrap();
+
+    let report = store.usage_report("parent").await.unwrap();
+    assert_eq!(report["subagents"]["turns"], 1);
+    assert_eq!(report["subagents"]["attempts"], 3);
+    assert_eq!(report["subagents"]["failedAttempts"], 2);
+    assert_eq!(report["subagents"]["replayedTurns"], 1);
+    assert_eq!(report["retries"]["attempts"], 1);
+}

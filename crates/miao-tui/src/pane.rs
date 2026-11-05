@@ -2308,13 +2308,30 @@ impl Pane for SidebarPane {
                     // A subagent bills on its own Session, so a parent screen
                     // that only shows its own tokens understates the cost.
                     if usage.subagent_sessions > 0 {
+                        // A child's retries are its own billed attempts. When it
+                        // took more than its settled turns, say so rather than
+                        // reporting the child at the price of one turn.
+                        let retried = if usage.subagent_replayed_turns > 0 {
+                            format!(
+                                "  ·  {} attempt{}",
+                                usage.subagent_attempts,
+                                if usage.subagent_attempts == 1 {
+                                    ""
+                                } else {
+                                    "s"
+                                }
+                            )
+                        } else {
+                            String::new()
+                        };
                         lines.push(Line::from(Span::styled(
                             format!(
-                                "subagents {}  ·  {} turn{}  ·  in {}",
+                                "subagents {}  ·  {} turn{}  ·  in {}{}",
                                 usage.subagent_sessions,
                                 usage.subagent_turns,
                                 if usage.subagent_turns == 1 { "" } else { "s" },
                                 crate::status::compact_tokens(usage.subagent_input_tokens),
+                                retried,
                             ),
                             Style::new().fg(palette.text_muted),
                         )));

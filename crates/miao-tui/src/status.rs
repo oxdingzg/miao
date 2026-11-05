@@ -47,6 +47,10 @@ pub struct UsageSummary {
     pub subagent_turns: u64,
     pub subagent_input_tokens: u64,
     pub subagent_cache_read_tokens: u64,
+    /// Attempts the child Sessions made, retries included: a child that spent
+    /// three attempts where the parent spent one was billed for three.
+    pub subagent_attempts: u64,
+    pub subagent_replayed_turns: u64,
     /// Decisions a person had to make for this Session to keep going.
     pub approvals: u64,
     pub answers: u64,
@@ -134,6 +138,8 @@ impl UsageSummary {
             subagent_input_tokens: u64_at(value, &["subagents", "tokens", "input"]).unwrap_or(0),
             subagent_cache_read_tokens: u64_at(value, &["subagents", "tokens", "cacheRead"])
                 .unwrap_or(0),
+            subagent_attempts: u64_at(value, &["subagents", "attempts"]).unwrap_or(0),
+            subagent_replayed_turns: u64_at(value, &["subagents", "replayedTurns"]).unwrap_or(0),
             approvals: u64_at(value, &["interventions", "approvals"]).unwrap_or(0),
             answers: u64_at(value, &["interventions", "answers"]).unwrap_or(0),
             rejections: u64_at(value, &["interventions", "rejections"]).unwrap_or(0),
@@ -172,7 +178,14 @@ mod tests {
             "ttftMs": {"count": 3, "avg": 812, "min": 400, "max": 1200},
             "lineage": [{"protocol": "chat", "model": "glm-5", "turns": 3}],
             "retries": {"attempts": 5, "failedAttempts": 2, "replayedTurns": 1, "details": []},
-            "subagents": {"sessions": 2, "turns": 4, "tokens": {"input": 900, "cacheRead": 700}},
+            "subagents": {
+                "sessions": 2,
+                "turns": 4,
+                "attempts": 6,
+                "failedAttempts": 1,
+                "replayedTurns": 2,
+                "tokens": {"input": 900, "cacheRead": 700}
+            },
             "interventions": {"approvals": 2, "answers": 1, "rejections": 1, "cancels": 0, "inputEdits": 3},
             "rework": {"toolInputErrors": 4},
             "auxiliary": {"usage": {"observations": 9, "tokens": {"input": 1524, "output": 3433}}},
@@ -194,6 +207,9 @@ mod tests {
         assert_eq!(usage.subagent_turns, 4);
         assert_eq!(usage.subagent_input_tokens, 900);
         assert_eq!(usage.subagent_cache_read_tokens, 700);
+        // A child's retried attempts are billed work of its own.
+        assert_eq!(usage.subagent_attempts, 6);
+        assert_eq!(usage.subagent_replayed_turns, 2);
         // Supervision cost: what a person had to decide, and what the model had
         // to redo without asking.
         assert_eq!(usage.approvals, 2);
