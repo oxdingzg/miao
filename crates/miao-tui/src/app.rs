@@ -719,7 +719,11 @@ impl App {
                 if self.pending_accounts {
                     self.pending_accounts = false;
                     if self.dialog.is_none() {
-                        self.open_provider_accounts();
+                        if self.accounts.is_empty() {
+                            self.open_providers();
+                        } else {
+                            self.open_provider_accounts();
+                        }
                     }
                 }
             }
@@ -1609,6 +1613,33 @@ impl App {
                     engine.select_model(&session_id, binding);
                 }
             }
+            Some(Dialog::Providers(list)) => {
+                // A provider narrows the model picker to its own models, which
+                // is the step ctrl+o takes when the account catalog is empty. A
+                // provider this engine does not serve yet has no models to
+                // narrow to, so it says how to add one instead.
+                let Some(provider) = list
+                    .rows
+                    .get(index)
+                    .map(|row| row.id.clone())
+                    .filter(|id| !id.is_empty())
+                else {
+                    return;
+                };
+                self.dialog = None;
+                if !self
+                    .models
+                    .iter()
+                    .any(|model| model.provider.as_deref() == Some(provider.as_str()))
+                {
+                    self.notice(&format!(
+                        "this provider is not configured yet: run `miao auth login {provider} <key>`, add a model for it in miao.json, then reopen /models"
+                    ));
+                    return;
+                }
+                self.models_filter = Some(provider);
+                self.reopen_models_dialog();
+            }
             Some(Dialog::Workspaces(_)) => {
                 let Some(directory) = self
                     .workspaces
@@ -1973,6 +2004,11 @@ impl App {
     /// ctrl+o: the providers that hold an account, the level `provider.accounts`
     /// opens in the TypeScript UI. Reading the catalog needs no Session;
     /// switching an account still does.
+    ///
+    /// Accounts only exist for catalog routes that carry a credential, so a
+    /// configuration that authenticates per provider (`auth.json` keys, OAuth)
+    /// names none and would show an empty table. The provider list answers
+    /// there and is never empty, so an empty account catalog falls back to it.
     fn open_accounts(&mut self) {
         if let Some(engine) = self.engine.as_ref() {
             engine.catalog();
@@ -5756,6 +5792,84 @@ mod tests {
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(app.home.notice(), Some("open a Session to switch accounts"));
+    }
+
+    /// Accounts only exist for catalog routes that name a credential, so a
+    /// per-provider configuration (auth.json keys, OAuth) answers with none.
+    /// ctrl+o must still show something: the provider list is never empty.
+    #[test]
+    fn ctrl_o_falls_back_to_the_provider_list_when_no_account_is_stored() {
+        let mut app = app();
+        app.handle(key(KeyCode::Char('o'), KeyModifiers::CONTROL));
+        assert!(app.pending_accounts);
+        app.handle(AppEvent::Accounts(Vec::new()));
+        assert!(app.pending_providers);
+        app.handle(AppEvent::ProviderCatalog(serde_json::json!({
+            "providers": [
+                { "id": "volcengine", "name": "Volcengine Ark", "models": 16, "configured": true }
+            ]
+        })));
+        let list = app.dialog.as_ref().and_then(Dialog::list).expect("list");
+        assert_eq!(list.title, "providers");
+        assert!(list
+            .rows
+            .iter()
+            .any(|row| row.label == "Volcengine Ark" && row.detail == "16 models · ready"));
+    }
+
+    #[test]
+    fn choosing_a_provider_narrows_the_model_picker_to_it() {
+        let mut app = session_app();
+        app.models = vec![
+            ModelInfo {
+                protocol: "openai-chat".into(),
+                model: "gpt-5".into(),
+                route_id: Some("openai/gpt-5".into()),
+                variant: None,
+                provider: Some("openai".into()),
+            },
+            ModelInfo {
+                protocol: "openai-chat".into(),
+                model: "glm-5".into(),
+                route_id: Some("zhipu/glm-5".into()),
+                variant: None,
+                provider: Some("zhipu".into()),
+            },
+        ];
+        leader(&mut app, 'a');
+        app.handle(AppEvent::ProviderCatalog(serde_json::json!({
+            "providers": [
+                { "id": "openai", "name": "OpenAI", "models": 1, "configured": true },
+                { "id": "zhipu", "name": "Zhipu", "models": 1, "configured": true }
+            ]
+        })));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        let list = app.dialog.as_ref().and_then(Dialog::list).expect("list");
+        assert_eq!(list.title, "models");
+        assert_eq!(app.models_filter.as_deref(), Some("openai"));
+        assert!(list.rows.iter().any(|row| row.label.contains("gpt-5")));
+        assert!(!list.rows.iter().any(|row| row.label.contains("glm-5")));
+    }
+
+    /// A provider the engine serves no model of has nothing to narrow to, so
+    /// the row says how to add one instead of opening an empty picker.
+    #[test]
+    fn choosing_an_unconfigured_provider_explains_how_to_add_it() {
+        let mut app = session_app();
+        leader(&mut app, 'a');
+        app.handle(AppEvent::ProviderCatalog(serde_json::json!({
+            "providers": [
+                { "id": "zhipu", "name": "Zhipu", "models": 4, "configured": false }
+            ]
+        })));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.dialog.is_none());
+        assert!(app
+            .shell
+            .composer
+            .notice
+            .as_deref()
+            .is_some_and(|notice| notice.contains("miao auth login zhipu")));
     }
 
     #[test]
