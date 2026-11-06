@@ -3022,12 +3022,27 @@ impl App {
             // operator's last choice, labelled from the catalog. Nothing else
             // is in play before a Session exists, and the product's home status
             // line reads its local selection the same way.
-            let landing = self.remembered_model.as_deref().map(|model| {
+            // The remembered choice, or the model the newest Session ran on:
+            // an install that predates the remembering still has sessions that
+            // name their model, and the launcher should reflect what this
+            // machine actually uses rather than stay blank until a pick.
+            let landing_model = self.remembered_model.clone().or_else(|| {
+                self.catalog
+                    .first()
+                    .and_then(|session| session.model.clone())
+            });
+            let landing = landing_model.map(|model| {
+                // A Session pin may carry a route id (`provider/model`); the
+                // catalog is keyed by the model name alone.
+                let name = model
+                    .rsplit_once('/')
+                    .map(|(_, name)| name)
+                    .unwrap_or(&model);
                 self.models
                     .iter()
-                    .find(|info| info.model == model)
+                    .find(|info| info.model == model || info.model == name)
                     .map(ModelInfo::identity)
-                    .unwrap_or_else(|| model.to_string())
+                    .unwrap_or(model)
             });
             self.shell.status.model = landing;
             self.shell.status.usage = None;
@@ -4777,6 +4792,49 @@ mod tests {
             app.shell.status.model.as_deref(),
             Some("glm-5 · xiaomi · openai-chat"),
             "the landing strip names the model, its provider and its protocol"
+        );
+    }
+
+    /// An install that never picked a model still has Sessions that name the
+    /// model they ran on, so the launcher reads the newest one instead of
+    /// staying blank until the operator opens the picker.
+    #[test]
+    fn the_landing_strip_falls_back_to_the_newest_session_model() {
+        let mut app = app();
+        app.set_settings(engine::Settings {
+            spawn: crate::transport::EngineSpawn {
+                program: PathBuf::from("/bin/true"),
+                args: Vec::new(),
+                env: Vec::new(),
+            },
+            model: engine::UNROUTED_MODEL.to_string(),
+            embedded: true,
+        });
+        app.models = vec![ModelInfo {
+            protocol: "openai-chat".into(),
+            model: "glm-5".into(),
+            route_id: Some("xiaomi/glm-5".into()),
+            variant: None,
+            provider: Some("xiaomi".into()),
+        }];
+        app.remembered_model = None;
+        app.catalog = vec![crate::session::SessionSummary {
+            id: "ses_a".into(),
+            model: Some("xiaomi/glm-5".into()),
+            updated_at_ms: Some(2),
+            title: None,
+            parent_id: None,
+            archived_at_ms: None,
+            pinned_at_ms: None,
+            directory: None,
+            credential_id: None,
+            preview: None,
+        }];
+        app.update_status();
+        assert_eq!(
+            app.shell.status.model.as_deref(),
+            Some("glm-5 · xiaomi · openai-chat"),
+            "a pinned route id still resolves to the catalog entry"
         );
     }
 
