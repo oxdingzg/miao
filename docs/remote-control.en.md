@@ -125,3 +125,8 @@ cannot be undone, so it appears only when the owner granted **allow permanent
 deletion of Sessions** on the computer, and the phone asks once more before
 deleting. A Session whose turn is still running is never deleted; the phone asks
 you to stop it first.
+
+The menu also offers **archive** and **unarchive**. Archiving is temporary
+storage: the Session is hidden from the list by default and the sidebar's **show
+archived** toggle reveals it again. Archiving leaves the record intact, so it
+needs no deletion authority.

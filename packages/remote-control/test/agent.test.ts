@@ -371,7 +371,7 @@ describe("outbound authorized encrypted Agent", () => {
       calls.push(request)
       return { status: "completed" }
     }
-    const methods = { "session.pin": handler, "session.remove": handler }
+    const methods = { "session.pin": handler, "session.remove": handler, "session.archive": handler }
     const readOnly = await client(await fixture(methods, ["read"]))
     for (const method of ["session.pin", "session.remove"] as const) {
       await readOnly.send(readOnly.request({ method, operationID: crypto.randomUUID() }))
@@ -382,6 +382,10 @@ describe("outbound authorized encrypted Agent", () => {
     const pinner = await client(await fixture(methods, ["read", "session.rename"]))
     await pinner.send(
       pinner.request({ method: "session.pin", operationID: crypto.randomUUID(), payload: { pinned: true } }),
+    )
+    expect(await pinner.receive()).toMatchObject({ type: "result", data: { status: "completed" } })
+    await pinner.send(
+      pinner.request({ method: "session.archive", operationID: crypto.randomUUID(), payload: { archived: true } }),
     )
     expect(await pinner.receive()).toMatchObject({ type: "result", data: { status: "completed" } })
     await pinner.send(pinner.request({ method: "session.remove", operationID: crypto.randomUUID() }))
@@ -395,7 +399,7 @@ describe("outbound authorized encrypted Agent", () => {
       deleter.request({ method: "provider.connectKey", sessionID: undefined, operationID: crypto.randomUUID() }),
     )
     expect(await deleter.receive()).toMatchObject({ type: "error", code: "forbidden" })
-    expect(calls.map((call) => call.method)).toEqual(["session.pin", "session.remove"])
+    expect(calls.map((call) => call.method)).toEqual(["session.pin", "session.archive", "session.remove"])
   })
   test("routes approved requests through real Hub and rejects out-of-scope or stale Runtime targets", async () => {
     const calls: ControlAgent.Request[] = []

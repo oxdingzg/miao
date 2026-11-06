@@ -718,9 +718,14 @@ struct SessionSummary: Identifiable {
     let id: String
     let title: String
     let projectID: String
+    /// Present in `time` only while archived; the wire omits the key otherwise.
+    let archived: Bool
+    let pinned: Bool
     init?(_ value: JSONValue) {
         guard let id = value["id"]?.string, let title = value["title"]?.string, let projectID = value["projectID"]?.string else { return nil }
         self.id = id; self.title = title; self.projectID = projectID
+        archived = value["time"]?["archived"] != nil
+        pinned = value["time"]?["pinned"] != nil
     }
 }
 

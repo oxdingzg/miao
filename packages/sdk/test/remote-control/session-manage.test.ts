@@ -12,6 +12,9 @@ function fixtures(input: { running?: boolean; executionThrows?: boolean } = {}) 
       pin: async (request: unknown) => {
         calls.push({ method: "pin", input: request })
       },
+      archive: async (request: unknown) => {
+        calls.push({ method: "archive", input: request })
+      },
       remove: async (request: unknown) => {
         calls.push({ method: "remove", input: request })
       },
@@ -100,6 +103,19 @@ describe("session management", () => {
 
     expect(result).toEqual({ status: "completed" })
     expect(f.calls.find((call) => call.method === "pin")?.input).toEqual({ sessionID: "session-a", pinned: true })
+  })
+  test("passes an archive flag through to the Session", async () => {
+    const f = fixtures()
+    const result = (await f.methods["session.archive"]!(
+      f.request("session.archive", { archived: false }) as never,
+      f.context as never,
+    )) as { status: string }
+
+    expect(result).toEqual({ status: "completed" })
+    expect(f.calls.find((call) => call.method === "archive")?.input).toEqual({
+      sessionID: "session-a",
+      archived: false,
+    })
   })
 
   test("forwards a search term to the host instead of filtering locally", async () => {
