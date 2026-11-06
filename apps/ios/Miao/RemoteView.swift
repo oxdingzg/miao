@@ -75,6 +75,7 @@ struct RemoteView: View {
                 for client in model.clients.values where client.record.accountID != nil {
                     await client.scene(sceneID, phase: .active)
                     if client.ready { await client.refreshLists() }
+                    if client.ready { await client.loadInbox() }
                 }
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
             }
@@ -237,6 +238,7 @@ struct RemoteView: View {
         .listStyle(.insetGrouped)
         .onAppear {
             Task { await client.refreshLists() }
+            Task { await client.loadInbox() }
         }
     }
 
@@ -264,6 +266,23 @@ struct RemoteView: View {
     }
 
     @ViewBuilder private func accountSessionSections(_ client: HostClient) -> some View {
+        if !client.inbox.isEmpty {
+            Section("待处理") {
+                ForEach(client.inbox) { entry in
+                    Button {
+                        hostID = client.record.id
+                        open(entry, client: client)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.title)
+                            Text(entry.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("inbox-\(entry.sessionID)")
+                }
+            }
+        }
         ForEach(client.lists.keys.sorted(), id: \.self) { project in
             Section(projectName(project)) {
                 ForEach(client.lists[project] ?? []) { session in
@@ -346,6 +365,14 @@ struct RemoteView: View {
     private func select(_ session: SessionSummary) {
         sessionID = session.id
         withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false }
+    }
+
+    /// Opens a Session straight from the inbox: set the target first, then let the
+    /// list catch up, because the entry may sit on a page that is not loaded yet.
+    private func open(_ entry: InboxEntry, client: HostClient) {
+        sessionID = entry.sessionID
+        withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false }
+        Task { await client.refreshLists() }
     }
 
     private var emptySidebar: some View {

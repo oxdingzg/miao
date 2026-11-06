@@ -746,6 +746,9 @@ final class HostClient {
     /// `provider.list` projection for the settings screen; never holds credentials.
     var providers: ProviderDirectory?
     var providersError: String?
+    /// Sessions with a permission or question waiting, newest first.
+    var inbox: [InboxEntry] = []
+    var inboxError: String?
     var sendingTargets = Set<String>()
     private(set) var runtimeID: String
     private var connection: HubConnection?

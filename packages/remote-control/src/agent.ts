@@ -24,6 +24,7 @@ export const Method = Schema.Literals([
   "session.diff",
   "selection.list",
   "provider.list",
+  "pending.list",
   "operation.get",
   "session.create",
   "session.prompt",
