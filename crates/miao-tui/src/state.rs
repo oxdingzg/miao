@@ -47,6 +47,11 @@ pub struct Preferences {
     pub theme: Option<String>,
     #[serde(default)]
     pub terminal_title_enabled: Option<bool>,
+    /// The model the operator last chose, so the home screen can name what the
+    /// next prompt will run on before any Session exists. The product keeps the
+    /// same fact in its local store and reads it from the status line.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 pub fn preferences() -> Preferences {
@@ -56,6 +61,12 @@ pub fn preferences() -> Preferences {
 pub fn save_theme(name: &str) {
     let mut prefs = preferences();
     prefs.theme = Some(name.to_string());
+    write_json("preferences.json", &prefs);
+}
+
+pub fn save_model(model: &str) {
+    let mut prefs = preferences();
+    prefs.model = Some(model.to_string());
     write_json("preferences.json", &prefs);
 }
 

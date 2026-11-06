@@ -344,6 +344,11 @@ pub struct App {
     /// back to the same file on a single-binary start, so a key stored here is
     /// the one a restarted engine reads.
     credential_store: Option<std::path::PathBuf>,
+    /// The model last chosen in this install. The home screen has no Session
+    /// pin and no assistant message to read an answer from, and the engine's
+    /// settings hold the `unavailable/model` sentinel, so without this the
+    /// status strip under the landing prompt named nothing.
+    remembered_model: Option<String>,
     /// Same for the account dialog.
     pending_accounts: bool,
     /// Same for the provider list: it opens when the catalog answers.
@@ -448,6 +453,7 @@ impl App {
             stream_ended: None,
             providers_needing_auth: Vec::new(),
             credential_store: miao_engine::credential::default_database(),
+            remembered_model: crate::state::preferences().model,
             pending_accounts: false,
             pending_providers: false,
             scroll: Scroll::default(),
@@ -1644,8 +1650,20 @@ impl App {
                 let Some(binding) = binding else {
                     return;
                 };
+                // Remember the choice before the Session check: the landing
+                // screen names the model the next prompt will use, and a
+                // Session that is opened later starts from this selection.
+                self.remembered_model = self
+                    .models
+                    .get(index)
+                    .map(|info| info.model.clone())
+                    .or(self.remembered_model.clone());
+                if let Some(model) = self.remembered_model.as_deref() {
+                    crate::state::save_model(model);
+                }
                 let Some(session_id) = self.session_id() else {
                     self.shell.composer.notice = Some("open a Session to select a model".into());
+                    self.update_status();
                     return;
                 };
                 if let Some(engine) = self.engine.as_ref() {
@@ -3000,7 +3018,18 @@ impl App {
             self.shell.title.set_status_alert(false);
             self.shell.composer.queued = 0;
             self.shell.composer.phase = None;
-            self.shell.status.model = None;
+            // The launcher names the model the next prompt would run on: the
+            // operator's last choice, labelled from the catalog. Nothing else
+            // is in play before a Session exists, and the product's home status
+            // line reads its local selection the same way.
+            let landing = self.remembered_model.as_deref().map(|model| {
+                self.models
+                    .iter()
+                    .find(|info| info.model == model)
+                    .map(ModelInfo::identity)
+                    .unwrap_or_else(|| model.to_string())
+            });
+            self.shell.status.model = landing;
             self.shell.status.usage = None;
             self.shell.status.hints.clear();
             // The launch policy holds before any Session opens, so the strip
@@ -3137,7 +3166,7 @@ impl App {
             self.models
                 .iter()
                 .find(|info| info.model == model)
-                .map(ModelInfo::label)
+                .map(ModelInfo::identity)
         });
         self.shell.status.model = self
             .session
@@ -3150,6 +3179,19 @@ impl App {
                     .as_ref()
                     .map(|settings| settings.model.clone())
                     .filter(|model| model != engine::UNROUTED_MODEL)
+            })
+            // The landing screen has nothing else to name: the operator's last
+            // choice is the model the next prompt would run on, and the catalog
+            // knows the provider and protocol that go with it.
+            .or_else(|| {
+                let model = self.remembered_model.clone()?;
+                Some(
+                    self.models
+                        .iter()
+                        .find(|info| info.model == model)
+                        .map(ModelInfo::identity)
+                        .unwrap_or(model),
+                )
             });
         self.shell.status.usage =
             self.usage
@@ -4691,19 +4733,50 @@ mod tests {
         app.models = vec![ModelInfo {
             protocol: "openai-chat".into(),
             model: "glm-5.3-flash".into(),
-            route_id: None,
+            route_id: Some("xiaomi/glm-5.3-flash".into()),
             variant: None,
-            provider: None,
+            provider: Some("xiaomi".into()),
         }];
         app.update_status();
         assert_eq!(
             app.shell.status.model.as_deref(),
-            Some("glm-5.3-flash · openai-chat"),
-            "the strip names the provider as well, like a Session pin does"
+            Some("glm-5.3-flash · xiaomi · openai-chat"),
+            "the strip names the provider, not only the transport"
         );
         assert_ne!(
             app.shell.status.model.as_deref(),
             Some(engine::UNROUTED_MODEL)
+        );
+    }
+
+    /// The landing screen has no Session pin and no assistant message, so the
+    /// strip under its prompt used to name nothing at all. It now names the
+    /// model the operator last chose, with the provider and protocol beside it.
+    #[test]
+    fn the_landing_strip_names_the_remembered_model() {
+        let mut app = app();
+        app.set_settings(engine::Settings {
+            spawn: crate::transport::EngineSpawn {
+                program: PathBuf::from("/bin/true"),
+                args: Vec::new(),
+                env: Vec::new(),
+            },
+            model: engine::UNROUTED_MODEL.to_string(),
+            embedded: true,
+        });
+        app.models = vec![ModelInfo {
+            protocol: "openai-chat".into(),
+            model: "glm-5".into(),
+            route_id: Some("xiaomi/glm-5".into()),
+            variant: None,
+            provider: Some("xiaomi".into()),
+        }];
+        app.remembered_model = Some("glm-5".into());
+        app.update_status();
+        assert_eq!(
+            app.shell.status.model.as_deref(),
+            Some("glm-5 · xiaomi · openai-chat"),
+            "the landing strip names the model, its provider and its protocol"
         );
     }
 
