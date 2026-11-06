@@ -2831,6 +2831,12 @@ async fn execute(
         .then(crate::subagent::time_limit)
         .flatten()
         .map(|limit| std::time::Instant::now() + limit);
+    // Todo debt: count provider turns against the last `todos` revision so a
+    // long stretch of tool calls cannot leave the persisted checklist silently
+    // behind the work. The existing no-progress guard only watches text-only
+    // turns, which is why a busy turn never noticed its own stale list.
+    let mut ledger_turns: std::collections::HashMap<String, (u64, u64)> =
+        std::collections::HashMap::new();
     loop {
         if cancel.is_cancelled() {
             return Ok(());
@@ -3039,6 +3045,21 @@ async fn execute(
             )
             .await?;
         let (mut history, state) = inner.store.selected_input(session).await?;
+        let todos_revision = state["todos"]["revision"].as_u64().unwrap_or(0);
+        let ledger = {
+            let entry = ledger_turns
+                .entry(session.to_string())
+                .or_insert((todos_revision, 0));
+            if entry.0 == todos_revision {
+                entry.1 += 1;
+            } else {
+                *entry = (todos_revision, 0);
+            }
+            match crate::state::ledger_nudge(entry.1) {
+                Some(nudge) => format!("\n\n{nudge}"),
+                None => String::new(),
+            }
+        };
         crate::session_model::validate_history(&history, binding.as_ref(), provider.identity())?;
         // A loop that survived in the transcript is replaced in this request
         // only: the model imitates its own prior output, so leaving it in the
@@ -3055,9 +3076,10 @@ async fn execute(
             } else {
                 let ready = crate::state::runnable_state(&state)?;
                 let text = format!(
-                    "<session-state>\n{}\n</session-state>\nRunnable tasks (all prerequisites completed): {}. Waiting jobs block only their dependents; continue independent runnable work. Current durable progress tracking; recorded evidence is a claim, not independent verification. Follow the latest user request.",
+                    "<session-state>\n{}\n</session-state>\nRunnable tasks (all prerequisites completed): {}. Waiting jobs block only their dependents; continue independent runnable work. Current durable progress tracking; recorded evidence is a claim, not independent verification. Follow the latest user request.{}",
                     serde_json::to_string(&state)?,
-                    serde_json::to_string(&ready)?
+                    serde_json::to_string(&ready)?,
+                    ledger
                 );
                 // The note is optional context, so an input already near the
                 // request budget is sent without it. Refusing the turn left a
