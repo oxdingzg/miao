@@ -73,6 +73,10 @@ struct Inner {
     actors: Mutex<HashMap<String, Actor>>,
     jobs: Mutex<HashMap<String, Background>>,
     terminals: crate::terminal::Registry,
+    /// The credential store this start reads, when a host told us. The picker
+    /// needs it to tell "this provider has an account but no route" from "this
+    /// provider has no account at all", which are different next steps.
+    credential_db: std::sync::OnceLock<Option<std::path::PathBuf>>,
     timers: Mutex<HashMap<String, Background>>,
     crons: Mutex<HashMap<String, Background>>,
     job_slots: Arc<Semaphore>,
@@ -313,6 +317,12 @@ async fn validate_policy_boundary(
 }
 
 impl Runtime {
+    /// Tell the runtime which credential store this start reads. Set once, at
+    /// startup, by whichever layer resolved it.
+    pub fn set_credential_db(&self, path: Option<std::path::PathBuf>) {
+        let _ = self.inner.credential_db.set(path);
+    }
+
     pub async fn new(
         store: Store,
         provider: Arc<dyn Provider>,
@@ -486,6 +496,7 @@ impl Runtime {
                 actors: Mutex::new(HashMap::new()),
                 jobs: Mutex::new(HashMap::new()),
                 terminals: crate::terminal::Registry::default(),
+                credential_db: std::sync::OnceLock::new(),
                 timers: Mutex::new(HashMap::new()),
                 crons: Mutex::new(HashMap::new()),
                 job_slots: Arc::new(Semaphore::new(2)),
@@ -1988,6 +1999,24 @@ impl Runtime {
         let Some(entries) = document.as_object() else {
             return json!({ "providers": [] });
         };
+        // How many accounts this install holds per provider. `configured`
+        // answers "does this engine serve one of its models"; this answers
+        // "is there a key at all", and the two have different next steps.
+        let accounts: std::collections::BTreeMap<String, usize> = self
+            .inner
+            .credential_db
+            .get()
+            .and_then(|path| path.as_deref())
+            .and_then(|path| crate::credential::list_database(path).ok())
+            .map(|credentials| {
+                let mut counts: std::collections::BTreeMap<String, usize> =
+                    std::collections::BTreeMap::new();
+                for credential in credentials.iter().filter(|credential| !credential.expired) {
+                    *counts.entry(credential.integration.clone()).or_default() += 1;
+                }
+                counts
+            })
+            .unwrap_or_default();
         let mut providers: Vec<serde_json::Value> = entries
             .iter()
             .map(|(id, entry)| {
@@ -1997,6 +2026,7 @@ impl Runtime {
                     "name": entry.get("name").and_then(|name| name.as_str()).unwrap_or(id),
                     "models": entry.get("models").and_then(|models| models.as_object()).map(|models| models.len()).unwrap_or(0),
                     "configured": configured,
+                    "accounts": accounts.get(id).copied().unwrap_or(0),
                 })
             })
             .collect();

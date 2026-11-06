@@ -1266,6 +1266,14 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             );
         }
     };
+    // The same store this start read its routes from, so a host can ask which
+    // providers hold an account without holding a route.
+    runtime.set_credential_db(
+        options
+            .get("--credential-db")
+            .map(std::path::PathBuf::from)
+            .or_else(stored_default),
+    );
     if let Some(limits) = context_limits {
         runtime.set_context_limits(Some(limits)).await;
     }

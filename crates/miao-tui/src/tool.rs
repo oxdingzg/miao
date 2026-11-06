@@ -143,6 +143,30 @@ pub fn product_input(engine: &str, input: &Value) -> Value {
                 projected.insert("run_in_background".into(), Value::Bool(true));
             }
         }
+        "apply_patch" => {
+            // A patch names its targets inside the payload, not in a field the
+            // row can print: without this the header read as a bare
+            // `apply_patch` with no subject at all.
+            let patch = record
+                .get("patch")
+                .or_else(|| record.get("text"))
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let targets: Vec<&str> = patch
+                .lines()
+                .filter_map(|line| line.trim().strip_prefix("***"))
+                .filter_map(|rest| rest.rsplit_once(':'))
+                .map(|(_, path)| path.trim())
+                .filter(|path| !path.is_empty())
+                .collect();
+            if let Some(subject) = match targets.as_slice() {
+                [] => None,
+                [only] => Some((*only).to_string()),
+                [first, ..] => Some(format!("{first} +{} more", targets.len() - 1)),
+            } {
+                projected.insert("filePath".into(), Value::String(subject));
+            }
+        }
         "task" => {
             if let Some(agent) = record.get("agent") {
                 projected
@@ -165,6 +189,39 @@ pub fn product_input(engine: &str, input: &Value) -> Value {
         _ => {}
     }
     Value::Object(projected)
+}
+
+#[cfg(test)]
+mod patch_subject_tests {
+    use super::product_input;
+    use serde_json::json;
+
+    /// A patch names its targets inside the payload. Without this projection
+    /// the row read as a bare `apply_patch` with no subject, and a transcript
+    /// of several calls showed the operator nothing at all.
+    #[test]
+    fn a_patch_row_names_what_it_touches() {
+        let one = product_input(
+            "apply_patch",
+            &json!({
+                "patch": "*** Begin Patch\n*** Update File: crates/miao-tui/src/app.rs\n@@\n-a\n+b\n*** End Patch"
+            }),
+        );
+        assert_eq!(one["filePath"], json!("crates/miao-tui/src/app.rs"));
+
+        let many = product_input(
+            "apply_patch",
+            &json!({
+                "patch": "*** Begin Patch\n*** Add File: a.rs\n*** Delete File: b.rs\n*** Update File: c.rs\n*** End Patch"
+            }),
+        );
+        assert_eq!(many["filePath"], json!("a.rs +2 more"));
+
+        // A payload with no target marker leaves the row as it was rather than
+        // printing an empty subject.
+        let none = product_input("apply_patch", &json!({ "patch": "not a patch" }));
+        assert!(none.get("filePath").is_none());
+    }
 }
 
 fn quote_argument(argument: &str) -> String {
@@ -195,6 +252,10 @@ fn header(tool: &ToolPart, label: &str, detail: &str, theme: &Theme) -> Line<'st
         ("✗", Style::new().fg(palette.error))
     } else if tool.output.is_some() {
         ("✓", Style::new().fg(palette.success))
+    } else if tool.unreturned {
+        // The turn ended without this call's result: nothing is in flight, so
+        // the row must not keep the running glyph.
+        ("–", Style::new().fg(palette.text_muted))
     } else {
         ("·", Style::new().fg(palette.warning))
     };
@@ -919,6 +980,32 @@ mod tests {
         }
     }
 
+    /// A call whose turn ended without a result is not running any more. The
+    /// row's state used to be inferred from the result alone, so such a row
+    /// kept the running glyph for the rest of the Session.
+    #[test]
+    fn an_unreturned_call_reads_as_settled_not_running() {
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let mut call = tool("apply_patch", serde_json::json!({}), None, false);
+        call.unreturned = true;
+        let text = format!("{:?}", lines(&call, None, &theme, false, None));
+        assert!(
+            text.contains('–'),
+            "an unanswered call after a finished turn shows the settled glyph: {text}"
+        );
+        assert!(
+            !text.contains('·'),
+            "it must not keep the running glyph: {text}"
+        );
+        // Before the turn ends the same row still reads as in flight.
+        call.unreturned = false;
+        let running = format!("{:?}", lines(&call, None, &theme, false, None));
+        assert!(running.contains('·'), "a live call still shows running");
+    }
+
     fn tool(name: &str, input: Value, output: Option<Value>, failed: bool) -> ToolPart {
         ToolPart {
             id: "call_1".into(),
@@ -926,6 +1013,7 @@ mod tests {
             input,
             output: output.map(|value| value.to_string()),
             failed,
+            unreturned: false,
         }
     }
 

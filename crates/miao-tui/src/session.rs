@@ -513,6 +513,11 @@ pub struct ToolPart {
     /// joined here by `tool_use_id`.
     pub output: Option<String>,
     pub failed: bool,
+    /// The turn this call belonged to has ended without a result ever arriving
+    /// (an interrupted turn, or a call the engine closed bare). Kept apart from
+    /// `failed`, which is a result the engine marked as an error: a row with
+    /// neither a result nor this flag is genuinely still running.
+    pub unreturned: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -582,6 +587,25 @@ pub struct Transcript {
     /// Sequence of the newest projected message. Messages and events share one
     /// sequence, so it says whether a failure still trails the conversation.
     pub tail_seq: u64,
+}
+
+impl Transcript {
+    /// Close every tool call that will never get a result. Called when the run
+    /// that owned them is over: the row's state is inferred from the result
+    /// alone, so an unanswered call otherwise kept the running glyph forever.
+    pub fn settle_unreturned(&mut self) {
+        for entry in &mut self.entries {
+            let Entry::Assistant { parts, .. } = entry else {
+                continue;
+            };
+            for part in parts {
+                let Part::Tool(tool) = part else { continue };
+                if tool.output.is_none() {
+                    tool.unreturned = true;
+                }
+            }
+        }
+    }
 }
 
 impl Transcript {
@@ -737,6 +761,7 @@ impl Transcript {
                         input: block.get("input").cloned().unwrap_or(Value::Null),
                         output: None,
                         failed: false,
+                        unreturned: false,
                     }));
                 }
                 _ => {}
@@ -863,6 +888,48 @@ fn failure_of(seq: u64, data: &Value) -> Option<(u64, String)> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// A finished run closes the calls that never got a result, and leaves the
+    /// ones that did exactly as they were.
+    #[test]
+    fn a_finished_turn_settles_the_calls_it_never_answered() {
+        let answered = ToolPart {
+            id: "call_1".into(),
+            name: "read_file".into(),
+            input: Value::Null,
+            output: Some("ok".into()),
+            failed: false,
+            unreturned: false,
+        };
+        let unanswered = ToolPart {
+            id: "call_2".into(),
+            name: "apply_patch".into(),
+            input: Value::Null,
+            output: None,
+            failed: false,
+            unreturned: false,
+        };
+        let mut transcript = Transcript {
+            entries: vec![Entry::Assistant {
+                agent: None,
+                model: None,
+                parts: vec![Part::Tool(answered), Part::Tool(unanswered)],
+            }],
+            ..Default::default()
+        };
+        transcript.settle_unreturned();
+        let Entry::Assistant { parts, .. } = &transcript.entries[0] else {
+            panic!("assistant entry");
+        };
+        let [Part::Tool(answered), Part::Tool(unanswered)] = parts.as_slice() else {
+            panic!("two tool parts");
+        };
+        assert!(
+            !answered.unreturned,
+            "a call that got its result is untouched"
+        );
+        assert!(unanswered.unreturned, "an unanswered call is settled");
+    }
 
     fn snapshot(
         id: &str,

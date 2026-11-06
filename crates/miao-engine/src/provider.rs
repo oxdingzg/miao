@@ -552,6 +552,7 @@ pub trait Provider: Send + Sync {
                 variants: vec![],
                 model_key: None,
                 credential_id: None,
+                account: None,
             })
             .collect()
     }

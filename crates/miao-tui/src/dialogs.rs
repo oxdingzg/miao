@@ -19,6 +19,10 @@ pub struct ModelInfo {
     /// The provider half of the catalog's model key (`volcengine/model`), so
     /// the picker groups the list the way the product's does.
     pub provider: Option<String>,
+    /// The account this route spends, when the provider holds more than one.
+    /// Two accounts answer through two routes, and the label is what tells
+    /// them apart in the picker.
+    pub account: Option<String>,
 }
 
 impl ModelInfo {
@@ -66,12 +70,17 @@ impl ModelInfo {
                                     .collect::<Vec<_>>()
                             })
                             .unwrap_or_default();
+                        let account = entry
+                            .get("account")
+                            .and_then(Value::as_str)
+                            .map(str::to_string);
                         let single = Self {
                             protocol: protocol.to_string(),
                             model: model.to_string(),
                             route_id: route_id.clone(),
                             variant: None,
                             provider: provider.clone(),
+                            account: account.clone(),
                         };
                         if variants.is_empty() {
                             return vec![single];
@@ -84,6 +93,7 @@ impl ModelInfo {
                                 route_id: route_id.clone(),
                                 variant: Some(variant),
                                 provider: provider.clone(),
+                                account: account.clone(),
                             })
                             .collect()
                     })
@@ -93,9 +103,18 @@ impl ModelInfo {
     }
 
     pub fn label(&self) -> String {
+        // The account rides the label for providers holding several keys: the
+        // same model then appears once per account, and only the label tells
+        // the operator which key a choice spends.
+        let account = self
+            .account
+            .as_deref()
+            .filter(|account| *account != "default")
+            .map(|account| format!("{account} · "))
+            .unwrap_or_default();
         match &self.variant {
-            Some(variant) => format!("{} · {} · {variant}", self.model, self.protocol),
-            None => format!("{} · {}", self.model, self.protocol),
+            Some(variant) => format!("{account}{} · {} · {variant}", self.model, self.protocol),
+            None => format!("{account}{} · {}", self.model, self.protocol),
         }
     }
 
@@ -108,6 +127,13 @@ impl ModelInfo {
         let mut parts = vec![self.model.clone()];
         if let Some(provider) = &self.provider {
             parts.push(provider.clone());
+        }
+        if let Some(account) = self
+            .account
+            .as_deref()
+            .filter(|account| *account != "default")
+        {
+            parts.push(account.to_string());
         }
         parts.push(self.protocol.clone());
         if let Some(variant) = &self.variant {
@@ -128,6 +154,24 @@ impl ModelInfo {
             }
         }
         providers
+    }
+
+    /// The id a selection is remembered by: the route when the catalog names
+    /// one, otherwise `provider/model`, which is what the engine keys a model
+    /// by when a provider serves exactly one account.
+    pub fn route(&self) -> String {
+        self.route_id.clone().unwrap_or_else(|| {
+            format!(
+                "{}/{}",
+                self.provider.as_deref().unwrap_or_default(),
+                self.model
+            )
+        })
+    }
+
+    /// Whether a remembered pin or a starred route names this model.
+    pub fn matches(&self, name: &str) -> bool {
+        self.model == name || self.route() == name
     }
 
     pub fn binding(&self) -> Value {
@@ -227,6 +271,9 @@ pub struct ProviderEntry {
     /// Whether this engine already serves a model of the provider. The model
     /// picker marks the rest as needing auth instead of hiding them.
     pub configured: bool,
+    /// How many unexpired credentials this install holds for the provider, so a
+    /// row can tell "no account" from "an account but no route".
+    pub accounts: u64,
 }
 
 impl ProviderEntry {
@@ -243,6 +290,7 @@ impl ProviderEntry {
                     .get("configured")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
+                let accounts = entry.get("accounts").and_then(Value::as_u64).unwrap_or(0);
                 Some(Self {
                     id: id.to_string(),
                     name: entry
@@ -252,9 +300,20 @@ impl ProviderEntry {
                         .to_string(),
                     detail: format!(
                         "{models} models · {}",
-                        if configured { "ready" } else { "needs auth" }
+                        // "needs auth" named the wrong thing: a provider can
+                        // hold an account and still serve no route, which needs
+                        // a models entry rather than a key.
+                        match (configured, accounts) {
+                            (true, 0) => "ready".to_string(),
+                            (true, 1) => "ready · 1 account".to_string(),
+                            (true, many) => format!("ready · {many} accounts"),
+                            (false, 0) => "needs auth".to_string(),
+                            (false, 1) => "1 account · no route".to_string(),
+                            (false, many) => format!("{many} accounts · no route"),
+                        }
                     ),
                     configured,
+                    accounts,
                 })
             })
             .collect()
@@ -629,17 +688,21 @@ impl Dialog {
         current: Option<&str>,
         provider: Option<&str>,
     ) -> Self {
-        Self::models_with_needs_auth(models, current, provider, &[])
+        Self::models_with_needs_auth(models, current, provider, &[], &[], &[])
     }
 
-    /// The picker plus a tail section naming providers the snapshot knows but
-    /// this engine does not serve yet: visible on the road, one `miao auth
-    /// login` away.
+    /// The picker plus a tail section naming providers this engine does not
+    /// serve yet, split by what stands in the way: a provider with no stored
+    /// key needs one, while a provider whose key exists but whose route the
+    /// manifest does not carry needs its model list looked at. One line of
+    /// advice cannot serve both.
     pub fn models_with_needs_auth(
         models: &[ModelInfo],
         current: Option<&str>,
         provider: Option<&str>,
-        needs_auth: &[(String, String)],
+        unserved: &[(String, String, bool)],
+        recents: &[String],
+        favorites: &[String],
     ) -> Self {
         // The picker groups by provider the way the product's does: a muted
         // header row names each provider and the models beneath it belong to
@@ -647,6 +710,49 @@ impl Dialog {
         // can turn a chosen row back into a binding without assuming the
         // dialog's indices match the catalog's.
         let mut rows: Vec<Row> = Vec::new();
+        // Favorites then recents lead the list, the way the product's picker
+        // opens above its provider groups: the answer an operator wants is
+        // usually one they starred or already used, and neither should need
+        // scrolling past providers they moved away from.
+        if provider.is_none() {
+            for (title, names) in [("favorites", favorites), ("recent", recents)] {
+                let mut listed: Vec<usize> = Vec::new();
+                for name in names {
+                    if let Some(index) = models
+                        .iter()
+                        .position(|model| model.matches(name))
+                        .filter(|index| !listed.contains(index))
+                    {
+                        listed.push(index);
+                    }
+                }
+                if listed.is_empty() {
+                    continue;
+                }
+                rows.push(Row {
+                    id: format!("group:{title}"),
+                    label: title.to_string(),
+                    detail: String::new(),
+                });
+                for index in listed {
+                    rows.push(Row {
+                        id: index.to_string(),
+                        label: models[index].label(),
+                        detail: models[index].route_id.clone().unwrap_or_default(),
+                    });
+                }
+            }
+            // An install holding no route at all says so, instead of opening an
+            // empty box: the tail below is the way out, and the first line has
+            // to admit there is nothing else yet.
+            if models.is_empty() {
+                rows.push(Row {
+                    id: "empty".into(),
+                    label: "no models yet".to_string(),
+                    detail: "store a provider key to start".to_string(),
+                });
+            }
+        }
         // A provider's models are merged even when the catalog lists them in
         // separate runs, so a provider names itself once.
         let mut groups: Vec<(Option<String>, Vec<usize>)> = Vec::new();
@@ -687,23 +793,39 @@ impl Dialog {
                 });
             }
         }
-        if !needs_auth.is_empty() && provider.is_none() {
-            rows.push(Row {
-                id: "group:needs-auth".into(),
-                label: "more providers · needs auth".into(),
-                detail: String::new(),
-            });
-            for (id, name) in needs_auth {
+        if provider.is_none() {
+            for (title, holds_key) in [("needs a key", false), ("has a key · no route", true)] {
+                let entries: Vec<&(String, String, bool)> = unserved
+                    .iter()
+                    .filter(|entry| entry.2 == holds_key)
+                    .collect();
+                if entries.is_empty() {
+                    continue;
+                }
                 rows.push(Row {
-                    id: format!("auth:{id}"),
-                    label: name.clone(),
-                    detail: "enter to store a key".to_string(),
+                    id: format!(
+                        "group:{}",
+                        if holds_key { "no-route" } else { "needs-auth" }
+                    ),
+                    label: title.to_string(),
+                    detail: String::new(),
                 });
+                for (id, name, _) in entries {
+                    rows.push(Row {
+                        id: format!("{}:{id}", if holds_key { "accounts" } else { "auth" }),
+                        label: name.clone(),
+                        detail: if holds_key {
+                            "key stored · no route serves it".to_string()
+                        } else {
+                            "enter to store a key".to_string()
+                        },
+                    });
+                }
             }
         }
         let hint = match provider {
-            Some(_) => "one provider · ctrl+o widen · type to filter · esc close",
-            None => "type to filter · ctrl+o pick provider · esc close",
+            Some(_) => "one provider · ctrl+o widen · ctrl+f favorite · esc close",
+            None => "type to filter · ctrl+f favorite · ctrl+o provider · esc close",
         };
         Dialog::Models(ListDialog::new("models", rows, ListKind::Plain, hint))
     }
@@ -1879,6 +2001,113 @@ mod tests {
         );
         assert!(list.rows[0].is_header());
         assert!(!list.rows[1].is_header());
+    }
+
+    /// The operator's recent models lead the picker, the way the product's
+    /// dialog opens with its recents above the provider groups: the answer an
+    /// operator wants is usually one they already gave.
+    #[test]
+    fn recents_lead_the_picker_once_each() {
+        let recents = vec![
+            "haiku".to_string(),
+            "glm-5".to_string(),
+            "haiku".to_string(),
+        ];
+        let dialog = Dialog::models_with_needs_auth(&grouped(), None, None, &[], &recents, &[]);
+        let list = dialog.list().expect("list");
+        let labels: Vec<&str> = list.rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(
+            &labels[..3],
+            &["recent", "haiku · openai-chat", "glm-5 · openai-chat"],
+            "recents come first, in the order they were used, once each"
+        );
+        assert!(list.rows[0].is_header());
+        // The provider groups still follow, unchanged.
+        assert_eq!(labels[3], "zhipu");
+        // A provider-narrowed picker has no recents section: everything in it
+        // is already that provider.
+        let narrowed =
+            Dialog::models_with_needs_auth(&grouped(), None, Some("zhipu"), &[], &recents, &[]);
+        let narrowed = narrowed.list().expect("list");
+        assert!(
+            narrowed
+                .rows
+                .iter()
+                .all(|row| row.label.as_str() != "recent"),
+            "the narrowed picker stays a single provider"
+        );
+    }
+
+    /// Starred models lead even the recents: an operator who starred a route
+    /// asked for it by name, which outranks "used last".
+    #[test]
+    fn favorites_lead_the_picker_before_recents() {
+        let favorites = vec!["glm-5".to_string()];
+        let recents = vec!["haiku".to_string()];
+        let dialog =
+            Dialog::models_with_needs_auth(&grouped(), None, None, &[], &recents, &favorites);
+        let list = dialog.list().expect("list");
+        let labels: Vec<&str> = list.rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(
+            &labels[..3],
+            &["favorites", "glm-5 · openai-chat", "recent"]
+        );
+        // A favorite row still names its position in the catalog, so starring
+        // one and choosing it bind the same model.
+        let position: usize = list.rows[1].id.parse().expect("catalog position");
+        assert_eq!(
+            grouped()[position].model,
+            "glm-5",
+            "the starred row binds the model it names"
+        );
+        assert!(list.rows[2].is_header());
+    }
+
+    /// An install holding no route at all says so, instead of opening an empty
+    /// box with a tail of providers whose keys are the only way forward.
+    #[test]
+    fn an_empty_catalog_names_itself_and_the_way_out() {
+        let unserved = vec![("anthropic".to_string(), "Anthropic".to_string(), false)];
+        let dialog = Dialog::models_with_needs_auth(&[], None, None, &unserved, &[], &[]);
+        let list = dialog.list().expect("list");
+        let labels: Vec<&str> = list.rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            ["no models yet", "needs a key", "Anthropic"],
+            "the empty state sits above the one action that fills it"
+        );
+        assert_eq!(list.rows[0].detail, "store a provider key to start");
+    }
+
+    /// A stored key with no route behind it is a different problem from a
+    /// missing key, and the picker says which one the operator has.
+    #[test]
+    fn a_provider_holding_a_key_without_a_route_says_that() {
+        let unserved = vec![
+            ("anthropic".to_string(), "Anthropic".to_string(), false),
+            ("mistral".to_string(), "Mistral".to_string(), true),
+        ];
+        let dialog = Dialog::models_with_needs_auth(&grouped(), None, None, &unserved, &[], &[]);
+        let list = dialog.list().expect("list");
+        let rows: Vec<(&str, &str)> = list
+            .rows
+            .iter()
+            .map(|row| (row.label.as_str(), row.detail.as_str()))
+            .collect();
+        assert!(
+            rows.contains(&("needs a key", "")),
+            "a provider with no credential leads its own group"
+        );
+        assert!(
+            rows.contains(&("Mistral", "key stored · no route serves it")),
+            "a stored key with no route says so instead of asking for the key again"
+        );
+        let mistral = list
+            .rows
+            .iter()
+            .find(|row| row.label == "Mistral")
+            .expect("mistral row");
+        assert_eq!(mistral.id, "accounts:mistral");
     }
 
     #[test]

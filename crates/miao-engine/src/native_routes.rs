@@ -66,12 +66,24 @@ pub fn routes(
         Some(Ok(list)) => list,
         _ => Vec::new(),
     };
-    // One unexpired credential per integration. A later stored credential is
-    // reachable through the product UI, which rewrites the manifest on use.
-    let mut live: BTreeMap<&str, &crate::credential::Metadata> = BTreeMap::new();
+    // Every unexpired credential per integration, the default label first: the
+    // engine models an account as a route, so a provider holding two keys has
+    // to answer through two routes. Keeping the first account on the plain
+    // `provider/model` id leaves a Session that already pinned that id working.
+    let mut live: BTreeMap<&str, Vec<&crate::credential::Metadata>> = BTreeMap::new();
     for credential in credentials.iter().filter(|credential| !credential.expired) {
         live.entry(credential.integration.as_str())
-            .or_insert(credential);
+            .or_default()
+            .push(credential);
+    }
+    for accounts in live.values_mut() {
+        accounts.sort_by(|left, right| {
+            let rank =
+                |credential: &crate::credential::Metadata| u8::from(credential.label != "default");
+            rank(left)
+                .cmp(&rank(right))
+                .then_with(|| left.id.cmp(&right.id))
+        });
     }
     let mut entries = Vec::new();
     let mut primary_seen = false;
@@ -79,7 +91,10 @@ pub fn routes(
         if provider.get("disabled").and_then(Value::as_bool) == Some(true) {
             continue;
         }
-        let Some(credential) = live.get(id.as_str()) else {
+        let Some(accounts) = live.get(id.as_str()) else {
+            continue;
+        };
+        let Some(account) = accounts.first() else {
             continue;
         };
         let Some(db_path) = credential_db else {
@@ -110,8 +125,8 @@ pub fn routes(
                 "credential": {
                     "type": "database",
                     "path": db_path.display().to_string(),
-                    "id": credential.id,
-                    "integration": credential.integration,
+                    "id": account.id,
+                    "integration": account.integration,
                 },
                 "primary": primary,
             });
@@ -137,7 +152,11 @@ pub fn routes(
                     entry["limit"] = Value::Object(bounded);
                 }
             }
-            entries.push(entry);
+            for (position, account) in accounts.iter().enumerate() {
+                entries.push(route_entry(
+                    &entry, id, model_id, account, position, &entries,
+                ));
+            }
         }
     }
     // Credential integrations the configuration does not name still answer
@@ -153,7 +172,20 @@ pub fn routes(
             if providers.contains_key(id) {
                 continue;
             }
-            let Some(credential) = live.get(id.as_str()).filter(|c| c.kind == "key") else {
+            let Some(accounts) = live
+                .get(id.as_str())
+                .map(|accounts| {
+                    accounts
+                        .iter()
+                        .filter(|account| account.kind == "key")
+                        .copied()
+                        .collect::<Vec<_>>()
+                })
+                .filter(|accounts| !accounts.is_empty())
+            else {
+                continue;
+            };
+            let Some(account) = accounts.first() else {
                 continue;
             };
             let Some(db_path) = credential_db else {
@@ -188,8 +220,8 @@ pub fn routes(
                     "credential": {
                         "type": "database",
                         "path": db_path.display().to_string(),
-                        "id": credential.id,
-                        "integration": credential.integration,
+                        "id": account.id,
+                        "integration": account.integration,
                     },
                 });
                 entry["endpoint"] = json!(endpoint);
@@ -214,7 +246,11 @@ pub fn routes(
                 {
                     entry["input_modalities"] = json!(input);
                 }
-                entries.push(entry);
+                for (position, account) in accounts.iter().enumerate() {
+                    entries.push(route_entry(
+                        &entry, id, model_id, account, position, &entries,
+                    ));
+                }
             }
         }
     }
@@ -377,6 +413,73 @@ fn models_snapshot() -> Option<Value> {
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
 }
 
+/// One route per account. The engine models an account as a route, so a
+/// provider holding several keys answers through several routes; the first
+/// keeps the plain `provider/model` id a Session may already carry, and the
+/// rest name their account so they stay distinct and findable.
+fn route_entry(
+    base: &Value,
+    provider: &str,
+    model: &str,
+    account: &crate::credential::Metadata,
+    position: usize,
+    entries: &[Value],
+) -> Value {
+    let key = format!("{provider}/{model}");
+    let mut entry = base.clone();
+    if position > 0 {
+        let candidate = format!("{key}@{}", account_slot(&account.label));
+        entry["id"] = json!(free_route_id(&candidate, entries));
+        // Only the account that answers the plain id can be the primary route.
+        entry["primary"] = json!(false);
+    }
+    entry["credential"]["id"] = json!(account.id);
+    entry["credential"]["integration"] = json!(account.integration);
+    entry["account"] = json!({
+        "id": account.id,
+        "model_key": key,
+        "label": account.label,
+        "default": position == 0,
+    });
+    entry
+}
+
+/// A label that can sit in a route id: ids travel through Session pins and
+/// command arguments, so keep them to characters that need no quoting.
+fn account_slot(label: &str) -> String {
+    let slot: String = label
+        .chars()
+        .map(|character| {
+            match character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                true => character,
+                false => '-',
+            }
+        })
+        .collect();
+    let slot = slot.trim_matches('-').to_string();
+    match slot.is_empty() {
+        true => "account".to_string(),
+        false => slot,
+    }
+}
+
+/// Two labels can normalize to the same slot (`work!` and `work?`), so a route
+/// id is only reused when nothing already claims it.
+fn free_route_id(candidate: &str, entries: &[Value]) -> String {
+    let taken = |id: &str| {
+        entries
+            .iter()
+            .any(|entry| entry.get("id").and_then(Value::as_str) == Some(id))
+    };
+    if !taken(candidate) {
+        return candidate.to_string();
+    }
+    (2..)
+        .map(|suffix| format!("{candidate}-{suffix}"))
+        .find(|id| !taken(id))
+        .expect("a free route id")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -455,6 +558,82 @@ mod tests {
         assert_eq!(entry["credential"]["integration"], "volcengine");
         assert_eq!(entry["input_modalities"], json!(["text"]));
         assert_eq!(entry["limit"]["context"], 1048576);
+    }
+
+    /// A provider can hold several accounts, and the engine models an account as
+    /// a route: both keys have to answer for the same model, with the default
+    /// one on the plain id a Session may already have pinned.
+    #[test]
+    fn a_second_credential_adds_a_second_route_for_the_same_model() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("miao.json"),
+            serde_json::to_string(&json!({
+                "model": "volcengine/deepseek",
+                "providers": {
+                    "volcengine": {
+                        "models": {
+                            "deepseek": {
+                                "api": {
+                                    "type": "aisdk",
+                                    "package": "@ai-sdk/openai-compatible",
+                                    "url": "https://ark.example.com/api/v3",
+                                },
+                            }
+                        }
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let database = directory.path().join("credentials.db");
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .execute(
+                "CREATE TABLE credential (id text primary key, integration_id text, label text, value text)",
+                [],
+            )
+            .unwrap();
+        // "default" sorts after "work" by id, so the label rank has to decide.
+        for (id, label) in [("cred_b", "default"), ("cred_a", "work")] {
+            connection
+                .execute(
+                    "INSERT INTO credential VALUES (?1, 'volcengine', ?2, '{\"type\":\"key\",\"key\":\"k\"}')",
+                    rusqlite::params![id, label],
+                )
+                .unwrap();
+        }
+        let entries = routes(
+            &[Source::Dir(directory.path().to_path_buf())],
+            Some(&database),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            entries.len(),
+            2,
+            "{}",
+            serde_json::to_string(&entries).unwrap()
+        );
+        let default = entries
+            .iter()
+            .find(|entry| entry["id"] == "volcengine/deepseek")
+            .expect("the default account keeps the plain id");
+        assert_eq!(default["primary"], true);
+        assert_eq!(default["credential"]["id"], "cred_b");
+        assert_eq!(default["account"]["label"], "default");
+        assert_eq!(default["account"]["default"], true);
+        assert_eq!(default["account"]["model_key"], "volcengine/deepseek");
+        let named = entries
+            .iter()
+            .find(|entry| entry["id"] == "volcengine/deepseek@work")
+            .expect("the named account gets its own route");
+        assert_eq!(named["primary"], false);
+        assert_eq!(named["credential"]["id"], "cred_a");
+        assert_eq!(named["account"]["label"], "work");
+        assert_eq!(named["account"]["default"], false);
+        assert_eq!(named["model"], "deepseek");
     }
 
     #[test]

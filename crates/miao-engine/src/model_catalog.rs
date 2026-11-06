@@ -129,6 +129,10 @@ pub struct Info {
     pub model_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub credential_id: Option<String>,
+    /// The operator's name for the account this route spends. Providers can
+    /// hold several credentials; the label is what tells them apart.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 
 /// Trusted route metadata. Only logical model and opaque credential identities
@@ -141,6 +145,8 @@ pub struct Account {
     pub model_key: String,
     #[serde(default, rename = "default")]
     pub is_default: bool,
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 pub struct Catalog {
@@ -364,6 +370,11 @@ impl Provider for Catalog {
                     .as_ref()
                     .and_then(|route| self.accounts.get(route))
                     .and_then(|account| account.id.clone()),
+                account: self
+                    .primary_route
+                    .as_ref()
+                    .and_then(|route| self.accounts.get(route))
+                    .and_then(|account| account.label.clone()),
             })
             .chain(self.routes.iter().filter_map(|(id, provider)| {
                 provider.identity().map(|identity| Info {
@@ -372,6 +383,10 @@ impl Provider for Catalog {
                         .get(id)
                         .map(|account| account.model_key.clone()),
                     credential_id: self.accounts.get(id).and_then(|account| account.id.clone()),
+                    account: self
+                        .accounts
+                        .get(id)
+                        .and_then(|account| account.label.clone()),
                     route_id: Some(id.clone()),
                     protocol: identity.protocol,
                     model: identity.model,
