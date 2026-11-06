@@ -2277,7 +2277,8 @@ fn clip_cells(line: &str, offset: usize, width: u16) -> String {
 /// The last 24 hours of billed usage, one glyph per hour.
 ///
 /// Colour only ever underlines what the glyphs already say: bar height is the
-/// volume, the trailing column is the current hour, `~` says a figure covers
+/// volume against the day's 95th percentile (an hour above it fills the top
+/// level), the trailing column is the current hour, `~` says a figure covers
 /// fewer turns than the window counted, and `partial` says retention removed
 /// rows inside it. A monochrome terminal loses none of those facts.
 fn hourly_lines(
@@ -2308,7 +2309,6 @@ fn hourly_lines(
         lines.push(Line::from(Span::styled("no usage recorded", muted)));
         return lines;
     }
-    let peak = cells.iter().copied().max().unwrap_or(0);
     let mut sorted = cells.clone();
     sorted.sort_unstable();
     let p95 = sorted[(sorted.len() * 95 / 100).min(sorted.len() - 1)];
@@ -2320,13 +2320,21 @@ fn hourly_lines(
             _ if *tokens > p95 => palette.warning,
             _ => palette.accent,
         };
+        // Bar height is the volume against the day's 95th percentile hour, so
+        // one outlier cannot flatten the other twenty-three into the baseline;
+        // an hour above that percentile fills the top level and keeps its
+        // warning colour, which is how a monochrome reader still sees it.
         // Zero hours keep a baseline dot so the axis stays 24 cells wide: a gap
         // would read as "no data", which is a different fact from "no spend".
-        let glyph = match (tokens, peak) {
-            (0, _) => '·',
-            (tokens, peak) => {
-                let level = (tokens * 8 / peak.max(1)).clamp(1, 8) as usize;
-                GLYPHS[level - 1]
+        let glyph = match *tokens {
+            0 => '·',
+            tokens => {
+                let top = GLYPHS.len() as u64;
+                let level = match tokens > p95 {
+                    true => top,
+                    false => (tokens * (top - 1) / p95.max(1)).clamp(1, top - 1),
+                };
+                GLYPHS[level as usize - 1]
             }
         };
         spans.push(Span::styled(glyph.to_string(), Style::new().fg(colour)));
@@ -5494,6 +5502,57 @@ mod tests {
             "retention is stated: {rendered}"
         );
         assert!(rendered.contains('~'), "partial cost coverage is marked");
+    }
+
+    /// A day with one expensive hour must still show the shape of the other
+    /// twenty-three. Scaling bar height to the busiest hour flattened them all
+    /// onto the baseline, so the strip said "one spike" and nothing else.
+    #[test]
+    fn one_outlier_hour_does_not_flatten_the_rest_of_the_strip() {
+        let buckets = (0..24)
+            .map(|index| crate::status::HourlyBucket {
+                start_ms: 1_760_000_000_000 + index * 3_600_000,
+                tokens: match index {
+                    15 => 100_000,
+                    _ => 1_000,
+                },
+                turns: 1,
+                cost_usd: 0.001,
+            })
+            .collect::<Vec<_>>();
+        let usage = crate::status::HourlyUsage {
+            buckets,
+            input: 123_000,
+            output: 1_000,
+            cache_read: 0,
+            turns: 24,
+            tokens: 123_000,
+            cost_usd: 0.024,
+            cost_turns: 24,
+            peak: Some((1_760_000_000_000 + 15 * 3_600_000, 100_000)),
+            truncated: false,
+        };
+        let theme = home_theme();
+        let strip = hourly_lines(Some(&usage), 40, &theme.palette);
+        let glyphs = strip[1]
+            .spans
+            .iter()
+            .map(|span| span.content.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(glyphs.len(), 24);
+        assert_eq!(
+            glyphs[0], "▇",
+            "a typical hour keeps nearly the whole height: {glyphs:?}"
+        );
+        assert_eq!(
+            glyphs[15], "█",
+            "the outlier fills the top level: {glyphs:?}"
+        );
+        assert_eq!(
+            strip[1].spans[15].style.fg,
+            Some(theme.palette.warning),
+            "the outlier keeps its warning colour"
+        );
     }
 
     /// A long CJK title and a long CJK todo each stay on one row. Counting
