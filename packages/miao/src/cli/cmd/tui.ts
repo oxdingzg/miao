@@ -164,7 +164,7 @@ export const TuiThreadCommand = cmd({
         return
       }
 
-      if (process.platform === "win32" && !(await import("@miao/tui/terminal-win32")).vtSupported()) {
+      if (process.platform === "win32" && !(await import("./terminal-win32")).vtSupported()) {
         UI.error(
           "The interactive interface needs a VT-capable terminal. Use Windows Terminal or PowerShell 7, or run `miao run` for plain output.",
         )
@@ -205,7 +205,7 @@ export const TuiThreadCommand = cmd({
           process.exitCode = 1
           return
         }
-        if (process.platform === "win32" && !(await import("@miao/tui/terminal-win32")).vtSupported()) {
+        if (process.platform === "win32" && !(await import("./terminal-win32")).vtSupported()) {
           UI.error(
             "The interactive interface needs a VT-capable terminal. Use Windows Terminal or PowerShell 7, or run `miao run` for plain output.",
           )
@@ -287,7 +287,7 @@ export const TuiThreadCommand = cmd({
 
     // Argument validation above is terminal-independent, so a non-VT console
     // still reports a usage error before the VT-capability refusal.
-    if (process.platform === "win32" && !(await import("@miao/tui/terminal-win32")).vtSupported()) {
+    if (process.platform === "win32" && !(await import("./terminal-win32")).vtSupported()) {
       UI.error(
         "The interactive interface needs a VT-capable terminal. Use Windows Terminal or PowerShell 7, or run `miao run` for plain output.",
       )
@@ -296,7 +296,7 @@ export const TuiThreadCommand = cmd({
     }
 
     const unguard =
-      process.platform === "win32" ? (await import("@miao/tui/terminal-win32")).win32InstallCtrlCGuard() : undefined
+      process.platform === "win32" ? (await import("./terminal-win32")).win32InstallCtrlCGuard() : undefined
     try {
       if (args.fork && !args.continue && !args.session) {
         UI.error("--fork requires --continue or --session")

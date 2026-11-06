@@ -185,7 +185,7 @@ WindowLifecycle.install()
 
 try {
   if (process.platform === "win32") {
-    const { win32EnableVirtualTerminal } = await import("@miao/tui/terminal-win32")
+    const { win32EnableVirtualTerminal } = await import("./cli/cmd/terminal-win32")
     win32EnableVirtualTerminal()
   }
   const cli = await buildCli(selection)

@@ -179,7 +179,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
 
   try {
     // Enable ANSI/VT on legacy Windows consoles before the renderer writes.
-    const { win32EnableVirtualTerminal } = await import("@miao/tui/terminal-win32")
+    const { win32EnableVirtualTerminal } = await import("../terminal-win32")
     win32EnableVirtualTerminal()
     const renderer = await createCliRenderer({
       stdin: source.stdin,
