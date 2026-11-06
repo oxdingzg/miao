@@ -11,6 +11,8 @@ struct RemoteView: View {
     @State private var pairing = false
     @State private var accountPresented = false
     @State private var providersHost: UUID?
+    @State private var search = ""
+    @State private var deleteTarget: SessionSummary?
     @State private var invitation = ""
     @State private var attached: UUID?
     @State private var attachEpoch = 0
@@ -240,6 +242,31 @@ struct RemoteView: View {
             Task { await client.refreshLists() }
             Task { await client.loadInbox() }
         }
+        .searchable(text: $search, prompt: "搜索会话")
+        .task(id: search) {
+            guard !search.isEmpty else { return }
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await client.refreshLists(search: search)
+        }
+        .confirmationDialog(
+            deleteTarget.map { "永久删除「\($0.title)」？" } ?? "永久删除会话？",
+            isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("永久删除", role: .destructive) {
+                guard let session = deleteTarget else { return }
+                deleteTarget = nil
+                Task {
+                    _ = await client.session(session).command(.sessionRemove, kind: .sessionRemove, payload: .object([:]))
+                    await client.refreshLists()
+                    await client.loadInbox()
+                }
+            }
+            Button("取消", role: .cancel) { deleteTarget = nil }
+        } message: {
+            Text("会话记录会从电脑上删除，无法撤销。")
+        }
     }
 
     @ViewBuilder private func sidebarHeader(_ client: HostClient) -> some View {
@@ -292,6 +319,29 @@ struct RemoteView: View {
                     } label: {
                         Label(session.title, systemImage: "bubble.left.and.text.bubble.right")
                     }.buttonStyle(.plain)
+                        .contextMenu {
+                            if client.record.grant.permissions.contains(.sessionRename) {
+                                Button {
+                                    Task {
+                                        _ = await client.session(session).command(.sessionPin, kind: .sessionPin,
+                                                                                payload: .object(["pinned": .bool(true)]))
+                                        await client.refreshLists()
+                                    }
+                                } label: { Label("置顶", systemImage: "pin") }
+                                Button {
+                                    Task {
+                                        _ = await client.session(session).command(.sessionPin, kind: .sessionPin,
+                                                                                payload: .object(["pinned": .bool(false)]))
+                                        await client.refreshLists()
+                                    }
+                                } label: { Label("取消置顶", systemImage: "pin.slash") }
+                            }
+                            if client.record.grant.permissions.contains(.sessionDelete) {
+                                Button(role: .destructive) { deleteTarget = session } label: {
+                                    Label("永久删除", systemImage: "trash")
+                                }
+                            }
+                        }
                 }
                 if client.next[project] != nil {
                     Button("更多会话") { Task { await client.refreshLists(more: project) } }.disabled(!client.ready)

@@ -30,6 +30,8 @@ type Picker = {
   readonly scope: "all" | "current"
   /** Owner opt-in for `provider.configure`: write API keys, disconnect, default model. */
   readonly provider?: boolean
+  /** Owner opt-in for `session.delete`, which is irreversible. */
+  readonly delete?: boolean
 }
 
 const durations = [
@@ -279,15 +281,27 @@ export function DialogDevices(props: {
         return [
           {
             value: "permission-basic",
-            title: "不配置服务商（默认）",
-            description: "设备不能新增 API Key、断开凭据或修改默认模型",
-            onSelect: () => setPicker({ ...custom, provider: false, stage: "duration" }),
+            title: "不额外授权（默认）",
+            description: "设备不能配置服务商，也不能永久删除会话",
+            onSelect: () => setPicker({ ...custom, provider: false, delete: false, stage: "duration" }),
           },
           {
             value: "permission-provider",
             title: "允许配置服务商与模型",
             description: "设备可填写 API Key、断开凭据并选择默认模型；密钥只经加密连接传输",
-            onSelect: () => setPicker({ ...custom, provider: true, stage: "duration" }),
+            onSelect: () => setPicker({ ...custom, provider: true, delete: false, stage: "duration" }),
+          },
+          {
+            value: "permission-delete",
+            title: "允许永久删除会话",
+            description: "设备可删除会话记录，删除后无法撤销；不能配置服务商",
+            onSelect: () => setPicker({ ...custom, provider: false, delete: true, stage: "duration" }),
+          },
+          {
+            value: "permission-both",
+            title: "以上两项都允许",
+            description: "既能配置服务商与模型，也能永久删除会话",
+            onSelect: () => setPicker({ ...custom, provider: true, delete: true, stage: "duration" }),
           },
           { value: "picker-back", title: "返回", onSelect: () => setPicker({ ...custom, stage: "scope" }) },
         ]
@@ -302,7 +316,10 @@ export function DialogDevices(props: {
             onSelect: () => {
               const all = custom.scope === "all" && props.projectID
               const grant = custom.grant
-              const extra: RemoteAccess.Permission[] = custom.provider ? ["provider.configure"] : []
+              const extra: RemoteAccess.Permission[] = [
+                ...(custom.provider ? (["provider.configure"] as const) : []),
+                ...(custom.delete ? (["session.delete"] as const) : []),
+              ]
               if (custom.kind === "invite") {
                 invite({
                   permissions: [...write, ...extra, "session.create"],

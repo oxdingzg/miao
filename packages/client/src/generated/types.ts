@@ -8102,6 +8102,7 @@ export type ServerRuntimeAccountTrustOutput = {
     | "session.rename"
     | "session.selection"
     | "provider.configure"
+    | "session.delete"
   >
   readonly expiresAt: number
   readonly autoAdmit?: boolean | undefined
@@ -8122,6 +8123,7 @@ export type ServerRuntimeBindAccountInput = {
         | "session.rename"
         | "session.selection"
         | "provider.configure"
+        | "session.delete"
       >
       readonly projectIDs: ReadonlyArray<string>
       readonly sessionIDs: ReadonlyArray<string>
@@ -8143,6 +8145,7 @@ export type ServerRuntimeBindAccountInput = {
         | "session.rename"
         | "session.selection"
         | "provider.configure"
+        | "session.delete"
       >
       readonly projectIDs: ReadonlyArray<string>
       readonly sessionIDs: ReadonlyArray<string>
@@ -8164,6 +8167,7 @@ export type ServerRuntimeBindAccountInput = {
         | "session.rename"
         | "session.selection"
         | "provider.configure"
+        | "session.delete"
       >
       readonly projectIDs: ReadonlyArray<string>
       readonly sessionIDs: ReadonlyArray<string>
@@ -8188,6 +8192,7 @@ export type ServerRuntimeBindAccountOutput = {
     | "session.rename"
     | "session.selection"
     | "provider.configure"
+    | "session.delete"
   >
   readonly expiresAt: number
   readonly autoAdmit?: boolean | undefined
@@ -8224,6 +8229,7 @@ export type ServerRuntimeInviteInput = {
       | "session.rename"
       | "session.selection"
       | "provider.configure"
+      | "session.delete"
     >
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
@@ -8241,6 +8247,7 @@ export type ServerRuntimeInviteInput = {
       | "session.rename"
       | "session.selection"
       | "provider.configure"
+      | "session.delete"
     >
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
@@ -8258,6 +8265,7 @@ export type ServerRuntimeInviteInput = {
       | "session.rename"
       | "session.selection"
       | "provider.configure"
+      | "session.delete"
     >
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
@@ -8275,6 +8283,7 @@ export type ServerRuntimeInviteInput = {
       | "session.rename"
       | "session.selection"
       | "provider.configure"
+      | "session.delete"
     >
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
@@ -8292,6 +8301,7 @@ export type ServerRuntimeInviteInput = {
       | "session.rename"
       | "session.selection"
       | "provider.configure"
+      | "session.delete"
     >
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
@@ -8325,6 +8335,7 @@ export type ServerRuntimePendingOutput = ReadonlyArray<{
       | "session.rename"
       | "session.selection"
       | "provider.configure"
+      | "session.delete"
     >
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
@@ -8350,6 +8361,7 @@ export type ServerRuntimeApproveOutput = {
     | "session.rename"
     | "session.selection"
     | "provider.configure"
+    | "session.delete"
   >
   readonly projectIDs: ReadonlyArray<string>
   readonly sessionIDs: ReadonlyArray<string>
@@ -8378,6 +8390,7 @@ export type ServerRuntimeDevicesOutput = ReadonlyArray<{
     | "session.rename"
     | "session.selection"
     | "provider.configure"
+    | "session.delete"
   >
   readonly projectIDs: ReadonlyArray<string>
   readonly sessionIDs: ReadonlyArray<string>
@@ -8407,6 +8420,7 @@ export type ServerRuntimeRevokeOutput = {
     | "session.rename"
     | "session.selection"
     | "provider.configure"
+    | "session.delete"
   >
   readonly projectIDs: ReadonlyArray<string>
   readonly sessionIDs: ReadonlyArray<string>

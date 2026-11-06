@@ -172,6 +172,21 @@ export function make(options: {
         await options.client.sessions.rename({ sessionID: request.sessionID!, title: payload.title })
       },
     ),
+    "session.pin": mutation(Schema.Struct({ pinned: Schema.Boolean }), async (payload, request, context) => {
+      context.authorize()
+      await options.client.sessions.pin({ sessionID: request.sessionID!, pinned: payload.pinned })
+    }),
+    "session.remove": mutation(Schema.Struct({}), async (_payload, request, context) => {
+      const execution = await options.client.sessions.execution(
+        { sessionID: request.sessionID! },
+        { signal: context.signal },
+      )
+      context.authorize()
+      // Deleting a running Session would strand its execution in a store that no
+      // longer has it, so the owner has to stop the work first.
+      if (execution.type === "running") throw new ControlAgent.RequestError("conflict")
+      await options.client.sessions.remove({ sessionID: request.sessionID! })
+    }),
     "session.switchAgent": mutation(Schema.Struct({ agent: Agent.ID }), async (payload, request, context) => {
       context.authorize()
       await options.client.sessions.switchAgent({ sessionID: request.sessionID!, agent: payload.agent })
@@ -326,6 +341,7 @@ export function make(options: {
         Schema.Struct({
           cursor: Schema.optional(Schema.String.check(Schema.isMaxLength(2048))),
           limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }))),
+          search: Schema.optional(Schema.String.check(Schema.isLengthBetween(1, 200))),
         }),
         { onExcessProperty: "error" },
       )(request.payload)
@@ -333,7 +349,12 @@ export function make(options: {
       if (request.projectID) {
         if (!context.grant.projectIDs.includes(request.projectID)) throw new ControlAgent.RequestError("forbidden")
         const sessions = await options.client.sessions.list(
-          { project: request.projectID, limit: page.value.limit ?? 100, cursor: page.value.cursor },
+          {
+            project: request.projectID,
+            limit: page.value.limit ?? 100,
+            cursor: page.value.cursor,
+            ...(page.value.search === undefined ? {} : { search: page.value.search }),
+          },
           { signal: context.signal },
         )
         context.authorize()
