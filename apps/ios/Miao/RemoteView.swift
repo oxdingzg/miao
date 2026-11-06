@@ -320,13 +320,13 @@ struct RemoteView: View {
         Button { Task { await client.refreshLists() } } label: {
             Label("刷新会话", systemImage: "arrow.clockwise").frame(maxWidth: .infinity, alignment: .leading)
         }.disabled(!client.ready)
-        if client.canConfigureProviders {
-            Button { providersPresented = true } label: {
-                Label("服务商与模型", systemImage: "key.horizontal").frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .disabled(!client.ready)
-            .accessibilityIdentifier("providersSettings")
+        // Always reachable: without the permission the screen explains which
+        // authorization step is missing instead of hiding the feature.
+        Button { providersPresented = true } label: {
+            Label("服务商与模型", systemImage: "key.horizontal").frame(maxWidth: .infinity, alignment: .leading)
         }
+        .disabled(!client.ready)
+        .accessibilityIdentifier("providersSettings")
         Button { accountPresented = true } label: {
             Label(model.accountSignedIn ? "中继账号" : "登录中继", systemImage: "person.crop.circle")
                 .frame(maxWidth: .infinity, alignment: .leading)
