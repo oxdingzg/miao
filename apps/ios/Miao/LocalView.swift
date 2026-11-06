@@ -14,6 +14,8 @@ struct LocalView: View {
     @State private var picked: [PhotosPickerItem] = []
     @State private var attachments: [UIImage] = []
     @State private var speech = SpeechInput()
+    @State private var appearance = false
+    @AppStorage("localTypeSize") private var typeSize = 1
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -44,12 +46,20 @@ struct LocalView: View {
                         })
                 }
             }
+            .dynamicTypeSize(typeSize == 0 ? .medium : typeSize == 1 ? .large : .xLarge)
             .navigationTitle(agent.provider.model.isEmpty ? "本机" : agent.provider.model)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { configuring = true } label: { Image(systemName: "slider.horizontal.3") }
-                        .accessibilityIdentifier("localSettings")
+                    Menu {
+                        Button { configuring = true } label: { Label("服务商", systemImage: "slider.horizontal.3") }
+                        Button { appearance = true } label: { Label("外观", systemImage: "textformat.size") }
+                        ShareLink(item: transcriptText) { Label("导出对话", systemImage: "square.and.arrow.up") }
+                            .disabled(agent.messages.isEmpty)
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityIdentifier("localSettings")
                 }
                 ToolbarItem(placement: .topBarLeading) {
                     Button { sidebarVisible ? close() : open() } label: { Image(systemName: "list.bullet") }
@@ -59,8 +69,39 @@ struct LocalView: View {
             .sheet(isPresented: $configuring) {
                 LocalConfigView(agent: agent)
             }
+            .sheet(isPresented: $appearance) {
+                NavigationStack {
+                    Form {
+                        Section {
+                            Picker("对话字号", selection: $typeSize) {
+                                Text("标准").tag(0)
+                                Text("较大").tag(1)
+                                Text("最大").tag(2)
+                            }
+                            .pickerStyle(.segmented)
+                        } footer: {
+                            Text("只影响这台手机上的显示，不改变模型输出。")
+                        }
+                    }
+                    .navigationTitle("外观")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { appearance = false } } }
+                }
+                .presentationDetents([.medium])
+            }
 
         }
+    }
+
+    /// Plain Markdown so the export reads well in any editor or chat.
+    private var transcriptText: String {
+        agent.messages.map { message in
+            switch message.role {
+            case .user: return "**我**\n\n" + message.text
+            case .assistant: return "**miao**\n\n" + message.text
+            case .tool: return "_[工具] " + (message.toolName ?? "tool") + "_"
+            }
+        }.joined(separator: "\n\n---\n\n")
     }
 
     private let bottom = "bottom"
@@ -179,14 +220,14 @@ struct LocalView: View {
                     Button { UIPasteboard.general.string = message.text } label: {
                         Label("复制回答", systemImage: "doc.on.doc")
                     }
+                    if message.id == agent.messages.last(where: { $0.role == .assistant })?.id {
+                        Button { agent.retryLast() } label: {
+                            Label("重新生成", systemImage: "arrow.clockwise")
+                        }
+                    }
                 }
         case .tool:
-            VStack(alignment: .leading, spacing: 4) {
-                Label(message.toolName ?? "tool", systemImage: "hammer").font(.caption).foregroundStyle(.secondary)
-                Text(message.text).font(.system(.caption, design: .monospaced)).lineLimit(8)
-            }
-            .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            ToolRow(message: message)
         }
     }
 
@@ -337,11 +378,57 @@ private struct LocalConfigView: View {
     }
 }
 
+/// Tool traffic is context, not content: one collapsed line unless asked.
+private struct ToolRow: View {
+    let message: LocalMessage
+    @State private var expanded = false
+
+    private var summary: String {
+        message.text.split(separator: "\n").first.map(String.init) ?? message.text
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "hammer").font(.caption2)
+                    Text(message.toolName ?? "tool").font(.caption)
+                    Text(summary).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.caption2)
+                }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            if expanded {
+                Text(message.text)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
 private struct SessionDrawer: View {
     @Bindable var agent: LocalAgent
     var close: () -> Void
     @State private var renaming: LocalSession?
     @State private var title = ""
+    @State private var query = ""
+
+    private var shown: [LocalSession] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return agent.sessions }
+        return agent.sessions.filter { session in
+            session.title.localizedCaseInsensitiveContains(term)
+                || session.messages.contains { $0.text.localizedCaseInsensitiveContains(term) }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -364,7 +451,7 @@ private struct SessionDrawer: View {
             .accessibilityIdentifier("localNewSession")
 
             List {
-                ForEach(agent.sessions) { item in
+                ForEach(shown) { item in
                     Button {
                         agent.selectSession(item.id)
                         close()
@@ -392,6 +479,7 @@ private struct SessionDrawer: View {
                 }
             }
             .listStyle(.plain)
+            .searchable(text: $query, prompt: "搜索会话")
         }
         .background(.background)
         .alert("重命名会话", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {

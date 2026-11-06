@@ -234,6 +234,23 @@ final class LocalAgent {
         }
     }
 
+    /// Drops the tail of the current Session (the answer and its tool traffic)
+    /// and runs the last prompt again.
+    func retryLast() {
+        guard !busy, ready, let index = sessions.firstIndex(where: { $0.id == currentID }) else { return }
+        var list = sessions[index].messages
+        while let last = list.last, last.role == .assistant || last.role == .tool { list.removeLast() }
+        guard list.contains(where: { $0.role == .user }) else { return }
+        sessions[index].messages = list
+        persist()
+        error = nil
+        busy = true
+        task = Task { [weak self] in
+            await self?.run()
+            self?.busy = false
+        }
+    }
+
     func stop() {
         task?.cancel()
         busy = false
