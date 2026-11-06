@@ -1,6 +1,6 @@
 import { EOL } from "os"
 import { Schema } from "effect"
-import { colorEnabled } from "@miao/tui/terminal-win32"
+import { colorEnabled } from "./cmd/terminal-win32"
 import { logo as glyphs } from "./logo"
 
 const wordmark = ["  /\\/\\  ", " ( o.o ) ", "  > ^ <  "]
