@@ -3456,9 +3456,10 @@ impl App {
             Some(context) => format!("{context}\n\n{text}"),
             None => text,
         };
-        // A live turn is the right signal: the display phase only appears once
-        // the engine has been quiet long enough to narrate it.
-        let queued = self.live.is_some();
+        // The durable run identity is the only honest "a turn is running"
+        // signal: `live` is cleared as soon as the first token arrives, and the
+        // display phase only appears after the engine has been quiet a while.
+        let queued = self.state.active_run.is_some();
         engine.prompt(&session_id, &text, attachments, queued);
         // The prompt left the composer, so its draft is gone too: keeping it
         // would restore text the Session already sent if the operator switched
