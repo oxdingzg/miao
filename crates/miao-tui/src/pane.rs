@@ -3499,6 +3499,32 @@ fn relative_time(updated_at_ms: u64) -> String {
 mod tests {
 
     #[test]
+    fn wide_characters_never_overflow_the_width_and_keep_every_character() {
+        // A CJK paragraph mixes full-width text with a narrow phrase, so a naive
+        // split overflows the viewport or drops cells where the boundary lands
+        // inside a wide character.
+        let line = "两项属于 P1，等 P0 合并后我单独开 PR。另外这轮真实账本验证有两个发现已记进后续待办";
+        let cells = line
+            .chars()
+            .map(|character| (character, ratatui::style::Style::new()))
+            .collect::<Vec<_>>();
+        for width in 2..=40 {
+            let chunks = super::chunk_cells(&cells, width);
+            for chunk in &chunks {
+                assert!(
+                    super::cells_width(chunk) <= width,
+                    "width {width} overflowed the viewport"
+                );
+            }
+            let joined = chunks
+                .iter()
+                .flat_map(|chunk| chunk.iter().map(|(character, _)| *character))
+                .collect::<String>();
+            assert_eq!(joined, line, "width {width} lost, duplicated or reordered cells");
+        }
+    }
+
+    #[test]
     fn a_scrolled_back_viewport_names_the_question_it_belongs_to() {
         let workspace = std::path::Path::new("/tmp/pane-test");
         let mut shell = Shell::new(workspace, home_theme());
