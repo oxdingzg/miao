@@ -75,6 +75,7 @@ pub enum AppEvent {
     Accounts(Vec<AccountInfo>),
     /// The open Session's billed usage, for the status dialog.
     Usage(UsageSummary),
+    UsageHourly(crate::status::HourlyUsage),
     /// The host's workspace list, served by the engine.
     Workspaces(Vec<(String, String, String)>),
     /// The host answered a call the engine does not own.

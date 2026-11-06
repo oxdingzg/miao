@@ -171,6 +171,10 @@ pub enum Request {
     Usage {
         session_id: String,
     },
+    /// The trailing hourly window the sidebar paints, workspace-wide.
+    UsageHourly {
+        hours: u64,
+    },
     /// Pin the account every turn of this Session runs on; `None` restores the
     /// engine default.
     SelectAccount {
@@ -434,6 +438,12 @@ impl Handle {
         let _ = self.tx.send(Request::Usage {
             session_id: session_id.to_string(),
         });
+    }
+
+    /// The trailing hourly window the sidebar paints. It is not Session
+    /// scoped: the ledger answers for every Session in this workspace.
+    pub fn usage_hourly(&self, hours: u64) {
+        let _ = self.tx.send(Request::UsageHourly { hours });
     }
 
     pub fn select_account(&self, session_id: &str, credential_id: Option<&str>) {
@@ -1253,6 +1263,21 @@ async fn run(
                         Ok(value) => bus.send(AppEvent::Usage(UsageSummary::from_value(&value))),
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("usage failed: {error}")))
+                        }
+                    }
+                }
+                Request::UsageHourly { hours } => {
+                    let result = client
+                        .request("usage.hourly", json!({ "hours": hours }))
+                        .await;
+                    match result {
+                        Ok(value) => bus.send(AppEvent::UsageHourly(
+                            crate::status::HourlyUsage::from_value(&value),
+                        )),
+                        // A window nobody has written yet is an empty strip,
+                        // not a failure the operator has to dismiss.
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("usage.hourly failed: {error}")))
                         }
                     }
                 }
