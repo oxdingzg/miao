@@ -38,6 +38,7 @@ Read methods: `capabilities`, `project.list`, `session.list`, `session.get`,
 `interrupt`, `session.rename` → `session.rename`, `session.switchAgent` and
 `session.switchModel` → `session.selection`, `provider.connectKey`,
 `provider.disconnect` and `model.default` → `provider.configure`,
+`session.pin` → `session.rename`, `session.remove` → `session.delete`,
 `permission.reply` → `permission.reply`, and `question.reply` →
 `question.reply`. All writable methods require an operation ID. Only registered
 methods are callable; payload validation and result semantics are supplied by
@@ -104,3 +105,9 @@ sessions and 4 MiB total. Oversized parts expose `truncated: true`; idle live
 views expire after two minutes. Durable text/reasoning settlement replaces live
 values through the ordinary history projection. Reads remain session/grant
 scoped and are reauthorized before returning this optional field.
+
+`session.list` forwards an optional `search` term to the host, so a device with a
+long history searches the catalogue instead of the page it happens to hold.
+`session.remove` refuses a Session whose execution is still running (`conflict`)
+rather than strand that execution in a store that no longer has it, and a Session
+whose execution cannot be read is never deleted.

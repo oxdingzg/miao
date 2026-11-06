@@ -365,6 +365,38 @@ describe("outbound authorized encrypted Agent", () => {
       "model.default",
     ])
   })
+  test("pinning and deleting need their own capabilities and session scope", async () => {
+    const calls: ControlAgent.Request[] = []
+    const handler: ControlAgent.Handler = async (request) => {
+      calls.push(request)
+      return { status: "completed" }
+    }
+    const methods = { "session.pin": handler, "session.remove": handler }
+    const readOnly = await client(await fixture(methods, ["read"]))
+    for (const method of ["session.pin", "session.remove"] as const) {
+      await readOnly.send(readOnly.request({ method, operationID: crypto.randomUUID() }))
+      expect(await readOnly.receive()).toMatchObject({ type: "error", code: "forbidden" })
+    }
+
+    // A rename grant may pin, but pinning must not imply deletion.
+    const pinner = await client(await fixture(methods, ["read", "session.rename"]))
+    await pinner.send(
+      pinner.request({ method: "session.pin", operationID: crypto.randomUUID(), payload: { pinned: true } }),
+    )
+    expect(await pinner.receive()).toMatchObject({ type: "result", data: { status: "completed" } })
+    await pinner.send(pinner.request({ method: "session.remove", operationID: crypto.randomUUID() }))
+    expect(await pinner.receive()).toMatchObject({ type: "error", code: "forbidden" })
+
+    const deleter = await client(await fixture(methods, ["read", "session.delete"]))
+    await deleter.send(deleter.request({ method: "session.remove", operationID: crypto.randomUUID() }))
+    expect(await deleter.receive()).toMatchObject({ type: "result", data: { status: "completed" } })
+    // Deletion must not imply provider configuration either.
+    await deleter.send(
+      deleter.request({ method: "provider.connectKey", sessionID: undefined, operationID: crypto.randomUUID() }),
+    )
+    expect(await deleter.receive()).toMatchObject({ type: "error", code: "forbidden" })
+    expect(calls.map((call) => call.method)).toEqual(["session.pin", "session.remove"])
+  })
   test("routes approved requests through real Hub and rejects out-of-scope or stale Runtime targets", async () => {
     const calls: ControlAgent.Request[] = []
     const f = await fixture({

@@ -113,3 +113,15 @@ old chat commands and bot accounts do not carry over.
 
 Availability follows the installed build. Source-only UI changes may not yet
 be in the latest release; check the release notes before using preview features.
+
+## Organising Sessions from the phone
+
+The search field at the top of the sidebar sends its term to the computer, so it
+searches the whole catalogue instead of the page the phone happens to hold.
+
+Long-press a Session to **pin**, **unpin** or **permanently delete** it. Pinned
+Sessions sort first. Permanent deletion removes the record from the computer and
+cannot be undone, so it appears only when the owner granted **allow permanent
+deletion of Sessions** on the computer, and the phone asks once more before
+deleting. A Session whose turn is still running is never deleted; the phone asks
+you to stop it first.
