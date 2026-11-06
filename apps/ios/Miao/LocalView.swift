@@ -43,10 +43,6 @@ struct LocalView: View {
                     Button { configuring = true } label: { Image(systemName: "slider.horizontal.3") }
                         .accessibilityIdentifier("localSettings")
                 }
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("完成") { focused = false }.accessibilityIdentifier("localDismissKeyboard")
-                }
                 ToolbarItem(placement: .topBarLeading) {
                     Button { sidebarVisible ? close() : open() } label: { Image(systemName: "list.bullet") }
                         .accessibilityIdentifier("localSessions")
@@ -57,6 +53,14 @@ struct LocalView: View {
             }
 
         }
+    }
+
+    private let bottom = "bottom"
+
+    /// Keep the newest content visible: no animation while streaming, so the
+    /// text does not fight the scroll on every token.
+    private func pin(_ proxy: ScrollViewProxy) {
+        proxy.scrollTo(bottom, anchor: .bottom)
     }
 
     private func open() { withAnimation(.easeInOut(duration: 0.22)) { sidebarVisible = true } }
@@ -89,14 +93,19 @@ struct LocalView: View {
                     if let error = agent.error {
                         Text(error).font(.footnote).foregroundStyle(.red).textSelection(.enabled)
                     }
+                    // A real anchor at the end scrolls past the last bubble, which
+                    // anchoring to a message cannot do while it grows.
+                    Color.clear.frame(height: 1).id(bottom)
                 }
                 .padding(.horizontal).padding(.vertical, 12)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .scrollDismissesKeyboard(.interactively)
             .onTapGesture { focused = false }
-            .onChange(of: agent.messages.count) { _, _ in
-                if let last = agent.messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
-            }
+            .onChange(of: agent.messages.count) { _, _ in pin(proxy) }
+            .onChange(of: agent.messages.last?.text) { _, _ in pin(proxy) }
+            .onChange(of: focused) { _, _ in pin(proxy) }
+            .onAppear { pin(proxy) }
         }
     }
 
@@ -138,7 +147,7 @@ struct LocalView: View {
                     .accessibilityIdentifier("localSend")
             }
         }
-        .padding(.horizontal).padding(.vertical, 8)
+        .padding(.horizontal, 12).padding(.vertical, 6)
         .background(.bar)
     }
 
