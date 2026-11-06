@@ -92,6 +92,8 @@ impl Shell {
             leader_hint: None,
             sidebar: Some(SidebarPane {
                 hover_rows: Vec::new(),
+                changes: None,
+                mode: None,
                 theme,
                 session: None,
                 usage: None,
@@ -327,6 +329,18 @@ impl Shell {
                     status: todo.status.clone(),
                 })
                 .collect();
+        }
+    }
+
+    pub fn set_changes(&mut self, changes: Option<(usize, u64, u64)>) {
+        if let Some(sidebar) = self.sidebar.as_mut() {
+            sidebar.changes = changes;
+        }
+    }
+
+    pub fn set_mode(&mut self, mode: Option<&str>) {
+        if let Some(sidebar) = self.sidebar.as_mut() {
+            sidebar.mode = mode.map(str::to_string);
         }
     }
 
@@ -2279,6 +2293,10 @@ pub struct SidebarPane {
     /// Screen row to the full text of the todo painted there, for the hover
     /// tip: the row itself shows `fit(...)`'s clipped title.
     pub hover_rows: Vec<(u16, String)>,
+    /// Files this Session's tools touched, with lines added and removed.
+    pub changes: Option<(usize, u64, u64)>,
+    /// The launch policy in force, when it is not the default one.
+    pub mode: Option<String>,
     theme: Theme,
     session: Option<SessionSummary>,
     usage: Option<crate::status::UsageSummary>,
@@ -2492,6 +2510,19 @@ impl Pane for SidebarPane {
                 }
             }
             lines.push(Line::default());
+            if let Some(mode) = &self.mode {
+                lines.push(Line::from(Span::styled(
+                    format!("▾ Mode · {mode}"),
+                    Style::new().fg(palette.warning),
+                )));
+            }
+            if let Some((files, added, removed)) = self.changes {
+                let noun = if files == 1 { "file" } else { "files" };
+                lines.push(Line::from(Span::styled(
+                    format!("▾ Changes {files} {noun}  +{added} −{removed}"),
+                    Style::new().fg(palette.text_muted),
+                )));
+            }
             if let Some(goal) = &self.goal {
                 // The status word is the one thing here that can need the
                 // operator, so it keeps colour only when it does.
@@ -5309,6 +5340,8 @@ mod tests {
     fn a_long_cjk_sidebar_stays_on_one_row_per_line() {
         let mut sidebar = SidebarPane {
             hover_rows: Vec::new(),
+            changes: None,
+            mode: None,
             theme: home_theme(),
             session: None,
             usage: None,

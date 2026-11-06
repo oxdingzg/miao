@@ -883,6 +883,23 @@ impl App {
                 if self.state.active_run.is_none() {
                     transcript.settle_unreturned();
                 }
+                // What this Session changed, counted once per file: the sidebar
+                // answers "what did it touch" without opening a diff.
+                let mut touched: std::collections::HashSet<&str> = std::collections::HashSet::new();
+                let mut added = 0u64;
+                let mut removed = 0u64;
+                for file in transcript.displays.values().flatten() {
+                    touched.insert(file.path.as_str());
+                    added += file.additions;
+                    removed += file.deletions;
+                }
+                self.shell.set_changes((!touched.is_empty()).then_some((
+                    touched.len(),
+                    added,
+                    removed,
+                )));
+                self.shell
+                    .set_mode(self.startup.auto.then_some("auto-approve"));
                 // A Session that already holds prompts may still be unnamed —
                 // resuming one must not leave the sidebar reading "New session".
                 if let Some((id, first)) = self
