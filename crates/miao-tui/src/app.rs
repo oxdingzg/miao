@@ -4555,6 +4555,7 @@ mod tests {
             session_id,
             text,
             attachments,
+            ..
         }) = requests.try_recv()
         else {
             panic!("the landing prompt must reach the Session it opened");
