@@ -413,6 +413,74 @@ fn models_snapshot() -> Option<Value> {
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
 }
 
+
+/// One route per account. The engine models an account as a route, so a
+/// provider holding several keys answers through several routes; the first
+/// keeps the plain `provider/model` id a Session may already carry, and the
+/// rest name their account so they stay distinct and findable.
+fn route_entry(
+    base: &Value,
+    provider: &str,
+    model: &str,
+    account: &crate::credential::Metadata,
+    position: usize,
+    entries: &[Value],
+) -> Value {
+    let key = format!("{provider}/{model}");
+    let mut entry = base.clone();
+    if position > 0 {
+        let candidate = format!("{key}@{}", account_slot(&account.label));
+        entry["id"] = json!(free_route_id(&candidate, entries));
+        // Only the account that answers the plain id can be the primary route.
+        entry["primary"] = json!(false);
+    }
+    entry["credential"]["id"] = json!(account.id);
+    entry["credential"]["integration"] = json!(account.integration);
+    entry["account"] = json!({
+        "id": account.id,
+        "model_key": key,
+        "label": account.label,
+        "default": position == 0,
+    });
+    entry
+}
+
+/// A label that can sit in a route id: ids travel through Session pins and
+/// command arguments, so keep them to characters that need no quoting.
+fn account_slot(label: &str) -> String {
+    let slot: String = label
+        .chars()
+        .map(|character| {
+            match character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                true => character,
+                false => '-',
+            }
+        })
+        .collect();
+    let slot = slot.trim_matches('-').to_string();
+    match slot.is_empty() {
+        true => "account".to_string(),
+        false => slot,
+    }
+}
+
+/// Two labels can normalize to the same slot (`work!` and `work?`), so a route
+/// id is only reused when nothing already claims it.
+fn free_route_id(candidate: &str, entries: &[Value]) -> String {
+    let taken = |id: &str| {
+        entries
+            .iter()
+            .any(|entry| entry.get("id").and_then(Value::as_str) == Some(id))
+    };
+    if !taken(candidate) {
+        return candidate.to_string();
+    }
+    (2..)
+        .map(|suffix| format!("{candidate}-{suffix}"))
+        .find(|id| !taken(id))
+        .expect("a free route id")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -593,71 +661,4 @@ mod tests {
             .join_pair("chat/completions")
             .is_none());
     }
-}
-
-/// One route per account. The engine models an account as a route, so a
-/// provider holding several keys answers through several routes; the first
-/// keeps the plain `provider/model` id a Session may already carry, and the
-/// rest name their account so they stay distinct and findable.
-fn route_entry(
-    base: &Value,
-    provider: &str,
-    model: &str,
-    account: &crate::credential::Metadata,
-    position: usize,
-    entries: &[Value],
-) -> Value {
-    let key = format!("{provider}/{model}");
-    let mut entry = base.clone();
-    if position > 0 {
-        let candidate = format!("{key}@{}", account_slot(&account.label));
-        entry["id"] = json!(free_route_id(&candidate, entries));
-        // Only the account that answers the plain id can be the primary route.
-        entry["primary"] = json!(false);
-    }
-    entry["credential"]["id"] = json!(account.id);
-    entry["credential"]["integration"] = json!(account.integration);
-    entry["account"] = json!({
-        "id": account.id,
-        "model_key": key,
-        "label": account.label,
-        "default": position == 0,
-    });
-    entry
-}
-
-/// A label that can sit in a route id: ids travel through Session pins and
-/// command arguments, so keep them to characters that need no quoting.
-fn account_slot(label: &str) -> String {
-    let slot: String = label
-        .chars()
-        .map(|character| {
-            match character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
-                true => character,
-                false => '-',
-            }
-        })
-        .collect();
-    let slot = slot.trim_matches('-').to_string();
-    match slot.is_empty() {
-        true => "account".to_string(),
-        false => slot,
-    }
-}
-
-/// Two labels can normalize to the same slot (`work!` and `work?`), so a route
-/// id is only reused when nothing already claims it.
-fn free_route_id(candidate: &str, entries: &[Value]) -> String {
-    let taken = |id: &str| {
-        entries
-            .iter()
-            .any(|entry| entry.get("id").and_then(Value::as_str) == Some(id))
-    };
-    if !taken(candidate) {
-        return candidate.to_string();
-    }
-    (2..)
-        .map(|suffix| format!("{candidate}-{suffix}"))
-        .find(|id| !taken(id))
-        .expect("a free route id")
 }
