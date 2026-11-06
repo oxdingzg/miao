@@ -32,8 +32,8 @@ business parameters. A handler's durable receipt determines acceptance.
 
 Read methods: `capabilities`, `project.list`, `session.list`, `session.get`,
 `session.history`, `session.events`, `session.pending`, `session.diff`,
-`selection.list`, `provider.list`, `operation.get`. They require `read`
-permission. Writable methods and permissions are `session.create` →
+`selection.list`, `provider.list`, `pending.list`, `operation.get`. They require
+`read` permission. Writable methods and permissions are `session.create` →
 `session.create`, `session.prompt` → `prompt`, `session.interrupt` →
 `interrupt`, `session.rename` → `session.rename`, `session.switchAgent` and
 `session.switchModel` → `session.selection`, `provider.connectKey`,
@@ -50,6 +50,12 @@ a credential, is therefore never hashed or stored. `provider.list` reports
 provider identity, available authentication methods, connection sources and
 the model list only — stored credential material never travels back to a
 device, and an OAuth connection stays a local action on the host.
+
+`pending.list` answers "what is waiting" for the whole grant in one request: it
+enumerates only Sessions inside the grant scope, drops Sessions this Runtime does
+not own or that have nothing waiting, and returns each remaining Session with its
+approval actions and question text. A Session-only grant reads its own Sessions
+instead of enumerating the project, so a device cannot learn sibling titles.
 
 Directory queries must filter before serializing results. An operation query
 must not reveal another device's receipt. Approval is limited to the current

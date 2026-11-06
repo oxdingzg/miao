@@ -38,6 +38,19 @@ unwanted pairing or revoke a device there. Revocation invalidates its grant
 and closes its active channels. Turning off Remote Control closes this
 window's connection while local work continues.
 
+## The pending inbox on the phone
+
+The sidebar's **Pending** section lists every Session waiting on you, each row
+showing the Session title and the exact approval command or question. Tapping a
+row jumps straight into that Session instead of opening them one by one. The
+list comes from a single aggregate query and contains only Sessions inside the
+current grant; a Session with nothing waiting never appears, and one whose
+sharing is switched off disappears immediately.
+
+It refreshes every ten seconds in the foreground and once when the sidebar
+opens. Approvals and questions are still answered inside the Session; the inbox
+only puts "what needs me" in front of you.
+
 ## Configure providers and models from the phone
 
 A phone can enter a provider's API key, disconnect a stored credential, and

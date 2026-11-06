@@ -518,6 +518,50 @@ export function make(options: {
       context.authorize()
       return { inputs: results[0], permissions: results[1], questions: results[2], execution: results[3] }
     },
+    "pending.list": async (_request, context) => {
+      // One round trip instead of the client polling every Session: a phone needs
+      // to know what is waiting without opening each Session to find out.
+      const pages = await Promise.all(
+        context.grant.projectIDs.map((projectID) =>
+          options.client.sessions.list({ project: projectID, limit: 100 }, { signal: context.signal }),
+        ),
+      )
+      context.authorize()
+      const candidates = new Map<string, { id: string; title: string; projectID: string }>()
+      for (const page of pages)
+        for (const session of page.data)
+          if (context.grant.projectIDs.includes(session.projectID))
+            candidates.set(session.id, { id: session.id, title: session.title, projectID: session.projectID })
+      // Session-only grants must not enumerate siblings, so their titles are read
+      // one approved Session at a time.
+      for (const sessionID of context.grant.sessionIDs) {
+        if (candidates.has(sessionID)) continue
+        const session = await options.client.sessions
+          .get({ sessionID }, { signal: context.signal })
+          .catch(() => undefined)
+        if (session) candidates.set(session.id, { id: session.id, title: session.title, projectID: session.projectID })
+      }
+      context.authorize()
+      const waiting = await Promise.all(
+        [...candidates.values()].slice(0, 100).map(async (session) => {
+          if (!(await options.owned(session.id))) return undefined
+          const [permissions, questions] = await Promise.all([
+            options.client.permissions.list({ sessionID: session.id }, { signal: context.signal }),
+            options.client.questions.list({ sessionID: session.id }, { signal: context.signal }),
+          ])
+          if (permissions.length === 0 && questions.length === 0) return undefined
+          return {
+            sessionID: session.id,
+            title: session.title,
+            projectID: session.projectID,
+            permissions: permissions.map((entry) => ({ id: entry.id, action: entry.action })),
+            questions: questions.map((entry) => ({ id: entry.id, text: entry.questions[0].question })),
+          }
+        }),
+      )
+      context.authorize()
+      return { data: waiting.filter((entry) => entry !== undefined) }
+    },
     "session.diff": (request, context) =>
       options.client.sessions.diff({ sessionID: request.sessionID! }, { signal: context.signal }),
     "session.prompt": async (request, context) => {
