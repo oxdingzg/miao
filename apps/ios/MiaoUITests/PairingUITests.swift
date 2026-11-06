@@ -423,4 +423,33 @@ final class PairingUITests: XCTestCase {
         stage("done")
     }
 
+    /// The phone-only surfaces must exist and open with no computer attached,
+    /// which is the whole point of the standalone mode.
+    @MainActor
+    func testLocalModeSurfacesSessionsAndProviderSetup() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        XCTAssertTrue(app.tabBars.buttons["本机"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.tabBars.buttons["本机"].isSelected)
+        XCTAssertTrue(app.tabBars.buttons["电脑"].exists)
+
+        // The drawer lists Sessions and can start a new one.
+        app.buttons["localSessions"].tap()
+        XCTAssertTrue(app.buttons["localNewSession"].waitForExistence(timeout: 5))
+        app.buttons["localNewSession"].tap()
+        XCTAssertTrue(app.buttons["localSessions"].waitForExistence(timeout: 5))
+
+        // With no provider configured the empty state leads into provider setup,
+        // where a known service is picked before the key is typed.
+        if app.buttons["localConfigure"].waitForExistence(timeout: 5) {
+            app.buttons["localConfigure"].tap()
+            XCTAssertTrue(app.buttons["添加服务商"].waitForExistence(timeout: 5))
+            app.buttons["添加服务商"].tap()
+            XCTAssertTrue(app.descendants(matching: .any)["localPreset"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.secureTextFields["localAPIKey"].waitForExistence(timeout: 5))
+            app.buttons["取消"].tap()
+            app.buttons["完成"].tap()
+        }
+    }
 }
