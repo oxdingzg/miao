@@ -382,3 +382,142 @@ pub fn list_legacy(path: &Path) -> Result<Vec<Metadata>, Error> {
         .map(|(id, value)| metadata(id.clone(), id.clone(), "legacy".into(), value))
         .collect())
 }
+
+/// Where an install keeps its credential store: the same data home and the same
+/// file the engine falls back to when no host passes a credential source. A
+/// client that offers to store a key has to write the file a plain engine start
+/// will read, or the provider it just added stays unconfigured.
+pub fn default_database() -> Option<PathBuf> {
+    let root = std::env::var_os("MIAO_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("XDG_DATA_HOME").map(|dir| PathBuf::from(dir).join("miao")))
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share/miao"))
+        })?;
+    Some(root.join("miao.db"))
+}
+
+/// Store one API-key credential and answer the metadata a listing shows. The
+/// same integration and label are replaced rather than piling rows up, which is
+/// what re-entering a key means.
+pub fn store_key(
+    path: &Path,
+    integration: &str,
+    key: &str,
+    account: Option<&str>,
+) -> Result<Metadata, Error> {
+    let integration = integration.trim();
+    if integration.is_empty()
+        || integration.len() > 128
+        || !integration
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err(Error::Invalid);
+    }
+    if key.trim().is_empty() || key.len() > 65_536 {
+        return Err(Error::Invalid);
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|_| Error::Io)?;
+    }
+    let label = account
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("default")
+        .to_string();
+    let id = credential_id();
+    let value = serde_json::json!({ "type": "key", "key": key }).to_string();
+    let now = now_ms() as i64;
+    let connection = Connection::open(path).map_err(|_| Error::Database)?;
+    // A fresh machine has no store yet: storing has to be able to create it, the
+    // same way `miao auth login` bootstraps the first credential.
+    connection
+        .execute(
+            "CREATE TABLE IF NOT EXISTS credential(id text primary key, integration_id text, label text, value text, active integer, time_created integer, time_updated integer)",
+            [],
+        )
+        .map_err(|_| Error::Database)?;
+    connection
+        .execute(
+            "DELETE FROM credential WHERE integration_id=?1 AND label=?2",
+            rusqlite::params![integration, label],
+        )
+        .map_err(|_| Error::Database)?;
+    connection
+        .execute(
+            "INSERT INTO credential(id,integration_id,label,value,active,time_created,time_updated) VALUES(?1,?2,?3,?4,1,?5,?5)",
+            rusqlite::params![id, integration, label, value, now],
+        )
+        .map_err(|_| Error::Database)?;
+    Ok(Metadata {
+        id,
+        integration: integration.to_string(),
+        label,
+        kind: "key".into(),
+        expires_at_ms: None,
+        expired: false,
+    })
+}
+
+/// A credential identity in the shape the store already uses.
+fn credential_id() -> String {
+    const ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    // Two keys stored inside one clock tick would otherwise hash the same
+    // identifier and the second insert would collide on the primary key.
+    let sequence = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut seed = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos() as u64)
+        .unwrap_or(0)
+        ^ (std::process::id() as u64) << 32)
+        .wrapping_add(sequence.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    let mut id = String::from("cred_");
+    for _ in 0..26 {
+        id.push(ALPHABET[(seed % ALPHABET.len() as u64) as usize] as char);
+        seed = (seed / ALPHABET.len() as u64) ^ seed.rotate_left(7);
+    }
+    id
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Storing a key has to leave the store readable by the engine: one row per
+    /// (integration, label), replaced rather than piled up, and the same
+    /// metadata a listing shows.
+    #[test]
+    fn a_stored_key_is_listed_and_replaces_the_same_label() {
+        let dir = std::env::temp_dir().join(format!("miao-credential-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let path = dir.join("miao.db");
+        let first = store_key(&path, "commandcode", "sk-one", None).expect("store");
+        assert_eq!(first.label, "default");
+        assert_eq!(first.kind, "key");
+        let named = store_key(&path, "commandcode", "sk-two", Some("work")).expect("store");
+        assert_eq!(named.label, "work");
+        let replaced = store_key(&path, "commandcode", "sk-three", None).expect("store");
+        assert_ne!(
+            replaced.id, first.id,
+            "a re-entered key is a new credential"
+        );
+        let listed = list_database(&path).expect("list");
+        assert_eq!(listed.len(), 2, "one default and one named account");
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|entry| entry.label == "default")
+                .count(),
+            1
+        );
+        assert!(listed
+            .iter()
+            .all(|entry| entry.integration == "commandcode"));
+        assert!(store_key(&path, "bad integration", "sk", None).is_err());
+        assert!(store_key(&path, "commandcode", "   ", None).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

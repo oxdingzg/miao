@@ -132,6 +132,9 @@ impl Harness {
         cmd.cwd(&dir);
         cmd.env("TERM", "xterm-256color");
         cmd.env("MIAO_TUI_STATE_DIR", dir.join("state"));
+        // A store per test: the sign-in prompt writes the real credential file,
+        // and a test must never reach the developer's own one.
+        cmd.env("MIAO_DATA_HOME", dir.join("data"));
         cmd.env("MIAO_DISABLE_TERMINAL_TITLE", "0");
         if inject_panic {
             cmd.env("MIAO_TUI_TEST_PANIC", "1");
@@ -909,6 +912,69 @@ fn an_approval_is_answered_from_the_panel() {
     let status = wait_exit(&mut harness.child, Duration::from_secs(5))
         .expect("process did not exit after Ctrl+C");
     assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    harness.shutdown();
+}
+
+/// A provider the engine serves no model of takes a key inside the picker, and
+/// the key lands in the store a restarted engine reads. This is the path an
+/// operator takes to add opencode-go, and the one the earlier advice ("run this
+/// in a shell, then reopen /models") could not have completed.
+#[test]
+fn an_unconfigured_provider_takes_a_key_and_stores_it() {
+    let mut harness = Harness::spawn_in_session("sign-in", "ses_a");
+    // `needs auth` is the tail the picker appends after the served models.
+    harness.write(b"\x18m");
+    assert!(
+        wait_for_plain(&harness, "needs auth", Duration::from_secs(3)),
+        "the picker never offered the unserved provider:\n{}",
+        plain(&harness.text())
+    );
+    // Two served models and the group header precede the provider row. The
+    // picker filters on typed letters, so the cursor moves with arrow keys.
+    for _ in 0..4 {
+        harness.write(b"\x1b[B");
+    }
+    harness.write(b"\r");
+    assert!(
+        wait_for_screen(&harness, "API key", Duration::from_secs(3)),
+        "the key prompt never opened:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"sk-smoke");
+    harness.write(b"\r");
+    let store = workspace("sign-in").join("data").join("miao.db");
+    let start = Instant::now();
+    let mut stored = Vec::new();
+    while start.elapsed() < Duration::from_secs(5) {
+        if store.is_file() {
+            stored = miao_engine::credential::list_database(&store).unwrap_or_default();
+            if !stored.is_empty() {
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(
+        stored.len(),
+        1,
+        "the key was not stored at {}",
+        store.display()
+    );
+    assert_eq!(stored[0].integration, "opencode-go");
+    assert_eq!(stored[0].label, "default");
+    // The notice names the provider it stored; the composer line clips the
+    // rest at this width, so that is what the raw stream carries.
+    assert!(
+        wait_for_plain(
+            &harness,
+            "stored the opencode-go key",
+            Duration::from_secs(3)
+        ),
+        "the notice never said the key was stored:\n{}",
+        plain(&harness.text())
+    );
+    harness.write(b"\x03");
+    let _ = wait_exit(&mut harness.child, Duration::from_secs(5));
     harness.shutdown();
 }
 

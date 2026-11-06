@@ -507,6 +507,7 @@ pub enum Dialog {
     Palette(PaletteDialog),
     Rename(RenameDialog),
     Tag(TagDialog),
+    SignIn(SignInDialog),
     Confirm(ConfirmDialog),
 }
 
@@ -573,6 +574,15 @@ impl PaletteDialog {
 /// lookup of the row it came from.
 pub struct RenameDialog {
     pub session_id: String,
+    pub input: Editor,
+}
+
+/// The API key for one provider. The engine builds its route table when it
+/// starts, so storing the key is only half the job: the app restarts the engine
+/// afterwards, which is what makes the provider's models appear.
+pub struct SignInDialog {
+    pub provider: String,
+    pub name: String,
     pub input: Editor,
 }
 
@@ -663,7 +673,7 @@ impl Dialog {
                 rows.push(Row {
                     id: format!("auth:{id}"),
                     label: name.clone(),
-                    detail: format!("miao auth login {id} <key>"),
+                    detail: "enter to store a key".to_string(),
                 });
             }
         }
@@ -1050,6 +1060,15 @@ impl Dialog {
         })
     }
 
+    /// Store the key of one provider the engine does not serve yet.
+    pub fn sign_in_prompt(provider: &str, name: &str) -> Self {
+        Dialog::SignIn(SignInDialog {
+            provider: provider.to_string(),
+            name: name.to_string(),
+            input: Editor::new(),
+        })
+    }
+
     pub fn rename(session_id: &str, title: &str) -> Self {
         let mut input = Editor::new();
         input.set_text(title);
@@ -1112,6 +1131,7 @@ impl Dialog {
             Dialog::Palette(palette) => handle_palette_key(palette, key),
             Dialog::Rename(rename) => handle_rename_key(&mut rename.input, key),
             Dialog::Tag(tag) => handle_rename_key(&mut tag.input, key),
+            Dialog::SignIn(sign_in) => handle_rename_key(&mut sign_in.input, key),
             Dialog::Confirm(confirm) => handle_confirm_key(confirm, key),
         }
     }
@@ -1142,6 +1162,7 @@ impl Dialog {
             Dialog::Palette(_) => "commands",
             Dialog::Rename(_) => "rename session",
             Dialog::Tag(_) => "tag session",
+            Dialog::SignIn(_) => "provider key",
             Dialog::Confirm(confirm) => confirm.title,
         }
     }
@@ -1190,6 +1211,16 @@ impl Dialog {
             | Dialog::Jobs(list)
             | Dialog::Devices(list)
             | Dialog::Schedule(list) => Some(list),
+            _ => None,
+        }
+    }
+
+    /// The key prompt for a provider this engine does not serve. It paints
+    /// through its own renderer, so the provider name can stand beside the
+    /// input instead of only in the border title.
+    pub fn sign_in(&self) -> Option<&SignInDialog> {
+        match self {
+            Dialog::SignIn(sign_in) => Some(sign_in),
             _ => None,
         }
     }
@@ -1254,7 +1285,7 @@ impl Dialog {
             let filter = u16::from(list.shows_filter());
             return rows + 3 + filter;
         }
-        if self.rename_input().is_some() {
+        if self.rename_input().is_some() || self.sign_in().is_some() {
             return 5;
         }
         6
