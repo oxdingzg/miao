@@ -281,6 +281,10 @@ pub struct App {
     dialog: Option<Dialog>,
     permission_generation: u64,
     workspace_changes_generation: u64,
+    /// A provider key was stored while a turn was running: the engine restarts
+    /// to serve its models as soon as that turn ends, because a restart cancels
+    /// whatever the engine is running.
+    pending_routes_reload: bool,
     /// `Ctrl+X` was pressed; the next key completes the chord.
     leader: bool,
     /// When the leader was armed, so a stale one expires instead of eating a
@@ -429,6 +433,7 @@ impl App {
             dialog: None,
             permission_generation: 0,
             workspace_changes_generation: 0,
+            pending_routes_reload: false,
             leader: false,
             leader_since: None,
             notice_until: None,
@@ -855,6 +860,15 @@ impl App {
                 }
                 self.state = *state;
                 self.stream_ended = None;
+                // A stored provider key waits for the Session to stop running:
+                // the restart that serves its models also cancels an in-flight
+                // turn, and that turn is worth more than a few seconds saved.
+                if self.pending_routes_reload && self.state.active_run.is_none() {
+                    self.pending_routes_reload = false;
+                    if let Some(engine) = self.engine.as_ref() {
+                        engine.reload_provider_routes();
+                    }
+                }
                 // A Session that already holds prompts may still be unnamed —
                 // resuming one must not leave the sidebar reading "New session".
                 if let Some((id, first)) = self
@@ -2101,19 +2115,37 @@ impl App {
     }
 
     /// Store the key an operator typed for a provider the engine does not serve
-    /// yet. The engine reads the store when it starts, so the notice says the
-    /// restart is what makes the provider's models appear — there is no route
-    /// rebuild inside a running engine.
+    /// yet, then restart the engine so its routes include that provider.
+    ///
+    /// A running engine keeps the routes it built at startup, so storing a key
+    /// alone served nothing and the operator had to restart miao. The engine's
+    /// spawn re-prepares those routes, which makes restarting it the whole fix.
+    /// A turn that is still running defers the restart, because shutting an
+    /// engine down ends the work it is doing.
     fn store_provider_key(&mut self, provider: &str, key: &str) {
         let Some(store) = self.credential_store.clone() else {
             self.notice("no credential store: set MIAO_DATA_HOME, XDG_DATA_HOME or HOME");
             return;
         };
         match miao_engine::credential::store_key(&store, provider, key, None) {
-            Ok(stored) => self.notice(&format!(
-                "stored the {provider} key as {} ({}); restart miao to use it — the engine builds its model routes at startup",
-                stored.label, stored.id
-            )),
+            Ok(stored) => {
+                let label = format!("{} ({})", stored.label, stored.id);
+                // The restart that makes the key usable also stops whatever the
+                // engine is running, so a busy Session defers it instead.
+                if self.state.active_run.is_some() {
+                    self.pending_routes_reload = true;
+                    self.notice(&format!(
+                        "stored the {provider} key as {label}; its models load when this turn finishes"
+                    ));
+                    return;
+                }
+                self.notice(&format!(
+                    "stored the {provider} key as {label}; restarting the engine to load its models"
+                ));
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.reload_provider_routes();
+                }
+            }
             Err(error) => self.notice(&format!("could not store the {provider} key: {error}")),
         }
     }
@@ -6108,12 +6140,14 @@ mod tests {
         assert_eq!(sign_in.input.text(), "oc_sk_pasted");
     }
 
-    /// Submitting the prompt stores the key in the credential store and says the
-    /// engine has to restart: routes are built at startup, so the models of the
-    /// provider appear only after a new engine.
+    /// Submitting the prompt stores the key and restarts the engine: routes are
+    /// built at startup, so a new engine process is what makes the provider's
+    /// models appear and the operator never restarts miao for it.
     #[test]
-    fn submitting_the_key_stores_it_and_says_a_restart_is_needed() {
+    fn submitting_the_key_stores_it_and_restarts_the_engine() {
         let mut app = session_app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
         let dir = std::env::temp_dir().join(format!("miao-sign-in-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let store = dir.join("miao.db");
@@ -6128,11 +6162,68 @@ mod tests {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].integration, "opencode-go");
         assert_eq!(listed[0].label, "default");
+        assert!(
+            matches!(
+                requests.try_recv(),
+                Ok(engine::Request::ReloadProviderRoutes)
+            ),
+            "the engine is restarted so the stored key can serve its models"
+        );
         let notice = app.shell.composer.notice.clone().expect("notice");
         assert!(
-            notice.contains("restart miao"),
-            "says what is left: {notice}"
+            notice.contains("restarting the engine"),
+            "says what happens next: {notice}"
         );
+        assert!(
+            !notice.contains("restart miao"),
+            "the operator is not asked to restart miao: {notice}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A running turn is worth more than the new models: the restart that serves
+    /// a stored key would cancel it, so the reload waits for the Session to go
+    /// idle and then happens on its own.
+    #[test]
+    fn a_stored_key_waits_for_a_running_turn_before_the_engine_restarts() {
+        let mut app = session_app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        let dir = std::env::temp_dir().join(format!("miao-sign-in-busy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        app.credential_store = Some(dir.join("miao.db"));
+        app.state.active_run = Some("run_1".into());
+        app.open_dialog(Dialog::sign_in_prompt(
+            "zhipuai-coding-plan",
+            "Zhipu AI Coding Plan",
+        ));
+        for character in "sk-test".chars() {
+            app.handle(key(KeyCode::Char(character), KeyModifiers::NONE));
+        }
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(
+            requests.try_recv().is_err(),
+            "the running turn keeps the engine alive"
+        );
+        assert!(app.pending_routes_reload);
+        let notice = app.shell.composer.notice.clone().expect("notice");
+        assert!(
+            notice.contains("when this turn finishes"),
+            "says when the models arrive: {notice}"
+        );
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState::default()),
+        });
+        assert!(
+            matches!(
+                requests.try_recv(),
+                Ok(engine::Request::ReloadProviderRoutes)
+            ),
+            "the idle Session releases the restart"
+        );
+        assert!(!app.pending_routes_reload);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
