@@ -2637,6 +2637,10 @@ pub fn render_dialog(frame: &mut Frame, area: Rect, dialog: &Dialog, theme: &The
         render_palette(frame, inner, palette, theme);
         return;
     }
+    if let Some(sign_in) = dialog.sign_in() {
+        render_sign_in(frame, inner, sign_in, theme);
+        return;
+    }
     if let Some(input) = dialog.rename_input() {
         render_rename(frame, inner, input, theme);
         return;
@@ -2863,6 +2867,55 @@ fn render_rename(frame: &mut Frame, area: Rect, input: &crate::editor::Editor, t
         input_area,
     );
     let (_, cells) = input.cursor_position();
+    let column = cells.min(input_area.width as usize - 1) as u16;
+    frame.set_cursor_position(Position::new(input_area.x + column, input_area.y));
+}
+
+/// The key prompt for a provider the engine does not serve yet. The border
+/// title cannot carry the provider (it is a static string), so the name stands
+/// on the label row beside the input instead.
+fn render_sign_in(
+    frame: &mut Frame,
+    area: Rect,
+    sign_in: &crate::dialogs::SignInDialog,
+    theme: &Theme,
+) {
+    let palette = theme.palette;
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            format!("{}  API key", sign_in.name),
+            Style::new().fg(palette.text_muted),
+        ))),
+        Rect { height: 1, ..area },
+    );
+    let input_area = Rect {
+        y: area.y + 1,
+        height: 1,
+        ..area
+    };
+    if input_area.width == 0 {
+        return;
+    }
+    let text = clip_cells(sign_in.input.text(), 0, input_area.width);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            text,
+            Style::new().fg(palette.text),
+        ))),
+        input_area,
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            "enter stores the key and restarts the engine · esc cancels",
+            Style::new().fg(palette.text_muted),
+        ))),
+        Rect {
+            y: area.y + 3,
+            height: 1,
+            ..area
+        },
+    );
+    let (_, cells) = sign_in.input.cursor_position();
     let column = cells.min(input_area.width as usize - 1) as u16;
     frame.set_cursor_position(Position::new(input_area.x + column, input_area.y));
 }

@@ -340,6 +340,10 @@ pub struct App {
     /// Providers the snapshot knows but this engine does not serve yet, as
     /// (id, display name). Fed to the model picker's needs-auth tail.
     providers_needing_auth: Vec<(String, String)>,
+    /// Where a key typed into the sign-in prompt is stored. The engine falls
+    /// back to the same file on a single-binary start, so a key stored here is
+    /// the one a restarted engine reads.
+    credential_store: Option<std::path::PathBuf>,
     /// Same for the account dialog.
     pending_accounts: bool,
     /// Same for the provider list: it opens when the catalog answers.
@@ -443,6 +447,7 @@ impl App {
             accounts_filter: None,
             stream_ended: None,
             providers_needing_auth: Vec::new(),
+            credential_store: miao_engine::credential::default_database(),
             pending_accounts: false,
             pending_providers: false,
             scroll: Scroll::default(),
@@ -1496,6 +1501,12 @@ impl App {
                     engine.tag(&tag.session_id, &value);
                 }
             }
+            DialogAction::Submit(key) if matches!(self.dialog, Some(Dialog::SignIn(_))) => {
+                let Some(Dialog::SignIn(sign_in)) = self.dialog.take() else {
+                    return;
+                };
+                self.store_provider_key(&sign_in.provider, &key);
+            }
             DialogAction::Submit(title) => {
                 let Some(Dialog::Rename(rename)) = self.dialog.take() else {
                     return;
@@ -1586,10 +1597,13 @@ impl App {
                 // parse silently.
                 if let Some(row) = list.rows.get(index) {
                     if let Some(provider) = row.id.strip_prefix("auth:") {
-                        self.dialog = None;
-                        self.shell.composer.notice = Some(format!(
-                            "this provider has no account yet: run `miao auth login {provider} <key>` in a shell, then restart miao — the engine builds its model routes at startup, so reopening /models alone will not show it"
-                        ));
+                        let name = self
+                            .providers
+                            .iter()
+                            .find(|entry| entry.id == provider)
+                            .map(|entry| entry.name.clone())
+                            .unwrap_or_else(|| provider.to_string());
+                        self.open_dialog(Dialog::sign_in_prompt(provider, &name));
                         return;
                     }
                 }
@@ -1626,17 +1640,24 @@ impl App {
                 else {
                     return;
                 };
-                self.dialog = None;
                 if !self
                     .models
                     .iter()
                     .any(|model| model.provider.as_deref() == Some(provider.as_str()))
                 {
-                    self.notice(&format!(
-                        "this provider has no account yet: run `miao auth login {provider} <key>` in a shell, then restart miao — the engine builds its model routes at startup, so reopening /models alone will not show it"
-                    ));
+                    // The same way in as the picker's needs-auth row: the key
+                    // prompt, not a shell command the running engine could not
+                    // have reflected.
+                    let name = self
+                        .providers
+                        .iter()
+                        .find(|entry| entry.id == provider)
+                        .map(|entry| entry.name.clone())
+                        .unwrap_or_else(|| provider.clone());
+                    self.open_dialog(Dialog::sign_in_prompt(&provider, &name));
                     return;
                 }
+                self.dialog = None;
                 self.models_filter = Some(provider);
                 self.reopen_models_dialog();
             }
@@ -2018,6 +2039,24 @@ impl App {
             return;
         }
         self.open_provider_accounts();
+    }
+
+    /// Store the key an operator typed for a provider the engine does not serve
+    /// yet. The engine reads the store when it starts, so the notice says the
+    /// restart is what makes the provider's models appear — there is no route
+    /// rebuild inside a running engine.
+    fn store_provider_key(&mut self, provider: &str, key: &str) {
+        let Some(store) = self.credential_store.clone() else {
+            self.notice("no credential store: set MIAO_DATA_HOME, XDG_DATA_HOME or HOME");
+            return;
+        };
+        match miao_engine::credential::store_key(&store, provider, key, None) {
+            Ok(stored) => self.notice(&format!(
+                "stored the {provider} key as {} ({}); restart miao to use it — the engine builds its model routes at startup",
+                stored.label, stored.id
+            )),
+            Err(error) => self.notice(&format!("could not store the {provider} key: {error}")),
+        }
     }
 
     fn open_provider_accounts(&mut self) {
@@ -5851,35 +5890,55 @@ mod tests {
         assert!(!list.rows.iter().any(|row| row.label.contains("glm-5")));
     }
 
-    /// A provider the engine serves no model of has nothing to narrow to, so
-    /// the row says how to add one instead of opening an empty picker. The
-    /// route table is built when the engine starts, so the width of the advice
-    /// matters: reopening /models inside the running TUI cannot show a
-    /// provider that was added after this engine was launched.
+    /// A provider the engine serves no model of opens the key prompt. Sending
+    /// an operator to `miao auth login` meant leaving the TUI for a shell, and
+    /// the running engine could not have reflected the result anyway; pasting
+    /// the key here stores it in the file a restarted engine reads.
     #[test]
-    fn choosing_an_unconfigured_provider_explains_how_to_add_it() {
+    fn choosing_an_unconfigured_provider_opens_the_key_prompt() {
         let mut app = session_app();
         leader(&mut app, 'a');
         app.handle(AppEvent::ProviderCatalog(serde_json::json!({
             "providers": [
-                { "id": "zhipu", "name": "Zhipu", "models": 4, "configured": false }
+                { "id": "opencode-go", "name": "OpenCode Go", "models": 37, "configured": false }
             ]
         })));
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
-        assert!(app.dialog.is_none());
+        let sign_in = app
+            .dialog
+            .as_ref()
+            .and_then(Dialog::sign_in)
+            .expect("prompt");
+        assert_eq!(sign_in.provider, "opencode-go");
+        assert_eq!(sign_in.name, "OpenCode Go");
+    }
+
+    /// Submitting the prompt stores the key in the credential store and says the
+    /// engine has to restart: routes are built at startup, so the models of the
+    /// provider appear only after a new engine.
+    #[test]
+    fn submitting_the_key_stores_it_and_says_a_restart_is_needed() {
+        let mut app = session_app();
+        let dir = std::env::temp_dir().join(format!("miao-sign-in-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = dir.join("miao.db");
+        app.credential_store = Some(store.clone());
+        app.open_dialog(Dialog::sign_in_prompt("opencode-go", "OpenCode Go"));
+        for character in "sk-test".chars() {
+            app.handle(key(KeyCode::Char(character), KeyModifiers::NONE));
+        }
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.dialog.is_none(), "the prompt closes on submit");
+        let listed = miao_engine::credential::list_database(&store).expect("list");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].integration, "opencode-go");
+        assert_eq!(listed[0].label, "default");
         let notice = app.shell.composer.notice.clone().expect("notice");
         assert!(
-            notice.contains("miao auth login zhipu"),
-            "the notice names the command: {notice}"
-        );
-        assert!(
             notice.contains("restart miao"),
-            "and says the engine builds routes at startup: {notice}"
+            "says what is left: {notice}"
         );
-        assert!(
-            !notice.contains("miao.json"),
-            "a provider the snapshot serves needs no model entry: {notice}"
-        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
