@@ -441,6 +441,14 @@ fn main() {
                     {"protocol":"responses","model":"fake/gpt","variants":["low","high"],"credential_id":"cred_b"}
                 ]),
             ),
+            // One provider the engine serves no model of, so the picker has a
+            // needs-auth row an operator can act on.
+            "provider_catalog" if sessions => unit_command(
+                &mut out,
+                id,
+                &frame,
+                json!({"providers":[{"id":"opencode-go","name":"OpenCode Go","models":37,"configured":false}]}),
+            ),
             "usage" if sessions => send(
                 &mut out,
                 json!({"id":id,"result":{

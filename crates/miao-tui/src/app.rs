@@ -718,6 +718,13 @@ impl App {
                 if matches!(self.dialog, Some(Dialog::Providers(_))) {
                     self.open_dialog(Dialog::providers(&self.providers));
                 }
+                // The picker carries the needs-auth tail, and it is built before
+                // this answer arrives: without this, the first /models of a
+                // session listed only the served models and the row that adds a
+                // provider appeared only after closing and reopening it.
+                if matches!(self.dialog, Some(Dialog::Models(_))) {
+                    self.reopen_models_dialog();
+                }
             }
             AppEvent::Accounts(accounts) => {
                 self.accounts = accounts;

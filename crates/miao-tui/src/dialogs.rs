@@ -673,7 +673,7 @@ impl Dialog {
                 rows.push(Row {
                     id: format!("auth:{id}"),
                     label: name.clone(),
-                    detail: format!("miao auth login {id} <key>"),
+                    detail: "enter to store a key".to_string(),
                 });
             }
         }

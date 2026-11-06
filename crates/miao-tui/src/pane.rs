@@ -2906,7 +2906,7 @@ fn render_sign_in(
     );
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            "enter stores the key and restarts the engine · esc cancels",
+            "enter stores · esc cancels",
             Style::new().fg(palette.text_muted),
         ))),
         Rect {

@@ -463,11 +463,16 @@ pub fn store_key(
 /// A credential identity in the shape the store already uses.
 fn credential_id() -> String {
     const ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    let mut seed = std::time::SystemTime::now()
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    // Two keys stored inside one clock tick would otherwise hash the same
+    // identifier and the second insert would collide on the primary key.
+    let sequence = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut seed = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_nanos() as u64)
         .unwrap_or(0)
-        ^ (std::process::id() as u64) << 32;
+        ^ (std::process::id() as u64) << 32)
+        .wrapping_add(sequence.wrapping_mul(0x9E37_79B9_7F4A_7C15));
     let mut id = String::from("cred_");
     for _ in 0..26 {
         id.push(ALPHABET[(seed % ALPHABET.len() as u64) as usize] as char);
