@@ -4503,17 +4503,59 @@ fn auth_write(rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("logout") => {
-            let integration = rest.get(1).ok_or("usage: miao auth logout INTEGRATION")?;
+            // `--account` names one stored account. Without it the default
+            // account is removed, which is what a plain login created; a
+            // named account was otherwise unreachable from the CLI and could
+            // only be deleted by editing the store.
+            let mut account: Option<String> = None;
+            let mut integration: Option<String> = None;
+            let mut args = rest[1..].iter();
+            while let Some(argument) = args.next() {
+                match argument.as_str() {
+                    "--account" => {
+                        account = Some(args.next().ok_or("--account needs a name")?.clone());
+                    }
+                    other if other.starts_with('-') => {
+                        return Err(format!("unknown auth logout option {other}"))
+                    }
+                    other => {
+                        if integration.replace(other.to_string()).is_some() {
+                            return Err(
+                                "usage: miao auth logout INTEGRATION [--account NAME]".into()
+                            );
+                        }
+                    }
+                }
+            }
+            let Some(integration) = integration else {
+                return Err("usage: miao auth logout INTEGRATION [--account NAME]".into());
+            };
+            let label = account
+                .map(|name| name.trim().to_string())
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| "default".to_string());
             let removed = connection
                 .execute(
-                    "DELETE FROM credential WHERE integration_id=?1 AND label='default'",
-                    rusqlite::params![integration],
+                    "DELETE FROM credential WHERE integration_id=?1 AND label=?2",
+                    rusqlite::params![integration, label],
                 )
                 .map_err(|error| error.to_string())?;
-            println!("removed {removed} credential(s) for {integration}");
+            let remaining: i64 = connection
+                .query_row(
+                    "SELECT count(*) FROM credential WHERE integration_id=?1",
+                    rusqlite::params![integration],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?;
+            println!(
+                "removed {removed} credential(s) for {integration} ({label}); {remaining} left"
+            );
             Ok(())
         }
-        _ => Err("usage: miao auth login INTEGRATION KEY | miao auth logout INTEGRATION".into()),
+        _ => Err(
+            "usage: miao auth login INTEGRATION KEY [--account NAME] [--oauth] | miao auth logout INTEGRATION [--account NAME]"
+                .into(),
+        ),
     }
 }
 
