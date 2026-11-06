@@ -199,28 +199,66 @@ private struct ProviderEditor: View {
     @Bindable var agent: LocalAgent
     @Environment(\.dismiss) private var dismiss
     @State private var draft: LocalProvider
+    @State private var preset: String
 
     init(agent: LocalAgent, item: LocalProvider) {
         self.agent = agent
         _draft = State(initialValue: item)
+        let known = LocalPresets.all.first { $0.baseURL == item.baseURL }?.id
+        _preset = State(initialValue: known ?? (item.baseURL.isEmpty ? "" : "custom"))
+    }
+
+    private var chosen: LocalPreset? { LocalPresets.named(preset) }
+
+    private func apply(_ id: String) {
+        guard let item = LocalPresets.named(id) else { return }
+        draft.name = item.name
+        draft.baseURL = item.baseURL
+        draft.model = item.defaultModel
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("名称（可选）", text: $draft.name)
-                    TextField("接口地址", text: $draft.baseURL)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                        .accessibilityIdentifier("localBaseURL")
+                    Picker("服务商", selection: $preset) {
+                        Text("选择…").tag("")
+                        ForEach(LocalPresets.all) { item in Text(item.name).tag(item.id) }
+                        Text("自定义").tag("custom")
+                    }
+                    .onChange(of: preset) { _, value in apply(value) }
+                    .accessibilityIdentifier("localPreset")
+                } footer: {
+                    Text("选好服务商后通常只需填 API Key。")
+                }
+                Section {
                     SecureField("API Key", text: $draft.apiKey)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .accessibilityIdentifier("localAPIKey")
-                    TextField("模型名称", text: $draft.model)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .accessibilityIdentifier("localModel")
-                } footer: {
-                    Text("兼容 OpenAI 的 /chat/completions 接口，例如火山引擎的 https://ark.cn-beijing.volces.com/api/v3。")
+                    if let items = chosen?.models, !items.isEmpty {
+                        Picker("模型", selection: $draft.model) {
+                            ForEach(items, id: \.self) { item in Text(item).tag(item) }
+                        }
+                    } else {
+                        TextField("模型名称", text: $draft.model)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .accessibilityIdentifier("localModel")
+                    }
+                } header: {
+                    Text(chosen?.name ?? "连接")
+                }
+                if chosen == nil {
+                    Section {
+                        TextField("名称", text: $draft.name)
+                        TextField("接口地址", text: $draft.baseURL)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                            .accessibilityIdentifier("localBaseURL")
+                        TextField("模型名称", text: $draft.model)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .accessibilityIdentifier("localModelCustom")
+                    } footer: {
+                        Text("兼容 OpenAI 的 /chat/completions 接口。")
+                    }
                 }
             }
             .navigationTitle(draft.model.isEmpty ? "新的服务商" : "编辑服务商")
