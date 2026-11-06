@@ -3456,7 +3456,9 @@ impl App {
             Some(context) => format!("{context}\n\n{text}"),
             None => text,
         };
-        let queued = self.shell.composer.phase.is_some();
+        // A live turn is the right signal: the display phase only appears once
+        // the engine has been quiet long enough to narrate it.
+        let queued = self.live.is_some();
         engine.prompt(&session_id, &text, attachments, queued);
         // The prompt left the composer, so its draft is gone too: keeping it
         // would restore text the Session already sent if the operator switched
