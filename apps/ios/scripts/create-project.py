@@ -38,8 +38,27 @@ add('main-group', f'isa = PBXGroup; children = {refs(["source-group", "ui-group"
 add('package', 'isa = XCLocalSwiftPackageReference; relativePath = MiaoCore;')
 add('product', f'isa = XCSwiftPackageProductDependency; package = {ident("package")}; productName = MiaoCore;')
 add('framework-build', f'isa = PBXBuildFile; productRef = {ident("product")};')
+# Remote SwiftPM dependencies. Pinned to a branch so the checked-in project
+# resolves without guessing tags; bump deliberately when a package moves.
+# Keep this list small: every entry slows the cold build of the app. ExyteChat
+# was evaluated and dropped: it drags GiphyUISDK, ExyteMediaPicker, Kingfisher
+# and libwebp into a text-only agent conversation.
+remote = [
+    ("openai", "https://github.com/MacPaw/OpenAI.git", "main", ["OpenAI"]),
+    ("markdown", "https://github.com/swiftlang/swift-markdown.git", "main", ["Markdown"]),
+    # Textual needs iOS 18; MarkdownUI keeps the app's iOS 17 floor.
+    ("markdownui", "https://github.com/gonzalezreal/swift-markdown-ui.git", "main", ["MarkdownUI"]),
+    ("highlightr", "https://github.com/raspu/Highlightr.git", "master", ["Highlightr"]),
+]
+remote_products = []
+for slug, url, branch, products in remote:
+    add(f'pkg-{slug}', f'isa = XCRemoteSwiftPackageReference; repositoryURL = "{url}"; requirement = {{ kind = branch; branch = {branch}; }};')
+    for product in products:
+        add(f'prod-{product}', f'isa = XCSwiftPackageProductDependency; package = {ident(f"pkg-{slug}")}; productName = {product};')
+        add(f'fb-{product}', f'isa = PBXBuildFile; productRef = {ident(f"prod-{product}")};')
+        remote_products.append(f'prod-{product}')
 add('sources', f'isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = {refs(["build:" + name for name in files])}; runOnlyForDeploymentPostprocessing = 0;')
-add('frameworks', f'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = {refs(["framework-build"])}; runOnlyForDeploymentPostprocessing = 0;')
+add('frameworks', f'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = {refs(["framework-build"] + ["fb-" + product for _, _, _, products in remote for product in products])}; runOnlyForDeploymentPostprocessing = 0;')
 add('resources', f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = {refs(["assets-build", "icon-license-build"])}; runOnlyForDeploymentPostprocessing = 0;')
 for config in ['Debug', 'Release']:
     common = 'CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos;'
@@ -61,13 +80,13 @@ for kind in ['project', 'target', 'ui']:
     add(kind + '-configs', f'isa = XCConfigurationList; buildConfigurations = {refs([kind + ":Debug", kind + ":Release"])}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')
 add('target', f'''isa = PBXNativeTarget; buildConfigurationList = {ident("target-configs")};
     buildPhases = {refs(["sources", "frameworks", "resources"])}; buildRules = (); dependencies = ();
-    name = Miao; packageProductDependencies = {refs(["product"])}; productName = Miao;
+    name = Miao; packageProductDependencies = {refs(["product"] + remote_products)}; productName = Miao;
     productReference = {ident("app")}; productType = "com.apple.product-type.application";''')
 add('ui-target', f'''isa = PBXNativeTarget; buildConfigurationList = {ident("ui-configs")}; buildPhases = {refs(["ui-sources"])}; buildRules = (); dependencies = {refs(["ui-dependency"])}; name = MiaoUITests; productName = MiaoUITests; productReference = {ident("ui-product")}; productType = "com.apple.product-type.bundle.ui-testing";''')
 add('project', f'''isa = PBXProject; attributes = {{ BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 1500; }};
     buildConfigurationList = {ident("project-configs")}; compatibilityVersion = "Xcode 14.0";
     developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base, "zh-Hans");
-    mainGroup = {ident("main-group")}; packageReferences = {refs(["package"])};
+    mainGroup = {ident("main-group")}; packageReferences = {refs(["package"] + ["pkg-" + slug for slug, _, _, _ in remote])};
     productRefGroup = {ident("products")}; projectDirPath = ""; projectRoot = ""; targets = {refs(["target", "ui-target"])};''')
 (root / 'Miao.xcodeproj/project.pbxproj').write_text('// !$*UTF8*$!\n{\n\tarchiveVersion = 1;\n\tclasses = {};\n\tobjectVersion = 56;\n\tobjects = {\n' + '\n'.join(entries) + '\n\t};\n\trootObject = ' + ident('project') + ';\n}\n')
 (root / 'Miao.xcodeproj/xcshareddata/xcschemes/Miao.xcscheme').write_text(f'''<?xml version="1.0" encoding="UTF-8"?>
