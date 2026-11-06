@@ -760,11 +760,42 @@ pub fn attach(settings: &Settings, bus: Bus) -> Result<Handle, String> {
         });
         return Ok(Handle { tx });
     }
-    let (connection, events) = Connection::start(settings.spawn.clone(), REQUEST_TIMEOUT)
-        .map_err(|error| format!("cannot start the engine: {error}"))?;
-    let (tx, rx) = mpsc::unbounded_channel();
-    tokio::spawn(run(connection, events, rx, bus));
-    Ok(Handle { tx })
+    match Connection::start(settings.spawn.clone(), REQUEST_TIMEOUT) {
+        Ok((connection, events)) => {
+            let (tx, rx) = mpsc::unbounded_channel();
+            tokio::spawn(run(connection, events, rx, bus));
+            Ok(Handle { tx })
+        }
+        Err(error) => {
+            // A host that names an engine binary we cannot find must not cost
+            // the start: the Windows product passes a launch prefix where no
+            // POSIX wrapper exists, which reads as "program not found" while
+            // the engine itself is linked in and perfectly able to run here.
+            let argv = settings.spawn.args.clone();
+            let (tx, rx) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                match miao_engine::cli::configure(&argv).await {
+                    Ok(configured) => {
+                        match Connection::start_embedded(configured.runtime, REQUEST_TIMEOUT) {
+                            Ok((connection, events)) => {
+                                bus.send(AppEvent::EngineFailure(format!(
+                                    "the named engine could not start ({error}); using the in-process engine"
+                                )));
+                                run(connection, events, rx, bus).await
+                            }
+                            Err(error) => bus.send(AppEvent::EngineFailure(format!(
+                                "cannot start the engine: {error}"
+                            ))),
+                        }
+                    }
+                    Err(error) => bus.send(AppEvent::EngineFailure(format!(
+                        "cannot start the engine: {error}"
+                    ))),
+                }
+            });
+            Ok(Handle { tx })
+        }
+    }
 }
 
 /// What the TUI remembers about the open Session between snapshots: the last
