@@ -14,6 +14,7 @@ const HostWebSocket = WebSocket as unknown as {
 }
 
 export const Method = Schema.Literals([
+  "session.archive",
   "capabilities",
   "project.list",
   "session.list",
@@ -119,6 +120,7 @@ type Peer = {
   accountGrant?: DeviceGrants.Grant
 }
 const required: Partial<Record<Method, DeviceGrants.Permission>> = {
+  "session.archive": "session.rename",
   "session.create": "session.create",
   "session.prompt": "prompt",
   "session.interrupt": "interrupt",
@@ -134,6 +136,7 @@ const required: Partial<Record<Method, DeviceGrants.Permission>> = {
   "question.reply": "question.reply",
 }
 const sessionMethods = new Set<Method>([
+  "session.archive",
   "session.get",
   "session.history",
   "session.events",
