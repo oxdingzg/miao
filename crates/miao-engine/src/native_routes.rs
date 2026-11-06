@@ -39,7 +39,13 @@ pub fn materialize(
     Ok(Some(path))
 }
 
-fn routes(sources: &[Source], credential_db: Option<&Path>) -> Result<Option<Vec<Value>>, String> {
+/// Every route this configuration and credential store can address, in the
+/// shape the manifest carries. `miao models` prints the same set, so the CLI
+/// and a started engine cannot disagree about what a turn can reach.
+pub fn routes(
+    sources: &[Source],
+    credential_db: Option<&Path>,
+) -> Result<Option<Vec<Value>>, String> {
     let documents = config_derive::load(sources)?;
     let values = documents
         .iter()
