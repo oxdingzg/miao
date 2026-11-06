@@ -1,5 +1,6 @@
 import Foundation
 import MCP
+import UIKit
 import Observation
 
 /// On-device assistant: it talks to a provider the owner configured on the phone
@@ -19,6 +20,8 @@ struct LocalMessage: Codable, Sendable, Equatable, Identifiable {
     var role: Role
     var text: String
     var toolName: String?
+    /// Base64 JPEG, downscaled before it is stored, for multimodal turns.
+    var images: [String] = []
 }
 
 struct LocalSession: Codable, Sendable, Equatable, Identifiable {
@@ -210,11 +213,13 @@ final class LocalAgent {
 
     // MARK: turn
 
-    func send(_ text: String) {
+    func send(_ text: String, images: [UIImage] = []) {
         let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty, !busy, ready else { return }
+        guard (!prompt.isEmpty || !images.isEmpty), !busy, ready else { return }
         error = nil
-        messages.append(LocalMessage(role: .user, text: prompt))
+        let encoded = images.prefix(4).compactMap(Self.jpeg)
+        let title = prompt.isEmpty ? "（图片）" : prompt
+        messages.append(LocalMessage(role: .user, text: prompt.isEmpty ? title : prompt, images: encoded))
         persist()
         busy = true
         task = Task { [weak self] in
@@ -319,6 +324,17 @@ final class LocalAgent {
         return Reply(text: text.isEmpty ? "（模型没有返回内容）" : text, tool: nil, streamed: streamed)
     }
 
+    /// Phone photos are far larger than a model needs; shrink once, then keep
+    /// the small copy so a Session file stays reasonable.
+    static func jpeg(_ image: UIImage) -> String? {
+        let maxEdge: CGFloat = 1024
+        let scale = min(1, maxEdge / max(image.size.width, image.size.height))
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let small = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+        return small.jpegData(compressionQuality: 0.7)?.base64EncodedString()
+    }
+
     private func endpoint() throws -> URL {
         let trimmed = provider.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard var url = URL(string: trimmed) else { throw LocalAgentError.badEndpoint }
@@ -337,7 +353,17 @@ final class LocalAgent {
         ]]
         for message in messages {
             switch message.role {
-            case .user: wire.append(["role": "user", "content": message.text])
+            case .user:
+                if message.images.isEmpty {
+                    wire.append(["role": "user", "content": message.text])
+                } else {
+                    var parts: [[String: Any]] = [["type": "text", "text": message.text]]
+                    for image in message.images {
+                        parts.append(["type": "image_url",
+                                      "image_url": ["url": "data:image/jpeg;base64,\(image)"]])
+                    }
+                    wire.append(["role": "user", "content": parts])
+                }
             case .assistant: wire.append(["role": "assistant", "content": message.text])
             case .tool:
                 wire.append(["role": "user", "content": "[\(message.toolName ?? "tool")] \(message.text)"])

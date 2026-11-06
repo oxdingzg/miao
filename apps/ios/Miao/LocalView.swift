@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 /// The phone-only mode: no account, no computer, no relay.
@@ -10,6 +11,8 @@ struct LocalView: View {
     /// yank the transcript back down.
     @State private var followsLatest = true
     @State private var viewport: CGFloat = 0
+    @State private var picked: [PhotosPickerItem] = []
+    @State private var attachments: [UIImage] = []
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -149,7 +152,24 @@ struct LocalView: View {
         switch message.role {
         case .user:
             HStack { Spacer(minLength: 40)
-                Text(message.text).padding(10).background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 12)) }
+                VStack(alignment: .trailing, spacing: 6) {
+                    if !message.images.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(message.images.prefix(4), id: \.self) { encoded in
+                                if let data = Data(base64Encoded: encoded), let image = UIImage(data: data) {
+                                    Image(uiImage: image).resizable().scaledToFill()
+                                        .frame(width: 64, height: 64)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                            }
+                        }
+                    }
+                    if !message.text.isEmpty {
+                        Text(message.text).padding(10)
+                            .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+            }
         case .assistant:
             LocalMarkdown(text: message.text)
                 .padding(10).frame(maxWidth: .infinity, alignment: .leading)
@@ -170,8 +190,31 @@ struct LocalView: View {
     }
 
     private var composer: some View {
-        HStack(spacing: 8) {
-            TextField("说点什么…", text: $draft, axis: .vertical)
+        VStack(spacing: 6) {
+            if !attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(attachments.enumerated()), id: \.offset) { index, image in
+                            Image(uiImage: image)
+                                .resizable().scaledToFill()
+                                .frame(width: 56, height: 56)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(alignment: .topTrailing) {
+                                    Button { attachments.remove(at: index) } label: {
+                                        Image(systemName: "xmark.circle.fill").foregroundStyle(.white, .black.opacity(0.5))
+                                    }.padding(2)
+                                }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                }
+            }
+            HStack(spacing: 8) {
+                PhotosPicker(selection: $picked, maxSelectionCount: 4, matching: .images) {
+                    Image(systemName: "photo.on.rectangle").font(.title3)
+                }
+                .accessibilityIdentifier("localAttach")
+                TextField("说点什么…", text: $draft, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.plain)
                 .padding(.horizontal, 10).padding(.vertical, 8)
@@ -184,18 +227,33 @@ struct LocalView: View {
                     .accessibilityIdentifier("localStop")
             } else {
                 Button { send() } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }
-                    .disabled(!agent.ready || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!agent.ready || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty))
                     .accessibilityIdentifier("localSend")
+            }
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(.bar)
+        .onChange(of: picked) { _, items in
+            Task {
+                var loaded: [UIImage] = []
+                for item in items {
+                    if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
+                        loaded.append(image)
+                    }
+                }
+                attachments = Array(loaded.prefix(4))
+            }
+        }
     }
 
     private func send() {
         let text = draft
+        let images = attachments
         draft = ""
-        agent.send(text)
+        attachments = []
+        picked = []
+        agent.send(text, images: images)
     }
 }
 
