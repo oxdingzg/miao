@@ -38,6 +38,27 @@ unwanted pairing or revoke a device there. Revocation invalidates its grant
 and closes its active channels. Turning off Remote Control closes this
 window's connection while local work continues.
 
+## Configure providers and models from the phone
+
+A phone can enter a provider's API key, disconnect a stored credential, and
+choose the default model new Sessions on that computer use.
+
+1. On the computer, open `/remote-control` and pick **allow provider and model
+   configuration** in the device-permission step. The default is to leave it
+   out, and the phone then shows no entry point for it.
+2. On iOS, open **Providers and models** from the sidebar: connected providers
+   can be disconnected, connectable ones accept an API key, and the default
+   model is chosen under **New Sessions**.
+3. Providers configured through environment variables, and OAuth providers that
+   need a browser, stay a local action; the phone labels them as connectable
+   only on the computer.
+
+The key travels only over the encrypted channel and is stored by your computer.
+The phone never displays a stored key and never writes it to local cache or the
+operation ledger; the result is confirmed by re-reading the provider list.
+Disconnecting removes only the stored credential and leaves other settings
+alone.
+
 ## What happens when a window closes
 
 Each normal miao invocation owns its execution and remote connection. Closing

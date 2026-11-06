@@ -10,6 +10,7 @@ struct RemoteView: View {
     @State private var hostID: UUID?
     @State private var pairing = false
     @State private var accountPresented = false
+    @State private var providersHost: UUID?
     @State private var invitation = ""
     @State private var attached: UUID?
     @State private var attachEpoch = 0
@@ -51,6 +52,11 @@ struct RemoteView: View {
                     SessionView(client: client, session: client.session(destination.summary))
                         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { notificationSession = nil } } }
                 }
+            }
+        }
+        .sheet(isPresented: Binding(get: { providersHost != nil }, set: { if !$0 { providersHost = nil } })) {
+            if let id = providersHost, let client = model.clients[id] {
+                ProvidersView(client: client)
             }
         }
         .onChange(of: model.connectionEpoch) { _, _ in Task { await attach() } }
@@ -314,6 +320,13 @@ struct RemoteView: View {
         Button { Task { await client.refreshLists() } } label: {
             Label("刷新会话", systemImage: "arrow.clockwise").frame(maxWidth: .infinity, alignment: .leading)
         }.disabled(!client.ready)
+        // Always reachable: without the permission the screen explains which
+        // authorization step is missing instead of hiding the feature.
+        Button { providersHost = client.record.id } label: {
+            Label("服务商与模型", systemImage: "key.horizontal").frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .disabled(!client.ready)
+        .accessibilityIdentifier("providersSettings")
         Button { accountPresented = true } label: {
             Label(model.accountSignedIn ? "中继账号" : "登录中继", systemImage: "person.crop.circle")
                 .frame(maxWidth: .infinity, alignment: .leading)

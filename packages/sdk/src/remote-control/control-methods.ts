@@ -86,6 +86,34 @@ export function make(options: {
         .catch(() => undefined)
       return pending
     }
+  // Provider configuration has no Session, so it cannot use the Session-scoped
+  // receipt table. Each action here is idempotent and its outcome is read back
+  // through `provider.list`, so a payload is never hashed or stored.
+  const withoutReceipt =
+    <A>(
+      schema: Schema.Decoder<A, never>,
+      apply: (payload: A, context: ControlAgent.Context) => Promise<void>,
+    ): ControlAgent.Handler =>
+    async (request, context) => {
+      const decoded = Schema.decodeUnknownOption(schema, { onExcessProperty: "error" })(request.payload)
+      if (Option.isNone(decoded) || !request.operationID) throw new ControlAgent.RequestError("invalid_request")
+      context.authorize()
+      try {
+        await apply(decoded.value, context)
+      } catch (error) {
+        if (error instanceof ControlAgent.RequestError) return { status: "rejected", code: error.code }
+        return { status: "outcome_unknown" }
+      }
+      context.authorize()
+      return { status: "completed" }
+    }
+  const provider = async (providerID: string, context: ControlAgent.Context) => {
+    const listed = await options.client.integrations.list({}, { signal: context.signal })
+    context.authorize()
+    const found = listed.data.find((entry) => entry.id === providerID)
+    if (!found) throw new ControlAgent.RequestError("not_found")
+    return found
+  }
   const methods: Partial<Record<ControlAgent.Method, ControlAgent.Handler>> = {
     "selection.list": async (request, context) => {
       const decoded = Schema.decodeUnknownOption(Schema.Struct({ directoryID: Schema.optional(Schema.String) }), {
@@ -338,6 +366,76 @@ export function make(options: {
         cursor: { next: offset + ids.length < context.grant.sessionIDs.length ? String(offset + ids.length) : null },
       }
     },
+    "provider.list": async (_request, context) => {
+      const [listed, models, configured] = await Promise.all([
+        options.client.integrations.list({}, { signal: context.signal }),
+        options.client.models.list({}, { signal: context.signal }),
+        options.client.config.providers({}, { signal: context.signal }),
+      ])
+      context.authorize()
+      // Credential material never crosses this boundary. A device learns which
+      // providers exist, how each can be connected, and which one is live now.
+      return {
+        providers: listed.data.map((provider) => ({
+          id: provider.id,
+          name: provider.name,
+          connected: provider.connections.length > 0,
+          sources: provider.connections.map((connection) => connection.type),
+          methods: provider.methods.map((method) => ({
+            type: method.type,
+            label: method.type === "env" ? null : (method.label ?? null),
+            optional: method.type === "key" ? (method.optional ?? false) : false,
+            names: method.type === "env" ? method.names : [],
+          })),
+        })),
+        models: models.data.map((model) => ({
+          id: model.id,
+          providerID: model.providerID,
+          name: model.name,
+          capabilities: model.capabilities,
+        })),
+        default: configured.data.default,
+      }
+    },
+    "provider.connectKey": withoutReceipt(
+      Schema.Struct({
+        providerID: Schema.String.check(Schema.isLengthBetween(1, 128)),
+        key: Schema.String.check(Schema.isLengthBetween(1, 8192)),
+      }),
+      async (payload, context) => {
+        const found = await provider(payload.providerID, context)
+        // OAuth needs a browser the owner controls, so it stays a local action.
+        if (!found.methods.some((method) => method.type === "key"))
+          throw new ControlAgent.RequestError("forbidden")
+        await options.client.integrations.connectKey({ integrationID: found.id, key: payload.key })
+      },
+    ),
+    "provider.disconnect": withoutReceipt(
+      Schema.Struct({ providerID: Schema.String.check(Schema.isLengthBetween(1, 128)) }),
+      async (payload, context) => {
+        const found = await provider(payload.providerID, context)
+        const active = found.connections.flatMap((connection) =>
+          connection.type === "credential" && connection.active ? [connection.id] : [],
+        )
+        for (const credentialID of active) await options.client.credentials.remove({ credentialID })
+      },
+    ),
+    "model.default": withoutReceipt(
+      Schema.Struct({
+        providerID: Schema.String.check(Schema.isLengthBetween(1, 128)),
+        modelID: Schema.String.check(Schema.isLengthBetween(1, 128)),
+      }),
+      async (payload, context) => {
+        const models = await options.client.models.list({}, { signal: context.signal })
+        context.authorize()
+        if (!models.data.some((model) => model.providerID === payload.providerID && model.id === payload.modelID))
+          throw new ControlAgent.RequestError("not_found")
+        await options.client.config.update({
+          location: {},
+          config: { model: `${payload.providerID}/${payload.modelID}` },
+        })
+      },
+    ),
     capabilities: async () => ({
       protocol: 1,
       operationReceipts: true,
@@ -345,6 +443,7 @@ export function make(options: {
       events: "long-poll",
       methods: Object.keys(methods),
       promptDelivery: ["steer", "queue"],
+      providerConfigure: ["key"],
     }),
     "session.get": (request, context) =>
       options.client.sessions.get({ sessionID: request.sessionID! }, { signal: context.signal }),

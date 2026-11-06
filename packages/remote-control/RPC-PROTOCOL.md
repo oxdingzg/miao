@@ -32,13 +32,24 @@ business parameters. A handler's durable receipt determines acceptance.
 
 Read methods: `capabilities`, `project.list`, `session.list`, `session.get`,
 `session.history`, `session.events`, `session.pending`, `session.diff`,
-`selection.list`, `operation.get`. They require `read` permission. Writable
-methods and permissions are `session.create` → `session.create`,
-`session.prompt` → `prompt`, `session.interrupt` → `interrupt`,
-`session.rename` → `session.rename`, `permission.reply` → `permission.reply`,
-and `question.reply` → `question.reply`. All writable methods require an
-operation ID. Only registered methods are callable; payload validation and
-result semantics are supplied by each authoritative Runtime handler.
+`selection.list`, `provider.list`, `operation.get`. They require `read`
+permission. Writable methods and permissions are `session.create` →
+`session.create`, `session.prompt` → `prompt`, `session.interrupt` →
+`interrupt`, `session.rename` → `session.rename`, `session.switchAgent` and
+`session.switchModel` → `session.selection`, `provider.connectKey`,
+`provider.disconnect` and `model.default` → `provider.configure`,
+`permission.reply` → `permission.reply`, and `question.reply` →
+`question.reply`. All writable methods require an operation ID. Only registered
+methods are callable; payload validation and result semantics are supplied by
+each authoritative Runtime handler.
+
+Provider configuration is the one write family without a durable receipt. It
+has no Session to key a receipt by, its handlers are idempotent, and a client
+reconciles by re-reading `provider.list`; the request payload, which may carry
+a credential, is therefore never hashed or stored. `provider.list` reports
+provider identity, available authentication methods, connection sources and
+the model list only — stored credential material never travels back to a
+device, and an OAuth connection stays a local action on the host.
 
 Directory queries must filter before serializing results. An operation query
 must not reveal another device's receipt. Approval is limited to the current

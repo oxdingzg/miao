@@ -34,6 +34,8 @@ public enum RemoteMethod: String, Codable, Sendable {
     case sessionInterrupt = "session.interrupt", sessionRename = "session.rename"
     case sessionSwitchAgent = "session.switchAgent", sessionSwitchModel = "session.switchModel"
     case permissionReply = "permission.reply", questionReply = "question.reply"
+    case providerList = "provider.list", providerConnectKey = "provider.connectKey"
+    case providerDisconnect = "provider.disconnect", modelDefault = "model.default"
 }
 
 public struct ApprovedHost: Codable, Sendable, Equatable, Identifiable {
