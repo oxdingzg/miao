@@ -19,6 +19,10 @@ pub struct ModelInfo {
     /// The provider half of the catalog's model key (`volcengine/model`), so
     /// the picker groups the list the way the product's does.
     pub provider: Option<String>,
+    /// The account this route spends, when the provider holds more than one.
+    /// Two accounts answer through two routes, and the label is what tells
+    /// them apart in the picker.
+    pub account: Option<String>,
 }
 
 impl ModelInfo {
@@ -66,12 +70,17 @@ impl ModelInfo {
                                     .collect::<Vec<_>>()
                             })
                             .unwrap_or_default();
+                        let account = entry
+                            .get("account")
+                            .and_then(Value::as_str)
+                            .map(str::to_string);
                         let single = Self {
                             protocol: protocol.to_string(),
                             model: model.to_string(),
                             route_id: route_id.clone(),
                             variant: None,
                             provider: provider.clone(),
+                            account: account.clone(),
                         };
                         if variants.is_empty() {
                             return vec![single];
@@ -84,6 +93,7 @@ impl ModelInfo {
                                 route_id: route_id.clone(),
                                 variant: Some(variant),
                                 provider: provider.clone(),
+                                account: account.clone(),
                             })
                             .collect()
                     })
@@ -93,9 +103,18 @@ impl ModelInfo {
     }
 
     pub fn label(&self) -> String {
+        // The account rides the label for providers holding several keys: the
+        // same model then appears once per account, and only the label tells
+        // the operator which key a choice spends.
+        let account = self
+            .account
+            .as_deref()
+            .filter(|account| *account != "default")
+            .map(|account| format!("{account} · "))
+            .unwrap_or_default();
         match &self.variant {
-            Some(variant) => format!("{} · {} · {variant}", self.model, self.protocol),
-            None => format!("{} · {}", self.model, self.protocol),
+            Some(variant) => format!("{account}{} · {} · {variant}", self.model, self.protocol),
+            None => format!("{account}{} · {}", self.model, self.protocol),
         }
     }
 
@@ -108,6 +127,13 @@ impl ModelInfo {
         let mut parts = vec![self.model.clone()];
         if let Some(provider) = &self.provider {
             parts.push(provider.clone());
+        }
+        if let Some(account) = self
+            .account
+            .as_deref()
+            .filter(|account| *account != "default")
+        {
+            parts.push(account.to_string());
         }
         parts.push(self.protocol.clone());
         if let Some(variant) = &self.variant {
@@ -227,6 +253,9 @@ pub struct ProviderEntry {
     /// Whether this engine already serves a model of the provider. The model
     /// picker marks the rest as needing auth instead of hiding them.
     pub configured: bool,
+    /// How many unexpired credentials this install holds for the provider, so a
+    /// row can tell "no account" from "an account but no route".
+    pub accounts: u64,
 }
 
 impl ProviderEntry {
@@ -243,6 +272,7 @@ impl ProviderEntry {
                     .get("configured")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
+                let accounts = entry.get("accounts").and_then(Value::as_u64).unwrap_or(0);
                 Some(Self {
                     id: id.to_string(),
                     name: entry
@@ -252,9 +282,20 @@ impl ProviderEntry {
                         .to_string(),
                     detail: format!(
                         "{models} models · {}",
-                        if configured { "ready" } else { "needs auth" }
+                        // "needs auth" named the wrong thing: a provider can
+                        // hold an account and still serve no route, which needs
+                        // a models entry rather than a key.
+                        match (configured, accounts) {
+                            (true, 0) => "ready".to_string(),
+                            (true, 1) => "ready · 1 account".to_string(),
+                            (true, many) => format!("ready · {many} accounts"),
+                            (false, 0) => "needs auth".to_string(),
+                            (false, 1) => "1 account · no route".to_string(),
+                            (false, many) => format!("{many} accounts · no route"),
+                        }
                     ),
                     configured,
+                    accounts,
                 })
             })
             .collect()

@@ -4751,6 +4751,7 @@ mod tests {
             route_id: Some("xiaomi/glm-5.3-flash".into()),
             variant: None,
             provider: Some("xiaomi".into()),
+            account: None,
         }];
         app.update_status();
         assert_eq!(
@@ -4785,6 +4786,7 @@ mod tests {
             route_id: Some("xiaomi/glm-5".into()),
             variant: None,
             provider: Some("xiaomi".into()),
+            account: None,
         }];
         app.remembered_model = Some("glm-5".into());
         app.update_status();
@@ -4816,6 +4818,7 @@ mod tests {
             route_id: Some("xiaomi/glm-5".into()),
             variant: None,
             provider: Some("xiaomi".into()),
+            account: None,
         }];
         app.remembered_model = None;
         app.catalog = vec![crate::session::SessionSummary {
@@ -6022,6 +6025,7 @@ mod tests {
                 route_id: Some("openai/gpt-5".into()),
                 variant: None,
                 provider: Some("openai".into()),
+                account: None,
             },
             ModelInfo {
                 protocol: "openai-chat".into(),
@@ -6029,6 +6033,7 @@ mod tests {
                 route_id: Some("zhipu/glm-5".into()),
                 variant: None,
                 provider: Some("zhipu".into()),
+                account: None,
             },
         ];
         leader(&mut app, 'a');
@@ -6935,6 +6940,8 @@ fn seed_providers(raw: Option<&str>) -> Vec<ProviderEntry> {
             name,
             detail,
             configured: true,
+            // The export carries one row per active credential.
+            accounts: 1,
         })
         .collect()
 }
