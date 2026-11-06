@@ -634,7 +634,10 @@ pub fn split(text: &str) -> Option<(String, String)> {
         None => (first_line, ""),
     };
     let name = command.strip_prefix('/')?;
-    if name.is_empty() {
+    // A first token carrying a path separator is a pasted path, not a command:
+    // `/Users/me/x.apk do this` is a prompt about that file, and answering it
+    // with "unknown command" leaves the draft stuck because nothing submits.
+    if name.is_empty() || name.contains('/') || name.contains('\\') {
         return None;
     }
     let arguments = if rest.is_empty() {
@@ -648,6 +651,18 @@ pub fn split(text: &str) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pasted_path_is_a_prompt_not_a_command() {
+        assert_eq!(
+            split("/Users/me/BNApp64.apk install this on the phone"),
+            None
+        );
+        assert_eq!(
+            split("/compact keep the tail"),
+            Some(("compact".into(), "keep the tail".into()))
+        );
+    }
 
     fn temp_dir(tag: &str) -> PathBuf {
         let dir =
