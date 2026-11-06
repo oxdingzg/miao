@@ -6,6 +6,10 @@ struct LocalView: View {
     @State private var draft = ""
     @State private var configuring = false
     @State private var sidebarVisible = false
+    /// False while the reader is looking further up; then streaming must not
+    /// yank the transcript back down.
+    @State private var followsLatest = true
+    @State private var viewport: CGFloat = 0
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -60,6 +64,7 @@ struct LocalView: View {
     /// Keep the newest content visible: no animation while streaming, so the
     /// text does not fight the scroll on every token.
     private func pin(_ proxy: ScrollViewProxy) {
+        guard followsLatest else { return }
         proxy.scrollTo(bottom, anchor: .bottom)
     }
 
@@ -96,16 +101,47 @@ struct LocalView: View {
                     // A real anchor at the end scrolls past the last bubble, which
                     // anchoring to a message cannot do while it grows.
                     Color.clear.frame(height: 1).id(bottom)
+                        .background(GeometryReader { geo in
+                            Color.clear
+                                .onChange(of: geo.frame(in: .named("transcript")).minY) { _, y in
+                                    guard viewport > 0 else { return }
+                                    // Visible while the anchor sits inside the
+                                    // scroll viewport.
+                                    followsLatest = y <= viewport
+                                }
+                        })
                 }
                 .padding(.horizontal).padding(.vertical, 12)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .coordinateSpace(name: "transcript")
             .scrollDismissesKeyboard(.interactively)
             .onTapGesture { focused = false }
             .onChange(of: agent.messages.count) { _, _ in pin(proxy) }
             .onChange(of: agent.messages.last?.text) { _, _ in pin(proxy) }
-            .onChange(of: focused) { _, _ in pin(proxy) }
+            .onChange(of: focused) { _, _ in
+                followsLatest = true
+                pin(proxy)
+            }
             .onAppear { pin(proxy) }
+            .overlay(alignment: .bottomTrailing) {
+                if !followsLatest {
+                    Button {
+                        followsLatest = true
+                        pin(proxy)
+                    } label: {
+                        Label("跳到最新", systemImage: "arrow.down")
+                            .font(.footnote).padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(.thinMaterial, in: Capsule())
+                    }
+                    .padding(.trailing, 12).padding(.bottom, 12)
+                    .accessibilityIdentifier("localJumpLatest")
+                }
+            }
+            .background(GeometryReader { geo in
+                Color.clear.onAppear { viewport = geo.size.height }
+                    .onChange(of: geo.size.height) { _, value in viewport = value }
+            })
         }
     }
 
@@ -118,6 +154,11 @@ struct LocalView: View {
             LocalMarkdown(text: message.text)
                 .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .contextMenu {
+                    Button { UIPasteboard.general.string = message.text } label: {
+                        Label("复制回答", systemImage: "doc.on.doc")
+                    }
+                }
         case .tool:
             VStack(alignment: .leading, spacing: 4) {
                 Label(message.toolName ?? "tool", systemImage: "hammer").font(.caption).foregroundStyle(.secondary)
