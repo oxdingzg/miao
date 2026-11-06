@@ -5,18 +5,36 @@ struct LocalView: View {
     @Bindable var agent: LocalAgent
     @State private var draft = ""
     @State private var configuring = false
-    @State private var sessionsPresented = false
+    @State private var sidebarVisible = false
     @FocusState private var focused: Bool
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                if !agent.ready {
-                    setup
-                } else {
-                    transcript
+            ZStack(alignment: .leading) {
+                VStack(spacing: 0) {
+                    if !agent.ready {
+                        setup
+                    } else {
+                        transcript
+                    }
+                    composer
                 }
-                composer
+                .accessibilityHidden(sidebarVisible)
+                .simultaneousGesture(DragGesture(minimumDistance: 24).onEnded { value in
+                    // Only a drag that starts at the left edge opens the drawer.
+                    if !sidebarVisible, value.startLocation.x < 28, value.translation.width > 60 { open() }
+                })
+                if sidebarVisible {
+                    Color.black.opacity(0.3).ignoresSafeArea()
+                        .onTapGesture { close() }
+                    SessionDrawer(agent: agent, close: close)
+                        .frame(maxWidth: 300, maxHeight: .infinity)
+                        .background(.background)
+                        .transition(.move(edge: .leading))
+                        .gesture(DragGesture().onEnded { value in
+                            if value.translation.width < -60 { close() }
+                        })
+                }
             }
             .navigationTitle(agent.provider.model.isEmpty ? "本机" : agent.provider.model)
             .navigationBarTitleDisplayMode(.inline)
@@ -30,18 +48,19 @@ struct LocalView: View {
                     Button("完成") { focused = false }.accessibilityIdentifier("localDismissKeyboard")
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { sessionsPresented = true } label: { Image(systemName: "list.bullet") }
+                    Button { sidebarVisible ? close() : open() } label: { Image(systemName: "list.bullet") }
                         .accessibilityIdentifier("localSessions")
                 }
             }
             .sheet(isPresented: $configuring) {
                 LocalConfigView(agent: agent)
             }
-            .sheet(isPresented: $sessionsPresented) {
-                SessionList(agent: agent)
-            }
+
         }
     }
+
+    private func open() { withAnimation(.easeInOut(duration: 0.22)) { sidebarVisible = true } }
+    private func close() { withAnimation(.easeInOut(duration: 0.22)) { sidebarVisible = false } }
 
     private var setup: some View {
         VStack(spacing: 14) {
@@ -194,54 +213,56 @@ private struct LocalConfigView: View {
     }
 }
 
-private struct SessionList: View {
+private struct SessionDrawer: View {
     @Bindable var agent: LocalAgent
-    @Environment(\.dismiss) private var dismiss
+    var close: () -> Void
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            HStack {
+                Text("会话").font(.headline)
+                Spacer()
+                Button { close() } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("关闭会话列表")
+            }
+            .padding(.horizontal).padding(.top, 14).padding(.bottom, 10)
+
+            Button {
+                agent.newSession()
+                close()
+            } label: {
+                Label("新会话", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal).padding(.bottom, 10)
+            .accessibilityIdentifier("localNewSession")
+
             List {
-                Section {
+                ForEach(agent.sessions) { item in
                     Button {
-                        agent.newSession()
-                        dismiss()
+                        agent.selectSession(item.id)
+                        close()
                     } label: {
-                        Label("新会话", systemImage: "plus")
-                    }
-                    .accessibilityIdentifier("localNewSession")
-                }
-                Section {
-                    ForEach(agent.sessions) { item in
-                        Button {
-                            agent.selectSession(item.id)
-                            dismiss()
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.title.isEmpty ? "新会话" : item.title).foregroundStyle(.primary)
-                                    Text(item.updated.formatted(date: .abbreviated, time: .shortened))
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if item.id == agent.currentID {
-                                    Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
-                                }
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.title.isEmpty ? "新会话" : item.title).foregroundStyle(.primary)
+                                Text(item.updated.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if item.id == agent.currentID {
+                                Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
                             }
                         }
                     }
-                    .onDelete { offsets in
-                        for offset in offsets { agent.deleteSession(agent.sessions[offset].id) }
-                    }
-                } header: {
-                    Text("本机会话")
-                } footer: {
-                    Text("左滑删除。会话只保存在这台手机上。")
+                }
+                .onDelete { offsets in
+                    for offset in offsets { agent.deleteSession(agent.sessions[offset].id) }
                 }
             }
-            .navigationTitle("会话")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .listStyle(.plain)
         }
+        .background(.background)
     }
 }
 
