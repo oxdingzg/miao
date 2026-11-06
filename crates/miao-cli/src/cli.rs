@@ -2361,9 +2361,11 @@ fn prepare_tui_engine(launch: &mut miao_tui::Launch) {
     let layers = config_layers(&launch.workspace, launch.config_dir.as_deref(), &|name| {
         std::env::var(name).ok()
     });
-    let Ok(routes) = model_routes(&layers, &model) else {
+    let Ok(mut routes) = model_routes(&layers, &model) else {
         return;
     };
+    routes.extend(unconfigured_key_routes(&layers));
+    settle_primary(&mut routes, &model);
     let Some(primary) = routes.iter().find(|route| route["primary"] == true) else {
         return;
     };
@@ -2435,6 +2437,58 @@ fn prepare_tui_engine(launch: &mut miao_tui::Launch) {
                 std::env::set_var("MIAO_ENGINE_MODEL_ROUTES_CONFIG", path);
             }
         }
+    }
+}
+
+/// The routes a stored key gives a provider the configuration never names.
+///
+/// Storing a key from the TUI is the operator asking for that provider, but the
+/// configured `providers` map is the only thing `model_routes` reads, so a
+/// provider added that way stayed unroutable: its models never reached the
+/// picker, re-entering the key changed nothing, and restarting miao only
+/// re-derived the same configuration subset. The catalog snapshot already
+/// carries the transport, endpoint and models, so the launcher adds those
+/// routes here and a stored key is enough to serve them.
+fn unconfigured_key_routes(layers: &[PathBuf]) -> Vec<serde_json::Value> {
+    let declared = merged_config(layers)
+        .and_then(|parsed| {
+            parsed
+                .get("providers")
+                .and_then(|value| value.as_object())
+                .cloned()
+        })
+        .unwrap_or_default();
+    let credential_db = std::env::var_os("MIAO_ENGINE_CREDENTIAL_DB")
+        .map(PathBuf::from)
+        .or_else(miao_engine::credential::default_database);
+    miao_engine::native_routes::catalog_key_routes(
+        &declared,
+        credential_db.as_deref().filter(|path| path.is_file()),
+    )
+}
+
+/// Settle the one default route. A model the operator named wins, wherever its
+/// route came from; otherwise the configuration's own primary stands, and a
+/// launch whose configuration names no provider falls back to the first route a
+/// stored key supplied. The engine accepts exactly one default.
+fn settle_primary(routes: &mut [serde_json::Value], requested: &str) {
+    let named = routes.iter().position(|route| {
+        !requested.is_empty()
+            && (route["id"].as_str() == Some(requested)
+                || route["model"].as_str() == Some(requested))
+    });
+    if let Some(index) = named {
+        for route in routes.iter_mut() {
+            route["primary"] = serde_json::json!(false);
+        }
+        routes[index]["primary"] = serde_json::json!(true);
+        return;
+    }
+    if routes.iter().any(|route| route["primary"] == true) {
+        return;
+    }
+    if let Some(route) = routes.first_mut() {
+        route["primary"] = serde_json::json!(true);
     }
 }
 
@@ -5843,8 +5897,8 @@ mod tests {
         db_file_bytes, db_read_only, db_report, db_vacuum, default_db, engine_argv_with,
         event_line, git_worktree_main_checkout, launch, lsp_servers, mcp_servers, merged_config,
         model_routes, parsed_session_location, plugin_entries, project_copy_apply,
-        project_copy_plan, retention_plan, serve_database, strip_comments, tree_bytes,
-        uninstall_targets, worktree_remove_apply, worktree_remove_plan,
+        project_copy_plan, retention_plan, serve_database, settle_primary, strip_comments,
+        tree_bytes, uninstall_targets, worktree_remove_apply, worktree_remove_plan,
     };
     use std::io::Write;
     use std::path::PathBuf;
@@ -6116,6 +6170,59 @@ mod tests {
             .expect("a primary");
         assert_eq!(primary["id"], "vendor/deepseek");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A launch whose configuration names no provider still has the routes a
+    /// stored key supplies, and the engine accepts exactly one default. The
+    /// model the operator named wins over the configured order, because that
+    /// is the route their turn is actually pinned to.
+    #[test]
+    fn the_named_model_becomes_the_only_default_route() {
+        let route =
+            |id: &str| serde_json::json!({ "id": id, "model": "glm-5.3", "primary": false });
+        let mut routes = vec![
+            route("zhipuai-coding-plan/glm-5.3"),
+            serde_json::json!({ "id": "vendor/deepseek", "model": "deepseek", "primary": true }),
+        ];
+        settle_primary(&mut routes, "zhipuai-coding-plan/glm-5.3");
+        let primaries: Vec<&serde_json::Value> = routes
+            .iter()
+            .filter(|route| route["primary"] == true)
+            .collect();
+        assert_eq!(primaries.len(), 1, "exactly one default");
+        assert_eq!(primaries[0]["id"], "zhipuai-coding-plan/glm-5.3");
+    }
+
+    /// A launch that names no route and starts from nothing but stored keys
+    /// still hands the engine a default instead of no primary at all.
+    #[test]
+    fn a_catalog_only_launch_defaults_to_its_first_route() {
+        let mut routes = vec![
+            serde_json::json!({ "id": "zhipuai-coding-plan/glm-5.3", "model": "glm-5.3" }),
+            serde_json::json!({ "id": "deepseek/deepseek-v4-pro", "model": "deepseek-v4-pro" }),
+        ];
+        settle_primary(&mut routes, "");
+        assert_eq!(routes[0]["primary"], true);
+        assert_eq!(
+            routes
+                .iter()
+                .filter(|route| route["primary"] == true)
+                .count(),
+            1
+        );
+    }
+
+    /// Settling must leave an existing default alone when the operator named no
+    /// model: the configuration's own choice is still the one to serve.
+    #[test]
+    fn an_existing_default_survives_when_nothing_is_named() {
+        let mut routes = vec![
+            serde_json::json!({ "id": "vendor/other", "model": "other", "primary": false }),
+            serde_json::json!({ "id": "vendor/deepseek", "model": "deepseek", "primary": true }),
+        ];
+        settle_primary(&mut routes, "");
+        assert_eq!(routes[1]["primary"], true);
+        assert_eq!(routes[0]["primary"], false);
     }
 
     /// OpenCode's gateway refuses a turn that does not name its conversation,

@@ -66,25 +66,7 @@ pub fn routes(
         Some(Ok(list)) => list,
         _ => Vec::new(),
     };
-    // Every unexpired credential per integration, the default label first: the
-    // engine models an account as a route, so a provider holding two keys has
-    // to answer through two routes. Keeping the first account on the plain
-    // `provider/model` id leaves a Session that already pinned that id working.
-    let mut live: BTreeMap<&str, Vec<&crate::credential::Metadata>> = BTreeMap::new();
-    for credential in credentials.iter().filter(|credential| !credential.expired) {
-        live.entry(credential.integration.as_str())
-            .or_default()
-            .push(credential);
-    }
-    for accounts in live.values_mut() {
-        accounts.sort_by(|left, right| {
-            let rank =
-                |credential: &crate::credential::Metadata| u8::from(credential.label != "default");
-            rank(left)
-                .cmp(&rank(right))
-                .then_with(|| left.id.cmp(&right.id))
-        });
-    }
+    let live = accounts_by_integration(&credentials);
     let mut entries = Vec::new();
     let mut primary_seen = false;
     for (id, provider) in providers {
@@ -159,101 +141,9 @@ pub fn routes(
             }
         }
     }
-    // Credential integrations the configuration does not name still answer
-    // the picker the way the product host answers: the catalog snapshot names
-    // their transport, endpoint and models, and a stored key credential
-    // routes them. Configuration wins where both name a provider, and an
-    // OAuth grant speaks its own transport, so only key credentials route a
-    // snapshot provider. Models that cannot answer in text step aside.
-    if let Some(snapshot) = models_snapshot() {
-        let empty = serde_json::Map::new();
-        let snapshot_providers = snapshot.as_object().unwrap_or(&empty);
-        for (id, provider) in snapshot_providers {
-            if providers.contains_key(id) {
-                continue;
-            }
-            let Some(accounts) = live
-                .get(id.as_str())
-                .map(|accounts| {
-                    accounts
-                        .iter()
-                        .filter(|account| account.kind == "key")
-                        .copied()
-                        .collect::<Vec<_>>()
-                })
-                .filter(|accounts| !accounts.is_empty())
-            else {
-                continue;
-            };
-            let Some(account) = accounts.first() else {
-                continue;
-            };
-            let Some(db_path) = credential_db else {
-                continue;
-            };
-            let npm = provider.get("npm").and_then(Value::as_str);
-            if npm != Some("@ai-sdk/openai-compatible") {
-                continue;
-            }
-            let Some(base) = provider.get("api").and_then(Value::as_str) else {
-                continue;
-            };
-            let models = provider.get("models").and_then(Value::as_object);
-            let Some(models) = models else { continue };
-            for (model_id, model) in models {
-                let produces_text = model
-                    .get("modalities")
-                    .and_then(|modalities| modalities.get("output"))
-                    .and_then(Value::as_array)
-                    .is_some_and(|outputs| outputs.iter().any(|item| item == "text"));
-                if !produces_text {
-                    continue;
-                }
-                let Some(endpoint) = base.join_pair("chat/completions") else {
-                    continue;
-                };
-                let transport = "openai-chat";
-                let mut entry = json!({
-                    "id": format!("{id}/{model_id}"),
-                    "provider": transport,
-                    "model": model_id,
-                    "credential": {
-                        "type": "database",
-                        "path": db_path.display().to_string(),
-                        "id": account.id,
-                        "integration": account.integration,
-                    },
-                });
-                entry["endpoint"] = json!(endpoint);
-                let limit = model.get("limit").and_then(Value::as_object);
-                let mut bounded = serde_json::Map::new();
-                for field in ["context", "output"] {
-                    if let Some(size) = limit
-                        .and_then(|limit| limit.get(field))
-                        .and_then(Value::as_u64)
-                    {
-                        bounded.insert(field.into(), json!(size));
-                    }
-                }
-                if !bounded.is_empty() {
-                    entry["limit"] = Value::Object(bounded);
-                }
-                if let Some(input) = model
-                    .get("modalities")
-                    .and_then(|modalities| modalities.get("input"))
-                    .and_then(Value::as_array)
-                    .filter(|input| !input.is_empty())
-                {
-                    entry["input_modalities"] = json!(input);
-                }
-                for (position, account) in accounts.iter().enumerate() {
-                    entries.push(route_entry(
-                        &entry, id, model_id, account, position, &entries,
-                    ));
-                }
-            }
-        }
-    }
+    // Credential integrations the configuration does not name answer through
+    // the catalog snapshot, the way the product host answers them.
+    entries.extend(catalog_key_routes(providers, credential_db));
     if entries.is_empty() {
         return Ok(None);
     }
@@ -263,6 +153,199 @@ pub fn routes(
         entries[0]["primary"] = json!(true);
     }
     Ok(Some(entries))
+}
+
+/// Every unexpired credential per integration, the default label first: the
+/// engine models an account as a route, so a provider holding two keys has to
+/// answer through two routes. Keeping the first account on the plain
+/// `provider/model` id leaves a Session that already pinned that id working.
+fn accounts_by_integration(
+    credentials: &[crate::credential::Metadata],
+) -> BTreeMap<&str, Vec<&crate::credential::Metadata>> {
+    let mut live: BTreeMap<&str, Vec<&crate::credential::Metadata>> = BTreeMap::new();
+    for credential in credentials.iter().filter(|credential| !credential.expired) {
+        live.entry(credential.integration.as_str())
+            .or_default()
+            .push(credential);
+    }
+    for accounts in live.values_mut() {
+        accounts.sort_by(|left, right| {
+            let rank =
+                |credential: &crate::credential::Metadata| u8::from(credential.label != "default");
+            rank(left)
+                .cmp(&rank(right))
+                .then_with(|| left.id.cmp(&right.id))
+        });
+    }
+    live
+}
+
+/// The catalogue half of the derivation: every provider the configuration does
+/// not name, routed by the key credentials the product store already holds.
+///
+/// A stored key is the operator saying "serve this provider", so a launcher has
+/// to turn it into a route even when no config entry mentions it. The snapshot
+/// supplies the transport, endpoint and models, which is why nothing had to be
+/// configured for this to work — and why leaving it out made a stored key look
+/// unsaved until the operator edited their configuration by hand.
+pub fn catalog_key_routes(
+    declared: &serde_json::Map<String, Value>,
+    credential_db: Option<&Path>,
+) -> Vec<Value> {
+    let Some(snapshot) = models_snapshot() else {
+        return Vec::new();
+    };
+    snapshot_key_routes(&snapshot, declared, credential_db)
+}
+
+/// Add the routes a key stored while the UI runs newly covers to an existing
+/// manifest, and answer how many were appended.
+///
+/// The launcher writes the manifest once, before the engine starts. An engine
+/// restart re-reads exactly that file, so a key stored afterwards had no route
+/// to serve: the provider only appeared once miao itself restarted and rewrote
+/// the manifest. Providers the file already routes stay untouched, which makes
+/// re-entering a key a no-op instead of a duplicate.
+pub fn refresh_key_routes(path: &Path, credential_db: Option<&Path>) -> Result<usize, String> {
+    let Some(snapshot) = models_snapshot() else {
+        return Ok(0);
+    };
+    refresh_snapshot_key_routes(path, &snapshot, credential_db)
+}
+
+fn refresh_snapshot_key_routes(
+    path: &Path,
+    snapshot: &Value,
+    credential_db: Option<&Path>,
+) -> Result<usize, String> {
+    let text =
+        std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let manifest: Value =
+        serde_json::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
+    let Some(entries) = manifest.as_array() else {
+        return Err(format!("{}: not a route list", path.display()));
+    };
+    // A route id is provider-qualified, so the providers the manifest already
+    // serves are the ones whose configuration must keep winning.
+    let mut declared = serde_json::Map::new();
+    for provider in entries
+        .iter()
+        .filter_map(|entry| entry.get("id").and_then(Value::as_str))
+        .filter_map(|id| id.split_once('/'))
+        .map(|(provider, _)| provider.to_string())
+    {
+        declared.insert(provider, Value::Null);
+    }
+    let extra = snapshot_key_routes(snapshot, &declared, credential_db);
+    if extra.is_empty() {
+        return Ok(0);
+    }
+    let mut merged = entries.clone();
+    merged.extend(extra);
+    let body = serde_json::to_vec(&merged).map_err(|error| error.to_string())?;
+    std::fs::write(path, body).map_err(|error| format!("{}: {error}", path.display()))?;
+    Ok(merged.len() - entries.len())
+}
+
+fn snapshot_key_routes(
+    snapshot: &Value,
+    declared: &serde_json::Map<String, Value>,
+    credential_db: Option<&Path>,
+) -> Vec<Value> {
+    let Some(db_path) = credential_db else {
+        return Vec::new();
+    };
+    let Ok(credentials) = crate::credential::list_database(db_path) else {
+        return Vec::new();
+    };
+    let live = accounts_by_integration(&credentials);
+    let empty = serde_json::Map::new();
+    let snapshot_providers = snapshot.as_object().unwrap_or(&empty);
+    let mut entries: Vec<Value> = Vec::new();
+    for (id, provider) in snapshot_providers {
+        if declared.contains_key(id) {
+            continue;
+        }
+        // An OAuth grant speaks its own transport, so only key credentials
+        // route a snapshot provider here.
+        let Some(accounts) = live
+            .get(id.as_str())
+            .map(|accounts| {
+                accounts
+                    .iter()
+                    .filter(|account| account.kind == "key")
+                    .copied()
+                    .collect::<Vec<_>>()
+            })
+            .filter(|accounts| !accounts.is_empty())
+        else {
+            continue;
+        };
+        let Some(account) = accounts.first() else {
+            continue;
+        };
+        let npm = provider.get("npm").and_then(Value::as_str);
+        if npm != Some("@ai-sdk/openai-compatible") {
+            continue;
+        }
+        let Some(base) = provider.get("api").and_then(Value::as_str) else {
+            continue;
+        };
+        let models = provider.get("models").and_then(Value::as_object);
+        let Some(models) = models else { continue };
+        for (model_id, model) in models {
+            let produces_text = model
+                .get("modalities")
+                .and_then(|modalities| modalities.get("output"))
+                .and_then(Value::as_array)
+                .is_some_and(|outputs| outputs.iter().any(|item| item == "text"));
+            if !produces_text {
+                continue;
+            }
+            let Some(endpoint) = base.join_pair("chat/completions") else {
+                continue;
+            };
+            let mut entry = json!({
+                "id": format!("{id}/{model_id}"),
+                "provider": "openai-chat",
+                "model": model_id,
+                "endpoint": endpoint,
+                "credential": {
+                    "type": "database",
+                    "path": db_path.display().to_string(),
+                    "id": account.id,
+                    "integration": account.integration,
+                },
+            });
+            let limit = model.get("limit").and_then(Value::as_object);
+            let mut bounded = serde_json::Map::new();
+            for field in ["context", "output"] {
+                if let Some(size) = limit
+                    .and_then(|limit| limit.get(field))
+                    .and_then(Value::as_u64)
+                {
+                    bounded.insert(field.into(), json!(size));
+                }
+            }
+            if !bounded.is_empty() {
+                entry["limit"] = Value::Object(bounded);
+            }
+            if let Some(input) = model
+                .get("modalities")
+                .and_then(|modalities| modalities.get("input"))
+                .and_then(Value::as_array)
+                .filter(|input| !input.is_empty())
+            {
+                entry["input_modalities"] = json!(input);
+            }
+            for (position, account) in accounts.iter().enumerate() {
+                entries.push(route_entry(
+                    &entry, id, model_id, account, position, &entries,
+                ));
+            }
+        }
+    }
+    entries
 }
 
 /// The wire a configured api rides, and the endpoint it reaches. The mapping
@@ -634,6 +717,162 @@ mod tests {
         assert_eq!(named["account"]["label"], "work");
         assert_eq!(named["account"]["default"], false);
         assert_eq!(named["model"], "deepseek");
+    }
+
+    /// A key stored for a provider the configuration never names is the
+    /// operator asking for that provider's models. It used to route nothing
+    /// outside the native single-binary start, so the provider stayed
+    /// unconfigured however often the key was re-entered.
+    #[test]
+    fn a_stored_key_routes_a_provider_the_config_never_names() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("credentials.db");
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .execute(
+                "CREATE TABLE credential (id text primary key, integration_id text, label text, value text)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO credential VALUES ('cred_zhipu', 'zhipuai-coding-plan', 'default', '{\"type\":\"key\",\"key\":\"sk-test\"}')",
+                [],
+            )
+            .unwrap();
+        let snapshot = json!({
+            "zhipuai-coding-plan": {
+                "name": "Zhipu AI Coding Plan",
+                "npm": "@ai-sdk/openai-compatible",
+                "api": "https://open.bigmodel.cn/api/coding/paas/v4",
+                "models": {
+                    "glm-5.3": {
+                        "tool_call": true,
+                        "modalities": { "input": ["text"], "output": ["text"] },
+                        "limit": { "context": 1000000, "output": 131072 },
+                    },
+                    "glm-image": {
+                        "modalities": { "input": ["text"], "output": ["image"] },
+                    },
+                },
+            },
+        });
+        let entries = snapshot_key_routes(&snapshot, &serde_json::Map::new(), Some(&database));
+        // Only the model that answers in text becomes a route.
+        assert_eq!(
+            entries.len(),
+            1,
+            "{}",
+            serde_json::to_string(&entries).unwrap()
+        );
+        let entry = &entries[0];
+        assert_eq!(entry["id"], "zhipuai-coding-plan/glm-5.3");
+        assert_eq!(entry["provider"], "openai-chat");
+        assert_eq!(
+            entry["endpoint"],
+            "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions"
+        );
+        assert_eq!(entry["credential"]["id"], "cred_zhipu");
+        assert_eq!(entry["credential"]["integration"], "zhipuai-coding-plan");
+        // The primary is the launcher's decision: a catalog route never claims
+        // it, so a configured default stays the default.
+        assert_eq!(entry.get("primary"), None);
+    }
+
+    /// The configuration owns the providers it names. A stored key for the
+    /// same integration must not add a second route under an id the config
+    /// already routes.
+    #[test]
+    fn a_declared_provider_is_left_to_the_configuration() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("credentials.db");
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .execute(
+                "CREATE TABLE credential (id text primary key, integration_id text, label text, value text)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO credential VALUES ('cred_volcengine', 'volcengine', 'default', '{\"type\":\"key\",\"key\":\"sk-test\"}')",
+                [],
+            )
+            .unwrap();
+        let snapshot = json!({
+            "volcengine": {
+                "npm": "@ai-sdk/openai-compatible",
+                "api": "https://ark.example.com/api/v3",
+                "models": { "deepseek": { "modalities": { "output": ["text"] } } },
+            },
+        });
+        let mut declared = serde_json::Map::new();
+        declared.insert("volcengine".into(), json!({ "models": {} }));
+        assert!(snapshot_key_routes(&snapshot, &declared, Some(&database)).is_empty());
+    }
+
+    /// A key stored while the TUI runs has to reach the manifest the engine
+    /// re-reads on restart. Writing it there is what makes the "restarting the
+    /// engine to load its models" notice true instead of another dead end.
+    #[test]
+    fn a_refreshed_manifest_gains_the_stored_keys_routes() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("credentials.db");
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .execute(
+                "CREATE TABLE credential (id text primary key, integration_id text, label text, value text)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO credential VALUES ('cred_zhipu', 'zhipuai-coding-plan', 'default', '{\"type\":\"key\",\"key\":\"sk-test\"}')",
+                [],
+            )
+            .unwrap();
+        let path = directory.path().join("routes.json");
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&json!([{
+                "id": "vendor/other",
+                "provider": "openai-chat",
+                "model": "other",
+                "endpoint": "https://vendor.test/v1/chat/completions",
+                "primary": true,
+            }]))
+            .unwrap(),
+        )
+        .unwrap();
+        let snapshot = json!({
+            "zhipuai-coding-plan": {
+                "npm": "@ai-sdk/openai-compatible",
+                "api": "https://open.bigmodel.cn/api/coding/paas/v4",
+                "models": { "glm-5.3": { "modalities": { "output": ["text"] } } },
+            },
+            // The provider the manifest already routes must not be duplicated.
+            "vendor": {
+                "npm": "@ai-sdk/openai-compatible",
+                "api": "https://vendor.test/v1",
+                "models": { "other": { "modalities": { "output": ["text"] } } },
+            },
+        });
+        let added =
+            refresh_snapshot_key_routes(&path, &snapshot, Some(&database)).expect("refreshes");
+        assert_eq!(added, 1, "only the new provider's model is appended");
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).expect("valid JSON");
+        let ids: Vec<&str> = manifest
+            .as_array()
+            .expect("a list")
+            .iter()
+            .filter_map(|entry| entry.get("id").and_then(Value::as_str))
+            .collect();
+        assert_eq!(ids, vec!["vendor/other", "zhipuai-coding-plan/glm-5.3"]);
+        // Re-running is how a re-entered key behaves: nothing is added twice.
+        let again =
+            refresh_snapshot_key_routes(&path, &snapshot, Some(&database)).expect("idempotent");
+        assert_eq!(again, 0);
     }
 
     #[test]

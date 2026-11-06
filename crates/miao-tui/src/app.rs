@@ -2263,10 +2263,12 @@ impl App {
     /// yet, then restart the engine so its routes include that provider.
     ///
     /// A running engine keeps the routes it built at startup, so storing a key
-    /// alone served nothing and the operator had to restart miao. The engine's
-    /// spawn re-prepares those routes, which makes restarting it the whole fix.
-    /// A turn that is still running defers the restart, because shutting an
-    /// engine down ends the work it is doing.
+    /// alone served nothing and the operator had to restart miao. Restarting
+    /// the engine re-reads the manifest the launcher wrote, which cannot name
+    /// this provider, so the manifest is refreshed first: without that the key
+    /// looked unsaved again until miao itself restarted. A turn that is still
+    /// running defers the restart, because shutting an engine down ends the
+    /// work it is doing.
     fn store_provider_key(&mut self, provider: &str, key: &str) {
         let Some(store) = self.credential_store.clone() else {
             self.notice("no credential store: set MIAO_DATA_HOME, XDG_DATA_HOME or HOME");
@@ -2275,6 +2277,14 @@ impl App {
         match miao_engine::credential::store_key(&store, provider, key, None) {
             Ok(stored) => {
                 let label = format!("{} ({})", stored.label, stored.id);
+                if let Some(error) = self.refresh_routes_manifest(&store) {
+                    // Restarting the engine would re-read a manifest that still
+                    // cannot name this provider, so name the step that can.
+                    self.notice(&format!(
+                        "stored the {provider} key as {label}; its models load after restarting miao: {error}"
+                    ));
+                    return;
+                }
                 // The restart that makes the key usable also stops whatever the
                 // engine is running, so a busy Session defers it instead.
                 if self.state.active_run.is_some() {
@@ -2293,6 +2303,17 @@ impl App {
             }
             Err(error) => self.notice(&format!("could not store the {provider} key: {error}")),
         }
+    }
+
+    /// Write the routes a just-stored key newly covers into the manifest the
+    /// engine reads, so a restart is enough to serve them.
+    ///
+    /// An unmatched launch (no manifest, an inline route list) has nothing to
+    /// refresh and reports no error: the restart still serves what it served.
+    fn refresh_routes_manifest(&self, store: &std::path::Path) -> Option<String> {
+        let path = std::env::var_os("MIAO_ENGINE_MODEL_ROUTES_CONFIG")?;
+        miao_engine::native_routes::refresh_key_routes(std::path::Path::new(&path), Some(store))
+            .err()
     }
 
     fn open_provider_accounts(&mut self) {
