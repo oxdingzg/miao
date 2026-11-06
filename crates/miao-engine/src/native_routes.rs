@@ -413,7 +413,6 @@ fn models_snapshot() -> Option<Value> {
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
 }
 
-
 /// One route per account. The engine models an account as a route, so a
 /// provider holding several keys answers through several routes; the first
 /// keeps the plain `provider/model` id a Session may already carry, and the
