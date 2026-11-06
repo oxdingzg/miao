@@ -151,7 +151,7 @@ struct ProvidersView: View {
 
     @ViewBuilder private var environmentSection: some View {
         let local = (client.providers?.providers ?? []).filter { !$0.connected && $0.environment.isEmpty && !$0.editable }
-        if let directory = client.providers, !local.isEmpty {
+        if !local.isEmpty {
             Section {
                 ForEach(local) { provider in
                     HStack {
@@ -165,7 +165,6 @@ struct ProvidersView: View {
             } footer: {
                 Text("这些服务商需要浏览器登录或被禁用，手机端不提供入口。")
             }
-            .id(directory.providers.count)
         }
     }
 

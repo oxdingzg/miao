@@ -10,7 +10,7 @@ struct RemoteView: View {
     @State private var hostID: UUID?
     @State private var pairing = false
     @State private var accountPresented = false
-    @State private var providersPresented = false
+    @State private var providersHost: UUID?
     @State private var invitation = ""
     @State private var attached: UUID?
     @State private var attachEpoch = 0
@@ -54,8 +54,8 @@ struct RemoteView: View {
                 }
             }
         }
-        .sheet(isPresented: $providersPresented) {
-            if let id = attached, let client = model.clients[id] {
+        .sheet(isPresented: Binding(get: { providersHost != nil }, set: { if !$0 { providersHost = nil } })) {
+            if let id = providersHost, let client = model.clients[id] {
                 ProvidersView(client: client)
             }
         }
@@ -322,7 +322,7 @@ struct RemoteView: View {
         }.disabled(!client.ready)
         // Always reachable: without the permission the screen explains which
         // authorization step is missing instead of hiding the feature.
-        Button { providersPresented = true } label: {
+        Button { providersHost = client.record.id } label: {
             Label("服务商与模型", systemImage: "key.horizontal").frame(maxWidth: .infinity, alignment: .leading)
         }
         .disabled(!client.ready)

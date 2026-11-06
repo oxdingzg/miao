@@ -117,10 +117,11 @@ extension HostClient {
     /// every outcome is reconciled by re-reading `provider.list`.
     private func configure(_ method: RemoteMethod, payload: JSONValue) async throws {
         let result = try await request(method, operationID: UUID(), payload: payload)
-        let status = result["status"]?.string
-        guard status == "completed" else {
+        // The host may have applied the change even when the receipt is
+        // uncertain, so read the authoritative state before reporting.
+        await loadProviders()
+        guard result["status"]?.string == "completed" else {
             throw RemoteRPCError.rejected(result["code"]?.string ?? "uncertain")
         }
-        await loadProviders()
     }
 }
