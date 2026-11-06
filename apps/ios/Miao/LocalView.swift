@@ -17,7 +17,7 @@ struct LocalView: View {
                 }
                 composer
             }
-            .navigationTitle("本机")
+            .navigationTitle(agent.provider.model.isEmpty ? "本机" : agent.provider.model)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -124,47 +124,92 @@ struct LocalView: View {
 private struct LocalConfigView: View {
     @Bindable var agent: LocalAgent
     @Environment(\.dismiss) private var dismiss
-    @State private var baseURL = ""
-    @State private var apiKey = ""
-    @State private var model = ""
+    @State private var editing: LocalProvider?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(agent.providers) { item in
+                        Button {
+                            editing = item
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.name.isEmpty ? item.model : item.name).foregroundStyle(.primary)
+                                    Text(item.model).font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if agent.selectedID == item.id {
+                                    Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+                                }
+                            }
+                        }
+                        .swipeActions {
+                            Button(role: .destructive) { agent.remove(item.id) } label: { Label("删除", systemImage: "trash") }
+                            Button { agent.select(item.id) } label: { Label("使用", systemImage: "checkmark") }
+                        }
+                    }
+                } header: {
+                    Text("服务商")
+                } footer: {
+                    Text("点一条进行编辑；左滑可以删除或设为当前使用。密钥只保存在这台手机上。")
+                }
+                Section {
+                    Button { editing = LocalProvider() } label: { Label("添加服务商", systemImage: "plus") }
+                }
+            }
+            .navigationTitle("本机服务商")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .sheet(item: $editing) { item in ProviderEditor(agent: agent, item: item) }
+        }
+    }
+}
+
+private struct ProviderEditor: View {
+    @Bindable var agent: LocalAgent
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: LocalProvider
+
+    init(agent: LocalAgent, item: LocalProvider) {
+        self.agent = agent
+        _draft = State(initialValue: item)
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("接口地址", text: $baseURL)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .keyboardType(.URL)
+                    TextField("名称（可选）", text: $draft.name)
+                    TextField("接口地址", text: $draft.baseURL)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                         .accessibilityIdentifier("localBaseURL")
-                    SecureField("API Key", text: $apiKey)
+                    SecureField("API Key", text: $draft.apiKey)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .accessibilityIdentifier("localAPIKey")
-                    TextField("模型名称", text: $model)
+                    TextField("模型名称", text: $draft.model)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .accessibilityIdentifier("localModel")
-                } header: {
-                    Text("服务商")
                 } footer: {
-                    Text("兼容 OpenAI 的 /chat/completions 接口。密钥只保存在这台手机上。")
+                    Text("兼容 OpenAI 的 /chat/completions 接口，例如火山引擎的 https://ark.cn-beijing.volces.com/api/v3。")
                 }
             }
-            .navigationTitle("本机服务商")
+            .navigationTitle(draft.model.isEmpty ? "新的服务商" : "编辑服务商")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
-                        agent.save(LocalProvider(baseURL: baseURL, apiKey: apiKey, model: model))
+                        var next = draft
+                        if next.name.isEmpty { next.name = next.model }
+                        agent.save(next)
+                        agent.select(next.id)
                         dismiss()
                     }
-                    .disabled(baseURL.isEmpty || apiKey.isEmpty || model.isEmpty)
+                    .disabled(draft.baseURL.isEmpty || draft.apiKey.isEmpty || draft.model.isEmpty)
                     .accessibilityIdentifier("localSave")
                 }
-            }
-            .onAppear {
-                baseURL = agent.provider.baseURL
-                apiKey = agent.provider.apiKey
-                model = agent.provider.model
             }
         }
     }

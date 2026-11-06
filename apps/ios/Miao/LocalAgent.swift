@@ -4,8 +4,10 @@ import Observation
 /// On-device assistant: it talks to a provider the owner configured on the phone
 /// and runs its tools against the app's own sandbox. Nothing here needs a
 /// computer, an account, or the relay.
-struct LocalProvider: Codable, Sendable, Equatable {
-    var baseURL: String = "https://api.openai.com/v1"
+struct LocalProvider: Codable, Sendable, Equatable, Identifiable {
+    var id = UUID()
+    var name: String = ""
+    var baseURL: String = ""
     var apiKey: String = ""
     var model: String = ""
 }
@@ -20,10 +22,17 @@ struct LocalMessage: Codable, Sendable, Equatable, Identifiable {
 
 @MainActor @Observable
 final class LocalAgent {
-    private(set) var provider = LocalProvider()
+    private(set) var providers: [LocalProvider] = []
+    private(set) var selectedID: UUID?
     private(set) var messages: [LocalMessage] = []
     private(set) var busy = false
     var error: String?
+
+    /// The provider the next turn uses. Kept as a value so a partially filled
+    /// row in the editor never becomes the active one by accident.
+    var provider: LocalProvider {
+        providers.first { $0.id == selectedID } ?? LocalProvider()
+    }
 
     /// Every tool resolves inside this directory, so a path from the model can
     /// never escape the app's own storage.
@@ -35,11 +44,14 @@ final class LocalAgent {
         workspace = support.appendingPathComponent("LocalAgent/workspace", isDirectory: true)
         try? FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         load()
+        importFromEnvironment()
     }
 
     var ready: Bool { !provider.model.isEmpty && !provider.apiKey.isEmpty && !provider.baseURL.isEmpty }
 
     // MARK: persistence
+
+    private struct Stored: Codable { var providers: [LocalProvider]; var selected: UUID? }
 
     private var configURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -48,18 +60,51 @@ final class LocalAgent {
     private var historyURL: URL { configURL.deletingLastPathComponent().appendingPathComponent("history.json") }
 
     func save(_ next: LocalProvider) {
-        provider = next
-        if let data = try? JSONEncoder().encode(next) {
-            try? FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(),
-                                                     withIntermediateDirectories: true)
-            try? data.write(to: configURL, options: [.atomic, .completeFileProtection])
-        }
+        if let index = providers.firstIndex(where: { $0.id == next.id }) { providers[index] = next }
+        else { providers.append(next) }
+        if selectedID == nil { selectedID = next.id }
+        store()
+    }
+
+    func select(_ id: UUID?) {
+        selectedID = id
+        store()
+    }
+
+    func remove(_ id: UUID) {
+        providers.removeAll { $0.id == id }
+        if selectedID == id { selectedID = providers.first?.id }
+        store()
+    }
+
+    private func store() {
+        guard let data = try? JSONEncoder().encode(Stored(providers: providers, selected: selectedID)) else { return }
+        try? FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        try? data.write(to: configURL, options: [.atomic, .completeFileProtection])
+    }
+
+    /// One-shot import so a desktop can hand the phone its providers without the
+    /// credentials ever entering the repository: launch with
+    /// `MIAO_LOCAL_PROVIDERS=<base64 JSON array>`, then the variable is ignored.
+    private func importFromEnvironment() {
+        guard providers.isEmpty,
+              let raw = ProcessInfo.processInfo.environment["MIAO_LOCAL_PROVIDERS"],
+              let data = Data(base64Encoded: raw),
+              let imported = try? JSONDecoder().decode([LocalProvider].self, from: data),
+              !imported.isEmpty
+        else { return }
+        providers = imported
+        selectedID = imported.first?.id
+        store()
+        print("miao-local-import:\(imported.count)")
     }
 
     private func load() {
         if let data = try? Data(contentsOf: configURL),
-           let value = try? JSONDecoder().decode(LocalProvider.self, from: data) {
-            provider = value
+           let value = try? JSONDecoder().decode(Stored.self, from: data) {
+            providers = value.providers
+            selectedID = value.selected ?? value.providers.first?.id
         }
         if let data = try? Data(contentsOf: historyURL),
            let value = try? JSONDecoder().decode([LocalMessage].self, from: data) {
