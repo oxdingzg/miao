@@ -143,6 +143,30 @@ pub fn product_input(engine: &str, input: &Value) -> Value {
                 projected.insert("run_in_background".into(), Value::Bool(true));
             }
         }
+        "apply_patch" => {
+            // A patch names its targets inside the payload, not in a field the
+            // row can print: without this the header read as a bare
+            // `apply_patch` with no subject at all.
+            let patch = record
+                .get("patch")
+                .or_else(|| record.get("text"))
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let targets: Vec<&str> = patch
+                .lines()
+                .filter_map(|line| line.trim().strip_prefix("***"))
+                .filter_map(|rest| rest.rsplit_once(':'))
+                .map(|(_, path)| path.trim())
+                .filter(|path| !path.is_empty())
+                .collect();
+            if let Some(subject) = match targets.as_slice() {
+                [] => None,
+                [only] => Some((*only).to_string()),
+                [first, ..] => Some(format!("{first} +{} more", targets.len() - 1)),
+            } {
+                projected.insert("filePath".into(), Value::String(subject));
+            }
+        }
         "task" => {
             if let Some(agent) = record.get("agent") {
                 projected
@@ -165,6 +189,39 @@ pub fn product_input(engine: &str, input: &Value) -> Value {
         _ => {}
     }
     Value::Object(projected)
+}
+
+#[cfg(test)]
+mod patch_subject_tests {
+    use super::product_input;
+    use serde_json::json;
+
+    /// A patch names its targets inside the payload. Without this projection
+    /// the row read as a bare `apply_patch` with no subject, and a transcript
+    /// of several calls showed the operator nothing at all.
+    #[test]
+    fn a_patch_row_names_what_it_touches() {
+        let one = product_input(
+            "apply_patch",
+            &json!({
+                "patch": "*** Begin Patch\n*** Update File: crates/miao-tui/src/app.rs\n@@\n-a\n+b\n*** End Patch"
+            }),
+        );
+        assert_eq!(one["filePath"], json!("crates/miao-tui/src/app.rs"));
+
+        let many = product_input(
+            "apply_patch",
+            &json!({
+                "patch": "*** Begin Patch\n*** Add File: a.rs\n*** Delete File: b.rs\n*** Update File: c.rs\n*** End Patch"
+            }),
+        );
+        assert_eq!(many["filePath"], json!("a.rs +2 more"));
+
+        // A payload with no target marker leaves the row as it was rather than
+        // printing an empty subject.
+        let none = product_input("apply_patch", &json!({ "patch": "not a patch" }));
+        assert!(none.get("filePath").is_none());
+    }
 }
 
 fn quote_argument(argument: &str) -> String {

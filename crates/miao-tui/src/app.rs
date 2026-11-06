@@ -339,7 +339,14 @@ pub struct App {
     stream_ended: Option<Duration>,
     /// Providers the snapshot knows but this engine does not serve yet, as
     /// (id, display name). Fed to the model picker's needs-auth tail.
+    /// Providers with no stored credential: the picker says "needs a key".
     providers_needing_auth: Vec<(String, String)>,
+    /// Providers holding a credential the manifest serves with no route: the
+    /// picker has to say that instead, or the operator stores a key that
+    /// changes nothing.
+    providers_without_route: Vec<(String, String)>,
+    /// Routes the operator starred, most recently starred first.
+    favorites: Vec<String>,
     /// Where a key typed into the sign-in prompt is stored. The engine falls
     /// back to the same file on a single-binary start, so a key stored here is
     /// the one a restarted engine reads.
@@ -452,6 +459,8 @@ impl App {
             accounts_filter: None,
             stream_ended: None,
             providers_needing_auth: Vec::new(),
+            providers_without_route: Vec::new(),
+            favorites: crate::state::favorites(),
             credential_store: miao_engine::credential::default_database(),
             remembered_model: crate::state::preferences().model,
             pending_accounts: false,
@@ -725,11 +734,19 @@ impl App {
                 // The same answer feeds the picker's `needs auth` tail and the
                 // provider list, so one request serves both.
                 self.providers = ProviderEntry::catalog(&catalog);
-                self.providers_needing_auth = self
+                let unserved = self
                     .providers
                     .iter()
                     .filter(|provider| !provider.configured)
-                    .map(|provider| (provider.id.clone(), provider.name.clone()))
+                    .map(|provider| (provider.id.clone(), provider.name.clone(), provider.accounts > 0));
+                self.providers_needing_auth = unserved
+                    .clone()
+                    .filter(|entry| !entry.2)
+                    .map(|(id, name, _)| (id, name))
+                    .collect();
+                self.providers_without_route = unserved
+                    .filter(|entry| entry.2)
+                    .map(|(id, name, _)| (id, name))
                     .collect();
                 if self.pending_providers {
                     self.pending_providers = false;
@@ -1105,6 +1122,32 @@ impl App {
     }
 
     fn handle_dialog_key(&mut self, key: KeyEvent) {
+        // ctrl+f stars the row under the cursor, the chord the product's
+        // picker binds: the starred models come back at the top of the list.
+        if key.kind == KeyEventKind::Press
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.code == KeyCode::Char('f')
+        {
+            if let Some(Dialog::Models(list)) = self.dialog.as_ref() {
+                let position = list
+                    .visible
+                    .get(list.selected)
+                    .and_then(|row| list.rows.get(*row))
+                    .and_then(|row| row.id.parse::<usize>().ok());
+                if let Some(position) = position {
+                    if let Some(route) = self.models.get(position).map(ModelInfo::route) {
+                        let starred = self.favorites.iter().any(|favorite| favorite == &route);
+                        self.favorites.retain(|favorite| favorite != &route);
+                        if !starred {
+                            self.favorites.insert(0, route);
+                        }
+                        crate::state::save_favorites(&self.favorites);
+                        self.reopen_models_dialog();
+                        return;
+                    }
+                }
+            }
+        }
         // ctrl+o narrows the model picker to one provider and backs out of the
         // provider list; Esc on that list returns to the models too.
         if key.kind == KeyEventKind::Press
@@ -1404,14 +1447,28 @@ impl App {
             .session
             .as_ref()
             .and_then(|summary| summary.model.as_deref());
-        let needs_auth = self.providers_needing_auth.clone();
+        // One tail list, flagged by whether a key is already stored: the two
+        // lines of advice it can print are different, so the picker needs to
+        // tell them apart rather than send everyone to `auth login`.
+        let unserved: Vec<(String, String, bool)> = self
+            .providers_needing_auth
+            .iter()
+            .map(|(id, name)| (id.clone(), name.clone(), false))
+            .chain(
+                self.providers_without_route
+                    .iter()
+                    .map(|(id, name)| (id.clone(), name.clone(), true)),
+            )
+            .collect();
         let recents = self.recent_models();
+        let favorites = self.favorites.clone();
         self.open_dialog(Dialog::models_with_needs_auth(
             &self.models,
             current,
             self.models_filter.as_deref(),
-            &needs_auth,
+            &unserved,
             &recents,
+            &favorites,
         ));
     }
 
@@ -1654,6 +1711,15 @@ impl App {
                 // yet; selecting it surfaces the way in instead of failing the
                 // parse silently.
                 if let Some(row) = list.rows.get(index) {
+                    if let Some(provider) = row.id.strip_prefix("accounts:") {
+                        // The row names one provider, so the list it opens is
+                        // that provider's credentials instead of the full one
+                        // again: the point of the row is "look at why this key
+                        // serves no model".
+                        self.accounts_filter = Some(provider.to_string());
+                        self.open_account_list();
+                        return;
+                    }
                     if let Some(provider) = row.id.strip_prefix("auth:") {
                         let name = self
                             .providers
@@ -1668,21 +1734,25 @@ impl App {
                 // The chosen row's id is its position in the catalog; a
                 // provider header never reaches here because the cursor
                 // skips headers, so an unparseable id is simply ignored.
-                let binding = list
+                let Some(position) = list
                     .rows
                     .get(index)
                     .and_then(|row| row.id.parse::<usize>().ok())
-                    .and_then(|position| self.models.get(position))
-                    .map(ModelInfo::binding);
-                let Some(binding) = binding else {
+                else {
+                    return;
+                };
+                let Some(binding) = self.models.get(position).map(ModelInfo::binding) else {
                     return;
                 };
                 // Remember the choice before the Session check: the landing
                 // screen names the model the next prompt will use, and a
                 // Session that is opened later starts from this selection.
+                // The row's id is its position in the catalog, which the
+                // favorites and recents sections made different from the row
+                // index: reading `index` here remembered the wrong model.
                 self.remembered_model = self
                     .models
-                    .get(index)
+                    .get(position)
                     .map(|info| info.model.clone())
                     .or(self.remembered_model.clone());
                 if let Some(model) = self.remembered_model.as_deref() {
@@ -3071,7 +3141,14 @@ impl App {
                     .map(ModelInfo::identity)
                     .unwrap_or(model)
             });
-            self.shell.status.model = landing;
+            // An install with no route at all leaves the row blank, which
+            // reads as a broken status line rather than an empty catalog.
+            self.shell.status.model = landing.or_else(|| {
+                Some(match self.keys.chord(keybinds::Action::ModelList) {
+                    Some(chord) => format!("no model · {chord} to pick a provider"),
+                    None => "no model · open the model list to pick a provider".to_string(),
+                })
+            });
             self.shell.status.usage = None;
             self.shell.status.hints.clear();
             // The launch policy holds before any Session opens, so the strip

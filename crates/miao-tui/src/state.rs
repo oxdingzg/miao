@@ -84,6 +84,19 @@ pub struct StashEntry {
     pub saved_at_ms: u64,
 }
 
+const FAVORITE_LIMIT: usize = 32;
+
+/// Routes the operator starred in the picker, most recently starred first.
+pub fn favorites() -> Vec<String> {
+    let mut entries: Vec<String> = read_json("favorites.json").unwrap_or_default();
+    entries.truncate(FAVORITE_LIMIT);
+    entries
+}
+
+pub fn save_favorites(entries: &[String]) {
+    write_json("favorites.json", &entries.to_vec());
+}
+
 const STASH_LIMIT: usize = 50;
 
 pub fn stash() -> Vec<StashEntry> {
