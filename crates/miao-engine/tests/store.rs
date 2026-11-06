@@ -869,10 +869,13 @@ async fn opening_a_store_indexes_the_event_kind_so_recovery_does_not_scan_the_ta
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
+    // Any index that leads with `kind` answers this: the hourly usage index
+    // (`kind`, `recorded_at_ms`) shares the prefix, and SQLite may prefer it.
     assert!(
         plan.iter()
-            .any(|detail| detail.contains("engine_event_kind")),
-        "the recovery query must seek the kind index instead of scanning the table: {plan:?}"
+            .any(|detail| detail.contains("engine_event_kind")
+                || detail.contains("engine_event_usage_time")),
+        "the recovery query must seek a kind index instead of scanning the table: {plan:?}"
     );
 }
 

@@ -5407,7 +5407,7 @@ mod tests {
                 start_ms: 1_760_000_000_000 + index * 3_600_000,
                 tokens: match index % 3 {
                     0 => 0,
-                    1 => 1_000 * (index as u64 + 1),
+                    1 => 1_000 * (index + 1),
                     _ => 40_000,
                 },
                 turns: 1,

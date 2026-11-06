@@ -74,7 +74,7 @@ impl HourlyUsage {
             cost_turns: number(totals.and_then(|totals| totals.get("cost_turns"))),
             peak: value
                 .get("peak")
-                .and_then(|peak| Some((number(peak.get("start_ms")), number(peak.get("tokens"))))),
+                .map(|peak| (number(peak.get("start_ms")), number(peak.get("tokens")))),
             truncated: value
                 .get("truncated")
                 .and_then(Value::as_bool)
