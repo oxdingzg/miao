@@ -277,8 +277,34 @@ pub(crate) fn projection(conn: &Connection, session: &str, through: u64) -> Resu
     Ok(state)
 }
 
+/// A list that stopped tracking real progress is worse than no list: the model
+/// keeps reading finished work as open and open work as finished.
+/// `packages/core/src/session/todo.ts` nudges a stale ledger through
+/// `turnsBehind`; the Rust Session had no counterpart, so a long turn could run
+/// dozens of tool calls without ever being asked to reconcile.
+pub fn ledger_nudge(turns_since_write: u64) -> Option<&'static str> {
+    const STALE_AFTER: u64 = 3;
+    if turns_since_write < STALE_AFTER {
+        return None;
+    }
+    Some(
+        "The persisted task list has not been reconciled for several turns. Update it with \
+         todowrite before continuing: mark started work in_progress, finished and verified \
+         work completed, and work whose prerequisites are still open pending.",
+    )
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_ledger_untouched_for_several_turns_gets_a_nudge() {
+        assert_eq!(super::ledger_nudge(0), None);
+        assert_eq!(super::ledger_nudge(2), None);
+        let nudge = super::ledger_nudge(3).expect("three turns without a write");
+        assert!(nudge.contains("todowrite"), "{nudge}");
+        assert!(nudge.contains("in_progress"), "{nudge}");
+    }
+
     /// Only Anthropic personas name `todowrite`, so every other model learns
     /// the tool exists only from the protocol the system prompt carries.
     #[test]
