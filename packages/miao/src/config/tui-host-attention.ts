@@ -1,4 +1,4 @@
-import { TuiConfig } from "@miao/tui/config"
+import { TuiConfig } from "./tui-schema"
 import { isRecord } from "../util/record"
 import { Filesystem } from "@/util/filesystem"
 import { Schema } from "effect"

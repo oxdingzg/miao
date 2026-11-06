@@ -2,7 +2,7 @@
 
 import { Config as ConfigV2 } from "@miao/core/config"
 import { ConfigV1 } from "@miao/core/v1/config/config"
-import { TuiConfig } from "@miao/tui/config"
+import { TuiConfig } from "../src/config/tui-schema"
 import { Schema } from "effect"
 
 type JsonSchema = Record<string, unknown>
