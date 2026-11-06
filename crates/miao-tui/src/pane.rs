@@ -1540,6 +1540,7 @@ fn draft_lines(parts: &[DraftPart], theme: &Theme, now_ms: u64) -> Vec<Row> {
                     input: serde_json::from_str(arguments).unwrap_or(serde_json::Value::Null),
                     output: Some(String::new()),
                     failed: false,
+                    unreturned: false,
                 };
                 for line in crate::tool::lines(&part, None, theme, false, None) {
                     rows.push(Row::hung(line, 2));
@@ -3969,6 +3970,7 @@ mod tests {
                 .to_string(),
             ),
             failed: false,
+            unreturned: false,
         };
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
@@ -4252,6 +4254,7 @@ mod tests {
             input,
             output: None,
             failed: false,
+            unreturned: false,
         };
         let transcript = Transcript {
             entries: vec![Entry::Assistant {

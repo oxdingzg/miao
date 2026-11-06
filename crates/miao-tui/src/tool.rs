@@ -252,6 +252,10 @@ fn header(tool: &ToolPart, label: &str, detail: &str, theme: &Theme) -> Line<'st
         ("✗", Style::new().fg(palette.error))
     } else if tool.output.is_some() {
         ("✓", Style::new().fg(palette.success))
+    } else if tool.unreturned {
+        // The turn ended without this call's result: nothing is in flight, so
+        // the row must not keep the running glyph.
+        ("–", Style::new().fg(palette.text_muted))
     } else {
         ("·", Style::new().fg(palette.warning))
     };
@@ -976,6 +980,32 @@ mod tests {
         }
     }
 
+    /// A call whose turn ended without a result is not running any more. The
+    /// row's state used to be inferred from the result alone, so such a row
+    /// kept the running glyph for the rest of the Session.
+    #[test]
+    fn an_unreturned_call_reads_as_settled_not_running() {
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let mut call = tool("apply_patch", serde_json::json!({}), None, false);
+        call.unreturned = true;
+        let text = format!("{:?}", lines(&call, None, &theme, false, None));
+        assert!(
+            text.contains('–'),
+            "an unanswered call after a finished turn shows the settled glyph: {text}"
+        );
+        assert!(
+            !text.contains('·'),
+            "it must not keep the running glyph: {text}"
+        );
+        // Before the turn ends the same row still reads as in flight.
+        call.unreturned = false;
+        let running = format!("{:?}", lines(&call, None, &theme, false, None));
+        assert!(running.contains('·'), "a live call still shows running");
+    }
+
     fn tool(name: &str, input: Value, output: Option<Value>, failed: bool) -> ToolPart {
         ToolPart {
             id: "call_1".into(),
@@ -983,6 +1013,7 @@ mod tests {
             input,
             output: output.map(|value| value.to_string()),
             failed,
+            unreturned: false,
         }
     }
 

@@ -836,7 +836,7 @@ impl App {
             }
             AppEvent::SessionOpened {
                 summary,
-                transcript,
+                mut transcript,
                 state,
             } => {
                 self.swap_draft(summary.as_ref().map(|session| session.id.as_str()));
@@ -859,6 +859,12 @@ impl App {
                 }
                 self.state = *state;
                 self.stream_ended = None;
+                // A run that is already over settles the calls it left
+                // unanswered, so a finished transcript stops showing rows that
+                // only look like they are still running.
+                if self.state.active_run.is_none() {
+                    transcript.settle_unreturned();
+                }
                 // A Session that already holds prompts may still be unnamed —
                 // resuming one must not leave the sidebar reading "New session".
                 if let Some((id, first)) = self
