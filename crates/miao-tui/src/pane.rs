@@ -3503,7 +3503,8 @@ mod tests {
         // A CJK paragraph mixes full-width text with a narrow phrase, so a naive
         // split overflows the viewport or drops cells where the boundary lands
         // inside a wide character.
-        let line = "两项属于 P1，等 P0 合并后我单独开 PR。另外这轮真实账本验证有两个发现已记进后续待办";
+        let line =
+            "两项属于 P1，等 P0 合并后我单独开 PR。另外这轮真实账本验证有两个发现已记进后续待办";
         let cells = line
             .chars()
             .map(|character| (character, ratatui::style::Style::new()))
@@ -3520,7 +3521,10 @@ mod tests {
                 .iter()
                 .flat_map(|chunk| chunk.iter().map(|(character, _)| *character))
                 .collect::<String>();
-            assert_eq!(joined, line, "width {width} lost, duplicated or reordered cells");
+            assert_eq!(
+                joined, line,
+                "width {width} lost, duplicated or reordered cells"
+            );
         }
     }
 
