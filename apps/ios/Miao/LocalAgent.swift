@@ -251,6 +251,18 @@ final class LocalAgent {
         }
     }
 
+    /// Rewinds the current Session to just before `messageID` and reports the
+    /// text to put back in the composer, so the user edits instead of retyping.
+    func rewind(before messageID: UUID) -> String? {
+        guard !busy, let index = sessions.firstIndex(where: { $0.id == currentID }),
+              let position = sessions[index].messages.firstIndex(where: { $0.id == messageID })
+        else { return nil }
+        let text = sessions[index].messages[position].text
+        sessions[index].messages.removeSubrange(position...)
+        persist()
+        return text
+    }
+
     func stop() {
         task?.cancel()
         busy = false

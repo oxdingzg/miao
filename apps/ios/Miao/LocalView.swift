@@ -15,7 +15,18 @@ struct LocalView: View {
     @State private var attachments: [UIImage] = []
     @State private var speech = SpeechInput()
     @State private var appearance = false
+    @State private var viewing: String?
     @AppStorage("localTypeSize") private var typeSize = 1
+    @AppStorage("localAccent") private var accent = 0
+
+    private var tint: Color {
+        switch accent {
+        case 1: return .green
+        case 2: return .orange
+        case 3: return .purple
+        default: return .accentColor
+        }
+    }
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -46,9 +57,33 @@ struct LocalView: View {
                         })
                 }
             }
+            .tint(tint)
             .dynamicTypeSize(typeSize == 0 ? .medium : typeSize == 1 ? .large : .xLarge)
             .navigationTitle(agent.provider.model.isEmpty ? "本机" : agent.provider.model)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Menu {
+                        ForEach(agent.providers) { item in
+                            Button {
+                                agent.select(item.id)
+                                tap()
+                            } label: {
+                                Label(item.model, systemImage: item.id == agent.selectedID ? "checkmark" : "circle")
+                            }
+                        }
+                        Divider()
+                        Button { configuring = true } label: { Label("管理服务商", systemImage: "slider.horizontal.3") }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(agent.provider.model.isEmpty ? "本机" : agent.provider.model)
+                                .font(.headline).lineLimit(1)
+                            Image(systemName: "chevron.down").font(.caption2)
+                        }
+                    }
+                    .accessibilityIdentifier("localModelMenu")
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -69,6 +104,15 @@ struct LocalView: View {
             .sheet(isPresented: $configuring) {
                 LocalConfigView(agent: agent)
             }
+            .sheet(item: Binding(get: { viewing.map(ViewedImage.init) }, set: { viewing = $0?.encoded })) { item in
+                ZStack {
+                    Color.black.ignoresSafeArea()
+                    if let data = Data(base64Encoded: item.encoded), let image = UIImage(data: data) {
+                        Image(uiImage: image).resizable().scaledToFit()
+                    }
+                }
+                .onTapGesture { viewing = nil }
+            }
             .sheet(isPresented: $appearance) {
                 NavigationStack {
                     Form {
@@ -77,6 +121,13 @@ struct LocalView: View {
                                 Text("标准").tag(0)
                                 Text("较大").tag(1)
                                 Text("最大").tag(2)
+                            }
+                            .pickerStyle(.segmented)
+                            Picker("主题色", selection: $accent) {
+                                Text("默认").tag(0)
+                                Text("绿").tag(1)
+                                Text("橙").tag(2)
+                                Text("紫").tag(3)
                             }
                             .pickerStyle(.segmented)
                         } footer: {
@@ -141,7 +192,16 @@ struct LocalView: View {
                         HStack(spacing: 8) { ProgressView(); Text("正在处理…").font(.footnote).foregroundStyle(.secondary) }
                     }
                     if let error = agent.error {
-                        Text(error).font(.footnote).foregroundStyle(.red).textSelection(.enabled)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(error).font(.footnote).foregroundStyle(.red).textSelection(.enabled)
+                            Button { agent.retryLast() } label: {
+                                Label("重试", systemImage: "arrow.clockwise").font(.footnote)
+                            }
+                            .disabled(agent.busy)
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                     }
                     // A real anchor at the end scrolls past the last bubble, which
                     // anchoring to a message cannot do while it grows.
@@ -202,6 +262,7 @@ struct LocalView: View {
                                     Image(uiImage: image).resizable().scaledToFill()
                                         .frame(width: 64, height: 64)
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        .onTapGesture { viewing = encoded }
                                 }
                             }
                         }
@@ -209,6 +270,14 @@ struct LocalView: View {
                     if !message.text.isEmpty {
                         Text(message.text).padding(10)
                             .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+                            .contextMenu {
+                                Button {
+                                    if let text = agent.rewind(before: message.id) {
+                                        draft = text
+                                        focused = true
+                                    }
+                                } label: { Label("编辑后重发", systemImage: "pencil") }
+                            }
                     }
                 }
             }
@@ -271,7 +340,7 @@ struct LocalView: View {
                 .disabled(!agent.ready)
                 .accessibilityIdentifier("localInput")
             if agent.busy {
-                Button { agent.stop() } label: { Image(systemName: "stop.circle.fill").font(.title2) }
+                Button { tap(); agent.stop() } label: { Image(systemName: "stop.circle.fill").font(.title2) }
                     .accessibilityIdentifier("localStop")
             } else {
                 Button { send() } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }
@@ -304,12 +373,17 @@ struct LocalView: View {
         }
     }
 
+    private func tap() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
     private func send() {
         let text = draft
         let images = attachments
         draft = ""
         attachments = []
         picked = []
+        tap()
         agent.send(text, images: images)
     }
 }
@@ -379,6 +453,11 @@ private struct LocalConfigView: View {
 }
 
 /// Tool traffic is context, not content: one collapsed line unless asked.
+private struct ViewedImage: Identifiable {
+    let encoded: String
+    var id: String { String(encoded.prefix(64)) }
+}
+
 private struct ToolRow: View {
     let message: LocalMessage
     @State private var expanded = false
@@ -459,7 +538,7 @@ private struct SessionDrawer: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.title.isEmpty ? "新会话" : item.title).foregroundStyle(.primary)
-                                Text(item.updated.formatted(date: .abbreviated, time: .shortened))
+                                Text(verbatim: "\(item.messages.count) 条 · " + item.updated.formatted(date: .abbreviated, time: .shortened))
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
