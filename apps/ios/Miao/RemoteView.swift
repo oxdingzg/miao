@@ -623,6 +623,7 @@ private struct SessionView: View {
     @State private var queue = false
     /// Queueing is only meaningful while a turn is running.
     private var running: Bool { session.pending["execution"]?["type"]?.string == "running" }
+    @State private var notice: String?
     @FocusState private var composing: Bool
     @Environment(\.scenePhase) private var phase
 
@@ -705,6 +706,11 @@ private struct SessionView: View {
     private var composer: some View {
         VStack(spacing: 8) {
             if let error = speech.error { Text(error).font(.caption).foregroundStyle(.red) }
+            if let notice {
+                Text(notice).font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("composerNotice")
+            }
             if client.record.grant.permissions.contains(.prompt) {
                 TextField("给 miao 的消息", text: Binding(get: { session.draft }, set: { session.edit($0) }), axis: .vertical)
                     .focused($composing)
@@ -729,7 +735,14 @@ private struct SessionView: View {
                         // toggle silently queued every later message.
                         let queued = running && queue
                         queue = false
-                        Task { await session.send(queue: queued) }
+                        notice = queued ? "已排队：这一轮结束后发送" : nil
+                        Task {
+                            await session.send(queue: queued)
+                            if queued {
+                                try? await Task.sleep(for: .seconds(3))
+                                if notice?.hasPrefix("已排队") == true { notice = nil }
+                            }
+                        }
                     }
                         .buttonStyle(.borderedProminent)
                         .disabled(!client.ready || client.sending(session.summary.id) || session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.draft.utf16.count > 65_536)
