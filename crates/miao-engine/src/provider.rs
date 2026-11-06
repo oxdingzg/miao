@@ -71,10 +71,8 @@ pub enum ProviderError {
 
 impl ProviderError {
     pub(crate) fn can_fallback(&self) -> bool {
-        matches!(
-            self,
-            Self::Transport(_) | Self::Http(429 | 500 | 502 | 503 | 504 | 529, _)
-        )
+        matches!(self, Self::Transport(_))
+            || matches!(self, Self::Http(status, _) if retryable_status(*status))
     }
     pub(crate) fn continuation(&self) -> Option<(&Reply, usize)> {
         match self {
@@ -111,7 +109,7 @@ impl ProviderError {
             Self::Transport(_) | Self::ResponseTransport | Self::ContinuableTransport { .. } => {
                 true
             }
-            Self::Http(status, _) => matches!(status, 429 | 500 | 502 | 503 | 504 | 529),
+            Self::Http(status, _) => retryable_status(*status),
             _ => false,
         }
     }
@@ -1011,9 +1009,19 @@ async fn send_all(progress: &mpsc::Sender<Value>, notices: &[Value]) -> Result<(
 /// The provider's own words about a failed response, on one line and bounded:
 /// ` · retry-after: 12s · {"error":…}`. A bare status code cannot tell a rate
 /// limit from an upstream fault, which is the first question an operator asks.
+/// Statuses the retry budget covers: a rate limit, and every server-side
+/// failure. That is the class the provider SDKs retry — Anthropic's retries
+/// "connection errors, rate limits, and 5xx server errors" and honours
+/// `retry-after` — while an enumerated list stops covering the gateway: a
+/// Cloudflare front end answers 520, 521, 522 or 524 when the origin is
+/// unreachable or times out, and those ended a turn on the first attempt.
+fn retryable_status(status: u16) -> bool {
+    status == 429 || (500..=599).contains(&status)
+}
+
 fn http_failure_detail(status: u16, pause: Option<Duration>, body: Option<&str>) -> String {
     let mut parts: Vec<String> = Vec::new();
-    if matches!(status, 429 | 500 | 502 | 503 | 504 | 529) {
+    if retryable_status(status) {
         if let Some(pause) = pause {
             parts.push(format!("retry-after: {}s", pause.as_secs()));
         }
@@ -1133,7 +1141,7 @@ pub(crate) async fn request_with_retry(
                 let status = response.status().as_u16();
                 // Only a rate limit or a server-side failure names a pause the
                 // runner trusts; any other status' header is ignored.
-                requested = matches!(status, 429 | 500 | 502 | 503 | 504 | 529)
+                requested = retryable_status(status)
                     .then(|| retry_after(response.headers()))
                     .flatten();
                 let detail = failure_detail(&mut response).await;
@@ -1173,10 +1181,9 @@ pub(crate) async fn request_with_retry(
             && last_failure_detail
                 .as_deref()
                 .is_some_and(image_parse_transient);
-        let retryable = matches!(
-            error,
-            ProviderError::Transport(_) | ProviderError::Http(429 | 500 | 502 | 503 | 504 | 529, _)
-        ) || transient_image_parse;
+        let retryable = matches!(error, ProviderError::Transport(_))
+            || matches!(error, ProviderError::Http(status, _) if retryable_status(status))
+            || transient_image_parse;
         // Carry the reason so a client can show why the attempt was retried.
         // The status code is the HTTP one when there was one.
         let (reason, status) = match &error {
@@ -2316,6 +2323,29 @@ mod input_watchdog_tests {
                 matches!(result, Err(ProviderError::Stream(message)) if message.contains("tool input idle timeout"))
             );
             server.abort();
+        }
+    }
+}
+
+#[cfg(test)]
+mod retry_status_tests {
+    use super::*;
+
+    /// A gateway timeout is a server-side failure like any other. Cloudflare
+    /// answers 520, 521, 522 or 524 when the origin is unreachable or too slow,
+    /// and an enumerated list turned those into an `invalid request` that ended
+    /// the turn after one attempt.
+    #[test]
+    fn every_server_side_status_is_retried_and_a_client_error_is_not() {
+        for status in [429, 500, 502, 503, 504, 520, 521, 522, 524, 529, 599] {
+            assert!(retryable_status(status), "{status} must be retried");
+            let error = ProviderError::Http(status, String::new());
+            assert!(error.can_fallback(), "{status} can fall back");
+            assert!(error.unavailable(), "{status} is unavailable");
+        }
+        for status in [400, 401, 402, 403, 404, 409, 413, 422] {
+            assert!(!retryable_status(status), "{status} must not be retried");
+            assert!(!ProviderError::Http(status, String::new()).can_fallback());
         }
     }
 }
