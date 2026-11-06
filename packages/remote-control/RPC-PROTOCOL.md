@@ -38,7 +38,8 @@ Read methods: `capabilities`, `project.list`, `session.list`, `session.get`,
 `interrupt`, `session.rename` → `session.rename`, `session.switchAgent` and
 `session.switchModel` → `session.selection`, `provider.connectKey`,
 `provider.disconnect` and `model.default` → `provider.configure`,
-`session.pin` → `session.rename`, `session.remove` → `session.delete`,
+`session.pin` and `session.archive` → `session.rename`, `session.remove` →
+`session.delete`,
 `permission.reply` → `permission.reply`, and `question.reply` →
 `question.reply`. All writable methods require an operation ID. Only registered
 methods are callable; payload validation and result semantics are supplied by

@@ -13,6 +13,7 @@ struct RemoteView: View {
     @State private var providersHost: UUID?
     @State private var search = ""
     @State private var deleteTarget: SessionSummary?
+    @State private var showArchived = false
     @State private var invitation = ""
     @State private var attached: UUID?
     @State private var attachEpoch = 0
@@ -224,6 +225,10 @@ struct RemoteView: View {
                     accountSessionSections(host)
                 }
             }
+            Section {
+                Toggle("显示已归档", isOn: $showArchived)
+                    .accessibilityIdentifier("showArchived")
+            }
             if !pendingOperations(client).isEmpty {
                 Section("待核对操作") {
                     ForEach(pendingOperations(client)) { operation in
@@ -312,7 +317,7 @@ struct RemoteView: View {
         }
         ForEach(client.lists.keys.sorted(), id: \.self) { project in
             Section(projectName(project)) {
-                ForEach(client.lists[project] ?? []) { session in
+                ForEach(visible(client, project)) { session in
                     Button {
                         hostID = client.record.id
                         select(session)
@@ -322,19 +327,17 @@ struct RemoteView: View {
                         .contextMenu {
                             if client.record.grant.permissions.contains(.sessionRename) {
                                 Button {
-                                    Task {
-                                        _ = await client.session(session).command(.sessionPin, kind: .sessionPin,
-                                                                                payload: .object(["pinned": .bool(true)]))
-                                        await client.refreshLists()
-                                    }
-                                } label: { Label("置顶", systemImage: "pin") }
+                                    Task { await setPinned(client, session, !session.pinned) }
+                                } label: {
+                                    Label(session.pinned ? "取消置顶" : "置顶",
+                                          systemImage: session.pinned ? "pin.slash" : "pin")
+                                }
                                 Button {
-                                    Task {
-                                        _ = await client.session(session).command(.sessionPin, kind: .sessionPin,
-                                                                                payload: .object(["pinned": .bool(false)]))
-                                        await client.refreshLists()
-                                    }
-                                } label: { Label("取消置顶", systemImage: "pin.slash") }
+                                    Task { await setArchived(client, session, !session.archived) }
+                                } label: {
+                                    Label(session.archived ? "取消归档" : "归档",
+                                          systemImage: session.archived ? "archivebox" : "archivebox.fill")
+                                }
                             }
                             if client.record.grant.permissions.contains(.sessionDelete) {
                                 Button(role: .destructive) { deleteTarget = session } label: {
@@ -352,7 +355,7 @@ struct RemoteView: View {
 
     private func sessionSection(_ client: HostClient, project: String) -> some View {
         Section(projectName(project)) {
-            ForEach(client.lists[project] ?? []) { session in
+            ForEach(visible(client, project)) { session in
                 sessionRow(client, session: session)
             }
             if client.next[project] != nil {
@@ -423,6 +426,23 @@ struct RemoteView: View {
         sessionID = entry.sessionID
         withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false }
         Task { await client.refreshLists() }
+    }
+
+    /// Archived Sessions stay out of the way until the owner asks to see them.
+    private func visible(_ client: HostClient, _ project: String) -> [SessionSummary] {
+        (client.lists[project] ?? []).filter { showArchived || !$0.archived }
+    }
+
+    private func setPinned(_ client: HostClient, _ session: SessionSummary, _ pinned: Bool) async {
+        _ = await client.session(session).command(.sessionPin, kind: .sessionPin,
+                                                  payload: .object(["pinned": .bool(pinned)]))
+        await client.refreshLists()
+    }
+
+    private func setArchived(_ client: HostClient, _ session: SessionSummary, _ archived: Bool) async {
+        _ = await client.session(session).command(.sessionArchive, kind: .sessionArchive,
+                                                  payload: .object(["archived": .bool(archived)]))
+        await client.refreshLists()
     }
 
     private var emptySidebar: some View {

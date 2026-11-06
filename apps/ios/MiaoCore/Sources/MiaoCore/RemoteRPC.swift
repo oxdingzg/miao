@@ -38,6 +38,7 @@ public enum RemoteMethod: String, Codable, Sendable {
     case providerDisconnect = "provider.disconnect", modelDefault = "model.default"
     case pendingList = "pending.list"
     case sessionPin = "session.pin", sessionRemove = "session.remove"
+    case sessionArchive = "session.archive"
 }
 
 public struct ApprovedHost: Codable, Sendable, Equatable, Identifiable {

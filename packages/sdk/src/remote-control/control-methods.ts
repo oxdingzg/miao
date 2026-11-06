@@ -176,6 +176,10 @@ export function make(options: {
       context.authorize()
       await options.client.sessions.pin({ sessionID: request.sessionID!, pinned: payload.pinned })
     }),
+    "session.archive": mutation(Schema.Struct({ archived: Schema.Boolean }), async (payload, request, context) => {
+      context.authorize()
+      await options.client.sessions.archive({ sessionID: request.sessionID!, archived: payload.archived })
+    }),
     "session.remove": mutation(Schema.Struct({}), async (_payload, request, context) => {
       const execution = await options.client.sessions.execution(
         { sessionID: request.sessionID! },
