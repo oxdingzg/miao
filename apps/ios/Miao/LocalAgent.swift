@@ -197,6 +197,12 @@ final class LocalAgent {
         persist()
     }
 
+    func renameSession(_ id: UUID, title: String) {
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        sessions[index].title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        persist()
+    }
+
     func deleteSession(_ id: UUID) {
         sessions.removeAll { $0.id == id }
         if currentID == id { currentID = sessions.first?.id }

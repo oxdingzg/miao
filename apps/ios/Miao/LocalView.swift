@@ -13,6 +13,7 @@ struct LocalView: View {
     @State private var viewport: CGFloat = 0
     @State private var picked: [PhotosPickerItem] = []
     @State private var attachments: [UIImage] = []
+    @State private var speech = SpeechInput()
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -214,6 +215,12 @@ struct LocalView: View {
                     Image(systemName: "photo.on.rectangle").font(.title3)
                 }
                 .accessibilityIdentifier("localAttach")
+                Button { Task { await dictate() } } label: {
+                    Image(systemName: speech.recording ? "waveform.circle.fill" : "mic")
+                        .font(.title3)
+                        .foregroundStyle(speech.recording ? Color.red : Color.accentColor)
+                }
+                .accessibilityIdentifier("localDictate")
                 TextField("说点什么…", text: $draft, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.plain)
@@ -244,6 +251,15 @@ struct LocalView: View {
                 }
                 attachments = Array(loaded.prefix(4))
             }
+        }
+    }
+
+    /// Recognition only fills the draft; sending stays an explicit action.
+    private func dictate() async {
+        if speech.recording { speech.stop(); return }
+        await speech.start(text: draft) { recognized, _ in
+            draft = recognized
+            return true
         }
     }
 
@@ -324,6 +340,8 @@ private struct LocalConfigView: View {
 private struct SessionDrawer: View {
     @Bindable var agent: LocalAgent
     var close: () -> Void
+    @State private var renaming: LocalSession?
+    @State private var title = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -363,6 +381,11 @@ private struct SessionDrawer: View {
                             }
                         }
                     }
+                    .contextMenu {
+                        Button { renaming = item; title = item.title } label: {
+                            Label("重命名", systemImage: "pencil")
+                        }
+                    }
                 }
                 .onDelete { offsets in
                     for offset in offsets { agent.deleteSession(agent.sessions[offset].id) }
@@ -371,6 +394,14 @@ private struct SessionDrawer: View {
             .listStyle(.plain)
         }
         .background(.background)
+        .alert("重命名会话", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("名称", text: $title)
+            Button("保存") {
+                if let item = renaming { agent.renameSession(item.id, title: title) }
+                renaming = nil
+            }
+            Button("取消", role: .cancel) { renaming = nil }
+        }
     }
 }
 
