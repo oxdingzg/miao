@@ -24,6 +24,10 @@ struct LocalView: View {
                     Button { configuring = true } label: { Image(systemName: "slider.horizontal.3") }
                         .accessibilityIdentifier("localSettings")
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完成") { focused = false }.accessibilityIdentifier("localDismissKeyboard")
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     if !agent.messages.isEmpty {
                         Button("清空", role: .destructive) { agent.clear() }
@@ -66,6 +70,8 @@ struct LocalView: View {
                 }
                 .padding(.horizontal).padding(.vertical, 12)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .onTapGesture { focused = false }
             .onChange(of: agent.messages.count) { _, _ in
                 if let last = agent.messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
             }
