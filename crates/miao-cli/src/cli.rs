@@ -2189,6 +2189,21 @@ fn product_db() -> Option<PathBuf> {
     Some(root.join("miao.db"))
 }
 
+/// The store `miao auth` reads and writes. An explicit
+/// `MIAO_ENGINE_CREDENTIAL_DB` wins, because a host that spawns the engine hands
+/// its own store over that way; without one the product store is the same file
+/// the engine falls back to when no host passes a source, so a credential
+/// written here is the one a single-binary start reads.
+fn credential_db_path() -> Result<PathBuf, String> {
+    if let Some(path) = std::env::var_os("MIAO_ENGINE_CREDENTIAL_DB") {
+        return Ok(PathBuf::from(path));
+    }
+    product_db().ok_or_else(|| {
+        "no credential store: set MIAO_ENGINE_CREDENTIAL_DB, or MIAO_DATA_HOME/XDG_DATA_HOME/HOME"
+            .to_string()
+    })
+}
+
 /// One XDG-scoped directory: the explicit `MIAO_*` variable wins, then the
 /// XDG base, then the home-relative default. Uninstall and the db reports
 /// share this so a removal target and a reporting target can never disagree.
@@ -3424,10 +3439,10 @@ fn providers() -> Result<(), String> {
         Ok(entries) if !entries.is_empty() => println!("plugins   {} configured", entries.len()),
         _ => println!("plugins   none"),
     }
-    match std::env::var("MIAO_ENGINE_CREDENTIAL_DB") {
-        Ok(path) => {
-            let entries = miao_engine::credential::list_database(std::path::Path::new(&path))
-                .map_err(|error| format!("{path}: {error}"))?;
+    match credential_db_path() {
+        Ok(path) if path.is_file() => {
+            let entries = miao_engine::credential::list_database(&path)
+                .map_err(|error| format!("{}: {error}", path.display()))?;
             println!("credentials {}", entries.len());
             for entry in entries.iter().take(5) {
                 println!("  {:<20} {:<4} {}", entry.integration, entry.kind, entry.id);
@@ -3436,7 +3451,8 @@ fn providers() -> Result<(), String> {
                 println!("  … {} more", entries.len() - 5);
             }
         }
-        Err(_) => println!("credentials unknown (MIAO_ENGINE_CREDENTIAL_DB is unset)"),
+        Ok(path) => println!("credentials 0 (nothing stored at {})", path.display()),
+        Err(message) => println!("credentials unknown ({message})"),
     }
     Ok(())
 }
@@ -4375,10 +4391,13 @@ fn credential_id() -> String {
 /// action, so it is the single writer at that moment; the engine keeps reading
 /// the same table read-only and never gains write authority.
 fn auth_write(rest: &[String]) -> Result<(), String> {
-    let db = std::env::var("MIAO_ENGINE_CREDENTIAL_DB").map_err(|_| {
-        "set MIAO_ENGINE_CREDENTIAL_DB (the product passes it to the engine)".to_string()
-    })?;
-    let connection = rusqlite::Connection::open(&db).map_err(|error| format!("{db}: {error}"))?;
+    let db = credential_db_path()?;
+    if let Some(parent) = db.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("{}: {error}", parent.display()))?;
+    }
+    let connection =
+        rusqlite::Connection::open(&db).map_err(|error| format!("{}: {error}", db.display()))?;
     // A fresh machine has no credential store yet: the single binary has to be
     // able to bootstrap its first credential through `auth login` alone, or
     // the first login on a new install fails on a chicken-and-egg (the store
@@ -4484,17 +4503,59 @@ fn auth_write(rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("logout") => {
-            let integration = rest.get(1).ok_or("usage: miao auth logout INTEGRATION")?;
+            // `--account` names one stored account. Without it the default
+            // account is removed, which is what a plain login created; a
+            // named account was otherwise unreachable from the CLI and could
+            // only be deleted by editing the store.
+            let mut account: Option<String> = None;
+            let mut integration: Option<String> = None;
+            let mut args = rest[1..].iter();
+            while let Some(argument) = args.next() {
+                match argument.as_str() {
+                    "--account" => {
+                        account = Some(args.next().ok_or("--account needs a name")?.clone());
+                    }
+                    other if other.starts_with('-') => {
+                        return Err(format!("unknown auth logout option {other}"))
+                    }
+                    other => {
+                        if integration.replace(other.to_string()).is_some() {
+                            return Err(
+                                "usage: miao auth logout INTEGRATION [--account NAME]".into()
+                            );
+                        }
+                    }
+                }
+            }
+            let Some(integration) = integration else {
+                return Err("usage: miao auth logout INTEGRATION [--account NAME]".into());
+            };
+            let label = account
+                .map(|name| name.trim().to_string())
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| "default".to_string());
             let removed = connection
                 .execute(
-                    "DELETE FROM credential WHERE integration_id=?1 AND label='default'",
-                    rusqlite::params![integration],
+                    "DELETE FROM credential WHERE integration_id=?1 AND label=?2",
+                    rusqlite::params![integration, label],
                 )
                 .map_err(|error| error.to_string())?;
-            println!("removed {removed} credential(s) for {integration}");
+            let remaining: i64 = connection
+                .query_row(
+                    "SELECT count(*) FROM credential WHERE integration_id=?1",
+                    rusqlite::params![integration],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?;
+            println!(
+                "removed {removed} credential(s) for {integration} ({label}); {remaining} left"
+            );
             Ok(())
         }
-        _ => Err("usage: miao auth login INTEGRATION KEY | miao auth logout INTEGRATION".into()),
+        _ => Err(
+            "usage: miao auth login INTEGRATION KEY [--account NAME] [--oauth] | miao auth logout INTEGRATION [--account NAME]"
+                .into(),
+        ),
     }
 }
 
@@ -4502,11 +4563,14 @@ fn auth_write(rest: &[String]) -> Result<(), String> {
 /// expiry metadata — the engine never serializes a secret — so this stays a
 /// read-only view and never touches the broker's write authority.
 fn list_credentials() -> Result<(), String> {
-    let path = std::env::var("MIAO_ENGINE_CREDENTIAL_DB").map_err(|_| {
-        "set MIAO_ENGINE_CREDENTIAL_DB (the product passes it to the engine)".to_string()
-    })?;
-    let entries = miao_engine::credential::list_database(std::path::Path::new(&path))
-        .map_err(|error| format!("{path}: {error}"))?;
+    let path = credential_db_path()?;
+    // A store nobody has written yet is an empty list, not an error: the first
+    // `auth login` is what creates it.
+    let entries = match path.is_file() {
+        true => miao_engine::credential::list_database(&path)
+            .map_err(|error| format!("{}: {error}", path.display()))?,
+        false => Vec::new(),
+    };
     for entry in entries {
         println!(
             "{:<22} {:<18} {:<6} {}{}",
