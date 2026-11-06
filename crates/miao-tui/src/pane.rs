@@ -3742,6 +3742,31 @@ mod tests {
         assert!(!painted.contains("nothing to show"), "{painted}");
     }
 
+    /// ctrl+o inside the model picker narrows to one provider. The box used to
+    /// paint its title and an empty body because the variant never answered
+    /// `list()`, so no row reached the frame.
+    #[test]
+    fn the_provider_filter_paints_its_rows() {
+        let theme = home_theme();
+        let dialog =
+            crate::dialogs::Dialog::model_provider_filter(&["deepseek".into(), "zhipu".into()]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).expect("terminal");
+        terminal
+            .draw(|frame| super::render_dialog(frame, frame.area(), &dialog, &theme))
+            .expect("draw");
+        let painted = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol().to_string())
+            .collect::<String>();
+        assert!(painted.contains("all providers"), "{painted}");
+        assert!(painted.contains("deepseek"), "{painted}");
+        assert!(painted.contains("zhipu"), "{painted}");
+    }
+
     /// An empty composer hints at what it accepts, the way the agent CLIs do;
     /// a draft replaces the hint instead of stacking on it.
     #[test]

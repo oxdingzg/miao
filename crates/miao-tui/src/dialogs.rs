@@ -1149,6 +1149,7 @@ impl Dialog {
     pub fn list(&self) -> Option<&ListDialog> {
         match self {
             Dialog::Models(list)
+            | Dialog::ModelProviders(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
             | Dialog::ProviderAccounts(list)
@@ -1163,6 +1164,7 @@ impl Dialog {
             | Dialog::Skills(list)
             | Dialog::Workspaces(list)
             | Dialog::Jobs(list)
+            | Dialog::Devices(list)
             | Dialog::Schedule(list) => Some(list),
             _ => None,
         }
@@ -1171,6 +1173,7 @@ impl Dialog {
     pub fn list_mut(&mut self) -> Option<&mut ListDialog> {
         match self {
             Dialog::Models(list)
+            | Dialog::ModelProviders(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
             | Dialog::ProviderAccounts(list)
@@ -1185,6 +1188,7 @@ impl Dialog {
             | Dialog::Skills(list)
             | Dialog::Workspaces(list)
             | Dialog::Jobs(list)
+            | Dialog::Devices(list)
             | Dialog::Schedule(list) => Some(list),
             _ => None,
         }
@@ -2295,5 +2299,42 @@ mod tests {
             dialog.handle_key(key(KeyCode::Enter)),
             Action::Confirmed(ConfirmKind::RemoveSession(id)) if id == "ses_a"
         ));
+    }
+
+    /// The paint path reaches a list's rows only through `list()`, so a list
+    /// variant that skips it draws its border and title over an empty body.
+    /// `ModelProviders` was in `title()` but not in `list()`: ctrl+o inside the
+    /// model picker opened a blank "model providers" box.
+    #[test]
+    fn every_list_variant_answers_the_body_accessors() {
+        let theme = crate::theme::Catalog::builtin();
+        let dialogs = vec![
+            Dialog::model_provider_filter(&[]),
+            Dialog::models(&[], None),
+            Dialog::theme("miao", &theme),
+            Dialog::sessions(&[]),
+            Dialog::provider_accounts(Vec::new()),
+            Dialog::accounts(&[]),
+            Dialog::stash(Vec::new()),
+            Dialog::timeline(Vec::new()),
+            Dialog::status(Vec::new()),
+            Dialog::debug(Vec::new()),
+            Dialog::help(Vec::new()),
+            Dialog::mcp(&[]),
+            Dialog::providers(&[]),
+            Dialog::devices(&[]),
+            Dialog::jobs(&[]),
+            Dialog::schedule(&[]),
+            Dialog::skills(&[]),
+            Dialog::workspaces(&[]),
+        ];
+        for mut dialog in dialogs {
+            let title = dialog.title();
+            assert!(dialog.list().is_some(), "{title} paints an empty body");
+            assert!(dialog.list_mut().is_some(), "{title} cannot take a cursor");
+            // One row, the hint line and the border; a list that falls through
+            // to the default six-row box loses rows it has.
+            assert!(dialog.height() >= 4, "{title} is too short for its rows");
+        }
     }
 }
