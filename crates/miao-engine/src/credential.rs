@@ -471,7 +471,7 @@ fn credential_id() -> String {
     let mut id = String::from("cred_");
     for _ in 0..26 {
         id.push(ALPHABET[(seed % ALPHABET.len() as u64) as usize] as char);
-        seed = seed / ALPHABET.len() as u64 ^ seed.rotate_left(7);
+        seed = (seed / ALPHABET.len() as u64) ^ seed.rotate_left(7);
     }
     id
 }
