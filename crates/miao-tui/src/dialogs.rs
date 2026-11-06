@@ -586,6 +586,13 @@ pub struct SignInDialog {
     pub input: Editor,
 }
 
+/// A paste into a one-line field: the line breaks a clipboard often carries
+/// would otherwise land inside a value that has to stay one line, like an API
+/// key or a Session name.
+fn insert_paste(input: &mut Editor, text: &str) {
+    input.insert_str(&text.replace(['\r', '\n'], ""));
+}
+
 /// The operator's own label for a Session. Confirming an empty label clears it,
 /// the same shape rename already has: the dialog is the edit.
 pub struct TagDialog {
@@ -1223,6 +1230,23 @@ impl Dialog {
             Dialog::SignIn(sign_in) => Some(sign_in),
             _ => None,
         }
+    }
+
+    /// Take a paste when this dialog owns a text field, and say so.
+    ///
+    /// A dialog is modal for keystrokes, but a paste arrives on its own event:
+    /// the provider prompt rendered, the operator pasted the key, and it went
+    /// into the composer underneath while the prompt stayed empty. Whatever
+    /// asked for the text gets it.
+    pub fn paste(&mut self, text: &str) -> bool {
+        match self {
+            Dialog::SavedPermissions(dialog) => dialog.paste(text),
+            Dialog::SignIn(sign_in) => insert_paste(&mut sign_in.input, text),
+            Dialog::Rename(rename) => insert_paste(&mut rename.input, text),
+            Dialog::Tag(tag) => insert_paste(&mut tag.input, text),
+            _ => return false,
+        }
+        true
     }
 
     pub fn rename_input(&self) -> Option<&Editor> {

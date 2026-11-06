@@ -610,8 +610,15 @@ impl App {
         match event {
             AppEvent::Key(key) => self.handle_key(key),
             AppEvent::Paste(text) => {
-                if let Some(Dialog::SavedPermissions(dialog)) = self.dialog.as_mut() {
-                    dialog.paste(&text);
+                // A dialog that owns a text field takes the paste. Keystrokes
+                // are already modal, but a paste carries its own event: the
+                // provider prompt opened, the key was pasted, and it landed in
+                // the composer underneath instead of the prompt.
+                if self
+                    .dialog
+                    .as_mut()
+                    .is_some_and(|dialog| dialog.paste(&text))
+                {
                     return;
                 }
                 // The landing screen paints the same composer, so a paste that
@@ -664,7 +671,18 @@ impl App {
                         let count = self.shell.composer.attach_image(&mime, &data);
                         self.notice(&format!("attached image {count}"));
                     }
-                    Some(clipboard::Content::Text(text)) => self.shell.composer.paste(&text),
+                    Some(clipboard::Content::Text(text)) => {
+                        // The clipboard is the second half of an empty paste,
+                        // so it has to reach the same place that paste would
+                        // have: a dialog's own field while one is open.
+                        let taken = self
+                            .dialog
+                            .as_mut()
+                            .is_some_and(|dialog| dialog.paste(&text));
+                        if !taken {
+                            self.shell.composer.paste(&text);
+                        }
+                    }
                     None => self.notice("the clipboard is empty"),
                 }
             }
@@ -5918,6 +5936,29 @@ mod tests {
             .expect("prompt");
         assert_eq!(sign_in.provider, "opencode-go");
         assert_eq!(sign_in.name, "OpenCode Go");
+    }
+
+    /// A pasted key has to reach the prompt that asked for it. Keystrokes were
+    /// already modal, but a paste carries its own event: it fell through to the
+    /// composer while the provider prompt stayed empty, so the operator saw the
+    /// key appear in the wrong place and Enter submitted an empty prompt.
+    #[test]
+    fn a_pasted_key_reaches_the_provider_prompt_instead_of_the_composer() {
+        let mut app = session_app();
+        app.shell.composer.editor.set_text("keep this draft");
+        app.open_dialog(Dialog::sign_in_prompt("opencode-go", "OpenCode Go"));
+        app.handle(AppEvent::Paste("oc_sk_pasted".into()));
+        assert_eq!(
+            app.shell.composer.editor.text(),
+            "keep this draft",
+            "the composer underneath keeps the draft it had"
+        );
+        let sign_in = app
+            .dialog
+            .as_ref()
+            .and_then(Dialog::sign_in)
+            .expect("prompt");
+        assert_eq!(sign_in.input.text(), "oc_sk_pasted");
     }
 
     /// Submitting the prompt stores the key in the credential store and says the
