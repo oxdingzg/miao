@@ -621,6 +621,8 @@ private struct SessionView: View {
     @State private var selectedAction: String?
     @State private var title = ""
     @State private var queue = false
+    /// Queueing is only meaningful while a turn is running.
+    private var running: Bool { session.pending["execution"]?["type"]?.string == "running" }
     @FocusState private var composing: Bool
     @Environment(\.scenePhase) private var phase
 
@@ -717,8 +719,18 @@ private struct SessionView: View {
                         } } }
                     }.disabled(speech.requesting)
                     Spacer()
-                    Toggle("排队", isOn: $queue).toggleStyle(.button).font(.caption).accessibilityIdentifier("queueInput")
-                    Button("发送", systemImage: "arrow.up") { speech.stop(); Task { await session.send(queue: queue) } }
+                    if running {
+                        Toggle("排队", isOn: $queue).toggleStyle(.button).font(.caption)
+                            .accessibilityIdentifier("queueInput")
+                    }
+                    Button("发送", systemImage: "arrow.up") {
+                        speech.stop()
+                        // Queueing is a per-message choice, not a mode: a sticky
+                        // toggle silently queued every later message.
+                        let queued = running && queue
+                        queue = false
+                        Task { await session.send(queue: queued) }
+                    }
                         .buttonStyle(.borderedProminent)
                         .disabled(!client.ready || client.sending(session.summary.id) || session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.draft.utf16.count > 65_536)
                         .accessibilityIdentifier("sendMessage")
