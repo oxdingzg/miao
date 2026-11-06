@@ -2354,8 +2354,8 @@ fn hourly_lines(
     ]));
     let mut money = Vec::new();
     if usage.cost_turns > 0 {
-        // Only a reported figure is money; `~` marks turns that reported none,
-        // so a partial answer is never read as the day's whole price.
+        // `~` marks turns that carried no figure at all, so a partial answer
+        // is never read as the day's whole price.
         let suffix = match usage.cost_turns >= usage.turns && !usage.truncated {
             true => String::new(),
             false => " ~".to_string(),

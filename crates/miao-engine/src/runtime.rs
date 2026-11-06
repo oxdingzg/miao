@@ -3670,11 +3670,14 @@ command: None,
                 return Err(Error::Invalid(message));
             }
         };
-        // Price the turn before it is recorded. The route says whose rates
-        // apply and the reported tokens are what a provider bills; an unpriced
-        // route stores no cost rather than a zero that reads as free.
+        // Price the turn before it is recorded. A gateway that billed the turn
+        // reports what it charged, and that figure wins over our own rates
+        // because it is the money that actually moved; an estimate is kept
+        // beside it, flagged, so the two can never be read as the same thing.
+        // An unpriced route with no report stores nothing rather than a zero
+        // that reads as free.
         let route = price_route(inner, binding.as_ref());
-        let cost = match route.as_deref() {
+        let estimate = match route.as_deref() {
             Some(route) => inner
                 .prices
                 .lock()
@@ -3682,12 +3685,22 @@ command: None,
                 .charge(route, crate::pricing::Tokens::from_usage(&reply.usage)),
             None => None,
         };
+        let cost = match reply.usage.get(crate::usage::BILLING) {
+            Some(billing) => {
+                let mut billing = billing.clone();
+                billing["reported"] = json!(true);
+                Some(billing)
+            }
+            None => estimate.map(
+                |cost| json!({"amount":cost.amount,"currency":cost.currency,"reported":false}),
+            ),
+        };
         inner
             .store
             .record(
                 session,
                 "usage",
-                json!({"run_id":run,"step":step,"usage":reply.usage,"model":binding.as_ref().map(|binding|binding.model.as_str()),"route":route,"cost":cost.as_ref().map(|cost|json!({"amount":cost.amount,"currency":cost.currency})),"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
+                json!({"run_id":run,"step":step,"usage":reply.usage,"model":binding.as_ref().map(|binding|binding.model.as_str()),"route":route,"cost":cost,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
             )
             .await?;
         budget_spent = budget_spent.saturating_add(billed_tokens(&reply.usage));

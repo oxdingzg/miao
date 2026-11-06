@@ -24,9 +24,10 @@ pub struct HourlyBucket {
 
 /// Billed usage per whole hour for the trailing window the engine answered.
 ///
-/// Money is only what providers reported: `cost_turns` says how many turns
-/// carried a figure, so a strip cannot present a handful of reported turns as
-/// the price of the whole day.
+/// `cost_turns` says how many turns carried a money figure — the gateway's own
+/// charge when it billed the turn, otherwise our rate applied to the reported
+/// tokens — so a strip cannot present a handful of priced turns as the price of
+/// the whole day.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct HourlyUsage {
     pub buckets: Vec<HourlyBucket>,
