@@ -4545,10 +4545,31 @@ fn list_models() -> Result<(), String> {
             let layers = config_layers(std::path::Path::new("."), None, &|name| {
                 std::env::var(name).ok()
             });
-            model_routes(&layers, "")?
+            let mut ids = model_routes(&layers, "")?
                 .iter()
                 .filter_map(|route| route["id"].as_str().map(str::to_string))
-                .collect()
+                .collect::<Vec<_>>();
+            // A provider the configuration does not name still serves turns
+            // when the shipped snapshot knows it and a key credential is
+            // stored, so the engine routes it. `model_routes` reads only the
+            // configured providers, and a listing built from it alone hid
+            // every one of those routes — opencode-go among them — while the
+            // engine was already serving them.
+            let credential_db = std::env::var_os("MIAO_ENGINE_CREDENTIAL_DB")
+                .map(PathBuf::from)
+                .or_else(product_db)
+                .filter(|path| path.is_file());
+            if let Ok(Some(routes)) = miao_engine::native_routes::routes(
+                &config_sources(&layers),
+                credential_db.as_deref(),
+            ) {
+                ids.extend(
+                    routes
+                        .iter()
+                        .filter_map(|route| route["id"].as_str().map(str::to_string)),
+                );
+            }
+            ids
         }
     };
     ids.sort();
