@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "0.3.42",
+  "version": "0.3.43",
   "name": "@miao/effect-sqlite-node",
   "type": "module",
   "license": "MIT",
