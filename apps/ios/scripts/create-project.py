@@ -44,7 +44,6 @@ add('framework-build', f'isa = PBXBuildFile; productRef = {ident("product")};')
 # was evaluated and dropped: it drags GiphyUISDK, ExyteMediaPicker, Kingfisher
 # and libwebp into a text-only agent conversation.
 remote = [
-    ("openai", "https://github.com/MacPaw/OpenAI.git", "main", ["OpenAI"]),
     ("markdown", "https://github.com/swiftlang/swift-markdown.git", "main", ["Markdown"]),
     # Textual needs iOS 18; MarkdownUI keeps the app's iOS 17 floor.
     ("markdownui", "https://github.com/gonzalezreal/swift-markdown-ui.git", "main", ["MarkdownUI"]),

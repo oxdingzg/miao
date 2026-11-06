@@ -106,7 +106,8 @@ final class LocalAgent {
                 let reply = try await complete()
                 if let call = reply.tool { try await perform(call) }
                 else {
-                    messages.append(LocalMessage(role: .assistant, text: reply.text))
+                    // Streaming already grew the bubble; only a quiet reply needs one.
+                    if !reply.streamed { messages.append(LocalMessage(role: .assistant, text: reply.text)) }
                     persist()
                     return
                 }
@@ -120,8 +121,11 @@ final class LocalAgent {
     }
 
     private struct ToolCall { let id: String; let name: String; let arguments: String }
-    private struct Reply { let text: String; let tool: ToolCall? }
+    private struct Reply { let text: String; let tool: ToolCall?; let streamed: Bool }
 
+    /// Streams the provider response so text appears as it arrives, and folds
+    /// tool-call deltas back into one call. `stream: true` is the only change to
+    /// the request body; the wire format stays OpenAI's chat completions.
     private func complete() async throws -> Reply {
         var request = URLRequest(url: try endpoint())
         request.httpMethod = "POST"
@@ -132,27 +136,57 @@ final class LocalAgent {
             "model": provider.model,
             "messages": wireMessages(),
             "tools": Self.tools,
+            "stream": true,
         ])
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let status = (response as? HTTPURLResponse)?.statusCode else { throw LocalAgentError.badResponse }
         guard (200..<300).contains(status) else {
-            throw LocalAgentError.provider(status, String(decoding: data.prefix(400), as: UTF8.self))
+            let body = try await bytes.reduce(into: Data()) { $0.append($1) }
+            throw LocalAgentError.provider(status, String(decoding: body.prefix(400), as: UTF8.self))
         }
-        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = root["choices"] as? [[String: Any]],
-              let first = choices.first,
-              let message = first["message"] as? [String: Any]
-        else { throw LocalAgentError.badResponse }
-        let text = message["content"] as? String ?? ""
-        let calls = message["tool_calls"] as? [[String: Any]]
-        if let call = calls?.first,
-           let id = call["id"] as? String,
-           let function = call["function"] as? [String: Any],
-           let name = function["name"] as? String {
-            return Reply(text: text, tool: ToolCall(id: id, name: name,
-                                                    arguments: function["arguments"] as? String ?? "{}"))
+
+        var text = ""
+        var callID: String?
+        var callName: String?
+        var callArguments = ""
+        var streamed = false
+
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data:") else { continue }
+            let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            if payload == "[DONE]" { break }
+            guard let object = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any],
+                  let choices = object["choices"] as? [[String: Any]],
+                  let first = choices.first,
+                  let delta = first["delta"] as? [String: Any]
+            else { continue }
+
+            if let piece = delta["content"] as? String, !piece.isEmpty {
+                text += piece
+                if streamed { messages[messages.count - 1].text = text }
+                else { messages.append(LocalMessage(role: .assistant, text: text)); streamed = true }
+            }
+            if let calls = delta["tool_calls"] as? [[String: Any]], let call = calls.first {
+                if let id = call["id"] as? String { callID = id }
+                if let function = call["function"] as? [String: Any] {
+                    if let name = function["name"] as? String { callName = name }
+                    if let arguments = function["arguments"] as? String { callArguments += arguments }
+                }
+            }
+            if Task.isCancelled { break }
         }
-        return Reply(text: text.isEmpty ? "（模型没有返回内容）" : text, tool: nil)
+
+        if let name = callName, text.isEmpty, streamed {
+            // A turn that only calls a tool must not leave an empty bubble behind.
+            messages.removeLast()
+            streamed = false
+        }
+        if let name = callName {
+            return Reply(text: text, tool: ToolCall(id: callID ?? UUID().uuidString, name: name,
+                                                    arguments: callArguments.isEmpty ? "{}" : callArguments),
+                         streamed: streamed)
+        }
+        return Reply(text: text.isEmpty ? "（模型没有返回内容）" : text, tool: nil, streamed: streamed)
     }
 
     private func endpoint() throws -> URL {
