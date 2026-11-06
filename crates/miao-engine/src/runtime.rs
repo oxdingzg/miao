@@ -2861,6 +2861,12 @@ async fn execute(
         .then(crate::subagent::time_limit)
         .flatten()
         .map(|limit| std::time::Instant::now() + limit);
+    // Todo debt: count provider turns against the last `todos` revision so a
+    // long stretch of tool calls cannot leave the persisted checklist silently
+    // behind the work. The existing no-progress guard only watches text-only
+    // turns, which is why a busy turn never noticed its own stale list.
+    let mut ledger_turns: std::collections::HashMap<String, (u64, u64)> =
+        std::collections::HashMap::new();
     loop {
         if cancel.is_cancelled() {
             return Ok(());
@@ -3069,6 +3075,21 @@ async fn execute(
             )
             .await?;
         let (mut history, state) = inner.store.selected_input(session).await?;
+        let todos_revision = state["todos"]["revision"].as_u64().unwrap_or(0);
+        let ledger = {
+            let entry = ledger_turns
+                .entry(session.to_string())
+                .or_insert((todos_revision, 0));
+            if entry.0 == todos_revision {
+                entry.1 += 1;
+            } else {
+                *entry = (todos_revision, 0);
+            }
+            match crate::state::ledger_nudge(entry.1) {
+                Some(nudge) => format!("\n\n{nudge}"),
+                None => String::new(),
+            }
+        };
         crate::session_model::validate_history(&history, binding.as_ref(), provider.identity())?;
         // A loop that survived in the transcript is replaced in this request
         // only: the model imitates its own prior output, so leaving it in the
@@ -3085,9 +3106,10 @@ async fn execute(
             } else {
                 let ready = crate::state::runnable_state(&state)?;
                 let text = format!(
-                    "<session-state>\n{}\n</session-state>\nRunnable tasks (all prerequisites completed): {}. Waiting jobs block only their dependents; continue independent runnable work. Current durable progress tracking; recorded evidence is a claim, not independent verification. Follow the latest user request.",
+                    "<session-state>\n{}\n</session-state>\nRunnable tasks (all prerequisites completed): {}. Waiting jobs block only their dependents; continue independent runnable work. Current durable progress tracking; recorded evidence is a claim, not independent verification. Follow the latest user request.{}",
                     serde_json::to_string(&state)?,
-                    serde_json::to_string(&ready)?
+                    serde_json::to_string(&ready)?,
+                    ledger
                 );
                 // The note is optional context, so an input already near the
                 // request budget is sent without it. Refusing the turn left a
@@ -3700,11 +3722,14 @@ command: None,
                 return Err(Error::Invalid(message));
             }
         };
-        // Price the turn before it is recorded. The route says whose rates
-        // apply and the reported tokens are what a provider bills; an unpriced
-        // route stores no cost rather than a zero that reads as free.
+        // Price the turn before it is recorded. A gateway that billed the turn
+        // reports what it charged, and that figure wins over our own rates
+        // because it is the money that actually moved; an estimate is kept
+        // beside it, flagged, so the two can never be read as the same thing.
+        // An unpriced route with no report stores nothing rather than a zero
+        // that reads as free.
         let route = price_route(inner, binding.as_ref());
-        let cost = match route.as_deref() {
+        let estimate = match route.as_deref() {
             Some(route) => inner
                 .prices
                 .lock()
@@ -3712,12 +3737,22 @@ command: None,
                 .charge(route, crate::pricing::Tokens::from_usage(&reply.usage)),
             None => None,
         };
+        let cost = match reply.usage.get(crate::usage::BILLING) {
+            Some(billing) => {
+                let mut billing = billing.clone();
+                billing["reported"] = json!(true);
+                Some(billing)
+            }
+            None => estimate.map(
+                |cost| json!({"amount":cost.amount,"currency":cost.currency,"reported":false}),
+            ),
+        };
         inner
             .store
             .record(
                 session,
                 "usage",
-                json!({"run_id":run,"step":step,"usage":reply.usage,"model":binding.as_ref().map(|binding|binding.model.as_str()),"route":route,"cost":cost.as_ref().map(|cost|json!({"amount":cost.amount,"currency":cost.currency})),"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
+                json!({"run_id":run,"step":step,"usage":reply.usage,"model":binding.as_ref().map(|binding|binding.model.as_str()),"route":route,"cost":cost,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
             )
             .await?;
         budget_spent = budget_spent.saturating_add(billed_tokens(&reply.usage));

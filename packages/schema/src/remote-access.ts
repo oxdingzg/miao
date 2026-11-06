@@ -15,6 +15,8 @@ export const Permission = Schema.Literals([
   "session.create",
   "session.rename",
   "session.selection",
+  "provider.configure",
+  "session.delete",
 ]).annotate({ identifier: "RemoteAccess.Permission" })
 export type Permission = typeof Permission.Type
 export interface Policy extends Schema.Schema.Type<typeof Policy> {}

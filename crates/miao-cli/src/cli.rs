@@ -2591,7 +2591,7 @@ fn model_routes(layers: &[PathBuf], requested: &str) -> Result<Vec<serde_json::V
             }),
             None => serde_json::json!({
                 "type": "environment",
-                "key": format!("{}_API_KEY", provider_id.to_uppercase().replace('-', "_")),
+                "key": route_env_key(provider_id),
             }),
         };
         if let Some(models) = provider.get("models").and_then(|value| value.as_object()) {
@@ -2639,6 +2639,16 @@ fn model_routes(layers: &[PathBuf], requested: &str) -> Result<Vec<serde_json::V
                     "credential": credential,
                     "primary": false,
                 });
+                // OpenCode's gateway routes a turn by conversation and refuses
+                // one that does not name it (400 MissingSessionID), so its
+                // routes carry the Session's opaque digest. The engine
+                // substitutes `$session`, which keeps sibling Sessions distinct
+                // and matches the header the product's own routes send.
+                if provider_id == "opencode-go" {
+                    route["auth"] = serde_json::json!({
+                        "headers": { "x-opencode-session": "$session" },
+                    });
+                }
                 if let Some(limit) = model.get("limit") {
                     route["limit"] = limit.clone();
                 }
@@ -2671,6 +2681,17 @@ fn model_routes(layers: &[PathBuf], requested: &str) -> Result<Vec<serde_json::V
         routes[index]["primary"] = serde_json::json!(true);
     }
     Ok(routes)
+}
+
+/// The environment variable a provider's key is normally supplied in. The
+/// product's catalog names OpenCode's gateway `OPENCODE_API_KEY`, so the
+/// mechanical `PROVIDER_API_KEY` spelling would look for `OPENCODE_GO_API_KEY`
+/// and find nothing.
+fn route_env_key(provider_id: &str) -> String {
+    match provider_id {
+        "opencode-go" => "OPENCODE_API_KEY".to_string(),
+        _ => format!("{}_API_KEY", provider_id.to_uppercase().replace('-', "_")),
+    }
 }
 
 /// Map the product's `lsp` section onto the engine's `lsp::Config` array: the
@@ -6094,6 +6115,44 @@ mod tests {
             .find(|route| route["primary"] == true)
             .expect("a primary");
         assert_eq!(primary["id"], "vendor/deepseek");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// OpenCode's gateway refuses a turn that does not name its conversation,
+    /// so the derived route has to carry the Session-bound header; without it
+    /// every `opencode-go` turn fails with 400 MissingSessionID.
+    #[test]
+    fn opencode_go_routes_carry_the_session_header() {
+        let dir = config_dir(
+            "routes-opencode-go",
+            "{ \"model\": \"opencode-go/deepseek\", \"providers\": { \
+               \"opencode-go\": { \"api\": { \"type\": \"aisdk\", \"package\": \"@ai-sdk/openai-compatible\", \
+                 \"url\": \"https://opencode.ai/inference/go/openai/v1\" }, \
+                 \"models\": { \"deepseek\": {} } }, \
+               \"vendor\": { \"api\": { \"url\": \"https://vendor.test/v1\" }, \
+                 \"models\": { \"other\": {} } } } }",
+        );
+        let routes =
+            model_routes(std::slice::from_ref(&dir), "opencode-go/deepseek").expect("derives");
+        let go = routes
+            .iter()
+            .find(|route| route["id"] == "opencode-go/deepseek")
+            .expect("a route");
+        assert_eq!(go["auth"]["headers"]["x-opencode-session"], "$session");
+        assert_eq!(
+            go["endpoint"],
+            "https://opencode.ai/inference/go/openai/v1/chat/completions"
+        );
+        // The key's documented name is not the mechanical provider spelling.
+        assert_eq!(go["credential"]["key"], "OPENCODE_API_KEY");
+        let other = routes
+            .iter()
+            .find(|route| route["id"] == "vendor/other")
+            .expect("a route");
+        assert!(
+            other.get("auth").is_none(),
+            "only the gateway needs the header"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

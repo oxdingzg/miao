@@ -718,9 +718,14 @@ struct SessionSummary: Identifiable {
     let id: String
     let title: String
     let projectID: String
+    /// Present in `time` only while archived; the wire omits the key otherwise.
+    let archived: Bool
+    let pinned: Bool
     init?(_ value: JSONValue) {
         guard let id = value["id"]?.string, let title = value["title"]?.string, let projectID = value["projectID"]?.string else { return nil }
         self.id = id; self.title = title; self.projectID = projectID
+        archived = value["time"]?["archived"] != nil
+        pinned = value["time"]?["pinned"] != nil
     }
 }
 
@@ -743,6 +748,12 @@ final class HostClient {
     var sessions: [String: RemoteSession] = [:]
     var operations: [PendingOperation] = []
     var error: String?
+    /// `provider.list` projection for the settings screen; never holds credentials.
+    var providers: ProviderDirectory?
+    var providersError: String?
+    /// Sessions with a permission or question waiting, newest first.
+    var inbox: [InboxEntry] = []
+    var inboxError: String?
     var sendingTargets = Set<String>()
     private(set) var runtimeID: String
     private var connection: HubConnection?
@@ -870,15 +881,18 @@ final class HostClient {
     }
 
     func request(_ method: RemoteMethod, sessionID: String? = nil, projectID: String? = nil,
-                 payload: JSONValue = .object([:])) async throws -> JSONValue {
+                 operationID: UUID? = nil, payload: JSONValue = .object([:])) async throws -> JSONValue {
         guard ready, let connection else { throw RemoteRPCError.disconnected }
-        return try await connection.request(method, sessionID: sessionID, projectID: projectID, payload: payload)
+        return try await connection.request(method, sessionID: sessionID, projectID: projectID,
+                                            operationID: operationID, payload: payload)
     }
 
-    private func loadList(_ project: String?, connection: HubConnection, more: Bool = false) async throws {
+    private func loadList(_ project: String?, connection: HubConnection, more: Bool = false,
+                          search: String? = nil) async throws {
         let key = project ?? ""
         var payload: [String: JSONValue] = ["limit": .number(100)]
-        if more, let cursor = next[key] { payload["cursor"] = .string(cursor) }
+        if let search { payload["search"] = .string(search) }
+        else if more, let cursor = next[key] { payload["cursor"] = .string(cursor) }
         let result = try await connection.request(.sessionList, projectID: project, payload: .object(payload))
         guard !closed else { throw CancellationError() }
         guard let data = result["data"]?.array else { throw RemoteConnectionError.protocolIncompatible }
@@ -888,15 +902,19 @@ final class HostClient {
         next[key] = result["cursor"]?["next"]?.string
     }
 
-    func refreshLists(more: String? = nil) async {
+    func refreshLists(more: String? = nil, search: String? = nil) async {
         guard ready, let connection else { return }
         do {
             if let more { try await loadList(more.isEmpty ? nil : more, connection: connection, more: true); return }
             if record.accountID != nil {
-                try await loadList(nil, connection: connection)
+                try await loadList(nil, connection: connection, search: search)
             } else {
-                if record.grant.sessionIDs.count > 0 { try await loadList(nil, connection: connection) }
-                for project in record.grant.projectIDs { try await loadList(project, connection: connection) }
+                if record.grant.sessionIDs.count > 0 {
+                    try await loadList(nil, connection: connection, search: search)
+                }
+                for project in record.grant.projectIDs {
+                    try await loadList(project, connection: connection, search: search)
+                }
             }
         } catch { self.error = userMessage(error) }
     }

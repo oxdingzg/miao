@@ -121,6 +121,10 @@ pub enum Request {
     },
     /// Read the engine's model catalog for the model dialog.
     Catalog,
+    /// Restart the engine so it re-prepares its routes and credentials, then
+    /// reload everything that restart can change. A provider key stored while
+    /// the engine runs is otherwise invisible: routes are built at startup.
+    ReloadProviderRoutes,
     SelectModel {
         session_id: String,
         binding: Value,
@@ -170,6 +174,10 @@ pub enum Request {
     /// Read the open Session's billed usage for the status dialog.
     Usage {
         session_id: String,
+    },
+    /// The trailing hourly window the sidebar paints, workspace-wide.
+    UsageHourly {
+        hours: u64,
     },
     /// Pin the account every turn of this Session runs on; `None` restores the
     /// engine default.
@@ -353,6 +361,12 @@ impl Handle {
         let _ = self.tx.send(Request::Catalog);
     }
 
+    /// Ask for a new engine process so a provider key stored a moment ago can
+    /// serve its models.
+    pub fn reload_provider_routes(&self) {
+        let _ = self.tx.send(Request::ReloadProviderRoutes);
+    }
+
     pub fn select_model(&self, session_id: &str, binding: Value) {
         let _ = self.tx.send(Request::SelectModel {
             session_id: session_id.to_string(),
@@ -434,6 +448,12 @@ impl Handle {
         let _ = self.tx.send(Request::Usage {
             session_id: session_id.to_string(),
         });
+    }
+
+    /// The trailing hourly window the sidebar paints. It is not Session
+    /// scoped: the ledger answers for every Session in this workspace.
+    pub fn usage_hourly(&self, hours: u64) {
+        let _ = self.tx.send(Request::UsageHourly { hours });
     }
 
     pub fn select_account(&self, session_id: &str, credential_id: Option<&str>) {
@@ -760,11 +780,42 @@ pub fn attach(settings: &Settings, bus: Bus) -> Result<Handle, String> {
         });
         return Ok(Handle { tx });
     }
-    let (connection, events) = Connection::start(settings.spawn.clone(), REQUEST_TIMEOUT)
-        .map_err(|error| format!("cannot start the engine: {error}"))?;
-    let (tx, rx) = mpsc::unbounded_channel();
-    tokio::spawn(run(connection, events, rx, bus));
-    Ok(Handle { tx })
+    match Connection::start(settings.spawn.clone(), REQUEST_TIMEOUT) {
+        Ok((connection, events)) => {
+            let (tx, rx) = mpsc::unbounded_channel();
+            tokio::spawn(run(connection, events, rx, bus));
+            Ok(Handle { tx })
+        }
+        Err(error) => {
+            // A host that names an engine binary we cannot find must not cost
+            // the start: the Windows product passes a launch prefix where no
+            // POSIX wrapper exists, which reads as "program not found" while
+            // the engine itself is linked in and perfectly able to run here.
+            let argv = settings.spawn.args.clone();
+            let (tx, rx) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                match miao_engine::cli::configure(&argv).await {
+                    Ok(configured) => {
+                        match Connection::start_embedded(configured.runtime, REQUEST_TIMEOUT) {
+                            Ok((connection, events)) => {
+                                bus.send(AppEvent::EngineFailure(format!(
+                                    "the named engine could not start ({error}); using the in-process engine"
+                                )));
+                                run(connection, events, rx, bus).await
+                            }
+                            Err(error) => bus.send(AppEvent::EngineFailure(format!(
+                                "cannot start the engine: {error}"
+                            ))),
+                        }
+                    }
+                    Err(error) => bus.send(AppEvent::EngineFailure(format!(
+                        "cannot start the engine: {error}"
+                    ))),
+                }
+            });
+            Ok(Handle { tx })
+        }
+    }
 }
 
 /// What the TUI remembers about the open Session between snapshots: the last
@@ -829,6 +880,13 @@ async fn run(
                     }
                 };
                 match request {
+                // The engine keeps the routes it built at startup, so a provider
+                // key stored afterwards needs a new engine process before its
+                // models can be served. Restarting is a `connection` operation,
+                // not a client request, so this arm reads no live client.
+                Request::ReloadProviderRoutes => {
+                    reload_provider_routes(&mut connection, &bus, &mut open).await
+                }
                 Request::RefreshSessions => refresh_sessions(client, &bus).await,
                 Request::Recall {
                     session_id,
@@ -1222,6 +1280,21 @@ async fn run(
                         Ok(value) => bus.send(AppEvent::Usage(UsageSummary::from_value(&value))),
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("usage failed: {error}")))
+                        }
+                    }
+                }
+                Request::UsageHourly { hours } => {
+                    let result = client
+                        .request("usage.hourly", json!({ "hours": hours }))
+                        .await;
+                    match result {
+                        Ok(value) => bus.send(AppEvent::UsageHourly(
+                            crate::status::HourlyUsage::from_value(&value),
+                        )),
+                        // A window nobody has written yet is an empty strip,
+                        // not a failure the operator has to dismiss.
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("usage.hourly failed: {error}")))
                         }
                     }
                 }
@@ -1743,6 +1816,44 @@ fn due_in(due_at_ms: Option<u64>) -> String {
         60..=3599 => format!("in {}m", seconds / 60),
         3600..=86_399 => format!("in {}h", seconds / 3600),
         _ => format!("in {}d", seconds / 86_400),
+    }
+}
+
+/// Replace the engine process and reload what only a restart can change.
+///
+/// The engine builds its model routes and credential sources at startup, from
+/// the product shim's plan. A provider key stored while it runs therefore has
+/// no route to serve, and the operator's only remaining step used to be
+/// restarting miao itself. Restarting just this engine re-runs that plan, and
+/// the replay cursor keeps the open Session gapless across the respawn.
+async fn reload_provider_routes(connection: &mut Connection, bus: &Bus, open: &mut Option<Opened>) {
+    if !connection.restart().await {
+        bus.send(AppEvent::ActionFailed(
+            "this engine cannot rebuild its routes; restart miao to load the stored key".into(),
+        ));
+        return;
+    }
+    let client = match connection.connect().await {
+        Ok(client) => client,
+        Err(error) => {
+            bus.send(AppEvent::EngineFailure(format!(
+                "engine restart failed: {error}"
+            )));
+            return;
+        }
+    };
+    // The new process answers with the routes its plan rebuilt, so both
+    // catalogs are worth re-reading even when the answer is unchanged.
+    if let Ok(value) = client.command("model_catalog").await {
+        bus.send(AppEvent::Accounts(AccountInfo::catalog(&value)));
+        bus.send(AppEvent::Models(ModelInfo::catalog(&value)));
+    }
+    if let Ok(value) = client.command("provider_catalog").await {
+        bus.send(AppEvent::ProviderCatalog(value));
+    }
+    refresh_sessions(client, bus).await;
+    if let Some(state) = open.as_mut() {
+        project(client, bus, state).await;
     }
 }
 

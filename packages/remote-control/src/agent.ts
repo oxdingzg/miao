@@ -14,6 +14,7 @@ const HostWebSocket = WebSocket as unknown as {
 }
 
 export const Method = Schema.Literals([
+  "session.archive",
   "capabilities",
   "project.list",
   "session.list",
@@ -23,13 +24,20 @@ export const Method = Schema.Literals([
   "session.pending",
   "session.diff",
   "selection.list",
+  "provider.list",
+  "pending.list",
   "operation.get",
   "session.create",
   "session.prompt",
   "session.interrupt",
   "session.rename",
+  "session.pin",
+  "session.remove",
   "session.switchAgent",
   "session.switchModel",
+  "provider.connectKey",
+  "provider.disconnect",
+  "model.default",
   "permission.reply",
   "question.reply",
 ])
@@ -112,16 +120,23 @@ type Peer = {
   accountGrant?: DeviceGrants.Grant
 }
 const required: Partial<Record<Method, DeviceGrants.Permission>> = {
+  "session.archive": "session.rename",
   "session.create": "session.create",
   "session.prompt": "prompt",
   "session.interrupt": "interrupt",
   "session.rename": "session.rename",
+  "session.pin": "session.rename",
+  "session.remove": "session.delete",
   "session.switchAgent": "session.selection",
   "session.switchModel": "session.selection",
+  "provider.connectKey": "provider.configure",
+  "provider.disconnect": "provider.configure",
+  "model.default": "provider.configure",
   "permission.reply": "permission.reply",
   "question.reply": "question.reply",
 }
 const sessionMethods = new Set<Method>([
+  "session.archive",
   "session.get",
   "session.history",
   "session.events",
@@ -130,6 +145,8 @@ const sessionMethods = new Set<Method>([
   "session.prompt",
   "session.interrupt",
   "session.rename",
+  "session.pin",
+  "session.remove",
   "session.switchAgent",
   "session.switchModel",
   "permission.reply",

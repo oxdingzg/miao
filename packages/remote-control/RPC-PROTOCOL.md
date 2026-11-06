@@ -32,13 +32,32 @@ business parameters. A handler's durable receipt determines acceptance.
 
 Read methods: `capabilities`, `project.list`, `session.list`, `session.get`,
 `session.history`, `session.events`, `session.pending`, `session.diff`,
-`selection.list`, `operation.get`. They require `read` permission. Writable
-methods and permissions are `session.create` → `session.create`,
-`session.prompt` → `prompt`, `session.interrupt` → `interrupt`,
-`session.rename` → `session.rename`, `permission.reply` → `permission.reply`,
-and `question.reply` → `question.reply`. All writable methods require an
-operation ID. Only registered methods are callable; payload validation and
-result semantics are supplied by each authoritative Runtime handler.
+`selection.list`, `provider.list`, `pending.list`, `operation.get`. They require
+`read` permission. Writable methods and permissions are `session.create` →
+`session.create`, `session.prompt` → `prompt`, `session.interrupt` →
+`interrupt`, `session.rename` → `session.rename`, `session.switchAgent` and
+`session.switchModel` → `session.selection`, `provider.connectKey`,
+`provider.disconnect` and `model.default` → `provider.configure`,
+`session.pin` and `session.archive` → `session.rename`, `session.remove` →
+`session.delete`,
+`permission.reply` → `permission.reply`, and `question.reply` →
+`question.reply`. All writable methods require an operation ID. Only registered
+methods are callable; payload validation and result semantics are supplied by
+each authoritative Runtime handler.
+
+Provider configuration is the one write family without a durable receipt. It
+has no Session to key a receipt by, its handlers are idempotent, and a client
+reconciles by re-reading `provider.list`; the request payload, which may carry
+a credential, is therefore never hashed or stored. `provider.list` reports
+provider identity, available authentication methods, connection sources and
+the model list only — stored credential material never travels back to a
+device, and an OAuth connection stays a local action on the host.
+
+`pending.list` answers "what is waiting" for the whole grant in one request: it
+enumerates only Sessions inside the grant scope, drops Sessions this Runtime does
+not own or that have nothing waiting, and returns each remaining Session with its
+approval actions and question text. A Session-only grant reads its own Sessions
+instead of enumerating the project, so a device cannot learn sibling titles.
 
 Directory queries must filter before serializing results. An operation query
 must not reveal another device's receipt. Approval is limited to the current
@@ -87,3 +106,9 @@ sessions and 4 MiB total. Oversized parts expose `truncated: true`; idle live
 views expire after two minutes. Durable text/reasoning settlement replaces live
 values through the ordinary history projection. Reads remain session/grant
 scoped and are reauthorized before returning this optional field.
+
+`session.list` forwards an optional `search` term to the host, so a device with a
+long history searches the catalogue instead of the page it happens to hold.
+`session.remove` refuses a Session whose execution is still running (`conflict`)
+rather than strand that execution in a store that no longer has it, and a Session
+whose execution cannot be read is never deleted.

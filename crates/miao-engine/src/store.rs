@@ -504,6 +504,14 @@ impl Store {
                         )?;
                     }
                 }
+                // The hourly usage strip reads `kind` + `recorded_at_ms` over a
+                // 24-hour window. The column arrives in the migration above, so
+                // the index has to be created here and not in the schema batch:
+                // a fresh database has no `recorded_at_ms` when that batch runs.
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS engine_event_usage_time ON engine_event(kind,recorded_at_ms)",
+                    [],
+                )?;
                 // The message's own copy of its event kind. History reads used to
                 // INNER JOIN engine_event for it, which means truncating that log
                 // below a compaction baseline would delete every historical message
@@ -4744,6 +4752,156 @@ impl Store {
         }).await
     }
 
+    /// Billed usage by whole hour, for a window ending with the current hour.
+    ///
+    /// Buckets are aligned to absolute UTC hours and the current hour is the
+    /// last, partial one, so a reader renders labels in local time without a
+    /// DST change moving usage between buckets. Every `usage` row counts,
+    /// including `partial` ones: this answers the same question `usage_report`
+    /// answers for one Session, so the two cannot disagree.
+    ///
+    /// Money is summed from `cost.amount` + `cost.currency` in US dollars:
+    /// the figure a gateway reported when it billed the turn itself, otherwise
+    /// our own rate applied to the reported tokens, and `cost.reported` says
+    /// which of the two a row is. `costTurns` counts the turns that carried a
+    /// figure at all, so the caller must not present a partial sum as the
+    /// day's whole price. `truncated` reports that retention removed events
+    /// inside the window, so a short bar is explained rather than silently
+    /// wrong.
+    pub async fn usage_hourly(&self, hours: u64) -> Result<Value, Error> {
+        let hours = hours.clamp(1, 24 * 31);
+        self.call(move |conn| {
+            const HOUR_MS: i64 = 3_600_000;
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_millis() as i64)
+                .unwrap_or(0);
+            let current = now_ms - now_ms.rem_euclid(HOUR_MS);
+            let first = current - (hours as i64 - 1) * HOUR_MS;
+            let mut buckets: std::collections::BTreeMap<i64, [u64; 5]> =
+                std::collections::BTreeMap::new();
+            let mut cost_micros: std::collections::BTreeMap<i64, u64> =
+                std::collections::BTreeMap::new();
+            let mut cost_turns: std::collections::BTreeMap<i64, u64> =
+                std::collections::BTreeMap::new();
+            {
+                let mut stmt = conn.prepare(
+                    "SELECT (recorded_at_ms/3600000)*3600000 AS bucket,
+                            COALESCE(SUM(json_extract(data,'$.usage.inputTokens')),0),
+                            COALESCE(SUM(json_extract(data,'$.usage.outputTokens')),0),
+                            COALESCE(SUM(json_extract(data,'$.usage.cacheReadInputTokens')),0),
+                            COALESCE(SUM(json_extract(data,'$.usage.cacheWriteInputTokens')),0),
+                            COUNT(*)
+                     FROM engine_event
+                     WHERE kind='usage' AND recorded_at_ms >= ?1
+                     GROUP BY bucket",
+                )?;
+                let mut rows = stmt.query(params![first])?;
+                while let Some(row) = rows.next()? {
+                    let bucket: i64 = row.get(0)?;
+                    buckets.insert(
+                        bucket,
+                        [
+                            row.get::<_, i64>(1)?.max(0) as u64,
+                            row.get::<_, i64>(2)?.max(0) as u64,
+                            row.get::<_, i64>(3)?.max(0) as u64,
+                            row.get::<_, i64>(4)?.max(0) as u64,
+                            row.get::<_, i64>(5)?.max(0) as u64,
+                        ],
+                    );
+                }
+            }
+            {
+                // A reported cost is the only money figure this answers: an
+                // estimate belongs to the caller, beside the price it used.
+                let mut stmt = conn.prepare(
+                    "SELECT (recorded_at_ms/3600000)*3600000 AS bucket,
+                            COALESCE(SUM(CAST(json_extract(data,'$.cost.amount') AS REAL)),0.0)
+                     FROM engine_event
+                     WHERE kind='usage' AND recorded_at_ms >= ?1
+                       AND lower(COALESCE(json_extract(data,'$.cost.currency'),'usd'))='usd'
+                       AND json_extract(data,'$.cost.amount') IS NOT NULL
+                     GROUP BY bucket",
+                )?;
+                let mut rows = stmt.query(params![first])?;
+                while let Some(row) = rows.next()? {
+                    let bucket: i64 = row.get(0)?;
+                    let amount: f64 = row.get(1)?;
+                    cost_micros.insert(bucket, (amount.max(0.0) * 1_000_000.0).round() as u64);
+                }
+            }
+            {
+                let mut stmt = conn.prepare(
+                    "SELECT (recorded_at_ms/3600000)*3600000 AS bucket, COUNT(*)
+                     FROM engine_event
+                     WHERE kind='usage' AND recorded_at_ms >= ?1
+                       AND json_extract(data,'$.cost.amount') IS NOT NULL
+                     GROUP BY bucket",
+                )?;
+                let mut rows = stmt.query(params![first])?;
+                while let Some(row) = rows.next()? {
+                    cost_turns.insert(row.get(0)?, row.get::<_, i64>(1)?.max(0) as u64);
+                }
+            }
+            let truncated: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_retention WHERE created_ms>=?1)",
+                params![first],
+                |row| row.get(0),
+            )?;
+            let mut out = Vec::with_capacity(hours as usize);
+            let mut totals = [0u64; 5];
+            let mut total_cost_micros = 0u64;
+            let mut total_cost_turns = 0u64;
+            let mut peak: Option<(i64, u64)> = None;
+            for hour in 0..hours as i64 {
+                let start = first + hour * HOUR_MS;
+                let counts = buckets.get(&start).copied().unwrap_or([0; 5]);
+                let cost = cost_micros.get(&start).copied().unwrap_or(0);
+                let cost_tally = cost_turns.get(&start).copied().unwrap_or(0);
+                let tokens = counts[0]
+                    .saturating_add(counts[1])
+                    .saturating_add(counts[2])
+                    .saturating_add(counts[3]);
+                for (total, value) in totals.iter_mut().zip(counts.iter()) {
+                    *total = total.saturating_add(*value);
+                }
+                total_cost_micros = total_cost_micros.saturating_add(cost);
+                total_cost_turns = total_cost_turns.saturating_add(cost_tally);
+                if tokens > 0 && peak.is_none_or(|(_, best)| tokens > best) {
+                    peak = Some((start, tokens));
+                }
+                out.push(json!({
+                    "start_ms": start,
+                    "input": counts[0],
+                    "output": counts[1],
+                    "cache_read": counts[2],
+                    "cache_write": counts[3],
+                    "turns": counts[4],
+                    "tokens": tokens,
+                    "cost_micros": cost,
+                    "cost_turns": cost_tally,
+                }));
+            }
+            Ok(json!({
+                "hours": hours,
+                "buckets": out,
+                "totals": {
+                    "input": totals[0],
+                    "output": totals[1],
+                    "cache_read": totals[2],
+                    "cache_write": totals[3],
+                    "turns": totals[4],
+                    "tokens": totals[0]+totals[1]+totals[2]+totals[3],
+                    "cost_micros": total_cost_micros,
+                    "cost_turns": total_cost_turns,
+                },
+                "peak": peak.map(|(start, tokens)| json!({"start_ms": start, "tokens": tokens})),
+                "truncated": truncated,
+            }))
+        })
+        .await
+    }
+
     /// Whether the Session exists in the durable ledger — the probe ACP
     /// `session/resume` uses, since resuming creates nothing.
     pub async fn exists(&self, session: &str) -> Result<bool, Error> {
@@ -5096,6 +5254,106 @@ impl Store {
             created_ms,
             updated_ms,
         }
+    }
+}
+
+#[cfg(test)]
+mod usage_hourly_tests {
+    use super::*;
+
+    /// A row written 26 hours ago must not leak into a 24-hour window, and the
+    /// current hour must be the last of exactly `hours` buckets: the strip is
+    /// drawn one glyph per bucket, so an extra or missing bucket is a wrong
+    /// picture rather than a rounding detail.
+    #[tokio::test]
+    async fn hours_land_in_the_bucket_they_were_recorded_in() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = Store::open(dir.path().join("engine.db"))
+            .await
+            .expect("store");
+        // `record` writes into a Session, so the row has to exist first: the
+        // ledger has no anonymous usage.
+        rusqlite::Connection::open(dir.path().join("engine.db"))
+            .expect("open")
+            .execute("INSERT INTO engine_session(id) VALUES('s')", [])
+            .expect("session");
+        store
+            .record(
+                "s",
+                "usage",
+                json!({"usage":{"inputTokens":100,"outputTokens":50}}),
+            )
+            .await
+            .expect("usage");
+        store
+            .record(
+                "s",
+                "usage",
+                json!({"usage":{"inputTokens":10,"outputTokens":5},
+                       "cost":{"amount":0.01,"currency":"USD"}}),
+            )
+            .await
+            .expect("usage");
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_millis() as i64)
+            .unwrap_or(0);
+        let connection = rusqlite::Connection::open(dir.path().join("engine.db")).expect("open");
+        connection
+            .execute(
+                "INSERT INTO engine_event(session_id,seq,kind,data,recorded_at_ms)
+                 VALUES('s',900,'usage',?1,?2)",
+                params![
+                    json!({"usage":{"inputTokens":7}}).to_string(),
+                    now_ms - 26 * 3_600_000
+                ],
+            )
+            .expect("old row");
+
+        let report = store.usage_hourly(24).await.expect("report");
+        assert_eq!(report["hours"], 24);
+        let buckets = report["buckets"].as_array().expect("buckets");
+        assert_eq!(buckets.len(), 24, "one bucket per hour, current hour last");
+        assert_eq!(report["totals"]["turns"], 2, "the 26h row is outside");
+        assert_eq!(report["totals"]["input"], 110);
+        assert_eq!(report["totals"]["cost_turns"], 1);
+        assert_eq!(buckets.last().expect("last")["turns"], 2);
+        assert_eq!(report["peak"]["tokens"], 165);
+        assert_eq!(report["truncated"], false);
+    }
+
+    /// Retention inside the window is a fact about the answer, not a silent
+    /// gap: a short bar has to be explained.
+    #[tokio::test]
+    async fn retention_inside_the_window_marks_the_answer_partial() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = Store::open(dir.path().join("engine.db"))
+            .await
+            .expect("store");
+        // `record` writes into a Session, so the row has to exist first: the
+        // ledger has no anonymous usage.
+        rusqlite::Connection::open(dir.path().join("engine.db"))
+            .expect("open")
+            .execute("INSERT INTO engine_session(id) VALUES('s')", [])
+            .expect("session");
+        store
+            .record("s", "usage", json!({"usage":{"inputTokens":5}}))
+            .await
+            .expect("usage");
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_millis() as i64)
+            .unwrap_or(0);
+        let connection = rusqlite::Connection::open(dir.path().join("engine.db")).expect("open");
+        connection
+            .execute(
+                "INSERT INTO engine_retention(session_id,through_seq,removed,created_ms)
+                 VALUES('s',10,3,?1)",
+                params![now_ms],
+            )
+            .expect("retention");
+        let report = store.usage_hourly(24).await.expect("report");
+        assert_eq!(report["truncated"], true);
     }
 }
 

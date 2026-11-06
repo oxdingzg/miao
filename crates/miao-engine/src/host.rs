@@ -285,6 +285,7 @@ impl Host {
             Command::ConfigNormalized => runtime.normalized_config().await,
             Command::State { session_id } => runtime.store().state(&session_id).await,
             Command::Usage { session_id } => runtime.store().usage_report(&session_id).await,
+            Command::UsageHourly { hours } => runtime.store().usage_hourly(hours).await,
             Command::VcsStatus { session_id } => runtime.store().vcs_status(&session_id).await,
             Command::VcsDiff { session_id, path } => {
                 runtime.store().vcs_diff(&session_id, &path).await

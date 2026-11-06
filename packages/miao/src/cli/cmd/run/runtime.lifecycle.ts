@@ -12,7 +12,7 @@ import path from "path"
 import { CliRenderEvents, createCliRenderer, type CliRenderer, type ScrollbackWriter } from "@opentui/core"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { Global } from "@miao/core/global"
-import { openEditor } from "@miao/tui/editor"
+import { openEditor } from "../editor"
 import { registerOpencodeKeymap } from "@miao/tui/keymap"
 import { SessionTitle } from "@miao/core/session/title"
 import * as Locale from "@/util/locale"
@@ -179,7 +179,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
 
   try {
     // Enable ANSI/VT on legacy Windows consoles before the renderer writes.
-    const { win32EnableVirtualTerminal } = await import("@miao/tui/terminal-win32")
+    const { win32EnableVirtualTerminal } = await import("../terminal-win32")
     win32EnableVirtualTerminal()
     const renderer = await createCliRenderer({
       stdin: source.stdin,

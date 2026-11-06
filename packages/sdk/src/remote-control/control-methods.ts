@@ -86,6 +86,34 @@ export function make(options: {
         .catch(() => undefined)
       return pending
     }
+  // Provider configuration has no Session, so it cannot use the Session-scoped
+  // receipt table. Each action here is idempotent and its outcome is read back
+  // through `provider.list`, so a payload is never hashed or stored.
+  const withoutReceipt =
+    <A>(
+      schema: Schema.Decoder<A, never>,
+      apply: (payload: A, context: ControlAgent.Context) => Promise<void>,
+    ): ControlAgent.Handler =>
+    async (request, context) => {
+      const decoded = Schema.decodeUnknownOption(schema, { onExcessProperty: "error" })(request.payload)
+      if (Option.isNone(decoded) || !request.operationID) throw new ControlAgent.RequestError("invalid_request")
+      context.authorize()
+      try {
+        await apply(decoded.value, context)
+      } catch (error) {
+        if (error instanceof ControlAgent.RequestError) return { status: "rejected", code: error.code }
+        return { status: "outcome_unknown" }
+      }
+      context.authorize()
+      return { status: "completed" }
+    }
+  const provider = async (providerID: string, context: ControlAgent.Context) => {
+    const listed = await options.client.integrations.list({}, { signal: context.signal })
+    context.authorize()
+    const found = listed.data.find((entry) => entry.id === providerID)
+    if (!found) throw new ControlAgent.RequestError("not_found")
+    return found
+  }
   const methods: Partial<Record<ControlAgent.Method, ControlAgent.Handler>> = {
     "selection.list": async (request, context) => {
       const decoded = Schema.decodeUnknownOption(Schema.Struct({ directoryID: Schema.optional(Schema.String) }), {
@@ -144,6 +172,25 @@ export function make(options: {
         await options.client.sessions.rename({ sessionID: request.sessionID!, title: payload.title })
       },
     ),
+    "session.pin": mutation(Schema.Struct({ pinned: Schema.Boolean }), async (payload, request, context) => {
+      context.authorize()
+      await options.client.sessions.pin({ sessionID: request.sessionID!, pinned: payload.pinned })
+    }),
+    "session.archive": mutation(Schema.Struct({ archived: Schema.Boolean }), async (payload, request, context) => {
+      context.authorize()
+      await options.client.sessions.archive({ sessionID: request.sessionID!, archived: payload.archived })
+    }),
+    "session.remove": mutation(Schema.Struct({}), async (_payload, request, context) => {
+      const execution = await options.client.sessions.execution(
+        { sessionID: request.sessionID! },
+        { signal: context.signal },
+      )
+      context.authorize()
+      // Deleting a running Session would strand its execution in a store that no
+      // longer has it, so the owner has to stop the work first.
+      if (execution.type === "running") throw new ControlAgent.RequestError("conflict")
+      await options.client.sessions.remove({ sessionID: request.sessionID! })
+    }),
     "session.switchAgent": mutation(Schema.Struct({ agent: Agent.ID }), async (payload, request, context) => {
       context.authorize()
       await options.client.sessions.switchAgent({ sessionID: request.sessionID!, agent: payload.agent })
@@ -298,6 +345,7 @@ export function make(options: {
         Schema.Struct({
           cursor: Schema.optional(Schema.String.check(Schema.isMaxLength(2048))),
           limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }))),
+          search: Schema.optional(Schema.String.check(Schema.isLengthBetween(1, 200))),
         }),
         { onExcessProperty: "error" },
       )(request.payload)
@@ -305,7 +353,12 @@ export function make(options: {
       if (request.projectID) {
         if (!context.grant.projectIDs.includes(request.projectID)) throw new ControlAgent.RequestError("forbidden")
         const sessions = await options.client.sessions.list(
-          { project: request.projectID, limit: page.value.limit ?? 100, cursor: page.value.cursor },
+          {
+            project: request.projectID,
+            limit: page.value.limit ?? 100,
+            cursor: page.value.cursor,
+            ...(page.value.search === undefined ? {} : { search: page.value.search }),
+          },
           { signal: context.signal },
         )
         context.authorize()
@@ -338,6 +391,76 @@ export function make(options: {
         cursor: { next: offset + ids.length < context.grant.sessionIDs.length ? String(offset + ids.length) : null },
       }
     },
+    "provider.list": async (_request, context) => {
+      const [listed, models, configured] = await Promise.all([
+        options.client.integrations.list({}, { signal: context.signal }),
+        options.client.models.list({}, { signal: context.signal }),
+        options.client.config.providers({}, { signal: context.signal }),
+      ])
+      context.authorize()
+      // Credential material never crosses this boundary. A device learns which
+      // providers exist, how each can be connected, and which one is live now.
+      return {
+        providers: listed.data.map((provider) => ({
+          id: provider.id,
+          name: provider.name,
+          connected: provider.connections.length > 0,
+          sources: provider.connections.map((connection) => connection.type),
+          methods: provider.methods.map((method) => ({
+            type: method.type,
+            label: method.type === "env" ? null : (method.label ?? null),
+            optional: method.type === "key" ? (method.optional ?? false) : false,
+            names: method.type === "env" ? method.names : [],
+          })),
+        })),
+        models: models.data.map((model) => ({
+          id: model.id,
+          providerID: model.providerID,
+          name: model.name,
+          capabilities: model.capabilities,
+        })),
+        default: configured.data.default,
+      }
+    },
+    "provider.connectKey": withoutReceipt(
+      Schema.Struct({
+        providerID: Schema.String.check(Schema.isLengthBetween(1, 128)),
+        key: Schema.String.check(Schema.isLengthBetween(1, 8192)),
+      }),
+      async (payload, context) => {
+        const found = await provider(payload.providerID, context)
+        // OAuth needs a browser the owner controls, so it stays a local action.
+        if (!found.methods.some((method) => method.type === "key"))
+          throw new ControlAgent.RequestError("forbidden")
+        await options.client.integrations.connectKey({ integrationID: found.id, key: payload.key })
+      },
+    ),
+    "provider.disconnect": withoutReceipt(
+      Schema.Struct({ providerID: Schema.String.check(Schema.isLengthBetween(1, 128)) }),
+      async (payload, context) => {
+        const found = await provider(payload.providerID, context)
+        const active = found.connections.flatMap((connection) =>
+          connection.type === "credential" && connection.active ? [connection.id] : [],
+        )
+        for (const credentialID of active) await options.client.credentials.remove({ credentialID })
+      },
+    ),
+    "model.default": withoutReceipt(
+      Schema.Struct({
+        providerID: Schema.String.check(Schema.isLengthBetween(1, 128)),
+        modelID: Schema.String.check(Schema.isLengthBetween(1, 128)),
+      }),
+      async (payload, context) => {
+        const models = await options.client.models.list({}, { signal: context.signal })
+        context.authorize()
+        if (!models.data.some((model) => model.providerID === payload.providerID && model.id === payload.modelID))
+          throw new ControlAgent.RequestError("not_found")
+        await options.client.config.update({
+          location: {},
+          config: { model: `${payload.providerID}/${payload.modelID}` },
+        })
+      },
+    ),
     capabilities: async () => ({
       protocol: 1,
       operationReceipts: true,
@@ -345,6 +468,7 @@ export function make(options: {
       events: "long-poll",
       methods: Object.keys(methods),
       promptDelivery: ["steer", "queue"],
+      providerConfigure: ["key"],
     }),
     "session.get": (request, context) =>
       options.client.sessions.get({ sessionID: request.sessionID! }, { signal: context.signal }),
@@ -418,6 +542,50 @@ export function make(options: {
       ])
       context.authorize()
       return { inputs: results[0], permissions: results[1], questions: results[2], execution: results[3] }
+    },
+    "pending.list": async (_request, context) => {
+      // One round trip instead of the client polling every Session: a phone needs
+      // to know what is waiting without opening each Session to find out.
+      const pages = await Promise.all(
+        context.grant.projectIDs.map((projectID) =>
+          options.client.sessions.list({ project: projectID, limit: 100 }, { signal: context.signal }),
+        ),
+      )
+      context.authorize()
+      const candidates = new Map<string, { id: string; title: string; projectID: string }>()
+      for (const page of pages)
+        for (const session of page.data)
+          if (context.grant.projectIDs.includes(session.projectID))
+            candidates.set(session.id, { id: session.id, title: session.title, projectID: session.projectID })
+      // Session-only grants must not enumerate siblings, so their titles are read
+      // one approved Session at a time.
+      for (const sessionID of context.grant.sessionIDs) {
+        if (candidates.has(sessionID)) continue
+        const session = await options.client.sessions
+          .get({ sessionID }, { signal: context.signal })
+          .catch(() => undefined)
+        if (session) candidates.set(session.id, { id: session.id, title: session.title, projectID: session.projectID })
+      }
+      context.authorize()
+      const waiting = await Promise.all(
+        [...candidates.values()].slice(0, 100).map(async (session) => {
+          if (!(await options.owned(session.id))) return undefined
+          const [permissions, questions] = await Promise.all([
+            options.client.permissions.list({ sessionID: session.id }, { signal: context.signal }),
+            options.client.questions.list({ sessionID: session.id }, { signal: context.signal }),
+          ])
+          if (permissions.length === 0 && questions.length === 0) return undefined
+          return {
+            sessionID: session.id,
+            title: session.title,
+            projectID: session.projectID,
+            permissions: permissions.map((entry) => ({ id: entry.id, action: entry.action })),
+            questions: questions.map((entry) => ({ id: entry.id, text: entry.questions[0].question })),
+          }
+        }),
+      )
+      context.authorize()
+      return { data: waiting.filter((entry) => entry !== undefined) }
     },
     "session.diff": (request, context) =>
       options.client.sessions.diff({ sessionID: request.sessionID! }, { signal: context.signal }),

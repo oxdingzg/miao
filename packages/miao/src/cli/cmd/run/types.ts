@@ -23,7 +23,7 @@ import type {
   ToolPart,
 } from "@miao/schema/view-models"
 import { type Client } from "@/client"
-import type { TuiConfig } from "@miao/tui/config"
+import type { TuiConfig } from "../../../config/tui-schema"
 
 export type RunFilePart = {
   type: "file"

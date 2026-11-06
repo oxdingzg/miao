@@ -16,6 +16,47 @@ use serde_json::{json, Map, Value};
 /// Audit-only raw provider payload; usage aggregation never sums into it.
 pub const PROVIDER_METADATA: &str = "providerMetadata";
 
+/// The money a gateway reported for the turn, in the ledger's `cost` shape.
+pub const BILLING: &str = "billing";
+
+/// Read the money a provider reported for one turn out of its raw usage object.
+///
+/// OpenCode's gateway answers `usage.cost` in US dollars beside an `opencode`
+/// object that names the list price, which source paid (`go`, `go-plus`,
+/// `balance`, `byok`, `free`), whether the figure is an estimate at list price,
+/// and, on a Go plan, the allowance the request consumed. Only what the
+/// provider said is kept: a figure it did not report stays absent rather than
+/// becoming a zero that reads as free, and nothing here is computed from our
+/// own rates.
+pub fn billing(raw: &Value) -> Option<Value> {
+    let amount = money(raw.get("cost"))?;
+    let detail = raw.get("opencode");
+    let field = |key: &str| detail.and_then(|detail| detail.get(key));
+    let mut billing = Map::new();
+    billing.insert("amount".into(), json!(amount));
+    billing.insert("currency".into(), json!("USD"));
+    if let Some(source) = field("billing_source").and_then(Value::as_str) {
+        billing.insert("source".into(), json!(source));
+    }
+    if let Some(list) = money(field("list_cost")) {
+        billing.insert("list".into(), json!(list));
+    }
+    if field("estimated").and_then(Value::as_bool) == Some(true) {
+        billing.insert("estimated".into(), json!(true));
+    }
+    if let Some(allowance) = money(field("allowance")) {
+        billing.insert("allowance".into(), json!(allowance));
+    }
+    Some(Value::Object(billing))
+}
+
+/// A money figure is finite and not negative. A quad or a negative amount is a
+/// provider bug, and a zero is still a real answer ("this turn was free").
+fn money(value: Option<&Value>) -> Option<f64> {
+    let amount = value?.as_f64()?;
+    (amount.is_finite() && amount >= 0.0).then_some(amount)
+}
+
 const AXES: [(&str, &str); 6] = [
     ("inputTokens", "input"),
     ("outputTokens", "output"),
@@ -122,6 +163,9 @@ fn field(raw: &Value, path: &[&str]) -> Option<u64> {
 fn finish(mut usage: Map<String, Value>, protocol: &str, raw: &Value, total: Option<u64>) -> Value {
     if let Some(total) = total {
         usage.insert("totalTokens".into(), json!(total));
+    }
+    if let Some(billing) = billing(raw) {
+        usage.insert(BILLING.into(), billing);
     }
     if raw.as_object().is_some_and(|raw| !raw.is_empty()) {
         usage.insert(PROVIDER_METADATA.into(), json!({protocol: raw.clone()}));
@@ -384,5 +428,72 @@ mod tests {
             cache_lineage(&json!({"inputTokens": 10, "outputTokens": 1})),
             json!({})
         );
+    }
+
+    /// The gateway bills the turn itself, so the money it names rides the same
+    /// canonical usage the tokens do: the sidebar's price line and the price we
+    /// would have estimated come from one object.
+    #[test]
+    fn a_gateway_reported_charge_rides_the_canonical_usage() {
+        let usage = chat(&json!({
+            "prompt_tokens": 16187,
+            "completion_tokens": 4,
+            "total_tokens": 16191,
+            "cost": 0.00202528,
+            "opencode": {
+                "billing_source": "balance",
+                "list_cost": 0.00202528,
+                "tokens": {"input": 4, "output": 4, "cache_read": 0, "cache_write_5m": 16183},
+            },
+        }));
+        assert_eq!(usage[BILLING]["amount"], json!(0.00202528));
+        assert_eq!(usage[BILLING]["currency"], json!("USD"));
+        assert_eq!(usage[BILLING]["source"], json!("balance"));
+        assert_eq!(usage[BILLING]["list"], json!(0.00202528));
+        assert!(usage[BILLING].get("estimated").is_none());
+        assert!(usage[BILLING].get("allowance").is_none());
+        // The raw payload is still audit-only and never billed beside the
+        // normalized numbers.
+        assert!(usage[PROVIDER_METADATA].get("openai-chat").is_some());
+    }
+
+    /// A Go plan reports the allowance a request consumed and says whether the
+    /// figure is a list-price estimate. Both are the provider's own words.
+    #[test]
+    fn a_plan_allowance_and_an_estimated_figure_are_carried_as_reported() {
+        let usage = chat(&json!({
+            "prompt_tokens": 10,
+            "completion_tokens": 2,
+            "cost": 0.25,
+            "opencode": {"billing_source": "go", "estimated": true, "allowance": 0.25},
+        }));
+        assert_eq!(usage[BILLING]["source"], json!("go"));
+        assert_eq!(usage[BILLING]["estimated"], json!(true));
+        assert_eq!(usage[BILLING]["allowance"], json!(0.25));
+        assert!(usage[BILLING].get("list").is_none());
+    }
+
+    /// No reported figure stays absent: a provider that never bills in money
+    /// must not read as free. A reported zero, however, is a real answer.
+    #[test]
+    fn an_unreported_charge_stays_absent_instead_of_becoming_zero() {
+        assert!(chat(&json!({"prompt_tokens": 10, "completion_tokens": 1}))
+            .get(BILLING)
+            .is_none());
+        assert!(
+            chat(&json!({"prompt_tokens": 10, "cost": -1, "opencode": {}}))
+                .get(BILLING)
+                .is_none()
+        );
+        assert!(chat(&json!({"prompt_tokens": 10, "cost": "0.5"}))
+            .get(BILLING)
+            .is_none());
+        let free = chat(&json!({
+            "prompt_tokens": 10,
+            "cost": 0,
+            "opencode": {"billing_source": "free"},
+        }));
+        assert_eq!(free[BILLING]["amount"].as_f64(), Some(0.0));
+        assert_eq!(free[BILLING]["source"], json!("free"));
     }
 }

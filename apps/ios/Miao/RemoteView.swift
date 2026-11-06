@@ -10,6 +10,10 @@ struct RemoteView: View {
     @State private var hostID: UUID?
     @State private var pairing = false
     @State private var accountPresented = false
+    @State private var providersHost: UUID?
+    @State private var search = ""
+    @State private var deleteTarget: SessionSummary?
+    @State private var showArchived = false
     @State private var invitation = ""
     @State private var attached: UUID?
     @State private var attachEpoch = 0
@@ -53,6 +57,11 @@ struct RemoteView: View {
                 }
             }
         }
+        .sheet(isPresented: Binding(get: { providersHost != nil }, set: { if !$0 { providersHost = nil } })) {
+            if let id = providersHost, let client = model.clients[id] {
+                ProvidersView(client: client)
+            }
+        }
         .onChange(of: model.connectionEpoch) { _, _ in Task { await attach() } }
         .onChange(of: model.hosts.map(\.id)) { _, ids in
             if hostID == nil || !ids.contains(hostID!) { hostID = ids.first; sessionID = nil }
@@ -69,6 +78,7 @@ struct RemoteView: View {
                 for client in model.clients.values where client.record.accountID != nil {
                     await client.scene(sceneID, phase: .active)
                     if client.ready { await client.refreshLists() }
+                    if client.ready { await client.loadInbox() }
                 }
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
             }
@@ -215,6 +225,10 @@ struct RemoteView: View {
                     accountSessionSections(host)
                 }
             }
+            Section {
+                Toggle("显示已归档", isOn: $showArchived)
+                    .accessibilityIdentifier("showArchived")
+            }
             if !pendingOperations(client).isEmpty {
                 Section("待核对操作") {
                     ForEach(pendingOperations(client)) { operation in
@@ -231,6 +245,32 @@ struct RemoteView: View {
         .listStyle(.insetGrouped)
         .onAppear {
             Task { await client.refreshLists() }
+            Task { await client.loadInbox() }
+        }
+        .searchable(text: $search, prompt: "搜索会话")
+        .task(id: search) {
+            guard !search.isEmpty else { return }
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await client.refreshLists(search: search)
+        }
+        .confirmationDialog(
+            deleteTarget.map { "永久删除「\($0.title)」？" } ?? "永久删除会话？",
+            isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("永久删除", role: .destructive) {
+                guard let session = deleteTarget else { return }
+                deleteTarget = nil
+                Task {
+                    _ = await client.session(session).command(.sessionRemove, kind: .sessionRemove, payload: .object([:]))
+                    await client.refreshLists()
+                    await client.loadInbox()
+                }
+            }
+            Button("取消", role: .cancel) { deleteTarget = nil }
+        } message: {
+            Text("会话记录会从电脑上删除，无法撤销。")
         }
     }
 
@@ -258,15 +298,53 @@ struct RemoteView: View {
     }
 
     @ViewBuilder private func accountSessionSections(_ client: HostClient) -> some View {
+        if !client.inbox.isEmpty {
+            Section("待处理") {
+                ForEach(client.inbox) { entry in
+                    Button {
+                        hostID = client.record.id
+                        open(entry, client: client)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.title)
+                            Text(entry.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("inbox-\(entry.sessionID)")
+                }
+            }
+        }
         ForEach(client.lists.keys.sorted(), id: \.self) { project in
             Section(projectName(project)) {
-                ForEach(client.lists[project] ?? []) { session in
+                ForEach(visible(client, project)) { session in
                     Button {
                         hostID = client.record.id
                         select(session)
                     } label: {
                         Label(session.title, systemImage: "bubble.left.and.text.bubble.right")
                     }.buttonStyle(.plain)
+                        .contextMenu {
+                            if client.record.grant.permissions.contains(.sessionRename) {
+                                Button {
+                                    Task { await setPinned(client, session, !session.pinned) }
+                                } label: {
+                                    Label(session.pinned ? "取消置顶" : "置顶",
+                                          systemImage: session.pinned ? "pin.slash" : "pin")
+                                }
+                                Button {
+                                    Task { await setArchived(client, session, !session.archived) }
+                                } label: {
+                                    Label(session.archived ? "取消归档" : "归档",
+                                          systemImage: session.archived ? "archivebox" : "archivebox.fill")
+                                }
+                            }
+                            if client.record.grant.permissions.contains(.sessionDelete) {
+                                Button(role: .destructive) { deleteTarget = session } label: {
+                                    Label("永久删除", systemImage: "trash")
+                                }
+                            }
+                        }
                 }
                 if client.next[project] != nil {
                     Button("更多会话") { Task { await client.refreshLists(more: project) } }.disabled(!client.ready)
@@ -277,7 +355,7 @@ struct RemoteView: View {
 
     private func sessionSection(_ client: HostClient, project: String) -> some View {
         Section(projectName(project)) {
-            ForEach(client.lists[project] ?? []) { session in
+            ForEach(visible(client, project)) { session in
                 sessionRow(client, session: session)
             }
             if client.next[project] != nil {
@@ -314,6 +392,13 @@ struct RemoteView: View {
         Button { Task { await client.refreshLists() } } label: {
             Label("刷新会话", systemImage: "arrow.clockwise").frame(maxWidth: .infinity, alignment: .leading)
         }.disabled(!client.ready)
+        // Always reachable: without the permission the screen explains which
+        // authorization step is missing instead of hiding the feature.
+        Button { providersHost = client.record.id } label: {
+            Label("服务商与模型", systemImage: "key.horizontal").frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .disabled(!client.ready)
+        .accessibilityIdentifier("providersSettings")
         Button { accountPresented = true } label: {
             Label(model.accountSignedIn ? "中继账号" : "登录中继", systemImage: "person.crop.circle")
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -333,6 +418,31 @@ struct RemoteView: View {
     private func select(_ session: SessionSummary) {
         sessionID = session.id
         withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false }
+    }
+
+    /// Opens a Session straight from the inbox: set the target first, then let the
+    /// list catch up, because the entry may sit on a page that is not loaded yet.
+    private func open(_ entry: InboxEntry, client: HostClient) {
+        sessionID = entry.sessionID
+        withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false }
+        Task { await client.refreshLists() }
+    }
+
+    /// Archived Sessions stay out of the way until the owner asks to see them.
+    private func visible(_ client: HostClient, _ project: String) -> [SessionSummary] {
+        (client.lists[project] ?? []).filter { showArchived || !$0.archived }
+    }
+
+    private func setPinned(_ client: HostClient, _ session: SessionSummary, _ pinned: Bool) async {
+        _ = await client.session(session).command(.sessionPin, kind: .sessionPin,
+                                                  payload: .object(["pinned": .bool(pinned)]))
+        await client.refreshLists()
+    }
+
+    private func setArchived(_ client: HostClient, _ session: SessionSummary, _ archived: Bool) async {
+        _ = await client.session(session).command(.sessionArchive, kind: .sessionArchive,
+                                                  payload: .object(["archived": .bool(archived)]))
+        await client.refreshLists()
     }
 
     private var emptySidebar: some View {
