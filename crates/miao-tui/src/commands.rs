@@ -702,16 +702,12 @@ mod tests {
             description: "Review the working tree".into(),
             template: "please review".into(),
         }]);
-        assert!(
-            details
-                .iter()
-                .any(|(name, detail)| name == "status" && detail == "Session status and usage")
-        );
-        assert!(
-            details
-                .iter()
-                .any(|(name, detail)| name == "review" && detail == "Review the working tree")
-        );
+        assert!(details
+            .iter()
+            .any(|(name, detail)| name == "status" && detail == "Session status and usage"));
+        assert!(details
+            .iter()
+            .any(|(name, detail)| name == "review" && detail == "Review the working tree"));
         assert_eq!(
             details.iter().filter(|(name, _)| name == "status").count(),
             1,
