@@ -6,6 +6,10 @@ final class PairingUITests: XCTestCase {
     func testFreshLaunchAndInvalidInvitationLeaveHostDirectoryEmpty() throws {
         let app = XCUIApplication()
         app.launch()
+        // The app opens on the phone-only tab; the relay client lives under 电脑.
+        let computer = app.buttons["电脑"].firstMatch
+        XCTAssertTrue(computer.waitForExistence(timeout: 15))
+        computer.tap()
         XCTAssertTrue(app.buttons["连接电脑"].firstMatch.waitForExistence(timeout: 15))
         XCTAssertFalse(app.staticTexts["设备数据无法读取或保存，请解锁设备后重试"].exists)
         let connect = app.buttons["连接电脑"].firstMatch
