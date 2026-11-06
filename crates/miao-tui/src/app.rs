@@ -3456,7 +3456,8 @@ impl App {
             Some(context) => format!("{context}\n\n{text}"),
             None => text,
         };
-        engine.prompt(&session_id, &text, attachments);
+        let queued = self.shell.composer.phase.is_some();
+        engine.prompt(&session_id, &text, attachments, queued);
         // The prompt left the composer, so its draft is gone too: keeping it
         // would restore text the Session already sent if the operator switched
         // away and back.
