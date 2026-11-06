@@ -461,6 +461,12 @@ pub enum Command {
     Usage {
         session_id: String,
     },
+    /// Billed usage bucketed by whole hour over a trailing window, for the
+    /// sidebar's last-24-hours strip. `hours` bounds the window so the strip
+    /// and this answer cannot disagree about which hours it covers.
+    UsageHourly {
+        hours: u64,
+    },
     /// Devices the host's remote-control administration knows about. The
     /// engine serves the host's list read-only; pairing and revocation stay
     /// with the host that owns that authority.

@@ -302,6 +302,8 @@ pub struct App {
     models: Vec<ModelInfo>,
     accounts: Vec<AccountInfo>,
     usage: Option<UsageSummary>,
+    /// The trailing 24 hours the sidebar paints, workspace-wide.
+    usage_hourly: Option<crate::status::HourlyUsage>,
     stash: Vec<StashEntry>,
     /// Prompts this Session already sent, oldest first. Retrying a failed turn
     /// is the common reason to send one again, and retyping it is what makes
@@ -442,6 +444,7 @@ impl App {
             devices: Vec::new(),
             accounts: Vec::new(),
             usage: None,
+            usage_hourly: None,
             stash: Vec::new(),
             prompt_history: Vec::new(),
             drafts: HashMap::new(),
@@ -803,10 +806,20 @@ impl App {
             AppEvent::Usage(usage) => {
                 self.usage = Some(usage);
                 self.shell.set_usage(self.usage.as_ref());
+                // Usage arrives on every settled step, which is also when the
+                // hourly strip can have grown: refresh it from the same signal
+                // instead of polling a clock of its own.
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.usage_hourly(24);
+                }
                 if matches!(self.dialog, Some(Dialog::Status(_))) {
                     let rows = self.status_rows();
                     self.open_dialog(Dialog::status(rows));
                 }
+            }
+            AppEvent::UsageHourly(hourly) => {
+                self.usage_hourly = Some(hourly);
+                self.shell.set_usage_hourly(self.usage_hourly.as_ref());
             }
             AppEvent::SessionRemoved(id) => {
                 if self
@@ -1988,8 +2001,11 @@ impl App {
         };
         self.usage = None;
         self.shell.set_usage(None);
+        self.usage_hourly = None;
+        self.shell.set_usage_hourly(None);
         if let Some(engine) = self.engine.as_ref() {
             engine.usage(&session_id);
+            engine.usage_hourly(24);
         }
         let rows = self.status_rows();
         self.open_dialog(Dialog::status(rows));

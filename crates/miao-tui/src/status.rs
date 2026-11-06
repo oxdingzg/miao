@@ -14,6 +14,82 @@ pub fn compact_tokens(tokens: u64) -> String {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HourlyBucket {
+    pub start_ms: u64,
+    pub tokens: u64,
+    pub turns: u64,
+    pub cost_usd: f64,
+}
+
+/// Billed usage per whole hour for the trailing window the engine answered.
+///
+/// Money is only what providers reported: `cost_turns` says how many turns
+/// carried a figure, so a strip cannot present a handful of reported turns as
+/// the price of the whole day.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HourlyUsage {
+    pub buckets: Vec<HourlyBucket>,
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub turns: u64,
+    pub tokens: u64,
+    pub cost_usd: f64,
+    pub cost_turns: u64,
+    /// The busiest hour: when it started, and the tokens it carried.
+    pub peak: Option<(u64, u64)>,
+    /// Retention removed events inside the window, so the strip is a lower
+    /// bound rather than the whole story.
+    pub truncated: bool,
+}
+
+impl HourlyUsage {
+    pub fn from_value(value: &Value) -> Self {
+        let number = |value: Option<&Value>| value.and_then(Value::as_u64).unwrap_or(0);
+        let totals = value.get("totals");
+        Self {
+            buckets: value
+                .get("buckets")
+                .and_then(Value::as_array)
+                .map(|buckets| {
+                    buckets
+                        .iter()
+                        .map(|bucket| HourlyBucket {
+                            start_ms: number(bucket.get("start_ms")),
+                            tokens: number(bucket.get("tokens")),
+                            turns: number(bucket.get("turns")),
+                            cost_usd: number(bucket.get("cost_micros")) as f64 / 1_000_000.0,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            input: number(totals.and_then(|totals| totals.get("input"))),
+            output: number(totals.and_then(|totals| totals.get("output"))),
+            cache_read: number(totals.and_then(|totals| totals.get("cache_read"))),
+            turns: number(totals.and_then(|totals| totals.get("turns"))),
+            tokens: number(totals.and_then(|totals| totals.get("tokens"))),
+            cost_usd: number(totals.and_then(|totals| totals.get("cost_micros"))) as f64
+                / 1_000_000.0,
+            cost_turns: number(totals.and_then(|totals| totals.get("cost_turns"))),
+            peak: value
+                .get("peak")
+                .and_then(|peak| Some((number(peak.get("start_ms")), number(peak.get("tokens"))))),
+            truncated: value
+                .get("truncated")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        }
+    }
+
+    /// The share of billed input that came from cache. The one number a
+    /// reader can act on: it is what makes the same work cheap or expensive.
+    pub fn cache_hit(&self) -> Option<f64> {
+        let billed = self.input + self.cache_read;
+        (billed > 0).then(|| self.cache_read as f64 / billed as f64)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UsageSummary {
     pub turns: u64,

@@ -94,6 +94,7 @@ impl Shell {
                 theme,
                 session: None,
                 usage: None,
+                usage_hourly: None,
                 goal: None,
                 todos: Vec::new(),
             }),
@@ -305,6 +306,12 @@ impl Shell {
     pub fn set_usage(&mut self, usage: Option<&crate::status::UsageSummary>) {
         if let Some(sidebar) = self.sidebar.as_mut() {
             sidebar.usage = usage.cloned();
+        }
+    }
+
+    pub fn set_usage_hourly(&mut self, usage: Option<&crate::status::HourlyUsage>) {
+        if let Some(sidebar) = self.sidebar.as_mut() {
+            sidebar.usage_hourly = usage.cloned();
         }
     }
 
@@ -2267,10 +2274,142 @@ fn clip_cells(line: &str, offset: usize, width: u16) -> String {
     out
 }
 
+/// The last 24 hours of billed usage, one glyph per hour.
+///
+/// Colour only ever underlines what the glyphs already say: bar height is the
+/// volume, the trailing column is the current hour, `~` says a figure covers
+/// fewer turns than the window counted, and `partial` says retention removed
+/// rows inside it. A monochrome terminal loses none of those facts.
+fn hourly_lines(
+    usage: Option<&crate::status::HourlyUsage>,
+    width: usize,
+    palette: &crate::theme::Palette,
+) -> Vec<Line<'static>> {
+    const GLYPHS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    let muted = Style::new().fg(palette.text_muted);
+    let mut lines = vec![Line::from(Span::styled("▾ Last 24h", muted))];
+    let Some(usage) = usage else {
+        lines.push(Line::from(Span::styled("no usage recorded", muted)));
+        return lines;
+    };
+    // A narrow column pairs hours instead of dropping them: the shape of the
+    // day is the point, and twelve two-hour glyphs keep it.
+    let pair = width < 26;
+    let cells = usage
+        .buckets
+        .chunks(if pair { 2 } else { 1 })
+        .map(|chunk| {
+            chunk
+                .iter()
+                .fold(0u64, |total, bucket| total.saturating_add(bucket.tokens))
+        })
+        .collect::<Vec<_>>();
+    if cells.is_empty() {
+        lines.push(Line::from(Span::styled("no usage recorded", muted)));
+        return lines;
+    }
+    let peak = cells.iter().copied().max().unwrap_or(0);
+    let mut sorted = cells.clone();
+    sorted.sort_unstable();
+    let p95 = sorted[(sorted.len() * 95 / 100).min(sorted.len() - 1)];
+    let mut spans = Vec::with_capacity(cells.len());
+    for (index, tokens) in cells.iter().enumerate() {
+        let colour = match tokens {
+            0 => palette.element,
+            _ if index + 1 == cells.len() => palette.primary,
+            _ if *tokens > p95 => palette.warning,
+            _ => palette.accent,
+        };
+        // Zero hours keep a baseline dot so the axis stays 24 cells wide: a gap
+        // would read as "no data", which is a different fact from "no spend".
+        let glyph = match (tokens, peak) {
+            (0, _) => '·',
+            (tokens, peak) => {
+                let level = (tokens * 8 / peak.max(1)).clamp(1, 8) as usize;
+                GLYPHS[level - 1]
+            }
+        };
+        spans.push(Span::styled(glyph.to_string(), Style::new().fg(colour)));
+    }
+    lines.push(Line::from(spans));
+    // The marker under the last column says "this hour is still filling".
+    lines.push(Line::from(vec![
+        Span::raw(" ".repeat(cells.len().saturating_sub(1))),
+        Span::styled("▸", Style::new().fg(palette.primary)),
+    ]));
+    let compact = crate::status::compact_tokens;
+    lines.push(Line::from(vec![
+        Span::styled("in ", muted),
+        Span::styled(compact(usage.input), Style::new().fg(palette.secondary)),
+        Span::styled(" · out ", muted),
+        Span::styled(compact(usage.output), Style::new().fg(palette.warning)),
+        Span::styled(" · cache ", muted),
+        Span::styled(
+            usage
+                .cache_hit()
+                .map(|hit| format!("{:.0}%", hit * 100.0))
+                .unwrap_or_else(|| "—".into()),
+            Style::new().fg(palette.success),
+        ),
+    ]));
+    let mut money = Vec::new();
+    if usage.cost_turns > 0 {
+        // Only a reported figure is money; `~` marks turns that reported none,
+        // so a partial answer is never read as the day's whole price.
+        let suffix = match usage.cost_turns >= usage.turns && !usage.truncated {
+            true => String::new(),
+            false => " ~".to_string(),
+        };
+        money.push(Span::styled(
+            format!("${:.3}", usage.cost_usd),
+            Style::new().fg(palette.text),
+        ));
+        if !suffix.is_empty() {
+            money.push(Span::styled(suffix, muted));
+        }
+        money.push(Span::styled(" · ", muted));
+    }
+    money.push(Span::styled(
+        format!(
+            "{} turn{}",
+            usage.turns,
+            if usage.turns == 1 { "" } else { "s" }
+        ),
+        muted,
+    ));
+    if let Some((start_ms, tokens)) = usage.peak {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_millis() as u64)
+            .unwrap_or(0);
+        let hours_ago = now_ms.saturating_sub(start_ms) / 3_600_000;
+        money.push(Span::styled(
+            format!(
+                " · peak {}  {}",
+                match hours_ago {
+                    0 => "now".to_string(),
+                    hours => format!("-{hours}h"),
+                },
+                compact(tokens)
+            ),
+            muted,
+        ));
+    }
+    lines.push(Line::from(money));
+    if usage.truncated {
+        lines.push(Line::from(Span::styled(
+            "partial: retention removed older rows",
+            Style::new().fg(palette.warning),
+        )));
+    }
+    lines
+}
+
 pub struct SidebarPane {
     theme: Theme,
     session: Option<SessionSummary>,
     usage: Option<crate::status::UsageSummary>,
+    usage_hourly: Option<crate::status::HourlyUsage>,
     /// The durable Goal, painted above the checklist and never mixed into it.
     goal: Option<crate::session::GoalView>,
     todos: Vec<crate::session::TodoView>,
@@ -2333,6 +2472,12 @@ impl Pane for SidebarPane {
             ],
         };
         if self.session.is_some() {
+            lines.push(Line::default());
+            lines.extend(hourly_lines(
+                self.usage_hourly.as_ref(),
+                text_width,
+                &palette,
+            ));
             // Context: the same billed usage the status dialog reads, kept
             // beside the transcript so cost and throughput stay glanceable.
             lines.push(Line::default());
@@ -5252,6 +5397,105 @@ mod tests {
         assert_eq!(pane.take_selection().as_deref(), Some("abc"));
     }
 
+    /// The strip keeps one cell per hour and marks the hour that is still
+    /// filling: a reader counting glyphs must see the window it was promised,
+    /// and a monochrome terminal must still see where "now" is.
+    #[test]
+    fn the_hourly_strip_keeps_one_cell_per_hour() {
+        let buckets = (0..24)
+            .map(|index| crate::status::HourlyBucket {
+                start_ms: 1_760_000_000_000 + index * 3_600_000,
+                tokens: match index % 3 {
+                    0 => 0,
+                    1 => 1_000 * (index as u64 + 1),
+                    _ => 40_000,
+                },
+                turns: 1,
+                cost_usd: 0.001,
+            })
+            .collect::<Vec<_>>();
+        let usage = crate::status::HourlyUsage {
+            buckets,
+            input: 120_000,
+            output: 9_000,
+            cache_read: 300_000,
+            turns: 24,
+            tokens: 429_000,
+            cost_usd: 0.024,
+            cost_turns: 24,
+            peak: Some((1_760_000_000_000 + 12 * 3_600_000, 40_000)),
+            truncated: false,
+        };
+        let mut sidebar = SidebarPane {
+            theme: home_theme(),
+            session: Some(home_row("ses_u", "usage", None)),
+            usage: None,
+            usage_hourly: Some(usage.clone()),
+            goal: None,
+            todos: Vec::new(),
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 30)).expect("terminal");
+        terminal
+            .draw(|frame| sidebar.render(frame, frame.area()))
+            .expect("draw");
+        let rows = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(60)
+            .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let header = rows
+            .iter()
+            .position(|row| row.contains("Last 24h"))
+            .expect("hourly header");
+        let strip = &rows[header + 1];
+        let cells = strip
+            .chars()
+            .filter(|glyph| "▁▂▃▄▅▆▇█·".contains(*glyph))
+            .count();
+        assert_eq!(cells, 24, "one cell per hour: {strip:?}");
+        assert!(
+            rows[header + 2].contains('▸'),
+            "the filling hour is marked: {:?}",
+            rows[header + 2]
+        );
+        let money = rows[header + 3..]
+            .iter()
+            .find(|row| row.contains('$'))
+            .expect("reported cost row");
+        assert!(money.contains("0.02"), "reported cost is shown: {money:?}");
+
+        // A column too narrow for 24 glyphs pairs the hours instead of
+        // dropping them: the shape of the day is the point, not the count.
+        let palette = home_theme().palette;
+        let narrow = hourly_lines(sidebar.usage_hourly.as_ref(), 20, &palette);
+        assert_eq!(narrow[1].spans.len(), 12, "narrow columns pair hours");
+
+        sidebar.usage_hourly = Some(crate::status::HourlyUsage {
+            cost_turns: 3,
+            truncated: true,
+            ..usage
+        });
+        terminal
+            .draw(|frame| sidebar.render(frame, frame.area()))
+            .expect("draw");
+        let rows = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(60)
+            .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let rendered = rows.join("\n");
+        assert!(
+            rendered.contains("partial"),
+            "retention is stated: {rendered}"
+        );
+        assert!(rendered.contains('~'), "partial cost coverage is marked");
+    }
+
     /// A long CJK title and a long CJK todo each stay on one row. Counting
     /// characters instead of cells let both through at twice the column's
     /// width, and the wrapping widget then broke them one character per line.
@@ -5261,6 +5505,7 @@ mod tests {
             theme: home_theme(),
             session: None,
             usage: None,
+            usage_hourly: None,
             goal: None,
             todos: Vec::new(),
         };
