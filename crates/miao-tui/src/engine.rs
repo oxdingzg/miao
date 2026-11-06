@@ -78,6 +78,10 @@ pub enum Request {
         session_id: String,
         text: String,
         attachments: Vec<Value>,
+        /// A live turn is running, so the input waits for the turn to finish
+        /// instead of joining it. Matches what Claude Code does with text typed
+        /// while the agent works.
+        queued: bool,
     },
     /// Admit a rendered template command: the engine captures the reference,
     /// prepares its placeholders after promotion, and records the command.
@@ -288,11 +292,12 @@ impl Handle {
         let _ = self.tx.send(Request::Refresh);
     }
 
-    pub fn prompt(&self, session_id: &str, text: &str, attachments: Vec<Value>) {
+    pub fn prompt(&self, session_id: &str, text: &str, attachments: Vec<Value>, queued: bool) {
         let _ = self.tx.send(Request::Prompt {
             session_id: session_id.to_string(),
             text: text.to_string(),
             attachments,
+            queued,
         });
     }
 
@@ -918,12 +923,15 @@ async fn run(
                     session_id,
                     text,
                     attachments,
+                    queued,
                 } => {
                     let input = json!({
                         "session_id": session_id.clone(),
                         "input_id": new_id("in"),
                         "prompt": text,
-                        "delivery": "steer",
+                        // Idle: start a turn now. Running: wait for this turn to
+                        // finish, so a later instruction cannot derail it.
+                        "delivery": if queued { "queue" } else { "steer" },
                     });
                     match client.admit(input, true, attachments.clone()).await {
                         Ok(_) => {

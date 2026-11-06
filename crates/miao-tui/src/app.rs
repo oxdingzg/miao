@@ -3608,7 +3608,11 @@ impl App {
             Some(context) => format!("{context}\n\n{text}"),
             None => text,
         };
-        engine.prompt(&session_id, &text, attachments);
+        // The durable run identity is the only honest "a turn is running"
+        // signal: `live` is cleared as soon as the first token arrives, and the
+        // display phase only appears after the engine has been quiet a while.
+        let queued = self.state.active_run.is_some();
+        engine.prompt(&session_id, &text, attachments, queued);
         // The prompt left the composer, so its draft is gone too: keeping it
         // would restore text the Session already sent if the operator switched
         // away and back.
@@ -4704,6 +4708,7 @@ mod tests {
             session_id,
             text,
             attachments,
+            ..
         }) = requests.try_recv()
         else {
             panic!("the landing prompt must reach the Session it opened");
