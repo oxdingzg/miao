@@ -26,8 +26,10 @@ type Confirmation =
 type Picker = {
   readonly kind: "invite" | "trust" | "auto"
   readonly grant?: RemoteAccess.Grant
-  readonly stage: "scope" | "duration"
+  readonly stage: "scope" | "permissions" | "duration"
   readonly scope: "all" | "current"
+  /** Owner opt-in for `provider.configure`: write API keys, disconnect, default model. */
+  readonly provider?: boolean
 }
 
 const durations = [
@@ -257,7 +259,7 @@ export function DialogDevices(props: {
                   value: "scope-current",
                   title: "仅当前会话",
                   description: "只授权正在查看的这一个会话",
-                  onSelect: () => setPicker({ ...custom, scope: "current", stage: "duration" }),
+                  onSelect: () => setPicker({ ...custom, scope: "current", stage: "permissions" }),
                 },
               ]
             : []),
@@ -267,11 +269,27 @@ export function DialogDevices(props: {
                   value: "scope-grant",
                   title: "沿用设备请求的范围（默认）",
                   description: "这个窗口没有可识别的项目或会话",
-                  onSelect: () => setPicker({ ...custom, stage: "duration" }),
+                  onSelect: () => setPicker({ ...custom, stage: "permissions" }),
                 },
               ]
             : []),
           { value: "picker-back", title: "返回", onSelect: () => setPicker(undefined) },
+        ]
+      if (custom.stage === "permissions")
+        return [
+          {
+            value: "permission-basic",
+            title: "不配置服务商（默认）",
+            description: "设备不能新增 API Key、断开凭据或修改默认模型",
+            onSelect: () => setPicker({ ...custom, provider: false, stage: "duration" }),
+          },
+          {
+            value: "permission-provider",
+            title: "允许配置服务商与模型",
+            description: "设备可填写 API Key、断开凭据并选择默认模型；密钥只经加密连接传输",
+            onSelect: () => setPicker({ ...custom, provider: true, stage: "duration" }),
+          },
+          { value: "picker-back", title: "返回", onSelect: () => setPicker({ ...custom, stage: "scope" }) },
         ]
       const fallback = custom.kind === "invite" ? 7 * 86_400_000 : 90 * 86_400_000
       const ordered = [...durations].sort((a, b) => (b.value === fallback ? 1 : 0) - (a.value === fallback ? 1 : 0))
@@ -284,9 +302,10 @@ export function DialogDevices(props: {
             onSelect: () => {
               const all = custom.scope === "all" && props.projectID
               const grant = custom.grant
+              const extra: RemoteAccess.Permission[] = custom.provider ? ["provider.configure"] : []
               if (custom.kind === "invite") {
                 invite({
-                  permissions: [...write, "session.create"],
+                  permissions: [...write, ...extra, "session.create"],
                   projectIDs: all ? [props.projectID!] : [],
                   sessionIDs: all || !props.sessionID ? [] : [props.sessionID!],
                   expiresAt: Date.now() + duration.value,
@@ -296,7 +315,7 @@ export function DialogDevices(props: {
                   type: "trust",
                   grant,
                   policy: {
-                    permissions: [...new Set<RemoteAccess.Permission>([...grant.permissions, "session.create"])],
+                    permissions: [...new Set<RemoteAccess.Permission>([...grant.permissions, ...extra, "session.create"])],
                     projectIDs: all ? [props.projectID!] : custom.scope === "current" ? [] : grant.projectIDs,
                     sessionIDs:
                       !all && custom.scope === "current" && props.sessionID ? [props.sessionID!] : grant.sessionIDs,
@@ -309,7 +328,7 @@ export function DialogDevices(props: {
             },
           }),
         ),
-        { value: "picker-back", title: "返回", onSelect: () => setPicker({ ...custom, stage: "scope" }) },
+        { value: "picker-back", title: "返回", onSelect: () => setPicker({ ...custom, stage: "permissions" }) },
       ]
     }
     return [
@@ -604,7 +623,9 @@ export function DialogDevices(props: {
             : picker()
               ? picker()!.stage === "scope"
                 ? "选择授权范围"
-                : "选择授权时长"
+                : picker()!.stage === "permissions"
+                  ? "选择设备权限"
+                  : "选择授权时长"
               : invitation()
                 ? "扫码配对"
                 : "Web / iOS 设备"

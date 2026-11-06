@@ -329,6 +329,42 @@ describe("outbound authorized encrypted Agent", () => {
     }
     expect(calls.map((call) => call.method)).toEqual(["session.switchAgent", "session.switchModel"])
   })
+  test("provider configuration needs its own capability, an operation ID and no session scope", async () => {
+    const calls: ControlAgent.Request[] = []
+    const handler: ControlAgent.Handler = async (request) => {
+      calls.push(request)
+      return { status: "completed" }
+    }
+    const methods = {
+      "provider.list": handler,
+      "provider.connectKey": handler,
+      "provider.disconnect": handler,
+      "model.default": handler,
+    }
+    const readOnly = await fixture(methods, ["read"])
+    const reader = await client(readOnly)
+    await reader.send(reader.request({ method: "provider.list", sessionID: undefined }))
+    expect(await reader.receive()).toMatchObject({ type: "result", data: { status: "completed" } })
+    for (const method of ["provider.connectKey", "provider.disconnect", "model.default"] as const) {
+      await reader.send(reader.request({ method, sessionID: undefined, operationID: crypto.randomUUID() }))
+      expect(await reader.receive()).toMatchObject({ type: "error", code: "forbidden" })
+    }
+
+    const configurable = await fixture(methods, ["read", "provider.configure"])
+    const owner = await client(configurable)
+    for (const method of ["provider.connectKey", "provider.disconnect", "model.default"] as const) {
+      await owner.send(owner.request({ method, sessionID: undefined }))
+      expect(await owner.receive()).toMatchObject({ type: "error", code: "forbidden" })
+      await owner.send(owner.request({ method, sessionID: undefined, operationID: crypto.randomUUID() }))
+      expect(await owner.receive()).toMatchObject({ type: "result", data: { status: "completed" } })
+    }
+    expect(calls.map((call) => call.method)).toEqual([
+      "provider.list",
+      "provider.connectKey",
+      "provider.disconnect",
+      "model.default",
+    ])
+  })
   test("routes approved requests through real Hub and rejects out-of-scope or stale Runtime targets", async () => {
     const calls: ControlAgent.Request[] = []
     const f = await fixture({

@@ -743,6 +743,9 @@ final class HostClient {
     var sessions: [String: RemoteSession] = [:]
     var operations: [PendingOperation] = []
     var error: String?
+    /// `provider.list` projection for the settings screen; never holds credentials.
+    var providers: ProviderDirectory?
+    var providersError: String?
     var sendingTargets = Set<String>()
     private(set) var runtimeID: String
     private var connection: HubConnection?
@@ -870,9 +873,10 @@ final class HostClient {
     }
 
     func request(_ method: RemoteMethod, sessionID: String? = nil, projectID: String? = nil,
-                 payload: JSONValue = .object([:])) async throws -> JSONValue {
+                 operationID: UUID? = nil, payload: JSONValue = .object([:])) async throws -> JSONValue {
         guard ready, let connection else { throw RemoteRPCError.disconnected }
-        return try await connection.request(method, sessionID: sessionID, projectID: projectID, payload: payload)
+        return try await connection.request(method, sessionID: sessionID, projectID: projectID,
+                                            operationID: operationID, payload: payload)
     }
 
     private func loadList(_ project: String?, connection: HubConnection, more: Bool = false) async throws {
