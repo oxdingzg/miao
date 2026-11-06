@@ -91,6 +91,7 @@ impl Shell {
             panel: None,
             leader_hint: None,
             sidebar: Some(SidebarPane {
+                hover_rows: Vec::new(),
                 theme,
                 session: None,
                 usage: None,
@@ -1974,10 +1975,13 @@ fn render_composer_in(
             format!("{} queued", composer.queued)
         }
     });
+    // The idle box carries no label: the word "composer" named the widget
+    // rather than saying anything about the run, and the phase below is the
+    // fact worth the space.
     let name = if shell {
         "shell · runs locally · output stays in this Session · esc exit"
     } else {
-        "composer"
+        ""
     };
     let mut parts = composer.phase.iter().cloned().collect::<Vec<_>>();
     // The elapsed time rides the phase it measures: "Waiting for model · 2.0s"
@@ -1992,7 +1996,10 @@ fn render_composer_in(
         true => Style::new().fg(palette.warning),
         false => Style::new().fg(palette.text_muted),
     };
-    let mut title = vec![Span::styled(format!(" {name} "), title_style)];
+    let mut title = Vec::new();
+    if !name.is_empty() {
+        title.push(Span::styled(format!(" {name} "), title_style));
+    }
     if !parts.is_empty() {
         title.push(Span::styled("· ", Style::new().fg(palette.border)));
         // A run in flight gets the braille spinner beside its phase, so the box
@@ -2269,6 +2276,9 @@ fn clip_cells(line: &str, offset: usize, width: u16) -> String {
 }
 
 pub struct SidebarPane {
+    /// Screen row to the full text of the todo painted there, for the hover
+    /// tip: the row itself shows `fit(...)`'s clipped title.
+    pub hover_rows: Vec<(u16, String)>,
     theme: Theme,
     session: Option<SessionSummary>,
     usage: Option<crate::status::UsageSummary>,
@@ -2526,6 +2536,7 @@ impl Pane for SidebarPane {
                 )));
             }
             let width = area.width.saturating_sub(3) as usize;
+            self.hover_rows.clear();
             for todo in &self.todos {
                 // The same bracket glyphs the transcript's todowrite row paints,
                 // so a task reads identically in both columns.
@@ -2543,6 +2554,10 @@ impl Pane for SidebarPane {
                     palette.text_muted
                 };
                 let text = fit(&todo.content, width.saturating_sub(4));
+                // The row shows the clipped title; the hover tip has to carry
+                // the text the clip removed.
+                self.hover_rows
+                    .push((inner.y + lines.len() as u16, todo.content.clone()));
                 lines.push(Line::from(Span::styled(
                     format!("[{glyph}] {text}"),
                     Style::new().fg(color),
@@ -2570,6 +2585,34 @@ impl Pane for SidebarPane {
             inner,
         );
     }
+}
+
+/// The tooltip a hovered sidebar row draws: the full text the row clipped,
+/// cleared against the page so it reads over the transcript beside it.
+pub fn render_hover_tip(frame: &mut Frame, at: (u16, u16), text: &str, theme: &Theme) {
+    let area = frame.area();
+    let width = (text.chars().count() as u16 + 4).clamp(12, area.width.saturating_sub(2).max(12));
+    let height = 3;
+    let x = at.0.min(area.width.saturating_sub(width));
+    let y =
+        at.1.saturating_sub(1)
+            .min(area.height.saturating_sub(height));
+    let rect = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+    frame.render_widget(Clear, rect);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            clip_cells(text, 0, width.saturating_sub(2)),
+            Style::new().fg(theme.palette.text),
+        )))
+        .style(Style::new().bg(theme.palette.background))
+        .block(Block::bordered().border_style(Style::new().fg(theme.palette.text_muted))),
+        rect,
+    );
 }
 
 /// Draw a modal dialog centered over the current screen. `Clear` hides the
@@ -4312,10 +4355,12 @@ mod tests {
             palette,
         };
         let mut composer = crate::editor::Composer::new(Path::new("."));
+        // An idle box carries no widget label: the word "composer" named the
+        // widget rather than saying anything about the run.
         assert_eq!(
             draw_composer(&mut composer, &theme),
-            "┌ composer ────────────────────────────┐",
-            "an idle session names the box"
+            "┌──────────────────────────────────────┐",
+            "an idle session names nothing"
         );
 
         composer.phase = Some("Running bash".into());
@@ -4409,9 +4454,11 @@ mod tests {
             .position(|row| row.contains("finish every issue"))
             .expect("the queued prompt is painted");
         assert!(rows[queued].contains("· queued"), "{}", rows[queued]);
+        // The idle box carries no label, so the box's own rule is what locates
+        // it now.
         let input = rows
             .iter()
-            .position(|row| row.contains("composer"))
+            .position(|row| row.trim_start().starts_with('┌'))
             .expect("the input is painted");
         assert!(queued < input, "the queue sits above the input");
     }
@@ -5261,6 +5308,7 @@ mod tests {
     #[test]
     fn a_long_cjk_sidebar_stays_on_one_row_per_line() {
         let mut sidebar = SidebarPane {
+            hover_rows: Vec::new(),
             theme: home_theme(),
             session: None,
             usage: None,

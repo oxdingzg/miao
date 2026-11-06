@@ -795,8 +795,10 @@ impl Dialog {
         }
         if provider.is_none() {
             for (title, holds_key) in [("needs a key", false), ("has a key · no route", true)] {
-                let entries: Vec<&(String, String, bool)> =
-                    unserved.iter().filter(|entry| entry.2 == holds_key).collect();
+                let entries: Vec<&(String, String, bool)> = unserved
+                    .iter()
+                    .filter(|entry| entry.2 == holds_key)
+                    .collect();
                 if entries.is_empty() {
                     continue;
                 }
@@ -2046,7 +2048,10 @@ mod tests {
             Dialog::models_with_needs_auth(&grouped(), None, None, &[], &recents, &favorites);
         let list = dialog.list().expect("list");
         let labels: Vec<&str> = list.rows.iter().map(|row| row.label.as_str()).collect();
-        assert_eq!(&labels[..3], &["favorites", "glm-5 · openai-chat", "recent"]);
+        assert_eq!(
+            &labels[..3],
+            &["favorites", "glm-5 · openai-chat", "recent"]
+        );
         // A favorite row still names its position in the catalog, so starring
         // one and choosing it bind the same model.
         let position: usize = list.rows[1].id.parse().expect("catalog position");

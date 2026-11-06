@@ -347,6 +347,9 @@ pub struct App {
     providers_without_route: Vec<(String, String)>,
     /// Routes the operator starred, most recently starred first.
     favorites: Vec<String>,
+    /// Where the pointer last moved, so a hovered sidebar row can show the
+    /// text its cell clipped. Nothing is in flight while it sits still.
+    mouse_pos: Option<(u16, u16)>,
     /// Where a key typed into the sign-in prompt is stored. The engine falls
     /// back to the same file on a single-binary start, so a key stored here is
     /// the one a restarted engine reads.
@@ -461,6 +464,7 @@ impl App {
             providers_needing_auth: Vec::new(),
             providers_without_route: Vec::new(),
             favorites: crate::state::favorites(),
+            mouse_pos: None,
             credential_store: miao_engine::credential::default_database(),
             remembered_model: crate::state::preferences().model,
             pending_accounts: false,
@@ -608,7 +612,15 @@ impl App {
                     &self.shell.theme().clone(),
                 );
             }
-            Screen::Session => self.shell.render(frame),
+            Screen::Session => {
+                self.shell.render(frame);
+                if let (Some(at), Some(sidebar)) = (self.mouse_pos, self.shell.sidebar.as_ref()) {
+                    if let Some((_, text)) = sidebar.hover_rows.iter().find(|(row, _)| *row == at.1)
+                    {
+                        crate::pane::render_hover_tip(frame, at, text, &self.shell.theme().clone());
+                    }
+                }
+            }
         }
         if let Some(dialog) = self.dialog.as_ref() {
             render_dialog(frame, frame.area(), dialog, self.shell.theme());
@@ -738,7 +750,13 @@ impl App {
                     .providers
                     .iter()
                     .filter(|provider| !provider.configured)
-                    .map(|provider| (provider.id.clone(), provider.name.clone(), provider.accounts > 0));
+                    .map(|provider| {
+                        (
+                            provider.id.clone(),
+                            provider.name.clone(),
+                            provider.accounts > 0,
+                        )
+                    });
                 self.providers_needing_auth = unserved
                     .clone()
                     .filter(|entry| !entry.2)
@@ -1083,6 +1101,13 @@ impl App {
     /// way: text selection belongs to the terminal.
     ///
     fn handle_mouse(&mut self, mouse: MouseEvent) {
+        // Hover only paints a tip; the row under the pointer is resolved at
+        // render time from the sidebar's own row map, so moving off it clears
+        // the tip without any state to reset.
+        if let MouseEventKind::Moved = mouse.kind {
+            self.mouse_pos = Some((mouse.column, mouse.row));
+            return;
+        }
         // A drag over the transcript copies what it covered, like the
         // TypeScript UI: cells, not logical lines, because the transcript is
         // wrapped.

@@ -49,6 +49,7 @@ fn account(id: &str, family: &str, is_default: bool) -> Account {
         id: Some(id.into()),
         model_key: family.into(),
         is_default,
+        label: None,
     }
 }
 fn catalog() -> Arc<dyn Provider> {

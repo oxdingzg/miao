@@ -608,7 +608,6 @@ impl Transcript {
     }
 }
 
-
 impl Transcript {
     pub fn from_snapshot(snapshot: &Value) -> Self {
         let mut transcript = Transcript::default();
@@ -925,7 +924,10 @@ mod tests {
         let [Part::Tool(answered), Part::Tool(unanswered)] = parts.as_slice() else {
             panic!("two tool parts");
         };
-        assert!(!answered.unreturned, "a call that got its result is untouched");
+        assert!(
+            !answered.unreturned,
+            "a call that got its result is untouched"
+        );
         assert!(unanswered.unreturned, "an unanswered call is settled");
     }
 
