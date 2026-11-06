@@ -1588,7 +1588,7 @@ impl App {
                     if let Some(provider) = row.id.strip_prefix("auth:") {
                         self.dialog = None;
                         self.shell.composer.notice = Some(format!(
-                            "this provider is not configured yet: run `miao auth login {provider} <key>`, add a model for it in miao.json, then reopen /models"
+                            "this provider has no account yet: run `miao auth login {provider} <key>` in a shell, then restart miao — the engine builds its model routes at startup, so reopening /models alone will not show it"
                         ));
                         return;
                     }
@@ -1633,7 +1633,7 @@ impl App {
                     .any(|model| model.provider.as_deref() == Some(provider.as_str()))
                 {
                     self.notice(&format!(
-                        "this provider is not configured yet: run `miao auth login {provider} <key>`, add a model for it in miao.json, then reopen /models"
+                        "this provider has no account yet: run `miao auth login {provider} <key>` in a shell, then restart miao — the engine builds its model routes at startup, so reopening /models alone will not show it"
                     ));
                     return;
                 }
@@ -5852,7 +5852,10 @@ mod tests {
     }
 
     /// A provider the engine serves no model of has nothing to narrow to, so
-    /// the row says how to add one instead of opening an empty picker.
+    /// the row says how to add one instead of opening an empty picker. The
+    /// route table is built when the engine starts, so the width of the advice
+    /// matters: reopening /models inside the running TUI cannot show a
+    /// provider that was added after this engine was launched.
     #[test]
     fn choosing_an_unconfigured_provider_explains_how_to_add_it() {
         let mut app = session_app();
@@ -5864,12 +5867,19 @@ mod tests {
         })));
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         assert!(app.dialog.is_none());
-        assert!(app
-            .shell
-            .composer
-            .notice
-            .as_deref()
-            .is_some_and(|notice| notice.contains("miao auth login zhipu")));
+        let notice = app.shell.composer.notice.clone().expect("notice");
+        assert!(
+            notice.contains("miao auth login zhipu"),
+            "the notice names the command: {notice}"
+        );
+        assert!(
+            notice.contains("restart miao"),
+            "and says the engine builds routes at startup: {notice}"
+        );
+        assert!(
+            !notice.contains("miao.json"),
+            "a provider the snapshot serves needs no model entry: {notice}"
+        );
     }
 
     #[test]
