@@ -4760,11 +4760,14 @@ impl Store {
     /// including `partial` ones: this answers the same question `usage_report`
     /// answers for one Session, so the two cannot disagree.
     ///
-    /// Money is summed only where the provider reported it in US dollars
-    /// (`cost.amount` + `cost.currency`); `costTurns` says how many turns
-    /// carried that figure, and the caller must not present an estimate as a
-    /// measurement. `truncated` reports that retention removed events inside
-    /// the window, so a short bar is explained rather than silently wrong.
+    /// Money is summed from `cost.amount` + `cost.currency` in US dollars:
+    /// the figure a gateway reported when it billed the turn itself, otherwise
+    /// our own rate applied to the reported tokens, and `cost.reported` says
+    /// which of the two a row is. `costTurns` counts the turns that carried a
+    /// figure at all, so the caller must not present a partial sum as the
+    /// day's whole price. `truncated` reports that retention removed events
+    /// inside the window, so a short bar is explained rather than silently
+    /// wrong.
     pub async fn usage_hourly(&self, hours: u64) -> Result<Value, Error> {
         let hours = hours.clamp(1, 24 * 31);
         self.call(move |conn| {
