@@ -6,7 +6,7 @@
 // history ring. All are async because they read config or hit the SDK, but
 // none block each other.
 import { Context, Effect, Layer } from "effect"
-import { resolve } from "@miao/tui/config"
+import { resolve } from "../../../config/tui-schema"
 import { toProviderCatalog, toProviderList } from "@miao/tui/context/v2-adapters"
 import { TuiConfig } from "@/config/tui"
 import { makeRuntime } from "@miao/core/effect/runtime"

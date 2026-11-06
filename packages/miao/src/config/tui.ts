@@ -22,7 +22,7 @@ import { Filesystem } from "@/util/filesystem"
 import { ConfigVariable } from "@/config/variable"
 import { Npm } from "@miao/core/npm"
 import { FormatError, FormatUnknownError } from "@/cli/error"
-import { TuiConfig } from "@miao/tui/config"
+import { TuiConfig } from "./tui-schema"
 
 export const Info = TuiConfig.Info
 export type Info = TuiConfig.Info
