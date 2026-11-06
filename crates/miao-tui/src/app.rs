@@ -1405,12 +1405,39 @@ impl App {
             .as_ref()
             .and_then(|summary| summary.model.as_deref());
         let needs_auth = self.providers_needing_auth.clone();
+        let recents = self.recent_models();
         self.open_dialog(Dialog::models_with_needs_auth(
             &self.models,
             current,
             self.models_filter.as_deref(),
             &needs_auth,
+            &recents,
         ));
+    }
+
+    /// Models this install used most recently, newest Session first. The
+    /// product's picker leads with its recents for the same reason: the answer
+    /// an operator wants is usually one they already gave.
+    fn recent_models(&self) -> Vec<String> {
+        let mut recents: Vec<String> = Vec::new();
+        for model in self.remembered_model.iter().chain(
+            self.catalog
+                .iter()
+                .filter_map(|session| session.model.as_ref()),
+        ) {
+            // A Session pin may carry a route id (`provider/model@account`).
+            let name = model
+                .rsplit_once('/')
+                .map(|(_, name)| name)
+                .unwrap_or(model)
+                .split('@')
+                .next()
+                .unwrap_or(model);
+            if !recents.iter().any(|known| known == name) {
+                recents.push(name.to_string());
+            }
+        }
+        recents
     }
 
     fn dialog_action(&mut self, action: DialogAction) {

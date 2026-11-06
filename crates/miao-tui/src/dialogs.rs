@@ -670,7 +670,7 @@ impl Dialog {
         current: Option<&str>,
         provider: Option<&str>,
     ) -> Self {
-        Self::models_with_needs_auth(models, current, provider, &[])
+        Self::models_with_needs_auth(models, current, provider, &[], &[])
     }
 
     /// The picker plus a tail section naming providers the snapshot knows but
@@ -681,6 +681,7 @@ impl Dialog {
         current: Option<&str>,
         provider: Option<&str>,
         needs_auth: &[(String, String)],
+        recents: &[String],
     ) -> Self {
         // The picker groups by provider the way the product's does: a muted
         // header row names each provider and the models beneath it belong to
@@ -690,6 +691,38 @@ impl Dialog {
         let mut rows: Vec<Row> = Vec::new();
         // A provider's models are merged even when the catalog lists them in
         // separate runs, so a provider names itself once.
+        // Recently used models lead the list, the way the product's picker opens
+        // with its recents above the provider groups: the usual answer should
+        // not sit below thirty models of a provider the operator moved away
+        // from. Deduplicated by model name — a provider holding several
+        // accounts answers each with its own route.
+        let mut recent_indices: Vec<usize> = Vec::new();
+        if provider.is_none() {
+            for name in recents {
+                if let Some(index) = models
+                    .iter()
+                    .position(|model| model.model == *name)
+                    .filter(|index| !recent_indices.contains(index))
+                {
+                    recent_indices.push(index);
+                }
+            }
+        }
+        if !recent_indices.is_empty() {
+            rows.push(Row {
+                id: "group:recent".into(),
+                label: "recent".into(),
+                detail: String::new(),
+            });
+            for index in &recent_indices {
+                let model = &models[*index];
+                rows.push(Row {
+                    id: index.to_string(),
+                    label: model.label(),
+                    detail: model.route_id.clone().unwrap_or_default(),
+                });
+            }
+        }
         let mut groups: Vec<(Option<String>, Vec<usize>)> = Vec::new();
         for (index, model) in models.iter().enumerate() {
             if provider.is_some_and(|named| model.provider.as_deref() != Some(named)) {
@@ -1920,6 +1953,41 @@ mod tests {
         );
         assert!(list.rows[0].is_header());
         assert!(!list.rows[1].is_header());
+    }
+
+    /// The operator's recent models lead the picker, the way the product's
+    /// dialog opens with its recents above the provider groups: the answer an
+    /// operator wants is usually one they already gave.
+    #[test]
+    fn recents_lead_the_picker_once_each() {
+        let recents = vec![
+            "haiku".to_string(),
+            "glm-5".to_string(),
+            "haiku".to_string(),
+        ];
+        let dialog = Dialog::models_with_needs_auth(&grouped(), None, None, &[], &recents);
+        let list = dialog.list().expect("list");
+        let labels: Vec<&str> = list.rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(
+            &labels[..3],
+            &["recent", "haiku · openai-chat", "glm-5 · openai-chat"],
+            "recents come first, in the order they were used, once each"
+        );
+        assert!(list.rows[0].is_header());
+        // The provider groups still follow, unchanged.
+        assert_eq!(labels[3], "zhipu");
+        // A provider-narrowed picker has no recents section: everything in it
+        // is already that provider.
+        let narrowed =
+            Dialog::models_with_needs_auth(&grouped(), None, Some("zhipu"), &[], &recents);
+        let narrowed = narrowed.list().expect("list");
+        assert!(
+            narrowed
+                .rows
+                .iter()
+                .all(|row| row.label.as_str() != "recent"),
+            "the narrowed picker stays a single provider"
+        );
     }
 
     #[test]
