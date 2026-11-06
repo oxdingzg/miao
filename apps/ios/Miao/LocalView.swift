@@ -5,6 +5,7 @@ struct LocalView: View {
     @Bindable var agent: LocalAgent
     @State private var draft = ""
     @State private var configuring = false
+    @State private var sessionsPresented = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -29,13 +30,15 @@ struct LocalView: View {
                     Button("完成") { focused = false }.accessibilityIdentifier("localDismissKeyboard")
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    if !agent.messages.isEmpty {
-                        Button("清空", role: .destructive) { agent.clear() }
-                    }
+                    Button { sessionsPresented = true } label: { Image(systemName: "list.bullet") }
+                        .accessibilityIdentifier("localSessions")
                 }
             }
             .sheet(isPresented: $configuring) {
                 LocalConfigView(agent: agent)
+            }
+            .sheet(isPresented: $sessionsPresented) {
+                SessionList(agent: agent)
             }
         }
     }
@@ -187,6 +190,57 @@ private struct LocalConfigView: View {
             .onAppear { mcp = agent.mcpURL ?? "" }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
             .sheet(item: $editing) { item in ProviderEditor(agent: agent, item: item) }
+        }
+    }
+}
+
+private struct SessionList: View {
+    @Bindable var agent: LocalAgent
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Button {
+                        agent.newSession()
+                        dismiss()
+                    } label: {
+                        Label("新会话", systemImage: "plus")
+                    }
+                    .accessibilityIdentifier("localNewSession")
+                }
+                Section {
+                    ForEach(agent.sessions) { item in
+                        Button {
+                            agent.selectSession(item.id)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.title.isEmpty ? "新会话" : item.title).foregroundStyle(.primary)
+                                    Text(item.updated.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if item.id == agent.currentID {
+                                    Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+                                }
+                            }
+                        }
+                    }
+                    .onDelete { offsets in
+                        for offset in offsets { agent.deleteSession(agent.sessions[offset].id) }
+                    }
+                } header: {
+                    Text("本机会话")
+                } footer: {
+                    Text("左滑删除。会话只保存在这台手机上。")
+                }
+            }
+            .navigationTitle("会话")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }
     }
 }

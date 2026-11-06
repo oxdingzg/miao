@@ -21,6 +21,13 @@ struct LocalMessage: Codable, Sendable, Equatable, Identifiable {
     var toolName: String?
 }
 
+struct LocalSession: Codable, Sendable, Equatable, Identifiable {
+    var id = UUID()
+    var title = ""
+    var messages: [LocalMessage] = []
+    var updated = Date()
+}
+
 @MainActor @Observable
 final class LocalAgent {
     private(set) var providers: [LocalProvider] = []
@@ -30,7 +37,22 @@ final class LocalAgent {
     private var mcpClient: Client?
     private var mcpTools: [Tool] = []
     private(set) var selectedID: UUID?
-    private(set) var messages: [LocalMessage] = []
+    private(set) var sessions: [LocalSession] = []
+    private(set) var currentID: UUID?
+
+    /// Transcript of the selected Session; mutating it keeps the Session's
+    /// ordering and its derived title in step.
+    var messages: [LocalMessage] {
+        get { sessions.first { $0.id == currentID }?.messages ?? [] }
+        set {
+            guard let index = sessions.firstIndex(where: { $0.id == currentID }) else { return }
+            sessions[index].messages = newValue
+            sessions[index].updated = Date()
+            if sessions[index].title.isEmpty, let first = newValue.first(where: { $0.role == .user }) {
+                sessions[index].title = String(first.text.prefix(30))
+            }
+        }
+    }
     private(set) var busy = false
     var error: String?
 
@@ -63,7 +85,8 @@ final class LocalAgent {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("LocalAgent/config.json")
     }
-    private var historyURL: URL { configURL.deletingLastPathComponent().appendingPathComponent("history.json") }
+    private var historyURL: URL { configURL.deletingLastPathComponent().appendingPathComponent("sessions.json") }
+    private var legacyHistoryURL: URL { configURL.deletingLastPathComponent().appendingPathComponent("history.json") }
 
     func save(_ next: LocalProvider) {
         if let index = providers.firstIndex(where: { $0.id == next.id }) { providers[index] = next }
@@ -138,19 +161,50 @@ final class LocalAgent {
             mcpURL = value.mcp
         }
         if let data = try? Data(contentsOf: historyURL),
-           let value = try? JSONDecoder().decode([LocalMessage].self, from: data) {
-            messages = value
+           let value = try? JSONDecoder().decode([LocalSession].self, from: data) {
+            sessions = value
+        } else if let data = try? Data(contentsOf: legacyHistoryURL),
+                  let value = try? JSONDecoder().decode([LocalMessage].self, from: data), !value.isEmpty {
+            let title = String(value.first(where: { $0.role == .user })?.text.prefix(30) ?? "")
+            sessions = [LocalSession(title: title, messages: value)]
+            try? FileManager.default.removeItem(at: legacyHistoryURL)
+            persist()
         }
+        currentID = sessions.first?.id
+        if sessions.isEmpty { newSession() }
     }
 
     private func persist() {
-        guard let data = try? JSONEncoder().encode(messages) else { return }
+        guard let data = try? JSONEncoder().encode(sessions) else { return }
         try? data.write(to: historyURL, options: [.atomic, .completeFileProtection])
     }
 
+    func newSession() {
+        stop()
+        let session = LocalSession()
+        sessions.insert(session, at: 0)
+        currentID = session.id
+        persist()
+    }
+
+    func selectSession(_ id: UUID) {
+        guard sessions.contains(where: { $0.id == id }) else { return }
+        stop()
+        currentID = id
+        persist()
+    }
+
+    func deleteSession(_ id: UUID) {
+        sessions.removeAll { $0.id == id }
+        if currentID == id { currentID = sessions.first?.id }
+        if sessions.isEmpty { newSession() }
+        persist()
+    }
+
     func clear() {
-        task?.cancel()
+        stop()
         messages = []
+        if let index = sessions.firstIndex(where: { $0.id == currentID }) { sessions[index].title = "" }
         persist()
     }
 
