@@ -1,4 +1,5 @@
 import Foundation
+import MCP
 import Observation
 
 /// On-device assistant: it talks to a provider the owner configured on the phone
@@ -23,6 +24,11 @@ struct LocalMessage: Codable, Sendable, Equatable, Identifiable {
 @MainActor @Observable
 final class LocalAgent {
     private(set) var providers: [LocalProvider] = []
+    /// Optional MCP server reachable over HTTP; stdio is unavailable on iOS.
+    private(set) var mcpURL: String?
+    var mcpError: String?
+    private var mcpClient: Client?
+    private var mcpTools: [Tool] = []
     private(set) var selectedID: UUID?
     private(set) var messages: [LocalMessage] = []
     private(set) var busy = false
@@ -51,7 +57,7 @@ final class LocalAgent {
 
     // MARK: persistence
 
-    private struct Stored: Codable { var providers: [LocalProvider]; var selected: UUID? }
+    private struct Stored: Codable { var providers: [LocalProvider]; var selected: UUID?; var mcp: String? }
 
     private var configURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -71,6 +77,30 @@ final class LocalAgent {
         store()
     }
 
+    func setMCP(_ raw: String) async {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        mcpURL = trimmed.isEmpty ? nil : trimmed
+        mcpClient = nil
+        mcpTools = []
+        store()
+        await refreshMCP()
+    }
+
+    func refreshMCP() async {
+        guard let raw = mcpURL, let url = URL(string: raw) else { return }
+        mcpError = nil
+        do {
+            let client = Client(name: "miao-local", version: "1")
+            _ = try await client.connect(transport: HTTPClientTransport(endpoint: url))
+            mcpTools = try await client.listTools().tools
+            mcpClient = client
+        } catch {
+            mcpTools = []
+            mcpClient = nil
+            mcpError = error.localizedDescription
+        }
+    }
+
     func remove(_ id: UUID) {
         providers.removeAll { $0.id == id }
         if selectedID == id { selectedID = providers.first?.id }
@@ -78,7 +108,7 @@ final class LocalAgent {
     }
 
     private func store() {
-        guard let data = try? JSONEncoder().encode(Stored(providers: providers, selected: selectedID)) else { return }
+        guard let data = try? JSONEncoder().encode(Stored(providers: providers, selected: selectedID, mcp: mcpURL)) else { return }
         try? FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
         try? data.write(to: configURL, options: [.atomic, .completeFileProtection])
@@ -105,6 +135,7 @@ final class LocalAgent {
            let value = try? JSONDecoder().decode(Stored.self, from: data) {
             providers = value.providers
             selectedID = value.selected ?? value.providers.first?.id
+            mcpURL = value.mcp
         }
         if let data = try? Data(contentsOf: historyURL),
            let value = try? JSONDecoder().decode([LocalMessage].self, from: data) {
@@ -180,7 +211,7 @@ final class LocalAgent {
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "model": provider.model,
             "messages": wireMessages(),
-            "tools": Self.tools,
+            "tools": toolDefinitions(),
             "stream": true,
         ])
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
@@ -270,6 +301,32 @@ final class LocalAgent {
         tool("fetch_url", "Fetch an HTTP(S) URL and return its text", ["url": "string"]),
     ]
 
+    /// Built-in tools plus whatever the configured MCP server advertises.
+    private func toolDefinitions() -> [[String: Any]] {
+        Self.tools + mcpTools.compactMap { tool in
+            guard let data = try? JSONEncoder().encode(tool.inputSchema),
+                  let schema = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            return ["type": "function",
+                    "function": ["name": tool.name,
+                                 "description": tool.description ?? "",
+                                 "parameters": schema]]
+        }
+    }
+
+    private func callMCP(_ call: ToolCall) async throws -> String {
+        guard let client = mcpClient else { return "MCP 未连接" }
+        let decoded = try? JSONDecoder().decode(Value.self, from: Data(call.arguments.utf8))
+        guard case .object(let arguments)? = decoded else { throw LocalAgentError.badResponse }
+        let (content, isError) = try await client.callTool(name: call.name, arguments: arguments)
+        let text = content.compactMap { item -> String? in
+            if case .text(let value, _, _) = item { return value }
+            return nil
+        }.joined(separator: "\n")
+        if isError == true { return "失败：\(text)" }
+        return text.isEmpty ? "（无文本返回）" : text
+    }
+
     private static func tool(_ name: String, _ description: String, _ properties: [String: String]) -> [String: Any] {
         [
             "type": "function",
@@ -291,13 +348,17 @@ final class LocalAgent {
         persist()
         let result: String
         do {
-            switch call.name {
-            case "list_files": result = try list(arguments["path"] as? String ?? ".")
-            case "read_file": result = try read(arguments["path"] as? String ?? "")
-            case "write_file": result = try write(arguments["path"] as? String ?? "",
-                                                  arguments["content"] as? String ?? "")
-            case "fetch_url": result = try await fetch(arguments["url"] as? String ?? "")
-            default: result = "未知工具：\(call.name)"
+            if mcpTools.contains(where: { $0.name == call.name }) {
+                result = try await callMCP(call)
+            } else {
+                switch call.name {
+                case "list_files": result = try list(arguments["path"] as? String ?? ".")
+                case "read_file": result = try read(arguments["path"] as? String ?? "")
+                case "write_file": result = try write(arguments["path"] as? String ?? "",
+                                                      arguments["content"] as? String ?? "")
+                case "fetch_url": result = try await fetch(arguments["url"] as? String ?? "")
+                default: result = "未知工具：\(call.name)"
+                }
             }
         } catch {
             result = "失败：\(message(error))"

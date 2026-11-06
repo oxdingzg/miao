@@ -48,6 +48,7 @@ remote = [
     # Textual needs iOS 18; MarkdownUI keeps the app's iOS 17 floor.
     ("markdownui", "https://github.com/gonzalezreal/swift-markdown-ui.git", "main", ["MarkdownUI"]),
     ("highlightr", "https://github.com/raspu/Highlightr.git", "master", ["Highlightr"]),
+    ("mcp", "https://github.com/modelcontextprotocol/swift-sdk.git", "main", ["MCP"]),
 ]
 remote_products = []
 for slug, url, branch, products in remote:

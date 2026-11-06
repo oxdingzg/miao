@@ -131,6 +131,7 @@ private struct LocalConfigView: View {
     @Bindable var agent: LocalAgent
     @Environment(\.dismiss) private var dismiss
     @State private var editing: LocalProvider?
+    @State private var mcp = ""
 
     var body: some View {
         NavigationStack {
@@ -164,13 +165,34 @@ private struct LocalConfigView: View {
                 Section {
                     Button { editing = LocalProvider() } label: { Label("添加服务商", systemImage: "plus") }
                 }
+                Section {
+                    TextField("MCP 服务地址（可选）", text: $mcp)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                        .accessibilityIdentifier("mcpURL")
+                    Button("保存并连接") { Task { await agent.setMCP(mcp) } }
+                        .disabled(mcp == (agent.mcpURL ?? ""))
+                    if let error = agent.mcpError {
+                        Text(error).font(.footnote).foregroundStyle(.red)
+                    } else if !agent.mcpURL.isNilOrEmpty {
+                        Text("已连接：\(agent.mcpURL ?? "")").font(.footnote).foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("MCP 工具")
+                } footer: {
+                    Text("填一个走 HTTP 的 MCP 服务器地址；iOS 上没有 stdio 传输。")
+                }
             }
             .navigationTitle("本机服务商")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear { mcp = agent.mcpURL ?? "" }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
             .sheet(item: $editing) { item in ProviderEditor(agent: agent, item: item) }
         }
     }
+}
+
+private extension Optional where Wrapped == String {
+    var isNilOrEmpty: Bool { (self ?? "").isEmpty }
 }
 
 private struct ProviderEditor: View {
