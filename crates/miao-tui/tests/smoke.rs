@@ -922,10 +922,11 @@ fn an_approval_is_answered_from_the_panel() {
 #[test]
 fn an_unconfigured_provider_takes_a_key_and_stores_it() {
     let mut harness = Harness::spawn_in_session("sign-in", "ses_a");
-    // `needs auth` is the tail the picker appends after the served models.
+    // `needs a key` is the detail the picker appends to a provider it serves no
+    // credential for; `needs auth` stays for one it serves no model of.
     harness.write(b"\x18m");
     assert!(
-        wait_for_plain(&harness, "needs auth", Duration::from_secs(3)),
+        wait_for_plain(&harness, "needs a key", Duration::from_secs(3)),
         "the picker never offered the unserved provider:\n{}",
         plain(&harness.text())
     );
