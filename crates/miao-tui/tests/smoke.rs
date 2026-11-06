@@ -451,6 +451,24 @@ fn boots_renders_panes_and_quits_on_ctrl_c() {
     harness.shutdown();
 }
 
+/// Quitting names the Session the operator was in and the command that opens it
+/// again. The screen used to come back with nothing on it, so the conversation
+/// they had just left had no name they could type.
+#[test]
+fn quitting_names_the_session_and_how_to_continue_it() {
+    let mut harness = Harness::spawn_in_session("exit-epilogue", "ses_a");
+    harness.write(b"\x03");
+    let status = wait_exit(&mut harness.child, Duration::from_secs(5))
+        .expect("process did not exit after Ctrl+C");
+    assert!(status.success(), "Ctrl+C must exit 0, got {status:?}");
+    assert!(
+        wait_for(&harness, "Continue  miao -s ses_a", Duration::from_secs(5)),
+        "the exit epilogue never named the Session:\n{}",
+        plain(&harness.text())
+    );
+    harness.shutdown();
+}
+
 #[test]
 fn tag_sets_the_label_from_its_argument() {
     let mut harness = Harness::spawn_in_session("tag", "ses_b");

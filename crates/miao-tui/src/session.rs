@@ -840,6 +840,19 @@ fn text(value: Option<&Value>) -> Option<String> {
         .map(str::to_string)
 }
 
+/// What the operator reads once the screen comes back: the Session they were in
+/// and the command that opens it again. Quitting used to leave no way to name
+/// the Session except scrolling back through the transcript, and `--session`
+/// answers only if the identifier is written down.
+pub fn epilogue(session: &SessionSummary) -> String {
+    let title = session.title.as_deref().unwrap_or_default().trim();
+    let head = match title.is_empty() {
+        true => format!("  Session   {}", session.id),
+        false => format!("  Session   {title}\n  ID        {}", session.id),
+    };
+    format!("{head}\n  Continue  miao -s {}\n", session.id)
+}
+
 /// The drain's own error text, which `stop_failure` carries. A payload without
 /// one must not render an empty block.
 fn failure_of(seq: u64, data: &Value) -> Option<(u64, String)> {
@@ -884,6 +897,26 @@ mod tests {
         assert_eq!(ids, ["ses_b", "ses_a"]);
         assert_eq!(rows[0].label(), "newer");
         assert_eq!(rows[0].directory.as_deref(), Some("/work/miao"));
+    }
+
+    /// Quitting names the Session again. It used to print nothing, so the only
+    /// way back into the conversation was remembering an identifier that was
+    /// never shown.
+    #[test]
+    fn the_epilogue_names_the_session_and_how_to_continue_it() {
+        let titled =
+            SessionSummary::from_snapshot(&snapshot("ses_a", "修复退出提示", 10, None, None))
+                .expect("row");
+        assert_eq!(
+            epilogue(&titled),
+            "  Session   修复退出提示\n  ID        ses_a\n  Continue  miao -s ses_a\n"
+        );
+        let untitled =
+            SessionSummary::from_snapshot(&snapshot("ses_b", "   ", 10, None, None)).expect("row");
+        assert_eq!(
+            epilogue(&untitled),
+            "  Session   ses_b\n  Continue  miao -s ses_b\n"
+        );
     }
 
     #[test]

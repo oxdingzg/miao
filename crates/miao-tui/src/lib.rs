@@ -118,7 +118,7 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
     let mut terminal = terminal::init(preferences)?;
     terminal::install_panic_hook();
     let (bus, mut events) = event::bus();
-    runtime.block_on(drive(
+    let result = runtime.block_on(drive(
         &mut terminal,
         &mut app,
         &mut events,
@@ -126,7 +126,17 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         launch,
         preferences,
         termination,
-    ))
+    ));
+    // Hand the screen back before writing the epilogue. The restore guard drops
+    // after this function returns, so anything printed earlier would have landed
+    // on the alternate screen that was about to be discarded, which is exactly
+    // why quitting showed no session identifier at all.
+    drop(terminal);
+    terminal::restore();
+    if let Some(session) = app.session.as_ref() {
+        print!("{}", session::epilogue(session));
+    }
+    result
 }
 
 async fn drive(
