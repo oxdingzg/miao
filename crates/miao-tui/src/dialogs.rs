@@ -99,6 +99,23 @@ impl ModelInfo {
         }
     }
 
+    /// What the status strip names: the model, the provider serving it, the
+    /// wire protocol and the variant. The picker leaves the provider out
+    /// because its rows already sit under a provider header; the strip has no
+    /// header, and `deepseek-v4-1-flash-261017 · openai-chat` named the
+    /// transport without ever saying which provider answered.
+    pub fn identity(&self) -> String {
+        let mut parts = vec![self.model.clone()];
+        if let Some(provider) = &self.provider {
+            parts.push(provider.clone());
+        }
+        parts.push(self.protocol.clone());
+        if let Some(variant) = &self.variant {
+            parts.push(variant.clone());
+        }
+        parts.join(" · ")
+    }
+
     /// Distinct providers the catalog names, in first-appearance order. The
     /// ctrl+o filter list and the picker's groups share it.
     pub fn providers(models: &[ModelInfo]) -> Vec<String> {

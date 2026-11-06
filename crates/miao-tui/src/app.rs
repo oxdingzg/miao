@@ -3137,7 +3137,7 @@ impl App {
             self.models
                 .iter()
                 .find(|info| info.model == model)
-                .map(ModelInfo::label)
+                .map(ModelInfo::identity)
         });
         self.shell.status.model = self
             .session
@@ -4691,15 +4691,15 @@ mod tests {
         app.models = vec![ModelInfo {
             protocol: "openai-chat".into(),
             model: "glm-5.3-flash".into(),
-            route_id: None,
+            route_id: Some("xiaomi/glm-5.3-flash".into()),
             variant: None,
-            provider: None,
+            provider: Some("xiaomi".into()),
         }];
         app.update_status();
         assert_eq!(
             app.shell.status.model.as_deref(),
-            Some("glm-5.3-flash · openai-chat"),
-            "the strip names the provider as well, like a Session pin does"
+            Some("glm-5.3-flash · xiaomi · openai-chat"),
+            "the strip names the provider, not only the transport"
         );
         assert_ne!(
             app.shell.status.model.as_deref(),
