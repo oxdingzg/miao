@@ -121,6 +121,10 @@ pub enum Request {
     },
     /// Read the engine's model catalog for the model dialog.
     Catalog,
+    /// Restart the engine so it re-prepares its routes and credentials, then
+    /// reload everything that restart can change. A provider key stored while
+    /// the engine runs is otherwise invisible: routes are built at startup.
+    ReloadProviderRoutes,
     SelectModel {
         session_id: String,
         binding: Value,
@@ -355,6 +359,12 @@ impl Handle {
 
     pub fn catalog(&self) {
         let _ = self.tx.send(Request::Catalog);
+    }
+
+    /// Ask for a new engine process so a provider key stored a moment ago can
+    /// serve its models.
+    pub fn reload_provider_routes(&self) {
+        let _ = self.tx.send(Request::ReloadProviderRoutes);
     }
 
     pub fn select_model(&self, session_id: &str, binding: Value) {
@@ -870,6 +880,13 @@ async fn run(
                     }
                 };
                 match request {
+                // The engine keeps the routes it built at startup, so a provider
+                // key stored afterwards needs a new engine process before its
+                // models can be served. Restarting is a `connection` operation,
+                // not a client request, so this arm reads no live client.
+                Request::ReloadProviderRoutes => {
+                    reload_provider_routes(&mut connection, &bus, &mut open).await
+                }
                 Request::RefreshSessions => refresh_sessions(client, &bus).await,
                 Request::Recall {
                     session_id,
@@ -1799,6 +1816,44 @@ fn due_in(due_at_ms: Option<u64>) -> String {
         60..=3599 => format!("in {}m", seconds / 60),
         3600..=86_399 => format!("in {}h", seconds / 3600),
         _ => format!("in {}d", seconds / 86_400),
+    }
+}
+
+/// Replace the engine process and reload what only a restart can change.
+///
+/// The engine builds its model routes and credential sources at startup, from
+/// the product shim's plan. A provider key stored while it runs therefore has
+/// no route to serve, and the operator's only remaining step used to be
+/// restarting miao itself. Restarting just this engine re-runs that plan, and
+/// the replay cursor keeps the open Session gapless across the respawn.
+async fn reload_provider_routes(connection: &mut Connection, bus: &Bus, open: &mut Option<Opened>) {
+    if !connection.restart().await {
+        bus.send(AppEvent::ActionFailed(
+            "this engine cannot rebuild its routes; restart miao to load the stored key".into(),
+        ));
+        return;
+    }
+    let client = match connection.connect().await {
+        Ok(client) => client,
+        Err(error) => {
+            bus.send(AppEvent::EngineFailure(format!(
+                "engine restart failed: {error}"
+            )));
+            return;
+        }
+    };
+    // The new process answers with the routes its plan rebuilt, so both
+    // catalogs are worth re-reading even when the answer is unchanged.
+    if let Ok(value) = client.command("model_catalog").await {
+        bus.send(AppEvent::Accounts(AccountInfo::catalog(&value)));
+        bus.send(AppEvent::Models(ModelInfo::catalog(&value)));
+    }
+    if let Ok(value) = client.command("provider_catalog").await {
+        bus.send(AppEvent::ProviderCatalog(value));
+    }
+    refresh_sessions(client, bus).await;
+    if let Some(state) = open.as_mut() {
+        project(client, bus, state).await;
     }
 }
 

@@ -1029,6 +1029,23 @@ impl Connection {
         Ok(client)
     }
 
+    /// Stop the engine so the next request starts a fresh process.
+    ///
+    /// The engine's spawn is the product shim, which re-prepares routes and
+    /// credentials before it runs the engine, so a restart is what makes a
+    /// newly stored provider key usable. An in-process engine has no child to
+    /// respawn and keeps the routes it started with, so this reports whether a
+    /// restart is possible at all.
+    pub async fn restart(&mut self) -> bool {
+        if self.embedded {
+            return false;
+        }
+        if let Some(client) = self.client.take() {
+            client.close().await;
+        }
+        true
+    }
+
     pub fn client(&self) -> Option<&EngineClient> {
         self.client.as_ref()
     }
