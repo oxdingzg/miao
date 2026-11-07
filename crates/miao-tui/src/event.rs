@@ -168,10 +168,19 @@ impl Bus {
     /// Queue an event, dropping it if the render loop is far enough behind.
     ///
     /// Dropping is safe for events that carry the *latest* state rather than a
-    /// transition: a newer projection supersedes an older one, and a status
-    /// frame is replaced by the next. Events the operator cannot recover from
-    /// — a keystroke, a failed prompt, an engine failure — are awaited instead,
-    /// because losing them would change what the answer means.
+    /// transition and that another event will carry again: a status frame is
+    /// replaced by the next, and a catalog row arrives again on the following
+    /// refresh. Events the operator cannot recover from — a keystroke, a failed
+    /// prompt, an engine failure — are awaited instead, because losing them
+    /// would change what the answer means.
+    ///
+    /// A Session projection is awaited for that same reason even though it
+    /// carries the latest state: the projection it supersedes is already gone,
+    /// so dropping it is not coalescing, it is losing the only copy. The last
+    /// projection of a turn is the one most likely to meet a full queue — a
+    /// finished run has no later frame to trigger another — and it is the one
+    /// that would have cleared the queue count, the pending prompts and
+    /// `active_run`.
     pub fn send(&self, event: AppEvent) {
         match self.tx.try_send(event) {
             Ok(()) => {}
@@ -225,6 +234,7 @@ fn requires_delivery(event: &AppEvent) -> bool {
             | AppEvent::ShellFailed { .. }
             | AppEvent::Attention { .. }
             | AppEvent::Provider(_)
+            | AppEvent::SessionOpened { .. }
     )
 }
 
@@ -266,6 +276,7 @@ pub fn from_terminal(event: TerminalEvent) -> Option<AppEvent> {
 #[cfg(test)]
 mod backpressure_tests {
     use super::{bus, AppEvent, BUS_CAPACITY};
+    use crate::session::{SessionState, Transcript};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     /// A producer that outruns the loop must not grow the heap without bound.
@@ -335,5 +346,46 @@ mod backpressure_tests {
             }
         }
         assert!(saw_key, "a keystroke was dropped instead of delivered");
+    }
+
+    /// A Session projection is the only event that carries the Session's own
+    /// state — the queue count, the pending prompts, `active_run` — so it
+    /// cannot be coalesced away: the projection it supersedes is already gone,
+    /// and the last one of a turn has no later frame to replace it. Losing that
+    /// one left the footer reporting `queued (1)` for a prompt the engine had
+    /// already promoted and answered.
+    #[tokio::test]
+    async fn a_session_projection_is_delivered_even_when_the_queue_is_full() {
+        let (bus, mut rx) = bus();
+        for _ in 0..BUS_CAPACITY {
+            bus.send(AppEvent::Notice("filler".into()));
+        }
+        assert_eq!(
+            bus.dropped(),
+            0,
+            "filling the queue must not drop notices yet"
+        );
+        bus.send(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState::default()),
+        });
+        // The projection waits for a slot rather than being discarded, so it
+        // arrives behind whatever still fits.
+        let projection = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                match rx.recv().await {
+                    Some(event @ AppEvent::SessionOpened { .. }) => return event,
+                    Some(_) => {}
+                    None => panic!("the bus closed before the projection arrived"),
+                }
+            }
+        })
+        .await;
+        assert!(
+            projection.is_ok(),
+            "the Session projection was dropped instead of delivered"
+        );
+        assert_eq!(bus.dropped(), 0, "a projection was counted as dropped");
     }
 }
