@@ -40,6 +40,9 @@ jobs:
         with:
           workspaces: crates/miao-cli
 
+      - name: Format
+        run: cargo fmt --check
+
       - name: Clippy
         # Only this crate is linted; the engine and the TUI are dependencies here,
         # so their warnings compile through instead of failing the product build.

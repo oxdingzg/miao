@@ -211,8 +211,11 @@ entry points so a work-in-progress change can never break the tool you rely on.
   `curl -fsSL https://raw.githubusercontent.com/oxdingzg/miao/main/install | bash`. It
   lands at `~/.miao/bin/miao`, runs channel `latest` (DB `miao.db`), and
   auto-updates from `oxdingzg/miao` releases in the background.
-- `miao-dev` runs from source for fast iteration. It is the only entry point that
-  reflects uncommitted edits (channel `local`, DB `miao-local.db`).
+- `miao-dev` runs the Rust binary from source for fast iteration: `bun run dev`
+  (that is, `cargo run --manifest-path crates/miao-cli/Cargo.toml`) on channel
+  `local` with DB `miao-local.db`. It is the only entry point that reflects
+  uncommitted edits. There is no TypeScript product entry any more; the
+  TypeScript workspace now only builds the desktop app and its sidecar.
 - `miao-preview` is a compiled build of the current checkout, installed by
   `./script/install-local.sh --binary /path/to/prebuilt/miao` after building on a build host (`--single`). It smoke-tests
   `--version`, installs a versioned binary under `~/.local/share/miao/bin`, and
