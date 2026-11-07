@@ -63,7 +63,7 @@ pub fn lines(
         "write" | "edit" | "apply_patch" => {
             file(&mut out, tool, name, &input, files, raw, theme, fold)
         }
-        "todowrite" => todos(&mut out, tool, &input, result.as_ref(), raw, theme, fold),
+        "todowrite" => todos(&mut out, tool, result.as_ref(), raw, theme, fold),
         "question" => question(&mut out, tool, &input, result.as_ref(), theme),
         "webfetch" => inline(&mut out, tool, "WebFetch", &text(&input, "url"), theme),
         "websearch" => inline(&mut out, tool, "WebSearch", &text(&input, "query"), theme),
@@ -873,7 +873,6 @@ fn diff_color(marker: char, theme: &Theme) -> Color {
 fn todos(
     out: &mut Vec<Line<'static>>,
     tool: &ToolPart,
-    input: &Value,
     result: Option<&Value>,
     raw: Option<&str>,
     theme: &Theme,
@@ -881,18 +880,6 @@ fn todos(
 ) {
     let limit = fold.limit(TOOL_PREVIEW_LINES);
     let palette = theme.palette;
-    let list = input
-        .get("todos")
-        .and_then(Value::as_array)
-        .cloned()
-        .or_else(|| {
-            result
-                .and_then(|value| value.get("value"))
-                .and_then(|value| value.get("todos"))
-                .and_then(Value::as_array)
-                .cloned()
-        })
-        .unwrap_or_default();
     out.push(header(tool, "todowrite", "", theme));
     if tool.failed {
         preview(
@@ -904,7 +891,21 @@ fn todos(
         );
         return;
     }
-    for todo in &list {
+    // The list the engine recorded, never the one the model asked for. The
+    // result carries the applied list, while the input is what the call meant
+    // to write — and while the call is still in flight that input is a partial
+    // stream that would paint as the Session's plan before the engine has one.
+    // The sidebar paints the recorded list, so a row painted from the input
+    // disagreed with it every time the plan moved: same six items, different
+    // statuses, in the two places an operator reads the plan.
+    let Some(list) = result
+        .and_then(|value| value.get("value"))
+        .and_then(|value| value.get("todos"))
+        .and_then(Value::as_array)
+    else {
+        return;
+    };
+    for todo in list {
         let status = todo
             .get("status")
             .and_then(Value::as_str)
@@ -1577,20 +1578,44 @@ mod tests {
     }
 
     #[test]
-    fn todos_render_with_status_glyphs_and_dependencies() {
+    fn todos_render_the_records_the_engine_wrote_back() {
+        // The row shows the list the engine recorded, so it can never disagree
+        // with the sidebar's copy: the call's input is what the model meant to
+        // write, and by the time the row settles the engine has the applied
+        // list.
         let part = tool(
             "todowrite",
             json!({"todos": [
+                {"id": "1", "content": "write code", "status": "pending"},
+                {"id": "2", "content": "test it", "status": "pending"}
+            ]}),
+            Some(json!({"kind": "todos", "revision": 9, "value": {"todos": [
                 {"id": "1", "content": "write code", "status": "completed"},
                 {"id": "2", "content": "test it", "status": "in_progress", "depends_on": ["1"]}
-            ]}),
+            ]}})),
+            false,
+        );
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
+        assert_eq!(rendered[0], "✓ todowrite");
+        assert!(rendered.contains(&"  [✓] 1: write code".to_string()));
+        assert!(rendered.contains(&"  [•] 2: test it ← 1".to_string()));
+        // The input said both were pending; the painted row is the applied list.
+        assert!(!rendered.iter().any(|line| line.contains("  [ ] 1")));
+    }
+
+    #[test]
+    fn a_todo_write_still_in_flight_paints_only_its_header() {
+        // A partial stream is not the Session's plan: until the engine answers,
+        // the sidebar keeps painting the recorded list, so the row must not
+        // paint a half-written one beside it.
+        let part = tool(
+            "todowrite",
+            json!({"todos": [{"id": "1", "content": "write code", "status": "completed"}]}),
             None,
             false,
         );
         let rendered = rendered(&lines(&part, None, &theme(), false, None));
-        assert_eq!(rendered[0], "· todowrite");
-        assert!(rendered.contains(&"  [✓] 1: write code".to_string()));
-        assert!(rendered.contains(&"  [•] 2: test it ← 1".to_string()));
+        assert_eq!(rendered, vec!["· todowrite".to_string()]);
     }
 
     #[test]
