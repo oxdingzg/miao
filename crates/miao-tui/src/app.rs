@@ -923,6 +923,7 @@ impl App {
                 }
                 self.state = *state;
                 self.stream_ended = None;
+                self.refresh_suggestion();
                 // A run that is already over settles the calls it left
                 // unanswered, so a finished transcript stops showing rows that
                 // only look like they are still running.
@@ -3521,6 +3522,28 @@ impl App {
         self.shell.title.set_status(Some(status));
     }
 
+    /// Offer the Session's next runnable todo in the empty composer.
+    ///
+    /// The engine's continuation reads the same checklist, so this names the
+    /// work the next turn would pick up instead of inventing a suggestion. Only
+    /// `pending` and `in_progress` count as runnable: `waiting` and `blocked`
+    /// need an external event or a human decision, and `completed` is done.
+    /// Nothing is offered while a turn runs or prompts are queued — then the
+    /// composer belongs to steering the work in flight.
+    fn refresh_suggestion(&mut self) {
+        let next = match self.state.active_run.is_some() || self.state.pending > 0 {
+            true => None,
+            false => self
+                .state
+                .todos
+                .iter()
+                .find(|todo| matches!(todo.status.as_str(), "pending" | "in_progress"))
+                .map(|todo| todo.content.trim().to_string())
+                .filter(|content| !content.is_empty()),
+        };
+        self.shell.composer.set_suggestion(next);
+    }
+
     /// `--continue` opens the Session with the newest `updated_at_ms`. The list
     /// sorts a pin ahead of recency, but a pin is a view preference rather than
     /// an instruction to resume, and the catalog also carries archived
@@ -3791,6 +3814,7 @@ impl App {
         self.draft = None;
         self.committed = 0;
         self.shell.set_draft(&[]);
+        self.refresh_suggestion();
         self.usage = None;
         self.shell.set_usage(None);
         self.pending_accounts = false;
@@ -5263,6 +5287,63 @@ mod tests {
             app.shell.composer.phase.is_none(),
             "an idle Session keeps the composer title quiet"
         );
+    }
+
+    /// The settled Session offers its next runnable todo in the composer, and
+    /// stops offering it the moment a turn owns the composer again.
+    #[test]
+    fn a_settled_turn_offers_the_next_runnable_todo() {
+        let mut app = session_app();
+        let todos = vec![
+            crate::session::TodoView {
+                content: "write the parser".into(),
+                status: "completed".into(),
+            },
+            crate::session::TodoView {
+                content: "  cover it with tests  ".into(),
+                status: "pending".into(),
+            },
+        ];
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState {
+                todos: todos.clone(),
+                ..SessionState::default()
+            }),
+        });
+        assert_eq!(
+            app.shell.composer.suggestion.as_deref(),
+            Some("cover it with tests")
+        );
+
+        // A run in flight takes the composer back: a new task offered under a
+        // turn the operator is steering would invite a prompt they did not mean.
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState {
+                todos: todos.clone(),
+                active_run: Some("run-1".into()),
+                ..SessionState::default()
+            }),
+        });
+        assert_eq!(app.shell.composer.suggestion, None);
+
+        // `waiting` and `blocked` need an outside event or a human decision, so
+        // no runnable work is left to offer.
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState {
+                todos: vec![crate::session::TodoView {
+                    content: "land the release".into(),
+                    status: "waiting".into(),
+                }],
+                ..SessionState::default()
+            }),
+        });
+        assert_eq!(app.shell.composer.suggestion, None);
     }
 
     /// A run can be admitted and moving before any `provider.*` frame arrives.
