@@ -1006,12 +1006,17 @@ impl App {
                 self.swap_draft(summary.as_ref().map(|session| session.id.as_str()));
                 self.shell.set_goal(state.goal.as_ref());
                 self.shell.set_todos(&state.todos);
+                // A projection of the Session already on screen is a refresh,
+                // not an arrival. The background re-projection after a
+                // transport resync or a quiet-frames recovery arrives as the
+                // same event, so only a different Session may reset how the
+                // transcript is read.
+                let switched = self.session.as_ref().map(|session| session.id.as_str())
+                    != summary.as_ref().map(|session| session.id.as_str());
                 // The TS prompt re-rolls its placeholder example when a
                 // different Session opens; the same Session refreshing must
                 // not change it.
-                if self.session.as_ref().map(|session| session.id.as_str())
-                    != summary.as_ref().map(|session| session.id.as_str())
-                {
+                if switched {
                     self.shell.composer.reroll_placeholder();
                 }
                 self.session = summary;
@@ -1121,8 +1126,12 @@ impl App {
                 self.shell.set_transcript(&transcript);
                 self.shell.set_pending_prompts(&self.state.pending_prompts);
                 // Opening a Session shows its newest turn: `follow` survives
-                // from whatever was scrolled before.
-                self.shell.follow_transcript();
+                // from whatever was scrolled before. A refresh keeps it, so a
+                // transcript scrolled into history stays there instead of
+                // snapping to the newest row on the next projection.
+                if switched {
+                    self.shell.follow_transcript();
+                }
                 self.screen = Screen::Session;
                 self.sync_panel();
                 self.update_status();
@@ -3116,11 +3125,23 @@ impl App {
         // remain deliberate detaches.
         let streaming = self.state.active_run.is_some();
         if prompt_empty && action(keybinds::Action::PageUp) {
-            self.shell.scroll_transcript(-5);
+            let page = self.shell.transcript_page();
+            self.shell.scroll_transcript(-page);
             return;
         }
         if prompt_empty && action(keybinds::Action::PageDown) {
-            self.shell.scroll_transcript(5);
+            let page = self.shell.transcript_page();
+            self.shell.scroll_transcript(page);
+            return;
+        }
+        // Home and End name the ends of the history outright: reading a long
+        // run should not require paging towards either one.
+        if prompt_empty && key.code == KeyCode::Home {
+            self.shell.scroll_transcript_to_start();
+            return;
+        }
+        if prompt_empty && key.code == KeyCode::End {
+            self.shell.follow_transcript();
             return;
         }
         if prompt_empty && !streaming && action(keybinds::Action::LineUp) {
@@ -3862,7 +3883,7 @@ impl App {
         // from output that has scrolled out of sight.
         if !self.shell.following() {
             hints.push(StatusHint {
-                text: "not following · page down to resume".to_string(),
+                text: "not following · end to resume".to_string(),
                 warning: false,
             });
         }
@@ -4625,6 +4646,64 @@ mod tests {
             app.shell.following(),
             "scrolling back to the visible tail follows again instead of              needing an overshoot past it"
         );
+    }
+
+    #[test]
+    fn a_background_reprojection_keeps_a_scrolled_transcript_where_it_is() {
+        // The loop re-projects the Session it already shows after a transport
+        // resync, a dirty refresh, or a quiet-frames recovery, and each one
+        // arrives as `SessionOpened`. Re-attaching the transcript there pulled
+        // a reader back to the newest row every few seconds, which is what made
+        // reading history a race against the next projection.
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_a", 1)),
+            transcript: Box::new(forty_messages()),
+            state: Box::new(SessionState::default()),
+        });
+        draw(&mut app);
+        app.handle(wheel(MouseEventKind::ScrollUp));
+        draw(&mut app);
+        let detached = app.shell.transcript_scroll();
+        assert!(!app.shell.following(), "the wheel detaches");
+
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_a", 1)),
+            transcript: Box::new(forty_messages()),
+            state: Box::new(SessionState::default()),
+        });
+        draw(&mut app);
+        assert!(!app.shell.following(), "a refresh must not re-attach");
+        assert_eq!(
+            app.shell.transcript_scroll(),
+            detached,
+            "and the painted rows stay where the operator left them"
+        );
+    }
+
+    #[test]
+    fn a_page_key_moves_a_viewport_and_home_and_end_name_the_ends() {
+        // A fixed five rows is unreadable on a tall window and no page at all
+        // in a short one; the page is the viewport the operator is looking at.
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(forty_messages()),
+            state: Box::new(SessionState::default()),
+        });
+        draw(&mut app);
+        let tail = app.shell.transcript_scroll();
+        app.handle(key(KeyCode::PageUp, KeyModifiers::NONE));
+        let page = tail - app.shell.transcript_scroll();
+        assert!(page > 3, "one page covers the viewport, moved {page}");
+        assert!(!app.shell.following(), "a page up reads history");
+
+        app.handle(key(KeyCode::Home, KeyModifiers::NONE));
+        assert_eq!(app.shell.transcript_scroll(), 0, "home is the oldest row");
+
+        app.handle(key(KeyCode::End, KeyModifiers::NONE));
+        draw(&mut app);
+        assert!(app.shell.following(), "end returns to the newest row");
     }
 
     /// Paint one frame. The tail offset is computed while rendering, so a wheel
@@ -6010,37 +6089,31 @@ mod tests {
     }
 
     #[test]
-    fn opening_a_session_follows_its_newest_turn_again() {
+    fn opening_another_session_follows_its_newest_turn_again() {
         let mut app = session_app();
         app.handle(AppEvent::SessionOpened {
-            summary: None,
+            summary: Some(summary("ses_a", 1)),
             transcript: Box::new(Transcript::default()),
             state: Box::new(SessionState::default()),
         });
         assert!(app.shell.following(), "a fresh Session follows");
         // Scrolling up detaches, which is how reading history works. It needs
         // rows to scroll through: an empty transcript is always at the bottom.
-        let mut long = Transcript::default();
-        for index in 0..40 {
-            long.entries.push(crate::session::Entry::User {
-                text: format!("message {index}"),
-                seq: index as u64 + 1,
-            });
-        }
         app.handle(AppEvent::SessionOpened {
-            summary: None,
-            transcript: Box::new(long),
+            summary: Some(summary("ses_a", 1)),
+            transcript: Box::new(forty_messages()),
             state: Box::new(SessionState::default()),
         });
         app.shell.scroll_transcript(-3);
         assert!(!app.shell.following(), "scrolling up detaches");
-        // Opening a Session must not inherit that: it shows the newest turn.
+        // Another Session must not inherit that: it opens at the newest turn.
+        // Only the refresh of `ses_a` above keeps the operator's scroll.
         app.handle(AppEvent::SessionOpened {
-            summary: None,
+            summary: Some(summary("ses_b", 2)),
             transcript: Box::new(Transcript::default()),
             state: Box::new(SessionState::default()),
         });
-        assert!(app.shell.following(), "opening follows again");
+        assert!(app.shell.following(), "another Session follows again");
     }
 
     #[test]
