@@ -102,6 +102,7 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
     app.configure_scroll(config.scroll_speed, config.scroll_acceleration);
     app.configure_prompt_width(config.prompt_max_width);
     app.configure_leader_timeout(config.leader_timeout_ms);
+    app.configure_animations(config.animations);
     let preferences = terminal::Preferences {
         mouse: config.mouse,
         cursor: config.cursor,

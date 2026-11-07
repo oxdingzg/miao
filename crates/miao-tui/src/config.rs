@@ -48,6 +48,9 @@ pub struct Config {
     /// How long an armed leader waits for its chord key, in milliseconds. The
     /// TypeScript host calls this `leader_timeout` and defaults it to 2000.
     pub leader_timeout_ms: u64,
+    /// Painted idle animation, like the landing banner's shimmer. Off keeps
+    /// the landing screen static and never wakes the loop for a frame.
+    pub animations: bool,
     /// `None` leaves the terminal's own cursor shape alone.
     pub cursor: Option<Cursor>,
     /// `keybinds` entries, flattened to action name → strokes. `None` means the
@@ -96,6 +99,7 @@ impl Default for Config {
             scroll_speed: 3.0,
             scroll_acceleration: false,
             leader_timeout_ms: 2000,
+            animations: true,
             cursor: None,
             keybinds: BTreeMap::new(),
             prompt_max_width: PromptWidth::default(),
@@ -243,6 +247,15 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
             Some(timeout) if timeout > 0 => config.leader_timeout_ms = timeout,
             _ => warnings.push(format!(
                 "tui config {}: leader_timeout must be a positive number of milliseconds, ignoring",
+                path.display()
+            )),
+        }
+    }
+    if let Some(animations) = field("animations") {
+        match animations.as_bool() {
+            Some(animations) => config.animations = animations,
+            None => warnings.push(format!(
+                "tui config {}: animations must be a boolean, ignoring",
                 path.display()
             )),
         }
@@ -556,6 +569,17 @@ mod tests {
         assert!(config.sounds.is_empty());
         assert!(Config::default().mouse);
         assert!(Config::default().cursor.is_none());
+    }
+
+    #[test]
+    fn animations_off_reach_the_config_and_bad_values_warn() {
+        let dir = temp_dir("animations");
+        let (config, warnings) = merge_at(r#"{"animations": false}"#, &dir);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(!config.animations);
+        let (config, warnings) = merge_at(r#"{"animations": "nope"}"#, &dir);
+        assert!(config.animations, "a bad value keeps the default");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
     }
 
     #[test]
