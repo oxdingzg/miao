@@ -3441,6 +3441,7 @@ async fn execute(
                             inner.store.record(session,"provider.retry",json!({
                                 "run_id":run,"step":step,
                                 "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
+                                "cause":delta["cause"],"source":delta["source"],
                                 "delay_ms":delta["delay_ms"],
                             })).await?;
                         } else if delta["kind"] == "provider.attempt" {
@@ -3468,6 +3469,7 @@ async fn execute(
                     inner.store.record(session, "provider.retry", json!({
                         "run_id":run,"step":step,
                         "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
+                        "cause":delta["cause"],"source":delta["source"],
                         "delay_ms":delta["delay_ms"],
                     })).await?;
                 } else if delta["kind"] == "provider.attempt" {
@@ -3495,7 +3497,8 @@ async fn execute(
                     // recovered here looks like it failed outright.
                     let replay = json!({
                         "run_id":run,"step":step,"scope":"turn","attempt":attempts,
-                        "reason":error.to_string(),"status":null,"delay_ms":0,
+                        "reason":error.to_string(),"status":null,
+                        "cause":"transport","source":"immediate","delay_ms":0,
                     });
                     inner
                         .store

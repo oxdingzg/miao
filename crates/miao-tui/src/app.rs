@@ -81,17 +81,46 @@ fn routes_need_restart(refresh: &Option<Result<usize, String>>) -> bool {
     }
 }
 
-/// The provider's failure, on one status line. Bound it here rather than in
-/// every caller: a gateway body can be a whole HTML page.
-fn retry_detail(reason: Option<&str>) -> String {
-    let Some(reason) = reason.map(str::trim).filter(|reason| !reason.is_empty()) else {
-        return String::new();
+/// The provider's failure, on one status line: which wait this is, how long it
+/// lasts and where that pause came from, then the provider's own words. The
+/// engine names the class because a 429 is a vendor rate limit, a spent
+/// balance or a gateway's own throttle, and the pause source because a delay
+/// the provider asked for and one this runner guessed read the same and mean
+/// different things. Bound the words here rather than in every caller: a
+/// gateway body can be a whole HTML page.
+fn retry_detail(frame: &Value) -> String {
+    let cause = match frame.get("cause").and_then(Value::as_str) {
+        Some("vendor_rate_limit") => Some("rate limit"),
+        Some("account_quota") => Some("account quota"),
+        Some("upstream") => Some("upstream error"),
+        Some("transport") => Some("network"),
+        _ => None,
     };
-    let mut clipped: String = reason.chars().take(96).collect();
-    if reason.chars().count() > 96 {
-        clipped.push('…');
-    }
-    clipped
+    let pause = frame.get("delay_ms").and_then(Value::as_u64).map(|ms| {
+        let source = match frame.get("source").and_then(Value::as_str) {
+            Some("provider") => "from Retry-After",
+            Some("immediate") => "immediate replay",
+            _ => "local backoff",
+        };
+        format!("{} {source}", crate::pane::duration_ms(ms))
+    });
+    let reason = frame
+        .get("reason")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|reason| !reason.is_empty())
+        .map(|reason| {
+            let mut clipped: String = reason.chars().take(96).collect();
+            if reason.chars().count() > 96 {
+                clipped.push('…');
+            }
+            clipped
+        });
+    [cause.map(str::to_string), pause, reason]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<String>>()
+        .join(" · ")
 }
 
 impl Live {
@@ -3415,7 +3444,7 @@ impl App {
             }
             "provider.retry" => LivePhase::Retrying {
                 attempt: frame.get("attempt").and_then(Value::as_u64).unwrap_or(0) + 1,
-                detail: retry_detail(frame.get("reason").and_then(Value::as_str)),
+                detail: retry_detail(&frame),
             },
             // An attempt announcement proves the request is in flight, even
             // before the first heartbeat or right after a previous step.
@@ -6096,6 +6125,46 @@ mod tests {
         app.update_status();
         let status = app.shell.title.status().unwrap_or_default();
         assert!(status.contains("余额不足"), "{status}");
+    }
+
+    /// AUTH-04: the status line must say which wait a retry is — a vendor
+    /// rate limit or a spent account quota arrive as the same 429 — and who
+    /// chose the pause, or the operator cannot choose between waiting and
+    /// switching account.
+    #[test]
+    fn a_retry_names_the_wait_class_and_the_pause_source() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.retry",
+            "run_id": "run-1",
+            "attempt": 1,
+            "status": 429,
+            "cause": "account_quota",
+            "source": "backoff",
+            "delay_ms": 850,
+            "reason": "HTTP 429 · {\"error\":{\"code\":\"insufficient_quota\"}}",
+        })));
+        app.update_status();
+        let status = app.shell.title.status().unwrap_or_default();
+        assert!(status.contains("account quota"), "{status}");
+        assert!(status.contains("850ms local backoff"), "{status}");
+        assert!(status.contains("insufficient_quota"), "{status}");
+        // The provider naming the pause reads differently from the runner
+        // guessing one: the first is a statement about when it will answer.
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.retry",
+            "run_id": "run-1",
+            "attempt": 2,
+            "status": 429,
+            "cause": "vendor_rate_limit",
+            "source": "provider",
+            "delay_ms": 2000,
+            "reason": "HTTP 429",
+        })));
+        app.update_status();
+        let status = app.shell.title.status().unwrap_or_default();
+        assert!(status.contains("rate limit"), "{status}");
+        assert!(status.contains("2.0s from Retry-After"), "{status}");
     }
 
     #[test]
