@@ -283,18 +283,22 @@ fn messages(
 ) -> Result<Vec<Value>, ProviderError> {
     let invalid = || ProviderError::Stream("history cannot be lowered to Chat Completions".into());
     let mut output = Vec::new();
+    // A tool answer belongs directly after the assistant message carrying its
+    // `tool_calls`, and one turn's answers may arrive as several stored
+    // messages — the engine commits each result as it lands. Any text or image
+    // riding along is held back until the answers are done: emitting it right
+    // away puts a `user` message between `tool_calls` and a later `tool`
+    // answer, which the endpoint rejects with "An assistant message with
+    // 'tool_calls' must be followed by tool messages responding to each
+    // 'tool_call_id'".
+    let mut held_text: Vec<String> = Vec::new();
+    let mut held_images: Vec<Value> = Vec::new();
     for message in history {
         let blocks = message.content.as_array().ok_or_else(invalid)?;
         let mut text = Vec::new();
         let mut images = Vec::new();
         let mut calls = Vec::new();
         let mut reasoning = Vec::new();
-        // Tool results belong to the call in the previous assistant message, so
-        // they must reach the provider before anything else this message
-        // carries. Flushing this message's text or images first puts a `user`
-        // message between `tool_calls` and its `tool` answers, which the endpoint
-        // rejects with "An assistant message with 'tool_calls' must be followed
-        // by tool messages responding to each 'tool_call_id'".
         let mut tools = Vec::new();
         for block in blocks {
             match (message.role.as_str(), block["type"].as_str()) {
@@ -331,6 +335,7 @@ fn messages(
             }
         }
         if message.role == "assistant" {
+            flush_held(&mut output, &mut held_text, &mut held_images);
             let mut message = json!({"role":"assistant","content":if text.is_empty(){None}else{Some(text.join("\n"))}});
             if !reasoning.is_empty() {
                 message["reasoning_content"] = Value::String(reasoning.join(""));
@@ -348,14 +353,29 @@ fn messages(
                 message["tool_calls"] = Value::Array(calls);
             }
             output.push(message);
-        } else {
+        } else if !tools.is_empty() {
             output.append(&mut tools);
+            held_text.extend(text);
+            held_images.extend(images);
+        } else {
+            flush_held(&mut output, &mut held_text, &mut held_images);
             if !text.is_empty() || !images.is_empty() {
                 output.push(json!({"role":"user","content":user_content(&text,&images)}));
             }
         }
     }
+    flush_held(&mut output, &mut held_text, &mut held_images);
     Ok(output)
+}
+
+/// Emit the text and images held back across a run of tool-answer messages, as
+/// one `user` message after the answers.
+fn flush_held(output: &mut Vec<Value>, text: &mut Vec<String>, images: &mut Vec<Value>) {
+    if !text.is_empty() || !images.is_empty() {
+        output.push(json!({"role":"user","content":user_content(text,images)}));
+    }
+    text.clear();
+    images.clear();
 }
 
 #[derive(Default)]
@@ -774,5 +794,67 @@ mod tests {
         assert_eq!(wire[0]["role"], "tool");
         assert_eq!(wire[0]["tool_call_id"], "call_1");
         assert_eq!(wire[1]["role"], "user");
+    }
+
+    #[test]
+    fn tool_answers_stay_adjacent_when_they_arrive_as_separate_messages() {
+        // The engine commits each tool result as it lands, so one turn's
+        // answers reach the lowering as several stored messages, each also
+        // carrying an image of its own. Emitting each message's image right
+        // away used to put a `user` message between the `tool_calls` and the
+        // remaining `tool` answers, which the endpoint refuses with "An
+        // assistant message with 'tool_calls' must be followed by tool
+        // messages responding to each 'tool_call_id'" — and every later retry
+        // replayed the same refused history.
+        let history = vec![
+            Message {
+                role: "assistant".into(),
+                content: json!([
+                    {"type":"tool_use","id":"call_1","name":"read_image","input":{"path":"a.jpg"}},
+                    {"type":"tool_use","id":"call_2","name":"read_image","input":{"path":"b.jpg"}},
+                ]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            },
+            Message {
+                role: "user".into(),
+                content: json!([
+                    {"type":"tool_result","tool_use_id":"call_1","content":"ok"},
+                    {"type":"image","mime":"image/png","data":"AAAA"},
+                ]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            },
+            Message {
+                role: "user".into(),
+                content: json!([
+                    {"type":"tool_result","tool_use_id":"call_2","content":"ok"},
+                    {"type":"image","mime":"image/png","data":"BBBB"},
+                ]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            },
+            Message {
+                role: "user".into(),
+                content: json!([{"type":"text","text":"what do these show?"}]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            },
+        ];
+        let wire = messages(&history, false).expect("lowers to chat completions");
+        let roles: Vec<&str> = wire
+            .iter()
+            .map(|message| message["role"].as_str().expect("every frame has a role"))
+            .collect();
+        assert_eq!(
+            roles,
+            vec!["assistant", "tool", "tool", "user", "user"],
+            "both answers must sit directly after their tool_calls, with the images held back: {wire:?}"
+        );
+        assert_eq!(wire[1]["tool_call_id"], "call_1");
+        assert_eq!(wire[2]["tool_call_id"], "call_2");
+        // The held-back images land in one user message after the answers.
+        let images = wire[3]["content"].as_array().expect("image parts");
+        assert_eq!(images.len(), 2, "both deferred images land together");
     }
 }
