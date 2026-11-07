@@ -41,6 +41,11 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const EVENTS_PAGE: usize = 100;
 /// Inputs read per `pending_inputs` page while looking for the newest one.
 const PENDING_INPUT_PAGE: usize = 100;
+/// The engine names every method after its variant (`rename_all =
+/// "snake_case"` in `miao_engine::protocol`), so a dotted spelling is not a
+/// method at all: `usage.hourly` was answered with `unknown method` and the
+/// sidebar's strip stayed empty no matter what the UI asked for.
+const USAGE_HOURLY_METHOD: &str = "usage_hourly";
 
 pub enum Request {
     VcsChanges {
@@ -1293,7 +1298,7 @@ async fn run(
                 }
                 Request::UsageHourly { hours } => {
                     let result = client
-                        .request("usage.hourly", json!({ "hours": hours }))
+                        .request(USAGE_HOURLY_METHOD, json!({ "hours": hours }))
                         .await;
                     // A window nobody has written yet is an empty strip, not a
                     // failure the operator has to dismiss — and an engine that
@@ -2095,6 +2100,23 @@ fn pairs(value: &Value) -> Vec<(String, String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The wire name must be the protocol's own: a dotted `usage.hourly` is not
+    /// a method, and the engine answered every hourly read with `unknown
+    /// method`, which is why the sidebar's strip never showed a figure.
+    #[test]
+    fn the_hourly_usage_read_names_the_method_the_engine_serves() {
+        let request: miao_engine::protocol::Request = serde_json::from_value(serde_json::json!({
+            "id": 1,
+            "method": USAGE_HOURLY_METHOD,
+            "params": { "hours": 24 },
+        }))
+        .expect("the engine parses this method");
+        assert!(matches!(
+            request.command,
+            miao_engine::protocol::Command::UsageHourly { hours: 24 }
+        ));
+    }
 
     fn environment(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
         let pairs: std::collections::HashMap<String, String> = pairs
