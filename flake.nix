@@ -36,11 +36,9 @@
             node_modules = final.callPackage ./nix/node_modules.nix { };
           in
           rec {
-            miao = final.callPackage ./nix/miao.nix {
-              inherit node_modules;
-            };
+            miao = final.callPackage ./nix/miao.nix { };
             miao-desktop = final.callPackage ./nix/desktop.nix {
-              inherit miao;
+              inherit miao node_modules;
             };
           };
       };
@@ -52,11 +50,9 @@
         in
         rec {
           default = miao;
-          miao = pkgs.callPackage ./nix/miao.nix {
-            inherit node_modules;
-          };
+          miao = pkgs.callPackage ./nix/miao.nix { };
           miao-desktop = pkgs.callPackage ./nix/desktop.nix {
-            inherit miao;
+            inherit miao node_modules;
           };
           # Updater derivation with fakeHash - build fails and reveals correct hash
           node_modules_updater = node_modules.override {
