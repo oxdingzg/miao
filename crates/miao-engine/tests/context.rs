@@ -506,3 +506,103 @@ async fn rich_projects_exceeding_sixteen_sources_still_select() {
     };
     assert_eq!(store.select_context("s", bundle).await.unwrap(), 1);
 }
+
+#[tokio::test]
+async fn oversized_agent_instructions_are_truncated_instead_of_failing_the_turn() {
+    use miao_engine::session_agent::AgentManifest;
+    let dir = tempfile::tempdir().unwrap();
+    // Under read_file's 32 KiB whole-file bound: this block must survive as
+    // content and lose its slot to the agent block, not fail the assembly.
+    std::fs::write(dir.path().join("AGENTS.md"), "project rules ".repeat(2000)).unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let (send, mut receive) = mpsc::channel(10);
+    let agent: AgentManifest =
+        serde_json::from_value(json!({"name":"miao","instructions":"z".repeat(64 * 1024)}))
+            .unwrap();
+    let runtime = Runtime::with_policy_agent_and_tool_replay(
+        store.clone(),
+        Arc::new(Capture { send }),
+        Tools::new(dir.path()).await.unwrap(),
+        Policy::new(Config::default()).unwrap(),
+        None,
+        Some(agent),
+    )
+    .await
+    .unwrap();
+    runtime.admit(input("s", "one"), true).await.unwrap();
+    let system = tokio::time::timeout(std::time::Duration::from_secs(30), receive.recv())
+        .await
+        .expect("the turn reached the provider")
+        .unwrap();
+    idle(&store, "s", 1).await;
+    assert!(
+        system.len() <= 65536,
+        "system prompt was {} bytes",
+        system.len()
+    );
+    assert!(system.contains("rest omitted: the system context budget is full"));
+    let loaded = store
+        .events("s", 0, 1000)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "instructions_loaded")
+        .unwrap();
+    let sources = loaded.data["sources"].as_array().unwrap();
+    assert!(sources.iter().any(|source| {
+        source["type"] == "agent" && source["truncated_bytes"].as_u64().unwrap_or(0) > 0
+    }));
+    // The project instructions yield to the agent's own block instead of both
+    // blocks together pushing the prompt past the ceiling.
+    assert!(sources
+        .iter()
+        .any(|source| source["reason"] == "context_budget"));
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_oversized_instruction_file_is_skipped_instead_of_failing_the_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    // Above read_file's 32768-byte whole-file bound: assembly runs on every
+    // turn, so returning that error made the whole Session unrunnable.
+    std::fs::write(dir.path().join("AGENTS.md"), "p".repeat(40_000)).unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let (send, mut receive) = mpsc::channel(10);
+    let runtime = Runtime::new(
+        store.clone(),
+        Arc::new(Capture { send }),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime.admit(input("s", "one"), true).await.unwrap();
+    let system =
+        match tokio::time::timeout(std::time::Duration::from_secs(30), receive.recv()).await {
+            Ok(Some(system)) => system,
+            other => panic!(
+                "the turn did not reach the provider: {other:?}\nevents: {:#?}",
+                store
+                    .events("s", 0, 20)
+                    .await
+                    .unwrap()
+                    .iter()
+                    .map(|event| (event.kind.clone(), event.data.clone()))
+                    .collect::<Vec<_>>()
+            ),
+        };
+    idle(&store, "s", 1).await;
+    assert!(!system.contains("pppppppppp"));
+    let loaded = store
+        .events("s", 0, 1000)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "instructions_loaded")
+        .unwrap();
+    assert!(loaded.data["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|source| source["path"] == "AGENTS.md" && source["reason"] == "file_too_large"));
+    runtime.shutdown().await;
+}
