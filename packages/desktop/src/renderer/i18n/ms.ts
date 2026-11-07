@@ -19,7 +19,7 @@ export const dict = {
   "desktop.updater.installFailed.message": "Gagal memasang kemas kini",
   "desktop.cli.installed.title": "CLI Dipasang",
   "desktop.cli.installed.message":
-    "CLI telah dipasang ke {{path}}\n\nMulakan semula terminal anda untuk menggunakan arahan 'opencode'.",
+    "CLI telah dipasang ke {{path}}\n\nMulakan semula terminal anda untuk menggunakan arahan 'miao'.",
   "desktop.cli.failed.title": "Pemasangan Gagal",
   "desktop.cli.failed.message": "Gagal memasang CLI: {{error}}",
 
