@@ -224,6 +224,13 @@ impl EngineClient {
                         let Ok(values) = host.poll_events().await else { continue };
                         if !values.is_empty() { wire_note("event", &format!("{} durable", values.len())); }
                         for value in values {
+                            // `poll_events` yields bare events; the envelope is
+                            // this adapter's job, exactly as the stdio adapter
+                            // wraps them for its own output. Wrapping what the
+                            // host already wrapped produced a doubly nested
+                            // frame that could not decode into an event, so the
+                            // in-process engine delivered no durable
+                            // notification at all.
                             let frame = json!({ "method": "event", "params": value });
                             if let Ok(line) = serde_json::to_string(&frame) {
                                 reap.dispatch(&line);
@@ -859,6 +866,16 @@ impl Reap {
         match frame.get("method").and_then(Value::as_str) {
             Some("event") => {
                 let Ok(event) = serde_json::from_value::<EngineEvent>(params) else {
+                    // An event this client cannot read is not a frame to drop:
+                    // the client's view is now provably behind the journal, so
+                    // ask for one re-projection instead of waiting for the next
+                    // timer. Silently returning here is how a doubly wrapped
+                    // envelope left the transcript frozen for minutes while the
+                    // engine kept committing.
+                    wire_note("in-error", "event frame did not decode");
+                    let _ = self
+                        .events
+                        .send(TransportEvent::Resync("event frame did not decode".into()));
                     return;
                 };
                 let mut cursors = self.cursors.lock().expect("cursors");

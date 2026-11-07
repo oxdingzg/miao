@@ -700,7 +700,7 @@ async fn serve(runtime: Runtime, product_tools: Option<String>) -> io::Result<()
                         return Err(io::Error::new(io::ErrorKind::BrokenPipe, "stdio output writer stopped"));
                     }
                     for value in host.poll_events().await.map_err(io::Error::other)? {
-                        send(&output,value).await?;
+                        send(&output,json!({"method":"event","params":value})).await?;
                     }
                 },
                 _=tokio::time::sleep_until(idle_deadline), if idle.is_some() => {
