@@ -3913,10 +3913,23 @@ impl App {
                         compact_tokens(usage.output_tokens)
                     )
                 });
-        // What the run waits on, and what the next key does. An approval or a
-        // question blocks the turn, so it reads as a warning; the interrupt key
-        // is a fact about the run.
-        let mut hints = Vec::new();
+        // The state leads the strip: it is the one fact that is never absent.
+        // The composer title goes quiet on an idle Session and every hint below
+        // is conditional, so the row could render as a blank line — which is
+        // what a TUI that stopped painting looks like. The words carry the same
+        // judgement mtty's tab badge gets.
+        let mut hints = vec![StatusHint {
+            text: match crate::mtty_state::State::of(
+                phase_needs_operator,
+                self.state.active_run.is_some(),
+            ) {
+                crate::mtty_state::State::Idle => "idle",
+                crate::mtty_state::State::Processing => "working",
+                crate::mtty_state::State::Awaiting => "needs you",
+            }
+            .to_string(),
+            warning: false,
+        }];
         // Scrolled away from the newest row: the transcript keeps filling below
         // the window, so without this the operator cannot tell a stalled run
         // from output that has scrolled out of sight.
@@ -5997,6 +6010,44 @@ mod tests {
         );
     }
 
+    /// The strip is what still says what the Session is doing once the composer
+    /// title goes quiet, and every other hint is conditional: an idle Session
+    /// with nothing queued and the sidebar showing used to paint a blank row,
+    /// which is what a TUI that stopped painting looks like.
+    #[test]
+    fn the_strip_names_the_session_state_instead_of_going_blank() {
+        let mut app = session_app();
+        app.update_status();
+        assert_eq!(strip_hints(&app), vec!["idle"]);
+
+        app.state.active_run = Some("run-1".into());
+        app.update_status();
+        assert_eq!(strip_hints(&app), vec!["working", "esc interrupt"]);
+
+        app.state.active_run = None;
+        app.state.approvals.push(crate::session::ApprovalView {
+            request_id: "run-1/call_1".into(),
+            tool: "bash".into(),
+            resource: "ls".into(),
+            input: serde_json::json!({"command": "ls"}),
+            input_hash: "a".repeat(64),
+            policy_revision: "rev-1".into(),
+            matcher: None,
+            expires_at_ms: None,
+        });
+        app.update_status();
+        assert_eq!(strip_hints(&app), vec!["needs you"]);
+    }
+
+    fn strip_hints(app: &App) -> Vec<&str> {
+        app.shell
+            .status
+            .hints
+            .iter()
+            .map(|hint| hint.text.as_str())
+            .collect()
+    }
+
     /// The settled Session offers its next runnable todo in the composer, and
     /// stops offering it the moment a turn owns the composer again.
     #[test]
@@ -6149,7 +6200,9 @@ mod tests {
         app.state.approvals.clear();
         app.state.active_run = None;
         app.update_status();
-        assert!(app.shell.status.hints.is_empty());
+        // Idle still names itself: a blank strip is indistinguishable from one
+        // that stopped painting.
+        assert_eq!(strip_hints(&app), vec!["idle"]);
     }
 
     /// `--auto` widens what runs without asking. A Session that stops
