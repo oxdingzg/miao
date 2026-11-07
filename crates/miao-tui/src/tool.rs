@@ -77,6 +77,13 @@ pub fn lines(
             &compact(&text(&input, "to")),
             theme,
         )),
+        "terminal_start" => terminal_started(&mut out, tool, &input, result.as_ref(), theme, fold),
+        "terminal_write" | "terminal_resize" => {
+            terminal_control(&mut out, tool, name, &input, theme, fold)
+        }
+        "terminal_read" => terminal_read(&mut out, tool, &input, result.as_ref(), theme, fold),
+        "terminal_stop" => terminal_stopped(&mut out, tool, &input, result.as_ref(), theme, fold),
+        "terminal_list" => terminal_list(&mut out, tool, result.as_ref(), theme, fold),
         _ => generic(
             &mut out,
             tool,
@@ -284,7 +291,7 @@ fn preview(
     limit: usize,
     toggle: Option<&str>,
 ) {
-    let text = strip_ansi(text).replace('\r', "");
+    let text = scrub_output(text);
     let text = text.trim_end_matches('\n');
     if text.is_empty() {
         return;
@@ -392,6 +399,230 @@ fn peer_line(row: &Value) -> String {
     } else {
         format!("{title} · {task} · {objective}")
     }
+}
+
+/// Session-owned interactive terminals read as their id and state. The read
+/// payload carries raw PTY text with escape sequences, so the row paints the
+/// decoded output instead of the JSON envelope that delivered it — that
+/// envelope dumped verbatim buried the transcript under a screen of escapes.
+fn terminal_started(
+    out: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    input: &Value,
+    result: Option<&Value>,
+    theme: &Theme,
+    fold: Fold<'_>,
+) {
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
+    let palette = theme.palette;
+    let argv = input
+        .get("argv")
+        .and_then(Value::as_array)
+        .map(|argv| {
+            argv.iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .unwrap_or_default();
+    out.push(header(tool, "terminal", &compact(&argv), theme));
+    if tool.failed {
+        if let Some(output) = tool.output.as_deref() {
+            preview(out, output, palette.error, limit, fold.toggle);
+        }
+        return;
+    }
+    let Some(record) = result else {
+        return;
+    };
+    out.push(result_line(
+        &format!(
+            "{} · {}×{}",
+            text(record, "id"),
+            record.get("rows").and_then(Value::as_u64).unwrap_or(0),
+            record.get("cols").and_then(Value::as_u64).unwrap_or(0)
+        ),
+        palette.text_muted,
+    ));
+}
+
+fn terminal_control(
+    out: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    name: &str,
+    input: &Value,
+    theme: &Theme,
+    fold: Fold<'_>,
+) {
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
+    let palette = theme.palette;
+    let id = compact(&text(input, "id"));
+    let detail = match name {
+        "terminal_resize" => format!(
+            "{id} · {}×{}",
+            input.get("rows").and_then(Value::as_u64).unwrap_or(0),
+            input.get("cols").and_then(Value::as_u64).unwrap_or(0)
+        ),
+        _ => id,
+    };
+    out.push(header(
+        tool,
+        &format!("terminal {}", name.trim_start_matches("terminal_")),
+        &detail,
+        theme,
+    ));
+    if tool.failed {
+        if let Some(output) = tool.output.as_deref() {
+            preview(out, output, palette.error, limit, fold.toggle);
+        }
+        return;
+    }
+    out.push(result_line("accepted", palette.text_muted));
+}
+
+fn terminal_read(
+    out: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    input: &Value,
+    result: Option<&Value>,
+    theme: &Theme,
+    fold: Fold<'_>,
+) {
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
+    let palette = theme.palette;
+    out.push(header(
+        tool,
+        "terminal read",
+        &compact(&text(input, "id")),
+        theme,
+    ));
+    if tool.failed {
+        if let Some(output) = tool.output.as_deref() {
+            preview(out, output, palette.error, limit, fold.toggle);
+        }
+        return;
+    }
+    let Some(record) = result else {
+        return;
+    };
+    let body = record
+        .get("output")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let mut summary = byte_summary(body.len());
+    let dropped = record.get("dropped").and_then(Value::as_u64).unwrap_or(0);
+    if dropped > 0 {
+        summary.push_str(&format!(" · {} dropped", byte_summary(dropped as usize)));
+    }
+    if record
+        .get("truncated")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        summary.push_str(" · more retained");
+    }
+    summary.push_str(&format!(" · {}", exit_summary(record.get("exit"))));
+    out.push(result_line(&summary, palette.text_muted));
+    if !body.is_empty() {
+        preview(out, body, palette.text_muted, limit, fold.toggle);
+    }
+}
+
+fn terminal_stopped(
+    out: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    input: &Value,
+    result: Option<&Value>,
+    theme: &Theme,
+    fold: Fold<'_>,
+) {
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
+    let palette = theme.palette;
+    out.push(header(
+        tool,
+        "terminal stop",
+        &compact(&text(input, "id")),
+        theme,
+    ));
+    if tool.failed {
+        if let Some(output) = tool.output.as_deref() {
+            preview(out, output, palette.error, limit, fold.toggle);
+        }
+        return;
+    }
+    let Some(record) = result else {
+        return;
+    };
+    out.push(result_line(&exit_summary(Some(record)), palette.text_muted));
+}
+
+fn terminal_list(
+    out: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    result: Option<&Value>,
+    theme: &Theme,
+    fold: Fold<'_>,
+) {
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
+    let palette = theme.palette;
+    out.push(header(tool, "terminal list", "", theme));
+    if tool.failed {
+        if let Some(output) = tool.output.as_deref() {
+            preview(out, output, palette.error, limit, fold.toggle);
+        }
+        return;
+    }
+    let body = result
+        .and_then(|value| value.get("terminals"))
+        .and_then(Value::as_array)
+        .map(|terminals| {
+            terminals
+                .iter()
+                .map(|terminal| {
+                    format!(
+                        "{} · {}",
+                        text(terminal, "id"),
+                        exit_summary(terminal.get("exit"))
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+    if body.is_empty() {
+        out.push(result_line("no terminals", palette.text_muted));
+        return;
+    }
+    preview(out, &body, palette.text_muted, limit, fold.toggle);
+}
+
+fn exit_summary(exit: Option<&Value>) -> String {
+    // A live terminal answers `"exit": null` — the key exists but carries no
+    // exit yet, and that reads as running, not as a finished call.
+    let Some(exit) = exit.filter(|value| !value.is_null()) else {
+        return "running".to_string();
+    };
+    let reason = exit
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("exited");
+    if let Some(code) = exit.get("exit_code").and_then(Value::as_i64) {
+        return format!("{reason} · exit {code}");
+    }
+    if let Some(signal) = exit.get("signal").and_then(Value::as_i64) {
+        return format!("{reason} · signal {signal}");
+    }
+    reason.to_string()
+}
+
+fn byte_summary(len: usize) -> String {
+    if len < 1024 {
+        return format!("{len} B");
+    }
+    if len < 1024 * 1024 {
+        return format!("{:.1} KiB", len as f64 / 1024.0);
+    }
+    format!("{:.1} MiB", len as f64 / (1024.0 * 1024.0))
 }
 
 fn bash(
@@ -1108,6 +1339,16 @@ fn compact(text: &str) -> String {
     cut
 }
 
+/// Terminal escape sequences and stray control characters never paint: PTY
+/// text and echoed model output would otherwise corrupt the transcript's own
+/// rendering. Newlines and tabs survive.
+pub(crate) fn scrub_output(text: &str) -> String {
+    strip_ansi(text)
+        .chars()
+        .filter(|c| *c == '\n' || *c == '\t' || !c.is_control())
+        .collect()
+}
+
 /// Remove terminal escape sequences from PTY output before it is laid out.
 fn strip_ansi(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -1388,6 +1629,108 @@ mod tests {
         );
         let rendered = rendered(&lines(&part, None, &theme(), false, None));
         assert!(rendered.contains(&"  │ red".to_string()));
+    }
+
+    #[test]
+    fn a_terminal_read_row_reports_its_state_not_the_envelope() {
+        let part = tool(
+            "terminal_read",
+            json!({"id": "term_1"}),
+            Some(json!({
+                "id": "term_1",
+                "output": "\u{1b}[38;2;255;0;0mhello\u{1b}[0m world\nsecond line\nthird line\nfourth line",
+                "cursor": 65,
+                "retained_from": 0,
+                "dropped": 0,
+                "truncated": true,
+                "exit": null
+            })),
+            false,
+        );
+        let rendered = rendered(&lines(&part, None, &theme(), false, Some("ctrl+x r")));
+        assert!(rendered.iter().any(|line| line.contains("terminal read")));
+        assert!(rendered.iter().any(|line| line.contains("term_1")));
+        assert!(rendered
+            .iter()
+            .any(|line| line.contains("65 B · more retained · running")));
+        assert!(rendered.iter().any(|line| line.contains("hello world")));
+        assert!(rendered.iter().any(|line| line.contains("more lines")));
+        assert!(!rendered.iter().any(|line| line.contains("retained_from")));
+        assert!(!rendered.iter().any(|line| line.contains('\u{1b}')));
+    }
+
+    #[test]
+    fn an_expanded_terminal_read_shows_every_decoded_line() {
+        let part = tool(
+            "terminal_read",
+            json!({"id": "term_1"}),
+            Some(json!({
+                "id": "term_1",
+                "output": "one\n2 \u{1b}[31mred\u{1b}[0m\nthree",
+                "cursor": 20,
+                "truncated": false,
+                "exit": null
+            })),
+            false,
+        );
+        let rendered = rendered(&lines(&part, None, &theme(), true, Some("ctrl+x r")));
+        assert!(rendered.iter().any(|line| line.contains("2 red")));
+        assert!(rendered.iter().any(|line| line.contains("three")));
+        assert!(!rendered.iter().any(|line| line.contains("more lines")));
+    }
+
+    #[test]
+    fn a_terminal_start_row_names_its_command_and_size() {
+        let part = tool(
+            "terminal_start",
+            json!({"argv": ["bash"], "rows": 24, "cols": 80}),
+            Some(json!({
+                "id": "term_9",
+                "rows": 24,
+                "cols": 80,
+                "sandbox_profile": "workspace_write",
+                "network_allowed": true,
+                "max_lifetime_ms": 86400000
+            })),
+            false,
+        );
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
+        assert!(rendered.iter().any(|line| line.contains("bash")));
+        assert!(rendered.iter().any(|line| line.contains("term_9 · 24×80")));
+    }
+
+    #[test]
+    fn a_terminal_list_row_reads_one_line_per_terminal() {
+        let part = tool(
+            "terminal_list",
+            json!({}),
+            Some(json!({"terminals": [
+                {"id": "term_1", "exit": null},
+                {"id": "term_2", "exit": {"reason": "stopped", "exit_code": 0, "signal": null, "error": null}}
+            ]})),
+            false,
+        );
+        let rendered = rendered(&lines(&part, None, &theme(), true, None));
+        assert!(rendered
+            .iter()
+            .any(|line| line.contains("term_1 · running")));
+        assert!(rendered
+            .iter()
+            .any(|line| line.contains("term_2 · stopped · exit 0")));
+    }
+
+    #[test]
+    fn a_terminal_stop_row_reports_how_it_ended() {
+        let part = tool(
+            "terminal_stop",
+            json!({"id": "term_2"}),
+            Some(json!({"reason": "stopped", "exit_code": 0, "signal": null, "error": null})),
+            false,
+        );
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
+        assert!(rendered
+            .iter()
+            .any(|line| line.contains("stopped · exit 0")));
     }
 
     #[test]

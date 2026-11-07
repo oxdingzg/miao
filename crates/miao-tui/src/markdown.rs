@@ -16,6 +16,7 @@ use crate::theme::Theme;
 /// Render a markdown document as styled transcript lines.
 pub fn lines(markdown: &str, theme: &Theme) -> Vec<Line<'static>> {
     let palette = theme.palette;
+    let markdown = &crate::tool::scrub_output(markdown);
     let mut out = Vec::new();
     let source: Vec<&str> = markdown.lines().collect();
     let mut index = 0;
@@ -396,6 +397,19 @@ mod tests {
             .iter()
             .map(|span| span.content.as_ref())
             .collect()
+    }
+
+    #[test]
+    fn control_characters_never_reach_the_render() {
+        let painted = lines("\u{1b}[38;2;255;0;0mred\u{7}text\u{7}\nplain", &theme())
+            .iter()
+            .map(text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(painted.contains("redtext"));
+        assert!(painted.contains("plain"));
+        assert!(!painted.contains('\u{1b}'));
+        assert!(!painted.contains('\u{7}'));
     }
 
     #[test]
