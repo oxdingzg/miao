@@ -154,6 +154,11 @@ try {
       MIAO_DB: databasePath,
       MIAO_REMOTE_CONTROL_CONFIG: configuration,
       MIAO_PURE: "1",
+      // This check drives the Runtime control plane, which publishes Sessions the
+      // TypeScript engine owns. Without pinning placement the fixture Session can
+      // be admitted to the native engine, where `/api/runtime/control` cannot see
+      // it and publishing answers 400 "Session unavailable in this Runtime".
+      MIAO_ENGINE_STORAGE: "",
       MIAO_CONFIG_CONTENT: JSON.stringify({
         model: "fixture/missing",
         providers: {
