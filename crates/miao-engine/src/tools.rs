@@ -209,6 +209,9 @@ pub struct Tools {
     runner: Option<Arc<PathBuf>>,
     protected: Vec<PathBuf>,
     private_store: Option<PathBuf>,
+    /// The engine ledger a worktree removal consults before it strands a
+    /// Session. Unset means the removal refuses rather than guessing.
+    ledger: Option<PathBuf>,
     mcp: Option<Arc<mcp::Registry>>,
     web: Arc<StdRwLock<Option<Arc<crate::web::Client>>>>,
     worker: Option<Arc<crate::worker::Registry>>,
@@ -301,6 +304,7 @@ impl Tools {
             runner: None,
             protected: vec![],
             private_store: None,
+            ledger: None,
             mcp: None,
             web: Arc::new(StdRwLock::new(None)),
             worker: None,
@@ -1119,6 +1123,14 @@ impl Tools {
     pub fn with_protected_resource(self, path: &Path) -> Self {
         self.protect_resource(path)
     }
+    /// The engine ledger: a worktree removal counts the Sessions still working
+    /// in the tree before it removes anything, and refuses without the ledger
+    /// rather than removing blind.
+    pub(crate) fn with_ledger(mut self, path: &Path) -> Self {
+        self.ledger = Some(canonical_plain(path.to_owned()));
+        self
+    }
+
     pub(crate) fn protect_store(mut self, path: &Path) -> Self {
         self.private_store = Some(canonical_plain(path.to_owned()));
         self.protect_resource(path)
@@ -1386,6 +1398,9 @@ impl Tools {
             // (same project, resolved by id). Its own permission target is a
             // policy-layer follow-up, not a path.
             "list_sessions" | "send_message" | "read_session_context" => ".".into(),
+            // A worktree is created under the workspace itself, so the
+            // permission target is the workspace, not a file path.
+            "worktree_list" | "worktree_create" | "worktree_remove" => ".".into(),
             _ => return Err(ToolError::Unsupported),
         };
         let path = if name == "apply_patch" {
@@ -1521,9 +1536,11 @@ impl Tools {
             Access::Delegate
         } else if matches!(name, "run_command" | "bash") {
             Access::Execute
-        } else if matches!(name, "write_file" | "edit_file" | "apply_patch")
-            || (name == "knowledge"
-                && matches!(input["op"].as_str(), Some("put" | "index_file" | "delete")))
+        } else if matches!(
+            name,
+            "write_file" | "edit_file" | "apply_patch" | "worktree_create" | "worktree_remove"
+        ) || (name == "knowledge"
+            && matches!(input["op"].as_str(), Some("put" | "index_file" | "delete")))
         {
             Access::Write
         } else {
@@ -1552,6 +1569,9 @@ impl Tools {
                         | "task_list"
                         | "task_result"
                         | "task_cancel"
+                        | "worktree_list"
+                        | "worktree_create"
+                        | "worktree_remove"
                 ),
             access,
             name: name.into(),
@@ -2035,6 +2055,13 @@ impl Tools {
             ToolDefinition{name:"glob".into(),description:"Find workspace-relative file paths by glob under a directory. No symlink following; generated directories excluded. Per-file permissions and output/traversal budgets apply; truncated reports partial results.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
             ToolDefinition{name:"grep".into(),description:"Find regex matches in permitted UTF-8 workspace files under a directory. Returns paths, 1-based lines and bounded previews. Optional workspace-relative glob filter. No shell or symlink traversal.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"glob":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"case_sensitive":{"type":"boolean","default":true},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
         ]);
+        // Git worktrees: the engine owns the git plumbing, so an agent can ask
+        // for a second checkout without the operator leaving the TUI.
+        definitions.extend([
+            ToolDefinition{name:"worktree_list".into(),description:"List the git worktrees of this workspace's checkout, the checkout itself first.".into(),input_schema:json!({"type":"object","properties":{},"additionalProperties":false})},
+            ToolDefinition{name:"worktree_create".into(),description:"Add a git worktree named NAME under the checkout's worktree directory and return its path. This Session keeps working where it is.".into(),input_schema:json!({"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false})},
+            ToolDefinition{name:"worktree_remove".into(),description:"Remove one git worktree and the branch it holds. Refused while any Session still works in the tree.".into(),input_schema:json!({"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false})},
+        ]);
         // Inter-Session coordination: discovery is read-only, so it ships
         // before delivery does. `specs/v2/session-messaging.md` holds the whole
         // contract; `send_message` arrives separately because it admits mail.
@@ -2255,6 +2282,43 @@ impl Tools {
                         "directory":skill.directory,
                         "files":skill.files,
                     }))
+                }
+                "worktree_list" => Ok(json!(crate::worktree::list(&self.root)
+                    .map_err(|error| ToolError::External(error.to_string()))?)),
+                "worktree_create" => {
+                    let name = input
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .ok_or(ToolError::InvalidInput)?;
+                    Ok(json!(crate::worktree::create(&self.root, name)
+                        .map_err(|error| ToolError::External(error.to_string()))?))
+                }
+                "worktree_remove" => {
+                    let name = input
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .ok_or(ToolError::InvalidInput)?;
+                    let tree = self.root.join(crate::worktree::DIRECTORY).join(name);
+                    // Removal strands the Sessions whose working directory is
+                    // inside the tree, so the count decides -- and without the
+                    // ledger there is no count to trust.
+                    let ledger = self.ledger.as_ref().ok_or_else(|| {
+                        ToolError::External(
+                            "worktree removal needs the engine ledger to check who still works in the tree"
+                                .into(),
+                        )
+                    })?;
+                    let anchored = crate::worktree::anchored_sessions(ledger, &tree)
+                        .map_err(|error| ToolError::External(error.to_string()))?;
+                    if anchored > 0 {
+                        return Err(ToolError::External(format!(
+                            "{anchored} session(s) still work in {}: move or close them first",
+                            tree.display()
+                        )));
+                    }
+                    crate::worktree::remove(&self.root, name)
+                        .map_err(|error| ToolError::External(error.to_string()))?;
+                    Ok(json!({"removed": name}))
                 }
                 "read_image" => {
                     use base64::Engine;
@@ -2605,5 +2669,146 @@ mod recorded_read_tests {
             ),
             Err(ToolError::ProtectedResource)
         ));
+    }
+}
+
+#[cfg(test)]
+mod worktree_tool_tests {
+    use super::Tools;
+    use serde_json::json;
+    use tokio_util::sync::CancellationToken;
+
+    /// A checkout with one commit, which is all git needs before it can add a
+    /// worktree.
+    fn repository() -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "miao-worktree-tool-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("workspace");
+        for args in [
+            // `--initial-branch` needs git 2.28; the symbolic ref names the
+            // branch on every version a build host still runs.
+            &["init"][..],
+            &["symbolic-ref", "HEAD", "refs/heads/main"][..],
+            &["config", "user.email", "test@miao.invalid"][..],
+            &["config", "user.name", "miao test"][..],
+            &["commit", "--allow-empty", "-m", "seed"][..],
+        ] {
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&root)
+                .output()
+                .expect("git");
+            assert!(output.status.success(), "git {args:?} failed");
+        }
+        root
+    }
+
+    #[tokio::test]
+    async fn a_session_can_add_and_list_a_worktree() {
+        let root = repository();
+        let tools = Tools::new(&root).await.unwrap();
+        let created = tools
+            .execute(
+                "worktree_create",
+                json!({ "name": "wt" }),
+                CancellationToken::new(),
+            )
+            .await
+            .expect("create");
+        assert_eq!(created["name"], "wt");
+        assert_eq!(created["branch"], "wt");
+
+        let listed = tools
+            .execute("worktree_list", json!({}), CancellationToken::new())
+            .await
+            .expect("list");
+        let names: Vec<&str> = listed
+            .as_array()
+            .expect("trees")
+            .iter()
+            .map(|tree| tree["name"].as_str().unwrap_or_default())
+            .collect();
+        assert_eq!(names.len(), 2, "the checkout plus the new tree");
+        assert!(names.contains(&"wt"));
+    }
+
+    /// Removal is the destructive half: without a ledger there is no way to know
+    /// who still works in the tree, so the tool refuses instead of removing.
+    #[tokio::test]
+    async fn removing_a_worktree_refuses_while_a_session_still_works_there() {
+        let root = repository();
+        let tools = Tools::new(&root).await.unwrap();
+        tools
+            .execute(
+                "worktree_create",
+                json!({ "name": "wt" }),
+                CancellationToken::new(),
+            )
+            .await
+            .expect("create");
+        let tree = root.join(crate::worktree::DIRECTORY).join("wt");
+        assert!(tree.is_dir());
+
+        let refused = tools
+            .execute(
+                "worktree_remove",
+                json!({ "name": "wt" }),
+                CancellationToken::new(),
+            )
+            .await;
+        assert!(
+            refused.is_err(),
+            "a removal without the ledger must not run blind"
+        );
+
+        let ledger = root.join("engine.db");
+        let connection = rusqlite::Connection::open(&ledger).expect("ledger");
+        connection
+            .execute_batch("CREATE TABLE engine_location (session_id TEXT, root TEXT);")
+            .expect("schema");
+        // The ledger stores canonical roots, which is what the removal counts
+        // against; an uncanonicalised temp path (`/var` vs `/private/var`) would
+        // read as a different Location and the tree would look unused.
+        let canonical = std::fs::canonicalize(&tree).expect("canonical tree");
+        connection
+            .execute(
+                "INSERT INTO engine_location VALUES ('ses_a', ?1)",
+                [canonical.display().to_string()],
+            )
+            .expect("insert");
+        let tools = Tools::new(&root).await.unwrap().with_ledger(&ledger);
+        let refused = tools
+            .execute(
+                "worktree_remove",
+                json!({ "name": "wt" }),
+                CancellationToken::new(),
+            )
+            .await;
+        let message = format!("{:?}", refused.expect_err("anchored tree"));
+        assert!(
+            message.contains("still work in"),
+            "the refusal names the reason: {message}"
+        );
+        assert!(tree.is_dir(), "nothing was removed");
+
+        // With the Session gone the same call removes the tree.
+        connection
+            .execute("DELETE FROM engine_location", [])
+            .expect("clear");
+        tools
+            .execute(
+                "worktree_remove",
+                json!({ "name": "wt" }),
+                CancellationToken::new(),
+            )
+            .await
+            .expect("remove");
+        assert!(!tree.exists());
     }
 }

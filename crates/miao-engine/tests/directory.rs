@@ -21,6 +21,11 @@ async fn directory_catalog_and_execution_have_bounded_workspace_scope() {
             "list_files",
             "glob",
             "grep",
+            // Git worktrees: the engine owns the plumbing, so an agent can ask
+            // for a second checkout without leaving the Session.
+            "worktree_list",
+            "worktree_create",
+            "worktree_remove",
             // Inter-Session coordination, advertised before the product tool
             // layer because it needs nothing from the host.
             "list_sessions",
