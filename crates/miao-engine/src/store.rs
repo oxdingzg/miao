@@ -2711,6 +2711,26 @@ impl Store {
         .await
     }
 
+    /// Append with an explicit recorded time. The task rollup's wall clock and
+    /// intervention waits read this column, so tests pin a timeline instead of
+    /// racing the wall clock.
+    pub async fn record_at(
+        &self,
+        session: &str,
+        kind: &str,
+        data: Value,
+        at_ms: u64,
+    ) -> Result<Event, Error> {
+        let (session, kind) = (session.to_owned(), kind.to_owned());
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let event = append_at(&tx, &session, &kind, data, Some(at_ms))?;
+            tx.commit()?;
+            Ok(event)
+        })
+        .await
+    }
+
     /// Append one Session-scoped event only while this writer still holds the
     /// claim. The fence check runs inside the same transaction as the append,
     /// so a superseding claim cannot slip in between them.
@@ -4646,6 +4666,7 @@ impl Store {
                     }
                 }
             }
+            let rollup = task_rollup(conn, &session, &children)?;
             let lineage = per_identity
                 .into_iter()
                 .map(|((protocol, model), served)| json!({"protocol":protocol,"model":model,"turns":served}))
@@ -4754,6 +4775,8 @@ impl Store {
                     "toolInputErrors": tool_input_errors,
                     "inputRecoveryStopped": input_recovery_stopped,
                 },
+                "tasks": rollup["tasks"].clone(),
+                "wallClock": rollup["wallClock"].clone(),
                 "retries": {
                     "attempts": attempts,
                     "failedAttempts": failed_attempts,
@@ -4981,17 +5004,33 @@ pub(crate) fn finish_run_tx(
     };
     let mut total = Value::Null;
     let mut steps = 0u64;
+    let mut billed = 0u64;
     for data in usage_events {
         if let Ok(event) = serde_json::from_str::<Value>(&data) {
             steps += 1;
             merge_usage(&mut total, &event["usage"]);
+            billed = billed
+                .saturating_add(event["usage"]["inputTokens"].as_u64().unwrap_or(0))
+                .saturating_add(event["usage"]["outputTokens"].as_u64().unwrap_or(0));
         }
     }
+    // The run's billed tokens and the agent's soft budget ride the summary, so
+    // a per-task report can answer "under budget" without re-reading turns. A
+    // run with no recorded turn stays unknown: it may have been interrupted
+    // before its first usage row landed.
+    let budget = crate::session_agent::selected(tx, session)
+        .ok()
+        .flatten()
+        .and_then(|(manifest, _)| manifest.budget);
     append(
         tx,
         session,
         "run.usage",
-        json!({"run_id":run,"steps":steps,"usage":total}),
+        json!({
+            "run_id":run,"steps":steps,"usage":total,
+            "billedTokens": if steps > 0 { json!(billed) } else { Value::Null },
+            "budgetTokens": budget.map(Value::from).unwrap_or(Value::Null),
+        }),
     )?;
     let event = append(
         tx,
@@ -5000,6 +5039,486 @@ pub(crate) fn finish_run_tx(
         json!({"run_id":run,"reason":reason}),
     )?;
     Ok(event)
+}
+
+/// Per-task accounting (VAL-02): one admitted user input is one task, and the
+/// runs that promoted it are its work. The rollup answers what a completed
+/// task cost across every model that served it (main turns, delegated child
+/// Sessions attributed by time), how long submit took to reach a verified
+/// completion, and what waiting on a human cost. Missing figures stay
+/// unknown: an unpriced turn never folds in as free, and a task whose run
+/// never finished has no wall clock.
+fn task_rollup(conn: &Connection, session: &str, children: &[String]) -> Result<Value, Error> {
+    #[derive(Default)]
+    struct RunFacts {
+        finished_at: Option<i64>,
+        reason: Option<String>,
+        billed: Option<u64>,
+        budget: Option<u64>,
+    }
+    struct Task {
+        id: String,
+        admitted_at: i64,
+        internal: bool,
+        runs: Vec<String>,
+    }
+    struct Span {
+        kind: &'static str,
+        start: i64,
+        end: Option<i64>,
+        outcome: Option<String>,
+    }
+    let mut runs: std::collections::BTreeMap<String, RunFacts> = Default::default();
+    let mut promoted: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    let mut tasks: Vec<Task> = Vec::new();
+    let mut task_index: std::collections::HashMap<String, usize> = Default::default();
+    let mut spans: Vec<Span> = Vec::new();
+    let mut open_engine: std::collections::HashMap<(String, String), usize> = Default::default();
+    let mut open_product: std::collections::HashMap<String, usize> = Default::default();
+    let mut open_question: std::collections::HashMap<String, usize> = Default::default();
+    let mut stmt = conn.prepare(
+        "SELECT kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind IN \
+         ('input.admitted','user_prompt_submit','run.started','run.finished','run.usage',\
+         'permission_request','permission_denied','permission.approved',\
+         'product.permission.requested','product.permission.resolved',\
+         'question.requested','question.resolved') ORDER BY seq",
+    )?;
+    let mut rows = stmt.query(params![session])?;
+    while let Some(row) = rows.next()? {
+        let kind: String = row.get(0)?;
+        let data: Value = serde_json::from_str(&row.get::<_, String>(1)?)?;
+        let Some(at) = row.get::<_, Option<u64>>(2)? else {
+            continue;
+        };
+        let at = at as i64;
+        let close = |spans: &mut Vec<Span>, index: usize, outcome: &str, at: i64| {
+            spans[index].end = Some(at);
+            spans[index].outcome = Some(outcome.to_owned());
+        };
+        let ask = |spans: &mut Vec<Span>, kind: &'static str, at: i64| {
+            spans.push(Span {
+                kind,
+                start: at,
+                end: None,
+                outcome: None,
+            });
+            spans.len() - 1
+        };
+        match kind.as_str() {
+            "input.admitted" => {
+                let Some(id) = data["input_id"].as_str() else {
+                    continue;
+                };
+                let internal = id.starts_with("goal:")
+                    || id.starts_with("overflow:")
+                    || id.starts_with("transport:");
+                task_index.insert(id.to_owned(), tasks.len());
+                tasks.push(Task {
+                    id: id.to_owned(),
+                    admitted_at: at,
+                    internal,
+                    runs: Vec::new(),
+                });
+            }
+            "user_prompt_submit" => {
+                if let (Some(run), Some(input)) =
+                    (data["run_id"].as_str(), data["input_id"].as_str())
+                {
+                    promoted
+                        .entry(run.to_owned())
+                        .or_default()
+                        .push(input.to_owned());
+                }
+            }
+            "run.started" => {
+                if let Some(run) = data["run_id"].as_str() {
+                    runs.entry(run.to_owned()).or_default();
+                }
+            }
+            "run.finished" => {
+                if let Some(run) = data["run_id"].as_str() {
+                    let facts = runs.entry(run.to_owned()).or_default();
+                    facts.finished_at = Some(at);
+                    facts.reason = data["reason"].as_str().map(str::to_owned);
+                }
+            }
+            "run.usage" => {
+                if let Some(run) = data["run_id"].as_str() {
+                    let facts = runs.entry(run.to_owned()).or_default();
+                    facts.billed = data["billedTokens"].as_u64();
+                    facts.budget = data["budgetTokens"].as_u64();
+                }
+            }
+            "permission_request" => {
+                if let (Some(run), Some(call)) = (data["run_id"].as_str(), data["call_id"].as_str())
+                {
+                    let index = ask(&mut spans, "permission", at);
+                    open_engine.insert((run.to_owned(), call.to_owned()), index);
+                }
+            }
+            "permission.approved" | "permission_denied" => {
+                let outcome = if kind == "permission.approved" {
+                    "approved"
+                } else {
+                    "denied"
+                };
+                if let (Some(run), Some(call)) = (data["run_id"].as_str(), data["call_id"].as_str())
+                {
+                    if let Some(index) = open_engine.remove(&(run.to_owned(), call.to_owned())) {
+                        close(&mut spans, index, outcome, at);
+                    }
+                }
+            }
+            "product.permission.requested" => {
+                if let Some(id) = data["id"].as_str() {
+                    let index = ask(&mut spans, "permission", at);
+                    open_product.insert(id.to_owned(), index);
+                }
+            }
+            "product.permission.resolved" => {
+                if let Some(id) = data["id"].as_str() {
+                    if let Some(index) = open_product.remove(id) {
+                        close(
+                            &mut spans,
+                            index,
+                            data["state"].as_str().unwrap_or("resolved"),
+                            at,
+                        );
+                    }
+                }
+            }
+            "question.requested" => {
+                if let Some(id) = data["question_id"].as_str() {
+                    let index = ask(&mut spans, "question", at);
+                    open_question.insert(id.to_owned(), index);
+                }
+            }
+            "question.resolved" => {
+                if let Some(id) = data["question_id"].as_str() {
+                    if let Some(index) = open_question.remove(id) {
+                        close(
+                            &mut spans,
+                            index,
+                            data["state"].as_str().unwrap_or("resolved"),
+                            at,
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    // A run belongs to the first user input it promoted; internal continuations
+    // never steal attribution, and a later input of a batched promotion shares
+    // the run without double counting its spend.
+    for (run, inputs) in &promoted {
+        if let Some(first) = inputs.iter().find(|id| {
+            task_index
+                .get(*id)
+                .is_some_and(|index| !tasks[*index].internal)
+        }) {
+            let index = task_index[first];
+            tasks[index].runs.push(run.clone());
+        }
+    }
+    type SpendRow = (i64, Option<(f64, String)>);
+    fn usage_rows(
+        conn: &Connection,
+        target: &str,
+    ) -> Result<Vec<(String, i64, Option<(f64, String)>)>, Error> {
+        let mut rows_out = Vec::new();
+        let mut stmt = conn.prepare(
+            "SELECT data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind='usage' ORDER BY seq",
+        )?;
+        let mut rows = stmt.query(params![target])?;
+        while let Some(row) = rows.next()? {
+            let data: Value = serde_json::from_str(&row.get::<_, String>(0)?)?;
+            let Some(at) = row.get::<_, Option<u64>>(1)? else {
+                continue;
+            };
+            let at = at as i64;
+            let cost = data["cost"]["amount"]
+                .as_f64()
+                .zip(data["cost"]["currency"].as_str())
+                .map(|(amount, currency)| (amount, currency.to_owned()));
+            rows_out.push((
+                data["run_id"].as_str().unwrap_or_default().to_owned(),
+                at,
+                cost,
+            ));
+        }
+        Ok(rows_out)
+    }
+    let mut spend: std::collections::HashMap<String, Vec<SpendRow>> = Default::default();
+    for (run, at, cost) in usage_rows(conn, session)? {
+        spend.entry(run).or_default().push((at, cost));
+    }
+    let mut child_rows: Vec<(i64, Option<(f64, String)>)> = Vec::new();
+    for child in children {
+        child_rows.extend(
+            usage_rows(conn, child)?
+                .into_iter()
+                .map(|(_, at, cost)| (at, cost)),
+        );
+    }
+    let round = |amount: f64| (amount * 1_000_000.0).round() / 1_000_000.0;
+    let money = |amounts: &std::collections::BTreeMap<String, f64>| {
+        amounts
+            .iter()
+            .map(|(currency, amount)| json!({"currency":currency,"amount":round(*amount)}))
+            .collect::<Vec<_>>()
+    };
+    struct Totals {
+        outcome: &'static str,
+        completed_at: Option<i64>,
+        wall_clock: Option<i64>,
+        billed: Option<u64>,
+        budget: Option<u64>,
+        cost_known: bool,
+        cost: std::collections::BTreeMap<String, f64>,
+        child_cost_known: bool,
+        child_cost: std::collections::BTreeMap<String, f64>,
+        interventions: u64,
+        wait_ms: u64,
+    }
+    let mut totals: Vec<Totals> = Vec::with_capacity(tasks.len());
+    for task in &tasks {
+        let mut any_failed = false;
+        let mut all_completed = !task.runs.is_empty();
+        let mut all_finished = !task.runs.is_empty();
+        let mut completed_at: Option<i64> = None;
+        for run in &task.runs {
+            let Some(facts) = runs.get(run) else {
+                all_finished = false;
+                all_completed = false;
+                continue;
+            };
+            match (facts.finished_at, facts.reason.as_deref()) {
+                (Some(at), Some("completed")) => completed_at = completed_at.max(Some(at)),
+                (Some(_), Some("interrupted")) | (Some(_), None) => all_completed = false,
+                (Some(at), Some(_)) => {
+                    any_failed = true;
+                    completed_at = completed_at.max(Some(at));
+                }
+                (None, _) => {
+                    all_finished = false;
+                    all_completed = false;
+                }
+            }
+        }
+        let outcome = if any_failed {
+            "failed"
+        } else if all_finished && all_completed {
+            "passed"
+        } else {
+            "unverified"
+        };
+        let wall_clock = completed_at.map(|completed| completed - task.admitted_at);
+        let wall_clock = if all_finished { wall_clock } else { None };
+        let mut billed = Some(0u64);
+        let mut budget: Option<u64> = None;
+        for run in &task.runs {
+            let facts = runs.get(run);
+            billed = billed
+                .zip(facts.and_then(|facts| facts.billed))
+                .map(|(sum, billed)| sum + billed);
+            budget = budget.or(facts.and_then(|facts| facts.budget));
+        }
+        let mut cost_known = true;
+        let mut cost: std::collections::BTreeMap<String, f64> = Default::default();
+        for run in &task.runs {
+            for (_, row_cost) in spend.get(run).into_iter().flatten() {
+                match row_cost {
+                    Some((amount, currency)) => {
+                        *cost.entry(currency.clone()).or_default() += amount
+                    }
+                    None => cost_known = false,
+                }
+            }
+        }
+        let mut interventions = 0u64;
+        let mut wait_ms = 0u64;
+        let window_end = completed_at.unwrap_or(i64::MAX);
+        for span in &spans {
+            if span.start < task.admitted_at || span.start > window_end {
+                continue;
+            }
+            interventions += 1;
+            if let Some(end) = span.end {
+                wait_ms = wait_ms.saturating_add(end.saturating_sub(span.start).max(0) as u64);
+            }
+        }
+        totals.push(Totals {
+            outcome,
+            completed_at,
+            wall_clock,
+            billed,
+            budget,
+            cost_known,
+            cost,
+            child_cost_known: true,
+            child_cost: Default::default(),
+            interventions,
+            wait_ms,
+        });
+    }
+    // Child spend is attributed to the one task whose submit..completion window
+    // holds the row, so overlapping windows cannot double count. Work outside
+    // every window stays at the Session level (the `subagents` block).
+    let windows: Vec<(usize, i64, Option<i64>)> = tasks
+        .iter()
+        .enumerate()
+        .filter(|(_, task)| !task.internal)
+        .map(|(index, task)| (index, task.admitted_at, totals[index].completed_at))
+        .collect();
+    for (at, cost) in &child_rows {
+        let owner = windows
+            .iter()
+            .rev()
+            .find(|(_, admit, completed)| *admit <= *at && completed.is_none_or(|end| *at <= end))
+            .map(|(index, _, _)| *index);
+        let Some(index) = owner else {
+            continue;
+        };
+        let total = &mut totals[index];
+        match cost {
+            Some((amount, currency)) => {
+                *total.child_cost.entry(currency.clone()).or_default() += amount;
+            }
+            None => total.child_cost_known = false,
+        }
+    }
+    let user_indexes: Vec<usize> = tasks
+        .iter()
+        .enumerate()
+        .filter(|(_, task)| !task.internal)
+        .map(|(index, _)| index)
+        .collect();
+    let passed: Vec<usize> = user_indexes
+        .iter()
+        .copied()
+        .filter(|index| totals[*index].outcome == "passed")
+        .collect();
+    let per_completed_u64 = |values: Vec<Option<u64>>| -> Option<u64> {
+        if passed.is_empty() {
+            return None;
+        }
+        values
+            .into_iter()
+            .try_fold(0u64, |sum, value| value.map(|value| sum + value))
+            .map(|sum| sum / passed.len() as u64)
+    };
+    // The denominator is the passed count; the numerators are every user
+    // task's totals, failed and unverified work included — a cheap-but-wrong
+    // run is charged to the completions, never hidden beside them.
+    let cost_all_known = user_indexes
+        .iter()
+        .all(|index| totals[*index].cost_known && totals[*index].child_cost_known);
+    let cost_per_completed = (!passed.is_empty() && cost_all_known).then(|| {
+        let mut sum = std::collections::BTreeMap::new();
+        for index in &user_indexes {
+            for (currency, amount) in totals[*index]
+                .cost
+                .iter()
+                .chain(totals[*index].child_cost.iter())
+            {
+                *sum.entry(currency.clone()).or_default() += amount;
+            }
+        }
+        money(&sum)
+    });
+    let wall_per_completed = (!passed.is_empty()
+        && user_indexes
+            .iter()
+            .all(|index| totals[*index].wall_clock.is_some()))
+    .then(|| {
+        user_indexes
+            .iter()
+            .map(|index| totals[*index].wall_clock.unwrap_or(0))
+            .sum::<i64>()
+            / passed.len() as i64
+    });
+    let billed_per_completed = per_completed_u64(
+        user_indexes
+            .iter()
+            .map(|index| totals[*index].billed)
+            .collect(),
+    );
+    let mut detail: Vec<Value> = Vec::new();
+    for index in user_indexes.iter().copied().rev().take(64) {
+        let task = &tasks[index];
+        let total = &totals[index];
+        let cost_json = if total.cost_known && total.child_cost_known {
+            let mut merged = total.cost.clone();
+            for (currency, amount) in &total.child_cost {
+                *merged.entry(currency.clone()).or_default() += amount;
+            }
+            json!({"known": true, "byCurrency": money(&merged)})
+        } else {
+            json!({"known": false, "byCurrency": null})
+        };
+        let under_budget = match (total.budget, total.billed) {
+            (Some(budget), Some(billed)) => json!(billed <= budget),
+            _ => json!(null),
+        };
+        detail.push(json!({
+            "inputId": task.id,
+            "admittedAtMs": task.admitted_at,
+            "completedAtMs": total.completed_at,
+            "wallClockMs": total.wall_clock,
+            "outcome": total.outcome,
+            "runs": task.runs,
+            "billedTokens": total.billed,
+            "budgetTokens": total.budget,
+            "underBudget": under_budget,
+            "cost": cost_json,
+            "interventions": {"count": total.interventions, "waitMs": total.wait_ms},
+        }));
+    }
+    let first_submit = user_indexes.first().map(|index| tasks[*index].admitted_at);
+    let last_finish = user_indexes
+        .iter()
+        .filter_map(|index| totals[*index].completed_at)
+        .max();
+    let span_known = !user_indexes.is_empty()
+        && user_indexes
+            .iter()
+            .all(|index| totals[*index].wall_clock.is_some());
+    Ok(json!({
+        "tasks": {
+            "total": user_indexes.len(),
+            "passed": passed.len(),
+            "failed": user_indexes.iter().filter(|index| totals[**index].outcome == "failed").count(),
+            "unverified": user_indexes.iter().filter(|index| totals[**index].outcome == "unverified").count(),
+            "successRate": if user_indexes.is_empty() { Value::Null } else { json!(passed.len() as f64 / user_indexes.len() as f64) },
+            "perCompletedTask": {
+                "costByCurrency": cost_per_completed,
+                "wallClockMs": wall_per_completed,
+                "billedTokens": billed_per_completed,
+            },
+            "underBudget": {
+                "withBudget": user_indexes.iter().filter(|index| totals[**index].budget.is_some()).count(),
+                "within": user_indexes.iter().filter(|index| matches!((totals[**index].budget, totals[**index].billed), (Some(budget), Some(billed)) if billed <= budget)).count(),
+            },
+            "detail": detail,
+        },
+        "wallClock": {
+            "firstSubmitAtMs": first_submit,
+            "lastFinishAtMs": last_finish,
+            "spanMs": span_known.then(|| {
+                last_finish.unwrap_or(0) - first_submit.unwrap_or(0)
+            }),
+            "interventionWaitMs": spans.iter().filter_map(|span| span.end.map(|end| end.saturating_sub(span.start).max(0))).sum::<i64>(),
+            "openInterventions": spans.iter().filter(|span| span.end.is_none()).count(),
+            "interventionSpans": spans.iter().rev().take(32).map(|span| json!({
+                "kind": span.kind,
+                "startAtMs": span.start,
+                "endAtMs": span.end,
+                "waitMs": span.end.map(|end| end.saturating_sub(span.start).max(0)),
+                "outcome": span.outcome,
+            })).collect::<Vec<_>>(),
+        },
+    }))
 }
 
 /// Explicit TS↔native Session migration authority. A row is a versioned

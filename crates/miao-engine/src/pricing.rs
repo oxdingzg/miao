@@ -60,6 +60,10 @@ impl Tokens {
 pub struct Charge {
     pub currency: String,
     pub amount: f64,
+    /// The rates the amount was computed from, so a stored estimate stays
+    /// attributable when the price table changes later. A gateway-reported
+    /// figure carries no rates: the money moved at the provider's own price.
+    pub rates: Rates,
 }
 
 /// Prices keyed by the route that served the turn (`provider/model`), which is
@@ -124,6 +128,7 @@ impl Table {
         Some(Charge {
             currency: price.currency.clone(),
             amount: (amount * 1_000_000.0).round() / 1_000_000.0,
+            rates,
         })
     }
 }
@@ -186,6 +191,10 @@ mod tests {
             .unwrap();
         assert_eq!(cny.currency, "CNY");
         assert_eq!(cny.amount, 2.5);
+        // The charge carries the rates it used, so a stored estimate stays
+        // attributable when the table changes later.
+        assert_eq!(cny.rates.input, 2.0);
+        assert_eq!(cny.rates.cache_read, 0.5);
         let usd = table
             .charge(
                 "openai/gpt-5",

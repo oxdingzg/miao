@@ -3757,9 +3757,12 @@ command: None,
                 billing["reported"] = json!(true);
                 Some(billing)
             }
-            None => estimate.map(
-                |cost| json!({"amount":cost.amount,"currency":cost.currency,"reported":false}),
-            ),
+            None => estimate.map(|cost| {
+                json!({
+                    "amount":cost.amount,"currency":cost.currency,"reported":false,
+                    "rates":{"input":cost.rates.input,"output":cost.rates.output,"cacheRead":cost.rates.cache_read,"cacheWrite":cost.rates.cache_write,"perMillion":true},
+                })
+            }),
         };
         inner
             .store
