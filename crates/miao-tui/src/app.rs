@@ -3114,9 +3114,9 @@ impl App {
             return;
         }
         // With a draft on screen the arrows belong to the prompt (caret and
-        // history); the transcript scroll keys only answer an empty prompt,
-        // where there is no caret to move. Otherwise typing a long turn and
-        // nudging the caret once detached the transcript for the whole run.
+        // history); the line nudges only answer an empty prompt, where there is
+        // no caret to move. Otherwise typing a long turn and nudging the caret
+        // once detached the transcript for the whole run.
         let prompt_empty = self.shell.composer.editor.is_empty();
         // While a run streams, single-line arrow nudges must not detach the
         // transcript: an arrow pressed to recall or edit is read by the
@@ -3124,12 +3124,15 @@ impl App {
         // detached the whole run's stream. Page-level jumps and the wheel
         // remain deliberate detaches.
         let streaming = self.state.active_run.is_some();
-        if prompt_empty && action(keybinds::Action::PageUp) {
+        // A page jump is a deliberate read of history, so it answers whether or
+        // not the prompt holds text: the composer binds no page key, and losing
+        // them mid-draft made reading a sentence back cost clearing it first.
+        if action(keybinds::Action::PageUp) {
             let page = self.shell.transcript_page();
             self.shell.scroll_transcript(-page);
             return;
         }
-        if prompt_empty && action(keybinds::Action::PageDown) {
+        if action(keybinds::Action::PageDown) {
             let page = self.shell.transcript_page();
             self.shell.scroll_transcript(page);
             return;
@@ -4704,6 +4707,33 @@ mod tests {
         app.handle(key(KeyCode::End, KeyModifiers::NONE));
         draw(&mut app);
         assert!(app.shell.following(), "end returns to the newest row");
+    }
+
+    #[test]
+    fn a_page_key_reads_history_with_a_draft_in_the_prompt() {
+        // The composer binds no page key, so clearing a half-written turn to
+        // look something up was never part of the deal: a page jump answers
+        // while the draft is on screen.
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_a", 1)),
+            transcript: Box::new(forty_messages()),
+            state: Box::new(SessionState::default()),
+        });
+        draw(&mut app);
+        let tail = app.shell.transcript_scroll();
+        app.shell.composer.editor.set_text("a draft in progress");
+        app.handle(key(KeyCode::PageUp, KeyModifiers::NONE));
+        assert!(
+            app.shell.transcript_scroll() < tail,
+            "the page still moves with a draft in the prompt"
+        );
+        assert!(!app.shell.following());
+        assert_eq!(
+            app.shell.composer.editor.text(),
+            "a draft in progress",
+            "and the draft is untouched"
+        );
     }
 
     /// Paint one frame. The tail offset is computed while rendering, so a wheel
