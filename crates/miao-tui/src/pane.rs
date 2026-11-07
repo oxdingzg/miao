@@ -4948,7 +4948,7 @@ mod tests {
         // The reported symptom, in the sentence that showed it: backing off to
         // the last blank produced `[58, 60, 49, 9]` here, so `success。` sat
         // alone. Only a paragraph's own remainder may be short.
-        let sentence = "验证：macmini 上 fmt、clippy、三个测试全通过；合并后 main 推送的 tui / tui (macos-14)、engine (macos-arm64)、engine / cli (macos-arm64) 全部 success，整个 ci run 结论 success。";
+        let sentence = "验证：builder 上 fmt、clippy、三个测试全通过；合并后 main 推送的 tui / tui (macos-14)、engine (macos-arm64)、engine / cli (macos-arm64) 全部 success，整个 ci run 结论 success。";
         let rows = wrap_lines(&[Line::from(sentence)], 60);
         let texts = line_texts(&rows);
         assert!(texts.len() > 1, "the sentence wrapped: {texts:?}");

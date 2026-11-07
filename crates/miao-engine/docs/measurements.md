@@ -23,7 +23,7 @@ Gate (target, not a current result): p95 ≤ 50 ms, p99 ≤ 100 ms on a pinned
 machine, re-measured under streaming output and long-history load before the
 gate is claimed.
 
-Latest run (2026-10-31, macmini M-series, PTY 80×24, TUI against the scripted
+Latest run (2026-10-31, an M-series macOS build host, PTY 80×24, TUI against the scripted
 engine, 36 distinct keystrokes after entering a session):
 
 | scenario      | samples | p50 | p95 | p99 | max |
