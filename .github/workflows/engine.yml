@@ -103,17 +103,17 @@ jobs:
           components: rustfmt, clippy
 
       # The self-hosted macOS runner is a launchd service whose PATH omits the
-      # toolchain, and the shim directory alone is not a reliable answer: rustup
-      # rewrites `~/.cargo/bin` when it repairs itself, so a PATH entry for it
-      # can point at shims that are about to be replaced, and the job then died
-      # much later with `cargo: command not found`. Ask rustup where the
-      # toolchain actually put `cargo`, prove it runs here, and only then hand
-      # the directory to later steps.
+      # toolchain. `~/.cargo/bin` is not the answer on that host: every binary
+      # there is a shim that execs `~/.cargo/bin/rustup`, and when rustup
+      # replaces itself the shims are left dangling, which reads as
+      # `cargo: command not found` long after this step ran. Point PATH at the
+      # toolchain's own bin directory instead — `rustup which` names it, the
+      # binaries there are real files, and the step proves cargo runs before
+      # any later step depends on it.
       - name: Ensure cargo is on PATH (self-hosted runner)
         run: |
           cargo_bin="$(dirname "$(rustup which --toolchain stable cargo)")"
           echo "$cargo_bin" >> "$GITHUB_PATH"
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           "$cargo_bin/cargo" --version
 
       # The self-hosted macOS runner keeps crates/miao-engine/target on disk
