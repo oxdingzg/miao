@@ -328,6 +328,10 @@ pub struct App {
     /// that already happened ("copied 120 characters"); leaving it on screen
     /// until the next event turns it into permanent clutter.
     notice_until: Option<Instant>,
+    /// Escape pressed on an idle Session: the next Escape returns to Home. The
+    /// deadline is what expires the confirmation, so a press minutes later asks
+    /// again instead of leaving on a notice nobody is looking at.
+    leave_armed: Option<Instant>,
     /// How long an armed leader waits for its chord key.
     leader_timeout: Duration,
     keys: Keymap,
@@ -506,6 +510,7 @@ impl App {
             leader: false,
             leader_since: None,
             notice_until: None,
+            leave_armed: None,
             leader_timeout: Duration::from_millis(2000),
             keys,
             workspace,
@@ -4126,7 +4131,26 @@ impl App {
         if self.shell.panel.is_some() {
             return;
         }
+        // One Escape used to leave the Session outright, and Escape is also the
+        // key that clears a notice or a mode: the screen a Session holds is the
+        // operator's to lose, so the first press only offers the way home. This
+        // is how the other terminal agents answer the same key, where Escape
+        // stops a turn and never discards the transcript.
+        if !self.confirm_leave() {
+            self.leave_armed = Some(Instant::now() + NOTICE_LIFETIME);
+            self.notice("press esc again to go back home");
+            return;
+        }
         self.leave_session();
+    }
+
+    /// Take the armed Escape, reporting whether its confirmation is still live.
+    /// Taking it either way means one Escape cannot confirm twice.
+    fn confirm_leave(&mut self) -> bool {
+        let Some(until) = self.leave_armed.take() else {
+            return false;
+        };
+        Instant::now() < until
     }
 
     /// `!` runs on the Session's host shell through the engine. The engine
@@ -6519,6 +6543,10 @@ mod tests {
         // The typed command survives leaving the mode.
         assert_eq!(app.shell.composer.editor.text(), "ls");
         assert!(requests.try_recv().is_err(), "no interrupt was requested");
+        // Leaving the mode is not leaving the Session: the press that follows
+        // asks first, and only the confirming one goes home.
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Session);
         app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(app.screen, Screen::Home);
     }
@@ -6679,11 +6707,32 @@ mod tests {
     }
 
     #[test]
-    fn esc_returns_from_a_session_to_the_home_list() {
+    fn esc_asks_before_it_returns_to_the_home_list() {
         let mut app = session_app();
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Session);
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("press esc again to go back home")
+        );
         app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(app.screen, Screen::Home);
         assert!(app.session.is_none());
+    }
+
+    /// A confirmation that outlived its notice is not a confirmation: the next
+    /// Escape asks again rather than leaving on a deadline nobody saw.
+    #[test]
+    fn a_lapsed_escape_confirmation_asks_again() {
+        let mut app = session_app();
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        app.leave_armed = Some(Instant::now() - Duration::from_millis(1));
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Session);
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("press esc again to go back home")
+        );
     }
 
     fn leader(app: &mut App, letter: char) {
