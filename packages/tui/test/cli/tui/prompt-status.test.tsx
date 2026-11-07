@@ -66,7 +66,7 @@ test("prompt receipt distinguishes sending, failure and durable admission", asyn
     await app.renderOnce()
     expect(app.captureCharFrame()).toContain("RECEIVED · joins at the next safe turn")
     expect(app.captureCharFrame()).toMatch(
-      /RECEIVED · joins at the next safe turn · esc removes waiting prompts, newest first · \d/,
+      /RECEIVED · joins at the next safe turn · esc interrupts · up takes it back · \d/,
     )
     expect(app.captureCharFrame()).not.toContain("SEND FAILED")
   } finally {

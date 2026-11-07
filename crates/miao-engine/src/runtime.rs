@@ -2448,7 +2448,12 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                 },
                 Some(Command::Wake(force)) => wake=Some(wake.unwrap_or(false)||(force && active.is_none())),
                 Some(Command::Cancel(reply)) => {
-                    wake=None;
+                    // A wake already queued behind this run belongs to input the
+                    // operator admitted before stopping it. Escape interrupts the
+                    // turn, not the message typed behind it, so the coalesced
+                    // wake survives and the successor drain promotes that input.
+                    // With nothing queued no wake exists and the Session stays
+                    // stopped, which is what a plain interrupt means.
                     refuse_shell_queue(&inner,&session,&mut shells).await;
                     if let Some(cancel)=&active { cancel.cancel(); }
                     withdraw_product_sources(&inner,&session,&mut notifications);
@@ -2460,7 +2465,8 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                     // the active token and durable run belong to the same owner.
                     let result = match inner.store.active_run(&session).await {
                         Ok(Some(run)) if run == expected && active.as_ref().is_some_and(|token| !token.is_cancelled()) => {
-                            wake = None;
+                            // Same rule as `Cancel`: a coalesced wake is work the
+                            // operator already admitted, so it outlives the stop.
                             refuse_shell_queue(&inner,&session,&mut shells).await;
                             if let Some(token) = &active { token.cancel(); }
                             withdraw_product_sources(&inner,&session,&mut notifications);

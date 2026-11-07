@@ -50,9 +50,14 @@ export function statusHintSegments(source: StatusHint): StatusHintItem[] {
           },
         ]
       : []),
+    // Escape interrupts the running turn; a prompt waiting behind that turn is
+    // sent once it ends, so the hint promises the send as well. Removing a
+    // waiting prompt is the idle action.
     ...(source.busy
-      ? [{ text: `esc ${source.waitingPrompts > 0 ? "remove prompt" : "interrupt"}`, tone: "text" as const }]
-      : []),
+      ? [{ text: `esc ${source.waitingPrompts > 0 ? "interrupt and send" : "interrupt"}`, tone: "text" as const }]
+      : source.waitingPrompts > 0
+        ? [{ text: "esc remove prompt", tone: "text" as const }]
+        : []),
   ]
 }
 

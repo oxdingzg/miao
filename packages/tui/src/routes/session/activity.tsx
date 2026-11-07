@@ -214,11 +214,12 @@ export function SessionActivity(props: { sessionID: string; compact?: boolean; s
     busy() || compaction() || blocked() ? undefined : turnSummary({ messages: messages(), background: background() }),
   )
   // The esc hint names the next esc action, matching the prompt's hint row: one
-  // esc cancels the newest waiting prompt, and only an empty queue interrupts.
+  // esc interrupts the running turn, and the prompt queued behind it is sent
+  // once that turn ends. Only an idle Session takes a waiting prompt back.
   // The live line above the composer reports the turn, so only the non-compact
   // transcript line keeps the escape action here.
   const waitingCount = createMemo(() => sync.prompt.waiting(props.sessionID).length)
-  const esc = createMemo(() => (waitingCount() > 0 ? "remove prompt" : "interrupt"))
+  const esc = createMemo(() => (busy() && waitingCount() > 0 ? "interrupt and send" : "interrupt"))
   const receipt = createMemo(() => {
     const current = sync.prompt.latest(props.sessionID)
     if (current?.state !== "admitted" || (!busy() && status()?.type !== "retry")) return undefined
@@ -236,9 +237,7 @@ export function SessionActivity(props: { sessionID: string; compact?: boolean; s
               activity={activity()}
               phase={phase()}
               progress={progress()}
-              base={() =>
-                receipt() && !runningTool() ? (receipt()!.since ?? undefined) : elapsedBase()
-              }
+              base={() => (receipt() && !runningTool() ? (receipt()!.since ?? undefined) : elapsedBase())}
               totalBase={turnStartedAt}
               esc={esc()}
               receipt={receipt()}
