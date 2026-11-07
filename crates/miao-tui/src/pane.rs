@@ -4721,6 +4721,10 @@ mod tests {
     fn the_landing_prompt_is_the_products_open_band() {
         let theme = home_theme();
         let mut home = Home::new(theme.clone());
+        // The band's shape is what this test is about, so the width is pinned
+        // to the product's fixed cap; the default is `"auto"`, and its own
+        // arithmetic is asserted below.
+        home.set_prompt_width(crate::config::PromptWidth::Fixed(75));
         let mut composer = crate::editor::Composer::new(Path::new("."));
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).expect("terminal");
@@ -4756,6 +4760,13 @@ mod tests {
         assert!(banner_row.contains("/\\/\\"), "{banner_row:?}");
         assert_eq!(banner_row.find('/'), Some(46), "{banner_row:?}");
         assert!(banner_row.contains('█'), "{banner_row:?}");
+        // The default scales with the window instead of sitting at the
+        // product's fixed 75 columns.
+        assert_eq!(
+            crate::config::PromptWidth::default().resolve(120),
+            84,
+            "the default band is 70% of a 120-column window"
+        );
     }
 
     /// The landing prompt is not a one-row field: a draft with newlines in it
@@ -4765,6 +4776,7 @@ mod tests {
     fn the_landing_band_shows_every_line_of_its_draft() {
         let theme = home_theme();
         let mut home = Home::new(theme.clone());
+        home.set_prompt_width(crate::config::PromptWidth::Fixed(75));
         let mut composer = crate::editor::Composer::new(Path::new("."));
         composer
             .editor
