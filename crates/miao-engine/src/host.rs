@@ -317,6 +317,36 @@ impl Host {
             Command::Workspaces => Ok(parse_export(
                 std::env::var("MIAO_WORKSPACES_JSON").ok().as_deref(),
             )),
+            Command::Worktrees { root } => {
+                Ok(json!(crate::worktree::list(std::path::Path::new(&root))?))
+            }
+            Command::WorktreeCreate { root, name } => Ok(json!(crate::worktree::create(
+                std::path::Path::new(&root),
+                &name
+            )?)),
+            Command::WorktreeRemove { root, name, force } => {
+                let checkout = std::path::Path::new(&root);
+                let tree = checkout.join(crate::worktree::DIRECTORY).join(&name);
+                let ledger = runtime.store().path().to_path_buf();
+                let anchored = crate::worktree::anchored_sessions(&ledger, &tree)?;
+                // Removing a tree whose Sessions are still working there leaves
+                // their tools pointing at a directory that no longer exists, so
+                // the refusal names the count and the way out.
+                if anchored > 0 && !force {
+                    return Err(Error::Invalid(format!(
+                        "{anchored} session(s) still anchor {}: move or close them first, or pass force to point them back at the checkout",
+                        tree.display()
+                    )));
+                }
+                if anchored > 0 {
+                    runtime
+                        .store()
+                        .repoint_root(tree, checkout.to_path_buf())
+                        .await?;
+                }
+                crate::worktree::remove(checkout, &name)?;
+                Ok(json!({ "removed": name, "migrated": anchored }))
+            }
             Command::Devices => Ok(parse_export(
                 std::env::var("MIAO_DEVICES_JSON").ok().as_deref(),
             )),

@@ -105,6 +105,7 @@ pub mod wakeup;
 pub mod web;
 mod wildcard;
 pub mod worker;
+pub mod worktree;
 
 pub mod tool_catalog;
 mod tool_input;

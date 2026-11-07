@@ -1326,11 +1326,12 @@ fn worktree(rest: &[String]) -> Result<(), String> {
     let root = String::from_utf8_lossy(&top.stdout).trim().to_string();
     match rest.first().map(String::as_str) {
         Some("list") | None => {
-            let listed = git(&["worktree", "list", "--porcelain"])?;
-            for line in String::from_utf8_lossy(&listed.stdout).lines() {
-                if let Some(path) = line.strip_prefix("worktree ") {
-                    println!("{path}");
-                }
+            // The engine owns the git plumbing; the CLI only prints what it
+            // answers, so a tree another client creates lists here too.
+            for tree in miao_engine::worktree::list(std::path::Path::new(&root))
+                .map_err(|error| error.to_string())?
+            {
+                println!("{}", tree.path);
             }
             Ok(())
         }
@@ -1339,15 +1340,11 @@ fn worktree(rest: &[String]) -> Result<(), String> {
             if name.contains('/') || name.contains("..") {
                 return Err("worktree name must be a single path component".into());
             }
-            let path = PathBuf::from(&root).join(".miao-worktrees").join(name);
-            let path = path.display().to_string();
-            let added = git(&["worktree", "add", "-B", name, &path])?;
-            if !added.status.success() {
-                return Err(String::from_utf8_lossy(&added.stderr).trim().to_string());
-            }
-            // Report the canonical path: that is what a Location must be keyed by.
-            let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| PathBuf::from(&path));
-            println!("{}", canonical.display());
+            // Report the canonical path: that is what a Location must be keyed
+            // by, and the engine's service already canonicalises it.
+            let tree = miao_engine::worktree::create(std::path::Path::new(&root), name)
+                .map_err(|error| error.to_string())?;
+            println!("{}", tree.path);
             Ok(())
         }
         Some("remove") => {
@@ -1520,15 +1517,8 @@ fn worktree_remove_apply(
         let moved = tree_migrate_sessions(root, &check_path, &checkout)?;
         println!("migrated {moved} session(s) back to {}", checkout.display());
     }
-    let removed = git_in(
-        std::path::Path::new(root),
-        &["worktree", "remove", "--force", &path.display().to_string()],
-    )?;
-    if !removed.status.success() {
-        return Err(String::from_utf8_lossy(&removed.stderr).trim().to_string());
-    }
-    let _ = git_in(std::path::Path::new(root), &["branch", "-D", name]);
-    Ok(())
+    miao_engine::worktree::remove(std::path::Path::new(root), name)
+        .map_err(|error| error.to_string())
 }
 
 /// Sessions anchored to `tree` across the two ledgers that can hold one: the
