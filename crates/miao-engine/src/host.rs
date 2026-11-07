@@ -317,6 +317,33 @@ impl Host {
             Command::Workspaces => Ok(parse_export(
                 std::env::var("MIAO_WORKSPACES_JSON").ok().as_deref(),
             )),
+            Command::Worktrees { root } => Ok(json!(crate::worktree::list(
+                std::path::Path::new(&root)
+            )?)),
+            Command::WorktreeCreate { root, name } => Ok(json!(crate::worktree::create(
+                std::path::Path::new(&root),
+                &name
+            )?)),
+            Command::WorktreeRemove { root, name, force } => {
+                let checkout = std::path::Path::new(&root);
+                let tree = checkout.join(crate::worktree::DIRECTORY).join(&name);
+                let ledger = runtime.store().path().to_path_buf();
+                let anchored = crate::worktree::anchored_sessions(&ledger, &tree)?;
+                // Removing a tree whose Sessions are still working there leaves
+                // their tools pointing at a directory that no longer exists, so
+                // the refusal names the count and the way out.
+                if anchored > 0 && !force {
+                    return Err(Error::Invalid(format!(
+                        "{anchored} session(s) still anchor {}: move or close them first, or pass force to point them back at the checkout",
+                        tree.display()
+                    )));
+                }
+                if anchored > 0 {
+                    runtime.store().repoint_root(tree, checkout.to_path_buf()).await?;
+                }
+                crate::worktree::remove(checkout, &name)?;
+                Ok(json!({ "removed": name, "migrated": anchored }))
+            }
             Command::Devices => Ok(parse_export(
                 std::env::var("MIAO_DEVICES_JSON").ok().as_deref(),
             )),
@@ -703,16 +730,21 @@ impl Host {
         }
     }
 
-    /// Committed event notifications for every subscription, advancing each
-    /// cursor. Adapters page these into their own envelope; the durable cursor
-    /// keeps the replay→live handoff gapless.
+    /// Committed events for every subscription, advancing each cursor. Each
+    /// item is the bare event: the adapter owns the envelope, so a frame is
+    /// wrapped exactly once on its way to a client. Returning the envelope from
+    /// here let the in-process adapter wrap it again, and the doubly nested
+    /// frame could not decode into an event and was dropped — every durable
+    /// notification vanished, so the transcript refreshed only when a timer
+    /// happened to re-project. The durable cursor keeps the replay→live
+    /// handoff gapless.
     pub async fn poll_events(&mut self) -> Result<Vec<Value>, Error> {
         let runtime = &self.runtime;
         let mut notifications = Vec::new();
         for (session, cursor) in self.subscriptions.iter_mut() {
             for event in runtime.store().events(session, *cursor, 32).await? {
                 *cursor = event.seq;
-                notifications.push(json!({ "method": "event", "params": event }));
+                notifications.push(serde_json::to_value(event).map_err(Error::from)?);
             }
         }
         Ok(notifications)
