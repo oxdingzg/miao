@@ -11,6 +11,7 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use serde_json::Value;
 
+use crate::highlight::Highlighter;
 use crate::session::{DisplayFile, ToolPart};
 use crate::theme::Theme;
 
@@ -616,6 +617,12 @@ fn file(
         return;
     }
     let Some(files) = files.filter(|files| !files.is_empty()) else {
+        // A call still streaming has no recorded diff, and an engine that
+        // committed no display block leaves one behind. The input is then the
+        // only record of the change, and a row that is a bare filename tells
+        // the operator nothing about what was edited.
+        let (rows, hidden) = input_diff(name, input, diff_limit);
+        paint_diff(out, &rows, hidden, &path, theme, fold.toggle);
         return;
     };
     let added: u64 = files.iter().map(|file| file.additions).sum();
@@ -632,29 +639,8 @@ fn file(
             ),
             Style::new().fg(palette.accent),
         )));
-        let mut started = false;
-        let diff = file
-            .patch
-            .lines()
-            .filter(|line| {
-                if line.starts_with("@@") {
-                    started = true;
-                }
-                started
-            })
-            .collect::<Vec<_>>();
-        for line in diff.iter().take(diff_limit) {
-            out.push(Line::from(Span::styled(
-                format!("  {line}"),
-                Style::new().fg(diff_color(line, theme)),
-            )));
-        }
-        if diff.len() > diff_limit {
-            out.push(Line::from(Span::styled(
-                format!("  … {} more diff lines", diff.len() - diff_limit),
-                Style::new().fg(palette.text_muted),
-            )));
-        }
+        let (rows, hidden) = patch_diff(&file.patch, diff_limit);
+        paint_diff(out, &rows, hidden, &file.path, theme, fold.toggle);
     }
 }
 
@@ -680,18 +666,208 @@ fn file_summary(added: u64, removed: u64) -> String {
     }
 }
 
-fn diff_color(line: &str, theme: &Theme) -> Color {
+/// One painted diff row: the source line number when the patch states one, the
+/// `+`/`-` marker, and the code the line holds.
+enum DiffRow {
+    /// The seam between two hunks, where the numbers restart.
+    Hunk,
+    Line {
+        number: Option<u64>,
+        marker: char,
+        text: String,
+    },
+}
+
+/// Split a unified patch into paintable rows, stopping after `budget` lines.
+///
+/// `hidden` counts the lines the budget left out so the fold can say how much of
+/// the change is off screen. A hunk header that states its range
+/// (`@@ -12,7 +12,9 @@`) restarts both counters; the V4A shape an `apply_patch`
+/// tool takes as input states no range, so its rows carry no numbers.
+fn patch_diff(patch: &str, budget: usize) -> (Vec<DiffRow>, usize) {
+    let mut rows = Vec::new();
+    let mut hidden = 0;
+    let mut drawn = 0;
+    let mut numbers: Option<(u64, u64)> = None;
+    let mut started = false;
+    for line in patch.lines() {
+        if line.starts_with("@@") {
+            if drawn > 0 && drawn < budget {
+                rows.push(DiffRow::Hunk);
+            }
+            started = true;
+            numbers = hunk_start(line);
+            continue;
+        }
+        // Everything above the first hunk names the file, not a change to it.
+        if !started {
+            continue;
+        }
+        let Some((marker, text)) = marker_line(line) else {
+            continue;
+        };
+        let current = numbers;
+        let number = current.map(|(old, new)| {
+            numbers = Some(match marker {
+                '+' => (old, new + 1),
+                '-' => (old + 1, new),
+                _ => (old + 1, new + 1),
+            });
+            if marker == '+' {
+                new
+            } else {
+                old
+            }
+        });
+        if drawn >= budget {
+            hidden += 1;
+            continue;
+        }
+        drawn += 1;
+        rows.push(DiffRow::Line {
+            number,
+            marker,
+            text: text.to_string(),
+        });
+    }
+    (rows, hidden)
+}
+
+/// The change a call asked for, for the call no diff was recorded for.
+///
+/// A streamed call has no display diff yet, and an engine that committed none
+/// leaves the input as the only record of what changed.
+fn input_diff(name: &str, input: &Value, budget: usize) -> (Vec<DiffRow>, usize) {
+    if name == "apply_patch" {
+        return patch_diff(&text(input, "patch"), budget);
+    }
+    let (removed, added) = match name {
+        "edit" => (text(input, "old_string"), text(input, "new_string")),
+        _ => (String::new(), text(input, "content")),
+    };
+    // A replacement spends the budget on both halves: giving it all to one side
+    // would hide the very text the model asked to write.
+    let per_side = if removed.is_empty() || added.is_empty() {
+        budget
+    } else {
+        budget.div_ceil(2)
+    };
+    let mut rows = Vec::new();
+    let mut hidden = 0;
+    for (marker, side) in [('-', removed.as_str()), ('+', added.as_str())] {
+        for (index, text) in side.lines().enumerate() {
+            if index >= per_side {
+                hidden += 1;
+                continue;
+            }
+            rows.push(DiffRow::Line {
+                number: None,
+                marker,
+                text: text.to_string(),
+            });
+        }
+    }
+    (rows, hidden)
+}
+
+fn paint_diff(
+    out: &mut Vec<Line<'static>>,
+    rows: &[DiffRow],
+    hidden: usize,
+    path: &str,
+    theme: &Theme,
+    toggle: Option<&str>,
+) {
     let palette = theme.palette;
-    if line.starts_with('+') {
-        return palette.success;
+    // One gutter width for the whole block: a digit count that varies per row
+    // makes the markers jag down the block and the code jump sideways.
+    let width = rows
+        .iter()
+        .filter_map(|row| match row {
+            DiffRow::Line {
+                number: Some(number),
+                ..
+            } => Some(number.to_string().len()),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0);
+    // The scanner carries block-comment state across lines, so the file's own
+    // language decides the spans; an extension outside the table stays plain.
+    let mut highlighter = Highlighter::new(extension(path), palette);
+    for row in rows {
+        match row {
+            DiffRow::Hunk => out.push(Line::from(Span::styled(
+                format!("  {:width$}  …", ""),
+                Style::new().fg(palette.text_muted),
+            ))),
+            DiffRow::Line {
+                number,
+                marker,
+                text,
+            } => {
+                let gutter = match number {
+                    Some(number) => format!("  {number:>width$}  "),
+                    None => format!("  {:width$}  ", ""),
+                };
+                let mut spans = vec![
+                    Span::styled(gutter, Style::new().fg(palette.text_muted)),
+                    Span::styled(
+                        marker.to_string(),
+                        Style::new().fg(diff_color(*marker, theme)),
+                    ),
+                ];
+                spans.extend(highlighter.line(text));
+                out.push(Line::from(spans));
+            }
+        }
     }
-    if line.starts_with('-') {
-        return palette.error;
+    if hidden > 0 {
+        let line = match toggle {
+            Some(chord) => format!("  … {hidden} more diff lines · {chord} expand"),
+            None => format!("  … {hidden} more diff lines"),
+        };
+        out.push(Line::from(Span::styled(
+            line,
+            Style::new().fg(palette.text_muted),
+        )));
     }
-    if line.starts_with("@@") {
-        return palette.accent;
+}
+
+/// The `-a,b +c,d` range a unified hunk header states, if it states one.
+fn hunk_start(line: &str) -> Option<(u64, u64)> {
+    let rest = line.strip_prefix("@@ -")?;
+    let (old, new) = rest.split_once(" +")?;
+    Some((
+        old.split(',').next()?.parse().ok()?,
+        new.split([',', ' ']).next()?.parse().ok()?,
+    ))
+}
+
+/// The marker a diff body line opens with, and the text after it. A line that is
+/// not a change at all (`\ No newline at end of file`) has no marker.
+fn marker_line(line: &str) -> Option<(char, &str)> {
+    match line.chars().next() {
+        Some(marker @ ('+' | '-' | ' ')) => Some((marker, &line[marker.len_utf8()..])),
+        None => Some((' ', "")),
+        Some(_) => None,
     }
-    palette.text_muted
+}
+
+/// The extension whose scanner colours a file's code.
+fn extension(path: &str) -> &str {
+    path.rsplit_once('.')
+        .map(|(_, extension)| extension)
+        .unwrap_or_default()
+}
+
+fn diff_color(marker: char, theme: &Theme) -> Color {
+    let palette = theme.palette;
+    match marker {
+        '+' => palette.success,
+        '-' => palette.error,
+        _ => palette.text_muted,
+    }
 }
 
 fn todos(
@@ -1045,14 +1221,13 @@ mod tests {
     }
 
     fn rendered(lines: &[Line<'_>]) -> Vec<String> {
-        lines
+        lines.iter().map(row_text).collect()
+    }
+
+    fn row_text(line: &Line<'_>) -> String {
+        line.spans
             .iter()
-            .map(|line| {
-                line.spans
-                    .iter()
-                    .map(|span| span.content.as_ref())
-                    .collect::<String>()
-            })
+            .map(|span| span.content.as_ref())
             .collect()
     }
 
@@ -1253,9 +1428,152 @@ mod tests {
         assert_eq!(rendered[0], "✓ edit  src/lib.rs");
         assert!(rendered.contains(&"  ⎿ Added 1 line, removed 1 line".to_string()));
         assert!(rendered.contains(&"  ◆ update src/lib.rs +1 −1".to_string()));
-        assert!(rendered.contains(&"  -a".to_string()));
-        assert!(rendered.contains(&"  +b".to_string()));
+        assert!(rendered.contains(&"  1  -a".to_string()), "{rendered:?}");
+        assert!(rendered.contains(&"  1  +b".to_string()), "{rendered:?}");
         assert!(!rendered.iter().any(|line| line.contains("Index:")));
+    }
+
+    /// A streamed call has no recorded diff yet, and a row that is a bare
+    /// filename says nothing about the edit. The input is the only record of the
+    /// change then, so the row has to paint it.
+    #[test]
+    fn an_edit_without_a_recorded_diff_shows_what_it_asked_for() {
+        let part = tool(
+            "edit_file",
+            json!({
+                "path": "docs/guide.zh.md",
+                "old_string": "旧的一行",
+                "new_string": "新的一行",
+                "expected_sha256": "0"
+            }),
+            Some(json!({"path": "docs/guide.zh.md", "sha256": "1"})),
+            false,
+        );
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
+        assert_eq!(rendered[0], "✓ edit  docs/guide.zh.md");
+        assert!(
+            rendered.contains(&"    -旧的一行".to_string()),
+            "{rendered:?}"
+        );
+        assert!(
+            rendered.contains(&"    +新的一行".to_string()),
+            "{rendered:?}"
+        );
+    }
+
+    #[test]
+    fn a_write_without_a_recorded_diff_shows_the_lines_it_wrote() {
+        let part = tool(
+            "write_file",
+            json!({"path": "notes.md", "text": "first\nsecond", "expected_sha256": null}),
+            Some(json!({"path": "notes.md", "sha256": "1"})),
+            false,
+        );
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
+        assert_eq!(rendered[0], "✓ write  notes.md");
+        assert!(rendered.contains(&"    +first".to_string()), "{rendered:?}");
+        assert!(
+            rendered.contains(&"    +second".to_string()),
+            "{rendered:?}"
+        );
+    }
+
+    /// A hunk header states where its lines sit, so the row can print the number
+    /// the operator would see in an editor. Two hunks are one change to read:
+    /// the numbers restart at the second and a seam marks the skipped lines.
+    #[test]
+    fn a_second_hunk_restarts_its_numbers_under_a_seam() {
+        let files = vec![DisplayFile {
+            path: "src/lib.rs".into(),
+            action: "update".into(),
+            patch: "@@ -2,2 +2,2 @@\n-let old = 1;\n+let new = 1;\n@@ -40,2 +40,2 @@\n-let tail = 1;\n+let tail = 2;\n"
+                .into(),
+            additions: 2,
+            deletions: 2,
+        }];
+        let part = tool(
+            "edit_file",
+            json!({"path": "src/lib.rs"}),
+            Some(json!({"applied": true})),
+            false,
+        );
+        let rendered = rendered(&lines(&part, Some(&files), &theme(), false, None));
+        assert!(
+            rendered.contains(&"   2  -let old = 1;".to_string()),
+            "{rendered:?}"
+        );
+        assert!(
+            rendered.contains(&"  40  -let tail = 1;".to_string()),
+            "{rendered:?}"
+        );
+        assert!(
+            rendered.iter().any(|line| line.trim() == "…"),
+            "{rendered:?}"
+        );
+    }
+
+    /// The code keeps its colours: the marker column says what changed, and the
+    /// scanner says what the line is.
+    #[test]
+    fn a_diff_row_is_highlighted_by_the_files_language() {
+        let files = vec![DisplayFile {
+            path: "src/lib.rs".into(),
+            action: "update".into(),
+            patch: "@@ -1 +1 @@\n-let old = 1;\n+let new = 1;\n".into(),
+            additions: 1,
+            deletions: 1,
+        }];
+        let part = tool(
+            "edit_file",
+            json!({"path": "src/lib.rs"}),
+            Some(json!({"applied": true})),
+            false,
+        );
+        let theme = theme();
+        let rendered_lines = lines(&part, Some(&files), &theme, false, None);
+        let row = rendered_lines
+            .iter()
+            .find(|line| row_text(line) == "  1  -let old = 1;")
+            .expect("removed row");
+        let keyword = row
+            .spans
+            .iter()
+            .find(|span| span.content.as_ref() == "let")
+            .expect("the keyword is its own span");
+        assert_eq!(keyword.style.fg, Some(theme.palette.secondary));
+    }
+
+    #[test]
+    fn a_long_diff_folds_and_says_how_much_it_hides() {
+        let body = (1..=30)
+            .map(|number| format!("+line {number}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let files = vec![DisplayFile {
+            path: "notes.txt".into(),
+            action: "create".into(),
+            patch: format!("@@ -0,0 +1,30 @@\n{body}\n"),
+            additions: 30,
+            deletions: 0,
+        }];
+        let part = tool(
+            "write_file",
+            json!({"path": "notes.txt"}),
+            Some(json!({"applied": true})),
+            false,
+        );
+        let folded = rendered(&lines(&part, Some(&files), &theme(), false, None));
+        assert!(
+            folded
+                .iter()
+                .any(|line| line.contains("18 more diff lines")),
+            "{folded:?}"
+        );
+        let expanded = rendered(&lines(&part, Some(&files), &theme(), true, None));
+        assert!(
+            expanded.iter().any(|line| line.contains("line 30")),
+            "{expanded:?}"
+        );
     }
 
     #[test]
