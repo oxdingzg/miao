@@ -31,6 +31,7 @@ pub mod theme;
 pub mod tool;
 pub mod transport;
 pub mod workspace_changes;
+pub mod worktrees;
 
 use std::error::Error;
 use std::path::PathBuf;

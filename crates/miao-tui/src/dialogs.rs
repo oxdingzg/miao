@@ -467,6 +467,9 @@ pub enum ListKind {
     Jobs,
     /// `Enter` refreshes; `x` cancels the selected wakeup or cron.
     Schedule,
+    /// `Enter` moves this Session into the tree; `n` adds one, `d` removes
+    /// the one under the cursor.
+    Worktrees,
 }
 
 impl ListDialog {
@@ -623,6 +626,8 @@ impl ListDialog {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfirmKind {
     RemoveSession(String),
+    /// Remove one git worktree by name.
+    RemoveWorktree(String),
     /// Rewind the transcript to a user message, with or without restoring the
     /// file set the Session recorded at that boundary.
     Revert {
@@ -646,6 +651,7 @@ impl ConfirmDialog {
     pub fn action_label(&self) -> &'static str {
         match self.kind {
             ConfirmKind::RemoveSession(_) => "delete",
+            ConfirmKind::RemoveWorktree(_) => "remove",
             ConfirmKind::Revert { .. } => "revert",
         }
     }
@@ -674,11 +680,13 @@ pub enum Dialog {
     Schedule(ListDialog),
     Skills(ListDialog),
     Workspaces(ListDialog),
+    Worktrees(ListDialog),
     Message(TextDialog),
     Palette(PaletteDialog),
     Rename(RenameDialog),
     Tag(TagDialog),
     SignIn(SignInDialog),
+    WorktreeNew(WorktreeNewDialog),
     Confirm(ConfirmDialog),
 }
 
@@ -768,6 +776,12 @@ fn insert_paste(input: &mut Editor, text: &str) {
 /// the same shape rename already has: the dialog is the edit.
 pub struct TagDialog {
     pub session_id: String,
+    pub input: Editor,
+}
+
+/// The name for a new worktree: one path component, which is what the engine
+/// accepts and what the directory it creates is called.
+pub struct WorktreeNewDialog {
     pub input: Editor,
 }
 
@@ -1234,6 +1248,59 @@ impl Dialog {
         Dialog::Sessions(list)
     }
 
+    /// The git worktrees of this checkout, the checkout itself first.
+    pub fn worktrees(trees: &[crate::worktrees::Worktree]) -> Self {
+        let rows = if trees.is_empty() {
+            vec![Row {
+                id: String::new(),
+                label: "no worktrees".to_string(),
+                detail: String::new(),
+            }]
+        } else {
+            trees
+                .iter()
+                .map(|tree| Row {
+                    // The checkout itself is not removable, so its row carries
+                    // no id and `d` skips it.
+                    id: if tree.main {
+                        String::new()
+                    } else {
+                        tree.name.clone()
+                    },
+                    label: tree.label(),
+                    detail: tree.detail(),
+                })
+                .collect()
+        };
+        Dialog::Worktrees(ListDialog::new(
+            "worktrees",
+            rows,
+            ListKind::Worktrees,
+            "enter move this session here \u{b7} n new \u{b7} d remove \u{b7} esc close",
+        ))
+    }
+
+    /// The name for a new worktree: one path component under the checkout's
+    /// worktree directory.
+    pub fn worktree_new() -> Self {
+        Dialog::WorktreeNew(WorktreeNewDialog {
+            input: Editor::new(),
+        })
+    }
+
+    /// A worktree removal is destructive, so it asks first and opens on the safe
+    /// choice like a Session deletion does.
+    pub fn confirm_remove_worktree(name: &str) -> Self {
+        Dialog::Confirm(ConfirmDialog {
+            title: "remove worktree",
+            message: format!(
+                "Remove the worktree \"{name}\" and the branch it holds? Sessions still working there \nmove back to the checkout first."
+            ),
+            confirmed: false,
+            kind: ConfirmKind::RemoveWorktree(name.to_string()),
+        })
+    }
+
     pub fn accounts(accounts: &[AccountInfo]) -> Self {
         Dialog::Accounts(ListDialog::new(
             "accounts",
@@ -1375,11 +1442,13 @@ impl Dialog {
             Dialog::Schedule(list) => handle_list_key(list, key),
             Dialog::Skills(list) => handle_list_key(list, key),
             Dialog::Workspaces(list) => handle_list_key(list, key),
+            Dialog::Worktrees(list) => handle_list_key(list, key),
             Dialog::Message(text) => handle_text_key(text, key),
             Dialog::Palette(palette) => handle_palette_key(palette, key),
             Dialog::Rename(rename) => handle_rename_key(&mut rename.input, key),
             Dialog::Tag(tag) => handle_rename_key(&mut tag.input, key),
             Dialog::SignIn(sign_in) => handle_rename_key(&mut sign_in.input, key),
+            Dialog::WorktreeNew(dialog) => handle_rename_key(&mut dialog.input, key),
             Dialog::Confirm(confirm) => handle_confirm_key(confirm, key),
         }
     }
@@ -1406,11 +1475,13 @@ impl Dialog {
             Dialog::Schedule(list) => list.title,
             Dialog::Skills(list) => list.title,
             Dialog::Workspaces(list) => list.title,
+            Dialog::Worktrees(list) => list.title,
             Dialog::Message(text) => text.title,
             Dialog::Palette(_) => "commands",
             Dialog::Rename(_) => "rename session",
             Dialog::Tag(_) => "tag session",
             Dialog::SignIn(_) => "provider key",
+            Dialog::WorktreeNew(_) => "new worktree",
             Dialog::Confirm(confirm) => confirm.title,
         }
     }
@@ -1432,6 +1503,7 @@ impl Dialog {
             | Dialog::Providers(list)
             | Dialog::Skills(list)
             | Dialog::Workspaces(list)
+            | Dialog::Worktrees(list)
             | Dialog::Jobs(list)
             | Dialog::Devices(list)
             | Dialog::Schedule(list) => Some(list),
@@ -1456,6 +1528,7 @@ impl Dialog {
             | Dialog::Providers(list)
             | Dialog::Skills(list)
             | Dialog::Workspaces(list)
+            | Dialog::Worktrees(list)
             | Dialog::Jobs(list)
             | Dialog::Devices(list)
             | Dialog::Schedule(list) => Some(list),
@@ -1485,6 +1558,7 @@ impl Dialog {
             Dialog::SignIn(sign_in) => insert_paste(&mut sign_in.input, text),
             Dialog::Rename(rename) => insert_paste(&mut rename.input, text),
             Dialog::Tag(tag) => insert_paste(&mut tag.input, text),
+            Dialog::WorktreeNew(dialog) => insert_paste(&mut dialog.input, text),
             _ => return false,
         }
         true
@@ -1494,6 +1568,7 @@ impl Dialog {
         match self {
             Dialog::Rename(rename) => Some(&rename.input),
             Dialog::Tag(tag) => Some(&tag.input),
+            Dialog::WorktreeNew(dialog) => Some(&dialog.input),
             _ => None,
         }
     }
@@ -1570,6 +1645,10 @@ pub enum Action {
     DeviceChosen(usize, u8),
     /// Stop the background job the row names.
     CancelJob(String),
+    /// Ask for the name of a worktree to add.
+    WorktreeNew,
+    /// Remove the worktree the row names, after confirmation.
+    WorktreeRemove(String),
     /// Cancel the wakeup or cron the row names, written `kind:id`.
     CancelSchedule(String),
     OpenSession(String),
@@ -1707,6 +1786,12 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
         KeyCode::Char('x') if list.kind == ListKind::Schedule => {
             if let Some(id) = list.current_id() {
                 return Action::CancelSchedule(id);
+            }
+        }
+        KeyCode::Char('n') if list.kind == ListKind::Worktrees => return Action::WorktreeNew,
+        KeyCode::Char('d') if list.kind == ListKind::Worktrees => {
+            if let Some(id) = list.current_id().filter(|id| !id.is_empty()) {
+                return Action::WorktreeRemove(id);
             }
         }
         KeyCode::Char('x') if list.kind == ListKind::Devices => {
@@ -1904,6 +1989,7 @@ fn handle_confirm_key(confirm: &mut ConfirmDialog, key: KeyEvent) -> Action {
             }
             let kind = match &confirm.kind {
                 ConfirmKind::RemoveSession(id) => ConfirmKind::RemoveSession(id.clone()),
+                ConfirmKind::RemoveWorktree(name) => ConfirmKind::RemoveWorktree(name.clone()),
                 ConfirmKind::Revert {
                     boundary_seq,
                     files,
@@ -2321,6 +2407,73 @@ mod tests {
             .find(|row| row.label == "Mistral")
             .expect("mistral row");
         assert_eq!(mistral.id, "accounts:mistral");
+    }
+
+    fn worktrees() -> Vec<crate::worktrees::Worktree> {
+        crate::worktrees::decode(&serde_json::json!([
+            {"name": "miao", "path": "/repo", "branch": "main", "main": true},
+            {"name": "work", "path": "/repo/.miao-worktrees/work", "branch": "work"}
+        ]))
+    }
+
+    /// The checkout row is listed first and carries no id, so `d` cannot ask to
+    /// remove the tree the operator is standing in.
+    #[test]
+    fn the_worktree_dialog_lists_the_checkout_as_unremovable() {
+        let dialog = Dialog::worktrees(&worktrees());
+        let list = dialog.list().expect("list");
+        let rows: Vec<(&str, &str)> = list
+            .rows
+            .iter()
+            .map(|row| (row.label.as_str(), row.detail.as_str()))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("checkout", "/repo"),
+                ("work", "/repo/.miao-worktrees/work"),
+            ]
+        );
+        assert!(list.rows[0].id.is_empty(), "the checkout is not removable");
+        assert_eq!(list.rows[1].id, "work");
+    }
+
+    #[test]
+    fn a_worktree_row_asks_to_be_added_or_removed() {
+        let mut dialog = Dialog::worktrees(&worktrees());
+        assert!(
+            matches!(
+                dialog.handle_key(key(KeyCode::Char('n'))),
+                Action::WorktreeNew
+            ),
+            "n asks for a new worktree"
+        );
+        assert!(
+            matches!(dialog.handle_key(key(KeyCode::Char('d'))), Action::None),
+            "the checkout row is never removed"
+        );
+        dialog.handle_key(key(KeyCode::Down));
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('d'))),
+            Action::WorktreeRemove(name) if name == "work"
+        ));
+    }
+
+    #[test]
+    fn the_new_worktree_prompt_submits_one_path_component() {
+        let mut dialog = Dialog::worktree_new();
+        assert_eq!(dialog.title(), "new worktree");
+        assert!(
+            matches!(dialog.handle_key(key(KeyCode::Enter)), Action::None),
+            "an empty name is not a worktree"
+        );
+        for c in "wt".chars() {
+            dialog.handle_key(key(KeyCode::Char(c)));
+        }
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Enter)),
+            Action::Submit(name) if name == "wt"
+        ));
     }
 
     #[test]
