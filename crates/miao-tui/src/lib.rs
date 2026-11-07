@@ -7,6 +7,7 @@ pub const VERSION: &str = match option_env!("MIAO_TUI_VERSION") {
 };
 
 pub mod app;
+pub mod banner;
 pub mod commands;
 pub mod config;
 pub mod dialogs;
