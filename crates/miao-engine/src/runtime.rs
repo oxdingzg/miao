@@ -3016,12 +3016,38 @@ async fn execute(
                 )));
             }
         };
+        let mode = match agent.as_ref().and_then(|(manifest, _)| manifest.mode) {
+            Some(mode) => mode,
+            None => inner.store.mode(session).await?,
+        };
+        let plan = mode == crate::protocol::CollaborationMode::Plan;
+        // The collaboration fragment and the agent's own instructions are
+        // appended after budget-aware assembly, so the tail is built first and
+        // declared to the assembly as reserved space.
+        let mut tail = String::new();
+        if plan {
+            tail.push_str("\n\n<collaboration-mode mode=\"plan\">\nYou are in plan mode: investigate and propose a plan. Do not modify files, run commands, or start background work; those capabilities are denied.\n</collaboration-mode>");
+        }
+        if let Some((manifest, _)) = &agent {
+            if let Some(instructions) = manifest
+                .instructions
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
+            {
+                tail.push_str(&format!(
+                    "\n\n<agent name=\"{}\">\n{}\n</agent>",
+                    manifest.attribute(),
+                    instructions
+                ));
+            }
+        }
         let mut bundle = match crate::context::assemble_for_agent(
             &inner.tools,
             &policy,
             cancel.child_token(),
             manifest,
             &reads,
+            tail.len(),
         )
         .await
         {
@@ -3032,41 +3058,23 @@ async fn execute(
         if cancel.is_cancelled() {
             return Ok(());
         }
-        let mode = match agent.as_ref().and_then(|(manifest, _)| manifest.mode) {
-            Some(mode) => mode,
-            None => inner.store.mode(session).await?,
-        };
-        let plan = mode == crate::protocol::CollaborationMode::Plan;
-        let mut system = bundle.system.clone();
-        if plan {
-            system.push_str("\n\n<collaboration-mode mode=\"plan\">\nYou are in plan mode: investigate and propose a plan. Do not modify files, run commands, or start background work; those capabilities are denied.\n</collaboration-mode>");
-        }
-        if let Some((manifest, _)) = &agent {
-            if let Some(instructions) = manifest
-                .instructions
-                .as_deref()
-                .filter(|text| !text.trim().is_empty())
-            {
-                system.push_str(&format!(
-                    "\n\n<agent name=\"{}\">\n{}\n</agent>",
-                    manifest.attribute(),
-                    instructions
-                ));
-            }
-        }
+        let (fitted, omitted) = crate::context::clamp_tail(
+            &tail,
+            crate::context::SYSTEM_BUDGET.saturating_sub(bundle.system.len()),
+        );
+        bundle.system.push_str(&fitted);
         if let Some((manifest, hash)) = &agent {
-            if system.len() > 65536 {
-                return Err(Error::Invalid(
-                    "agent instructions exceed system context budget".into(),
-                ));
+            let mut entry = json!({"type":"agent","name":manifest.name,"agent_hash":hash});
+            if omitted > 0 {
+                entry["truncated_bytes"] = json!(omitted);
             }
-            bundle.system = system.clone();
-            bundle
-                .sources
-                .push(json!({"type":"agent","name":manifest.name,"agent_hash":hash}));
+            bundle.sources.push(entry);
+        }
+        if !tail.is_empty() || agent.is_some() {
             bundle.fingerprint =
                 crate::permission::context_digest(&bundle.system, &bundle.sources)?;
         }
+        let system = bundle.system.clone();
         let sources = bundle.sources.clone();
         let context_epoch = inner
             .store

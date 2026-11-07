@@ -7,6 +7,46 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
+/// Hard ceiling for one assembled system prompt, in bytes.
+///
+/// Assembly spends this budget on context sources, but the caller appends the
+/// collaboration fragment and the agent's own instructions afterwards. The
+/// caller therefore declares that tail up front (`reserve`) so sources yield
+/// space to it: filling the ceiling first and appending afterwards left every
+/// later turn of a Session at a deterministic over-budget assembly.
+pub(crate) const SYSTEM_BUDGET: usize = 65536;
+
+const TAIL_MARKER: &str = "\n\n(rest omitted: the system context budget is full)";
+
+/// Room left for context sources once the caller's tail and the closing
+/// task-list protocol are accounted for.
+fn source_budget(reserve: usize) -> usize {
+    SYSTEM_BUDGET.saturating_sub(reserve + crate::state::TASK_LIST_PROTOCOL.len())
+}
+
+/// Fit a post-assembly tail into the remaining budget. The tail is truncated
+/// with a marker instead of failing the turn: an oversized agent instruction or
+/// a repository whose instruction files grew would otherwise make every
+/// subsequent turn fail on the same assembly. The omitted byte count is
+/// returned so the caller can record that the prompt was cut.
+pub(crate) fn clamp_tail(tail: &str, room: usize) -> (String, usize) {
+    if tail.len() <= room {
+        return (tail.to_owned(), 0);
+    }
+    let (keep, marker) = if room > TAIL_MARKER.len() {
+        (room - TAIL_MARKER.len(), TAIL_MARKER)
+    } else {
+        (room, "")
+    };
+    let mut end = keep;
+    while end > 0 && !tail.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut text = tail[..end].to_owned();
+    text.push_str(marker);
+    (text, tail.len() - end)
+}
+
 #[derive(Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Source {
@@ -544,7 +584,7 @@ pub async fn assemble(
     policy: &Policy,
     cancel: CancellationToken,
 ) -> Result<ContextBundle, ToolError> {
-    assemble_for_agent(tools, policy, cancel, None, &[]).await
+    assemble_for_agent(tools, policy, cancel, None, &[], 0).await
 }
 
 pub(crate) async fn assemble_for_agent(
@@ -553,10 +593,12 @@ pub(crate) async fn assemble_for_agent(
     cancel: CancellationToken,
     agent: Option<&crate::session_agent::AgentManifest>,
     reads: &[ReadSource],
+    reserve: usize,
 ) -> Result<ContextBundle, ToolError> {
     if cancel.is_cancelled() {
         return Err(ToolError::Interrupted);
     }
+    let budget = source_budget(reserve);
     let names = tools
         .definitions()
         .iter()
@@ -605,13 +647,32 @@ pub(crate) async fn assemble_for_agent(
                     continue;
                 }
                 let resource=prepared.resource().to_owned();
-                let data=tools.execute_prepared(prepared,policy,cancel.child_token(),None).await?;
-                let text=data["text"].as_str().ok_or(ToolError::InvalidFile)?;
+                // An instruction file the ordinary read bound refuses is
+                // recorded and skipped: the same assembly runs on every turn of
+                // the Session, so propagating it here made one oversized file
+                // fail all of them.
+                let data=match tools.execute_prepared(prepared,policy,cancel.child_token(),None).await{
+                    Ok(data)=>data,
+                    Err(ToolError::Interrupted)=>return Err(ToolError::Interrupted),
+                    Err(ToolError::TooLarge(_))=>{
+                        sources.push(json!({"label":source.label,"path":source.path,"status":"skipped","reason":"file_too_large"}));
+                        continue;
+                    }
+                    Err(ToolError::InvalidFile)=>{
+                        sources.push(json!({"label":source.label,"path":source.path,"status":"skipped","reason":"invalid_file"}));
+                        continue;
+                    }
+                    Err(error)=>return Err(error),
+                };
+                let Some(text)=data["text"].as_str() else{
+                    sources.push(json!({"label":source.label,"path":source.path,"status":"skipped","reason":"invalid_file"}));
+                    continue;
+                };
                 let block=format!("\n\n<project-instructions source=\"{}\">\n{}\n</project-instructions>",source.label,text);
                 // Budget-aware assembly: an instructions block that would blow
                 // the context budget is skipped (recorded for the client) so a
                 // huge repo cannot fail the whole session at startup.
-                if system.len()+block.len()>65536{
+                if system.len()+block.len()>budget{
                     sources.push(json!({"label":source.label,"path":source.path,"resource":resource,"status":"skipped","reason":"context_budget"}));
                     continue;
                 }
@@ -619,6 +680,12 @@ pub(crate) async fn assemble_for_agent(
                 sources.push(json!({"label":source.label,"path":source.path,"resource":resource,"status":"loaded","sha256":data["sha256"]}));
             },
             Err(ToolError::Io(error)) if error.kind()==std::io::ErrorKind::NotFound=>sources.push(json!({"label":source.label,"path":source.path,"status":"missing"})),
+            // An instruction file the ordinary read bound refuses is recorded
+            // and skipped: the same assembly runs on every turn of the Session,
+            // so returning the error here made one oversized file fail all of
+            // them.
+            Err(ToolError::TooLarge(_))=>sources.push(json!({"label":source.label,"path":source.path,"status":"skipped","reason":"file_too_large"})),
+            Err(ToolError::InvalidFile)=>sources.push(json!({"label":source.label,"path":source.path,"status":"skipped","reason":"invalid_file"})),
             Err(ToolError::OutsideWorkspace|ToolError::ProtectedResource)=>sources.push(json!({"label":source.label,"path":source.path,"status":"skipped","reason":"outside_context_authority"})),
             Err(error)=>return Err(error),
         }
@@ -627,7 +694,7 @@ pub(crate) async fn assemble_for_agent(
     // exhausted they are omitted instead of failing the session. Their sources
     // stay registered so read_file still reaches them.
     let media_line="\n\nBuilt-in skill: media-observe — use load_skill with name media-observe when inspecting video/audio. Follow its timestamped frame/contact-sheet workflow using bash and read_image. Load any project skill below by name with load_skill.";
-    if system.len() + media_line.len() <= 65536 {
+    if system.len() + media_line.len() <= budget {
         system.push_str(media_line);
     }
     sources.push(json!({"type":"builtin_skill","name":"media-observe","path":"@builtin/skill/media-observe","status":"registered","sha256":crate::permission::digest(MEDIA_OBSERVE.as_bytes())}));
@@ -643,7 +710,7 @@ pub(crate) async fn assemble_for_agent(
             ));
         }
         section.push_str("</available-skills>");
-        if system.len() + section.len() <= 65536 {
+        if system.len() + section.len() <= budget {
             system.push_str(&section);
         }
         for skill in skills {
@@ -664,14 +731,23 @@ pub(crate) async fn assemble_for_agent(
             ));
         }
         section.push_str("</available-references>");
-        if system.len() + section.len() <= 65536 {
+        if system.len() + section.len() <= budget {
             system.push_str(&section);
         }
         for reference in references.iter() {
             sources.push(json!({"type":"reference","path":reference.path,"status":"authorized"}));
         }
     }
-    append_read_sources(tools, policy, cancel, reads, &mut system, &mut sources).await?;
+    append_read_sources(
+        tools,
+        policy,
+        cancel,
+        reads,
+        &mut system,
+        &mut sources,
+        budget,
+    )
+    .await?;
     // The task-list protocol closes the system prompt. It is constant text, so
     // it costs one context epoch rather than one per turn, and it is what tells
     // a model on a non-Anthropic persona that `todowrite` exists: without it
@@ -727,6 +803,7 @@ async fn append_read_sources(
     reads: &[ReadSource],
     system: &mut String,
     sources: &mut Vec<serde_json::Value>,
+    budget: usize,
 ) -> Result<(), ToolError> {
     if reads.is_empty() {
         return Ok(());
@@ -785,6 +862,10 @@ async fn append_read_sources(
                             data["text"].as_str().map(str::to_owned)
                         }
                         Err(ToolError::Interrupted) => return Err(ToolError::Interrupted),
+                        Err(ToolError::TooLarge(_)) => {
+                            entry["reason"] = json!("file_too_large");
+                            None
+                        }
                         Err(_) => {
                             entry["reason"] = json!("read_failed");
                             None
@@ -814,7 +895,7 @@ async fn append_read_sources(
             )
         });
         let block = block.filter(|block| {
-            if system.len() + block.len() <= 65536 {
+            if system.len() + block.len() <= budget {
                 return true;
             }
             entry["status"] = json!("skipped");
@@ -850,4 +931,58 @@ async fn append_read_sources(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_budget_reserves_the_tail_and_the_task_list_protocol() {
+        assert_eq!(
+            source_budget(0),
+            SYSTEM_BUDGET - crate::state::TASK_LIST_PROTOCOL.len()
+        );
+        // A tail that needs the whole ceiling leaves no room for sources, and
+        // saturates instead of underflowing.
+        assert_eq!(source_budget(SYSTEM_BUDGET), 0);
+        assert_eq!(source_budget(SYSTEM_BUDGET * 2), 0);
+    }
+
+    #[test]
+    fn a_tail_that_fits_is_unchanged() {
+        let (fitted, omitted) = clamp_tail("agent instructions", 64);
+        assert_eq!(fitted, "agent instructions");
+        assert_eq!(omitted, 0);
+    }
+
+    #[test]
+    fn an_oversized_tail_is_truncated_and_marked() {
+        let tail = "x".repeat(1000);
+        let (fitted, omitted) = clamp_tail(&tail, 200);
+        assert!(fitted.len() <= 200, "{}", fitted.len());
+        assert!(fitted.ends_with(TAIL_MARKER));
+        assert_eq!(omitted, 1000 - (200 - TAIL_MARKER.len()));
+    }
+
+    #[test]
+    fn truncation_never_splits_a_code_point() {
+        let tail = "上下文预算".repeat(100);
+        let (fitted, omitted) = clamp_tail(&tail, 101);
+        assert!(fitted.len() <= 101, "{}", fitted.len());
+        assert!(fitted.ends_with(TAIL_MARKER));
+        let kept = tail.len() - omitted;
+        assert_eq!(kept % 3, 0);
+        assert_eq!(&fitted[..kept], &tail[..kept]);
+    }
+
+    #[test]
+    fn a_room_too_small_for_the_marker_still_truncates_cleanly() {
+        let (fitted, omitted) = clamp_tail("abcdef", 3);
+        assert_eq!(fitted, "abc");
+        assert_eq!(omitted, 3);
+        let (empty, all) = clamp_tail("abcdef", 0);
+        assert!(empty.is_empty());
+        assert_eq!(all, 6);
+    }
 }
