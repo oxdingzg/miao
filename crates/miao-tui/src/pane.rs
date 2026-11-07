@@ -79,6 +79,12 @@ pub struct Shell {
     /// the elision line names a key the operator has. `None` means the action
     /// is unbound, and then the line promises no chord at all.
     toggle_chord: Option<String>,
+    /// The chord that shows or hides `sidebar`, resolved from the same keymap.
+    /// The column paints it as its own last row.
+    sidebar_chord: Option<String>,
+    /// Whether the operator hid the right column. The strip carries the chord
+    /// while it is gone, so hiding it never strands the way back.
+    sidebar_hidden: bool,
 }
 
 impl Shell {
@@ -100,9 +106,12 @@ impl Shell {
                 usage_hourly: None,
                 goal: None,
                 todos: Vec::new(),
+                chord: None,
             }),
             last: None,
             toggle_chord: None,
+            sidebar_chord: None,
+            sidebar_hidden: false,
         }
     }
 
@@ -124,6 +133,36 @@ impl Shell {
             self.transcript.set_rows(projected.rows);
             self.transcript.user_anchors = projected.anchors;
         }
+    }
+
+    /// Name the chord that shows or hides the right column the way the
+    /// operator's keymap spells it. The column paints it as its own last row,
+    /// and the status strip takes it over while the column is hidden.
+    pub fn set_sidebar_chord(&mut self, chord: Option<String>) {
+        if let Some(sidebar) = self.sidebar.as_mut() {
+            sidebar.chord = chord.clone();
+        }
+        self.sidebar_chord = chord;
+    }
+
+    /// The chord the strip names while the column is hidden: `None` when the
+    /// column is on screen, because then the column itself carries it.
+    pub fn hidden_sidebar_chord(&self) -> Option<&str> {
+        self.sidebar_hidden
+            .then_some(self.sidebar_chord.as_deref())
+            .flatten()
+    }
+
+    /// Whether the operator hid the right column.
+    pub fn sidebar_hidden(&self) -> bool {
+        self.sidebar_hidden
+    }
+
+    /// Show or hide the right column, returning whether it is now visible. The
+    /// transcript takes the whole width while it is gone.
+    pub fn toggle_sidebar(&mut self) -> bool {
+        self.sidebar_hidden = !self.sidebar_hidden;
+        !self.sidebar_hidden
     }
 
     pub fn set_transcript(&mut self, transcript: &Transcript) {
@@ -380,7 +419,12 @@ impl Shell {
             Constraint::Length(1),
         ])
         .areas(frame.area());
-        let (transcript_area, sidebar_area) = body_columns(body_area);
+        // A hidden column hands its width to the transcript instead of leaving
+        // an empty band beside the text.
+        let (transcript_area, sidebar_area) = match self.sidebar_hidden {
+            true => (body_area, None),
+            false => body_columns(body_area),
+        };
         self.transcript.render(frame, transcript_area);
         if let (Some(sidebar), Some(sidebar_area)) = (self.sidebar.as_mut(), sidebar_area) {
             sidebar.render(frame, sidebar_area);
@@ -2531,6 +2575,9 @@ pub struct SidebarPane {
     /// The durable Goal, painted above the checklist and never mixed into it.
     goal: Option<crate::session::GoalView>,
     todos: Vec<crate::session::TodoView>,
+    /// The chord that hides this column, resolved from the live keymap. Pinned
+    /// to the column's last row so a long checklist cannot scroll it away.
+    chord: Option<String>,
 }
 
 impl Pane for SidebarPane {
@@ -2843,12 +2890,44 @@ impl Pane for SidebarPane {
         // own default colour — a block of reset background hugging the rule on
         // one side while the transcript beside it was the page colour.
         let pad = area.x - inner.x;
+        // The column names its own way out, on its last row rather than after
+        // the checklist: a long todo list would otherwise push the one line
+        // that explains how to hide the column off the screen, and a chord
+        // nobody is shown is a chord nobody presses.
+        let hint = self
+            .chord
+            .as_ref()
+            .filter(|_| inner.height > 3)
+            .map(|chord| {
+                Line::from(vec![
+                    Span::styled(chord.clone(), Style::new().fg(palette.text)),
+                    Span::styled("  hide sidebar", Style::new().fg(palette.text_muted)),
+                ])
+            });
+        let content = match hint {
+            // One blank row keeps the data above the hint from touching it.
+            Some(_) => Rect {
+                height: inner.height - 2,
+                ..inner
+            },
+            None => inner,
+        };
         frame.render_widget(
             Paragraph::new(lines)
                 .style(Style::new().bg(palette.background))
                 .block(Block::new().padding(ratatui::widgets::Padding::left(pad))),
-            inner,
+            content,
         );
+        if let Some(hint) = hint {
+            frame.render_widget(
+                Paragraph::new(hint).style(Style::new().bg(palette.background)),
+                Rect {
+                    y: inner.y + inner.height - 1,
+                    height: 1,
+                    ..inner
+                },
+            );
+        }
     }
 }
 
@@ -5792,6 +5871,7 @@ mod tests {
             usage_hourly: Some(usage.clone()),
             goal: None,
             todos: Vec::new(),
+            chord: None,
         };
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 30)).expect("terminal");
@@ -5853,6 +5933,67 @@ mod tests {
             "retention is stated: {rendered}"
         );
         assert!(rendered.contains('~'), "partial cost coverage is marked");
+    }
+
+    /// The column names the chord that hides it on its own last row. A
+    /// checklist long enough to fill the column must not push the one key that
+    /// makes the column disappear off the screen, and an unbound action must
+    /// not promise a key that does nothing.
+    #[test]
+    fn the_sidebar_pins_the_chord_that_hides_it_to_its_last_row() {
+        fn rows(terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>) -> Vec<String> {
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .chunks(60)
+                .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect()
+        }
+
+        let mut sidebar = SidebarPane {
+            hover_rows: Vec::new(),
+            changes: None,
+            mode: None,
+            theme: home_theme(),
+            session: Some(home_row("ses_k", "keys", None)),
+            usage: None,
+            usage_hourly: None,
+            goal: None,
+            todos: (0..40)
+                .map(|index| crate::session::TodoView {
+                    content: format!("todo {index}"),
+                    status: "pending".to_string(),
+                })
+                .collect(),
+            chord: Some("ctrl+x b".to_string()),
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 12)).expect("terminal");
+        terminal
+            .draw(|frame| sidebar.render(frame, frame.area()))
+            .expect("draw");
+        let painted = rows(&mut terminal);
+        let last = painted.last().expect("a last row");
+        assert!(
+            last.contains("ctrl+x b") && last.contains("hide sidebar"),
+            "the chord that hides the column is its last row: {last:?}"
+        );
+        assert!(
+            !painted.iter().any(|row| row.contains("todo 39")),
+            "the hint takes its room from the list rather than covering it: {painted:?}"
+        );
+
+        sidebar.chord = None;
+        terminal
+            .draw(|frame| sidebar.render(frame, frame.area()))
+            .expect("draw");
+        assert!(
+            !rows(&mut terminal)
+                .iter()
+                .any(|row| row.contains("hide sidebar")),
+            "an unbound action promises no chord"
+        );
     }
 
     /// A day with one expensive hour must still show the shape of the other
@@ -5921,6 +6062,7 @@ mod tests {
             usage_hourly: None,
             goal: None,
             todos: Vec::new(),
+            chord: None,
         };
         let mut summary = home_row("ses_s", &"很长的会话标题".repeat(8), None);
         summary.directory = Some("/very/long/path\n".repeat(4));
