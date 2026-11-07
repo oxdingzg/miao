@@ -160,18 +160,41 @@ impl ModelInfo {
     /// one, otherwise `provider/model`, which is what the engine keys a model
     /// by when a provider serves exactly one account.
     pub fn route(&self) -> String {
-        self.route_id.clone().unwrap_or_else(|| {
-            format!(
-                "{}/{}",
-                self.provider.as_deref().unwrap_or_default(),
-                self.model
-            )
-        })
+        self.route_id
+            .clone()
+            .unwrap_or_else(|| match &self.provider {
+                // A catalog entry that names no provider has no route to key on,
+                // so the model id is the whole identity: writing `/{model}` into
+                // the remembered preference would name nothing.
+                Some(provider) => format!("{provider}/{}", self.model),
+                None => self.model.clone(),
+            })
     }
 
     /// Whether a remembered pin or a starred route names this model.
     pub fn matches(&self, name: &str) -> bool {
         self.model == name || self.route() == name
+    }
+
+    /// The catalog entry a remembered selection names.
+    ///
+    /// The launcher reads the operator's last pick back from its own
+    /// preferences, and that value can be a model id, a route id, or the
+    /// display name the engine carried before a route suffix was appended to
+    /// the id (`deepseek-v4.1-flash` against `deepseek-v4-1-flash-261017`).
+    /// Missing that match is why the landing strip used to name a model with
+    /// no provider: the label fell back to the remembered string.
+    pub fn resolve<'a>(models: &'a [ModelInfo], remembered: &str) -> Option<&'a ModelInfo> {
+        models
+            .iter()
+            .find(|info| info.matches(remembered))
+            .or_else(|| {
+                let wanted = comparable(remembered);
+                models.iter().find(|info| {
+                    let id = comparable(&info.model);
+                    id == wanted || (id.starts_with(&wanted) && id[wanted.len()..].starts_with('-'))
+                })
+            })
     }
 
     pub fn binding(&self) -> Value {
@@ -1817,6 +1840,12 @@ fn handle_confirm_key(confirm: &mut ConfirmDialog, key: KeyEvent) -> Action {
     Action::None
 }
 
+/// A model id reduced to the characters the two spellings share: the engine's
+/// ids are dashed, and a remembered display name may be the dotted form.
+fn comparable(model: &str) -> String {
+    model.to_lowercase().replace('.', "-")
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -1938,6 +1967,34 @@ mod tests {
             {"route_id": "r1", "protocol": "chat", "model": "glm-5"},
             {"protocol": "responses", "model": "gpt-5", "variants": ["low", "high"]}
         ]))
+    }
+
+    /// A remembered selection has to resolve through the catalog, because the
+    /// catalog is the only place that knows its provider: the exact model id,
+    /// the route id, and the dotted display name an older install stored all
+    /// name the same entry.
+    #[test]
+    fn a_remembered_selection_resolves_to_its_catalog_entry() {
+        let models = ModelInfo::catalog(&serde_json::json!([
+            {"route_id": "xiaomi/glm-5.3-flash", "protocol": "openai-chat", "model": "glm-5.3-flash"},
+            {"route_id": "deepseek/deepseek-v4-1-flash-261017", "protocol": "openai-chat", "model": "deepseek-v4-1-flash-261017"}
+        ]));
+        let identity =
+            |remembered: &str| ModelInfo::resolve(&models, remembered).map(ModelInfo::identity);
+        assert_eq!(
+            identity("glm-5.3-flash").as_deref(),
+            Some("glm-5.3-flash · xiaomi · openai-chat")
+        );
+        assert_eq!(
+            identity("xiaomi/glm-5.3-flash").as_deref(),
+            Some("glm-5.3-flash · xiaomi · openai-chat")
+        );
+        assert_eq!(
+            identity("deepseek-v4.1-flash").as_deref(),
+            Some("deepseek-v4-1-flash-261017 · deepseek · openai-chat"),
+            "the dotted display name the install remembered still names a provider"
+        );
+        assert_eq!(identity("not-a-model"), None);
     }
 
     #[test]

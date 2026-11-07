@@ -1150,6 +1150,10 @@ pub struct Home {
     /// `prompt.max_width`: the TS home caps the landing prompt and leaves the
     /// Session's full width, so the cap lives here rather than on the composer.
     prompt_width: crate::config::PromptWidth,
+    /// When the operator last typed, pasted or clicked. The idle light rests
+    /// after a stretch of no input, the way the product's logo does, so a home
+    /// screen left open stops repainting instead of running forever.
+    last_input: Instant,
     theme: Theme,
 }
 
@@ -1159,8 +1163,21 @@ impl Home {
             notice: None,
             warning: None,
             prompt_width: crate::config::PromptWidth::default(),
+            last_input: Instant::now(),
             theme,
         }
+    }
+
+    /// Any keystroke, paste or click restarts the idle light.
+    pub fn wake(&mut self) {
+        self.last_input = Instant::now();
+    }
+
+    /// Whether the banner still paints its sweep: on a colour terminal, and
+    /// only while the screen has had input inside the product's rest window.
+    pub fn shimmering(&self) -> bool {
+        matches!(self.theme.palette.primary, ratatui::style::Color::Rgb(..))
+            && self.last_input.elapsed() < crate::banner::REST
     }
 
     pub fn set_prompt_width(&mut self, width: crate::config::PromptWidth) {
@@ -1194,19 +1211,16 @@ impl Home {
     pub fn render(&mut self, frame: &mut Frame, area: Rect, composer: &mut Composer) {
         let palette = self.theme.palette;
         let width = area.width as usize;
-        // The banner art: cat on the left, the MIAO wordmark beside it.
-        let cat = [r"       ", r" /\/\  ", r"( o.o )", r" > ^ < ", r"       "];
-        let wordmark = [
-            ["█   █", "█", " ███ ", "█████"],
-            ["██ ██", "█", "█   █", "█   █"],
-            ["█ █ █", "█", "█   █", "█████"],
-            ["█   █", "█", "█   █", "█████"],
-            ["█   █", "█", "█   █", "█████"],
-        ];
-        let gap = "  ";
-        let banner_rows: Vec<String> = (0..5)
-            .map(|row| format!("{}  {}", cat[row], wordmark[row].join(gap)))
-            .collect();
+        // The page ground: every other row is painted by something, and the
+        // cells around the banner would otherwise keep the terminal's own
+        // background, a band that matches nothing beside it.
+        frame.render_widget(
+            Block::new().style(Style::new().bg(palette.background)),
+            area,
+        );
+        let banner = crate::banner::Banner::new();
+        let shimmer = self.shimmering();
+        let now = now_ms();
 
         let version = match option_env!("MIAO_TUI_VERSION") {
             Some(version) => version,
@@ -1214,11 +1228,28 @@ impl Home {
         };
 
         let prompt_width = self.prompt_width.resolve(area.width);
-        // The box wraps at the landing prompt's own width, so a long draft
+        // The band wraps at the landing prompt's own width, so a long draft
         // grows it the same way it grows the Session composer; sizing it from
         // the whole window left it one row tall and clipped.
         let prompt_h = crate::pane::composer_height(composer, prompt_width, area.height).max(3);
-        let notice_h = usize::from(self.notice.is_some()) + usize::from(self.warning.is_some());
+        // The composer's own notice used to ride the box's border title. The
+        // landing band has no title, so it is painted under the prompt the way
+        // the product shows a notice there: one line, in the accent tone.
+        let notices = composer
+            .notice
+            .iter()
+            .map(|notice| (notice.clone(), palette.accent))
+            .chain(
+                self.warning
+                    .iter()
+                    .map(|warning| (warning.clone(), palette.warning)),
+            )
+            .chain(
+                self.notice
+                    .iter()
+                    .map(|notice| (notice.clone(), palette.error)),
+            )
+            .collect::<Vec<_>>();
 
         // Vertical, following the TS home's flex stack
         // (`packages/tui/src/routes/home.tsx`):
@@ -1233,76 +1264,59 @@ impl Home {
         // sits centred and never higher than half a screen down. The previous
         // rule (`free * 2 / 5`) pushed it slightly below centre on every
         // height, which is why nothing could reproduce the TS layout.
-        let used = 5 + 1 + 1 + 1 + prompt_h as usize + notice_h;
+        let used = banner.height() + 1 + 1 + 1 + prompt_h as usize + notices.len();
         let free = (area.height as usize).saturating_sub(used);
         let gap_top = free / 2;
-        let gap_bottom = free.saturating_sub(gap_top);
 
-        let mut y = area.y as usize;
-        // Every block centres across the full window width, and the whole
-        // group sits in the vertical leftover — banner, version, one blank
-        // row, then the prompt, exactly the stack the TS home draws.
-        let centre = |text: &str, style: Style| -> Line<'static> {
-            let pad = (width.saturating_sub(text.width())) / 2;
-            Line::from(Span::styled(format!("{}{}", " ".repeat(pad), text), style))
-        };
-        let mut put_lines: Vec<Line<'static>> = Vec::new();
-        for row in &banner_rows {
-            put_lines.push(centre(row, Style::new().fg(palette.primary)));
+        let y = area.y as usize + gap_top.min(free);
+        // The banner centres as one block, its columns carrying their own ink;
+        // the version rides under it, then one blank row, then the prompt.
+        let banner_x = width.saturating_sub(banner.width()) / 2;
+        for row in 0..banner.height() {
+            frame.render_widget(
+                Paragraph::new(banner.line(row, now, shimmer, &self.theme)),
+                Rect {
+                    x: area.x + banner_x as u16,
+                    y: (y + row) as u16,
+                    width: banner.width() as u16,
+                    height: 1,
+                },
+            );
         }
-        put_lines.push(centre(
-            &format!("v{version}"),
-            Style::new().fg(palette.text_muted),
-        ));
-        put_lines.push(Line::default()); // the blank row between banner and prompt
-        y += gap_top.min(free);
+        let version = format!("v{version}");
+        let pad = width.saturating_sub(version.width()) / 2;
+        frame.render_widget(
+            Paragraph::new(Span::styled(version, Style::new().fg(palette.text_muted))),
+            Rect {
+                x: area.x + pad as u16,
+                y: (y + banner.height()) as u16,
+                height: 1,
+                ..area
+            },
+        );
         let prompt_x = width.saturating_sub(prompt_width as usize) / 2;
         let prompt_area = Rect {
             x: area.x + prompt_x as u16,
+            // The banner, the version and one blank row above the band, the
+            // TypeScript prompt's `paddingTop`.
+            y: (y + banner.height() + 1 + 1) as u16,
             width: prompt_width,
-            // One blank row above the box, the TypeScript prompt's padding.
-            y: (y + put_lines.len() + 1) as u16,
-            // The height already carries the borders, so adding them again
-            // left an empty row under a one-line prompt.
+            // The height already carries the rules, so adding them again left
+            // an empty row under a one-line prompt.
             height: prompt_h,
         };
-        for (offset, line) in put_lines.iter().enumerate() {
+        render_home_composer(frame, prompt_area, composer, &self.theme);
+        for (offset, (notice, ink)) in notices.iter().enumerate() {
             frame.render_widget(
-                Paragraph::new(line.clone()),
+                Paragraph::new(Span::styled(notice.clone(), Style::new().fg(*ink))),
                 Rect {
-                    y: y as u16 + offset as u16,
+                    x: prompt_area.x,
+                    y: prompt_area.y + prompt_h + offset as u16,
+                    width: prompt_area.width,
                     height: 1,
-                    ..area
                 },
             );
         }
-        render_composer(frame, prompt_area, composer, &self.theme);
-        let mut notice_y = prompt_area.y + prompt_h;
-        if let Some(warning) = &self.warning {
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    warning.clone(),
-                    Style::new().fg(palette.warning),
-                )),
-                Rect {
-                    y: notice_y,
-                    height: 1,
-                    ..area
-                },
-            );
-            notice_y += 1;
-        }
-        if let Some(notice) = &self.notice {
-            frame.render_widget(
-                Paragraph::new(Span::styled(notice.clone(), Style::new().fg(palette.error))),
-                Rect {
-                    y: notice_y,
-                    height: 1,
-                    ..area
-                },
-            );
-        }
-        let _ = gap_bottom;
     }
 }
 
@@ -1949,13 +1963,57 @@ fn render_queued(frame: &mut Frame, area: Rect, prompts: &[String], theme: &Them
     );
 }
 
-/// The home screen shows the same composer as a Session, so a prompt can be
-/// typed before any Session exists.
+/// The landing prompt, drawn the way the TypeScript home draws it: a rule above
+/// and one below, no sides, the draft two cells in from either edge, and the
+/// element background behind it.
+///
+/// The Session composer keeps its closed box and its border title because that
+/// title is where a run's phase, queue depth and notice live. The landing
+/// screen has no run, so it gets the open band the product shows there instead
+/// of a box titled with nothing.
 pub fn render_home_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
-    // The landing composer is the Session composer, in the Session's column: the
-    // band grows with the draft on both screens, so a fixed full width here was
-    // never needed and made the input change shape between screens.
-    render_composer(frame, area, composer, theme)
+    let palette = theme.palette;
+    if area.width < 5 || area.height < 2 {
+        return;
+    }
+    let shell = composer.mode() == Mode::Shell;
+    let rule = Style::new().fg(match shell {
+        true => palette.warning,
+        false => palette.primary,
+    });
+    for y in [area.y, area.y + area.height - 1] {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "─".repeat(area.width as usize),
+                rule,
+            ))),
+            Rect {
+                y,
+                height: 1,
+                ..area
+            },
+        );
+    }
+    let body = Rect {
+        y: area.y + 1,
+        height: area.height - 2,
+        ..area
+    };
+    frame.render_widget(Block::new().style(Style::new().bg(palette.element)), body);
+    if body.width < 5 {
+        return;
+    }
+    render_composer_body(
+        frame,
+        Rect {
+            x: body.x + 2,
+            width: body.width.saturating_sub(4),
+            ..body
+        },
+        composer,
+        theme,
+        shell,
+    );
 }
 
 fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
@@ -1979,11 +2037,6 @@ fn render_composer_in(
     // Shell mode says so in colour: a `!` line goes to the host shell, not the
     // model, and Esc leaves it.
     let shell = composer.mode() == Mode::Shell;
-    let accent = if shell {
-        palette.warning
-    } else {
-        palette.primary
-    };
     // The box carries a title, and the title is where the run's state lives:
     // the phase, the queue depth, and any notice, joined with separators. That
     // keeps "is it working, queued, or waiting on me?" beside the input the
@@ -2061,7 +2114,25 @@ fn render_composer_in(
         width: inner.width.saturating_sub(2),
         ..inner
     };
+    render_composer_body(frame, padded, composer, theme, shell);
+}
 
+/// The draft, its selection, the caret and the completion list, painted inside
+/// whatever chrome the caller drew around it: a Session composer's box or the
+/// landing prompt's two rules.
+fn render_composer_body(
+    frame: &mut Frame,
+    padded: Rect,
+    composer: &Composer,
+    theme: &Theme,
+    shell: bool,
+) {
+    let palette = theme.palette;
+    let accent = if shell {
+        palette.warning
+    } else {
+        palette.primary
+    };
     let completion_rows = composer
         .completion
         .items
@@ -4640,6 +4711,51 @@ mod tests {
         // A tall draft stops at the cap the TS prompt uses, not a fixed eight.
         composer.editor.set_text(&"x".repeat(2000));
         assert_eq!(composer_height(&composer, 75, 12), 2 + 6);
+    }
+
+    /// The landing prompt is the product's open band: 75 columns, a rule above
+    /// and one below, no sides, and the draft two cells in from either edge on
+    /// the element ground. The closed box it used to be read as a small,
+    /// separate widget rather than the home's own input.
+    #[test]
+    fn the_landing_prompt_is_the_products_open_band() {
+        let theme = home_theme();
+        let mut home = Home::new(theme.clone());
+        let mut composer = crate::editor::Composer::new(Path::new("."));
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).expect("terminal");
+        terminal
+            .draw(|frame| home.render(frame, frame.area(), &mut composer))
+            .expect("draw");
+        let buffer = terminal.backend().buffer().clone();
+        let row = |y: u16| {
+            (0..120)
+                .map(|x| buffer[(x, y)].symbol().to_string())
+                .collect::<String>()
+        };
+        let rule = "─".repeat(75);
+        let rules = (0..30)
+            .filter(|y| row(*y).contains(&rule))
+            .collect::<Vec<_>>();
+        assert_eq!(rules.len(), 2, "one rule above the draft and one below");
+        let (top, bottom) = (rules[0], rules[1]);
+        assert_eq!(bottom - top, 2, "the band is a rule, the draft, a rule");
+        // The band is capped at the TypeScript default and centred on the
+        // window, so a wide terminal does not stretch the input.
+        assert_eq!(row(top).find('─'), Some(22), "{:?}", row(top));
+        assert_eq!(row(top).trim_end().chars().count(), 97);
+        // No vertical borders: the cells beside the band stay blank.
+        assert_eq!(buffer[(21, top)].symbol(), " ");
+        assert_eq!(buffer[(97, top)].symbol(), " ");
+        // The draft starts two cells in from the edge, on the element ground.
+        assert_eq!(buffer[(24, top + 1)].symbol(), "A");
+        assert_eq!(buffer[(24, top + 1)].bg, theme.palette.element);
+        assert!(row(top + 1).contains("Ask anything"), "{:?}", row(top + 1));
+        // The banner sits above it, centred as one block.
+        let banner_row = row(top - 6);
+        assert!(banner_row.contains("/\\/\\"), "{banner_row:?}");
+        assert_eq!(banner_row.find('/'), Some(46), "{banner_row:?}");
+        assert!(banner_row.contains('█'), "{banner_row:?}");
     }
 
     /// A queued prompt names itself above the input: the title only carried a

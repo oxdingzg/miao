@@ -662,6 +662,14 @@ impl App {
     }
 
     pub fn handle(&mut self, event: AppEvent) {
+        // Any input restarts the landing banner's idle light, the way a key or
+        // a click wakes the product's logo.
+        if matches!(
+            &event,
+            AppEvent::Key(_) | AppEvent::Paste(_) | AppEvent::Mouse(_)
+        ) {
+            self.home.wake();
+        }
         match event {
             AppEvent::Key(key) => self.handle_key(key),
             AppEvent::Paste(text) => {
@@ -1845,10 +1853,13 @@ impl App {
                 // The row's id is its position in the catalog, which the
                 // favorites and recents sections made different from the row
                 // index: reading `index` here remembered the wrong model.
+                // The route, not the bare model name: a provider can serve two
+                // routes of one model, and the landing strip names whichever
+                // was picked only if the pick is remembered with its provider.
                 self.remembered_model = self
                     .models
                     .get(position)
-                    .map(|info| info.model.clone())
+                    .map(ModelInfo::route)
                     .or(self.remembered_model.clone());
                 if let Some(model) = self.remembered_model.as_deref() {
                     crate::state::save_model(model);
@@ -3227,6 +3238,12 @@ impl App {
         if self.shell.draft_pending() {
             return Some(crate::pane::DRAFT_REFRESH);
         }
+        // The landing banner's sweep is a painted animation, so the loop wakes
+        // for its next frame; once it has rested nothing on the screen is
+        // time-relative, and the loop may wait for events alone.
+        if self.screen == Screen::Home && self.home.shimmering() {
+            return Some(crate::banner::FRAME);
+        }
         let now = crate::pane::now_ms();
         let stamps = match self.screen {
             Screen::Home => Vec::new(),
@@ -3272,19 +3289,15 @@ impl App {
                     .first()
                     .and_then(|session| session.model.clone())
             });
-            let landing = landing_model.map(|model| {
-                // A Session pin may carry a route id (`provider/model`); the
-                // catalog is keyed by the model name alone.
-                let name = model
-                    .rsplit_once('/')
-                    .map(|(_, name)| name)
-                    .unwrap_or(&model);
-                self.models
-                    .iter()
-                    .find(|info| info.model == model || info.model == name)
-                    .map(ModelInfo::identity)
-                    .unwrap_or(model)
-            });
+            // The remembered value can name the model, its route, or the
+            // display name an older install stored; the catalog is what knows
+            // the provider, so the strip can only name it once the pick is
+            // resolved here.
+            let landing =
+                landing_model.map(|model| match ModelInfo::resolve(&self.models, &model) {
+                    Some(info) => info.identity(),
+                    None => model,
+                });
             // An install with no route at all leaves the row blank, which
             // reads as a broken status line rather than an empty catalog.
             self.shell.status.model = landing.or_else(|| {
@@ -3425,12 +3438,10 @@ impl App {
                     _ => None,
                 })
         });
-        let labelled = answering.as_deref().and_then(|model| {
-            self.models
-                .iter()
-                .find(|info| info.model == model)
-                .map(ModelInfo::identity)
-        });
+        let labelled = answering
+            .as_deref()
+            .and_then(|model| ModelInfo::resolve(&self.models, model))
+            .map(ModelInfo::identity);
         self.shell.status.model = self
             .session
             .as_ref()
@@ -3449,9 +3460,7 @@ impl App {
             .or_else(|| {
                 let model = self.remembered_model.clone()?;
                 Some(
-                    self.models
-                        .iter()
-                        .find(|info| info.model == model)
+                    ModelInfo::resolve(&self.models, &model)
                         .map(ModelInfo::identity)
                         .unwrap_or(model),
                 )
@@ -5047,6 +5056,29 @@ mod tests {
             app.shell.status.model.as_deref(),
             Some("glm-5 · xiaomi · openai-chat"),
             "the landing strip names the model, its provider and its protocol"
+        );
+    }
+
+    /// A remembered pick can be the display name an install stored before the
+    /// engine appended a route suffix to its model ids. The strip still has to
+    /// name the provider, and the catalog is where that fact lives.
+    #[test]
+    fn the_landing_strip_resolves_a_remembered_display_name() {
+        let mut app = app();
+        app.models = vec![ModelInfo {
+            protocol: "openai-chat".into(),
+            model: "deepseek-v4-1-flash-261017".into(),
+            route_id: Some("deepseek/deepseek-v4-1-flash-261017".into()),
+            variant: None,
+            provider: Some("deepseek".into()),
+            account: None,
+        }];
+        app.remembered_model = Some("deepseek-v4.1-flash".into());
+        app.update_status();
+        assert_eq!(
+            app.shell.status.model.as_deref(),
+            Some("deepseek-v4-1-flash-261017 · deepseek · openai-chat"),
+            "the remembered display name still names its provider"
         );
     }
 
