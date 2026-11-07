@@ -941,7 +941,13 @@ fn wrap_rows(rows: &[Row], width: u16) -> Vec<Line<'static>> {
             out.push(row_from(&cells[..end], &row.line));
             continue;
         }
-        let hang = (row.hang as usize).min(width.saturating_sub(1));
+        // `hang` is a display-cell width while `cells` holds one entry per
+        // char, so a prefix measured across wide characters can ask for more
+        // entries than the row carries; clamp so the slices below stay in
+        // range instead of panicking on CJK-heavy rows.
+        let hang = (row.hang as usize)
+            .min(width.saturating_sub(1))
+            .min(cells.len());
         if hang == 0 || cells_width(&cells) <= width {
             if hang == 0 {
                 out.extend(wrap_cells(&cells, width, &row.line));
@@ -958,6 +964,12 @@ fn wrap_rows(rows: &[Row], width: u16) -> Vec<Line<'static>> {
         // its wrapped lines.
         let prefix = &cells[..hang];
         let text = &cells[hang..];
+        if text.is_empty() {
+            // The clamped prefix swallowed the whole row: keeping it beats
+            // dropping it, which is what an empty chunk list would do.
+            out.push(row_from(&cells, &row.line));
+            continue;
+        }
         let budget = width - hang;
         let blank = prefix
             .last()
@@ -4516,6 +4528,20 @@ mod tests {
                 "a wrapped code-block row lost its box edge: {row:?}\n{painted:?}"
             );
         }
+    }
+
+    /// `hang` is a display-cell width while a row's cells are one entry per
+    /// char: 20 CJK entries span 40 cells, so a prefix measured across them
+    /// used to slice past the end of the row and panic the transcript.
+    #[test]
+    fn a_hang_wider_than_the_row_entries_wraps_instead_of_panicking() {
+        let rows = vec![Row::hung(Line::from("界".repeat(20)), 100)];
+        let wrapped = wrap_rows(&rows, 30);
+        let painted = line_texts(&wrapped);
+        assert!(
+            painted.iter().any(|row| row.contains("界")),
+            "the row survived intact: {painted:?}"
+        );
     }
 
     #[test]
