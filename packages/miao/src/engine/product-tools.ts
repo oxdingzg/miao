@@ -45,6 +45,7 @@ import { moveEngine } from "./transfer"
 import { PluginTools } from "./plugin-tools"
 import type { EngineSession } from "./session"
 import { readTranscriptEntries } from "./transcript"
+import { REQUIRED_PROTOCOL } from "./discovery"
 
 /**
  * Host side of the engine's product-tool reverse bridge: a manifest of
@@ -585,7 +586,7 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
         const child = SessionSchema.ID.create()
         yield* Effect
           .tryPromise({
-            try: () => owner.client.request("initialize", { session_id: child, title: input.description }),
+            try: () => owner.client.request("initialize", { session_id: child, title: input.description, protocol: REQUIRED_PROTOCOL }),
             catch: (error) => new ToolFailure({ message: `Could not create the subagent Session: ${String(error)}` }),
           })
           .pipe(

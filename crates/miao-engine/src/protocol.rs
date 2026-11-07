@@ -243,6 +243,10 @@ pub enum Command {
     Initialize {
         session_id: String,
         title: String,
+        /// The wire protocol the client speaks. Absent means a client too old
+        /// to negotiate at all, which the engine refuses rather than serves.
+        #[serde(default)]
+        protocol: u32,
     },
     Admit {
         input: Input,
