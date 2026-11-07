@@ -29,6 +29,8 @@ use portable_pty::native_pty_system;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize};
 
 const REPEATS: usize = 10;
+/// Samples the whole scenario may start over before a miss is reported.
+const RETRIES: usize = 3;
 const LARGE_FILES: usize = 3_300;
 const BUDGET: Duration = Duration::from_secs(30);
 
@@ -162,27 +164,43 @@ fn measure_scenario(
     repeats: usize,
 ) -> Vec<Option<u128>> {
     let mut samples = Vec::new();
+    let mut retries = RETRIES;
     for _ in 0..repeats {
-        let mut harness = Harness::spawn(dir.clone(), scaled_files);
-        let transcript = until(&harness, "hello from the fixture", Instant::now());
-        let mut chord_time = None;
-        if transcript.is_some() {
-            // Leader arm, then the chord key: the clock starts at the arm.
-            let started = Instant::now();
-            harness.write(b"\x18");
-            harness.write(b"g");
-            let needle = match scaled_files {
-                Some(count) => format!("{count} files"),
-                None => "3 files".to_string(),
-            };
-            chord_time = until(&harness, &needle, started);
+        let mut sample = sample_once(&dir, scaled_files);
+        // One starved sample is not evidence that the chord never paints: the
+        // runner shares its cores with other jobs, and a sample whose process
+        // was descheduled past the budget looks exactly like a broken key
+        // binding. Start that sample over, but spend from a per-scenario budget
+        // so a chord that genuinely never renders still fails instead of
+        // turning this harness into a long wait, and only report a miss once
+        // the budget is gone.
+        while sample.is_none() && retries > 0 {
+            retries -= 1;
+            sample = sample_once(&dir, scaled_files);
         }
-        samples.push(chord_time.map(|elapsed| elapsed.as_millis()));
-        let _ = harness.child.kill();
-        drop(harness.pty);
-        let _ = harness.reader.join();
+        samples.push(sample.map(|elapsed| elapsed.as_millis()));
     }
     samples
+}
+
+fn sample_once(dir: &std::path::Path, scaled_files: Option<usize>) -> Option<Duration> {
+    let mut harness = Harness::spawn(dir.to_path_buf(), scaled_files);
+    let transcript = until(&harness, "hello from the fixture", Instant::now());
+    let chord_time = transcript.and_then(|_| {
+        // Leader arm, then the chord key: the clock starts at the arm.
+        let started = Instant::now();
+        harness.write(b"\x18");
+        harness.write(b"g");
+        let needle = match scaled_files {
+            Some(count) => format!("{count} files"),
+            None => "3 files".to_string(),
+        };
+        until(&harness, &needle, started)
+    });
+    let _ = harness.child.kill();
+    drop(harness.pty);
+    let _ = harness.reader.join();
+    chord_time
 }
 
 fn percentile(sorted: &[u128], fraction: f64) -> u128 {

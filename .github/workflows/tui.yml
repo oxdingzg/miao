@@ -48,12 +48,20 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      # The self-hosted macOS runner is a launchd service whose PATH omits
-      # ~/.cargo/bin, so the dtolnay GITHUB_PATH export does not reach later
-      # steps.
+      # The self-hosted macOS runner is a launchd service whose PATH omits the
+      # toolchain. `~/.cargo/bin` is not the answer on that host: every binary
+      # there is a shim that execs `~/.cargo/bin/rustup`, and when rustup
+      # replaces itself the shims are left dangling, which reads as
+      # `cargo: command not found` long after this step ran. Point PATH at the
+      # toolchain's own bin directory instead — `rustup which` names it, the
+      # binaries there are real files, and the step proves cargo runs before
+      # any later step depends on it.
       - name: Ensure cargo is on PATH (self-hosted runner)
         if: matrix.os == 'macos-14'
-        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+        run: |
+          cargo_bin="$(dirname "$(rustup which --toolchain stable cargo)")"
+          echo "$cargo_bin" >> "$GITHUB_PATH"
+          "$cargo_bin/cargo" --version
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
