@@ -10,6 +10,7 @@
   autoPatchelfHook,
   copyDesktopItems,
   makeDesktopItem,
+  node_modules,
   miao,
 }:
 let
@@ -17,12 +18,11 @@ let
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "miao-desktop";
-  inherit (miao)
-    version
-    src
-    node_modules
-    patches
-    ;
+  inherit (miao) version;
+  # The desktop app is still built from the TypeScript tree, which the
+  # node_modules derivation already carries.
+  inherit (node_modules) src;
+  inherit node_modules;
 
   nativeBuildInputs = [
     bun
