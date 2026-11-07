@@ -1197,6 +1197,7 @@ pub(crate) async fn request_with_retry(
             scope.budget.note_failure(&reason);
             scope.budget.arm();
         }
+        let cause = retry_cause(status, last_failure_detail.as_deref());
         if !retryable {
             // A request the endpoint rejected (HTTP 400) is normally
             // deterministic, but a gateway also wraps a transient upstream
@@ -1208,10 +1209,14 @@ pub(crate) async fn request_with_retry(
                 announce_retry(
                     progress,
                     cancel,
-                    attempt + 1,
-                    &reason,
-                    status,
-                    Duration::ZERO,
+                    RetryNotice {
+                        attempt: attempt + 1,
+                        reason,
+                        status,
+                        cause,
+                        source: "immediate",
+                        pause: Duration::ZERO,
+                    },
                 )
                 .await?;
                 continue;
@@ -1224,8 +1229,19 @@ pub(crate) async fn request_with_retry(
         {
             return Err(error);
         }
-        let pause = retry_pause(attempt, requested);
-        announce_retry(progress, cancel, attempt + 1, &reason, status, pause).await?;
+        announce_retry(
+            progress,
+            cancel,
+            RetryNotice {
+                attempt: attempt + 1,
+                reason,
+                status,
+                cause,
+                source: pause_source(requested),
+                pause: retry_pause(attempt, requested),
+            },
+        )
+        .await?;
     }
     Err(match scope.budget.failure() {
         Some(reason) => ProviderError::Transport(format!(
@@ -1256,25 +1272,74 @@ async fn dispatch(
     }
 }
 
+/// One retry's announcement: everything the operator needs to name the wait.
+/// Grouped so the announce call stays readable instead of growing one argument
+/// per fact.
+struct RetryNotice {
+    attempt: usize,
+    reason: String,
+    status: Option<u16>,
+    cause: &'static str,
+    source: &'static str,
+    pause: Duration,
+}
+
 /// Announce the next attempt, then wait for it. A cancelled wait reports the
 /// interrupt instead of retrying, and a closed receiver means the turn is gone.
 async fn announce_retry(
     progress: &mpsc::Sender<Value>,
     cancel: &CancellationToken,
-    attempt: usize,
-    reason: &str,
-    status: Option<u16>,
-    pause: Duration,
+    notice: RetryNotice,
 ) -> Result<(), ProviderError> {
     tokio::select! {
         _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
-        result=progress.send(json!({"kind":"provider.retry","attempt":attempt,"reason":reason,"status":status,"delay_ms":pause.as_millis() as u64}))=>if result.is_err(){return Err(ProviderError::Interrupted);},
+        result=progress.send(json!({"kind":"provider.retry","attempt":notice.attempt,"reason":notice.reason,"status":notice.status,"cause":notice.cause,"source":notice.source,"delay_ms":notice.pause.as_millis() as u64}))=>if result.is_err(){return Err(ProviderError::Interrupted);},
     }
     tokio::select! {
         _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
-        _=tokio::time::sleep(pause)=>{},
+        _=tokio::time::sleep(notice.pause)=>{},
     }
     Ok(())
+}
+
+/// Which wait this is, in the words an operator asks with. A 429 covers three
+/// different situations — a vendor rate limit, a spent account balance and a
+/// gateway's own throttle — and only the body tells them apart, so the body
+/// decides the class before the status does. Naming it is what lets a client
+/// offer waiting, switching account or stopping instead of one unspecified
+/// retry; the engine still never switches identity on its own.
+fn retry_cause(status: Option<u16>, detail: Option<&str>) -> &'static str {
+    let body = detail.unwrap_or_default().to_ascii_lowercase();
+    let spent = [
+        "quota",
+        "billing",
+        "credit",
+        "insufficient",
+        "payment",
+        "余额",
+        "额度",
+        "欠费",
+    ]
+    .iter()
+    .any(|needle| body.contains(needle));
+    match status {
+        None => "transport",
+        Some(_) if spent => "account_quota",
+        Some(429) => "vendor_rate_limit",
+        Some(status) if (500..=599).contains(&status) => "upstream",
+        Some(_) => "unknown",
+    }
+}
+
+/// Where the pause the operator is sitting through came from: a delay the
+/// provider named in `Retry-After` is its own statement about when it will
+/// answer again, while a backoff is this runner's guess. The two read the same
+/// on a status line and mean different things.
+fn pause_source(requested: Option<Duration>) -> &'static str {
+    match requested {
+        Some(_) => "provider",
+        None => "backoff",
+    }
 }
 
 /// The pause before the next attempt: the backoff schedule, raised to the pause
@@ -1586,12 +1651,55 @@ mod retry_tests {
         assert!(outcome.is_ok());
         assert_eq!(state.lock().unwrap().1, 2, "one retry, then the answer");
         assert_eq!(delays(&notices), vec![1_000]);
-        assert_eq!(notices[0]["status"], 429);
+        let retry = notices
+            .iter()
+            .find(|notice| notice["kind"] == "provider.retry")
+            .unwrap();
+        assert_eq!(retry["status"], 429);
+        // The operator's first question about this wait is which of the three
+        // 429s it is, and the second is who chose the delay.
+        assert_eq!(retry["cause"], "vendor_rate_limit");
+        assert_eq!(retry["source"], "provider");
         assert!(
             started.elapsed() >= Duration::from_millis(900),
             "the attempt waited for the pause the endpoint named"
         );
         server.abort();
+    }
+
+    #[test]
+    fn a_wait_is_named_from_the_body_before_the_status() {
+        // A spent balance and a vendor throttle arrive as the same 429; only
+        // the body separates them, and only the class lets a client offer
+        // "switch account" instead of "wait".
+        assert_eq!(
+            retry_cause(
+                Some(429),
+                Some("{\"error\":{\"code\":\"insufficient_quota\"}}")
+            ),
+            "account_quota"
+        );
+        assert_eq!(
+            retry_cause(Some(403), Some("{\"message\":\"余额不足或无可用资源包\"}")),
+            "account_quota"
+        );
+        assert_eq!(
+            retry_cause(
+                Some(429),
+                Some("{\"error\":{\"type\":\"rate_limit_error\"}}")
+            ),
+            "vendor_rate_limit"
+        );
+        assert_eq!(retry_cause(Some(529), Some("overloaded")), "upstream");
+        assert_eq!(retry_cause(Some(503), None), "upstream");
+        assert_eq!(retry_cause(None, None), "transport");
+        assert_eq!(retry_cause(Some(400), Some("bad model id")), "unknown");
+    }
+
+    #[test]
+    fn a_pause_names_whether_the_provider_or_the_backoff_chose_it() {
+        assert_eq!(pause_source(Some(Duration::from_secs(2))), "provider");
+        assert_eq!(pause_source(None), "backoff");
     }
 
     #[tokio::test]
