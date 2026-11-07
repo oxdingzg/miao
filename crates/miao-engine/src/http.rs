@@ -13,6 +13,10 @@
 //! never apply backpressure to the provider or the run loop, and never loses a
 //! delta it would have no way to replay.
 //!
+//! `GET /api/health` is the one endpoint without a token: a supervisor that has
+//! not attached yet still needs to know the engine is up and which build it is,
+//! so the probe names the version and reads no runtime state.
+//!
 //! Authority: the caller binds a loopback listener and supplies a bearer token.
 //! Only an authenticated request reaches the controller capability inside
 //! [`Host`]; an unauthenticated or wrong-token request is rejected before the
@@ -84,6 +88,7 @@ pub async fn serve_with_idle_timeout(
         .route("/rpc", post(rpc))
         .route("/events", get(events))
         .route("/version", get(version))
+        .route("/api/health", get(health))
         .route("/lease", post(lease))
         .layer(DefaultBodyLimit::max(MAX_BODY))
         .with_state(state.clone());
@@ -186,6 +191,17 @@ async fn lease(State(state): State<Arc<Shared>>, headers: HeaderMap, body: Bytes
 
 async fn version() -> Response {
     ok(json!({ "protocol": PROTOCOL_VERSION }))
+}
+
+/// Liveness probe for a supervisor that has no token yet: the desktop polls a
+/// sidecar before it claims a window is attached, so the Rust engine answers the
+/// same shape (`{healthy, version, pid}`) the TypeScript server did.
+async fn health() -> Response {
+    ok(json!({
+        "healthy": true,
+        "version": env!("MIAO_ENGINE_VERSION"),
+        "pid": std::process::id(),
+    }))
 }
 
 #[derive(Deserialize)]

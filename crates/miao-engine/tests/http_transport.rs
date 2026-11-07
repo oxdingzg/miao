@@ -68,6 +68,28 @@ async fn rejects_missing_and_wrong_bearer_token() {
     assert_eq!(wrong.status(), 401);
 }
 
+/// The supervisor probes before it holds a token, so health answers without one
+/// and still names the build behind the port.
+#[tokio::test]
+async fn answers_a_tokenless_health_probe_with_the_build() {
+    let (url, _dir) = start(Vec::new()).await;
+    let response = reqwest::get(format!("{}/api/health", url.trim_end_matches("/rpc")))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response
+            .headers()
+            .get("miao-engine-protocol")
+            .map(|value| value.to_str().unwrap()),
+        Some(miao_engine::http::PROTOCOL_VERSION)
+    );
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["healthy"], json!(true));
+    assert_eq!(body["version"], env!("MIAO_ENGINE_VERSION"));
+    assert_eq!(body["pid"].as_u64(), Some(std::process::id() as u64));
+}
+
 #[tokio::test]
 async fn rejects_unknown_method_and_unknown_protocol() {
     let (url, _dir) = start(Vec::new()).await;
