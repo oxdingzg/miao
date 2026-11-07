@@ -5,7 +5,6 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
 
 /// Hard ceiling for one assembled system prompt, in bytes.
@@ -600,10 +599,6 @@ pub(crate) async fn assemble_for_agent(
         return Err(ToolError::Interrupted);
     }
     let budget = source_budget(reserve);
-    // Instruction files repeat across worktrees and nested directories; the
-    // same bytes in the prompt twice only spend budget and invite conflicting
-    // readings, so content is loaded once and later copies are recorded.
-    let mut loaded: HashMap<String, String> = HashMap::new();
     let names = tools
         .definitions()
         .iter()
@@ -674,7 +669,7 @@ pub(crate) async fn assemble_for_agent(
                     continue;
                 };
                 let sha256=data["sha256"].as_str().map(str::to_owned);
-                if let Some(original)=sha256.as_deref().and_then(|sha|loaded.get(sha).cloned()){
+                if let Some(original)=sha256.as_deref().and_then(|sha|loaded_label(&sources,sha)){
                     sources.push(json!({"label":source.label,"path":source.path,"resource":resource,"status":"skipped","reason":"duplicate_content","duplicate_of":original}));
                     continue;
                 }
@@ -687,9 +682,6 @@ pub(crate) async fn assemble_for_agent(
                     continue;
                 }
                 system.push_str(&block);
-                if let Some(sha256)=sha256{
-                    loaded.insert(sha256,source.label.clone());
-                }
                 sources.push(json!({"label":source.label,"path":source.path,"resource":resource,"status":"loaded","sha256":data["sha256"]}));
             },
             Err(ToolError::Io(error)) if error.kind()==std::io::ErrorKind::NotFound=>sources.push(json!({"label":source.label,"path":source.path,"status":"missing"})),
@@ -758,7 +750,6 @@ pub(crate) async fn assemble_for_agent(
         reads,
         &mut system,
         &mut sources,
-        &mut loaded,
         budget,
     )
     .await?;
@@ -810,6 +801,16 @@ pub(crate) fn progress_reminder(history: &[Message]) -> Option<&'static str> {
     )
 }
 
+/// The label that already installed this content, if any. Instruction files
+/// repeat across worktrees and nested directories, and the same bytes in the
+/// prompt twice only spend budget and invite conflicting readings.
+fn loaded_label(sources: &[serde_json::Value], sha256: &str) -> Option<String> {
+    sources
+        .iter()
+        .find(|source| source["status"] == "loaded" && source["sha256"] == sha256)
+        .and_then(|source| source["label"].as_str().map(str::to_owned))
+}
+
 async fn append_read_sources(
     tools: &Tools,
     policy: &Policy,
@@ -817,7 +818,6 @@ async fn append_read_sources(
     reads: &[ReadSource],
     system: &mut String,
     sources: &mut Vec<serde_json::Value>,
-    loaded: &mut HashMap<String, String>,
     budget: usize,
 ) -> Result<(), ToolError> {
     if reads.is_empty() {
@@ -873,7 +873,7 @@ async fn append_read_sources(
                     {
                         Ok(data) => {
                             let sha256 = data["sha256"].as_str().map(str::to_owned);
-                            match sha256.as_deref().and_then(|sha| loaded.get(sha).cloned()) {
+                            match sha256.as_deref().and_then(|sha| loaded_label(sources, sha)) {
                                 Some(original) => {
                                     entry["reason"] = json!("duplicate_content");
                                     entry["duplicate_of"] = json!(original);
@@ -881,9 +881,6 @@ async fn append_read_sources(
                                     None
                                 }
                                 None => {
-                                    if let Some(sha256) = sha256 {
-                                        loaded.insert(sha256, source.label.clone());
-                                    }
                                     entry["status"] = json!("loaded");
                                     entry["sha256"] = data["sha256"].clone();
                                     data["text"].as_str().map(str::to_owned)
