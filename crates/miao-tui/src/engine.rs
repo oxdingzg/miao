@@ -902,6 +902,11 @@ async fn run(
     // between frames is not hammered, and reset as soon as any frame arrives.
     let mut last_frame = Instant::now();
     let mut resync_backoff = RESYNC_AFTER;
+    // The assembled prompt can be degraded by the context budget: an
+    // instruction file skipped, or the agent's own block cut short. The
+    // transcript never shows that, so it is announced once per distinct
+    // degradation rather than on every turn.
+    let mut context_degradation: Option<String> = None;
     crate::transport::wire_note("run", "startup refresh begin");
     if let Ok(client) = connection.connect().await {
         refresh_sessions(client, &bus).await;
@@ -1586,6 +1591,15 @@ async fn run(
                         if let Some((kind, id)) = attention_event(&event) {
                             bus.send(AppEvent::Attention { kind, id });
                         }
+                        if event.kind == "instructions_loaded" {
+                            let notice = context_degradation_notice(&event);
+                            if notice != context_degradation {
+                                if let Some(text) = &notice {
+                                    bus.send(AppEvent::Notice(text.clone()));
+                                }
+                                context_degradation = notice;
+                            }
+                        }
                         // The attention path is filtered by the snapshot cursor,
                         // so an approval that predates it would surface nowhere.
                         // Refreshing on the event itself keeps the panel honest.
@@ -1726,6 +1740,45 @@ fn settles_into_snapshot(kind: &str) -> bool {
             | "session.reverted"
             | "session.unreverted"
     )
+}
+
+/// What an `instructions_loaded` frame says about a degraded prompt. The engine
+/// keeps a Session runnable by skipping instruction files or cutting the agent's
+/// own block, and both silently reduce what the model knows: name them once, so
+/// a thin answer has a visible cause instead of looking like a model failure.
+fn context_degradation_notice(event: &transport::EngineEvent) -> Option<String> {
+    if event.kind != "instructions_loaded" {
+        return None;
+    }
+    let sources = event.data.get("sources")?.as_array()?;
+    let skipped = sources
+        .iter()
+        .filter(|source| {
+            source.get("status").and_then(Value::as_str) == Some("skipped")
+                && matches!(
+                    source.get("reason").and_then(Value::as_str),
+                    Some("context_budget") | Some("file_too_large")
+                )
+        })
+        .count();
+    let truncated: u64 = sources
+        .iter()
+        .filter_map(|source| source.get("truncated_bytes").and_then(Value::as_u64))
+        .sum();
+    let mut parts = Vec::new();
+    if skipped > 0 {
+        parts.push(format!(
+            "{skipped} instruction {} skipped",
+            if skipped == 1 { "file" } else { "files" }
+        ));
+    }
+    if truncated > 0 {
+        parts.push(format!(
+            "agent instructions truncated by {:.1} KiB",
+            truncated as f64 / 1024.0
+        ));
+    }
+    (!parts.is_empty()).then(|| format!("context budget: {}", parts.join(" · ")))
 }
 
 /// What a `config` frame means for the user: the sections that moved, or why
@@ -2378,5 +2431,59 @@ mod tests {
         );
         assert_eq!(args.len(), 7);
         assert!(!args.iter().any(|arg| arg == "--credential-db"));
+    }
+}
+
+#[cfg(test)]
+mod context_notice_tests {
+    use super::*;
+
+    fn event(kind: &str, sources: Value) -> transport::EngineEvent {
+        transport::EngineEvent {
+            session_id: "s".into(),
+            seq: 1,
+            kind: kind.into(),
+            data: json!({ "sources": sources }),
+            recorded_at_ms: None,
+        }
+    }
+
+    #[test]
+    fn a_degraded_prompt_is_named_with_what_was_lost() {
+        let degraded = event(
+            "instructions_loaded",
+            json!([
+                { "label": "AGENTS.md", "status": "loaded" },
+                { "label": "nested-1", "status": "skipped", "reason": "context_budget" },
+                { "label": "nested-2", "status": "skipped", "reason": "file_too_large" },
+                { "type": "agent", "truncated_bytes": 4096 },
+            ]),
+        );
+        assert_eq!(
+            context_degradation_notice(&degraded).unwrap(),
+            "context budget: 2 instruction files skipped · agent instructions truncated by 4.0 KiB"
+        );
+        let truncated_only = event(
+            "instructions_loaded",
+            json!([{ "type": "agent", "truncated_bytes": 512 }]),
+        );
+        assert_eq!(
+            context_degradation_notice(&truncated_only).unwrap(),
+            "context budget: agent instructions truncated by 0.5 KiB"
+        );
+    }
+
+    #[test]
+    fn a_clean_assembly_and_other_frames_say_nothing() {
+        let clean = event(
+            "instructions_loaded",
+            json!([
+                { "label": "AGENTS.md", "status": "loaded" },
+                { "label": "copy", "status": "skipped", "reason": "duplicate_content" },
+            ]),
+        );
+        assert!(context_degradation_notice(&clean).is_none());
+        assert!(context_degradation_notice(&event("tool.completed", json!([]))).is_none());
+        assert!(context_degradation_notice(&event("instructions_loaded", json!({}))).is_none());
     }
 }
