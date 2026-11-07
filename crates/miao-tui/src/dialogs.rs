@@ -1525,7 +1525,6 @@ impl Dialog {
             Dialog::Skills(list) => list.title,
             Dialog::Workspaces(list) => list.title,
             Dialog::Worktrees(list) => list.title,
-            Dialog::TurnTimings(list) => list.title,
             Dialog::Message(text) => text.title,
             Dialog::Palette(_) => "commands",
             Dialog::Rename(_) => "rename session",
