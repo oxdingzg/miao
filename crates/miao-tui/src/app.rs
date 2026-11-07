@@ -10,8 +10,8 @@ use serde_json::Value;
 
 use crate::commands::{self, Builtin};
 use crate::dialogs::{
-    AccountInfo, Action as DialogAction, ConfirmKind, Dialog, ModelInfo, ProviderEntry, Row,
-    TextDialog,
+    session_model, AccountInfo, Action as DialogAction, ConfirmKind, Dialog, ModelInfo,
+    ProviderEntry, Row, TextDialog,
 };
 use crate::editor::{Action, Mode};
 use crate::engine;
@@ -21,7 +21,7 @@ use crate::pane::{render_dialog, Home, Panel, PanelKind, Shell, StatusHint};
 use crate::platform::attention::{self, Attention};
 use crate::platform::{clipboard, editor, zed};
 use crate::scroll::Scroll;
-use crate::session::{Entry, Part, SessionState, SessionSummary};
+use crate::session::{Entry, ModelPin, Part, SessionState, SessionSummary};
 use crate::state::{self, StashEntry};
 use crate::status::{compact_tokens, UsageSummary};
 use crate::theme::{self, Theme};
@@ -1549,7 +1549,8 @@ impl App {
         let current = self
             .session
             .as_ref()
-            .and_then(|summary| summary.model.as_deref());
+            .and_then(|summary| summary.model.as_ref())
+            .map(ModelPin::label);
         // One tail list, flagged by whether a key is already stored: the two
         // lines of advice it can print are different, so the picker needs to
         // tell them apart rather than send everyone to `auth login`.
@@ -1567,7 +1568,7 @@ impl App {
         let favorites = self.favorites.clone();
         self.open_dialog(Dialog::models_with_needs_auth(
             &self.models,
-            current,
+            current.as_deref(),
             self.models_filter.as_deref(),
             &unserved,
             &recents,
@@ -1580,19 +1581,20 @@ impl App {
     /// an operator wants is usually one they already gave.
     fn recent_models(&self) -> Vec<String> {
         let mut recents: Vec<String> = Vec::new();
-        for model in self.remembered_model.iter().chain(
-            self.catalog
-                .iter()
-                .filter_map(|session| session.model.as_ref()),
-        ) {
+        let pinned = self
+            .catalog
+            .iter()
+            .filter_map(|session| session.model.as_ref())
+            .map(ModelPin::label);
+        for name in self.remembered_model.iter().cloned().chain(pinned) {
             // A Session pin may carry a route id (`provider/model@account`).
-            let name = model
+            let name = name
                 .rsplit_once('/')
                 .map(|(_, name)| name)
-                .unwrap_or(model)
+                .unwrap_or(&name)
                 .split('@')
                 .next()
-                .unwrap_or(model);
+                .unwrap_or(&name);
             if !recents.iter().any(|known| known == name) {
                 recents.push(name.to_string());
             }
@@ -2210,7 +2212,11 @@ impl App {
             row("id", &session.id),
             row(
                 "model",
-                session.model.as_deref().unwrap_or("engine default"),
+                &session
+                    .model
+                    .as_ref()
+                    .map(|pin| session_model(&self.models, pin))
+                    .unwrap_or_else(|| "engine default".to_string()),
             ),
             row(
                 "account",
@@ -3284,19 +3290,26 @@ impl App {
             // an install that predates the remembering still has sessions that
             // name their model, and the launcher should reflect what this
             // machine actually uses rather than stay blank until a pick.
-            let landing_model = self.remembered_model.clone().or_else(|| {
-                self.catalog
-                    .first()
-                    .and_then(|session| session.model.clone())
-            });
-            // The remembered value can name the model, its route, or the
-            // display name an older install stored; the catalog is what knows
-            // the provider, so the strip can only name it once the pick is
-            // resolved here.
-            let landing =
-                landing_model.map(|model| match ModelInfo::resolve(&self.models, &model) {
+            let landing = self
+                .remembered_model
+                .clone()
+                // The remembered value can name the model, its route, or the
+                // display name an older install stored; the catalog is what
+                // knows the provider, so the strip can only name it once the
+                // pick is resolved here.
+                .map(|model| match ModelInfo::resolve(&self.models, &model) {
                     Some(info) => info.identity(),
                     None => model,
+                })
+                // The remembered choice, or the model the newest Session ran
+                // on: an install that predates the remembering still has
+                // Sessions that name their model, and its pin resolves to the
+                // provider and account the catalog knows.
+                .or_else(|| {
+                    self.catalog
+                        .first()
+                        .and_then(|session| session.model.as_ref())
+                        .map(|pin| session_model(&self.models, pin))
                 });
             // An install with no route at all leaves the row blank, which
             // reads as a broken status line rather than an empty catalog.
@@ -3445,7 +3458,8 @@ impl App {
         self.shell.status.model = self
             .session
             .as_ref()
-            .and_then(|session| session.model.clone())
+            .and_then(|session| session.model.as_ref())
+            .map(|pin| session_model(&self.models, pin))
             .or(labelled)
             .or(answering)
             .or_else(|| {
@@ -5014,6 +5028,7 @@ mod tests {
             variant: None,
             provider: Some("xiaomi".into()),
             account: None,
+            credential_id: None,
         }];
         app.update_status();
         assert_eq!(
@@ -5049,6 +5064,7 @@ mod tests {
             variant: None,
             provider: Some("xiaomi".into()),
             account: None,
+            credential_id: None,
         }];
         app.remembered_model = Some("glm-5".into());
         app.update_status();
@@ -5072,6 +5088,7 @@ mod tests {
             variant: None,
             provider: Some("deepseek".into()),
             account: None,
+            credential_id: None,
         }];
         app.remembered_model = Some("deepseek-v4.1-flash".into());
         app.update_status();
@@ -5104,11 +5121,17 @@ mod tests {
             variant: None,
             provider: Some("xiaomi".into()),
             account: None,
+            credential_id: None,
         }];
         app.remembered_model = None;
         app.catalog = vec![crate::session::SessionSummary {
             id: "ses_a".into(),
-            model: Some("xiaomi/glm-5".into()),
+            model: Some(ModelPin {
+                protocol: "openai-chat".into(),
+                model: "glm-5".into(),
+                route_id: Some("xiaomi/glm-5".into()),
+                variant: None,
+            }),
             updated_at_ms: Some(2),
             title: None,
             parent_id: None,
@@ -5124,6 +5147,46 @@ mod tests {
             Some("glm-5 · xiaomi · openai-chat"),
             "a pinned route id still resolves to the catalog entry"
         );
+    }
+
+    /// The status dialog reads the model the way the strip does: the pin
+    /// resolved through the catalog, so the row names the provider and the
+    /// account answering for it instead of only the route.
+    #[test]
+    fn the_status_dialog_names_the_provider_and_the_account() {
+        let mut app = session_app();
+        app.models = vec![ModelInfo {
+            protocol: "openai-chat".into(),
+            model: "glm-5".into(),
+            route_id: Some("zhipu-work/glm-5".into()),
+            variant: None,
+            provider: Some("zhipu".into()),
+            account: Some("work".into()),
+            credential_id: Some("cred_a".into()),
+        }];
+        app.session = Some(SessionSummary {
+            id: "ses_a".into(),
+            title: Some("offset fix".into()),
+            parent_id: None,
+            updated_at_ms: Some(10),
+            archived_at_ms: None,
+            pinned_at_ms: None,
+            directory: None,
+            model: Some(ModelPin {
+                protocol: "openai-chat".into(),
+                model: "glm-5".into(),
+                route_id: Some("zhipu-work/glm-5".into()),
+                variant: None,
+            }),
+            credential_id: Some("cred_a".into()),
+            preview: None,
+        });
+        let model = app
+            .status_rows()
+            .into_iter()
+            .find(|row| row.label == "model")
+            .expect("the status dialog names a model");
+        assert_eq!(model.detail, "glm-5 · zhipu · work · openai-chat");
     }
 
     #[test]
@@ -6335,6 +6398,7 @@ mod tests {
                 variant: None,
                 provider: Some("openai".into()),
                 account: None,
+                credential_id: None,
             },
             ModelInfo {
                 protocol: "openai-chat".into(),
@@ -6343,6 +6407,7 @@ mod tests {
                 variant: None,
                 provider: Some("zhipu".into()),
                 account: None,
+                credential_id: None,
             },
         ];
         leader(&mut app, 'a');

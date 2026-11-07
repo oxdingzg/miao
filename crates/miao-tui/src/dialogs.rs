@@ -8,7 +8,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use serde_json::Value;
 
 use crate::editor::Editor;
-use crate::session::SessionSummary;
+use crate::session::{ModelPin, SessionSummary};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelInfo {
@@ -23,6 +23,10 @@ pub struct ModelInfo {
     /// Two accounts answer through two routes, and the label is what tells
     /// them apart in the picker.
     pub account: Option<String>,
+    /// The opaque credential identity behind the route. It stands in for the
+    /// account label when the operator named none, which is the only thing
+    /// telling two keys of one provider apart.
+    pub credential_id: Option<String>,
 }
 
 impl ModelInfo {
@@ -74,6 +78,10 @@ impl ModelInfo {
                             .get("account")
                             .and_then(Value::as_str)
                             .map(str::to_string);
+                        let credential_id = entry
+                            .get("credential_id")
+                            .and_then(Value::as_str)
+                            .map(str::to_string);
                         let single = Self {
                             protocol: protocol.to_string(),
                             model: model.to_string(),
@@ -81,6 +89,7 @@ impl ModelInfo {
                             variant: None,
                             provider: provider.clone(),
                             account: account.clone(),
+                            credential_id: credential_id.clone(),
                         };
                         if variants.is_empty() {
                             return vec![single];
@@ -94,6 +103,7 @@ impl ModelInfo {
                                 variant: Some(variant),
                                 provider: provider.clone(),
                                 account: account.clone(),
+                                credential_id: credential_id.clone(),
                             })
                             .collect()
                     })
@@ -103,19 +113,32 @@ impl ModelInfo {
     }
 
     pub fn label(&self) -> String {
-        // The account rides the label for providers holding several keys: the
-        // same model then appears once per account, and only the label tells
-        // the operator which key a choice spends.
+        match &self.variant {
+            Some(variant) => format!("{} · {} · {variant}", self.model, self.protocol),
+            None => format!("{} · {}", self.model, self.protocol),
+        }
+    }
+
+    /// The muted column of a picker row: the provider that serves the route
+    /// and, when that provider holds more than one account (`shared`), the
+    /// account the row spends. The TypeScript picker fills the same column
+    /// with `provider.name` (`dialog-model.tsx`), which keeps a row readable
+    /// once its provider header has scrolled away.
+    pub fn origin(&self, shared: &[String]) -> String {
+        let name_account = self
+            .provider
+            .as_ref()
+            .is_some_and(|provider| shared.contains(provider));
         let account = self
             .account
             .as_deref()
-            .filter(|account| *account != "default")
-            .map(|account| format!("{account} · "))
-            .unwrap_or_default();
-        match &self.variant {
-            Some(variant) => format!("{account}{} · {} · {variant}", self.model, self.protocol),
-            None => format!("{account}{} · {}", self.model, self.protocol),
-        }
+            .or(self.credential_id.as_deref())
+            .filter(|account| name_account && *account != "default");
+        [self.provider.as_deref(), account]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<&str>>()
+            .join(" · ")
     }
 
     /// What the status strip names: the model, the provider serving it, the
@@ -210,6 +233,55 @@ impl ModelInfo {
         }
         binding
     }
+}
+
+/// The model a Session runs on, as a row names it: the pin, then the provider
+/// and the account that serve it. The pin on its own read `Claude-Opus-4.5`,
+/// which named no provider at all, and left two accounts of one provider
+/// looking like the same choice.
+pub fn session_model(models: &[ModelInfo], pin: &ModelPin) -> String {
+    let known = models.iter().find(|info| {
+        let named = match &pin.route_id {
+            Some(route_id) => info.route_id.as_deref() == Some(route_id.as_str()),
+            None => {
+                info.route_id.is_none() && info.model == pin.model && info.protocol == pin.protocol
+            }
+        };
+        named && info.variant == pin.variant
+    });
+
+    // A catalog entry answers with the model, its provider, its account, the
+    // protocol and the variant — the same reading the status strip gives a
+    // selection. Only a route the catalog no longer serves falls back to the
+    // raw pin, which is better than naming nothing.
+    match known {
+        Some(known) => known.identity(),
+        None => pin.label(),
+    }
+}
+
+/// The providers whose catalog holds more than one account. Two keys of one
+/// provider serve the same models, so only those rows need the account named;
+/// a provider with a single key would just repeat its own id on every row.
+fn providers_with_several_accounts(models: &[ModelInfo]) -> Vec<String> {
+    let mut seen: Vec<(&str, Vec<&str>)> = Vec::new();
+    for model in models {
+        let Some(provider) = model.provider.as_deref() else {
+            continue;
+        };
+        let Some(account) = model.account.as_deref().or(model.credential_id.as_deref()) else {
+            continue;
+        };
+        match seen.iter_mut().find(|(named, _)| *named == provider) {
+            Some((_, accounts)) if !accounts.contains(&account) => accounts.push(account),
+            Some(_) => {}
+            None => seen.push((provider, vec![account])),
+        }
+    }
+    seen.into_iter()
+        .filter(|(_, accounts)| accounts.len() > 1)
+        .map(|(provider, _)| provider.to_string())
+        .collect()
 }
 
 /// One selectable account, derived from the entries of `model_catalog` that
@@ -733,6 +805,10 @@ impl Dialog {
         // can turn a chosen row back into a binding without assuming the
         // dialog's indices match the catalog's.
         let mut rows: Vec<Row> = Vec::new();
+        // A provider holding several accounts serves one model through
+        // several keys, so only those rows need the account named; the
+        // provider itself belongs on every row.
+        let shared = providers_with_several_accounts(models);
         // Favorites then recents lead the list, the way the product's picker
         // opens above its provider groups: the answer an operator wants is
         // usually one they starred or already used, and neither should need
@@ -761,7 +837,7 @@ impl Dialog {
                     rows.push(Row {
                         id: index.to_string(),
                         label: models[index].label(),
-                        detail: models[index].route_id.clone().unwrap_or_default(),
+                        detail: models[index].origin(&shared),
                     });
                 }
             }
@@ -804,7 +880,10 @@ impl Dialog {
                 // The Session's own binding is marked so the list answers
                 // "which one am I on" without opening the footer.
                 let label = match current {
-                    Some(current) if current == model.label() => {
+                    // A pin names either the route or the `model · protocol`
+                    // pair, and the row's label now carries neither the route
+                    // nor the account, so both spellings mark the row.
+                    Some(current) if current == model.label() || current == model.route() => {
                         format!("● {}", model.label())
                     }
                     _ => model.label(),
@@ -812,7 +891,7 @@ impl Dialog {
                 rows.push(Row {
                     id: index.to_string(),
                     label,
-                    detail: model.route_id.clone().unwrap_or_default(),
+                    detail: model.origin(&shared),
                 });
             }
         }
@@ -2004,6 +2083,83 @@ mod tests {
         assert_eq!(models[2].label(), "gpt-5 · responses · high");
         assert_eq!(models[0].binding()["route_id"], "r1");
         assert_eq!(models[2].binding()["variant"], "high");
+    }
+
+    /// The picker used to leave the provider to the section header, so a row
+    /// read `glm-5 · openai-chat` and named no provider once that header had
+    /// scrolled away.
+    #[test]
+    fn every_picker_row_names_the_provider_that_serves_it() {
+        let dialog = Dialog::models(&grouped(), None);
+        let list = dialog.list().expect("list");
+        let rows: Vec<(&str, &str)> = list
+            .rows
+            .iter()
+            .map(|row| (row.label.as_str(), row.detail.as_str()))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("zhipu", ""),
+                ("glm-5 · openai-chat", "zhipu"),
+                ("flash · openai-chat", "zhipu"),
+                ("mtty", ""),
+                ("haiku · openai-chat", "mtty"),
+            ],
+            "a header leaves the detail column empty; every model row names its provider"
+        );
+    }
+
+    /// Two keys of one provider serve the same models, so the rows only read as
+    /// different choices when each names its account. An account the operator
+    /// never named falls back to the opaque credential identity.
+    #[test]
+    fn two_accounts_of_one_provider_are_told_apart() {
+        let models = ModelInfo::catalog(&serde_json::json!([
+            {"protocol": "openai-chat", "model": "glm-5", "model_key": "zhipu/glm-5",
+             "route_id": "zhipu-work/glm-5", "account": "work", "credential_id": "cred_a"},
+            {"protocol": "openai-chat", "model": "glm-5", "model_key": "zhipu/glm-5",
+             "route_id": "zhipu-home/glm-5", "credential_id": "cred_b"}
+        ]));
+        let dialog = Dialog::models(&models, None);
+        let list = dialog.list().expect("list");
+        let details: Vec<&str> = list.rows.iter().map(|row| row.detail.as_str()).collect();
+        assert_eq!(
+            details,
+            vec!["", "zhipu · work", "zhipu · cred_b"],
+            "one provider, two keys: the account is what tells them apart"
+        );
+    }
+
+    /// A Session's row names the provider and the account behind its pin, not
+    /// only the route: `Claude-Opus-4.5` on its own said nothing about who
+    /// answered.
+    #[test]
+    fn a_session_model_names_the_provider_and_the_account_behind_the_pin() {
+        let models = ModelInfo::catalog(&serde_json::json!([
+            {"protocol": "openai-chat", "model": "glm-5", "model_key": "zhipu/glm-5",
+             "route_id": "zhipu-work/glm-5", "account": "work", "credential_id": "cred_a"}
+        ]));
+        let pin = ModelPin {
+            protocol: "openai-chat".into(),
+            model: "glm-5".into(),
+            route_id: Some("zhipu-work/glm-5".into()),
+            variant: None,
+        };
+        assert_eq!(
+            session_model(&models, &pin),
+            "glm-5 · zhipu · work · openai-chat",
+            "the row names the model, its provider, its account and the protocol"
+        );
+        let dropped = ModelPin {
+            route_id: Some("gone/glm-5".into()),
+            ..pin
+        };
+        assert_eq!(
+            session_model(&models, &dropped),
+            "gone/glm-5",
+            "a route the catalog no longer serves still prints instead of vanishing"
+        );
     }
 
     #[test]
