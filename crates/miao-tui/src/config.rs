@@ -62,19 +62,19 @@ pub struct Config {
 }
 
 /// `prompt.max_width` from `tui.json`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Absent, the landing prompt scales with the window (`Auto`). The product's
+/// home falls back to a fixed 75 columns instead, which is a small field on a
+/// wide terminal — at 200 columns it covers little more than a third of the
+/// window — so this build defaults to the product's own `"auto"` rule, and a
+/// `tui.json` `{"prompt": {"max_width": 75}}` restores the fixed default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum PromptWidth {
     /// A fixed maximum in columns.
     Fixed(u16),
     /// `Math.max(75, floor(width * 0.7))`, the TS `"auto"` rule.
+    #[default]
     Auto,
-}
-
-impl Default for PromptWidth {
-    fn default() -> Self {
-        // The TS schema makes the key optional and the home falls back to 75.
-        Self::Fixed(75)
-    }
 }
 
 impl PromptWidth {
@@ -626,10 +626,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// The TS home caps its prompt at `prompt.max_width` (default 75, `"auto"`
-    /// scaling with the terminal) and leaves the Session's prompt full width.
-    /// The Rust home used a hard-coded `70%` and read no config at all, so
-    /// every terminal got a different layout from the one the TS host draws.
+    /// The home caps its prompt at `prompt.max_width` and leaves the Session's
+    /// prompt full width. A number pins the band; `"auto"` scales it with the
+    /// terminal; absent uses this build's default, which is `"auto"` rather
+    /// than the product's fixed 75.
     #[test]
     fn the_landing_prompt_width_comes_from_the_typescript_key() {
         let dir = temp_dir("prompt-width");
@@ -642,15 +642,16 @@ mod tests {
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(config.prompt_max_width, PromptWidth::Auto);
 
-        // Absent is the TS schema's optional default, not a warning.
+        // Absent is this build's default, not a warning: the band scales with
+        // the window instead of sitting at the product's fixed 75 columns.
         let (config, warnings) = merge_at(r#"{"prompt": {}}"#, &dir);
         assert!(warnings.is_empty(), "{warnings:?}");
-        assert_eq!(config.prompt_max_width, PromptWidth::Fixed(75));
+        assert_eq!(config.prompt_max_width, PromptWidth::Auto);
 
         for bad in ["0", "-4", "\"wide\"", "true"] {
             let (config, warnings) =
                 merge_at(&format!(r#"{{"prompt": {{"max_width": {bad}}}}}"#), &dir);
-            assert_eq!(config.prompt_max_width, PromptWidth::Fixed(75), "{bad}");
+            assert_eq!(config.prompt_max_width, PromptWidth::Auto, "{bad}");
             assert!(
                 warnings
                     .iter()
