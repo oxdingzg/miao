@@ -38,3 +38,9 @@ e6f6ddaa5ccf3d242c2b341e4ee4303513d38161:packages/console/app/package.json:gener
 # They are generated for the test and never leave it, and all four findings share
 # this fingerprint because the fixture is one line of JSON.
 de922740735b3d76041a47bfa241cfbb3b57656a:apps/ios/MiaoCore/Tests/MiaoCoreTests/Fixtures/account-enrollment.json:generic-api-key:1
+# Fake secret-looking strings used by the diagnostic-bundle redaction tests:
+# the fixtures must match the redaction regexes, so they are deliberately
+# credential-shaped; every one is a fabricated constant used only in tests.
+e5e903b6e9cdaba5806c0218ee28de462bdfcdc8:crates/miao-engine/tests/diagnostic_bundle.rs:github-pat:126
+e5e903b6e9cdaba5806c0218ee28de462bdfcdc8:crates/miao-engine/tests/diagnostic_bundle.rs:generic-api-key:83
+e5e903b6e9cdaba5806c0218ee28de462bdfcdc8:crates/miao-engine/tests/diagnostic_bundle.rs:generic-api-key:126
