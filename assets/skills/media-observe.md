@@ -1,7 +1,8 @@
 <!--
   Built-in skill. Name and description are registered in code at
-  packages/core/src/plugin/skill.ts (V2) and packages/miao/src/skill/index.ts
-  (V1). The body below becomes the skill's content.
+  packages/core/src/plugin/skill.ts for the TypeScript host and
+  crates/miao-engine/src/context.rs for the Rust host. The body below
+  becomes the skill's content.
 -->
 
 # Media observation

@@ -4113,10 +4113,10 @@ fn assemble_instructions(
     config_dir: Option<&std::path::Path>,
 ) -> Option<String> {
     const LIMIT: usize = 64 * 1024;
-    /// The product's own persona, embedded at compile time from the TypeScript
-    /// asset so the two hosts can never drift into different personalities.
-    const PERSONA: &str =
-        include_str!("../../../packages/core/src/system-context/persona/default.txt");
+    /// The product's own persona, embedded at compile time from the shared
+    /// `assets/` copy so the Rust host and the desktop sidecar can never drift
+    /// into different personalities.
+    const PERSONA: &str = include_str!("../../../assets/persona/default.txt");
     let mut blocks: Vec<String> = vec![PERSONA.trim().to_string()];
     let mut total = 0usize;
     for (label, path) in [

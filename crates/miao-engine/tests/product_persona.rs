@@ -104,8 +104,8 @@ async fn effective_model_replaces_product_persona_and_explicit_agent_instruction
     turn(&runtime, &store, 3).await;
     runtime.shutdown().await;
     let requests = provider.requests.lock().unwrap();
-    let gemini = include_str!("../../../packages/core/src/system-context/persona/gemini.txt");
-    let anthropic = include_str!("../../../packages/core/src/system-context/persona/anthropic.txt");
+    let gemini = include_str!("../../../assets/persona/gemini.txt");
+    let anthropic = include_str!("../../../assets/persona/anthropic.txt");
     assert!(requests[0].system.starts_with(gemini));
     assert!(requests[1].system.starts_with(anthropic));
     assert!(!requests[1].system.contains(gemini));
