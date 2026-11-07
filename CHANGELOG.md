@@ -11,6 +11,16 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.46] - 2026-11-07
+
+### Fixed
+- **cli**: write the derived model routes manifest whatever its size (#2662) (`ebc45bc6cc`)
+- **tui**: repair the workspace list and worktree removal guards (#2663) (`67728878ca`)
+- **terminal**: resume an overrun read at the newest window (#2661) (`116ea2b364`)
+
+### Docs
+- **acceptance**: record the WSP-01 workspace-surface runs (#2664) (`2e3fb13276`)
+
 ## [0.3.45] - 2026-11-07
 
 ### Added
