@@ -7,7 +7,7 @@
   "type": "module",
   "packageManager": "bun@1.4.2",
   "scripts": {
-    "dev": "bun run --cwd packages/miao src/index.ts",
+    "dev": "cargo run --manifest-path crates/miao-cli/Cargo.toml",
     "dev:desktop": "bun --cwd packages/desktop dev",
     "dev:web": "bun --cwd packages/app dev",
     "dev:storybook": "bun --cwd packages/storybook storybook",

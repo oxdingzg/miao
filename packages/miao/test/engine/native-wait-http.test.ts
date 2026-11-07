@@ -31,7 +31,7 @@ test.skipIf(!binary)(
         )
       },
     })
-    const child = Bun.spawn([process.execPath, "src/index.ts", "serve", "--hostname", "127.0.0.1", "--port", "0"], {
+    const child = Bun.spawn([process.execPath, "src/serve.ts", "--hostname", "127.0.0.1", "--port", "0"], {
       cwd: path.join(import.meta.dir, "../.."),
       env: {
         ...process.env,

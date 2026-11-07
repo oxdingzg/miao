@@ -213,7 +213,7 @@ jobs:
         run: bun test test/runtime-ownership.test.ts test/session-ownership.test.ts test/process/process.test.ts test/location-filesystem-windows.test.ts
       - name: Verify window exit and immutable upgrade
         working-directory: packages/miao
-        run: bun test test/runtime/window.test.ts test/installation/windows-upgrade.test.ts
+        run: bun test test/installation/windows-upgrade.test.ts
 
   unit:
     name: unit (linux)

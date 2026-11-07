@@ -45,7 +45,6 @@ export async function start(filename: string) {
         () => state.server?.stop(true),
         () => (state.server ? state.execution?.interruptAll() : undefined),
         () => state.execution?.dispose(),
-        () => WindowLifecycle.disposeCore(),
         () => RuntimeRegistration.remove(storage, identity.runtimeID),
       ]
       for (const action of actions) {

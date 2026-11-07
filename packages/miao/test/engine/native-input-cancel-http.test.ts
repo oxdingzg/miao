@@ -9,7 +9,7 @@ if (binary)
     await using tmp = await tmpdir()
     const directory = path.join(tmp.path, "project")
     await Bun.$`mkdir -p ${directory}`.quiet()
-    const child = Bun.spawn([process.execPath, "src/index.ts", "serve", "--hostname", "127.0.0.1", "--port", "0"], {
+    const child = Bun.spawn([process.execPath, "src/serve.ts", "--hostname", "127.0.0.1", "--port", "0"], {
       cwd: path.join(import.meta.dir, "../.."),
       env: {
         ...process.env,

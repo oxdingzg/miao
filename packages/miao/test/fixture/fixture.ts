@@ -13,7 +13,7 @@ import { LayerNode } from "@miao/core/effect/layer-node"
 import { Database } from "@miao/core/database/database"
 import { EventV2 } from "@miao/core/event"
 import { FSUtil } from "@miao/core/fs-util"
-import { projectContext, type ProjectContext } from "../../src/cli/project-context"
+import { projectContext, type ProjectContext } from "../../src/project-context"
 import { TestLLMServer } from "../lib/llm-server"
 
 // Strip null bytes from paths (defensive fix for CI environment issues)

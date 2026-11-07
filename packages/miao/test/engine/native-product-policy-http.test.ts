@@ -41,7 +41,7 @@ async function exercise(permissions: unknown, target: string) {
     },
   })
   const sessionID = `ses_native_product_policy_${crypto.randomUUID()}`
-  const child = Bun.spawn([process.execPath, "src/index.ts", "serve", "--hostname", "127.0.0.1", "--port", "0"], {
+  const child = Bun.spawn([process.execPath, "src/serve.ts", "--hostname", "127.0.0.1", "--port", "0"], {
     cwd: path.join(import.meta.dir, "../.."),
     env: {
       ...process.env,

@@ -45,7 +45,7 @@ test.skipIf(!binary)(
     const headers = { "content-type": "application/json", "x-opencode-directory": directory }
     const windows: { url: string; child: ReturnType<typeof Bun.spawn> }[] = []
     const start = async () => {
-      const child = Bun.spawn([process.execPath, "src/index.ts", "serve", "--hostname", "127.0.0.1", "--port", "0"], {
+      const child = Bun.spawn([process.execPath, "src/serve.ts", "--hostname", "127.0.0.1", "--port", "0"], {
         cwd: path.join(import.meta.dir, "../.."),
         env,
         stdout: "pipe",

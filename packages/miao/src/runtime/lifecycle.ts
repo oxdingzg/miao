@@ -1,7 +1,7 @@
 export * as WindowLifecycle from "./lifecycle"
 
 const resources = new Set<() => Promise<unknown>>()
-const state: { closing?: Promise<void>; core?: Promise<void>; installed: boolean } = { installed: false }
+const state: { closing?: Promise<void>; installed: boolean } = { installed: false }
 
 /** All resources registered here belong to this invocation, never to another window. */
 export function register(stop: () => Promise<unknown>) {
@@ -45,15 +45,4 @@ export function install() {
   process.once("SIGINT", () => exit(130))
   process.once("SIGTERM", () => exit(143))
   process.once("SIGHUP", () => exit(129))
-}
-
-/** Dispose the process graph once, after owned listeners and executions stop. */
-export function disposeCore() {
-  state.core ??= (async () => {
-    const { cliRuntimeUsed } = await import("../cli/cli-runtime-usage")
-    if (!cliRuntimeUsed.value) return
-    const { CliRuntime } = await import("../cli/cli-runtime")
-    await CliRuntime.dispose()
-  })()
-  return state.core
 }
