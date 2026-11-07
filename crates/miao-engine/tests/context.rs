@@ -606,3 +606,32 @@ async fn an_oversized_instruction_file_is_skipped_instead_of_failing_the_turn() 
         .any(|source| source["path"] == "AGENTS.md" && source["reason"] == "file_too_large"));
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn duplicate_instruction_content_is_loaded_once() {
+    use miao_engine::context::Source;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("AGENTS.md"), "SHARED_RULE").unwrap();
+    std::fs::write(dir.path().join("copy.md"), "SHARED_RULE").unwrap();
+    let tools = Tools::new(dir.path())
+        .await
+        .unwrap()
+        .with_context_sources(vec![Source {
+            label: "copy".into(),
+            path: "copy.md".into(),
+        }])
+        .unwrap();
+    let bundle = assemble(
+        &tools,
+        &Policy::new(Config::default()).unwrap(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(bundle.system.matches("SHARED_RULE").count(), 1);
+    assert!(bundle.sources.iter().any(|source| {
+        source["path"] == "copy.md"
+            && source["reason"] == "duplicate_content"
+            && source["duplicate_of"] == "AGENTS.md"
+    }));
+}

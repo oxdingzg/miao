@@ -5,6 +5,7 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::json;
+use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
 
 /// Hard ceiling for one assembled system prompt, in bytes.
@@ -599,6 +600,10 @@ pub(crate) async fn assemble_for_agent(
         return Err(ToolError::Interrupted);
     }
     let budget = source_budget(reserve);
+    // Instruction files repeat across worktrees and nested directories; the
+    // same bytes in the prompt twice only spend budget and invite conflicting
+    // readings, so content is loaded once and later copies are recorded.
+    let mut loaded: HashMap<String, String> = HashMap::new();
     let names = tools
         .definitions()
         .iter()
@@ -668,6 +673,11 @@ pub(crate) async fn assemble_for_agent(
                     sources.push(json!({"label":source.label,"path":source.path,"status":"skipped","reason":"invalid_file"}));
                     continue;
                 };
+                let sha256=data["sha256"].as_str().map(str::to_owned);
+                if let Some(original)=sha256.as_deref().and_then(|sha|loaded.get(sha).cloned()){
+                    sources.push(json!({"label":source.label,"path":source.path,"resource":resource,"status":"skipped","reason":"duplicate_content","duplicate_of":original}));
+                    continue;
+                }
                 let block=format!("\n\n<project-instructions source=\"{}\">\n{}\n</project-instructions>",source.label,text);
                 // Budget-aware assembly: an instructions block that would blow
                 // the context budget is skipped (recorded for the client) so a
@@ -677,6 +687,9 @@ pub(crate) async fn assemble_for_agent(
                     continue;
                 }
                 system.push_str(&block);
+                if let Some(sha256)=sha256{
+                    loaded.insert(sha256,source.label.clone());
+                }
                 sources.push(json!({"label":source.label,"path":source.path,"resource":resource,"status":"loaded","sha256":data["sha256"]}));
             },
             Err(ToolError::Io(error)) if error.kind()==std::io::ErrorKind::NotFound=>sources.push(json!({"label":source.label,"path":source.path,"status":"missing"})),
@@ -745,6 +758,7 @@ pub(crate) async fn assemble_for_agent(
         reads,
         &mut system,
         &mut sources,
+        &mut loaded,
         budget,
     )
     .await?;
@@ -803,6 +817,7 @@ async fn append_read_sources(
     reads: &[ReadSource],
     system: &mut String,
     sources: &mut Vec<serde_json::Value>,
+    loaded: &mut HashMap<String, String>,
     budget: usize,
 ) -> Result<(), ToolError> {
     if reads.is_empty() {
@@ -857,9 +872,23 @@ async fn append_read_sources(
                         .await
                     {
                         Ok(data) => {
-                            entry["status"] = json!("loaded");
-                            entry["sha256"] = data["sha256"].clone();
-                            data["text"].as_str().map(str::to_owned)
+                            let sha256 = data["sha256"].as_str().map(str::to_owned);
+                            match sha256.as_deref().and_then(|sha| loaded.get(sha).cloned()) {
+                                Some(original) => {
+                                    entry["reason"] = json!("duplicate_content");
+                                    entry["duplicate_of"] = json!(original);
+                                    entry["sha256"] = data["sha256"].clone();
+                                    None
+                                }
+                                None => {
+                                    if let Some(sha256) = sha256 {
+                                        loaded.insert(sha256, source.label.clone());
+                                    }
+                                    entry["status"] = json!("loaded");
+                                    entry["sha256"] = data["sha256"].clone();
+                                    data["text"].as_str().map(str::to_owned)
+                                }
+                            }
                         }
                         Err(ToolError::Interrupted) => return Err(ToolError::Interrupted),
                         Err(ToolError::TooLarge(_)) => {
