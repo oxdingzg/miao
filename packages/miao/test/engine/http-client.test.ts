@@ -3,6 +3,7 @@ import path from "node:path"
 import { EngineHttpClient } from "@/engine/http-client"
 import { EngineSession } from "@/engine/session"
 import { tmpdir } from "../fixture/fixture"
+import { REQUIRED_PROTOCOL } from "../../src/engine/discovery"
 
 for (const url of [
   "https://127.0.0.1:1000/",
@@ -87,7 +88,7 @@ test.skipIf(!binary)(
       const denied = new EngineHttpClient({ url, token: "wrong" })
       await expect(denied.request("sessions")).rejects.toMatchObject({ code: "engine_http" })
       await denied.close()
-      await first.request("initialize", { session_id: "ses_http_shared", title: "shared" })
+      await first.request("initialize", { session_id: "ses_http_shared", title: "shared" , protocol: REQUIRED_PROTOCOL })
       const projected: unknown[] = []
       const session = new EngineSession(second, (event) => projected.push(event))
       const done = Promise.withResolvers<void>()

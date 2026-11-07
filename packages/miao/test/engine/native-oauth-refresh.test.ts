@@ -4,6 +4,7 @@ import path from "node:path"
 import { EngineClient } from "@/engine/client"
 import { EngineSession } from "@/engine/session"
 import { tmpdir } from "../fixture/fixture"
+import { REQUIRED_PROTOCOL } from "../../src/engine/discovery"
 
 const binary = process.env.MIAO_ENGINE_BIN
 const real = binary ? test : test.skip
@@ -36,7 +37,7 @@ real("expired OAuth triggers its host owner and continues through the native inb
     return true
   })
   try {
-    await client.request("initialize", { session_id: "ses_expired_fixture", title: "Expiry fixture" })
+    await client.request("initialize", { session_id: "ses_expired_fixture", title: "Expiry fixture" , protocol: REQUIRED_PROTOCOL })
     save("fixture-expired", 1)
     await session.prompt("ses_expired_fixture", "Continue my task", { inputID: "input_fixture" })
     const deadline = Date.now() + 10000

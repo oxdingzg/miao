@@ -9,6 +9,7 @@ import { readTranscript } from "@/engine/transcript"
 import { EngineClient } from "@/engine/client"
 import path from "node:path"
 import { tmpdir } from "../fixture/fixture"
+import { REQUIRED_PROTOCOL } from "../../src/engine/discovery"
 
 const sessionID = "ses_context_settlement"
 const location = { directory: AbsolutePath.make("/tmp/settlement") }
@@ -143,7 +144,7 @@ test.skipIf(!binary)(
       if (event.kind === "run.finished") finished.resolve()
     })
     try {
-      await client.request("initialize", { session_id: sessionID, title: "Pruning fixture" })
+      await client.request("initialize", { session_id: sessionID, title: "Pruning fixture" , protocol: REQUIRED_PROTOCOL })
       await client.subscribe(sessionID)
       await client.admit({ session_id: sessionID, input_id: "msg_read_original", prompt: "Read large.txt and finish" })
       await finished.promise

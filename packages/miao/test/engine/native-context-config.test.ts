@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises"
 import { EngineClient } from "../../src/engine/client"
 import { nativeEngineOptions } from "../../src/engine/native-engine"
 import { tmpdir } from "../fixture/fixture"
+import { REQUIRED_PROTOCOL } from "../../src/engine/discovery"
 
 const binary = process.env.MIAO_ENGINE_BIN
 
@@ -91,7 +92,7 @@ test.skipIf(!binary)(
       if (event.kind === "run.finished") finished.resolve()
     })
     try {
-      await client.request("initialize", { session_id: "context-fixture", title: "Context fixture" })
+      await client.request("initialize", { session_id: "context-fixture", title: "Context fixture" , protocol: REQUIRED_PROTOCOL })
       await client.subscribe("context-fixture")
       await client.admit({
         session_id: "context-fixture",
