@@ -236,7 +236,7 @@ it.live("product routes bind active accounts without persisting secrets and keep
         // contributed nothing and every Session pinned to it was rejected at
         // admission with "no native route for ...".
         expect(routes.find((route: { id: string }) => route.id === "mtty/deepseek-v4-1-flash-261017")).toMatchObject({
-          account: { id: "cred_mtty", model_key: "mtty/deepseek-v4-1-flash-261017", default: true },
+          account: { id: "cred_mtty", model_key: "mtty/deepseek-v4-1-flash-261017", default: true, label: "default" },
           credential: { id: "cred_mtty" },
         })
         const alternate = routes.find(
@@ -244,7 +244,7 @@ it.live("product routes bind active accounts without persisting secrets and keep
             route.account?.id === "cred_backup" && route.account.model_key === "commandcode/model-0",
         )
         expect(alternate).toMatchObject({
-          account: { id: "cred_backup", model_key: "commandcode/model-0", default: false },
+          account: { id: "cred_backup", model_key: "commandcode/model-0", default: false, label: "backup" },
           credential: { id: "cred_backup" },
         })
         expect(alternate.id).toMatch(/^account\/[a-f0-9]{64}$/)

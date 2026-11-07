@@ -22,7 +22,7 @@ type Source =
   | { type: "environment"; key: string }
   | { type: "aws"; region: string; profile?: string }
 
-type Account = { source: Source; oauth: boolean; value?: Credential.Value; id?: string; isDefault: boolean }
+type Account = { source: Source; oauth: boolean; value?: Credential.Value; id?: string; label?: string; isDefault: boolean }
 
 /**
  * Automatic context management for the native engine, derived from the product
@@ -292,6 +292,7 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
         oauth: value.type === "oauth",
         value,
         isDefault: true,
+        ...(connection.type === "credential" ? { label: connection.label } : {}),
       })
     }
     // Resolving an alternative never activates it globally. The broker remains
@@ -316,6 +317,7 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
         oauth: alternate.type === "oauth",
         value: alternate,
         isDefault: false,
+        label: credential.label,
       })
     }
     accounts.set(integration, entries)
@@ -343,7 +345,15 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
             : `account/${createHash("sha256")
                 .update(JSON.stringify([model.providerID, model.id, account.id]))
                 .digest("hex")}`,
-          account: { id: account.id ?? null, model_key: `${model.providerID}/${model.id}`, default: account.isDefault },
+          account: {
+            id: account.id ?? null,
+            model_key: `${model.providerID}/${model.id}`,
+            default: account.isDefault,
+            // The label is what the TUI status strip and pickers name the
+            // account by; providers holding several credentials are otherwise
+            // indistinguishable once they leave this manifest.
+            ...(account.label === undefined ? {} : { label: account.label }),
+          },
           ...transport,
           model: model.api.id,
           primary: account.isDefault && model.providerID === defaultModel.providerID && model.id === defaultModel.id,
