@@ -64,6 +64,7 @@ newer record is the one to read.
 | `2026-11-05-tool06-malformed-input-and-loops.md` | `e67cfe8664` | TOOL-06 (bounded correction for malformed calls, loop detection that halts before a late tool call, provider-only neutralization; the cross-provider matrix stays open) |
 | `2026-11-05-tool07-web.md` | `37db1dc9c3` | TOOL-07 (source URL, body bound, redirects, credentials, cancellation) |
 | `2026-11-05-cfg02-unknown-keys.md` | `82d4e77eae` | CFG-02 (unknown keys warned about with their source and closest known key; the managed scope stays open) |
+| `2026-11-07-val02-task-accounting.md` | `97b4dea0ce` | VAL-02 (per-completed-task cost, submit-to-verified-completion wall clock, human-intervention accounting; a real-model intervention round stays open) |
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
 carries the table of filters that were re-run to keep the earlier records honest.
