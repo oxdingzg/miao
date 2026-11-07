@@ -258,8 +258,9 @@ pub(crate) fn resolve_references(
     crate::context::validate_references(&references)?;
     let mut roots = Vec::new();
     for reference in &references {
-        let canonical =
-            std::fs::canonicalize(&reference.path).map_err(|_| ToolError::InvalidInput)?;
+        let canonical = canonical_plain(
+            std::fs::canonicalize(&reference.path).map_err(|_| ToolError::InvalidInput)?,
+        );
         // A file reference authorizes that exact file, not its siblings.
         // Directory references retain their explicitly granted subtree.
         if !roots.contains(&canonical) {
@@ -662,8 +663,14 @@ impl Tools {
             return;
         };
         // The mutation was committed already. Formatting failures must not
-        // make its side effects look uncommitted or safe to repeat.
-        if tokio::fs::canonicalize(path).await.ok().as_deref() != Some(path) {
+        // make its side effects look uncommitted or safe to repeat. Both
+        // spellings are stripped to plain first: on Windows `canonicalize`
+        // hands back a verbatim path that never equals the prepared one.
+        let canonical = tokio::fs::canonicalize(path)
+            .await
+            .ok()
+            .map(canonical_plain);
+        if canonical.as_deref() != Some(path) {
             return;
         }
         let Ok(before) = tokio::fs::read(path).await else {
@@ -1420,8 +1427,9 @@ impl Tools {
                     return Err(ToolError::ResourceChanged);
                 }
             }
-            let parent =
-                tokio::fs::canonicalize(candidate.parent().ok_or(ToolError::InvalidInput)?).await?;
+            let parent = canonical_plain(
+                tokio::fs::canonicalize(candidate.parent().ok_or(ToolError::InvalidInput)?).await?,
+            );
             if !parent.starts_with(&self.root) {
                 return Err(ToolError::OutsideWorkspace);
             }
@@ -2245,7 +2253,7 @@ impl Tools {
         while tokio::fs::symlink_metadata(existing).await.is_err() {
             existing = existing.parent().ok_or(ToolError::OutsideWorkspace)?;
         }
-        let base = tokio::fs::canonicalize(existing).await?;
+        let base = canonical_plain(tokio::fs::canonicalize(existing).await?);
         if !base.starts_with(&self.root) {
             return Err(ToolError::OutsideWorkspace);
         }
@@ -2548,6 +2556,94 @@ mod native_config_ownership_tests {
                  would fall back to the product's tool layer and read config twice: {names:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod write_containment_tests {
+    use super::{Gates, ToolError, Tools};
+    use serde_json::json;
+
+    fn writing_tools() -> Gates {
+        Gates {
+            writes: true,
+            process: false,
+            process_network: false,
+            process_sandbox: false,
+            background: false,
+            delegation: false,
+            wakeup: false,
+            cron: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_write_into_the_workspace_prepares_instead_of_refusing_containment() {
+        // On Windows `canonicalize` hands back a verbatim path (`\\?\C:\...`)
+        // whose prefix lives inside the first component, so comparing it
+        // against the plain workspace root used to reject every write with
+        // "path is outside the configured workspace" — while reads, whose
+        // check strips the prefix, kept working.
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("notes.txt"), "before").unwrap();
+        std::fs::create_dir(directory.path().join("out")).unwrap();
+        let tools = Tools::new(directory.path()).await.unwrap();
+        tools.set_gates(writing_tools());
+
+        let create = tools
+            .prepare(
+                "write_file",
+                json!({"path":"out/summary.txt","text":"hello","expected_sha256":null}),
+            )
+            .await
+            .expect("a write under the workspace must prepare");
+        assert!(create.resolved_path().starts_with(tools.location()));
+
+        let edit = tools
+            .prepare(
+                "edit_file",
+                json!({
+                    "path":"notes.txt",
+                    "old_string":"before",
+                    "new_string":"after",
+                    "expected_sha256": format!("{:0<64}", "a"),
+                }),
+            )
+            .await
+            .expect("an edit under the workspace must prepare");
+        assert!(edit.resolved_path().starts_with(tools.location()));
+
+        let patch = tools
+            .prepare(
+                "apply_patch",
+                json!({"patch":"*** Begin Patch\n*** Add File: out/patched.txt\n+hello\n*** End Patch\n"}),
+            )
+            .await
+            .expect("a patch under the workspace must prepare");
+        assert!(patch.resolved_path().starts_with(tools.location()));
+    }
+
+    #[tokio::test]
+    async fn a_write_outside_the_workspace_is_still_refused() {
+        let directory = tempfile::tempdir().unwrap();
+        let tools = Tools::new(directory.path()).await.unwrap();
+        tools.set_gates(writing_tools());
+        let outside = tempfile::tempdir().unwrap();
+        let escape = format!("{}", outside.path().join("escape.txt").display());
+        let error = match tools
+            .prepare(
+                "write_file",
+                json!({"path":escape,"text":"hello","expected_sha256":null}),
+            )
+            .await
+        {
+            Err(error) => error,
+            Ok(_) => panic!("a write outside the workspace must be refused"),
+        };
+        assert!(matches!(
+            error,
+            ToolError::OutsideWorkspace | ToolError::InvalidArgs(_)
+        ));
     }
 }
 
