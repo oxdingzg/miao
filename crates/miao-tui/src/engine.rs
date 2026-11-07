@@ -575,6 +575,11 @@ pub struct Settings {
     /// The argv in `spawn` is reused verbatim, so the in-process engine is
     /// configured by exactly the flags the child would have received.
     pub embedded: bool,
+    /// The caller named an engine binary or launcher prefix. Only then is a
+    /// spawn a real alternative when the in-process engine cannot be
+    /// configured: the packaged binary names nothing and ships no separate
+    /// `miao-engine`, so spawning there could only fail.
+    pub named_engine: bool,
 }
 
 /// The stand-in model a Session uses when nothing supplied a route. The engine
@@ -644,6 +649,10 @@ pub fn settings(
         )?,
         env: Vec::new(),
     };
+    // A named engine is the only thing a spawn could reach: this package links
+    // the engine in and ships no separate `miao-engine`.
+    let named_engine = std::env::var_os("MIAO_ENGINE_BIN").is_some()
+        || std::env::var_os("MIAO_ENGINE_LAUNCH_PREFIX").is_some();
     Ok(Settings {
         spawn,
         model,
@@ -655,12 +664,10 @@ pub fn settings(
         // the in-process argv makes the embedded engine parse `literal prefix`
         // as its subcommand — which is what the launcher-prefix smoke test hit.
         // Those configurations keep spawning unless embedding is asked for.
+        named_engine,
         embedded: std::env::var("MIAO_TUI_EMBEDDED")
             .map(|value| value != "0")
-            .unwrap_or_else(|_| {
-                std::env::var_os("MIAO_ENGINE_BIN").is_none()
-                    && std::env::var_os("MIAO_ENGINE_LAUNCH_PREFIX").is_none()
-            }),
+            .unwrap_or(!named_engine),
     })
 }
 
@@ -799,11 +806,12 @@ fn engine_binary() -> PathBuf {
 pub fn attach(settings: &Settings, bus: Bus) -> Result<Handle, String> {
     if settings.embedded {
         // Same argv, same transport contract, no child process: the engine is
-        // built here and dispatched in-process. If that cannot be configured
-        // (missing credentials, for instance) fall back to the spawned engine
-        // rather than failing a start that used to work.
+        // built here and dispatched in-process. A caller that named an engine
+        // keeps that spawn as a fallback; the packaged binary names nothing, so
+        // its only engine is this one and the refusal below is the answer.
         let argv = settings.spawn.args.clone();
         let spawn = settings.spawn.clone();
+        let named = settings.named_engine;
         let (tx, rx) = mpsc::unbounded_channel();
         tokio::spawn(async move {
             match miao_engine::cli::configure(&argv).await {
@@ -815,6 +823,14 @@ pub fn attach(settings: &Settings, bus: Bus) -> Result<Handle, String> {
                         ))),
                     }
                 }
+                // Nothing named an engine, so there is nothing to spawn: the
+                // package links this engine in and ships no separate
+                // `miao-engine`. Reporting the spawn's "program not found"
+                // instead buried the reason a Windows start without `HOME`
+                // could not resolve its model or credential.
+                Err(error) if !named => bus.send(AppEvent::EngineFailure(format!(
+                    "cannot start the engine: {error}"
+                ))),
                 Err(error) => match Connection::start(spawn, REQUEST_TIMEOUT) {
                     Ok((connection, events)) => {
                         bus.send(AppEvent::EngineFailure(format!(
@@ -822,8 +838,8 @@ pub fn attach(settings: &Settings, bus: Bus) -> Result<Handle, String> {
                         )));
                         run(connection, events, rx, bus).await
                     }
-                    Err(error) => bus.send(AppEvent::EngineFailure(format!(
-                        "cannot start the engine: {error}"
+                    Err(spawn_error) => bus.send(AppEvent::EngineFailure(format!(
+                        "cannot start the engine: {error}; the named miao-engine could not start either ({spawn_error})"
                     ))),
                 },
             }

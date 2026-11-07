@@ -19,6 +19,7 @@ async fn continuous_committed_activity_keeps_refreshing_the_open_session() {
                 ],
             },
             embedded: false,
+            named_engine: true,
             model: "fixture".into(),
         },
         bus,

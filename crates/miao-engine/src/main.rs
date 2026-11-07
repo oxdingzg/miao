@@ -12,6 +12,9 @@ use tokio::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // The engine reads `HOME` for its configuration, credentials, and ledger;
+    // a Windows shell names that directory `USERPROFILE` instead.
+    miao_engine::placement::normalize_home();
     // A panic is the one failure the TUI cannot report: the process aborts
     // before its stderr ring is read, so record it while the hook still runs.
     let default = std::panic::take_hook();
