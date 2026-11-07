@@ -91,6 +91,28 @@ pub fn anchored_sessions(db: &Path, tree: &Path) -> Result<u64, Error> {
     Ok(anchored as u64)
 }
 
+/// Point every Session anchored to `tree` back at `checkout` in one ledger, and
+/// answer how many rows moved.
+///
+/// A tree can be created and worked in before any Session of the checkout has
+/// moved into it, so its own ledger anchors Sessions the checkout's ledger never
+/// sees. The removal check has to read both, the way `miao worktree remove`
+/// plans it.
+pub fn repoint_sessions(db: &Path, tree: &Path, checkout: &Path) -> Result<u64, Error> {
+    if !db.is_file() {
+        return Ok(0);
+    }
+    let connection = rusqlite::Connection::open(db)?;
+    let moved = connection.execute(
+        "UPDATE engine_location SET root = ?2 WHERE root = ?1 OR root LIKE ?1 || '/%'",
+        [
+            canonical(tree).display().to_string(),
+            canonical(checkout).display().to_string(),
+        ],
+    )?;
+    Ok(moved as u64)
+}
+
 fn validate(name: &str) -> Result<(), Error> {
     if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
         return Err(Error::Invalid(
@@ -226,6 +248,48 @@ mod tests {
             anchored_sessions(&db, Path::new(&tree.path)).expect("count"),
             2,
             "a Session inside a subdirectory of the tree is still stranded by removing it"
+        );
+    }
+
+    #[test]
+    fn repoint_sessions_moves_a_tree_ledger_back_to_the_checkout() {
+        let root = repository();
+        let tree = create(&root, "work").expect("create");
+        let db = root.join("tree.db");
+        let connection = rusqlite::Connection::open(&db).expect("db");
+        connection
+            .execute_batch("CREATE TABLE engine_location (session_id TEXT, root TEXT);")
+            .expect("schema");
+        connection
+            .execute(
+                "INSERT INTO engine_location VALUES ('ses_a', ?1), ('ses_b', ?2), ('ses_c', ?3)",
+                [
+                    tree.path.clone(),
+                    format!("{}/sub/dir", tree.path),
+                    "/elsewhere".to_string(),
+                ],
+            )
+            .expect("insert");
+
+        let moved = repoint_sessions(&db, Path::new(&tree.path), &root).expect("repoint");
+
+        assert_eq!(moved, 2, "only the tree's own roots move");
+        let roots: Vec<String> = connection
+            .prepare("SELECT root FROM engine_location")
+            .expect("prepare")
+            .query_map([], |row| row.get(0))
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("rows");
+        let checkout = canonical(&root).display().to_string();
+        assert_eq!(
+            roots.iter().filter(|root| **root == checkout).count(),
+            2,
+            "both anchored Sessions follow the checkout"
+        );
+        assert!(
+            roots.iter().any(|root| root == "/elsewhere"),
+            "an unrelated root stays put"
         );
     }
 }

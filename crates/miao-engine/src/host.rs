@@ -328,7 +328,18 @@ impl Host {
                 let checkout = std::path::Path::new(&root);
                 let tree = checkout.join(crate::worktree::DIRECTORY).join(&name);
                 let ledger = runtime.store().path().to_path_buf();
-                let anchored = crate::worktree::anchored_sessions(&ledger, &tree)?;
+                // A tree can anchor Sessions in its own ledger, which the
+                // checkout's ledger never sees: the tree was worked in before
+                // any Session moved into it. Read both, so the count matches
+                // what `miao worktree remove` plans.
+                let tree_ledger = crate::placement::default_database(&tree);
+                let anchored = crate::worktree::anchored_sessions(&ledger, &tree)?
+                    + match tree_ledger.as_deref() {
+                        Some(tree_ledger) if tree_ledger != ledger => {
+                            crate::worktree::anchored_sessions(tree_ledger, &tree)?
+                        }
+                        _ => 0,
+                    };
                 // Removing a tree whose Sessions are still working there leaves
                 // their tools pointing at a directory that no longer exists, so
                 // the refusal names the count and the way out.
@@ -341,8 +352,11 @@ impl Host {
                 if anchored > 0 {
                     runtime
                         .store()
-                        .repoint_root(tree, checkout.to_path_buf())
+                        .repoint_root(tree.clone(), checkout.to_path_buf())
                         .await?;
+                    if let Some(tree_ledger) = tree_ledger.as_deref() {
+                        crate::worktree::repoint_sessions(tree_ledger, &tree, checkout)?;
+                    }
                 }
                 crate::worktree::remove(checkout, &name)?;
                 Ok(json!({ "removed": name, "migrated": anchored }))
