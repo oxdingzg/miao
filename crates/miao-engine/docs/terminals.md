@@ -19,10 +19,13 @@ confined foreground command.
   and other controls still pass through tool admission and permission policy.
 - Read returns raw PTY text, absolute byte `cursor`, `retained_from`, `dropped`,
   `truncated`, and `exit`. Omitted cursor continues from the last read. An
-  explicit cursor replays retained bytes. Each read returns at most 32 KiB;
-  the ring retains at most 1 MiB. Escape sequences and terminal echo are part
-  of the raw output. An input timeout reports that some bytes may have been
-  written and must not be blindly retried.
+  explicit cursor replays retained bytes. A cursor the ring has already overrun
+  cannot be replayed: the read resumes at the newest 32 KiB window and reports
+  the skipped bytes as `dropped`, so a reader that fell behind reaches the
+  current screen in one call instead of walking a backlog it cannot catch up
+  with. Each read returns at most 32 KiB; the ring retains at most 1 MiB. Escape
+  sequences and terminal echo are part of the raw output. An input timeout
+  reports that some bytes may have been written and must not be blindly retried.
 - Resize changes the actual PTY window size (1–500 rows/columns).
 - Exited terminals retain output until stop; stop reaps the child and returns
   unread output, capped at 32 KiB, before releasing the slot.
