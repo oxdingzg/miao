@@ -88,9 +88,11 @@ pub struct Shell {
     /// Where the draft was painted last frame. A pointer inside these cells
     /// selects the composer's text instead of falling through to the transcript.
     composer_text: Option<ComposerText>,
-    /// A drag that began on the draft owns the selection until the button comes
-    /// up, which is when its text is copied.
-    composer_drag: bool,
+    /// Which surface the pointer's drag belongs to, if one is in flight. The
+    /// release copies that surface and no other.
+    drag: Option<DragTarget>,
+    /// The queued prompts as painted, so a drag can copy the row it covers.
+    queued: PaintedCells,
 }
 
 impl Shell {
@@ -119,7 +121,8 @@ impl Shell {
             sidebar_chord: None,
             sidebar_hidden: false,
             composer_text: None,
-            composer_drag: false,
+            drag: None,
+            queued: PaintedCells::default(),
         }
     }
 
@@ -318,8 +321,9 @@ impl Shell {
         self.transcript.expanded
     }
 
-    /// A press inside the draft starts a text selection on it; anywhere else it
-    /// belongs to the transcript's own rows, so one gesture means one source.
+    /// A press inside the draft starts a text selection on it, the queued rows
+    /// above it answer next, and anywhere else the press belongs to the
+    /// transcript, so one gesture means one source.
     pub fn begin_selection(&mut self, position: Position) -> bool {
         if let Some(text) = self
             .composer_text
@@ -327,35 +331,48 @@ impl Shell {
         {
             let offset = text.offset(&self.composer.editor, position);
             self.composer.editor.select_from(offset, offset);
-            self.composer_drag = true;
+            self.drag = Some(DragTarget::Composer);
             return true;
         }
-        self.composer_drag = false;
-        self.transcript.begin_selection(position)
+        if self.queued.begin(position) {
+            self.drag = Some(DragTarget::Queued);
+            return true;
+        }
+        self.drag = self
+            .transcript
+            .begin_selection(position)
+            .then_some(DragTarget::Transcript);
+        self.drag.is_some()
     }
 
     /// Extend the drag on the surface the press named, so a drag that leaves
     /// the draft still covers the last line it crossed.
     pub fn update_selection(&mut self, position: Position) {
-        if self.composer_drag {
-            if let Some(text) = self.composer_text {
-                let offset = text.offset(&self.composer.editor, position);
-                self.composer.editor.select_to(offset);
+        match self.drag {
+            Some(DragTarget::Composer) => {
+                if let Some(text) = self.composer_text {
+                    let offset = text.offset(&self.composer.editor, position);
+                    self.composer.editor.select_to(offset);
+                }
             }
-            return;
+            Some(DragTarget::Queued) => self.queued.update(position),
+            Some(DragTarget::Transcript) => self.transcript.update_selection(position),
+            None => {}
         }
-        self.transcript.update_selection(position);
     }
 
     /// Consume the selection, whichever surface owns it.
     pub fn take_selection(&mut self) -> Option<String> {
-        if self.composer_drag {
-            self.composer_drag = false;
-            let text = self.composer.editor.selected_text().map(str::to_string);
-            self.composer.editor.clear_selection();
-            return text;
+        match self.drag.take() {
+            Some(DragTarget::Composer) => {
+                let text = self.composer.editor.selected_text().map(str::to_string);
+                self.composer.editor.clear_selection();
+                text
+            }
+            Some(DragTarget::Queued) => self.queued.take(),
+            Some(DragTarget::Transcript) => self.transcript.take_selection(),
+            None => None,
         }
-        self.transcript.take_selection()
     }
 
     pub fn scroll_transcript(&mut self, delta: i32) {
@@ -495,6 +512,17 @@ impl Shell {
             &self.transcript.pending_prompts,
             &self.transcript.theme,
         );
+        // The queued rows are read back so a drag copies the text it covered,
+        // and the highlight lands on the same cells. Snapshotting refreshes the
+        // cells only: the drag's anchor has to survive the frames drawn between
+        // a press and its release. An empty queue keeps no cells, so a press on
+        // the band falls through to the transcript.
+        if self.transcript.pending_prompts.is_empty() {
+            self.queued.clear();
+        } else {
+            self.queued.snapshot(frame, queued_area);
+            self.queued.paint(frame);
+        }
         // The input spans the whole window width, covering the sidebar's bottom
         // band the way the layout draws it: the sidebar's content ends high, and
         // a prose-width input left that band looking cut off.
@@ -2251,6 +2279,112 @@ fn render_home_composer(
         theme,
         shell,
     ))
+}
+
+/// A painted band of rows a pointer can select from. Read-only text — the
+/// queued prompts above the input — has no editing model, so the cells this
+/// frame drew are both what the highlight covers and what a copy returns.
+#[derive(Default)]
+struct PaintedCells {
+    area: Rect,
+    cells: Vec<Vec<String>>,
+    selection: Option<(Position, Position)>,
+}
+
+impl PaintedCells {
+    /// Remember the symbols this frame drew inside `area`.
+    fn snapshot(&mut self, frame: &mut Frame, area: Rect) {
+        self.area = area;
+        let buffer = frame.buffer_mut();
+        self.cells = (area.y..area.bottom())
+            .map(|y| {
+                (area.x..area.right())
+                    .map(|x| {
+                        buffer
+                            .cell(Position::new(x, y))
+                            .map(|cell| cell.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect()
+            })
+            .collect();
+    }
+
+    /// Reverse the covered cells, the way a transcript drag does, so the band
+    /// shows what a release would copy.
+    fn paint(&self, frame: &mut Frame) {
+        let Some((a, b)) = self.selection else {
+            return;
+        };
+        let (start, end) = if (a.y, a.x) > (b.y, b.x) {
+            (b, a)
+        } else {
+            (a, b)
+        };
+        let buffer = frame.buffer_mut();
+        for y in start.y.max(self.area.y)..=end.y.min(self.area.bottom().saturating_sub(1)) {
+            let from = if y == start.y { start.x } else { self.area.x };
+            let to = if y == end.y {
+                end.x
+            } else {
+                self.area.right().saturating_sub(1)
+            };
+            for x in from.max(self.area.x)..=to.min(self.area.right().saturating_sub(1)) {
+                if let Some(cell) = buffer.cell_mut(Position::new(x, y)) {
+                    cell.set_style(Style::new().add_modifier(Modifier::REVERSED));
+                }
+            }
+        }
+    }
+
+    fn begin(&mut self, position: Position) -> bool {
+        if self.cells.is_empty() || !self.area.contains(position) {
+            return false;
+        }
+        self.selection = Some((position, position));
+        true
+    }
+
+    fn update(&mut self, position: Position) {
+        let Some((anchor, _)) = self.selection else {
+            return;
+        };
+        let clamped = Position::new(
+            position
+                .x
+                .clamp(self.area.x, self.area.right().saturating_sub(1)),
+            position
+                .y
+                .clamp(self.area.y, self.area.bottom().saturating_sub(1)),
+        );
+        self.selection = Some((anchor, clamped));
+    }
+
+    fn take(&mut self) -> Option<String> {
+        let (a, b) = self.selection.take()?;
+        if a == b {
+            return None;
+        }
+        let text = selection_text(&self.cells, self.area, a, b);
+        (!text.is_empty()).then_some(text)
+    }
+
+    /// Forget the band: with nothing queued there is nothing to select. The
+    /// drag selection is only dropped here, never by a repaint, or a drag would
+    /// lose its anchor on every frame the loop draws.
+    fn clear(&mut self) {
+        self.cells.clear();
+        self.selection = None;
+    }
+}
+
+/// Which painted surface a drag belongs to. One gesture selects from one
+/// surface, so a drag that leaves it clamps instead of jumping to a neighbour.
+#[derive(Clone, Copy)]
+enum DragTarget {
+    Composer,
+    Queued,
+    Transcript,
 }
 
 /// Where the draft was painted and how far a wrapped draft scrolled, recorded
@@ -6125,6 +6259,33 @@ mod tests {
             shell.take_selection().as_deref(),
             Some("hell"),
             "the drag covered the first four cells"
+        );
+    }
+
+    /// Queued prompts are painted text with no editing model, and they could not
+    /// be selected either: the band above the input takes a drag the way the
+    /// transcript does, and the release copies the row it covered.
+    #[test]
+    fn a_drag_over_the_queued_rows_copies_them() {
+        let mut shell = Shell::new(Path::new("."), home_theme());
+        shell.set_pending_prompts(&["queued prompt".to_string()]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 14)).expect("terminal");
+        terminal.draw(|frame| shell.render(frame)).expect("draw");
+        let area = shell.queued.area;
+        assert!(area.height > 0, "the queue band painted: {area:?}");
+        assert!(
+            shell.begin_selection(Position::new(area.x, area.y)),
+            "the press belongs to the queued rows"
+        );
+        // The loop draws between the press and the drag; a repaint must keep
+        // the anchor instead of starting a fresh band each frame.
+        terminal.draw(|frame| shell.render(frame)).expect("draw");
+        shell.update_selection(Position::new(area.right().saturating_sub(1), area.y));
+        let copied = shell.take_selection().expect("the drag copies the row");
+        assert!(
+            copied.contains("queued prompt"),
+            "the copy is what was painted: {copied:?}"
         );
     }
 
