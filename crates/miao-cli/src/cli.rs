@@ -437,6 +437,14 @@ fn latest_version(feed: Option<&str>) -> Result<String, String> {
         .trim_end_matches('/');
     let output = std::process::Command::new("curl")
         .args([
+            // A single transient TLS reset through a local proxy used to fail the
+            // whole upgrade with `SSL_ERROR_SYSCALL`; the download that follows a
+            // successful check already retries, so the check must too.
+            "--retry",
+            "4",
+            "--retry-all-errors",
+            "--retry-delay",
+            "2",
             "-fsSL",
             "-o",
             "/dev/null",
