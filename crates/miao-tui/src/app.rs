@@ -61,11 +61,26 @@ pub struct Live {
 pub enum LivePhase {
     /// The request is out and no token has come back yet.
     Waiting,
-    /// A pause before another attempt, announced by the engine.
-    Retrying { attempt: u64 },
+    /// A pause before another attempt, announced by the engine, carrying the
+    /// provider's own words about the failure: a rate limit and a spent
+    /// balance arrive as the same 429, and only the body tells them apart.
+    Retrying { attempt: u64, detail: String },
     /// A tool call is executing. The engine is quiet here too, but naming the
     /// work is what makes a long command differ from a stuck turn.
     Tool { name: String },
+}
+
+/// The provider's failure, on one status line. Bound it here rather than in
+/// every caller: a gateway body can be a whole HTML page.
+fn retry_detail(reason: Option<&str>) -> String {
+    let Some(reason) = reason.map(str::trim).filter(|reason| !reason.is_empty()) else {
+        return String::new();
+    };
+    let mut clipped: String = reason.chars().take(96).collect();
+    if reason.chars().count() > 96 {
+        clipped.push('…');
+    }
+    clipped
 }
 
 impl Live {
@@ -95,7 +110,12 @@ impl Live {
                 "Waiting for model · the model may reason before the first token".to_string()
             }
             LivePhase::Waiting => "Waiting for model".to_string(),
-            LivePhase::Retrying { attempt } => format!("Retrying · attempt {attempt}"),
+            LivePhase::Retrying { attempt, detail } if detail.is_empty() => {
+                format!("Retrying · attempt {attempt}")
+            }
+            LivePhase::Retrying { attempt, detail } => {
+                format!("Retrying · attempt {attempt} · {detail}")
+            }
             LivePhase::Tool { name } => format!("Running {}", tool_label(name)),
         }
     }
@@ -3092,13 +3112,20 @@ impl App {
                 self.stream(&run_id, delta);
                 return;
             }
-            // The engine repeats this while it has no first token.
+            // The engine repeats this while it has no first token. A retry in
+            // flight keeps its own phase: the heartbeat would otherwise erase
+            // the reason the wait is long, which is the one thing an operator
+            // needs while the request keeps failing.
             "provider.waiting" => {
                 self.stream_ended = None;
-                LivePhase::Waiting
+                match self.live.as_ref().map(|live| live.phase.clone()) {
+                    Some(phase @ LivePhase::Retrying { .. }) => phase,
+                    _ => LivePhase::Waiting,
+                }
             }
             "provider.retry" => LivePhase::Retrying {
                 attempt: frame.get("attempt").and_then(Value::as_u64).unwrap_or(0) + 1,
+                detail: retry_detail(frame.get("reason").and_then(Value::as_str)),
             },
             // An attempt announcement proves the request is in flight, even
             // before the first heartbeat or right after a previous step.
@@ -5481,6 +5508,30 @@ mod tests {
             app.shell.title.status(),
             Some("Retrying · attempt 2 · Esc interrupt")
         );
+    }
+
+    /// A 429 can be a rate limit or a spent balance, and only the provider's
+    /// body says which. Keeping it on the status line is what stops a failing
+    /// gateway from reading as a slow model for the whole retry window.
+    #[test]
+    fn a_retry_shows_the_providers_own_reason() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.retry",
+            "run_id": "run-1",
+            "attempt": 1,
+            "status": 429,
+            "reason": "HTTP 429 · {\"error\":{\"code\":\"1113\",\"message\":\"余额不足或无可用资源包\"}}",
+        })));
+        app.update_status();
+        let status = app.shell.title.status().unwrap_or_default();
+        assert!(status.contains("attempt 2"), "{status}");
+        assert!(status.contains("余额不足"), "{status}");
+        // The heartbeat that follows must not erase it.
+        app.handle(provider_frame("provider.waiting"));
+        app.update_status();
+        let status = app.shell.title.status().unwrap_or_default();
+        assert!(status.contains("余额不足"), "{status}");
     }
 
     #[test]
