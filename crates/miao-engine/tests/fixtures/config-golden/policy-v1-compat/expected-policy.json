@@ -11,7 +11,23 @@
   "process_network": true,
   "sandbox": false,
   "writable_roots": [],
-  "rules": [],
+  "rules": [
+    {
+      "tool": "bash",
+      "path": "**",
+      "decision": "allow"
+    },
+    {
+      "tool": "{apply_patch,edit_file,write_file}",
+      "path": "**",
+      "decision": "deny"
+    },
+    {
+      "tool": "{apply_patch,edit_file,write_file}",
+      "path": "**",
+      "decision": "ask"
+    }
+  ],
   "approval_timeout_ms": 60000,
   "max_provider_turns": null
 }
