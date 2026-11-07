@@ -412,6 +412,16 @@ pub struct App {
     themes: theme::Catalog,
     /// Live provider activity for the open Session.
     live: Option<Live>,
+    /// A tool call the engine announced and has not completed yet.
+    ///
+    /// The provider's stream ends the moment the model stops talking, which is
+    /// before the command it queued runs. The end-of-stream frame therefore
+    /// cannot retire the turn on its own: a long command would sit under a
+    /// frozen "Done" total and read as a wedged Session while it is working.
+    /// Claude Code keeps the same distinction — a tool keeps its spinner and
+    /// its moving clock until it returns, and only then does the turn report a
+    /// total.
+    tool_running: Option<ToolRunning>,
     /// When the current run was first seen active, and which run it was.
     ///
     /// A run can be active before any `provider.*` frame arrives — the engine
@@ -425,6 +435,21 @@ pub struct App {
     /// Assistant entries in the last projection, so a draft can name the
     /// projection that supersedes it.
     committed: usize,
+}
+
+/// The tool call the current run is executing, with the phase clock that goes
+/// with it. The name and start are kept here rather than read back from the
+/// live phase, because the phase channel and the durable tool events arrive in
+/// either order.
+#[derive(Debug, Clone)]
+struct ToolRunning {
+    run_id: String,
+    name: String,
+    since: Instant,
+    /// Calls this run announced and has not returned yet. One assistant message
+    /// can dispatch several, so a single result says nothing about the rest:
+    /// the phase only retires with the last of them.
+    in_flight: usize,
 }
 
 impl App {
@@ -515,6 +540,7 @@ impl App {
             startup,
             themes,
             live: None,
+            tool_running: None,
             run_since: None,
             draft: None,
             committed: 0,
@@ -3225,8 +3251,6 @@ impl App {
             // A token reached the stream, so the wait is over and the answer
             // starts to show before it commits.
             "provider.delta" => {
-                self.live = None;
-                self.shell.set_running_tool(None);
                 // `data` is the engine's delta envelope: `{"kind":"delta",
                 // "delta":{...},"raw":{...}}`, so the normalized delta the draft
                 // reads sits one level down. Captured from a real turn: `data`
@@ -3239,12 +3263,24 @@ impl App {
                 // projection retires the run: the operator sees the total
                 // time the moment the answer completes.
                 if delta.get("kind").and_then(Value::as_str) == Some("stream.done") {
+                    // Unless the answer queued a command that is still running.
+                    // The model stops talking before its tool returns, so the
+                    // stream ending says nothing about the turn: retiring the
+                    // phase here painted "Done" over a busy command for as long
+                    // as it took, with a clock that had stopped moving.
+                    if self.tool_running.is_some() {
+                        return;
+                    }
+                    self.live = None;
+                    self.shell.set_running_tool(None);
                     self.stream_ended = self
                         .run_since
                         .as_ref()
                         .map(|(_, since)| now.duration_since(*since));
                     return;
                 }
+                self.live = None;
+                self.shell.set_running_tool(None);
                 self.stream(&run_id, delta);
                 return;
             }
@@ -3283,13 +3319,37 @@ impl App {
                         .and_then(Value::as_str)
                         .unwrap_or_default(),
                 );
+                // Each call owns its clock: the newest command is the one the
+                // operator is waiting on, and it does not inherit the turn's.
+                let in_flight = match self.tool_running.as_ref() {
+                    Some(tool) if tool.run_id == run_id => tool.in_flight + 1,
+                    _ => 1,
+                };
+                self.tool_running = Some(ToolRunning {
+                    run_id: run_id.clone(),
+                    name: label.clone(),
+                    since: now,
+                    in_flight,
+                });
                 self.shell.set_running_tool(Some(label.clone()));
                 LivePhase::Tool { name: label }
             }
             // The call finished; the run's next phase is not known yet.
             "tool.completed" => {
+                // Only the last result ends the tool phase: a message that
+                // dispatched two calls is still working under the first one's
+                // result.
+                self.tool_running = self.tool_running.take().and_then(|mut tool| {
+                    tool.in_flight = tool.in_flight.saturating_sub(1);
+                    Some(tool).filter(|tool| tool.in_flight > 0)
+                });
+                // Work resumed after the answer, so a total frozen at stream
+                // end no longer describes this run: the next provider frame
+                // names its phase, and until then the clock keeps moving.
+                self.stream_ended = None;
                 self.live = None;
-                self.shell.set_running_tool(None);
+                self.shell
+                    .set_running_tool(self.tool_running.as_ref().map(|tool| tool.name.clone()));
                 return;
             }
             _ => return,
@@ -3492,6 +3552,16 @@ impl App {
             .run_since
             .as_ref()
             .map(|(_, since)| now.duration_since(*since));
+        // A tool only describes the run that announced it. A finished run (or a
+        // newer one) leaves nothing executing, so a stale record must not keep
+        // naming work that is over.
+        if self
+            .tool_running
+            .as_ref()
+            .is_some_and(|tool| run_id.as_deref() != Some(tool.run_id.as_str()))
+        {
+            self.tool_running = None;
+        }
         // The compact activity row splits into what the TS row splits into:
         // state text on the left, elapsed time right-aligned, and a spinner
         // that turns warning-colored once a model wait passes half a minute.
@@ -3510,18 +3580,30 @@ impl App {
                 // demonstrably working does not look like one that has wedged.
                 // The alert tone follows the same half-minute threshold as a
                 // real phase wait.
-                (Some(_), None) => match self.stream_ended {
+                (Some(_), None) => match (self.tool_running.as_ref(), self.stream_ended) {
+                    // The phase channel and the durable tool events arrive in
+                    // either order, and a projection can retire the live phase
+                    // mid-command. The announced tool is the truth in both
+                    // cases: name it and let its own clock run, because the
+                    // command outlives the answer that queued it.
+                    (Some(tool), _) => (
+                        format!("Running {}", tool_label(&tool.name)),
+                        Some(crate::pane::duration_ms(
+                            now.duration_since(tool.since).as_millis() as u64,
+                        )),
+                        false,
+                    ),
                     // The answer is on screen: the turn is done, so the label
                     // retires with the frozen total instead of claiming the
                     // run is still working (Claude Code drops the spinner at
                     // stream end; the frozen total is miao's extra honesty
                     // while a stalled projection holds the run open).
-                    Some(frozen) => (
+                    (None, Some(frozen)) => (
                         "Done".to_string(),
                         Some(crate::pane::duration_ms(frozen.as_millis() as u64)),
                         false,
                     ),
-                    None => (
+                    (None, None) => (
                         "Working".to_string(),
                         run_elapsed
                             .map(|waited| crate::pane::duration_ms(waited.as_millis() as u64)),
@@ -5946,6 +6028,146 @@ mod tests {
         assert_eq!(
             app.shell.title.status(),
             Some("Running bash · Esc interrupt")
+        );
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.completed",
+            "run_id": "run-1",
+        })));
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("Working · Esc interrupt"));
+    }
+
+    #[test]
+    fn a_stream_ending_under_a_running_command_keeps_the_command_in_the_status() {
+        // The model stops talking before the command it queued returns. The
+        // end-of-stream marker must not retire the turn: a heavy `bash` used to
+        // sit under a frozen `Done` total, which reads as a wedged Session even
+        // though the engine is demonstrably working.
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.planned",
+            "run_id": "run-1",
+            "name": "bash",
+        })));
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.delta",
+            "run_id": "run-1",
+            "data": { "kind": "stream.done" },
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Running bash · Esc interrupt")
+        );
+        assert_eq!(app.shell.composer.phase.as_deref(), Some("Running bash"));
+    }
+
+    #[test]
+    fn a_command_named_after_the_stream_ended_still_holds_the_status() {
+        // The journal event and the ephemeral progress frame arrive in either
+        // order, so the status has to survive `Done` landing first.
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.waiting"));
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.delta",
+            "run_id": "run-1",
+            "data": { "kind": "stream.done" },
+        })));
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("Done · Esc interrupt"));
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.planned",
+            "run_id": "run-1",
+            "name": "bash",
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Running bash · Esc interrupt")
+        );
+    }
+
+    #[test]
+    fn a_snapshot_refresh_mid_command_does_not_lose_the_command() {
+        // A projection can retire the live phase while the command still runs;
+        // the announced tool is what keeps the status honest.
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.planned",
+            "run_id": "run-1",
+            "name": "bash",
+        })));
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState {
+                active_run: Some("run-1".into()),
+                ..SessionState::default()
+            }),
+        });
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Running bash · Esc interrupt")
+        );
+    }
+
+    #[test]
+    fn a_finished_command_does_not_leave_a_frozen_total_behind() {
+        // Once the command returns, the turn is working again: a total frozen
+        // at stream end would otherwise read as `Done` until the next provider
+        // frame, however long that took.
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.planned",
+            "run_id": "run-1",
+            "name": "bash",
+        })));
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.delta",
+            "run_id": "run-1",
+            "data": { "kind": "stream.done" },
+        })));
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.completed",
+            "run_id": "run-1",
+        })));
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("Working · Esc interrupt"));
+        app.handle(provider_frame("provider.waiting"));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Waiting for model · Esc interrupt")
+        );
+    }
+
+    #[test]
+    fn a_second_call_keeps_the_tool_phase_after_the_first_returns() {
+        // One assistant message can dispatch several calls. The first result
+        // does not finish the work, so it must not hand the turn back to a
+        // generic label — let alone to `Done`.
+        let mut app = running_app("run-1");
+        for name in ["bash", "grep"] {
+            app.handle(AppEvent::Provider(serde_json::json!({
+                "kind": "tool.planned",
+                "run_id": "run-1",
+                "name": name,
+            })));
+        }
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.completed",
+            "run_id": "run-1",
+        })));
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.delta",
+            "run_id": "run-1",
+            "data": { "kind": "stream.done" },
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Running grep · Esc interrupt")
         );
         app.handle(AppEvent::Provider(serde_json::json!({
             "kind": "tool.completed",
