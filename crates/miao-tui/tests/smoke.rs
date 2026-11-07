@@ -1245,7 +1245,7 @@ fn the_palette_runs_actions_and_a_template_command_reaches_the_engine() {
     // that changed, so a row the palette already painted can arrive with holes
     // and the row's text never appears contiguously in the stream.
     assert!(
-        wait_for_screen(&harness, "/stash-draft", Duration::from_secs(10)),
+        wait_for_screen(&harness, "/model", Duration::from_secs(10)),
         "the palette did not open the help dialog:\n{}",
         harness.screen()
     );

@@ -685,6 +685,7 @@ pub enum Dialog {
     Skills(ListDialog),
     Workspaces(ListDialog),
     Worktrees(ListDialog),
+    TurnTimings(ListDialog),
     Message(TextDialog),
     Palette(PaletteDialog),
     Rename(RenameDialog),
@@ -1305,6 +1306,24 @@ impl Dialog {
         })
     }
 
+    /// COST-04: one reviewable view of where the turn spent its time and what
+    /// it waited for.
+    pub fn turn_timings(rows: &[(String, String)]) -> Self {
+        Dialog::TurnTimings(ListDialog::new(
+            "turn timings",
+            rows.iter()
+                .enumerate()
+                .map(|(index, (label, spent))| Row {
+                    id: index.to_string(),
+                    label: label.clone(),
+                    detail: spent.clone(),
+                })
+                .collect(),
+            ListKind::Plain,
+            "phases close as the turn moves on · esc close",
+        ))
+    }
+
     pub fn accounts(accounts: &[AccountInfo]) -> Self {
         Dialog::accounts_with_actions(Vec::new(), accounts)
     }
@@ -1471,6 +1490,7 @@ impl Dialog {
             Dialog::Skills(list) => handle_list_key(list, key),
             Dialog::Workspaces(list) => handle_list_key(list, key),
             Dialog::Worktrees(list) => handle_list_key(list, key),
+            Dialog::TurnTimings(list) => handle_list_key(list, key),
             Dialog::Message(text) => handle_text_key(text, key),
             Dialog::Palette(palette) => handle_palette_key(palette, key),
             Dialog::Rename(rename) => handle_rename_key(&mut rename.input, key),
@@ -1485,6 +1505,7 @@ impl Dialog {
         match self {
             Dialog::SavedPermissions(_) => "saved permissions",
             Dialog::WorkspaceChanges(_) => "workspace changes",
+            Dialog::TurnTimings(_) => "turn timings",
             Dialog::Models(list)
             | Dialog::Theme(list)
             | Dialog::Sessions(list)
@@ -1504,6 +1525,7 @@ impl Dialog {
             Dialog::Skills(list) => list.title,
             Dialog::Workspaces(list) => list.title,
             Dialog::Worktrees(list) => list.title,
+            Dialog::TurnTimings(list) => list.title,
             Dialog::Message(text) => text.title,
             Dialog::Palette(_) => "commands",
             Dialog::Rename(_) => "rename session",

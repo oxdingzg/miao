@@ -21,6 +21,7 @@ pub enum Builtin {
     Permissions,
     WorkspaceChanges,
     Worktrees,
+    TurnTimings,
     Theme,
     Sessions,
     NewSession,
@@ -44,11 +45,12 @@ pub enum Builtin {
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 24] = [
+    pub const ALL: [Builtin; 25] = [
         Builtin::Models,
         Builtin::Permissions,
         Builtin::WorkspaceChanges,
         Builtin::Worktrees,
+        Builtin::TurnTimings,
         Builtin::Theme,
         Builtin::Sessions,
         Builtin::NewSession,
@@ -78,6 +80,7 @@ impl Builtin {
             Builtin::Permissions => "permissions",
             Builtin::WorkspaceChanges => "changes",
             Builtin::Worktrees => "worktree",
+            Builtin::TurnTimings => "timings",
             Builtin::Theme => "theme",
             Builtin::Sessions => "sessions",
             Builtin::NewSession => "new",
@@ -117,6 +120,7 @@ impl Builtin {
             Builtin::Permissions => "Review saved permissions",
             Builtin::WorkspaceChanges => "Show workspace file changes",
             Builtin::Worktrees => "Git worktrees of this checkout",
+            Builtin::TurnTimings => "Show phase timings of this turn",
             Builtin::Theme => "Select a theme",
             Builtin::Sessions => "Browse sessions",
             Builtin::NewSession => "New session",
@@ -155,6 +159,7 @@ impl Builtin {
             // Worktrees have no chord of their own: the palette is where an
             // operator looks for a rare action like this one.
             Builtin::Worktrees => None,
+            Builtin::TurnTimings => None,
             Builtin::Theme => Some(Action::ThemeList),
             Builtin::Sessions => Some(Action::SessionList),
             Builtin::NewSession => Some(Action::SessionNew),

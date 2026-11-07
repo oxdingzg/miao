@@ -55,6 +55,10 @@ pub struct Live {
     pub since: Instant,
     /// The newest frame from the engine, which is the only proof it is working.
     pub signal: Instant,
+    /// Phases this run already left, each with how long it lasted. `phase`
+    /// itself is still open against `since`; the closed ones are what the
+    /// timings view collects.
+    pub spans: Vec<(LivePhase, Duration)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +98,34 @@ fn routes_need_restart(refresh: &Option<Result<usize, String>>) -> bool {
 /// the provider asked for and one this runner guessed read the same and mean
 /// different things. Bound the words here rather than in every caller: a
 /// gateway body can be a whole HTML page.
+/// One row label for the timings view: what the run was doing, with a
+/// provider's own words kept short enough to stay a row.
+fn phase_label(phase: &LivePhase) -> String {
+    match phase {
+        LivePhase::Waiting => "waiting for the model".to_string(),
+        LivePhase::Retrying {
+            attempt,
+            detail,
+            cause,
+        } => {
+            let why = cause
+                .clone()
+                .unwrap_or_else(|| detail.chars().take(48).collect());
+            format!("retry {attempt} · {why}")
+        }
+        LivePhase::Tool { name } => format!("running {name}"),
+    }
+}
+
+fn spent_label(spent: Duration) -> String {
+    let secs = spent.as_secs_f32();
+    if secs >= 60.0 {
+        format!("{}m {:.0}s", (secs / 60.0) as u32, secs % 60.0)
+    } else {
+        format!("{secs:.1}s")
+    }
+}
+
 fn retry_detail(frame: &Value) -> String {
     let cause = match frame.get("cause").and_then(Value::as_str) {
         Some("vendor_rate_limit") => Some("rate limit"),
@@ -405,6 +437,9 @@ pub struct App {
     devices: Vec<DeviceRow>,
     /// Workspaces the engine serves (name, branch or type, directory).
     workspaces: Vec<(String, String, String)>,
+    /// The finished turn's closed phase spans, so the timings view can still
+    /// show a turn after its run ends.
+    last_timings: Option<Vec<(LivePhase, Duration)>>,
     /// The model dialog waits for the catalog when nothing is cached yet.
     pending_models: bool,
     /// The provider the model picker is narrowed to; `None` lists everything.
@@ -561,6 +596,7 @@ impl App {
             providers: seed_providers(std::env::var("MIAO_TUI_PROVIDERS_JSON").ok().as_deref()),
             skills: parse_pairs(std::env::var("MIAO_TUI_SKILLS_JSON").ok().as_deref()),
             workspaces: Vec::new(),
+            last_timings: None,
             devices: Vec::new(),
             accounts: Vec::new(),
             usage: None,
@@ -1086,7 +1122,7 @@ impl App {
                 if self.live.as_ref().is_some_and(|live| {
                     self.state.active_run.as_deref() != Some(live.run_id.as_str())
                 }) {
-                    self.live = None;
+                    self.retire_live();
                 }
                 let committed = transcript
                     .entries
@@ -1510,6 +1546,7 @@ impl App {
             Builtin::Recall => {
                 self.notice("/recall <tool_use_id> restores an archived tool output")
             }
+            Builtin::TurnTimings => self.open_turn_timings(),
             Builtin::Tag => match self.session.as_ref() {
                 Some(session) => self.open_dialog(Dialog::tag(&session.id, "")),
                 None => self.notice("open a Session to tag it"),
@@ -2353,6 +2390,39 @@ impl App {
 
     fn open_skills(&mut self) {
         self.open_dialog(Dialog::skills(&self.skills));
+    }
+
+    /// Where the running turn spends its time, phase by phase; after the run
+    /// ends, the same ledger for the turn that just finished.
+    fn open_turn_timings(&mut self) {
+        let rows = match self.live.as_ref() {
+            Some(live) => {
+                let mut rows: Vec<(String, String)> = live
+                    .spans
+                    .iter()
+                    .map(|(phase, spent)| (phase_label(phase), spent_label(*spent)))
+                    .collect();
+                rows.push((
+                    phase_label(&live.phase),
+                    format!(
+                        "{} so far",
+                        spent_label(Instant::now().duration_since(live.since))
+                    ),
+                ));
+                rows
+            }
+            None => match self.last_timings.as_ref() {
+                Some(spans) => spans
+                    .iter()
+                    .map(|(phase, spent)| (phase_label(phase), spent_label(*spent)))
+                    .collect(),
+                None => {
+                    self.notice("no turn has been timed yet");
+                    return;
+                }
+            },
+        };
+        self.open_dialog(Dialog::turn_timings(&rows));
     }
 
     /// Ask the engine for the host's workspace list; the dialog opens when the
@@ -3459,7 +3529,7 @@ impl App {
                     if self.tool_running.is_some() {
                         return;
                     }
-                    self.live = None;
+                    self.retire_live();
                     self.shell.set_running_tool(None);
                     self.stream_ended = self
                         .run_since
@@ -3467,7 +3537,7 @@ impl App {
                         .map(|(_, since)| now.duration_since(*since));
                     return;
                 }
-                self.live = None;
+                self.retire_live();
                 self.shell.set_running_tool(None);
                 self.stream(&run_id, delta);
                 return;
@@ -3539,7 +3609,7 @@ impl App {
                 // end no longer describes this run: the next provider frame
                 // names its phase, and until then the clock keeps moving.
                 self.stream_ended = None;
-                self.live = None;
+                self.retire_live();
                 self.shell
                     .set_running_tool(self.tool_running.as_ref().map(|tool| tool.name.clone()));
                 return;
@@ -3547,17 +3617,43 @@ impl App {
             _ => return,
         };
         // Only a phase change restarts the clock; a heartbeat must not restart
-        // the elapsed time the user is already reading.
-        let since = match self.live.as_ref() {
-            Some(live) if live.run_id == run_id && live.phase == phase => live.since,
-            _ => now,
-        };
+        // the elapsed time the user is already reading. A change closes the
+        // phase the run just left into the ledger the timings view reads.
+        if let Some(live) = self.live.as_mut() {
+            if live.run_id == run_id {
+                if live.phase == phase {
+                    live.signal = now;
+                    return;
+                }
+                live.spans
+                    .push((live.phase.clone(), now.duration_since(live.since)));
+                live.phase = phase;
+                live.since = now;
+                live.signal = now;
+                return;
+            }
+        }
         self.live = Some(Live {
             run_id,
             phase,
-            since,
+            since: now,
             signal: now,
+            spans: Vec::new(),
         });
+    }
+
+    /// The run stopped speaking under its phase: close it into the ledger and
+    /// keep the turn's spans reviewable after the run is gone.
+    fn retire_live(&mut self) {
+        let Some(live) = self.live.take() else {
+            return;
+        };
+        let mut spans = live.spans;
+        spans.push((
+            live.phase.clone(),
+            Instant::now().duration_since(live.since),
+        ));
+        self.last_timings = Some(spans);
     }
 
     /// Append one normalized provider delta to the draft the next projection
@@ -4292,6 +4388,7 @@ impl App {
         self.session = None;
         self.state = SessionState::default();
         self.live = None;
+        self.last_timings = None;
         self.draft = None;
         self.committed = 0;
         self.shell.set_draft(&[]);
@@ -6400,6 +6497,69 @@ mod tests {
     }
 
     #[test]
+    fn the_timings_view_collects_the_phases_the_turn_left_behind() {
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.waiting"));
+        app.handle(provider_frame("provider.retry"));
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.planned",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "name": "bash",
+        })));
+        app.open_turn_timings();
+        let Some(Dialog::TurnTimings(list)) = app.dialog.as_ref() else {
+            panic!("timings dialog opens");
+        };
+        let labels: Vec<&str> = list.rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(labels.len(), 3, "{labels:?}");
+        assert_eq!(labels[0], "waiting for the model");
+        assert!(labels[1].starts_with("retry 2"), "{}", labels[1]);
+        assert_eq!(labels[2], "running bash");
+        assert!(
+            list.rows[2].detail.ends_with("so far"),
+            "{}",
+            list.rows[2].detail
+        );
+    }
+
+    #[test]
+    fn the_timings_view_survives_the_run_ending() {
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.waiting"));
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.planned",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "name": "bash",
+        })));
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.completed",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+        })));
+        assert!(app.live.is_none());
+        app.open_turn_timings();
+        let Some(Dialog::TurnTimings(list)) = app.dialog.as_ref() else {
+            panic!("timings dialog opens");
+        };
+        let labels: Vec<&str> = list.rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(labels, vec!["waiting for the model", "running bash"]);
+        assert!(list.rows.iter().all(|row| !row.detail.contains("so far")));
+    }
+
+    #[test]
+    fn timings_without_a_turn_say_so_instead_of_opening_an_empty_list() {
+        let mut app = running_app("run-1");
+        app.open_turn_timings();
+        assert!(app.dialog.is_none());
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("no turn has been timed yet")
+        );
+    }
+
+    #[test]
     fn a_waiting_run_counts_the_wait_instead_of_showing_a_static_working() {
         let mut app = running_app("run-1");
         app.update_status();
@@ -6548,6 +6708,7 @@ mod tests {
             phase: LivePhase::Waiting,
             since: now - Duration::from_secs(40),
             signal: now - Duration::from_secs(20),
+            spans: Vec::new(),
         });
         app.update_status();
         assert_eq!(
@@ -6823,6 +6984,7 @@ mod tests {
             },
             since: now - Duration::from_secs(300),
             signal: now - Duration::from_secs(300),
+            spans: Vec::new(),
         });
         app.update_status();
         assert_eq!(
