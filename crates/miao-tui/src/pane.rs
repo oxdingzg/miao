@@ -992,8 +992,8 @@ fn cells_width(cells: &[(char, Style)]) -> usize {
         .sum()
 }
 
-/// Split cells into chunks of at most `width` display cells, preferring the
-/// last blank of each chunk as the break.
+/// Split cells into chunks of at most `width` display cells, each ending where
+/// [`row_end`] says the row may end.
 fn chunk_cells(cells: &[(char, Style)], width: usize) -> Vec<&[(char, Style)]> {
     let mut chunks = Vec::new();
     let mut start = 0;
@@ -1012,14 +1012,83 @@ fn chunk_cells(cells: &[(char, Style)], width: usize) -> Vec<&[(char, Style)]> {
                 blank = Some(end);
             }
         }
-        let end = match blank {
-            Some(index) if index > start && index < end => index,
-            _ => end,
-        };
+        let end = row_end(cells, start, end, blank);
         chunks.push(&cells[start..end]);
         start = end;
     }
     chunks
+}
+
+/// Where a row filled to the width ends.
+///
+/// Filling the row is the ordinary break: CJK text has no word boundaries, so a
+/// break between any two of its characters is normal typesetting. Ending every
+/// row at its last blank instead measured Chinese prose against Latin word
+/// wrapping, which stopped rows a tenth of their width short and left the tail
+/// of a sentence (`自证。`) alone on a row of its own.
+///
+/// Two things still pull the row back: an ASCII run — an identifier, a path, a
+/// flag — must never be cut in two, and closing punctuation must not open the
+/// next row. Both fall back to the row's last blank, and when there is no blank
+/// the punctuation moves down with the character it belongs to.
+fn row_end(cells: &[(char, Style)], start: usize, end: usize, blank: Option<usize>) -> usize {
+    if end >= cells.len() {
+        return end;
+    }
+    let blank = blank.filter(|index| *index > start && *index < end);
+    let splits = joins_word(cells[end - 1].0) && joins_word(cells[end].0);
+    if splits || !opens_row(cells[end].0) {
+        if let Some(index) = blank {
+            return index;
+        }
+    }
+    if splits {
+        return end;
+    }
+    let pull_back = !opens_row(cells[end].0)
+        && end > start + 1
+        && cells[end - 1].0 != ' '
+        && !joins_word(cells[end - 1].0);
+    match pull_back {
+        true => end - 1,
+        false => end,
+    }
+}
+
+/// The ASCII runs a break must keep whole: a word, a path, a flag, a number.
+fn joins_word(character: char) -> bool {
+    character.is_ascii_alphanumeric()
+        || matches!(
+            character,
+            '_' | '-' | '.' | '/' | '\\' | ':' | '@' | '+' | '=' | '~' | '%' | '#' | '&' | '?'
+        )
+}
+
+/// Whether a row may open with this character. Closing punctuation never does:
+/// Chinese typesetting keeps `。` and `）` with the character they belong to.
+fn opens_row(character: char) -> bool {
+    !matches!(
+        character,
+        '。' | '，'
+            | '、'
+            | '；'
+            | '：'
+            | '？'
+            | '！'
+            | '）'
+            | '］'
+            | '｝'
+            | '」'
+            | '』'
+            | '】'
+            | '》'
+            | '〉'
+            | '”'
+            | '’'
+            | '…'
+            | '·'
+            | '～'
+    )
 }
 
 fn wrap_cells(cells: &[(char, Style)], width: usize, line: &Line<'static>) -> Vec<Line<'static>> {
@@ -4507,6 +4576,43 @@ mod tests {
     fn wrapped_rows_break_on_the_last_blank() {
         let rows = wrap_lines(&[Line::from("hello world again")], 10);
         assert_eq!(line_texts(&rows), vec!["hello ", "world ", "again"]);
+    }
+
+    #[test]
+    fn a_cjk_row_fills_its_width_instead_of_stopping_at_a_blank() {
+        // Chinese breaks between characters, so only a word that would be cut
+        // apart pulls the row back to a blank. Ending every row at the last
+        // blank left the tail of a sentence alone on a row: the operator sees
+        // `自证。` on a line of its own.
+        let rows = wrap_lines(&[Line::from("中文 ab 中文文")], 10);
+        assert_eq!(line_texts(&rows), vec!["中文 ab 中", "文文"]);
+    }
+
+    #[test]
+    fn closing_punctuation_never_opens_a_row() {
+        let rows = wrap_lines(&[Line::from("中文中文。")], 4);
+        assert_eq!(line_texts(&rows), vec!["中文", "中", "文。"]);
+        // A word keeps the punctuation company instead of being cut for it.
+        let rows = wrap_lines(&[Line::from("ab cd，ef")], 6);
+        assert_eq!(line_texts(&rows), vec!["ab ", "cd，ef"]);
+    }
+
+    #[test]
+    fn a_chinese_sentence_keeps_its_tail_off_a_row_of_its_own() {
+        // The reported symptom, in the sentence that showed it: backing off to
+        // the last blank produced `[58, 60, 49, 9]` here, so `success。` sat
+        // alone. Only a paragraph's own remainder may be short.
+        let sentence = "验证：macmini 上 fmt、clippy、三个测试全通过；合并后 main 推送的 tui / tui (macos-14)、engine (macos-arm64)、engine / cli (macos-arm64) 全部 success，整个 ci run 结论 success。";
+        let rows = wrap_lines(&[Line::from(sentence)], 60);
+        let texts = line_texts(&rows);
+        assert!(texts.len() > 1, "the sentence wrapped: {texts:?}");
+        for row in &texts[..texts.len() - 1] {
+            let width = UnicodeWidthStr::width(row.as_str());
+            assert!(
+                width > 52,
+                "a row of the sentence stopped early at {width} cells: {row:?} in {texts:?}"
+            );
+        }
     }
 
     #[test]
