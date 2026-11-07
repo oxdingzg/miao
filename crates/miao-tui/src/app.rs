@@ -64,7 +64,13 @@ pub enum LivePhase {
     /// A pause before another attempt, announced by the engine, carrying the
     /// provider's own words about the failure: a rate limit and a spent
     /// balance arrive as the same 429, and only the body tells them apart.
-    Retrying { attempt: u64, detail: String },
+    /// `cause` is the engine's wait class, so the strip can offer the remedy
+    /// that class actually has: switching the account or the model.
+    Retrying {
+        attempt: u64,
+        detail: String,
+        cause: Option<String>,
+    },
     /// A tool call is executing. The engine is quiet here too, but naming the
     /// work is what makes a long command differ from a stuck turn.
     Tool { name: String },
@@ -150,10 +156,14 @@ impl Live {
                 "Waiting for model · the model may reason before the first token".to_string()
             }
             LivePhase::Waiting => "Waiting for model".to_string(),
-            LivePhase::Retrying { attempt, detail } if detail.is_empty() => {
+            LivePhase::Retrying {
+                attempt, detail, ..
+            } if detail.is_empty() => {
                 format!("Retrying · attempt {attempt}")
             }
-            LivePhase::Retrying { attempt, detail } => {
+            LivePhase::Retrying {
+                attempt, detail, ..
+            } => {
                 format!("Retrying · attempt {attempt} · {detail}")
             }
             LivePhase::Tool { name } => format!("Running {}", tool_label(name)),
@@ -3445,6 +3455,10 @@ impl App {
             "provider.retry" => LivePhase::Retrying {
                 attempt: frame.get("attempt").and_then(Value::as_u64).unwrap_or(0) + 1,
                 detail: retry_detail(&frame),
+                cause: frame
+                    .get("cause")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
             },
             // An attempt announcement proves the request is in flight, even
             // before the first heartbeat or right after a previous step.
@@ -3871,6 +3885,29 @@ impl App {
                 },
                 warning: false,
             });
+        }
+        // A spent balance and a vendor rate limit are the two waits whose
+        // remedy is switching what serves the Session, so the strip names the
+        // keys at the moment they matter. The chords render from the live
+        // keybinds: a rebinding must not leave the strip advertising a stroke
+        // that no longer fires.
+        if let Some(LivePhase::Retrying {
+            cause: Some(cause), ..
+        }) = live.map(|live| &live.phase)
+        {
+            if matches!(cause.as_str(), "account_quota" | "vendor_rate_limit") {
+                let mut text = match self.keys.chord(keybinds::Action::Accounts) {
+                    Some(chord) => format!("{chord} switch account"),
+                    None => "switch account".to_string(),
+                };
+                if let Some(chord) = self.keys.chord(keybinds::Action::ModelList) {
+                    text.push_str(&format!(" · {chord} switch model"));
+                }
+                hints.push(StatusHint {
+                    text,
+                    warning: false,
+                });
+            }
         }
         // `--auto` widens what runs without asking, so the operator has to be
         // able to see it. A Session that stops prompting should read as a
@@ -6130,7 +6167,8 @@ mod tests {
     /// AUTH-04: the status line must say which wait a retry is — a vendor
     /// rate limit or a spent account quota arrive as the same 429 — and who
     /// chose the pause, or the operator cannot choose between waiting and
-    /// switching account.
+    /// switching account. The quota classes are exactly the ones where
+    /// switching is the remedy, so the strip also names the keys.
     #[test]
     fn a_retry_names_the_wait_class_and_the_pause_source() {
         let mut app = running_app("run-1");
@@ -6149,6 +6187,16 @@ mod tests {
         assert!(status.contains("account quota"), "{status}");
         assert!(status.contains("850ms local backoff"), "{status}");
         assert!(status.contains("insufficient_quota"), "{status}");
+        let switch = app
+            .shell
+            .status
+            .hints
+            .iter()
+            .map(|hint| hint.text.as_str())
+            .find(|text| text.contains("switch account"))
+            .expect("a quota retry offers the account switch");
+        assert!(switch.contains("ctrl+o"), "{switch}");
+        assert!(switch.contains("switch model"), "{switch}");
         // The provider naming the pause reads differently from the runner
         // guessing one: the first is a statement about when it will answer.
         app.handle(AppEvent::Provider(serde_json::json!({
@@ -6165,6 +6213,34 @@ mod tests {
         let status = app.shell.title.status().unwrap_or_default();
         assert!(status.contains("rate limit"), "{status}");
         assert!(status.contains("2.0s from Retry-After"), "{status}");
+        assert!(
+            app.shell
+                .status
+                .hints
+                .iter()
+                .any(|hint| hint.text.contains("switch account")),
+            "a rate limit still leaves the switch on the strip"
+        );
+    }
+
+    /// A network-class retry has no account remedy: switching what serves the
+    /// Session cannot fix a cut cable. The strip must not send the operator
+    /// hunting for a switch that would not help.
+    #[test]
+    fn a_transport_retry_does_not_advertise_switching() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.retry",
+            "run_id": "run-1",
+            "attempt": 1,
+            "cause": "transport",
+            "source": "backoff",
+            "delay_ms": 400,
+            "reason": "connection reset",
+        })));
+        app.update_status();
+        let status = app.shell.title.status().unwrap_or_default();
+        assert!(status.contains("network"), "{status}");
     }
 
     #[test]
