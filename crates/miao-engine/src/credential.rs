@@ -460,6 +460,41 @@ pub fn store_key(
     })
 }
 
+/// Remove the credentials stored for an integration — every account, or the
+/// one label — and answer how many rows went away.
+///
+/// Updating a key is `store_key` under the same label, so it replaces rather
+/// than piles up; deleting is this. Both live beside the store so a UI and
+/// `miao auth logout` cannot disagree about what "delete the key" means.
+pub fn remove_key(path: &Path, integration: &str, label: Option<&str>) -> Result<usize, Error> {
+    let integration = integration.trim();
+    if integration.is_empty()
+        || integration.len() > 128
+        || !integration
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err(Error::Invalid);
+    }
+    // Deleting from a store that was never created must not create one.
+    if !path.is_file() {
+        return Ok(0);
+    }
+    let connection = Connection::open(path).map_err(|_| Error::Database)?;
+    let removed = match label.map(str::trim).filter(|label| !label.is_empty()) {
+        Some(label) => connection.execute(
+            "DELETE FROM credential WHERE integration_id=?1 AND label=?2",
+            rusqlite::params![integration, label],
+        ),
+        None => connection.execute(
+            "DELETE FROM credential WHERE integration_id=?1",
+            rusqlite::params![integration],
+        ),
+    }
+    .map_err(|_| Error::Database)?;
+    Ok(removed)
+}
+
 /// A credential identity in the shape the store already uses.
 fn credential_id() -> String {
     const ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -518,6 +553,42 @@ mod tests {
             .all(|entry| entry.integration == "commandcode"));
         assert!(store_key(&path, "bad integration", "sk", None).is_err());
         assert!(store_key(&path, "commandcode", "   ", None).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Deleting is the counterpart of storing: one label goes on its own, the
+    /// integration goes whole, and a store that was never created stays absent
+    /// instead of being conjured up empty.
+    #[test]
+    fn a_removed_key_leaves_the_other_accounts_alone() {
+        let dir = std::env::temp_dir().join(format!("miao-credential-del-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let path = dir.join("miao.db");
+        assert_eq!(
+            remove_key(&path, "zhipuai-coding-plan", None).expect("absent store"),
+            0
+        );
+        assert!(!path.exists(), "deleting must not create the store");
+        store_key(&path, "zhipuai-coding-plan", "sk-one", None).expect("store");
+        store_key(&path, "zhipuai-coding-plan", "sk-two", Some("work")).expect("store");
+        store_key(&path, "deepseek", "sk-three", None).expect("store");
+        assert_eq!(
+            remove_key(&path, "zhipuai-coding-plan", Some("work")).expect("remove"),
+            1
+        );
+        let listed = list_database(&path).expect("list");
+        assert_eq!(listed.len(), 2, "one zhipu account and one deepseek key");
+        assert_eq!(
+            remove_key(&path, "zhipuai-coding-plan", None).expect("remove"),
+            1
+        );
+        assert_eq!(
+            remove_key(&path, "zhipuai-coding-plan", None).expect("gone"),
+            0
+        );
+        assert_eq!(list_database(&path).expect("list").len(), 1);
+        assert!(remove_key(&path, "bad integration", None).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

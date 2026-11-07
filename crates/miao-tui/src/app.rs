@@ -70,6 +70,17 @@ pub enum LivePhase {
     Tool { name: String },
 }
 
+/// Whether a reconciled manifest needs the engine restarted. A manifest that
+/// changed has to be re-read; one that already served the provider does not; a
+/// launch with no manifest keeps the restart because nothing else publishes
+/// the routes.
+fn routes_need_restart(refresh: &Option<Result<usize, String>>) -> bool {
+    match refresh {
+        Some(Ok(changed)) => *changed > 0,
+        Some(Err(_)) | None => true,
+    }
+}
+
 /// The provider's failure, on one status line. Bound it here rather than in
 /// every caller: a gateway body can be a whole HTML page.
 fn retry_detail(reason: Option<&str>) -> String {
@@ -1840,6 +1851,13 @@ impl App {
             }
             DialogAction::Confirmed(kind) => {
                 self.dialog = None;
+                // Forgetting a key is a store and manifest concern; the engine
+                // only has to be restarted afterwards, so it needs no handle
+                // here and a Session-less start can still do it.
+                if let ConfirmKind::RemoveCredential(integration) = kind {
+                    self.remove_provider_key(&integration);
+                    return;
+                }
                 let Some(engine) = self.engine.clone() else {
                     return;
                 };
@@ -1851,6 +1869,7 @@ impl App {
                         let root = self.worktree_root();
                         engine.worktree_remove(&root, &name);
                     }
+                    ConfirmKind::RemoveCredential(_) => {}
                     ConfirmKind::Revert {
                         boundary_seq,
                         files,
@@ -2055,9 +2074,7 @@ impl App {
                 self.open_account_list();
             }
             Some(Dialog::Accounts(list)) => {
-                // The row id is the credential, so a narrowed list still picks
-                // the account the operator pointed at.
-                let Some(credential_id) = list
+                let Some(chosen) = list
                     .rows
                     .get(index)
                     .map(|row| row.id.clone())
@@ -2065,6 +2082,21 @@ impl App {
                 else {
                     return;
                 };
+                // A provider-scoped list leads with the key's own actions:
+                // re-entering a key replaces it, deleting forgets it.
+                if let Some(provider) = chosen.strip_prefix("action:update:") {
+                    let name = self.provider_name(provider);
+                    self.open_dialog(Dialog::sign_in_prompt(provider, &name));
+                    return;
+                }
+                if let Some(provider) = chosen.strip_prefix("action:delete:") {
+                    let name = self.provider_name(provider);
+                    self.open_dialog(Dialog::confirm_remove_credential(provider, &name));
+                    return;
+                }
+                // The row id is the credential, so a narrowed list still picks
+                // the account the operator pointed at.
+                let credential_id = chosen;
                 let Some(session_id) = self.session_id() else {
                     self.notice("open a Session to switch accounts");
                     return;
@@ -2453,11 +2485,21 @@ impl App {
         match miao_engine::credential::store_key(&store, provider, key, None) {
             Ok(stored) => {
                 let label = format!("{} ({})", stored.label, stored.id);
-                if let Some(error) = self.refresh_routes_manifest(&store) {
+                let refresh = self.refresh_routes_manifest(&store);
+                if let Some(Err(error)) = &refresh {
                     // Restarting the engine would re-read a manifest that still
                     // cannot name this provider, so name the step that can.
                     self.notice(&format!(
                         "stored the {provider} key as {label}; its models load after restarting miao: {error}"
+                    ));
+                    return;
+                }
+                if !routes_need_restart(&refresh) {
+                    // The manifest already serves this provider, so only the
+                    // stored value changed. The engine reads the secret per
+                    // request, and a restart would just cancel a running turn.
+                    self.notice(&format!(
+                        "stored the {provider} key as {label}; the next request uses it"
                     ));
                     return;
                 }
@@ -2481,15 +2523,60 @@ impl App {
         }
     }
 
+    /// Forget every credential a provider stores, then make the engine stop
+    /// serving the routes that named them.
+    ///
+    /// The manifest is reconciled rather than appended to here: a deleted key
+    /// leaves a route that could only fail, so the same refresh drops it. A
+    /// turn that is still running defers the restart, the way storing does.
+    fn remove_provider_key(&mut self, integration: &str) {
+        let Some(store) = self.credential_store.clone() else {
+            self.notice("no credential store: set MIAO_DATA_HOME, XDG_DATA_HOME or HOME");
+            return;
+        };
+        match miao_engine::credential::remove_key(&store, integration, None) {
+            Ok(0) => self.notice(&format!("no key is stored for {integration}")),
+            Ok(removed) => {
+                let refresh = self.refresh_routes_manifest(&store);
+                let label = match removed {
+                    1 => "1 account".to_string(),
+                    count => format!("{count} accounts"),
+                };
+                if !routes_need_restart(&refresh) {
+                    self.notice(&format!(
+                        "deleted the {integration} key ({label}); no route served it"
+                    ));
+                    return;
+                }
+                if self.state.active_run.is_some() {
+                    self.pending_routes_reload = true;
+                    self.notice(&format!(
+                        "deleted the {integration} key ({label}); the engine drops its routes when this turn finishes"
+                    ));
+                    return;
+                }
+                self.notice(&format!(
+                    "deleted the {integration} key ({label}); restarting the engine to drop its routes"
+                ));
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.reload_provider_routes();
+                }
+            }
+            Err(error) => self.notice(&format!("could not delete the {integration} key: {error}")),
+        }
+    }
+
     /// Write the routes a just-stored key newly covers into the manifest the
     /// engine reads, so a restart is enough to serve them.
     ///
     /// An unmatched launch (no manifest, an inline route list) has nothing to
     /// refresh and reports no error: the restart still serves what it served.
-    fn refresh_routes_manifest(&self, store: &std::path::Path) -> Option<String> {
+    fn refresh_routes_manifest(&self, store: &std::path::Path) -> Option<Result<usize, String>> {
         let path = std::env::var_os("MIAO_ENGINE_MODEL_ROUTES_CONFIG")?;
-        miao_engine::native_routes::refresh_key_routes(std::path::Path::new(&path), Some(store))
-            .err()
+        Some(miao_engine::native_routes::refresh_key_routes(
+            std::path::Path::new(&path),
+            Some(store),
+        ))
     }
 
     fn open_provider_accounts(&mut self) {
@@ -2541,7 +2628,33 @@ impl App {
                 .collect::<Vec<_>>(),
             None => self.accounts.clone(),
         };
-        self.open_dialog(Dialog::accounts(&accounts));
+        // The key's own actions belong where the key is shown. Only a provider
+        // scope can name the integration they act on.
+        let actions = match self.accounts_filter.as_deref() {
+            Some(provider) => vec![
+                Row {
+                    id: format!("action:update:{provider}"),
+                    label: "update key".to_string(),
+                    detail: format!("store a new key for {provider}"),
+                },
+                Row {
+                    id: format!("action:delete:{provider}"),
+                    label: "delete key".to_string(),
+                    detail: "forget every account this provider stores".to_string(),
+                },
+            ],
+            None => Vec::new(),
+        };
+        self.open_dialog(Dialog::accounts_with_actions(actions, &accounts));
+    }
+
+    /// The display name of a provider, falling back to its id.
+    fn provider_name(&self, provider: &str) -> String {
+        self.providers
+            .iter()
+            .find(|entry| entry.id == provider)
+            .map(|entry| entry.name.clone())
+            .unwrap_or_else(|| provider.to_string())
     }
 
     fn open_debug(&mut self) {
@@ -6947,11 +7060,19 @@ mod tests {
                 .iter()
                 .map(|row| row.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["cred_b", "cred_c"]
+            vec![
+                "action:update:openai",
+                "action:delete:openai",
+                "cred_b",
+                "cred_c"
+            ],
+            "the key's own actions lead the provider's accounts"
         );
-        // The narrowed list starts on its first account, so one step down
-        // lands on the second one.
-        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        // The narrowed list starts on the first action, so three steps down
+        // land on the second account.
+        for _ in 0..3 {
+            app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        }
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         assert!(app.dialog.is_none());
         assert_eq!(
@@ -6977,6 +7098,10 @@ mod tests {
         assert!(matches!(app.dialog, Some(Dialog::ProviderAccounts(_))));
         app.handle(key(KeyCode::Down, KeyModifiers::NONE));
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        // The provider's key actions lead its accounts, so step past them to
+        // reach the account the landing screen cannot pin.
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(app.home.notice(), Some("open a Session to switch accounts"));
     }
@@ -7125,6 +7250,88 @@ mod tests {
         assert!(
             !notice.contains("restart miao"),
             "the operator is not asked to restart miao: {notice}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Updating a key for a provider the manifest already serves needs no
+    /// restart: the engine reads the secret per request, so a restart would
+    /// only cancel whatever turn is running.
+    #[test]
+    fn a_key_that_changed_no_route_needs_no_restart() {
+        assert!(!routes_need_restart(&Some(Ok(0))));
+        assert!(routes_need_restart(&Some(Ok(1))));
+        assert!(routes_need_restart(&Some(Err("unreadable".into()))));
+        assert!(
+            routes_need_restart(&None),
+            "a launch with no manifest must still restart: nothing else publishes routes"
+        );
+    }
+
+    /// A stored key is also where it is replaced or forgotten: the provider's
+    /// own list carries both actions ahead of its accounts.
+    #[test]
+    fn a_provider_account_list_offers_updating_and_deleting_its_key() {
+        let mut app = session_app();
+        app.accounts = vec![AccountInfo {
+            credential_id: "cred_zhipu".into(),
+            provider: Some("zhipuai-coding-plan".into()),
+            detail: "glm-5.3".into(),
+        }];
+        app.accounts_filter = Some("zhipuai-coding-plan".into());
+        app.open_account_list();
+        let Some(Dialog::Accounts(list)) = app.dialog.as_ref() else {
+            panic!("an accounts dialog")
+        };
+        let ids: Vec<&str> = list.rows.iter().map(|row| row.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "action:update:zhipuai-coding-plan",
+                "action:delete:zhipuai-coding-plan",
+                "cred_zhipu",
+            ]
+        );
+    }
+
+    /// Deleting asks first, then forgets every credential the provider stored
+    /// and restarts the engine so its routes stop being served.
+    #[test]
+    fn deleting_a_key_forgets_it_and_restarts_the_engine() {
+        let mut app = session_app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        let dir = std::env::temp_dir().join(format!("miao-delete-key-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = dir.join("miao.db");
+        app.credential_store = Some(store.clone());
+        miao_engine::credential::store_key(&store, "zhipuai-coding-plan", "sk-test", None)
+            .expect("store");
+        app.open_dialog(Dialog::confirm_remove_credential(
+            "zhipuai-coding-plan",
+            "Zhipu AI Coding Plan",
+        ));
+        // The destructive button starts unfocused, so a stray Enter is safe.
+        app.handle(key(KeyCode::Char('y'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.dialog.is_none(), "the confirmation closes on delete");
+        assert!(
+            miao_engine::credential::list_database(&store)
+                .expect("list")
+                .is_empty(),
+            "the key is gone"
+        );
+        assert!(
+            matches!(
+                requests.try_recv(),
+                Ok(engine::Request::ReloadProviderRoutes)
+            ),
+            "the engine is restarted so the deleted key serves nothing"
+        );
+        let notice = app.shell.composer.notice.clone().expect("notice");
+        assert!(
+            notice.contains("deleted the zhipuai-coding-plan key"),
+            "says what happened: {notice}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
