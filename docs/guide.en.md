@@ -151,6 +151,12 @@ While the prompt holds the keyboard:
 | `ctrl+y`                                | copy the selection, or the last response                   |
 | `ctrl+j`                                | start a new line without sending                           |
 | `ctrl+c`                                | clear the draft (an empty draft quits)                     |
+| `tab`                                   | accept the grey offer in the prompt (indents when a draft exists) |
+
+Once a turn settles, the empty prompt offers the next thing this Session's todo
+list still has to do (`Next: …`). `tab` turns it into the draft so it can be
+edited before sending; a draft, a `!` command line, or a running turn keeps the
+offer away.
 
 Rebind in `~/.config/miao/tui.json` (or `keybinds` in miao.jsonc).
 

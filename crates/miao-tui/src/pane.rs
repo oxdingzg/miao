@@ -2186,28 +2186,38 @@ fn render_composer_body(
     let selection_style = Style::new().fg(palette.background).bg(accent);
     let selection_cells = composer.editor.selection_cells();
     if composer.editor.is_empty() && composer.completion.items.is_empty() {
-        // An empty composer offers the example the TS prompt cycles through:
-        // one quiet sentence, `Run a command…` on a `!` line. The pick is the
-        // stored per-mount roll, not a clock drift, so the example stays put
-        // the way the TS one does between Session changes.
-        let examples: &[&str] = if shell {
-            &SHELL_PLACEHOLDERS
-        } else {
-            &PLACEHOLDERS
+        // The work the finished turn left behind outranks the rotating example:
+        // it is this Session's own next todo, dim until `Tab` promotes it. The
+        // `!` line runs commands, so it keeps its own examples.
+        let line = match composer.suggestion.as_deref().filter(|_| !shell) {
+            Some(next) => Line::from(vec![
+                Span::styled(format!("Next: {next}"), Style::new().fg(palette.text_muted)),
+                Span::styled(" (tab)", Style::new().fg(palette.text_muted).dim()),
+            ]),
+            None => {
+                // An empty composer offers the example the TS prompt cycles
+                // through: one quiet sentence, `Run a command…` on a `!` line.
+                // The pick is the stored per-mount roll, not a clock drift, so
+                // the example stays put the way the TS one does between Session
+                // changes.
+                let examples: &[&str] = if shell {
+                    &SHELL_PLACEHOLDERS
+                } else {
+                    &PLACEHOLDERS
+                };
+                let verb = if shell {
+                    "Run a command…"
+                } else {
+                    "Ask anything…"
+                };
+                let example = examples[composer.placeholder % examples.len()];
+                Line::from(Span::styled(
+                    format!("{verb} \u{201c}{example}\u{201d}"),
+                    Style::new().fg(palette.text_muted),
+                ))
+            }
         };
-        let verb = if shell {
-            "Run a command…"
-        } else {
-            "Ask anything…"
-        };
-        let example = examples[composer.placeholder % examples.len()];
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                format!("{verb} \u{201c}{example}\u{201d}"),
-                Style::new().fg(palette.text_muted),
-            )),
-            input_area,
-        );
+        frame.render_widget(Paragraph::new(line), input_area);
     } else {
         let lines = composer
             .editor
@@ -4147,6 +4157,56 @@ mod tests {
         assert!(painted.contains("all providers"), "{painted}");
         assert!(painted.contains("deepseek"), "{painted}");
         assert!(painted.contains("zhipu"), "{painted}");
+    }
+
+    /// The offer a settled turn leaves reads where the rotating example would,
+    /// and never claims the `!` line, which runs commands instead.
+    #[test]
+    fn an_offered_task_replaces_the_example_hint() {
+        let theme = home_theme();
+        let mut composer = crate::editor::Composer::new(Path::new("."));
+        composer.set_suggestion(Some("cover the parser with tests".into()));
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 6)).expect("terminal");
+        let painted = |terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>| {
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol().to_string())
+                .collect::<String>()
+        };
+        terminal
+            .draw(|frame| {
+                super::render_composer(
+                    frame,
+                    ratatui::layout::Rect::new(0, 0, 80, 6),
+                    &composer,
+                    &theme,
+                )
+            })
+            .expect("draw");
+        let text = painted(&mut terminal);
+        assert!(text.contains("Next: cover the parser with tests"), "{text}");
+        assert!(text.contains("(tab)"), "{text}");
+        assert!(!text.contains("Ask anything"), "{text}");
+
+        // A draft hides the offer: what the operator wrote is the composer.
+        composer.editor.insert_str("hello");
+        terminal
+            .draw(|frame| {
+                super::render_composer(
+                    frame,
+                    ratatui::layout::Rect::new(0, 0, 80, 6),
+                    &composer,
+                    &theme,
+                )
+            })
+            .expect("draw");
+        let text = painted(&mut terminal);
+        assert!(text.contains("hello"), "{text}");
+        assert!(!text.contains("Next: cover"), "{text}");
     }
 
     /// An empty composer hints at what it accepts, the way the agent CLIs do;

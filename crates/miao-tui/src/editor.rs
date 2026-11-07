@@ -770,6 +770,11 @@ pub struct Composer {
     /// one at random when it mounts and re-rolls on a Session change, so this
     /// is a stored index rather than a clock drift.
     pub placeholder: usize,
+    /// The work the Session's own checklist still has left, offered in the
+    /// empty composer once nothing is running. It is the todo list the engine
+    /// continues from, not a guess at what to do next, so accepting it asks for
+    /// the turn the engine would have picked up anyway.
+    pub suggestion: Option<String>,
     /// Inline media sent with the prompt. The composer only shows their
     /// `[Image N]` markers; the bytes travel beside the text.
     attachments: Vec<Value>,
@@ -805,6 +810,7 @@ impl Composer {
             phase_elapsed: None,
             phase_alert: false,
             placeholder: random_pick(),
+            suggestion: None,
             attachments: Vec::new(),
             pastes: Vec::new(),
             history: load_history(&history_path),
@@ -823,6 +829,27 @@ impl Composer {
     /// different Session opens.
     pub fn reroll_placeholder(&mut self) {
         self.placeholder = self.placeholder.wrapping_add(1 + random_pick());
+    }
+
+    /// Offer `text` in the empty composer, or clear what the last turn left.
+    /// Storing it beside the draft rather than in it keeps the offer out of the
+    /// history, the stash and the paste bookkeeping until Tab spends a
+    /// keystroke on it.
+    pub fn set_suggestion(&mut self, text: Option<String>) {
+        self.suggestion = text;
+    }
+
+    /// Promote the offer into the draft. Only an empty composer takes it: a
+    /// draft the operator is writing is never overwritten by Tab.
+    fn accept_suggestion(&mut self) -> bool {
+        if !self.editor.is_empty() || self.mode != Mode::Normal {
+            return false;
+        }
+        let Some(text) = self.suggestion.clone() else {
+            return false;
+        };
+        self.editor.set_text(&text);
+        true
     }
 
     /// Names (without the leading `/`) offered by slash completion.
@@ -882,6 +909,12 @@ impl Composer {
             if handled {
                 return Action::None;
             }
+        }
+        // Only once the completion list has had its turn: an open list keeps
+        // Tab for the item it is highlighting.
+        if key.code == KeyCode::Tab && key.modifiers.is_empty() && self.accept_suggestion() {
+            self.refresh_completion();
+            return Action::None;
         }
         let action = self.handle_edit_key(key, keys);
         if matches!(action, Action::None) {
@@ -1028,6 +1061,10 @@ impl Composer {
         self.history_index = None;
         self.draft.clear();
         self.completion = Completion::default();
+        // The offer was about the work this prompt now asks for. It comes back
+        // only if the checklist still has something runnable once the turn
+        // settles, so a submitted prompt never leaves stale work on screen.
+        self.suggestion = None;
         Action::Submit { text, attachments }
     }
 
@@ -1477,6 +1514,7 @@ mod tests {
             phase_elapsed: None,
             phase_alert: false,
             placeholder: 0,
+            suggestion: None,
             attachments: Vec::new(),
             pastes: Vec::new(),
             history: Vec::new(),
@@ -2054,6 +2092,36 @@ mod tests {
         // A finished first word is no longer a command being completed.
         composer.refresh_completion();
         assert!(!composer.completion.active());
+    }
+
+    /// A settled turn offers the Session's next todo in the empty composer.
+    /// `Tab` spends the keystroke on it instead of the two spaces it otherwise
+    /// types, and a draft already being written is never overwritten.
+    #[test]
+    fn tab_promotes_the_offered_task_into_the_draft() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-editor-{}-t", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let mut composer = composer(&dir);
+        let keys = Keymap::default();
+        assert!(matches!(
+            composer.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &keys),
+            Action::None
+        ));
+        // With nothing offered, Tab is still the indent it always was.
+        assert_eq!(composer.editor.text(), "  ");
+
+        composer.editor.clear();
+        composer.set_suggestion(Some("fix the login redirect".into()));
+        composer.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &keys);
+        assert_eq!(composer.editor.text(), "fix the login redirect");
+        // The caret waits after the accepted text, ready to append.
+        assert_eq!(composer.editor.cursor(), "fix the login redirect".len());
+
+        // A draft in progress keeps the keystroke: Tab indents it rather than
+        // replacing work the operator already wrote.
+        composer.editor.set_text("half a thought");
+        composer.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &keys);
+        assert_eq!(composer.editor.text(), "half a thought  ");
     }
 
     /// Enter with a highlighted command runs it in one stroke — the TypeScript
