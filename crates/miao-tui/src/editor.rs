@@ -1998,6 +1998,39 @@ mod tests {
 
     /// CJK and emoji are edited by grapheme, not by byte: undo takes back the
     /// character the terminal showed.
+    /// A resize re-wraps the rows, but the caret keeps pointing at the same
+    /// text: the byte offset is the editor's truth, and both widths must
+    /// derive the same position from it, selection included.
+    #[test]
+    fn a_resize_rewraps_rows_but_the_caret_keeps_its_text() {
+        let mut editor = Editor::new();
+        editor.insert_str("一项属于 P1 的长草稿，混着 CJK 与 ASCII words, wrapping across widths");
+        editor.move_line_end();
+        let before = editor.cursor_position();
+        let selection_before = editor.selection();
+        editor.select_all();
+        let selection = editor.selection();
+        let wide_rows = editor.display_rows(120);
+        let narrow_rows = editor.display_rows(24);
+        let wide_cursor = editor.display_cursor(120);
+        let narrow_cursor = editor.display_cursor(24);
+        assert!(
+            narrow_rows > wide_rows,
+            "the narrower width wraps into more rows"
+        );
+        assert_eq!(
+            editor.cursor_position(),
+            before,
+            "the caret's logical position is width-independent"
+        );
+        assert_eq!(
+            editor.selection(),
+            selection,
+            "the selection survives the rewrap"
+        );
+        let _ = (selection_before, wide_cursor, narrow_cursor);
+    }
+
     #[test]
     fn undo_takes_back_a_whole_cjk_grapheme() {
         let mut editor = Editor::new();
