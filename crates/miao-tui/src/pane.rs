@@ -2926,6 +2926,16 @@ fn hourly_lines(
         ));
     }
     lines.push(Line::from(money));
+    // An unhealthy cache state carries its own next step: billed input that
+    // the cache barely recognised is the one shape compaction actually
+    // fixes, so name the command instead of printing a bare percentage.
+    if usage.cache_hit().is_some_and(|hit| hit < 0.5) && usage.input + usage.cache_read >= 50_000 {
+        lines.push(Line::from(vec![
+            Span::styled("low cache hit: ", Style::new().fg(palette.warning)),
+            Span::styled("/compact", Style::new().fg(palette.secondary)),
+            Span::styled(" trims the input later turns resend", muted),
+        ]));
+    }
     if usage.truncated {
         lines.push(Line::from(Span::styled(
             "partial: retention removed older rows",
@@ -6636,6 +6646,61 @@ mod tests {
             strip[1].spans[15].style.fg,
             Some(theme.palette.warning),
             "the outlier keeps its warning colour"
+        );
+    }
+
+    #[test]
+    fn an_unhealthy_cache_hit_carries_its_recommendation_and_a_healthy_one_does_not() {
+        let theme = home_theme();
+        let build = |input: u64, cache_read: u64| {
+            let bucket = |index: u64| crate::status::HourlyBucket {
+                start_ms: 1_760_000_000_000 + index * 3_600_000,
+                tokens: (input + cache_read) / 6,
+                turns: 1,
+                cost_usd: 0.001,
+            };
+            crate::status::HourlyUsage {
+                buckets: (0..6).map(bucket).collect(),
+                input,
+                output: 1_000,
+                cache_read,
+                turns: 6,
+                tokens: input + cache_read,
+                cost_usd: 0.01,
+                cost_turns: 6,
+                peak: None,
+                truncated: false,
+            }
+        };
+        let unhealthy = hourly_lines(Some(&build(120_000, 10_000)), 40, &theme.palette);
+        let joined = unhealthy
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.to_string())
+            .collect::<String>();
+        assert!(
+            joined.contains("/compact"),
+            "a low hit with heavy billed input names the fix: {joined:?}"
+        );
+        let healthy = hourly_lines(Some(&build(20_000, 120_000)), 40, &theme.palette);
+        let joined = healthy
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.to_string())
+            .collect::<String>();
+        assert!(
+            !joined.contains("/compact"),
+            "a healthy hit stays quiet: {joined:?}"
+        );
+        let small = hourly_lines(Some(&build(3_000, 1_000)), 40, &theme.palette);
+        let joined = small
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.to_string())
+            .collect::<String>();
+        assert!(
+            !joined.contains("/compact"),
+            "a small session is not worth a recommendation: {joined:?}"
         );
     }
 
