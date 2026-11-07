@@ -234,9 +234,11 @@ fn severity(decision: Decision) -> u8 {
 }
 
 /// Match the host ShellApproval extraction: every command in document order,
-/// including substitutions, with redirections widened to their statement.
+/// including substitutions, with redirections widened to their statement. The
+/// engine runs commands with `bash -c` on every platform, so the bash parse is
+/// the same extraction Windows needs.
 fn shell_resources(command: &str) -> Option<Vec<String>> {
-    if cfg!(windows) || command.len() > 65536 {
+    if command.len() > 65536 {
         return None;
     }
     let mut parser = tree_sitter::Parser::new();
@@ -324,7 +326,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(windows))]
     fn shell_resources_match_the_host_parser_and_every_command_is_checked() {
         let fixture: Value =
             serde_json::from_str(include_str!("../tests/differential/agent_policy.json")).unwrap();
