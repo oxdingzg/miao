@@ -2428,15 +2428,24 @@ fn prepare_tui_engine(launch: &mut miao_tui::Launch) {
             std::env::set_var("MIAO_ENGINE_AGENT_CONFIG", path);
         }
     }
-    if let Ok(encoded) = serde_json::to_string(&routes) {
-        if encoded.len() <= 65536 {
-            let path =
-                std::env::temp_dir().join(format!("miao-tui-routes-{}.json", std::process::id()));
-            if std::fs::write(&path, encoded).is_ok() {
-                std::env::set_var("MIAO_ENGINE_MODEL_ROUTES_CONFIG", path);
-            }
-        }
+    if let Some(path) = write_routes_manifest("miao-tui-routes", &routes) {
+        std::env::set_var("MIAO_ENGINE_MODEL_ROUTES_CONFIG", path);
     }
+}
+
+/// Write the derived routes where the engine reads them and answer the path.
+///
+/// The engine takes a path and reads the file itself, so the 64 KiB ceiling
+/// that governs a value passed through the environment does not apply here.
+/// Applying it kept whole launches without a manifest once their route list
+/// grew past it, and a key stored afterwards had nothing to append its routes
+/// to: the provider only appeared after restarting miao, which re-derived the
+/// list from scratch.
+fn write_routes_manifest(name: &str, routes: &[serde_json::Value]) -> Option<std::path::PathBuf> {
+    let encoded = serde_json::to_string(routes).ok()?;
+    let path = std::env::temp_dir().join(format!("{name}-{}.json", std::process::id()));
+    std::fs::write(&path, encoded).ok()?;
+    Some(path)
 }
 
 /// The routes a stored key gives a provider the configuration never names.
@@ -4328,16 +4337,10 @@ fn engine_argv_with(
                             }
                         }
                     }
-                    if let Ok(encoded) = serde_json::to_string(&routes) {
-                        if encoded.len() <= 65536 {
-                            let path = std::env::temp_dir()
-                                .join(format!("miao-routes-{}.json", std::process::id()));
-                            if std::fs::write(&path, encoded).is_ok() {
-                                argv.push("--model-routes-config".into());
-                                argv.push(path.display().to_string());
-                                derived_routes = true;
-                            }
-                        }
+                    if let Some(path) = write_routes_manifest("miao-routes", &routes) {
+                        argv.push("--model-routes-config".into());
+                        argv.push(path.display().to_string());
+                        derived_routes = true;
                     }
                 }
             }
@@ -5912,7 +5915,28 @@ mod tests {
         model_routes, parsed_session_location, plugin_entries, project_copy_apply,
         project_copy_plan, retention_plan, serve_database, settle_primary, strip_comments,
         tree_bytes, uninstall_targets, worktree_remove_apply, worktree_remove_plan,
+        write_routes_manifest,
     };
+
+    /// 64 KiB is the ceiling for a value passed through the environment, not for
+    /// the file the engine reads. Applying it to the file kept a launch with a
+    /// large route list from writing one at all, so a key stored afterwards had
+    /// nothing to append to and the provider only appeared after restarting miao.
+    #[test]
+    fn a_route_list_past_the_environment_ceiling_still_gets_a_manifest() {
+        let routes = (0..4_000)
+            .map(|index| serde_json::json!({"id": format!("provider/model-{index}")}))
+            .collect::<Vec<_>>();
+        let path =
+            write_routes_manifest("miao-routes-test", &routes).expect("the manifest is written");
+        let written = std::fs::read_to_string(&path).expect("the manifest reads back");
+        assert!(
+            written.len() > 65_536,
+            "the fixture must clear the old ceiling"
+        );
+        assert!(written.contains("provider/model-3999"));
+        let _ = std::fs::remove_file(path);
+    }
     use std::io::Write;
     use std::path::PathBuf;
 
