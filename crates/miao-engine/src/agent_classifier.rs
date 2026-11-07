@@ -159,9 +159,12 @@ pub fn host_edit(resources: &[String], host: &crate::product::HostContext) -> Ve
 }
 
 pub fn bash(command: &str) -> Verdict {
-    // The host classifier declines on Windows; the extra length bound only
-    // turns a pathological parse into an ask instead of a stall.
-    if cfg!(windows) || command.is_empty() || command.len() > 65536 {
+    // The engine runs every command through `bash -c` on every platform,
+    // Windows included (`process::Input::argv`), so bash syntax is exactly what
+    // Windows executes too and the same parse is the right analysis there. The
+    // length bound only turns a pathological parse into an ask instead of a
+    // stall.
+    if command.is_empty() || command.len() > 65536 {
         return Verdict::Unknown;
     }
     let mut parser = tree_sitter::Parser::new();
@@ -188,6 +191,21 @@ pub fn bash(command: &str) -> Verdict {
         return Verdict::Unknown;
     }
     if extracted.iter().all(|tokens| safe_tokens(tokens)) {
+        Verdict::Safe
+    } else {
+        Verdict::Unknown
+    }
+}
+
+/// The same verdict for an argv command.
+///
+/// `run_command` hands its array straight to the runner, so no shell reads it:
+/// the head and every token are exactly the words that will be executed, and
+/// they are checked the way a parsed single command would be. Shell syntax
+/// cannot appear here, which is why `argv` never needs a parser.
+pub fn argv(argv: &[String]) -> Verdict {
+    let tokens = argv.iter().map(String::as_str).collect::<Vec<_>>();
+    if safe_tokens(&tokens) {
         Verdict::Safe
     } else {
         Verdict::Unknown
@@ -304,14 +322,6 @@ mod tests {
 
     #[test]
     fn readonly_bash_is_safe_and_mutating_or_opaque_bash_stays_unknown() {
-        if cfg!(windows) {
-            // The host classifier also declines on Windows: cmd/bat semantics
-            // make token-level readonly checks unreliable, so every bash ask
-            // stays a prompt there.
-            assert_eq!(bash("ls -la"), Verdict::Unknown);
-            assert_eq!(bash("rm -rf scratch"), Verdict::Unknown);
-            return;
-        }
         assert_eq!(bash("ls -la"), Verdict::Safe);
         assert_eq!(bash("git status; git log --oneline"), Verdict::Safe);
         assert_eq!(bash("echo hello world"), Verdict::Safe);
@@ -335,13 +345,6 @@ mod tests {
 
     #[test]
     fn protected_paths_are_never_classified_safe() {
-        if cfg!(windows) {
-            // Bash declines wholesale on Windows (see the readonly test), so
-            // no path distinction is observable through it there.
-            assert_eq!(bash("cat .env"), Verdict::Unknown);
-            assert_eq!(bash("cat src/app.ts"), Verdict::Unknown);
-            return;
-        }
         assert_eq!(bash("cat .env"), Verdict::Unknown);
         assert_eq!(bash("cat .env.local"), Verdict::Unknown);
         assert_eq!(bash("grep pattern .ssh/config"), Verdict::Unknown);
@@ -349,6 +352,21 @@ mod tests {
         assert_eq!(bash("head --lines=5 ~/.gitconfig"), Verdict::Unknown);
         assert_eq!(bash("ls .git"), Verdict::Unknown);
         assert_eq!(bash("cat src/app.ts"), Verdict::Safe);
+    }
+
+    #[test]
+    fn an_argv_command_is_judged_by_the_words_it_will_execute() {
+        // `run_command` never reaches a shell, so its array is the whole
+        // command: the same head/token proof applies without a parser.
+        let words = |argv: &[&str]| argv.iter().map(|word| word.to_string()).collect::<Vec<_>>();
+        assert_eq!(argv(&words(&["ls", "-la"])), Verdict::Safe);
+        assert_eq!(argv(&words(&["grep", "pattern", "src/"])), Verdict::Safe);
+        assert_eq!(argv(&words(&["git", "status"])), Verdict::Safe);
+        assert_eq!(argv(&words(&["rm", "-rf", "scratch"])), Verdict::Unknown);
+        assert_eq!(argv(&words(&["sh", "-c", "rm -rf /"])), Verdict::Unknown);
+        assert_eq!(argv(&words(&["cat", ".env"])), Verdict::Unknown);
+        assert_eq!(argv(&words(&["sudo", "ls"])), Verdict::Unknown);
+        assert_eq!(argv(&words(&[])), Verdict::Unknown);
     }
 
     #[test]

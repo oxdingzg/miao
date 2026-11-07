@@ -428,14 +428,33 @@ impl Policy {
             "edit" => {
                 crate::agent_classifier::edit(targets) == crate::agent_classifier::Verdict::Safe
             }
-            "bash" => input
-                .filter(|input| input.get("stdin").is_none())
-                .and_then(|input| input["command"].as_str())
-                .is_some_and(|command| {
-                    crate::agent_classifier::bash(command) == crate::agent_classifier::Verdict::Safe
+            // `run_command` carries an argv and never a shell string, so the
+            // same proof runs over its array: without this arm every argv call
+            // needed a prompt on every platform, which is what "the agent has
+            // no command permission" looked like on Windows.
+            "bash" | "run_command" => input.is_some_and(|input| match input["command"].as_str() {
+                Some(command) => {
+                    input.get("stdin").is_none()
+                        && crate::agent_classifier::bash(command)
+                            == crate::agent_classifier::Verdict::Safe
+                }
+                None => Self::argv_of(input).is_some_and(|argv| {
+                    crate::agent_classifier::argv(&argv) == crate::agent_classifier::Verdict::Safe
                 }),
+            }),
             _ => false,
         }
+    }
+
+    /// The argv of a `run_command` call. Every element has to be a string: a
+    /// shape the model got wrong returns `None`, so the call keeps its prompt
+    /// instead of being proven safe by accident.
+    fn argv_of(input: &Value) -> Option<Vec<String>> {
+        input["argv"]
+            .as_array()?
+            .iter()
+            .map(|argument| argument.as_str().map(str::to_owned))
+            .collect()
     }
 
     fn assess_base(&self, tool: &str, path: &str, access: Access) -> (Decision, RuleMatch) {
@@ -574,18 +593,15 @@ mod auto_mode_tests {
             ordered_ask(),
         );
         let bash_input = serde_json::json!({"command": "ls -la"});
-        // On Windows the bash classifier declines wholesale (host parity), so
-        // only edit asks can settle there.
-        assert_eq!(
-            cfg!(windows),
-            !policy.auto_settles(
-                "bash",
-                ".",
-                Access::Execute,
-                Some(&bash_input),
-                &[".".to_owned()]
-            )
-        );
+        // The classifier proves the read on every platform, because the engine
+        // runs commands with `bash -c` everywhere.
+        assert!(policy.auto_settles(
+            "bash",
+            ".",
+            Access::Execute,
+            Some(&bash_input),
+            &[".".to_owned()]
+        ));
         let dangerous = serde_json::json!({"command": "rm -rf scratch"});
         assert!(!policy.auto_settles(
             "bash",
@@ -647,16 +663,13 @@ mod auto_mode_tests {
         .unwrap();
         let policy = base.for_agent(None).unwrap();
         let bash_input = serde_json::json!({"command": "ls -la"});
-        assert_eq!(
-            cfg!(windows),
-            !policy.auto_settles(
-                "bash",
-                ".",
-                Access::Execute,
-                Some(&bash_input),
-                &[".".to_owned()]
-            )
-        );
+        assert!(policy.auto_settles(
+            "bash",
+            ".",
+            Access::Execute,
+            Some(&bash_input),
+            &[".".to_owned()]
+        ));
         let dangerous = serde_json::json!({"command": "rm -rf scratch"});
         assert!(!policy.auto_settles(
             "bash",
@@ -715,18 +728,51 @@ mod auto_mode_tests {
             }),
         );
         let bash_input = serde_json::json!({"command": "cat report.md"});
-        // Windows declines bash wholesale (host parity); off-Windows the
-        // classifier proves the read and settles.
-        assert_eq!(
-            cfg!(windows),
-            !policy.auto_settles(
-                "bash",
-                ".",
-                Access::Execute,
-                Some(&bash_input),
-                &[".".to_owned()]
-            )
+        // The classifier proves the read on every platform: the engine runs
+        // commands with `bash -c` everywhere, Windows included.
+        assert!(policy.auto_settles(
+            "bash",
+            ".",
+            Access::Execute,
+            Some(&bash_input),
+            &[".".to_owned()]
+        ));
+    }
+
+    #[test]
+    fn an_argv_command_settles_like_a_shell_command() {
+        // `run_command` has no binding in the ordered policy, so its action is
+        // its own name; before this path every argv call stayed a prompt on
+        // every platform, which read as "no command permission" on Windows.
+        let policy = policy_with(
+            Some(crate::session_agent::PermissionMode::Auto),
+            ordered_ask(),
         );
+        let read = serde_json::json!({"argv": ["ls", "-la"], "cwd": "."});
+        assert!(policy.auto_settles(
+            "run_command",
+            ".",
+            Access::Execute,
+            Some(&read),
+            &[".".to_owned()]
+        ));
+        let write = serde_json::json!({"argv": ["rm", "-rf", "scratch"]});
+        assert!(!policy.auto_settles(
+            "run_command",
+            ".",
+            Access::Execute,
+            Some(&write),
+            &[".".to_owned()]
+        ));
+        // A shape the tool could not read keeps its prompt.
+        let malformed = serde_json::json!({"argv": [1, 2]});
+        assert!(!policy.auto_settles(
+            "run_command",
+            ".",
+            Access::Execute,
+            Some(&malformed),
+            &[".".to_owned()]
+        ));
     }
 }
 
