@@ -336,7 +336,7 @@ async fn a_crashed_operator_shell_identity_is_unknown_and_never_reexecuted() {
     let mut input = child.stdin.take().unwrap();
     let mut output = BufReader::new(child.stdout.take().unwrap()).lines();
     let call = invocation("crash-id", "printf x >> marker; sleep 0.5");
-    input.write_all(format!("{}\n{}\n",json!({"id":1,"method":"initialize","params":{"session_id":"s","title":"fixture"}}),json!({"id":2,"method":"shell","params":{"session_id":"s","call_id":call.call_id,"command":call.command,"timeout_ms":call.timeout_ms}})).as_bytes()).await.unwrap();
+    input.write_all(format!("{}\n{}\n",json!({"id":1,"method":"initialize","params":{"session_id":"s","title":"fixture","protocol":miao_engine::PROTOCOL}}),json!({"id":2,"method":"shell","params":{"session_id":"s","call_id":call.call_id,"command":call.command,"timeout_ms":call.timeout_ms}})).as_bytes()).await.unwrap();
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
         while let Some(line) = output.next_line().await.unwrap() {
             let reply: Value = serde_json::from_str(&line).unwrap();

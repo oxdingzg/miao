@@ -41,7 +41,17 @@ impl Host {
     pub async fn dispatch(&mut self, command: Command) -> Result<Value, Error> {
         let runtime = &self.runtime;
         match command {
-            Command::Initialize { session_id, title } => {
+            Command::Initialize {
+                session_id,
+                title,
+                protocol,
+            } => {
+                if protocol != crate::PROTOCOL {
+                    return Err(Error::Invalid(format!(
+                        "protocol mismatch: client {protocol}, engine {}; refusing to serve this session rather than risk corrupting it",
+                        crate::PROTOCOL
+                    )));
+                }
                 runtime.initialize(&session_id, &title).await
             }
             Command::Admit {

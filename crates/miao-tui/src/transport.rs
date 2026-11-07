@@ -397,7 +397,11 @@ impl EngineClient {
     pub async fn initialize(&self, session_id: &str, title: &str) -> Result<Value, TransportError> {
         self.request(
             "initialize",
-            json!({ "session_id": session_id, "title": title }),
+            json!({
+                "session_id": session_id,
+                "title": title,
+                "protocol": miao_engine::PROTOCOL,
+            }),
         )
         .await
     }

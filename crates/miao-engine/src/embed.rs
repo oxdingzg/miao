@@ -58,7 +58,9 @@ mod tests {
         let frame = json!({"id": 7, "method": "initialize",
                            "params": {"session_id": "ses_a", "title": "t"}});
         match decode(&frame).expect("decodes") {
-            Command::Initialize { session_id, title } => {
+            Command::Initialize {
+                session_id, title, ..
+            } => {
                 assert_eq!(session_id, "ses_a");
                 assert_eq!(title, "t");
             }

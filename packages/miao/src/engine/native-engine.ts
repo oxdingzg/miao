@@ -105,6 +105,7 @@ const CancelReply = Schema.Struct({ accepted: Schema.Boolean, reason: Schema.opt
 
 import { replayJournal } from "./journal"
 import { readTranscript } from "./transcript"
+import { REQUIRED_PROTOCOL } from "./discovery"
 
 /**
  * Production native transport, opt-in through the engine binary environment:
@@ -780,7 +781,7 @@ export const fromOwners = (
       ),
     initialize: (input) =>
       read(input, (connection) =>
-        connection.client.request("initialize", { session_id: input.sessionID, title: input.title }),
+        connection.client.request("initialize", { session_id: input.sessionID, title: input.title, protocol: REQUIRED_PROTOCOL }),
       ).pipe(Effect.asVoid),
     inputs: (input) =>
       read<unknown>(input, (connection) =>

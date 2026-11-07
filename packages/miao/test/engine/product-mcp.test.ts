@@ -10,6 +10,7 @@ import { prepareMcpConfig } from "../../src/engine/mcp-config"
 import { EngineClient } from "../../src/engine/client"
 import { tmpdir } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { REQUIRED_PROTOCOL } from "../../src/engine/discovery"
 
 const it = testEffect(AppNodeBuilder.build(McpAuth.node))
 
@@ -131,7 +132,7 @@ it.live("native MCP and SDK consumers share rotating OAuth authority without cop
       })
       yield* Effect.addFinalizer(() => Effect.promise(() => client.close()))
       yield* Effect.promise(() =>
-        client.request("initialize", { session_id: "native_oauth_probe", title: "OAuth probe" }),
+        client.request("initialize", { session_id: "native_oauth_probe", title: "OAuth probe" , protocol: REQUIRED_PROTOCOL }),
       )
       expect(state.initialized).toBe(1)
       expect(state.listed).toBeGreaterThanOrEqual(2)
@@ -147,7 +148,7 @@ it.live("native MCP and SDK consumers share rotating OAuth authority without cop
       })
       yield* Effect.addFinalizer(() => Effect.promise(() => legacy.close()))
       const rejected = yield* Effect.promise(() =>
-        legacy.request("initialize", { session_id: "legacy_probe", title: "legacy" }),
+        legacy.request("initialize", { session_id: "legacy_probe", title: "legacy" , protocol: REQUIRED_PROTOCOL }),
       ).pipe(Effect.exit)
       expect(rejected._tag).toBe("Failure")
       expect(state.initialized).toBe(process.env.MIAO_ENGINE_BIN ? 1 : 0)

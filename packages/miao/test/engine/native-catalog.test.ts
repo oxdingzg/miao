@@ -7,6 +7,7 @@ import { readCatalog } from "@/engine/catalog"
 import { capabilities } from "@/engine/discovery"
 import { EngineClient } from "@/engine/client"
 import { tmpdir } from "../fixture/fixture"
+import { REQUIRED_PROTOCOL } from "../../src/engine/discovery"
 
 const binary = process.env.MIAO_ENGINE_BIN
 test("a storage file that is already gone answers no facts instead of a conflict", async () => {
@@ -37,7 +38,7 @@ test.skipIf(!binary || capabilities(binary)?.catalog !== 1)(
       env: { OPENAI_API_KEY: "fixture-only" },
     })
     try {
-      await client.request("initialize", { session_id: "ses_catalog", title: "live title" })
+      await client.request("initialize", { session_id: "ses_catalog", title: "live title" , protocol: REQUIRED_PROTOCOL })
       const before = await client.request("snapshot", { session_id: "ses_catalog" })
       const result = await Effect.runPromise(
         readCatalog(binary!, {
@@ -50,7 +51,7 @@ test.skipIf(!binary || capabilities(binary)?.catalog !== 1)(
       expect(result.map((entry) => entry.snapshot.title)).toEqual(["live title"])
       expect(result[0]?.usage).toBeDefined()
       const longID = SessionID.make(`ses_${"x".repeat(252)}`)
-      await client.request("initialize", { session_id: longID, title: "long identity" })
+      await client.request("initialize", { session_id: longID, title: "long identity" , protocol: REQUIRED_PROTOCOL })
       const longBefore = await client.request("snapshot", { session_id: longID })
       const sessions = Array.from({ length: 200 }, () => longID)
       expect(JSON.stringify(sessions).length).toBeGreaterThan(32_767)

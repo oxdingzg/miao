@@ -57,7 +57,7 @@ fn cli_registers_routes_and_catalog_exposes_only_selection_metadata() {
         &manifest,
         &[
             json!({"id":1,"method":"model_catalog"}),
-            json!({"id":2,"method":"initialize","params":{"session_id":"s","title":"route"}}),
+            json!({"id":2,"method":"initialize","params":{"session_id":"s","title":"route","protocol":miao_engine::PROTOCOL}}),
             json!({"id":3,"method":"select_model","params":{"session_id":"s","binding":{"route_id":"account-two/shared","protocol":"openai-chat","model":"shared"}}}),
             json!({"id":4,"method":"snapshot","params":{"session_id":"s"}}),
             json!({"id":5,"method":"shutdown"}),
