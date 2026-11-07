@@ -1,6 +1,6 @@
-# OpenCode Desktop
+# Miao Desktop
 
-The OpenCode Desktop app, built with Electron.
+The Miao Desktop app, built with Electron.
 
 ## Development
 

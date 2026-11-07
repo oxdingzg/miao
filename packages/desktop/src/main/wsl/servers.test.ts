@@ -55,7 +55,7 @@ test("clears cached distro probes when removing a WSL server", () => {
       {
         Debian: {
           distro: "Debian",
-          resolvedPath: "/home/luke/.miao/bin/opencode",
+          resolvedPath: "/home/luke/.miao/bin/miao",
           version: "1.16.2",
           expectedVersion: "1.16.2",
           matchesDesktop: true,
@@ -115,7 +115,7 @@ test("ignores stale background miao checks after removing a WSL server", async (
         onExit: () => undefined,
       },
       url: "http://127.0.0.1:4096",
-      username: "opencode",
+      username: "miao",
       password: "secret",
     }),
     testControllerOptions(),
@@ -164,7 +164,7 @@ test("probes addable distros in parallel before checking miao", async () => {
     },
     resolveOpencode: async (distro) => {
       opencode.push(distro)
-      return "/home/me/.miao/bin/opencode"
+      return "/home/me/.miao/bin/miao"
     },
   })
 
@@ -195,7 +195,7 @@ test("does not check miao in addable distros that cannot execute commands", asyn
     }),
     resolveOpencode: async (distro) => {
       opencode.push(distro)
-      return "/home/me/.miao/bin/opencode"
+      return "/home/me/.miao/bin/miao"
     },
   })
 
@@ -225,7 +225,7 @@ function testControllerOptions() {
       await new Promise<void>((resolve) => {
         releaseOpencodeResolve = resolve
       })
-      return "/home/me/.miao/bin/opencode"
+      return "/home/me/.miao/bin/miao"
     },
   }
 }
