@@ -435,7 +435,7 @@ impl Runtime {
             ));
         }
         validate_policy_boundary(&policy, &store, &tools, provider.as_ref()).await?;
-        let mut tools = tools.protect_store(store.path());
+        let mut tools = tools.protect_store(store.path()).with_ledger(store.path());
         tools
             .set_web(policy.web_enabled())
             .map_err(|error| Error::Invalid(error.to_string()))?;
