@@ -13,7 +13,7 @@ export const prepare = Effect.fn("Engine.workerConfig")(function* () {
   const directory = yield* fs.makeTempDirectoryScoped({ prefix: "miao-engine-worker-" })
   const file = path.join(directory, "config.json")
   const source =
-    typeof MIAO_PACKAGED !== "undefined" && MIAO_PACKAGED ? [] : [path.resolve(import.meta.dir, "../index.ts")]
+    typeof MIAO_PACKAGED !== "undefined" && MIAO_PACKAGED ? [] : [path.resolve(import.meta.dir, "../serve.ts")]
   yield* fs.writeFileString(
     file,
     JSON.stringify({ argv: [InstallationExecutable.executable, ...source, "__worker-host"] }),

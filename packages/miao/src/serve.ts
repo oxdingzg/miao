@@ -16,6 +16,14 @@ import { WindowLifecycle } from "./runtime/lifecycle"
 
 const args = process.argv.slice(2)
 
+// The optional extension worker re-executes this entry with `__worker-host`;
+// the engine's worker config builds that argv for a source checkout.
+if (args[0] === "__worker-host") {
+  const { run } = await import("./engine/worker-host")
+  await run()
+  process.exit(0)
+}
+
 function value(name: string) {
   const inline = args.find((argument) => argument.startsWith(`--${name}=`))
   if (inline) return inline.slice(name.length + 3)
