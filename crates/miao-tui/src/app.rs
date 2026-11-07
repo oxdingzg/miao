@@ -3997,6 +3997,13 @@ fn remedy(message: &str) -> Option<&'static str> {
             "api key",
             "set ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY",
         ),
+        // A start with no resolvable model is the configuration's fault, not
+        // the engine's, and it used to read as a missing binary: the spawn
+        // fallback's "program not found" replaced this diagnosis.
+        (
+            "--model is required",
+            "no model is configured: store a key with `miao auth login <provider> <key>`, then pick a model",
+        ),
         (
             "miao-engine",
             "install the engine beside the TUI, or set MIAO_ENGINE_BIN",
@@ -4369,6 +4376,12 @@ mod tests {
             ),
             ("permission denied opening the workspace", "--mode"),
             ("engine timed out after 30s", "no engine signal"),
+            // Both engines failed: the in-process refusal is the diagnosis and
+            // the advice must follow it, not the fallback's missing binary.
+            (
+                "cannot start the engine: --model is required; the separate miao-engine could not start either (program not found)",
+                "miao auth login",
+            ),
         ];
         for (message, expected) in cases {
             let advice = remedy(message).unwrap_or_default();
@@ -5151,6 +5164,7 @@ mod tests {
             },
             model: engine::UNROUTED_MODEL.to_string(),
             embedded: true,
+            named_engine: false,
         });
         app.handle(AppEvent::SessionOpened {
             summary: None,
@@ -5202,6 +5216,7 @@ mod tests {
             },
             model: engine::UNROUTED_MODEL.to_string(),
             embedded: true,
+            named_engine: false,
         });
         app.models = vec![ModelInfo {
             protocol: "openai-chat".into(),
@@ -5259,6 +5274,7 @@ mod tests {
             },
             model: engine::UNROUTED_MODEL.to_string(),
             embedded: true,
+            named_engine: false,
         });
         app.models = vec![ModelInfo {
             protocol: "openai-chat".into(),
@@ -5348,6 +5364,7 @@ mod tests {
             },
             model: engine::UNROUTED_MODEL.to_string(),
             embedded: true,
+            named_engine: false,
         });
         app.update_status();
         assert_eq!(app.shell.status.model, None);

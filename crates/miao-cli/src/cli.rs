@@ -5104,6 +5104,9 @@ async fn run_prompt(
 }
 
 pub fn run(args: Vec<String>) -> std::process::ExitCode {
+    // Before any path is derived: a Windows shell sets `USERPROFILE`, and every
+    // reader here — config, credentials, the ledger — looks for `HOME`.
+    miao_engine::placement::normalize_home();
     // The engine re-executes its own binary for sandboxed processes; those
     // entry points must exist here too, or every bash call fails because the
     // child is this CLI and it does not know the flag.

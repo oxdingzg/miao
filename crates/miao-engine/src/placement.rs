@@ -20,6 +20,32 @@ pub fn storage_root() -> Option<PathBuf> {
         .map(|home| PathBuf::from(home).join(".local/share/miao-engine/storage"))
 }
 
+/// Publish the Windows user profile under `HOME`.
+///
+/// `HOME` is the only spelling this workspace reads for the user's home, and a
+/// Windows shell does not set it: cmd, PowerShell, and Windows Terminal hand a
+/// child process `USERPROFILE` instead. Without this the product resolved an
+/// empty home — `miao doctor` reported `config missing: \.config\miao`, the
+/// ledger fell beside the drive root, and a start found neither a model nor a
+/// credential, so the engine refused it and the TUI showed only the fallback
+/// spawn's "program not found". Normalising once here keeps one resolution rule
+/// instead of a platform branch at every `HOME` reader.
+///
+/// An empty `HOME` counts as missing: `set HOME=` in cmd leaves the variable
+/// present but empty, and every join against it lands at the drive root — the
+/// same broken paths a start with no `HOME` produced.
+pub fn normalize_home() {
+    if !cfg!(windows) {
+        return;
+    }
+    if std::env::var_os("HOME").is_some_and(|value| !value.is_empty()) {
+        return;
+    }
+    if let Some(profile) = std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()) {
+        std::env::set_var("HOME", profile);
+    }
+}
+
 /// The stable identity of a workspace directory: the real path when the
 /// directory exists, a lexically normalised absolute path when it does not.
 /// Every ledger-name derivation goes through this, so one directory spells one
