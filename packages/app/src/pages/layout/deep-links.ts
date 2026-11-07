@@ -1,7 +1,9 @@
-export const deepLinkEvent = "opencode:deep-link"
+export const deepLinkEvent = "miao:deep-link"
+
+const schemes = ["miao://", "opencode://"]
 
 const parseUrl = (input: string) => {
-  if (!input.startsWith("opencode://")) return
+  if (!schemes.some((scheme) => input.startsWith(scheme))) return
   if (typeof URL.canParse === "function" && !URL.canParse(input)) return
   try {
     return new URL(input)
