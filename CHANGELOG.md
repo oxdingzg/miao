@@ -11,6 +11,19 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.45] - 2026-11-07
+
+### Added
+- **tui**: offer the account and model switch on quota retries (#2651) (`c922187e2a`)
+- **engine**: name the wait class and pause source on provider retries (#2647) (`17c6feb84a`)
+- **engine**: account cost, wall clock, and interventions per task (VAL-02) (#2645) (`284fbf50e1`)
+
+### Fixed
+- **engine**: strip verbatim paths from the remaining containment checks (#2649) (`5186e6850d`)
+- **engine**: accept a bare permission action like the product (#2650) (`0d60b195de`)
+- **engine**: keep chat tool answers adjacent across stored messages (#2648) (`f6d4c57496`)
+- **cli**: retry the release probe like the download already does (#2646) (`41276032ed`)
+
 ## [0.3.44] - 2026-11-07
 
 ### Added
