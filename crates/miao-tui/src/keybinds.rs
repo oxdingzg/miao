@@ -20,6 +20,9 @@ pub enum Action {
     CommandList,
     CopyMessage,
     ToolOutputToggle,
+    /// Show or hide the right column. The column names its own chord, so the
+    /// way back to it is never a key the operator has to remember.
+    SidebarToggle,
     McpList,
     ProviderList,
     SkillList,
@@ -94,6 +97,7 @@ impl Action {
             Action::CommandList => "command_list",
             Action::CopyMessage => "messages_copy",
             Action::ToolOutputToggle => "session_toggle_generic_tool_output",
+            Action::SidebarToggle => "sidebar_toggle",
             Action::McpList => "mcp_list",
             Action::ProviderList => "provider_list",
             Action::SkillList => "skill_list",
@@ -168,6 +172,7 @@ const ACTIONS: &[Action] = &[
     Action::CommandList,
     Action::CopyMessage,
     Action::ToolOutputToggle,
+    Action::SidebarToggle,
     Action::McpList,
     Action::ProviderList,
     Action::SkillList,
@@ -253,6 +258,7 @@ const DEFAULTS: &[(Action, &str)] = &[
     (Action::CommandList, "ctrl+p"),
     (Action::CopyMessage, "ctrl+y,<leader>y"),
     (Action::ToolOutputToggle, "<leader>u"),
+    (Action::SidebarToggle, "<leader>b"),
     (Action::McpList, "<leader>i"),
     (Action::ProviderList, "<leader>a"),
     (Action::SkillList, "<leader>k"),

@@ -448,6 +448,9 @@ impl App {
         // The folded-output hint names the operator's own chord, so a remap or
         // an unbound action cannot leave the transcript promising a dead key.
         shell.set_toggle_chord(keys.chord(keybinds::Action::ToolOutputToggle));
+        // The column advertises the chord that hides it, so the one key that
+        // makes it disappear is also the one key it teaches.
+        shell.set_sidebar_chord(keys.chord(keybinds::Action::SidebarToggle));
         Self {
             shell,
             home,
@@ -1365,6 +1368,16 @@ impl App {
                     "Tool output expanded"
                 } else {
                     "Tool output folded"
+                });
+            }
+            // The column names the chord that hides it; the notice only reports
+            // the toggle, because the strip carries the way back.
+            Some(keybinds::Action::SidebarToggle) => {
+                let visible = self.shell.toggle_sidebar();
+                self.notice(if visible {
+                    "Sidebar shown"
+                } else {
+                    "Sidebar hidden"
                 });
             }
             Some(keybinds::Action::AppExit) => self.run_builtin(Builtin::Quit),
@@ -3639,6 +3652,15 @@ impl App {
             hints.push(StatusHint {
                 text: "auto-approve".to_string(),
                 warning: true,
+            });
+        }
+        // A hidden column took its own chord with it. Naming it here is what
+        // keeps the key findable after the only thing that advertised it is
+        // off the screen.
+        if let Some(chord) = self.shell.hidden_sidebar_chord() {
+            hints.push(StatusHint {
+                text: format!("{chord} sidebar"),
+                warning: false,
             });
         }
         self.shell.status.hints = hints;
@@ -6428,6 +6450,49 @@ mod tests {
         assert!(app.shell.composer.editor.is_empty());
         leader(&mut app, 'q');
         assert!(app.quit);
+    }
+
+    /// The column names the chord that hides it, and the strip takes that chord
+    /// over once the column is gone: the key that makes the column disappear
+    /// must never be the one thing the screen stops saying.
+    #[test]
+    fn the_sidebar_chord_hides_the_column_and_the_strip_names_the_way_back() {
+        let mut app = session_app();
+        open_session(&mut app, "ses_a");
+        app.update_status();
+        // The column carries the chord itself, so the strip stays quiet.
+        assert!(!app
+            .shell
+            .status
+            .hints
+            .iter()
+            .any(|hint| hint.text.contains("sidebar")));
+        leader(&mut app, 'b');
+        app.update_status();
+        assert!(app.shell.sidebar_hidden());
+        assert!(
+            app.shell
+                .status
+                .hints
+                .iter()
+                .any(|hint| hint.text == "ctrl+x b sidebar"),
+            "{:?}",
+            app.shell
+                .status
+                .hints
+                .iter()
+                .map(|hint| &hint.text)
+                .collect::<Vec<_>>()
+        );
+        leader(&mut app, 'b');
+        app.update_status();
+        assert!(!app.shell.sidebar_hidden());
+        assert!(!app
+            .shell
+            .status
+            .hints
+            .iter()
+            .any(|hint| hint.text.contains("sidebar")));
     }
 
     #[test]
