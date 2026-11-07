@@ -73,7 +73,7 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     return child
   }
   const access = async (input: Record<string, unknown> | string) => {
-    const child = Bun.spawn([process.execPath, "run", "src/index.ts", "runtime", "access"], {
+    const child = Bun.spawn([process.execPath, "run", "test/runtime/fixture-access.ts"], {
       cwd: path.resolve(import.meta.dir, "../.."),
       env: environment,
       stdin: new Blob([typeof input === "string" ? input : JSON.stringify({ version: 1, ...input })]),

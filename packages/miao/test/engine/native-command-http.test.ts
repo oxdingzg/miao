@@ -101,8 +101,7 @@ test.skipIf(!binary)(
     const child = Bun.spawn({
       cmd: [
         "bun",
-        path.resolve(import.meta.dir, "../../src/index.ts"),
-        "serve",
+        path.resolve(import.meta.dir, "../../src/serve.ts"),
         "--hostname",
         "127.0.0.1",
         "--port",
