@@ -67,3 +67,95 @@ pub fn committed_events(
     output.flush()?;
     Ok(high)
 }
+
+/// Credential-shaped strings a session's text can carry by accident: pasted
+/// keys and auth headers travel inside prompts and tool calls, and a
+/// diagnostic bundle is meant to travel. Replacing the match, not the whole
+/// string, keeps enough shape to see where the secret sat.
+fn redact_string(text: &str) -> (String, usize) {
+    let patterns = [
+        r"\bsk-[A-Za-z0-9_-]{16,}",
+        r"\bghp_[A-Za-z0-9]{30,}\b",
+        r"\bgithub_pat_[A-Za-z0-9_]{40,}\b",
+        r"\bAKIA[0-9A-Z]{16}\b",
+        r"\bBearer [A-Za-z0-9._~+/=-]{18,}",
+        r"\bxox[abprs]-[A-Za-z0-9-]{10,}",
+        r"\bglpat-[A-Za-z0-9_-]{20,}",
+        r"\bAIza[0-9A-Za-z_-]{35}",
+    ];
+    let mut redacted = text.to_owned();
+    let mut count = 0;
+    for pattern in patterns {
+        let re = regex::Regex::new(pattern).expect("credential pattern compiles");
+        count += re.find_iter(&redacted).count();
+        redacted = re.replace_all(&redacted, "[redacted]").into_owned();
+    }
+    (redacted, count)
+}
+
+fn redact_value(value: &mut serde_json::Value) -> usize {
+    use serde_json::Value;
+    match value {
+        Value::String(text) => {
+            let (redacted, count) = redact_string(text);
+            *text = redacted;
+            count
+        }
+        Value::Array(items) => items.iter_mut().map(redact_value).sum(),
+        Value::Object(map) => map
+            .iter_mut()
+            .map(|(key, item)| {
+                let inner = redact_value(item);
+                let sensitive = matches!(
+                    key.to_ascii_lowercase().as_str(),
+                    "authorization" | "api_key" | "apikey" | "secret" | "token"
+                ) && item.is_string();
+                if sensitive {
+                    *item = Value::String("[redacted]".into());
+                    inner + 1
+                } else {
+                    inner
+                }
+            })
+            .sum(),
+        _ => 0,
+    }
+}
+
+/// Test access to the redaction walk.
+#[doc(hidden)]
+pub fn redact_for_tests(value: &mut serde_json::Value) -> usize {
+    redact_value(value)
+}
+
+/// A redacted diagnostic bundle for one Session: the committed events from a
+/// cursor, with credential-shaped strings replaced, wrapped in what a
+/// supporter needs to place it — the wire protocol, the schema, the session
+/// id and the cursor it starts from. Same read-only contract as
+/// [`committed_events`]: the database stays authoritative, serving continues.
+pub fn diagnostic_bundle(
+    path: impl AsRef<Path>,
+    session: &str,
+    after: u64,
+) -> Result<serde_json::Value, Error> {
+    let mut sink = Vec::new();
+    let high = committed_events(path.as_ref(), session, after, &mut sink)?;
+    let text = String::from_utf8_lossy(&sink);
+    let mut events = Vec::new();
+    let mut redactions = 0;
+    for line in text.lines() {
+        let mut event: serde_json::Value = serde_json::from_str(line)?;
+        redactions += redact_value(&mut event);
+        events.push(event);
+    }
+    Ok(serde_json::json!({
+        "session": session,
+        "after": after,
+        "through": high,
+        "protocol": crate::PROTOCOL,
+        "schema": crate::store::SCHEMA_VERSION,
+        "event_count": events.len(),
+        "redactions": redactions,
+        "events": events,
+    }))
+}

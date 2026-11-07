@@ -3225,6 +3225,65 @@ fn db_vacuum(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn db_bundle(rest: &[String]) -> Result<(), String> {
+    let mut db: Option<PathBuf> = None;
+    let mut session: Option<String> = None;
+    let mut after = 0u64;
+    let mut out: Option<PathBuf> = None;
+    let mut index = 0;
+    while index < rest.len() {
+        match rest[index].as_str() {
+            "--db" => {
+                db = rest.get(index + 1).map(PathBuf::from);
+                index += 2;
+            }
+            "--session" => {
+                session = rest.get(index + 1).cloned();
+                index += 2;
+            }
+            "--after" => {
+                after = rest
+                    .get(index + 1)
+                    .and_then(|value| value.parse().ok())
+                    .ok_or("--after needs a cursor number")?;
+                index += 2;
+            }
+            "--out" => {
+                out = rest.get(index + 1).map(PathBuf::from);
+                index += 2;
+            }
+            _ => index += 1,
+        }
+    }
+    let session = session.ok_or("db bundle needs --session ID")?;
+    let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let path = db.unwrap_or_else(|| default_db(&workspace));
+    let mut bundle = miao_engine::export::diagnostic_bundle(&path, &session, after)
+        .map_err(|error| error.to_string())?;
+    bundle["generated_by"] = serde_json::json!(VERSION);
+    let rendered = serde_json::to_string_pretty(&bundle).map_err(|error| error.to_string())?;
+    let written = match out {
+        Some(path) => {
+            std::fs::write(&path, format!("{rendered}\n")).map_err(|error| error.to_string())?;
+            format!(" · written to {}", path.display())
+        }
+        None => {
+            println!("{rendered}");
+            String::new()
+        }
+    };
+    println!(
+        "bundle · {} events · {} redactions · through cursor {} · protocol {} schema {}{}",
+        bundle["event_count"].as_u64().unwrap_or(0),
+        bundle["redactions"].as_u64().unwrap_or(0),
+        bundle["through"].as_u64().unwrap_or(0),
+        bundle["protocol"],
+        bundle["schema"],
+        written,
+    );
+    Ok(())
+}
+
 /// The ledger `serve` and `web` run on when no `--db` was given.
 ///
 /// A process-enabled runtime refuses a ledger inside its own workspace
@@ -5487,6 +5546,13 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
                     Ok(()) => std::process::ExitCode::SUCCESS,
                     Err(message) => {
                         eprintln!("miao db vacuum: {message}");
+                        std::process::ExitCode::from(1)
+                    }
+                },
+                Some("bundle") => match db_bundle(&rest[1..]) {
+                    Ok(()) => std::process::ExitCode::SUCCESS,
+                    Err(message) => {
+                        eprintln!("miao db bundle: {message}");
                         std::process::ExitCode::from(1)
                     }
                 },
