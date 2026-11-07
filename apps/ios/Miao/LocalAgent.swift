@@ -31,6 +31,12 @@ struct LocalSession: Codable, Sendable, Equatable, Identifiable {
     var updated = Date()
 }
 
+struct LocalApproval: Identifiable, Sendable, Equatable {
+    let id = UUID()
+    let tool: String
+    let detail: String
+}
+
 @MainActor @Observable
 final class LocalAgent {
     private(set) var providers: [LocalProvider] = []
@@ -58,6 +64,14 @@ final class LocalAgent {
     }
     private(set) var busy = false
     var error: String?
+    /// A tool the owner has not yet allowed. The run waits here.
+    private(set) var approval: LocalApproval?
+    /// Owner opt-in: run tools without asking. Writes and the network still
+    /// stay inside the sandbox either way.
+    var autoAllowTools = UserDefaults.standard.bool(forKey: "localAutoAllowTools") {
+        didSet { UserDefaults.standard.set(autoAllowTools, forKey: "localAutoAllowTools") }
+    }
+    private var decision: CheckedContinuation<Bool, Never>?
 
     /// The provider the next turn uses. Kept as a value so a partially filled
     /// row in the editor never becomes the active one by accident.
@@ -264,8 +278,30 @@ final class LocalAgent {
     }
 
     func stop() {
+        decision?.resume(returning: false)
+        decision = nil
+        approval = nil
         task?.cancel()
         busy = false
+    }
+
+    /// Answer the pending approval. Denying reports back to the model as a tool
+    /// failure instead of silently skipping the call.
+    func resolve(_ approved: Bool) {
+        approval = nil
+        decision?.resume(returning: approved)
+        decision = nil
+    }
+
+    private func allowed(_ call: ToolCall) async -> Bool {
+        if autoAllowTools { return true }
+        // Reading the workspace needs no gate; writing it, reaching the network,
+        // and anything an MCP server exposes do.
+        if call.name == "list_files" || call.name == "read_file" { return true }
+        approval = LocalApproval(tool: call.name, detail: call.arguments)
+        return await withCheckedContinuation { continuation in
+            decision = continuation
+        }
     }
 
     private func run() async {
@@ -463,6 +499,12 @@ final class LocalAgent {
         persist()
         let result: String
         do {
+            if !(await allowed(call)) {
+                result = "用户拒绝了这次操作。"
+                messages.append(LocalMessage(role: .tool, text: result, toolName: call.name))
+                persist()
+                return
+            }
             if mcpTools.contains(where: { $0.name == call.name }) {
                 result = try await callMCP(call)
             } else {
