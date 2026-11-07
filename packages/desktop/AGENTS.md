@@ -1,5 +1,17 @@
 # Desktop package notes
 
+## Packaging status
+
+No CI workflow builds, packages, or publishes this package, and releases carry
+no desktop artifact. `bun dev` and `bun run build` are the only entry points,
+and both run `scripts/predev.ts` / `scripts/prebuild.ts`, which download a
+prebuilt CLI from pinned `@miao/cli-*` npm packages (`scripts/utils.ts`). Those
+packages are not published, so the dev channel cannot resolve a CLI today.
+`nix/desktop.nix` builds the `prod` channel (`MIAO_CHANNEL = "prod"`), which
+skips that download and ships no bundled CLI, while
+`src/main/background-cli.ts` expects `process.resourcesPath/miao-cli` in a
+packaged build. Treat this package as not shipped until that wiring exists.
+
 - Renderer process should only call `window.api` from `src/preload`.
 - Main process should register IPC handlers in `src/main/ipc.ts`.
 - NEVER hardcode user-visible English strings in production code. ALWAYS use an i18n key for native menus, picker titles, dialogs, buttons, accessible labels, and displayed errors.
