@@ -1381,7 +1381,10 @@ async fn run(
                     }
                 }
                 Request::Workspaces => {
-                    let result = client.request("workspaces", json!({})).await;
+                    // `workspaces` is a unit command: the engine's envelope is
+                    // adjacently tagged, so a `params` key would be rejected as
+                    // an invalid request instead of reading as no arguments.
+                    let result = client.command("workspaces").await;
                     match result {
                         Ok(value) => bus.send(AppEvent::Workspaces(pairs(&value))),
                         Err(error) => {
