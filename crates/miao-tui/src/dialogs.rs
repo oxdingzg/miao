@@ -634,6 +634,9 @@ pub enum ConfirmKind {
         boundary_seq: u64,
         files: bool,
     },
+    /// Forget every stored credential for one integration. The routes that
+    /// named them go with them, which is why it is worth a confirmation.
+    RemoveCredential(String),
 }
 
 pub struct ConfirmDialog {
@@ -653,6 +656,7 @@ impl ConfirmDialog {
             ConfirmKind::RemoveSession(_) => "delete",
             ConfirmKind::RemoveWorktree(_) => "remove",
             ConfirmKind::Revert { .. } => "revert",
+            ConfirmKind::RemoveCredential(_) => "delete",
         }
     }
 }
@@ -1302,18 +1306,29 @@ impl Dialog {
     }
 
     pub fn accounts(accounts: &[AccountInfo]) -> Self {
+        Dialog::accounts_with_actions(Vec::new(), accounts)
+    }
+
+    /// The same list with the provider's own actions ahead of its accounts, so
+    /// updating or deleting the key lives where the key is shown rather than
+    /// only in `miao auth`.
+    pub fn accounts_with_actions(actions: Vec<Row>, accounts: &[AccountInfo]) -> Self {
+        let hint = match actions.is_empty() {
+            true => "type to filter · ↑↓ move · enter switch · esc close",
+            false => "type to filter · ↑↓ move · enter select · esc close",
+        };
         Dialog::Accounts(ListDialog::new(
             "accounts",
-            accounts
-                .iter()
-                .map(|account| Row {
+            actions
+                .into_iter()
+                .chain(accounts.iter().map(|account| Row {
                     id: account.credential_id.clone(),
                     label: account.credential_id.clone(),
                     detail: account.detail.clone(),
-                })
+                }))
                 .collect(),
             ListKind::Plain,
-            "type to filter · ↑↓ move · enter switch · esc close",
+            hint,
         ))
     }
 
@@ -1399,6 +1414,19 @@ impl Dialog {
             message: format!("Delete \"{title}\" and everything it owns? This cannot be undone."),
             confirmed: false,
             kind: ConfirmKind::RemoveSession(session_id.to_string()),
+        })
+    }
+
+    /// Ask before a stored key is forgotten. Updating a key replaces it, so
+    /// only the removal needs this: nothing can put the secret back.
+    pub fn confirm_remove_credential(integration: &str, name: &str) -> Self {
+        Dialog::Confirm(ConfirmDialog {
+            title: "delete key",
+            message: format!(
+                "Delete the key stored for {name}? Its models stop being served until a new key is stored."
+            ),
+            confirmed: false,
+            kind: ConfirmKind::RemoveCredential(integration.to_string()),
         })
     }
 
@@ -1997,6 +2025,9 @@ fn handle_confirm_key(confirm: &mut ConfirmDialog, key: KeyEvent) -> Action {
                     boundary_seq: *boundary_seq,
                     files: *files,
                 },
+                ConfirmKind::RemoveCredential(integration) => {
+                    ConfirmKind::RemoveCredential(integration.clone())
+                }
             };
             return Action::Confirmed(kind);
         }

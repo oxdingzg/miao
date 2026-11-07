@@ -198,14 +198,16 @@ pub fn catalog_key_routes(
     snapshot_key_routes(&snapshot, declared, credential_db)
 }
 
-/// Add the routes a key stored while the UI runs newly covers to an existing
-/// manifest, and answer how many were appended.
+/// Reconcile an existing manifest with the product credential store: drop the
+/// routes whose credential is gone, add the ones a newly stored key covers, and
+/// answer how many entries the manifest gained or lost.
 ///
-/// The launcher writes the manifest once, before the engine starts. An engine
-/// restart re-reads exactly that file, so a key stored afterwards had no route
-/// to serve: the provider only appeared once miao itself restarted and rewrote
-/// the manifest. Providers the file already routes stay untouched, which makes
-/// re-entering a key a no-op instead of a duplicate.
+/// The launcher writes the manifest once, before the engine starts, and an
+/// engine restart re-reads exactly that file. A key stored afterwards had no
+/// route to serve, and a key deleted afterwards left a route that could only
+/// fail, so a restart could never tell the operator the truth about the store.
+/// Providers the manifest already routes stay untouched, which keeps a
+/// re-entered key a no-op instead of a duplicate.
 pub fn refresh_key_routes(path: &Path, credential_db: Option<&Path>) -> Result<usize, String> {
     let Some(snapshot) = models_snapshot() else {
         return Ok(0);
@@ -225,10 +227,36 @@ fn refresh_snapshot_key_routes(
     let Some(entries) = manifest.as_array() else {
         return Err(format!("{}: not a route list", path.display()));
     };
-    // A route id is provider-qualified, so the providers the manifest already
+    // An unreadable store is not evidence that every key is gone, so a failed
+    // read leaves the manifest alone: the engine still fails honestly on use.
+    let stored = match credential_db.map(crate::credential::list_database) {
+        None => None,
+        Some(Ok(list)) => Some(
+            list.iter()
+                .map(|entry| entry.id.clone())
+                .collect::<std::collections::HashSet<_>>(),
+        ),
+        Some(Err(_)) => None,
+    };
+    let kept = entries
+        .iter()
+        .filter(|entry| {
+            let credential = &entry["credential"];
+            if credential["type"].as_str() != Some("database") {
+                return true;
+            }
+            match (&stored, credential["id"].as_str()) {
+                (Some(stored), Some(id)) => stored.contains(id),
+                _ => true,
+            }
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let removed = entries.len() - kept.len();
+    // A route id is provider-qualified, so the providers the manifest still
     // serves are the ones whose configuration must keep winning.
     let mut declared = serde_json::Map::new();
-    for provider in entries
+    for provider in kept
         .iter()
         .filter_map(|entry| entry.get("id").and_then(Value::as_str))
         .filter_map(|id| id.split_once('/'))
@@ -237,14 +265,15 @@ fn refresh_snapshot_key_routes(
         declared.insert(provider, Value::Null);
     }
     let extra = snapshot_key_routes(snapshot, &declared, credential_db);
-    if extra.is_empty() {
+    let added = extra.len();
+    if removed == 0 && added == 0 {
         return Ok(0);
     }
-    let mut merged = entries.clone();
+    let mut merged = kept;
     merged.extend(extra);
     let body = serde_json::to_vec(&merged).map_err(|error| error.to_string())?;
     std::fs::write(path, body).map_err(|error| format!("{}: {error}", path.display()))?;
-    Ok(merged.len() - entries.len())
+    Ok(removed + added)
 }
 
 fn snapshot_key_routes(
@@ -873,6 +902,28 @@ mod tests {
         let again =
             refresh_snapshot_key_routes(&path, &snapshot, Some(&database)).expect("idempotent");
         assert_eq!(again, 0);
+        // Deleting the key takes its route with it: the manifest must not keep
+        // pointing at a credential that is gone.
+        rusqlite::Connection::open(&database)
+            .unwrap()
+            .execute("DELETE FROM credential", [])
+            .unwrap();
+        assert_eq!(
+            refresh_snapshot_key_routes(&path, &snapshot, Some(&database)).expect("prunes"),
+            1
+        );
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).expect("valid JSON");
+        let ids: Vec<&str> = manifest
+            .as_array()
+            .expect("a list")
+            .iter()
+            .filter_map(|entry| entry.get("id").and_then(Value::as_str))
+            .collect();
+        // The catalog route lost its credential and went with it; a manifest
+        // entry that names no credential (an operator's own route) is not ours
+        // to drop.
+        assert_eq!(ids, vec!["vendor/other"]);
     }
 
     #[test]
