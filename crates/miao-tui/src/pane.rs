@@ -1372,6 +1372,9 @@ pub struct Home {
     /// up, which is when its text is copied.
     composer_drag: bool,
     theme: Theme,
+    /// Painted idle animation, like the landing banner's shimmer. Off leaves
+    /// every surface static and the loop never wakes for a frame.
+    animated: bool,
 }
 
 impl Home {
@@ -1384,6 +1387,7 @@ impl Home {
             composer_text: None,
             composer_drag: false,
             theme,
+            animated: true,
         }
     }
 
@@ -1428,8 +1432,13 @@ impl Home {
     /// Whether the banner still paints its sweep: on a colour terminal, and
     /// only while the screen has had input inside the product's rest window.
     pub fn shimmering(&self) -> bool {
-        matches!(self.theme.palette.primary, ratatui::style::Color::Rgb(..))
+        self.animated
+            && matches!(self.theme.palette.primary, ratatui::style::Color::Rgb(..))
             && self.last_input.elapsed() < crate::banner::REST
+    }
+
+    pub fn set_animated(&mut self, animated: bool) {
+        self.animated = animated;
     }
 
     pub fn set_prompt_width(&mut self, width: crate::config::PromptWidth) {
@@ -4132,6 +4141,20 @@ fn relative_time(updated_at_ms: u64) -> String {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn animations_off_keep_the_landing_screen_still() {
+        let theme = crate::theme::Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+        };
+        let mut home = Home::new(theme);
+        assert!(
+            home.shimmering(),
+            "a colour terminal with fresh input shimmers"
+        );
+        home.set_animated(false);
+        assert!(!home.shimmering(), "animations off holds the banner still");
+    }
 
     #[test]
     fn wide_characters_never_overflow_the_width_and_keep_every_character() {

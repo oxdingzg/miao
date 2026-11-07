@@ -702,6 +702,10 @@ impl App {
         self.home.set_prompt_width(width);
     }
 
+    pub fn configure_animations(&mut self, animated: bool) {
+        self.home.set_animated(animated);
+    }
+
     /// How long the leader chord stays armed, from `tui.json`.
     pub fn configure_leader_timeout(&mut self, milliseconds: u64) {
         self.leader_timeout = Duration::from_millis(milliseconds);
