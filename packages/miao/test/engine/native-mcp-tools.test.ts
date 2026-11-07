@@ -82,7 +82,7 @@ if (binary)
     })
     const mcpConfig = path.join(tmp.path, "mcp.json")
     await Bun.write(mcpConfig, JSON.stringify([{ name: "fixture", url: `${upstream.url}mcp`, headers: {} }]))
-    const child = Bun.spawn([process.execPath, "src/index.ts", "serve", "--hostname", "127.0.0.1", "--port", "0"], {
+    const child = Bun.spawn([process.execPath, "src/serve.ts", "--hostname", "127.0.0.1", "--port", "0"], {
       cwd: path.join(import.meta.dir, "../.."),
       env: {
         ...process.env,

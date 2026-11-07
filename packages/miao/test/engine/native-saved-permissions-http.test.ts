@@ -223,7 +223,7 @@ test.skipIf(!binary)(
 async function serve(tmp: string, root: string, engine: "native" | "ts", shared = false) {
   if (!binary) throw new Error("native engine required")
   const child = Bun.spawn(
-    [process.execPath, "src/index.ts", "--engine", engine, "serve", "--hostname", "127.0.0.1", "--port", "0"],
+    [process.execPath, "src/serve.ts", "--engine", engine, "--hostname", "127.0.0.1", "--port", "0"],
     {
       cwd: path.join(import.meta.dir, "../.."),
       stdin: "ignore",

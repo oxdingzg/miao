@@ -7,7 +7,7 @@ test("composing a native transport preserves TS prompt admission without native 
   const directory = path.join(tmp.path, "project")
   await Bun.$`mkdir -p ${directory}`.quiet()
   // This executable must never start: no native placement was requested.
-  const child = Bun.spawn([process.execPath, "src/index.ts", "serve", "--hostname", "127.0.0.1", "--port", "0"], {
+  const child = Bun.spawn([process.execPath, "src/serve.ts", "--hostname", "127.0.0.1", "--port", "0"], {
     cwd: path.join(import.meta.dir, "../.."),
     env: {
       ...process.env,

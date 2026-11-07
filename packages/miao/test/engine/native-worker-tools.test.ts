@@ -96,7 +96,7 @@ export default tool({
       },
     })
     var bodies: unknown[] = []
-    const launcher = process.env.MIAO_WORKER_HOST_BIN ? [process.env.MIAO_WORKER_HOST_BIN] : [process.execPath, "src/index.ts"]
+    const launcher = process.env.MIAO_WORKER_HOST_BIN ? [process.env.MIAO_WORKER_HOST_BIN] : [process.execPath, "src/serve.ts"]
     const child = Bun.spawn([...launcher, "serve", "--hostname", "127.0.0.1", "--port", "0"], {
       cwd: path.join(import.meta.dir, "../.."),
       env: {
