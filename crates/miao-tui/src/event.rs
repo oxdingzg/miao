@@ -191,10 +191,25 @@ impl Bus {
                 if requires_delivery(&event) {
                     // The bounded send would block the producer; this is the
                     // one place where waiting is correct.
+                    //
+                    // The producer is not always a Tokio task: the terminal
+                    // input reader is a plain thread (`input::spawn`), so
+                    // `tokio::spawn` there panicked with "there is no reactor
+                    // running" and took the reader down with it. Every later
+                    // keystroke was then lost — Enter included, which read as
+                    // "the prompt will not submit". Wait inline when there is
+                    // no runtime to hand the wait to.
                     let tx = self.tx.clone();
-                    tokio::spawn(async move {
-                        let _ = tx.send(event).await;
-                    });
+                    match tokio::runtime::Handle::try_current() {
+                        Ok(handle) => {
+                            handle.spawn(async move {
+                                let _ = tx.send(event).await;
+                            });
+                        }
+                        Err(_) => {
+                            let _ = tx.blocking_send(event);
+                        }
+                    }
                     return;
                 }
                 self.dropped
@@ -390,5 +405,56 @@ mod backpressure_tests {
             "the Session projection was dropped instead of delivered"
         );
         assert_eq!(bus.dropped(), 0, "a projection was counted as dropped");
+    }
+
+    /// The terminal reader is a plain thread, not a Tokio task, so the
+    /// "must be delivered" path used to call `tokio::spawn` where no runtime
+    /// exists and panic with "there is no reactor running". The thread died
+    /// with it and every later keystroke was lost — Enter included, which the
+    /// operator read as "the prompt will not submit".
+    #[test]
+    fn a_keystroke_from_a_plain_thread_is_delivered_without_a_runtime() {
+        let (bus, mut rx) = bus();
+        for _ in 0..BUS_CAPACITY {
+            bus.send(AppEvent::Notice("filler".into()));
+        }
+        let reader = {
+            let bus = bus.clone();
+            std::thread::spawn(move || {
+                bus.send(AppEvent::Key(KeyEvent::new(
+                    KeyCode::Enter,
+                    KeyModifiers::NONE,
+                )));
+            })
+        };
+        let received = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        // Drain until the key arrives; the sender is blocked on a slot until
+        // it does.
+        for _ in 0..BUS_CAPACITY + 1 {
+            match rx.try_recv() {
+                Ok(event) => received.lock().expect("received").push(event),
+                Err(_) => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+            if received
+                .lock()
+                .expect("received")
+                .iter()
+                .any(|event| matches!(event, AppEvent::Key(_)))
+            {
+                break;
+            }
+        }
+        reader.join().expect("the reader thread must not panic");
+        assert!(
+            received
+                .lock()
+                .expect("received")
+                .iter()
+                .any(|event| matches!(event, AppEvent::Key(_))),
+            "the keystroke was lost instead of delivered"
+        );
+        assert_eq!(bus.dropped(), 0, "a keystroke was counted as dropped");
     }
 }
