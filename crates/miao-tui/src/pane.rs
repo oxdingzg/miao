@@ -2516,10 +2516,21 @@ fn hourly_lines(
     lines
 }
 
+/// One sidebar row whose clipped title a hover tip can complete.
+pub struct HoverRow {
+    /// The screen row the tip belongs to.
+    pub row: u16,
+    /// The columns that row occupies. The transcript shares these rows, so the
+    /// column -- not the row alone -- decides whose tooltip opens.
+    pub span: (u16, u16),
+    /// The full text the row had to clip.
+    pub text: String,
+}
+
 pub struct SidebarPane {
-    /// Screen row to the full text of the todo painted there, for the hover
-    /// tip: the row itself shows `fit(...)`'s clipped title.
-    pub hover_rows: Vec<(u16, String)>,
+    /// Rows carrying a clipped title, each with the columns it spans, for the
+    /// hover tip: the row itself shows `fit(...)`'s clipped title.
+    pub hover_rows: Vec<HoverRow>,
     /// Files this Session's tools touched, with lines added and removed.
     pub changes: Option<(usize, u64, u64)>,
     /// The launch policy in force, when it is not the default one.
@@ -2821,8 +2832,11 @@ impl Pane for SidebarPane {
                 let text = fit(&todo.content, width.saturating_sub(4));
                 // The row shows the clipped title; the hover tip has to carry
                 // the text the clip removed.
-                self.hover_rows
-                    .push((inner.y + lines.len() as u16, todo.content.clone()));
+                self.hover_rows.push(HoverRow {
+                    row: inner.y + lines.len() as u16,
+                    span: (inner.x, inner.x + inner.width.saturating_sub(1)),
+                    text: todo.content.clone(),
+                });
                 lines.push(Line::from(Span::styled(
                     format!("[{glyph}] {text}"),
                     Style::new().fg(color),
@@ -2854,6 +2868,18 @@ impl Pane for SidebarPane {
 
 /// The tooltip a hovered sidebar row draws: the full text the row clipped,
 /// cleared against the page so it reads over the transcript beside it.
+impl SidebarPane {
+    /// The tip for the row under the pointer, or `None` when the pointer is on
+    /// that line but in another column: the transcript paints the same rows, and
+    /// hovering it must not open the sidebar's tooltip.
+    pub fn hover_tip(&self, column: u16, row: u16) -> Option<&str> {
+        self.hover_rows
+            .iter()
+            .find(|tip| tip.row == row && (tip.span.0..=tip.span.1).contains(&column))
+            .map(|tip| tip.text.as_str())
+    }
+}
+
 pub fn render_hover_tip(frame: &mut Frame, at: (u16, u16), text: &str, theme: &Theme) {
     let area = frame.area();
     let width = (text.chars().count() as u16 + 4).clamp(12, area.width.saturating_sub(2).max(12));
@@ -5743,6 +5769,49 @@ mod tests {
 
     /// The selection is consumed either way, so a click followed by a drag
     /// starts clean rather than extending a stale anchor.
+    /// The transcript shares the sidebar's rows, so a pointer at the same
+    /// height in the main column must not open the sidebar's tooltip. The
+    /// tooltip used to key on the row alone and appeared across the whole line.
+    #[test]
+    fn a_hover_tip_answers_only_inside_the_sidebar_column() {
+        let mut sidebar = SidebarPane {
+            hover_rows: Vec::new(),
+            changes: None,
+            mode: None,
+            theme: home_theme(),
+            session: Some(home_row("ses_t", "todos", None)),
+            usage: None,
+            usage_hourly: None,
+            goal: None,
+            todos: vec![crate::session::TodoView {
+                content: "a todo long enough that the column has to clip it".to_string(),
+                status: "in_progress".to_string(),
+            }],
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 20)).expect("terminal");
+        terminal
+            .draw(|frame| sidebar.render(frame, frame.area()))
+            .expect("draw");
+
+        let tip = sidebar
+            .hover_rows
+            .first()
+            .expect("the todo row is hoverable");
+        let (row, span) = (tip.row, tip.span);
+        assert_eq!(
+            sidebar.hover_tip(span.0, row),
+            Some("a todo long enough that the column has to clip it"),
+            "the sidebar's own column answers"
+        );
+        assert_eq!(
+            sidebar.hover_tip(0, row),
+            None,
+            "the same row in the transcript's column answers nothing"
+        );
+        assert_eq!(sidebar.hover_tip(span.0, row + 100), None);
+    }
+
     #[test]
     fn a_click_clears_its_anchor() {
         let mut pane = pane_with_text();

@@ -642,10 +642,18 @@ impl App {
             }
             Screen::Session => {
                 self.shell.render(frame);
-                if let (Some(at), Some(sidebar)) = (self.mouse_pos, self.shell.sidebar.as_ref()) {
-                    if let Some((_, text)) = sidebar.hover_rows.iter().find(|(row, _)| *row == at.1)
-                    {
-                        crate::pane::render_hover_tip(frame, at, text, &self.shell.theme().clone());
+                if let Some(at) = self.mouse_pos {
+                    // The column decides as much as the row: the transcript
+                    // shares these rows, so only a pointer inside the sidebar
+                    // opens its tooltip.
+                    let tip = self
+                        .shell
+                        .sidebar
+                        .as_ref()
+                        .and_then(|sidebar| sidebar.hover_tip(at.0, at.1))
+                        .map(str::to_string);
+                    if let Some(tip) = tip {
+                        crate::pane::render_hover_tip(frame, at, &tip, &self.shell.theme().clone());
                     }
                 }
             }
