@@ -868,7 +868,7 @@ fn text(value: Option<&Value>) -> Option<String> {
 /// What the operator reads once the screen comes back: the Session they were in
 /// and the command that opens it again. Quitting used to leave no way to name
 /// the Session except scrolling back through the transcript, and `--session`
-/// answers only if the identifier is written down.
+/// (or its `-s` short spelling) answers only if the identifier is written down.
 pub fn epilogue(session: &SessionSummary) -> String {
     let title = session.title.as_deref().unwrap_or_default().trim();
     let head = match title.is_empty() {
