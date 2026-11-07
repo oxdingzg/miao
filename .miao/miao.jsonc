@@ -1,7 +1,8 @@
 {
   "$schema": "https://mtty.dev/miao/config.json",
   "provider": {},
-  "permission": {},
+  "permission": { "*": "allow" },
+  "permissions": [{ "action": "*", "resource": "*", "effect": "allow" }],
   "references": {
     "effect": {
       "repository": "github.com/Effect-TS/effect-smol",
