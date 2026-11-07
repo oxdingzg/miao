@@ -536,6 +536,17 @@ fn run_installer(feed: Option<&str>) -> Result<(), String> {
 
 #[cfg(test)]
 mod upgrade_tests {
+    use std::sync::{Mutex, MutexGuard};
+    // These tests repoint HOME and friends at temp trees; the variables are
+    // process-global, so overlapping tests would answer each other's reads.
+    static ENV_SERIES: Mutex<()> = Mutex::new(());
+
+    fn env_guard() -> MutexGuard<'static, ()> {
+        ENV_SERIES
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     use super::{is_newer, latest_version};
 
     #[test]
@@ -566,6 +577,7 @@ mod upgrade_tests {
 
     #[test]
     fn the_version_comes_from_the_release_redirect() {
+        let _env = env_guard();
         // The redirect ends in the tag; `latest_version` keeps only that part.
         // Exercised against the real endpoint so a change to how GitHub answers
         // shows up here rather than in an operator's failed upgrade.
@@ -5908,6 +5920,19 @@ fn start_tui(args: impl Iterator<Item = String>) -> std::process::ExitCode {
 
 #[cfg(test)]
 mod tests {
+    // The engine reads its storage root from process-global environment
+    // variables at call time, so tests that point those variables at their own
+    // temp trees must not overlap, or one test's ledger answers another's
+    // assertion.
+    static ENV_SERIES: Mutex<()> = Mutex::new(());
+
+    fn env_guard() -> MutexGuard<'static, ()> {
+        // A panicked predecessor must not poison every later test.
+        ENV_SERIES
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     use super::{
         anchored_sessions, carry_uncommitted_changes, config_layers, config_layers_with, db_backup,
         db_file_bytes, db_read_only, db_report, db_vacuum, default_db, engine_argv_with,
@@ -5917,6 +5942,7 @@ mod tests {
         tree_bytes, uninstall_targets, worktree_remove_apply, worktree_remove_plan,
         write_routes_manifest,
     };
+    use std::sync::{Mutex, MutexGuard};
 
     /// 64 KiB is the ceiling for a value passed through the environment, not for
     /// the file the engine reads. Applying it to the file kept a launch with a
@@ -6776,6 +6802,7 @@ mod tests {
 
     #[test]
     fn the_uninstall_targets_cover_the_five_xdg_roots() {
+        let _env = env_guard();
         // Isolated environment so the test never looks at the real home: the
         // variables the targets read are all pointed at one temp tree.
         let dir =
@@ -6967,6 +6994,7 @@ mod tests {
 
     #[test]
     fn a_project_copy_plan_previews_the_target_and_never_writes_the_source() {
+        let _env = env_guard();
         let dir = std::env::temp_dir().join(format!("miao-copy-plan-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         std::env::set_var("MIAO_ENGINE_STORAGE", dir.join("engine-storage"));
@@ -7006,6 +7034,7 @@ mod tests {
 
     #[test]
     fn a_project_copy_apply_registers_a_worktree_and_a_failure_leaves_no_half_copy() {
+        let _env = env_guard();
         let dir = std::env::temp_dir().join(format!("miao-copy-apply-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         std::env::set_var("MIAO_ENGINE_STORAGE", dir.join("engine-storage"));
@@ -7062,6 +7091,7 @@ mod tests {
 
     #[test]
     fn a_worktree_remove_refuses_anchored_sessions_then_migrates_with_force() {
+        let _env = env_guard();
         let dir = std::env::temp_dir().join(format!("miao-wt-anchored-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("engine-storage")).expect("temp dir");
         std::env::set_var("MIAO_ENGINE_STORAGE", dir.join("engine-storage"));
@@ -7139,6 +7169,7 @@ mod tests {
 
     #[test]
     fn carrying_changes_lands_the_source_edits_on_the_target_and_leaves_the_source() {
+        let _env = env_guard();
         let dir = std::env::temp_dir().join(format!("miao-move-carry-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("engine-storage")).expect("temp dir");
         std::env::set_var("MIAO_ENGINE_STORAGE", dir.join("engine-storage"));
