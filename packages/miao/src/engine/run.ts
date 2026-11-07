@@ -3,6 +3,7 @@ import { EngineClient, EngineError, type EngineEvent, type EngineOptions, type E
 import { BlackboxTape } from "@miao/core/blackbox/tape"
 import { EngineTrace } from "../blackbox/engine-trace"
 import { EngineTools } from "../blackbox/engine-tools"
+import { REQUIRED_PROTOCOL } from "./discovery"
 
 /**
  * Headless driver for one engine prompt. It subscribes before admitting so no
@@ -164,7 +165,7 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
         if (options.modelRoute) {
           // initialize is idempotent, so a follow-up input on an existing Session
           // re-selects the same route instead of failing.
-          await client.request("initialize", { session_id: session, title: "baseline" })
+          await client.request("initialize", { session_id: session, title: "baseline", protocol: REQUIRED_PROTOCOL })
           await client.request("select_model", { session_id: session, binding: options.modelRoute })
         }
         await client.subscribe(session, 0)
