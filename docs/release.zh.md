@@ -16,7 +16,7 @@
 2. **从已合并的 main 触发**：获得明确发布确认后，运行 `gh workflow run release.yml --ref main --repo oxdingzg/miao`。工作流**没有输入参数**，版本完全取自根 `package.json`；在 Actions 页面手动 dispatch 也一样。不要直接向 `main` 提交或推送版本准备改动。
 3. **工作流 `.github/workflows/release.yml`**：
    - `version`：运行 `script/version.ts`，以根 `package.json` 的版本创建**草稿** release `vX.Y.Z`，并生成 release notes，输出 `version/release/tag/repo`。
-   - `cli`：矩阵 `macos-26`(darwin-arm64) / `macos-26-intel`(darwin-x64) / `ubuntu-latest`(linux-x64) / `ubuntu-24.04-arm`(linux-arm64) / `windows-2025`(windows-x64)。每个平台先 `bun install` + 安装 Rust，然后 `packages/miao/script/build.ts --single` 构建本平台二进制（会先构建本机原生 addon 并内嵌），最后把 `miao-<target>.zip|tar.gz` 上传到该草稿 release。
+   - `cli`：矩阵 `macos-26`(darwin-arm64) / `macos-26-intel`(darwin-x64) / `ubuntu-latest`(linux-x64) / `ubuntu-24.04-arm`(linux-arm64) / `windows-2025`(windows-x64)。每个平台安装 Rust 后执行 `packages/miao/script/build.ts --native-cli`，用 cargo 构建 `crates/miao-cli`，并把 `miao-<target>.zip|tar.gz` 上传到该草稿 release。这是脚本保留的唯一路径：它原先携带的 TypeScript 打包器已随 TypeScript 产品线一起移除。
    - `publish`：所有平台成功后，先把 Windows 签名状态追加到 release 说明，再执行 `gh release edit --draft=false` 正式发布。
 4. **产物**：`miao-darwin-{arm64,x64}.zip`、`miao-linux-{x64,arm64}.tar.gz`、`miao-windows-x64.zip`（较旧的 CPU 另有 `miao-windows-x64-baseline.zip`），命名与 `install` 脚本、自更新（`Installation.latest` → `oxdingzg/miao/releases/latest`）一致。
 
