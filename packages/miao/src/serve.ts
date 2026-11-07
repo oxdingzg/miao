@@ -12,6 +12,7 @@ import { Flag } from "@miao/core/flag/flag"
 import { Global } from "@miao/core/global"
 import { applyEngineOptIn } from "./engine/native-engine"
 import { Server } from "./server/server"
+import { WindowLifecycle } from "./runtime/lifecycle"
 
 const args = process.argv.slice(2)
 
@@ -29,15 +30,17 @@ if (!Flag.MIAO_SERVER_PASSWORD) {
   console.log("Warning: MIAO_SERVER_PASSWORD is not set; server is unsecured.")
 }
 
+// Closing on a signal is part of the contract the integration suites assert:
+// the listener stops and the process exits 130/143/129 rather than hanging.
+WindowLifecycle.install()
+
 const server = await Server.listen({
   hostname: value("hostname") ?? "127.0.0.1",
   port: Number(value("port") ?? 0),
 })
 console.log(`miao server listening on http://${server.hostname}:${server.port}`)
 
-const stop = () => void server.stop(true)
-process.once("SIGINT", stop)
-process.once("SIGTERM", stop)
+WindowLifecycle.register(() => server.stop(true))
 
 // The server's layers live inside the runtime that started them, so the entry
 // has to stay parked in it rather than in a bare promise the event loop drops.
