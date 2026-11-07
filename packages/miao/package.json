@@ -9,7 +9,8 @@
     "typecheck": "tsgo --noEmit",
     "test": "bun test --timeout 30000 --only-failures --path-ignore-patterns \"test/engine/**\"",
     "bench:test": "bun run script/bench-test-suite.ts",
-    "profile:test": "bun run script/profile-test-files.ts"
+    "profile:test": "bun run script/profile-test-files.ts",
+    "test:integration": "bash ../../script/test-integration.sh"
   },
   "bin": {
     "miao": "./bin/miao"
