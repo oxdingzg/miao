@@ -4,7 +4,7 @@
 //! per session and appends one live event per `ping`, so each test can tell
 //! what was replayed from a cursor apart from what arrived afterwards.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use miao_tui::transport::{Connection, EngineSpawn, EventRx, TransportError, TransportEvent};
 use serde_json::{json, Value};
@@ -77,23 +77,52 @@ async fn an_engine_error_settles_one_request_without_retiring_the_transport() {
 
 #[tokio::test]
 async fn a_timed_out_catalog_read_keeps_the_transport_and_a_mutation_retires_it() {
+    // The deadline is the client's own timer, not a measurement of the engine,
+    // so it only has to be short enough for the test and long enough that a
+    // starved runner does not settle the request for another reason first.
+    //
+    // The request goes out only once the fixture says it is reading its input:
+    // a request written into a start-up race would let this test fail for a
+    // reason it does not measure.
+    let ready = std::env::temp_dir().join(format!("miao-transport-ready-{}", std::process::id()));
+    let _ = std::fs::remove_file(&ready);
+    let spawn = EngineSpawn {
+        env: vec![(
+            "MIAO_TUI_FAKE_READY_FILE".into(),
+            ready.display().to_string(),
+        )],
+        ..fake()
+    };
     let (mut connection, mut events) =
-        Connection::start(fake(), Duration::from_millis(500)).expect("start");
+        Connection::start(spawn, Duration::from_secs(2)).expect("start");
+    let deadline = Instant::now() + TIMEOUT;
+    while !ready.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "the fixture engine never started reading its input"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
     let client = connection.connect().await.expect("connect");
-    assert!(matches!(
-        client.request("snapshot", json!({"session_id":"s"})).await,
-        Err(TransportError::Timeout { .. })
-    ));
+    let catalog = client.request("snapshot", json!({"session_id":"s"})).await;
+    assert!(
+        matches!(catalog, Err(TransportError::Timeout { .. })),
+        "a catalog read the engine never answers has to time out, and the transport has to survive it: {catalog:?}"
+    );
     assert!(client.available());
-    assert!(matches!(
-        client.request("hang", json!({"session_id":"s"})).await,
-        Err(TransportError::Timeout { .. })
-    ));
+    let mutation = client.request("hang", json!({"session_id":"s"})).await;
+    assert!(
+        matches!(mutation, Err(TransportError::Timeout { .. })),
+        "a mutation the engine never answers has to time out before the transport retires: {mutation:?}"
+    );
     assert!(!client.available());
-    assert!(matches!(
-        next(&mut events).await,
-        TransportEvent::Failure(failure) if failure.code == "engine_request_timeout"
-    ));
+    assert!(
+        matches!(
+            next(&mut events).await,
+            TransportEvent::Failure(failure) if failure.code == "engine_request_timeout"
+        ),
+        "a timed-out mutation has to report the timeout as the transport's failure"
+    );
 }
 
 #[tokio::test]
