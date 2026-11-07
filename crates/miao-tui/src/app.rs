@@ -844,6 +844,9 @@ impl App {
                 self.open_dialog(Dialog::jobs(&rows));
                 self.preview_selected_job();
             }
+            AppEvent::Worktrees(trees) => {
+                self.open_dialog(Dialog::worktrees(&trees));
+            }
             AppEvent::Schedule(rows) => {
                 self.open_dialog(Dialog::schedule(&rows));
             }
@@ -1406,6 +1409,7 @@ impl App {
                 }
                 self.open_dialog(Dialog::SavedPermissions(dialog));
             }
+            Builtin::Worktrees => self.open_worktrees(),
             Builtin::WorkspaceChanges => {
                 let Some(session_id) = self.session_id() else {
                     self.update_status();
@@ -1757,6 +1761,13 @@ impl App {
                 };
                 self.store_provider_key(&sign_in.provider, &key);
             }
+            DialogAction::Submit(name) if matches!(self.dialog, Some(Dialog::WorktreeNew(_))) => {
+                self.dialog = None;
+                let root = self.worktree_root();
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.worktree_create(&root, &name);
+                }
+            }
             DialogAction::Submit(title) => {
                 let Some(Dialog::Rename(rename)) = self.dialog.take() else {
                     return;
@@ -1774,6 +1785,12 @@ impl App {
                     self.shell.set_usage(self.usage.as_ref());
                 }
             }
+            // A worktree's name is one path component, so the engine is the
+            // one that validates it; the dialog only asks.
+            DialogAction::WorktreeNew => self.open_dialog(Dialog::worktree_new()),
+            DialogAction::WorktreeRemove(name) => {
+                self.open_dialog(Dialog::confirm_remove_worktree(&name));
+            }
             DialogAction::Confirmed(kind) => {
                 self.dialog = None;
                 let Some(engine) = self.engine.clone() else {
@@ -1781,6 +1798,12 @@ impl App {
                 };
                 match kind {
                     ConfirmKind::RemoveSession(id) => engine.remove(&id),
+                    // The engine refuses while Sessions still work in the tree;
+                    // that refusal surfaces as a notice.
+                    ConfirmKind::RemoveWorktree(name) => {
+                        let root = self.worktree_root();
+                        engine.worktree_remove(&root, &name);
+                    }
                     ConfirmKind::Revert {
                         boundary_seq,
                         files,
@@ -1825,6 +1848,21 @@ impl App {
     /// dialog an index into the built-in names.
     fn choose(&mut self, index: usize) {
         match self.dialog.take() {
+            Some(Dialog::Worktrees(list)) => {
+                // The row's detail is the tree's path. Choosing it moves this
+                // Session there, which is what `enter_worktree` does for the
+                // agent on the TypeScript side.
+                let Some(directory) = list.rows.get(index).map(|row| row.detail.clone()) else {
+                    return;
+                };
+                let Some(session_id) = self.session_id() else {
+                    self.notice("open a Session to move into a worktree");
+                    return;
+                };
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.move_session(&session_id, &directory);
+                }
+            }
             Some(Dialog::Theme(_)) => {
                 let name = self.themes.names().get(index).map(|name| name.to_string());
                 if let Some(name) = name {
@@ -2023,6 +2061,30 @@ impl App {
             .and_then(|id| self.drafts.get(id).cloned())
             .unwrap_or_default();
         self.shell.composer.restore(&restored);
+    }
+
+    /// The checkout a worktree action belongs to: the open Session's directory,
+    /// or the process's own when the launcher has no Session yet.
+    fn worktree_root(&self) -> String {
+        self.session
+            .as_ref()
+            .and_then(|session| session.directory.clone())
+            .or_else(|| {
+                std::env::current_dir()
+                    .ok()
+                    .map(|dir| dir.display().to_string())
+            })
+            .unwrap_or_default()
+    }
+
+    /// The git worktrees of this checkout. The engine owns the git plumbing, so
+    /// the dialog only asks and paints.
+    fn open_worktrees(&mut self) {
+        let Some(engine) = self.engine.as_ref() else {
+            self.notice("Engine is not connected");
+            return;
+        };
+        engine.worktrees(&self.worktree_root());
     }
 
     /// A background job belongs to the open Session; without one there is

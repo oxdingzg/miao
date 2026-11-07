@@ -175,6 +175,21 @@ pub enum Request {
         session_id: String,
         target_directory: String,
     },
+    /// The git worktrees of `root`, the checkout itself first.
+    Worktrees {
+        root: String,
+    },
+    /// Add a worktree named `name` under `root`, then list again so the dialog
+    /// shows the tree that now exists.
+    WorktreeCreate {
+        root: String,
+        name: String,
+    },
+    /// Remove one worktree, then list again.
+    WorktreeRemove {
+        root: String,
+        name: String,
+    },
     /// Copy a Session's committed history into a fresh Session (CLI-01
     /// `--fork`); the executor opens the fresh copy on success.
     ForkSession {
@@ -388,6 +403,31 @@ impl Handle {
         let _ = self.tx.send(Request::MoveSession {
             session_id: session_id.to_string(),
             target_directory: target_directory.to_string(),
+        });
+    }
+
+    /// The git worktrees of the checkout `root` names.
+    pub fn worktrees(&self, root: &str) {
+        let _ = self.tx.send(Request::Worktrees {
+            root: root.to_string(),
+        });
+    }
+
+    /// Add a worktree and re-list in one step: the dialog then shows the tree
+    /// that now exists instead of waiting for a second keystroke.
+    pub fn worktree_create(&self, root: &str, name: &str) {
+        let _ = self.tx.send(Request::WorktreeCreate {
+            root: root.to_string(),
+            name: name.to_string(),
+        });
+    }
+
+    /// Remove one worktree and re-list. The engine refuses while Sessions still
+    /// work in the tree, and that refusal arrives as a notice.
+    pub fn worktree_remove(&self, root: &str, name: &str) {
+        let _ = self.tx.send(Request::WorktreeRemove {
+            root: root.to_string(),
+            name: name.to_string(),
         });
     }
 
@@ -1164,6 +1204,49 @@ async fn run(
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("move failed: {error}")))
                         }
+                    }
+                }
+                Request::Worktrees { root } => match client
+                    .request("worktrees", json!({ "root": &root }))
+                    .await
+                {
+                    Ok(value) => bus.send(AppEvent::Worktrees(crate::worktrees::decode(&value))),
+                    Err(error) => bus.send(AppEvent::ActionFailed(format!("worktrees: {error}"))),
+                },
+                Request::WorktreeCreate { root, name } => {
+                    match client
+                        .request("worktree_create", json!({ "root": &root, "name": &name }))
+                        .await
+                    {
+                        Ok(_) => match client.request("worktrees", json!({ "root": &root })).await {
+                            Ok(value) => {
+                                bus.send(AppEvent::Worktrees(crate::worktrees::decode(&value)))
+                            }
+                            Err(error) => {
+                                bus.send(AppEvent::ActionFailed(format!("worktrees: {error}")))
+                            }
+                        },
+                        Err(error) => bus.send(AppEvent::ActionFailed(format!(
+                            "cannot create the worktree {name}: {error}"
+                        ))),
+                    }
+                }
+                Request::WorktreeRemove { root, name } => {
+                    match client
+                        .request("worktree_remove", json!({ "root": &root, "name": &name }))
+                        .await
+                    {
+                        Ok(_) => match client.request("worktrees", json!({ "root": &root })).await {
+                            Ok(value) => {
+                                bus.send(AppEvent::Worktrees(crate::worktrees::decode(&value)))
+                            }
+                            Err(error) => {
+                                bus.send(AppEvent::ActionFailed(format!("worktrees: {error}")))
+                            }
+                        },
+                        Err(error) => bus.send(AppEvent::ActionFailed(format!(
+                            "cannot remove the worktree {name}: {error}"
+                        ))),
                     }
                 }
                 Request::ForkSession { session_id } => {

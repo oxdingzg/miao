@@ -87,6 +87,9 @@ pub enum AppEvent {
     Devices(serde_json::Value),
     /// Background jobs of the open Session, as `(job_id, state)` newest first.
     Jobs(Vec<(String, String)>),
+    /// The git worktrees of the checkout the open Session works in, the
+    /// checkout itself first.
+    Worktrees(Vec<crate::worktrees::Worktree>),
     /// The Session's scheduled wakeups and cron jobs, as
     /// `(kind:id, label, detail)` newest first.
     Schedule(Vec<(String, String, String)>),
