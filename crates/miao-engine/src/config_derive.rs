@@ -220,7 +220,23 @@ pub fn policy(documents: &[Document], miao_sandbox: Option<&str>) -> permission:
         .iter()
         .map(|document| document.value.clone())
         .collect::<Vec<_>>();
-    let merged = config_scope::merge_values(&values);
+    // Permission rules live on the normalized shape: the product writes the
+    // V1 `permission` section, and only the migration turns it into the
+    // `permissions` array `permission_rules` reads. Extracting rules from the
+    // raw merge ignored every configured rule, so writes and process kept the
+    // default ask no matter what the config allowed.
+    let normalized = config_scope::merge_values(
+        &values
+            .iter()
+            .map(|value| {
+                if crate::config_v1::is_v1(value) {
+                    crate::config_v1::migrate(value)
+                } else {
+                    crate::config_v1::normalize(value)
+                }
+            })
+            .collect::<Vec<_>>(),
+    );
     permission::Config {
         mode: permission::Mode::Workspace,
         allow_process: true,
@@ -234,7 +250,7 @@ pub fn policy(documents: &[Document], miao_sandbox: Option<&str>) -> permission:
         auto: false,
         sandbox: sandbox_enabled(documents, miao_sandbox),
         writable_roots: writable_roots(documents),
-        rules: permission_rules(&merged),
+        rules: permission_rules(&normalized),
         // Matches the engine's default; the product policy never sets it.
         approval_timeout_ms: 60_000,
         max_provider_turns: None,
@@ -1427,6 +1443,42 @@ mod tests {
                 "auto": false,
             })
         );
+    }
+
+    #[test]
+    fn a_product_permission_section_becomes_policy_rules() {
+        // The product writes the V1 `permission` spelling, and the rule array
+        // only exists after the migration. Reading rules off the raw merge
+        // left every configured allow out, so writes and process stayed on
+        // the default ask no matter what the config allowed.
+        let decided = permission::Policy::new(policy(
+            &documents(&[serde_json::json!({
+                "$schema": "https://mtty.dev/miao/config.json",
+                "permission": { "*": "allow" },
+            })]),
+            None,
+        ))
+        .unwrap();
+        assert_eq!(
+            decided.evaluate("bash", "run_command", permission::Access::Execute),
+            permission::Decision::Allow
+        );
+        assert_eq!(
+            decided.evaluate("write_file", "notes.txt", permission::Access::Write),
+            permission::Decision::Allow
+        );
+        assert_eq!(
+            decided.evaluate("read", "notes.txt", permission::Access::Read),
+            permission::Decision::Allow
+        );
+
+        // The bare string spelling migrates into the same wildcard.
+        let config = policy(
+            &documents(&[serde_json::json!({ "permission": "deny" })]),
+            None,
+        );
+        assert_eq!(config.rules.len(), 1);
+        assert_eq!(config.rules[0].decision, permission::Decision::Deny);
     }
 
     #[test]
