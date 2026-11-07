@@ -55,7 +55,10 @@ fn write_outside_workdir_is_denied() {
         .status()
         .unwrap();
 
-    assert!(!std::path::Path::new(&target).exists(), "write outside workdir should be denied");
+    assert!(
+        !std::path::Path::new(&target).exists(),
+        "write outside workdir should be denied"
+    );
 }
 
 #[test]
@@ -80,7 +83,10 @@ fn tcp_network_is_denied_without_allow_network() {
         ])
         .output()
         .unwrap();
-    assert!(!denied.status.success(), "TCP connect should be denied without --allow-network");
+    assert!(
+        !denied.status.success(),
+        "TCP connect should be denied without --allow-network"
+    );
 
     let allowed = Command::new(bin())
         .args([
@@ -98,5 +104,8 @@ fn tcp_network_is_denied_without_allow_network() {
         ])
         .output()
         .unwrap();
-    assert!(allowed.status.success(), "--allow-network should permit TCP connect");
+    assert!(
+        allowed.status.success(),
+        "--allow-network should permit TCP connect"
+    );
 }
