@@ -54,6 +54,14 @@ class GateTest(unittest.TestCase):
             for name in ["engine", "tui"]:
                 self.assertTrue(flags[name], f"{path}: {name}")
 
+    def test_an_unknown_base_is_unknown_rather_than_fatal(self):
+        # A push whose `before` was rewritten away used to abort the policy job
+        # inside `git diff`; the gate has to notice the missing commit and fall
+        # back to classifying every check.
+        self.assertFalse(gate.known(""))
+        self.assertFalse(gate.known("0" * 40))
+        self.assertTrue(gate.known("HEAD"), "a checkout always knows its own commit")
+
     def test_successful_and_intentionally_skipped_results_pass(self):
         flags = {name: "false" for name in gate.CHECKS}
         needs = {name: {"result": "skipped"} for name in gate.CHECKS}
