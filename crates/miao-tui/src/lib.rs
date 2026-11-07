@@ -18,6 +18,7 @@ pub mod highlight;
 pub mod input;
 pub mod keybinds;
 pub mod markdown;
+pub mod mtty_state;
 pub mod pane;
 pub mod platform;
 pub mod saved_permissions;
@@ -228,6 +229,7 @@ async fn drive(
             panic!("miao-tui: injected panic (MIAO_TUI_TEST_PANIC)");
         }
         if app.quit {
+            app.report_mtty_quit();
             return Ok(());
         }
         // An active run's status counts elapsed time and reports an engine that
