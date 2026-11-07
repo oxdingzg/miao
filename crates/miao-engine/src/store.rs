@@ -5222,10 +5222,8 @@ fn task_rollup(conn: &Connection, session: &str, children: &[String]) -> Result<
         }
     }
     type SpendRow = (i64, Option<(f64, String)>);
-    fn usage_rows(
-        conn: &Connection,
-        target: &str,
-    ) -> Result<Vec<(String, i64, Option<(f64, String)>)>, Error> {
+    type UsageRow = (String, i64, Option<(f64, String)>);
+    fn usage_rows(conn: &Connection, target: &str) -> Result<Vec<UsageRow>, Error> {
         let mut rows_out = Vec::new();
         let mut stmt = conn.prepare(
             "SELECT data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind='usage' ORDER BY seq",
