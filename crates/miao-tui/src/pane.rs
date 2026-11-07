@@ -334,6 +334,20 @@ impl Shell {
         self.transcript.follow = next >= max;
     }
 
+    /// How far one page of transcript moves: the painted height less two rows
+    /// of overlap, so the line read last stays on screen across the jump.
+    pub fn transcript_page(&self) -> i32 {
+        (self.transcript.area.height as i32 - 2).max(1)
+    }
+
+    /// Jump to the oldest row, the way `Home` reads. Going through
+    /// `scroll_transcript` keeps the follow rule in one place: a transcript
+    /// short enough to fit still counts as following.
+    pub fn scroll_transcript_to_start(&mut self) {
+        let scroll = self.transcript.scroll as i32;
+        self.scroll_transcript(-scroll);
+    }
+
     /// Follow the newest entry again, as opening a Session must: a scroll in a
     /// previous Session used to leave the next one parked at its oldest rows.
     pub fn follow_transcript(&mut self) {
