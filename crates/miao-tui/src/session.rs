@@ -22,11 +22,8 @@ pub struct SessionSummary {
     /// every client sorts the same shared catalog the same way.
     pub pinned_at_ms: Option<u64>,
     pub directory: Option<String>,
-    /// The Session's explicit model pin. A route id names the provider that
-    /// serves the model, so the status reads `provider/model[ · variant]`;
-    /// without a route it falls back to `model · protocol[ · variant]`.
-    /// `None` means the engine's default.
-    pub model: Option<String>,
+    /// The Session's explicit model pin. `None` means the engine's default.
+    pub model: Option<ModelPin>,
     /// The account every turn of this Session runs on, when one is pinned.
     pub credential_id: Option<String>,
     /// The engine's bounded "what this conversation last said", for the list
@@ -34,27 +31,55 @@ pub struct SessionSummary {
     pub preview: Option<String>,
 }
 
+/// The model a Session is pinned to, kept in the parts the engine reports
+/// instead of one pre-joined string: a route id names the provider that serves
+/// the model, and a client holding the catalog can name the provider and the
+/// account behind it. Folding the parts early lost both, which is why a row
+/// read `Claude-Opus-4.5` and never said who answered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelPin {
+    pub protocol: String,
+    pub model: String,
+    pub route_id: Option<String>,
+    pub variant: Option<String>,
+}
+
+impl ModelPin {
+    /// The pin as one string: the route when the catalog names one, otherwise
+    /// `model · protocol`, with the variant appended. Selections are matched by
+    /// this, and a client that knows no catalog still has something to print.
+    pub fn label(&self) -> String {
+        let head = match &self.route_id {
+            Some(route_id) => route_id.clone(),
+            None => format!("{} · {}", self.model, self.protocol),
+        };
+        match &self.variant {
+            Some(variant) => format!("{head} · {variant}"),
+            None => head,
+        }
+    }
+}
+
 impl SessionSummary {
     pub fn from_snapshot(snapshot: &Value) -> Option<Self> {
         let id = snapshot.get("session_id")?.as_str()?.to_string();
         let selection = snapshot.get("model_selection");
         let model = selection.and_then(|selection| {
-            let model = selection.get("model")?.as_str()?;
-            let variant = selection.get("variant").and_then(Value::as_str);
-            let head = selection
-                .get("route_id")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .unwrap_or_else(|| {
-                    let protocol = selection
-                        .get("protocol")
-                        .and_then(Value::as_str)
-                        .unwrap_or("");
-                    format!("{model} · {protocol}")
-                });
-            Some(match variant {
-                Some(variant) => format!("{head} · {variant}"),
-                None => head,
+            Some(ModelPin {
+                protocol: selection
+                    .get("protocol")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                model: selection.get("model")?.as_str()?.to_string(),
+                route_id: selection
+                    .get("route_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                variant: selection
+                    .get("variant")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
             })
         });
         Some(Self {
@@ -1079,7 +1104,10 @@ mod tests {
             "account_selection": {"credential_id": "cred_1"},
         });
         let row = SessionSummary::from_snapshot(&value).expect("row");
-        assert_eq!(row.model.as_deref(), Some("glm-5 · chat · high"));
+        assert_eq!(
+            row.model.as_ref().map(ModelPin::label).as_deref(),
+            Some("glm-5 · chat · high")
+        );
         assert_eq!(row.credential_id.as_deref(), Some("cred_1"));
         let bare = SessionSummary::from_snapshot(&json!({"session_id": "ses_b"})).expect("row");
         assert_eq!(bare.model, None);
@@ -1275,7 +1303,7 @@ mod tests {
         }))
         .expect("summary");
         assert_eq!(
-            summary.model.as_deref(),
+            summary.model.as_ref().map(ModelPin::label).as_deref(),
             Some("zhipuai-coding-plan/deepseek-v4-1-flash-261017"),
             "the strip names the provider as well"
         );
@@ -1284,7 +1312,10 @@ mod tests {
             "model_selection": {"protocol": "anthropic", "model": "claude-x"},
         }))
         .expect("summary");
-        assert_eq!(summary.model.as_deref(), Some("claude-x · anthropic"));
+        assert_eq!(
+            summary.model.as_ref().map(ModelPin::label).as_deref(),
+            Some("claude-x · anthropic")
+        );
     }
 
     #[test]
