@@ -703,16 +703,21 @@ impl Host {
         }
     }
 
-    /// Committed event notifications for every subscription, advancing each
-    /// cursor. Adapters page these into their own envelope; the durable cursor
-    /// keeps the replay→live handoff gapless.
+    /// Committed events for every subscription, advancing each cursor. Each
+    /// item is the bare event: the adapter owns the envelope, so a frame is
+    /// wrapped exactly once on its way to a client. Returning the envelope from
+    /// here let the in-process adapter wrap it again, and the doubly nested
+    /// frame could not decode into an event and was dropped — every durable
+    /// notification vanished, so the transcript refreshed only when a timer
+    /// happened to re-project. The durable cursor keeps the replay→live
+    /// handoff gapless.
     pub async fn poll_events(&mut self) -> Result<Vec<Value>, Error> {
         let runtime = &self.runtime;
         let mut notifications = Vec::new();
         for (session, cursor) in self.subscriptions.iter_mut() {
             for event in runtime.store().events(session, *cursor, 32).await? {
                 *cursor = event.seq;
-                notifications.push(json!({ "method": "event", "params": event }));
+                notifications.push(serde_json::to_value(event).map_err(Error::from)?);
             }
         }
         Ok(notifications)
