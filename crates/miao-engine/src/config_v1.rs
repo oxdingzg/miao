@@ -215,6 +215,14 @@ fn permissions(permission: Option<&Value>, tools: Option<&Value>) -> Option<Valu
                 }
             }
         }
+    } else if let Some(effect) = permission.and_then(Value::as_str) {
+        // The product also accepts one bare action for the whole surface
+        // (`permission: "allow"` becomes `{ "*": action }` there); emitting the
+        // wildcard rule it would produce keeps one config spelling on both
+        // sides. Skipping the string here left every tool at the default
+        // decision, so a config meant to allow writes and process ran
+        // read-only.
+        rules.push(json!({ "action": "*", "resource": "*", "effect": effect }));
     }
     if rules.is_empty() {
         None
@@ -1111,6 +1119,25 @@ mod tests {
                 { "action": "edit", "resource": "*", "effect": "deny" },
                 { "action": "edit", "resource": "*", "effect": "ask" }
             ])
+        );
+    }
+
+    #[test]
+    fn a_bare_permission_action_covers_the_whole_surface() {
+        // The product accepts `permission: "allow"` as one action for every
+        // tool (it normalizes to `{ "*": action }`). The engine used to read
+        // only the object form, so a config meant to allow everything left
+        // every tool at the default decision — writes and process stayed
+        // read-only.
+        let migrated = migrate(&json!({ "permission": "allow" }));
+        assert_eq!(
+            migrated["permissions"],
+            json!([{ "action": "*", "resource": "*", "effect": "allow" }])
+        );
+        let denied = migrate(&json!({ "permission": "deny" }));
+        assert_eq!(
+            denied["permissions"],
+            json!([{ "action": "*", "resource": "*", "effect": "deny" }])
         );
     }
 
