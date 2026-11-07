@@ -89,11 +89,17 @@ struct Output {
     cursor: u64,
     exit: Option<Value>,
 }
+/// Bytes the ring keeps per terminal. A full-screen program repaints far
+/// faster than a caller reads, so the ring holds the newest window rather than
+/// everything the terminal ever wrote.
+const RETAINED: usize = 1024 * 1024;
+/// Bytes one read returns.
+const WINDOW: u64 = 32768;
 impl Output {
     fn append(&mut self, bytes: &[u8]) {
         self.bytes.extend(bytes);
-        if self.bytes.len() > 1024 * 1024 {
-            let excess = self.bytes.len() - 1024 * 1024;
+        if self.bytes.len() > RETAINED {
+            let excess = self.bytes.len() - RETAINED;
             self.bytes.drain(..excess);
             self.offset += excess as u64;
         }
@@ -104,12 +110,20 @@ impl Output {
         if requested > end {
             return Err(ToolError::InvalidInput);
         }
-        let start = requested.max(self.offset);
+        // A cursor the ring has overrun cannot be served in order: those bytes
+        // are gone. Replaying from the oldest retained byte instead makes the
+        // caller walk a backlog it can never catch up with while the terminal
+        // keeps writing, so an overrun resumes at the newest window and reports
+        // the skipped bytes as dropped.
+        let start = match requested < self.offset {
+            true => end.saturating_sub(WINDOW),
+            false => requested,
+        };
         let bytes: Vec<u8> = self
             .bytes
             .iter()
             .skip((start - self.offset) as usize)
-            .take(32768)
+            .take(WINDOW as usize)
             .copied()
             .collect();
         let next = start + bytes.len() as u64;
@@ -661,4 +675,52 @@ async fn write_master(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Output;
+    use serde_json::json;
+
+    /// A read the ring has overrun resumes at the newest window. Replaying from
+    /// the oldest retained byte made a caller walk a megabyte of screen paint one
+    /// window per call while the terminal kept writing, so it never reached the
+    /// screen it was trying to read.
+    #[test]
+    fn an_overrun_cursor_resumes_at_the_newest_window() {
+        let mut output = Output::default();
+        output.append(&vec![b'x'; 2 * 1024 * 1024]);
+        output.append(b"END");
+        let read = output.read("term_1", Some(0)).unwrap();
+        assert!(read["dropped"].as_u64().unwrap() > 0);
+        let text = read["output"].as_str().unwrap();
+        assert_eq!(text.len(), 32768);
+        assert!(text.ends_with("END"), "the newest window carries the tail");
+        assert_eq!(
+            read["truncated"], false,
+            "an overrun read is caught up rather than one window into a backlog"
+        );
+        let caught_up = output
+            .read("term_1", Some(read["cursor"].as_u64().unwrap()))
+            .unwrap();
+        assert_eq!(caught_up["dropped"], 0);
+        assert_eq!(caught_up["output"], "");
+    }
+
+    /// A cursor still inside the ring replays in order, so a slow reader loses
+    /// nothing, and a cursor past the end is not a read at all.
+    #[test]
+    fn a_retained_cursor_replays_in_order() {
+        let mut output = Output::default();
+        output.append(b"hello");
+        assert_eq!(
+            output.read("term_1", Some(0)).unwrap()["output"],
+            json!("hello")
+        );
+        assert_eq!(
+            output.read("term_1", Some(2)).unwrap()["output"],
+            json!("llo")
+        );
+        assert!(output.read("term_1", Some(6)).is_err());
+    }
 }

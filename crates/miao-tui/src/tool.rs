@@ -19,6 +19,8 @@ use crate::theme::Theme;
 const TOOL_PREVIEW_LINES: usize = 1;
 /// Diff lines one changed file shows before collapsing.
 const DIFF_PREVIEW_LINES: usize = 12;
+/// Characters one terminal read lays out per row.
+const PAINT_ROW_CHARS: usize = 120;
 
 /// How much of a tool result to paint, and the chord that changes it.
 ///
@@ -524,8 +526,36 @@ fn terminal_read(
     summary.push_str(&format!(" · {}", exit_summary(record.get("exit"))));
     out.push(result_line(&summary, palette.text_muted));
     if !body.is_empty() {
-        preview(out, body, palette.text_muted, limit, fold.toggle);
+        preview(
+            out,
+            &paint_rows(&scrub_output(body)),
+            palette.text_muted,
+            limit,
+            fold.toggle,
+        );
     }
+}
+
+/// A PTY window is laid out as rows before the fold counts them. A full-screen
+/// program positions cells with escape sequences and emits no newline at all, so
+/// one read arrives as a single line of thousands of characters: a row budget
+/// cannot fold what is not a row, and the pane laid the whole window out
+/// instead. Scrubbing comes first so a row break cannot land inside an escape
+/// sequence and leave its tail as text.
+fn paint_rows(text: &str) -> String {
+    text.split('\n')
+        .flat_map(|line| {
+            let chars = line.chars().collect::<Vec<_>>();
+            match chars.len() <= PAINT_ROW_CHARS {
+                true => vec![line.to_string()],
+                false => chars
+                    .chunks(PAINT_ROW_CHARS)
+                    .map(|chunk| chunk.iter().collect())
+                    .collect(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn terminal_stopped(
@@ -1677,6 +1707,43 @@ mod tests {
         assert!(rendered.iter().any(|line| line.contains("2 red")));
         assert!(rendered.iter().any(|line| line.contains("three")));
         assert!(!rendered.iter().any(|line| line.contains("more lines")));
+    }
+
+    /// A full-screen program repaints cells with escapes and never emits a
+    /// newline, so a screen of paint is one endless logical line: the row budget
+    /// folded nothing and the pane laid the whole window out.
+    #[test]
+    fn a_terminal_read_window_without_newlines_folds_at_the_row_budget() {
+        let paint = format!(
+            "{}end",
+            "\u{1b}[38;2;252;232;108;48;2;46;52;64m█".repeat(4000)
+        );
+        let part = tool(
+            "terminal_read",
+            json!({"id": "term_1"}),
+            Some(json!({
+                "id": "term_1",
+                "output": paint,
+                "cursor": 9,
+                "dropped": 0,
+                "truncated": false,
+                "exit": null
+            })),
+            false,
+        );
+        let rendered = rendered(&lines(&part, None, &theme(), false, Some("ctrl+x r")));
+        assert!(
+            rendered.iter().all(|line| line.chars().count() <= 140),
+            "{rendered:?}"
+        );
+        assert!(
+            rendered.iter().any(|line| line.contains("more lines")),
+            "{rendered:?}"
+        );
+        assert!(
+            !rendered.iter().any(|line| line.contains("38;2;")),
+            "a row break must not leave an escape tail as text: {rendered:?}"
+        );
     }
 
     #[test]

@@ -142,7 +142,11 @@ async fn terminal_stop_and_shutdown_reap_processes_and_bound_output() {
     .unwrap();
     assert!(output["dropped"].as_u64().unwrap() > 0);
     assert!(output["output"].as_str().unwrap().len() <= 32768);
-    assert_eq!(output["truncated"], true);
+    // An overrun read is the newest window, so the caller is caught up rather
+    // than one window into a backlog it cannot walk while the terminal writes.
+    // This shell is still printing, so a follow-up read may legitimately find
+    // the ring overrun again; the ring's own test pins the caught-up case.
+    assert_eq!(output["truncated"], false);
     assert!(registry
         .execute("a", "terminal_read", json!({"id":id,"cursor":u64::MAX}))
         .await
@@ -549,7 +553,11 @@ async fn windows_terminal_output_is_bounded_by_the_ring() {
     .unwrap();
     assert!(output["dropped"].as_u64().unwrap() > 0);
     assert!(output["output"].as_str().unwrap().len() <= 32768);
-    assert_eq!(output["truncated"], true);
+    // An overrun read is the newest window, so the caller is caught up rather
+    // than one window into a backlog it cannot walk while the terminal writes.
+    // This shell is still printing, so a follow-up read may legitimately find
+    // the ring overrun again; catching up is what `truncated` reports.
+    assert_eq!(output["truncated"], false);
     assert!(registry
         .execute("a", "terminal_read", json!({"id":id,"cursor":u64::MAX}))
         .await

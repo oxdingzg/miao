@@ -2106,7 +2106,7 @@ impl Tools {
             });
             for (name, description) in [
                 ("terminal_write", "Write exact keystrokes to a running terminal, including newline to submit. Up to 32768 bytes; partial writes on timeout are reported."),
-                ("terminal_read", "Read up to 32768 bytes from a terminal. Omit cursor to continue; explicit absolute byte cursor allows replay. A 1 MiB output ring reports dropped bytes and truncation. Output is raw PTY text, including terminal escape sequences."),
+                ("terminal_read", "Read up to 32768 bytes from a terminal. Omit cursor to continue; an explicit absolute byte cursor replays retained bytes, and one the 1 MiB ring has overrun resumes at the newest window instead. The ring reports dropped bytes and truncation. Output is raw PTY text, including terminal escape sequences."),
                 ("terminal_resize", "Resize a running terminal's rows and columns."),
                 ("terminal_stop", "Stop and reap a terminal's process tree, return unread output and release its retained slot."),
                 ("terminal_list", "List this Session's retained terminals and exit status."),
