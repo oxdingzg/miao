@@ -34,7 +34,7 @@ than folding in as a fabricated zero.
 | a stored estimate keeps the rates it was computed from | (same suite + `--lib pricing`) | `test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.64s`, then `3 passed; 0 failed; 0 ignored; 0 measured; 395 filtered out` |
 
 Observed on the build host per the workstation's build-offloading policy
-(`ssh xx02`): the six-test suite and the pricing filter as quoted above, plus a
+(over SSH, Linux build host): the six-test suite and the pricing filter as quoted above, plus a
 full `cargo test` for `crates/miao-engine` on the same tree whose 196 test
 targets all reported `test result: ok` — none `FAILED`. Any reviewer can run
 the same commands wherever a Rust toolchain is available.
