@@ -456,6 +456,8 @@ pub struct App {
     suspend_requested: bool,
     terminal_title_enabled: bool,
     terminal_title_allowed: bool,
+    /// Reports the run state to mtty, so its tab can badge and title the phase.
+    mtty_state: crate::mtty_state::Reporter,
     /// Approval and question ids already announced.
     notified: Vec<String>,
     /// The Zed selection already sent with an earlier prompt.
@@ -589,6 +591,7 @@ impl App {
             suspend_requested: false,
             terminal_title_enabled: true,
             terminal_title_allowed: true,
+            mtty_state: crate::mtty_state::Reporter::from_env(),
             notified: Vec::new(),
             zed_selection_key: None,
             clipboard_busy: false,
@@ -641,6 +644,12 @@ impl App {
 
     pub fn take_redraw_request(&mut self) -> bool {
         std::mem::take(&mut self.redraw_requested)
+    }
+
+    /// The TUI is leaving: an idle report stops the tab claiming a run that
+    /// ended with this process.
+    pub fn report_mtty_quit(&mut self) {
+        self.mtty_state.clear();
     }
 
     pub fn configure_terminal_title(&mut self, enabled: bool, allowed: bool) {
@@ -3641,6 +3650,8 @@ impl App {
         // The composer mirrors the durable queue every frame so the count stays
         // live without the composer owning it.
         self.shell.composer.queued = self.state.pending;
+        self.mtty_state
+            .set_session(self.session.as_ref().map(|session| session.id.as_str()));
         if self.screen != Screen::Session {
             self.shell.title.set_status(None);
             self.shell.title.set_status_alert(false);
@@ -3694,6 +3705,7 @@ impl App {
                     warning: true,
                 });
             }
+            self.mtty_state.update(crate::mtty_state::State::Idle);
             return;
         }
         let now = Instant::now();
@@ -3719,6 +3731,10 @@ impl App {
                 plural(questions)
             )),
         };
+        self.mtty_state.update(crate::mtty_state::State::of(
+            blocking.is_some(),
+            self.state.active_run.is_some(),
+        ));
         let phase_needs_operator = blocking.is_some();
         // Time the run from the moment it was first seen active, so a run that
         // has announced no phase yet still shows a clock. Without an anchor the
