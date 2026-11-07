@@ -610,12 +610,15 @@ impl App {
     }
 
     /// Act on the launch flags once the engine is attached. `--session` opens
-    /// that Session directly; `--continue` asks for the catalog because only
-    /// the engine knows which Session was updated last.
+    /// that Session directly. The catalog is requested on every launch: the
+    /// landing strip names the next prompt's model with its provider and
+    /// account only once the catalog answers, and a plain launch used to skip
+    /// the request and keep the bare remembered id until a picker opened.
     pub fn start(&mut self) {
         let Some(engine) = self.engine.clone() else {
             return;
         };
+        engine.catalog();
         if let Some(session) = self.startup.session.clone() {
             if self.startup.fork {
                 engine.fork_session(&session);
@@ -625,7 +628,6 @@ impl App {
             return;
         }
         if self.startup.continue_last {
-            engine.catalog();
             return;
         }
         if self.startup.prompt.is_some() {
@@ -5022,6 +5024,9 @@ mod tests {
         let (handle, mut requests) = engine::Handle::recording();
         app.attach_engine(handle);
         app.start();
+        // Every launch asks for the catalog: the landing strip labels the
+        // model with its provider and account only once it answers.
+        assert!(matches!(requests.try_recv(), Ok(engine::Request::Catalog)));
         assert!(matches!(
             requests.try_recv(),
             Ok(engine::Request::Open(id)) if id == "ses_known"
@@ -5051,10 +5056,24 @@ mod tests {
         let (handle, mut requests) = engine::Handle::recording();
         app.attach_engine(handle);
         app.start();
+        assert!(matches!(requests.try_recv(), Ok(engine::Request::Catalog)));
         assert!(matches!(
             requests.try_recv(),
             Ok(engine::Request::ForkSession { .. })
         ));
+    }
+
+    /// A plain launch used to skip the catalog request, leaving the models
+    /// empty: the landing strip then fell back to the bare remembered id and
+    /// named no provider or account until a picker was opened.
+    #[test]
+    fn a_plain_launch_asks_for_the_model_catalog() {
+        let mut app = app_with(Startup::default());
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.start();
+        assert!(matches!(requests.try_recv(), Ok(engine::Request::Catalog)));
+        assert!(requests.try_recv().is_err(), "nothing else is requested");
     }
 
     #[test]
@@ -5204,6 +5223,7 @@ mod tests {
         let (handle, mut requests) = engine::Handle::recording();
         app.attach_engine(handle);
         app.start();
+        assert!(matches!(requests.try_recv(), Ok(engine::Request::Catalog)));
         assert!(matches!(
             requests.try_recv(),
             Ok(engine::Request::NewSession)
@@ -5721,6 +5741,45 @@ mod tests {
         );
     }
 
+    /// An open Session's pin is labelled through the catalog like the landing
+    /// pick: two accounts of one provider must not read the same on the strip.
+    #[test]
+    fn the_session_strip_labels_the_pinned_model() {
+        let mut app = session_app();
+        app.models = vec![ModelInfo {
+            protocol: "openai-chat".into(),
+            model: "deepseek-v4-1-flash-261017".into(),
+            route_id: Some("account/9f2c".into()),
+            variant: None,
+            provider: Some("deepseek".into()),
+            account: Some("work".into()),
+            credential_id: None,
+        }];
+        app.session = Some(SessionSummary {
+            model: Some(ModelPin {
+                protocol: "openai-chat".into(),
+                model: "deepseek-v4-1-flash-261017".into(),
+                route_id: Some("account/9f2c".into()),
+                variant: None,
+            }),
+            ..summary("ses_open", 1)
+        });
+        app.update_status();
+        assert_eq!(
+            app.shell.status.model.as_deref(),
+            Some("deepseek-v4-1-flash-261017 · deepseek · work · openai-chat"),
+            "the strip labels the pin with its provider and account"
+        );
+        // A pin the catalog no longer serves still names the route it carries.
+        app.models = Vec::new();
+        app.update_status();
+        assert_eq!(
+            app.shell.status.model.as_deref(),
+            Some("account/9f2c"),
+            "the unresolvable pin falls back to its raw route"
+        );
+    }
+
     /// The landing screen has no Session pin and no assistant message, so the
     /// strip under its prompt used to name nothing at all. It now names the
     /// model the operator last chose, with the provider and protocol beside it.
@@ -5776,6 +5835,29 @@ mod tests {
             app.shell.status.model.as_deref(),
             Some("deepseek-v4-1-flash-261017 · deepseek · openai-chat"),
             "the remembered display name still names its provider"
+        );
+    }
+
+    /// Two accounts of one provider must not look like the same choice: the
+    /// route a pick remembers carries the account, and the strip names it.
+    #[test]
+    fn the_landing_strip_names_the_account_of_a_multi_account_provider() {
+        let mut app = app();
+        app.models = vec![ModelInfo {
+            protocol: "openai-chat".into(),
+            model: "deepseek-v4-1-flash-261017".into(),
+            route_id: Some("account/9f2c".into()),
+            variant: None,
+            provider: Some("deepseek".into()),
+            account: Some("work".into()),
+            credential_id: None,
+        }];
+        app.remembered_model = Some("account/9f2c".into());
+        app.update_status();
+        assert_eq!(
+            app.shell.status.model.as_deref(),
+            Some("deepseek-v4-1-flash-261017 · deepseek · work · openai-chat"),
+            "the landing strip names the account the pick spends"
         );
     }
 
