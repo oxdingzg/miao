@@ -373,8 +373,7 @@ pub(crate) fn find_skill(tools: &Tools, name: &str) -> Option<LoadedSkill> {
     None
 }
 
-pub(crate) const MEDIA_OBSERVE: &str =
-    include_str!("../../../packages/core/src/plugin/skill/media-observe.md");
+pub(crate) const MEDIA_OBSERVE: &str = include_str!("../../../assets/skills/media-observe.md");
 
 async fn discover_skills(
     tools: &Tools,

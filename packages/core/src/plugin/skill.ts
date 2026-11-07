@@ -6,11 +6,11 @@ import { define } from "./internal"
 import { Effect } from "effect"
 import { AbsolutePath } from "../schema"
 import { SkillV2 } from "../skill"
-import customizeOpencodeContent from "./skill/customize-miao.md" with { type: "text" }
-import officeDocumentsContent from "./skill/office-documents.md" with { type: "text" }
-import mediaObserveContent from "./skill/media-observe.md" with { type: "text" }
-import backgroundWaitsContent from "./skill/background-waits.md" with { type: "text" }
-import autonomousContinuationContent from "./skill/autonomous-continuation.md" with { type: "text" }
+import customizeOpencodeContent from "../../../../assets/skills/customize-miao.md" with { type: "text" }
+import officeDocumentsContent from "../../../../assets/skills/office-documents.md" with { type: "text" }
+import mediaObserveContent from "../../../../assets/skills/media-observe.md" with { type: "text" }
+import backgroundWaitsContent from "../../../../assets/skills/background-waits.md" with { type: "text" }
+import autonomousContinuationContent from "../../../../assets/skills/autonomous-continuation.md" with { type: "text" }
 
 export const CustomizeOpencodeContent = customizeOpencodeContent
 export const OfficeDocumentsContent = officeDocumentsContent
