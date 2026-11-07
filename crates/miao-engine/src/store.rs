@@ -631,6 +631,22 @@ impl Store {
         &self.path
     }
 
+    /// Point every Session anchored to `from` at `to` instead, and answer how
+    /// many moved. A forced worktree removal uses this so the Sessions it would
+    /// otherwise strand keep a working directory that still exists.
+    pub async fn repoint_root(&self, from: PathBuf, to: PathBuf) -> Result<u64, Error> {
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let moved = tx.execute(
+                "UPDATE engine_location SET root = ?2 WHERE root = ?1 OR root LIKE ?1 || '/%'",
+                params![from.display().to_string(), to.display().to_string()],
+            )? as u64;
+            tx.commit()?;
+            Ok(moved)
+        })
+        .await
+    }
+
     pub(crate) async fn call<T: Send + 'static>(
         &self,
         f: impl FnOnce(&mut Connection) -> Result<T, Error> + Send + 'static,

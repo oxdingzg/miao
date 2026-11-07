@@ -506,6 +506,25 @@ pub enum Command {
     /// host's list read-only, the same way it serves model routes and MCP: it
     /// never invents workspace authority of its own.
     Workspaces,
+    /// The git worktrees of one checkout. The client names the checkout, the
+    /// way `MoveSession` names its target, because one engine serves many
+    /// Locations.
+    Worktrees {
+        root: String,
+    },
+    /// Add a worktree named `name` under the checkout's worktree directory.
+    WorktreeCreate {
+        root: String,
+        name: String,
+    },
+    /// Remove one worktree. A tree that still anchors Sessions is refused
+    /// unless `force` asks for them to be pointed back at the checkout first.
+    WorktreeRemove {
+        root: String,
+        name: String,
+        #[serde(default)]
+        force: bool,
+    },
     /// Sessions forked from or delegated to by this one, with the latest run
     /// that decides whether a child is still working (AGT-01). A Session with
     /// no children answers an empty list; an unknown Session is an error.
