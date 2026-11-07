@@ -1295,15 +1295,14 @@ async fn run(
                     let result = client
                         .request("usage.hourly", json!({ "hours": hours }))
                         .await;
-                    match result {
-                        Ok(value) => bus.send(AppEvent::UsageHourly(
+                    // A window nobody has written yet is an empty strip, not a
+                    // failure the operator has to dismiss — and an engine that
+                    // predates this read must not replace the notice the
+                    // operator is actually reading with one about the strip.
+                    if let Ok(value) = result {
+                        bus.send(AppEvent::UsageHourly(
                             crate::status::HourlyUsage::from_value(&value),
-                        )),
-                        // A window nobody has written yet is an empty strip,
-                        // not a failure the operator has to dismiss.
-                        Err(error) => {
-                            bus.send(AppEvent::ActionFailed(format!("usage.hourly failed: {error}")))
-                        }
+                        ));
                     }
                 }
                 Request::SelectAccount {

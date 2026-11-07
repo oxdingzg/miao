@@ -903,6 +903,11 @@ impl App {
                 mut transcript,
                 state,
             } => {
+                // The sidebar paints billed usage, so the two moments the
+                // figure moves are worth naming before the projection lands:
+                // a different Session opening, and a run settling.
+                let previous_id = self.session.as_ref().map(|session| session.id.clone());
+                let was_running = self.state.active_run.is_some();
                 self.swap_draft(summary.as_ref().map(|session| session.id.as_str()));
                 self.shell.set_goal(state.goal.as_ref());
                 self.shell.set_todos(&state.todos);
@@ -992,6 +997,30 @@ impl App {
                     self.shell.set_running_tool(None);
                 }
                 self.committed = committed;
+                // The sidebar's Context section and hourly strip are painted
+                // from billed usage, and the status dialog used to be their
+                // only caller: a Session screen read "no usage yet" until
+                // someone opened that dialog. Ask when a different Session
+                // opens and again when its run settles — the ledger only moves
+                // at those two moments.
+                let reopened = previous_id.as_deref()
+                    != self.session.as_ref().map(|session| session.id.as_str());
+                if reopened {
+                    self.usage = None;
+                }
+                if reopened || (was_running && self.state.active_run.is_none()) {
+                    if let Some(engine) = self.engine.as_ref() {
+                        if let Some(session) = &self.session {
+                            engine.usage(&session.id);
+                            // The strip spans the workspace rather than this
+                            // Session, so opening one reads it directly; a
+                            // settled run refreshes it from the usage answer.
+                            if reopened {
+                                engine.usage_hourly(24);
+                            }
+                        }
+                    }
+                }
                 self.shell.set_session(self.session.as_ref());
                 self.shell.set_usage(self.usage.as_ref());
                 self.shell.set_transcript(&transcript);
@@ -4083,6 +4112,23 @@ mod tests {
         AppEvent::Mouse(MouseEvent::new(kind, 0, 0, KeyModifiers::NONE))
     }
 
+    /// The sidebar polls billed usage when a Session opens and again when a run
+    /// settles. A test that asserts the control request the UI sends steps over
+    /// that traffic instead of mistaking it for its own, and an empty answer
+    /// still proves nothing else was sent.
+    fn control_requests(
+        requests: &mut tokio::sync::mpsc::UnboundedReceiver<engine::Request>,
+    ) -> Vec<engine::Request> {
+        std::iter::from_fn(|| requests.try_recv().ok())
+            .filter(|request| {
+                !matches!(
+                    request,
+                    engine::Request::Usage { .. } | engine::Request::UsageHourly { .. }
+                )
+            })
+            .collect()
+    }
+
     #[test]
     fn the_wheel_moves_the_configured_scroll_speed_in_the_transcript() {
         let mut app = session_app();
@@ -4564,8 +4610,8 @@ mod tests {
             state: Box::new(SessionState::default()),
         });
         assert!(matches!(
-            requests.try_recv(),
-            Ok(engine::Request::Prompt { session_id, text, .. })
+            control_requests(&mut requests).as_slice(),
+            [engine::Request::Prompt { session_id, text, .. }]
                 if session_id == "ses_new" && text == "hello"
         ));
         // A second open must not resend the launch prompt.
@@ -4574,7 +4620,10 @@ mod tests {
             transcript: Box::new(Transcript::default()),
             state: Box::new(SessionState::default()),
         });
-        assert!(requests.try_recv().is_err());
+        assert!(
+            control_requests(&mut requests).is_empty(),
+            "a second open must not resend the launch prompt"
+        );
     }
 
     #[test]
@@ -4799,17 +4848,18 @@ mod tests {
             transcript: Box::new(Transcript::default()),
             state: Box::new(SessionState::default()),
         });
-        let Ok(engine::Request::Prompt {
+        let asked = control_requests(&mut requests);
+        let [engine::Request::Prompt {
             session_id,
             text,
             attachments,
             ..
-        }) = requests.try_recv()
+        }] = asked.as_slice()
         else {
             panic!("the landing prompt must reach the Session it opened");
         };
-        assert_eq!(session_id, "ses_new");
-        assert_eq!(text, "[Image 1] ");
+        assert_eq!(session_id.as_str(), "ses_new");
+        assert_eq!(text.as_str(), "[Image 1] ");
         assert_eq!(attachments.len(), 1);
         assert_eq!(attachments[0]["mime"], "image/png");
     }
@@ -6326,6 +6376,72 @@ mod tests {
         });
     }
 
+    /// The sidebar's Context section and hourly strip are painted from billed
+    /// usage, and the status dialog was their only caller: a Session screen
+    /// read "no usage yet" while the ledger held the figures. Opening one must
+    /// ask for both.
+    #[test]
+    fn opening_a_session_asks_for_the_usage_its_sidebar_paints() {
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        open_session(&mut app, "ses_a");
+        let asked = std::iter::from_fn(|| requests.try_recv().ok()).collect::<Vec<_>>();
+        assert!(
+            asked
+                .iter()
+                .any(|request| matches!(request, engine::Request::Usage { session_id } if session_id == "ses_a")),
+            "the sidebar paints usage, so opening a Session must ask for it"
+        );
+        assert!(
+            asked
+                .iter()
+                .any(|request| matches!(request, engine::Request::UsageHourly { hours: 24 })),
+            "the hourly strip needs its own window"
+        );
+    }
+
+    /// A settled run is the other moment the sidebar's figures move. A
+    /// projection of the same Session that is still running must not re-ask,
+    /// or every streamed event would cost a request.
+    #[test]
+    fn a_settled_run_asks_for_usage_again_without_per_event_traffic() {
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        let running = SessionState {
+            active_run: Some("run-1".into()),
+            ..SessionState::default()
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_a", 10)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(running),
+        });
+        while requests.try_recv().is_ok() {}
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_a", 10)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState {
+                active_run: Some("run-1".into()),
+                ..SessionState::default()
+            }),
+        });
+        assert!(
+            requests.try_recv().is_err(),
+            "a running Session's projection changed nothing worth a request"
+        );
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_a", 10)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState::default()),
+        });
+        assert!(
+            matches!(requests.try_recv(), Ok(engine::Request::Usage { session_id }) if session_id == "ses_a"),
+            "a settled run is billed work the sidebar must show"
+        );
+    }
+
     #[test]
     fn the_leader_s_opens_the_status_dialog_and_usage_fills_it() {
         let mut app = session_app();
@@ -6980,8 +7096,8 @@ mod tests {
             state: Box::new(SessionState::default()),
         });
         assert!(matches!(
-            requests.try_recv(),
-            Ok(engine::Request::Rename { session_id, title })
+            control_requests(&mut requests).as_slice(),
+            [engine::Request::Rename { session_id, title }]
                 if session_id == "ses_a" && title == "fix the parser"
         ));
         // A snapshot arriving before the rename lands must not name it again.
@@ -6990,7 +7106,7 @@ mod tests {
             transcript: transcript(),
             state: Box::new(SessionState::default()),
         });
-        assert!(requests.try_recv().is_err(), "named twice");
+        assert!(control_requests(&mut requests).is_empty(), "named twice");
     }
 
     /// A Session the product already named keeps its title.
@@ -7012,7 +7128,10 @@ mod tests {
             }),
             state: Box::new(SessionState::default()),
         });
-        assert!(requests.try_recv().is_err(), "renamed an operator's title");
+        assert!(
+            control_requests(&mut requests).is_empty(),
+            "renamed an operator's title"
+        );
     }
 
     /// Sending the first prompt names a placeholder Session straight away: the
@@ -7032,8 +7151,8 @@ mod tests {
         });
         app.submit("fix the parser".into(), Vec::new());
         assert!(matches!(
-            requests.try_recv(),
-            Ok(engine::Request::Rename { session_id, title })
+            control_requests(&mut requests).first(),
+            Some(engine::Request::Rename { session_id, title })
                 if session_id == "ses_a" && title == "fix the parser"
         ));
         assert_eq!(
