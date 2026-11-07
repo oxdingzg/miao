@@ -15,6 +15,7 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ### Fixed
 - **cli**: write the derived model routes manifest whatever its size (#2662) (`ebc45bc6cc`)
+- **engine**: derive policy permission rules from the migrated config (#2665) (`572884874c`)
 - **tui**: repair the workspace list and worktree removal guards (#2663) (`67728878ca`)
 - **terminal**: resume an overrun read at the newest window (#2661) (`116ea2b364`)
 
