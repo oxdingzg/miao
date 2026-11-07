@@ -504,7 +504,11 @@ fn match_plan(content: &str, old_string: &str, replace_all: bool) -> EditMatch {
         return EditMatch {
             kind: MatchKind::Match,
             find: Some(old_string.to_string()),
-            count: if replace_all { count_occurrences(content, old_string) } else { 1 },
+            count: if replace_all {
+                count_occurrences(content, old_string)
+            } else {
+                1
+            },
         };
     }
 
@@ -553,7 +557,12 @@ fn match_plan(content: &str, old_string: &str, replace_all: bool) -> EditMatch {
 }
 
 /// Match and replace `oldString`, applying the shared matching contract.
-pub fn replace(content: &str, old_string: &str, new_string: &str, replace_all: bool) -> Result<String, EditError> {
+pub fn replace(
+    content: &str,
+    old_string: &str,
+    new_string: &str,
+    replace_all: bool,
+) -> Result<String, EditError> {
     if old_string == new_string {
         return Err(EditError::Identical);
     }
@@ -671,7 +680,11 @@ pub struct EditMatchResult {
 /// Pure match plan for the V2 edit tool. Returns `none`, `ambiguous`,
 /// `disproportionate` or `match`; the caller owns replacement and safety policy.
 #[napi(js_name = "matchEdit")]
-pub fn match_edit(content: String, old_string: String, replace_all: Option<bool>) -> EditMatchResult {
+pub fn match_edit(
+    content: String,
+    old_string: String,
+    replace_all: Option<bool>,
+) -> EditMatchResult {
     let matched = match_plan(&content, &old_string, replace_all.unwrap_or(false));
     EditMatchResult {
         kind: match matched.kind {
@@ -928,7 +941,11 @@ fn generate_unified_diff(old_content: &str, new_content: &str) -> String {
     }
 }
 
-fn derive_new_contents(chunks: &[PatchChunk], file_path: &str, original_text: &str) -> Result<DeriveResult, String> {
+fn derive_new_contents(
+    chunks: &[PatchChunk],
+    file_path: &str,
+    original_text: &str,
+) -> Result<DeriveResult, String> {
     derive_new_contents_impl(chunks, file_path, original_text, false)
 }
 
@@ -957,7 +974,12 @@ fn derive_new_contents_impl(
         original_lines.pop();
     }
 
-    let replacements = compute_replacements(&original_lines, file_path, chunks, append_after_trailing_blank)?;
+    let replacements = compute_replacements(
+        &original_lines,
+        file_path,
+        chunks,
+        append_after_trailing_blank,
+    )?;
 
     let joined = apply_replacements_into(&original_lines, &replacements);
 
@@ -1003,7 +1025,8 @@ pub struct GitEntry {
 fn git_line_stats(old: &[u8], new: &[u8]) -> (u32, u32) {
     // Git treats a blob containing NUL in its first bytes as binary and prints
     // "-" in numstat, which the JS contract already maps to zero.
-    if old.iter().take(8000).any(|byte| *byte == 0) || new.iter().take(8000).any(|byte| *byte == 0) {
+    if old.iter().take(8000).any(|byte| *byte == 0) || new.iter().take(8000).any(|byte| *byte == 0)
+    {
         return (0, 0);
     }
     compute_stats(&String::from_utf8_lossy(old), &String::from_utf8_lossy(new))
@@ -1829,19 +1852,28 @@ mod tests {
     #[test]
     fn match_plan_reports_self_overlap_as_ambiguous() {
         assert_eq!(match_plan("aaa", "aa", false).kind, MatchKind::Ambiguous);
-        assert_eq!(match_plan("same same", "same", false).kind, MatchKind::Ambiguous);
+        assert_eq!(
+            match_plan("same same", "same", false).kind,
+            MatchKind::Ambiguous
+        );
         assert_eq!(match_plan("same same same", "same", true).count, 3);
     }
 
     #[test]
     fn match_plan_keeps_fuzzy_matches_line_anchored() {
-        assert_eq!(match_plan("  xfoo   y\nbar\n", "foo y", false).kind, MatchKind::None);
+        assert_eq!(
+            match_plan("  xfoo   y\nbar\n", "foo y", false).kind,
+            MatchKind::None
+        );
     }
 
     #[test]
     fn match_plan_refuses_disproportionate_spans() {
         let content = format!("a{}b\nc{}d\n", " ".repeat(600), " ".repeat(600));
-        assert_eq!(match_plan(&content, "a b\nc d", false).kind, MatchKind::Disproportionate);
+        assert_eq!(
+            match_plan(&content, "a b\nc d", false).kind,
+            MatchKind::Disproportionate
+        );
     }
 
     #[test]
@@ -1891,13 +1923,15 @@ mod tests {
 
     #[test]
     fn derive_v2_appends_after_a_trailing_blank_line() {
-        let result = derive_new_contents_v2(&[chunk(&[], &["inserted"])], "f.txt", "line1\n\n").unwrap();
+        let result =
+            derive_new_contents_v2(&[chunk(&[], &["inserted"])], "f.txt", "line1\n\n").unwrap();
         assert_eq!(result.content, "line1\n\ninserted\n");
     }
 
     #[test]
     fn derive_legacy_inserts_before_a_trailing_blank_line() {
-        let result = derive_new_contents(&[chunk(&[], &["inserted"])], "f.txt", "line1\n\n").unwrap();
+        let result =
+            derive_new_contents(&[chunk(&[], &["inserted"])], "f.txt", "line1\n\n").unwrap();
         assert_eq!(result.content, "line1\ninserted\n");
     }
 
@@ -2022,7 +2056,9 @@ mod tests {
 
     #[test]
     fn git_status_matches_git_porcelain_and_numstat() {
-        let Some(dir) = temp_repo("status") else { return };
+        let Some(dir) = temp_repo("status") else {
+            return;
+        };
         std::fs::write(dir.join("file.txt"), "hello\nworld\nmore\n").unwrap();
         std::fs::write(dir.join("added.txt"), "fresh\n").unwrap();
         std::fs::write(dir.join("bin.dat"), [0u8, 1, 2, 3]).unwrap();
@@ -2031,7 +2067,14 @@ mod tests {
         let entries = git_status_entries(dir.to_str().unwrap()).unwrap();
         let mapped: Vec<(String, String, u32, u32)> = entries
             .iter()
-            .map(|entry| (entry.path.clone(), entry.status.clone(), entry.additions, entry.deletions))
+            .map(|entry| {
+                (
+                    entry.path.clone(),
+                    entry.status.clone(),
+                    entry.additions,
+                    entry.deletions,
+                )
+            })
             .collect();
         assert_eq!(
             mapped,
@@ -2046,7 +2089,15 @@ mod tests {
         // Path/status pairs must equal `git status --porcelain` with renames off
         // and untracked files listed individually.
         let porcelain = git(
-            &["status", "--porcelain=v1", "--untracked-files=all", "--no-renames", "-z", "--", "."],
+            &[
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                "--no-renames",
+                "-z",
+                "--",
+                ".",
+            ],
             &dir,
         );
         let mut expected: Vec<(String, String)> = String::from_utf8_lossy(&porcelain.stdout)
@@ -2067,8 +2118,10 @@ mod tests {
             })
             .collect();
         expected.sort();
-        let actual: Vec<(String, String)> =
-            entries.iter().map(|entry| (entry.path.clone(), entry.status.clone())).collect();
+        let actual: Vec<(String, String)> = entries
+            .iter()
+            .map(|entry| (entry.path.clone(), entry.status.clone()))
+            .collect();
         assert_eq!(actual, expected);
 
         let _ = std::fs::remove_dir_all(&dir);
