@@ -1,40 +1,58 @@
 {
   "$schema": "https://v2-8-13.turborepo.dev/schema.json",
-  "globalEnv": ["CI", "MIAO_DISABLE_SHARE"],
-  "globalPassThroughEnv": ["CI", "MIAO_DISABLE_SHARE"],
+  "globalEnv": [
+    "CI",
+    "MIAO_DISABLE_SHARE"
+  ],
+  "globalPassThroughEnv": [
+    "CI",
+    "MIAO_DISABLE_SHARE"
+  ],
   "tasks": {
     "typecheck": {},
     "@miao/native#build": {
       "cache": false,
-      "outputs": ["src/miao-native.node"]
+      "outputs": [
+        "src/miao-native.node"
+      ]
     },
     "build": {
       "dependsOn": [],
-      "outputs": ["dist/**"]
+      "outputs": [
+        "dist/**"
+      ]
     },
     "miao#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "outputs": [],
-      "passThroughEnv": ["*"]
+      "passThroughEnv": [
+        "*"
+      ]
     },
     "@miao/core#test": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "@miao/tui#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "outputs": []
     },
     "@miao/app#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "outputs": []
     },
     "@miao/ui#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "outputs": []
     },
     "@miao/session-ui#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "outputs": []
     }
   }

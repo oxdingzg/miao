@@ -12,14 +12,14 @@ class ChangesTest(unittest.TestCase):
         for paths in [[], ["README.md"], ["docs/guide.en.md", "specs/plan.md"]]:
             self.assertEqual(changes.classify(paths), {"code": False, "windows": False})
 
-    def test_tui_does_not_require_windows_runtime(self):
-        self.assertEqual(changes.classify(["packages/tui/src/config/keybind.ts"]), {"code": True, "windows": False})
+    def test_shared_ui_does_not_require_windows_runtime(self):
+        self.assertEqual(changes.classify(["packages/ui/src/components/button.tsx"]), {"code": True, "windows": False})
 
     def test_runtime_resources_are_code(self):
         self.assertTrue(changes.classify(["packages/core/src/prompt/system.md"])["code"])
 
     def test_platform_and_shared_changes_require_windows(self):
-        for path in ["packages/core/src/session.ts", "packages/miao/src/runtime/window.ts", "script/install-local.ps1", "bun.lock", ".github/actions/setup-bun/action.yml"]:
+        for path in ["packages/core/src/session.ts", "packages/miao/src/installation/index.ts", "script/install-local.ps1", "bun.lock", ".github/actions/setup-bun/action.yml"]:
             self.assertEqual(changes.classify([path]), {"code": True, "windows": True})
 
 

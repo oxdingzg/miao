@@ -7,13 +7,9 @@
   "private": true,
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "test": "bun test --timeout 30000 --only-failures --path-ignore-patterns \"test/engine/**\" --path-ignore-patterns \"test/acp/**\"",
-    "test:integration": "bash ../../script/test-integration.sh",
+    "test": "bun test --timeout 30000 --only-failures --path-ignore-patterns \"test/engine/**\"",
     "bench:test": "bun run script/bench-test-suite.ts",
-    "profile:test": "bun run script/profile-test-files.ts",
-    "build": "bun run script/build.ts",
-    "dev": "bun run ./src/index.ts",
-    "dev:temporary": "bun run ./src/temporary.ts"
+    "profile:test": "bun run script/profile-test-files.ts"
   },
   "bin": {
     "miao": "./bin/miao"
@@ -81,7 +77,6 @@
     "@effect/platform-node": "catalog:",
     "@ff-labs/fff-bun": "0.9.4",
     "@gitlab/opencode-gitlab-auth": "1.3.3",
-    "@miao/acp": "workspace:*",
     "@miao/client": "workspace:*",
     "@miao/codemode": "workspace:*",
     "@miao/llm": "workspace:*",
@@ -91,7 +86,6 @@
     "@miao/schema": "workspace:*",
     "@miao/script": "workspace:*",
     "@miao/server": "workspace:*",
-    "@miao/tui": "workspace:*",
     "@miao/ui": "workspace:*",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@octokit/graphql": "9.0.2",

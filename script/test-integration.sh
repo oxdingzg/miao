@@ -2,7 +2,7 @@
 # Runs the engine/ACP integration suites with one bun process per test file.
 #
 # The default `bun test` run keeps only pure unit tests: every file under
-# packages/miao/test/engine and packages/miao/test/acp spawns the miao-engine
+# packages/miao/test/engine spawns the miao-engine
 # binary, the engine-fake wire stand-in, or a real `miao serve` subprocess.
 # In one shared process their fixtures leak into each other (temp dirs,
 # ports, orphan engines) until the files scheduled last time out. A process
@@ -59,18 +59,18 @@ files=()
 if [ "$#" -gt 0 ]; then
   for file in "$@"; do
     case "$file" in
-      test/engine/*.test.ts|test/acp/*.test.ts)
+      test/engine/*.test.ts)
         [ -f "$file" ] || { echo "integration test file does not exist: $file" >&2; exit 1; }
         files+=("$file")
         ;;
-      *) echo "expected an integration test under test/engine or test/acp: $file" >&2; exit 1 ;;
+      *) echo "expected an integration test under test/engine: $file" >&2; exit 1 ;;
     esac
   done
 else
-  while IFS= read -r file; do files+=("$file"); done < <(find test/engine test/acp -name '*.test.ts' | sort)
+  while IFS= read -r file; do files+=("$file"); done < <(find test/engine -name '*.test.ts' | sort)
 fi
 if [ "${#files[@]}" -eq 0 ]; then
-  echo "no integration test files found under test/engine and test/acp" >&2
+  echo "no integration test files found under test/engine" >&2
   exit 1
 fi
 
@@ -121,7 +121,6 @@ run_attempt() {
   # whose credential routing the fixtures cannot provide. Only test/engine
   # files run against the engine under test.
   local runner_env=(env)
-  case "$file" in test/acp/*) runner_env+=(-u MIAO_ENGINE_BIN) ;; esac
   # env options must precede the per-process assignments.
   "${runner_env[@]}" TMPDIR="$round" bun test --timeout "$timeout_ms" --only-failures "./$file" &
   local pid=$!
