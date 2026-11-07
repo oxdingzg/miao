@@ -5866,6 +5866,7 @@ mod tests {
                 content: "a todo long enough that the column has to clip it".to_string(),
                 status: "in_progress".to_string(),
             }],
+            chord: None,
         };
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 20)).expect("terminal");
