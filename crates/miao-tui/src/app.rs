@@ -2790,9 +2790,15 @@ impl App {
             if self.decline_pending_approval() {
                 return;
             }
-            // A queued prompt is cheaper to take back than a running turn is to
-            // interrupt, so Escape cancels the newest queued input first and
-            // only reaches the turn when the queue is empty.
+            // Escape interrupts the turn that is running, and the input queued
+            // behind that turn is sent by the next drain rather than dropped:
+            // the operator stopping a turn still wants the message they already
+            // typed to be answered. Taking a queued prompt back is the idle
+            // action, because then there is no turn left to stop.
+            if self.state.active_run.is_some() {
+                self.interrupt_or_leave();
+                return;
+            }
             if self.state.pending > 0 {
                 if let (Some(id), Some(engine)) = (
                     self.session.as_ref().map(|session| session.id.clone()),
@@ -3444,7 +3450,7 @@ impl App {
         };
         let status = match (&self.state.active_run, self.state.pending) {
             (Some(_), 0) => format!("{phase} · Esc interrupt"),
-            (Some(_), queued) => format!("{phase} · {queued} queued · Esc interrupt"),
+            (Some(_), queued) => format!("{phase} · {queued} queued · Esc interrupt and send"),
             (None, 0) => phase.clone(),
             (None, queued) => format!("{phase} · {queued} queued"),
         };
@@ -3546,7 +3552,11 @@ impl App {
         }
         if self.state.active_run.is_some() {
             hints.push(StatusHint {
-                text: "esc interrupt".to_string(),
+                text: if self.state.pending > 0 {
+                    "esc interrupt and send".to_string()
+                } else {
+                    "esc interrupt".to_string()
+                },
                 warning: false,
             });
         }
@@ -6105,8 +6115,11 @@ mod tests {
         );
     }
 
+    /// Escape stops the turn, not the message the operator queued behind it:
+    /// the engine keeps the queued input and sends it once the interrupted run
+    /// has ended, so interrupting must not also take it back for editing.
     #[test]
-    fn escape_takes_back_the_newest_queued_input_before_interrupting() {
+    fn escape_interrupts_the_running_turn_and_leaves_the_queued_input_queued() {
         let mut app = session_app();
         let state = SessionState {
             active_run: Some("run-1".into()),
@@ -6124,14 +6137,47 @@ mod tests {
         let sent: Vec<_> = std::iter::from_fn(|| requests.try_recv().ok()).collect();
         assert!(
             sent.iter()
+                .any(|request| matches!(request, engine::Request::Cancel { .. })),
+            "Escape interrupts the running turn"
+        );
+        assert!(
+            !sent
+                .iter()
                 .any(|request| matches!(request, engine::Request::CancelLastInput { .. })),
-            "Escape takes back the queued input first"
+            "the queued input is sent after the interrupt, not taken back"
+        );
+        assert_eq!(app.screen, Screen::Session);
+    }
+
+    /// Nothing is running, so the queued prompt is the only thing Escape can
+    /// act on: it goes back to the composer instead of leaving the Session.
+    #[test]
+    fn escape_takes_back_the_newest_queued_input_when_no_turn_is_running() {
+        let mut app = session_app();
+        let state = SessionState {
+            active_run: None,
+            pending: 2,
+            ..SessionState::default()
+        };
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_queue", 10)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(state),
+        });
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        let sent: Vec<_> = std::iter::from_fn(|| requests.try_recv().ok()).collect();
+        assert!(
+            sent.iter()
+                .any(|request| matches!(request, engine::Request::CancelLastInput { .. })),
+            "an idle Session takes the queued input back for editing"
         );
         assert!(
             !sent
                 .iter()
                 .any(|request| matches!(request, engine::Request::Cancel { .. })),
-            "the running turn is not interrupted while input is queued"
+            "there is no running turn to interrupt"
         );
         assert_eq!(app.screen, Screen::Session);
     }

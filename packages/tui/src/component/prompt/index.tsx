@@ -169,8 +169,11 @@ export function Prompt(props: PromptProps) {
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
   const waitingPrompts = createMemo(() => (props.sessionID ? sync.prompt.waiting(props.sessionID) : []))
   // The footer names the next esc action, the same way the transcript status
-  // line does: a waiting prompt is removed before the turn is interrupted.
-  const escAction = createMemo(() => (waitingPrompts().length > 0 ? "remove prompt" : "interrupt"))
+  // line does: a running turn is interrupted first, because the prompt queued
+  // behind it is sent once that turn ends.
+  const escAction = createMemo(() =>
+    status().type !== "idle" && waitingPrompts().length > 0 ? "interrupt and send" : "interrupt",
+  )
   const history = usePromptHistory()
   const stash = usePromptStash()
   const keymap = useOpencodeKeymap()
@@ -496,11 +499,12 @@ export function Prompt(props: PromptProps) {
           }
           if (!props.sessionID) return
 
-          // One esc removes the newest prompt still waiting for promotion, and
-          // only an empty queue interrupts the turn. The status line already
-          // promises this order; interrupting first while a prompt is queued
-          // throws away work the user can still take back one message at a time.
-          const newest = sync.prompt.newest(props.sessionID)
+          // Esc stops the turn that is running, and the prompt queued behind it
+          // is promoted by the drain that follows instead of being dropped:
+          // what the operator stops is the answer in flight, not the message
+          // they already typed. Only an idle Session takes a waiting prompt
+          // back, because then nothing else is left to interrupt.
+          const newest = status().type === "idle" ? sync.prompt.newest(props.sessionID) : undefined
           if (newest) {
             void sync.prompt
               .cancel({ sessionID: props.sessionID, messageID: newest.info.id })
@@ -1606,7 +1610,13 @@ export function Prompt(props: PromptProps) {
               />
             </PromptPlaceholder>
             <Show when={!props.compactFooter || store.mode === "shell" || hasRightContent()}>
-              <box flexDirection="row" flexShrink={0} paddingTop={props.compactFooter ? 0 : 1} gap={1} justifyContent="space-between">
+              <box
+                flexDirection="row"
+                flexShrink={0}
+                paddingTop={props.compactFooter ? 0 : 1}
+                gap={1}
+                justifyContent="space-between"
+              >
                 <Show when={!props.compactFooter || store.mode === "shell"}>
                   <box flexDirection="row" gap={1}>
                     <Show when={local.agent.current()} fallback={<box height={1} />}>
