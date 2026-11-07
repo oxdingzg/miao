@@ -105,7 +105,7 @@ TUI options:
   --db PATH          engine database
   --model ID         model to use
   --config-dir PATH  product configuration directory
-  --session ID       resume a session
+  -s, --session ID   resume a session
   --continue         resume the most recent session
   --prompt TEXT      send an initial prompt
 ";
@@ -139,7 +139,8 @@ fn launch(args: impl Iterator<Item = String>) -> Result<miao_tui::Launch, String
             "--db" => db = Some(PathBuf::from(value("--db")?)),
             "--model" | "-m" => model = Some(value("--model")?),
             "--config-dir" => config_dir = Some(PathBuf::from(value("--config-dir")?)),
-            "--session" => session = Some(value("--session")?),
+            // The TUI's exit hint prints the short spelling, so both parse.
+            "--session" | "-s" => session = Some(value("--session")?),
             "--continue" => continue_last = true,
             "--prompt" => prompt = Some(value("--prompt")?),
             // The engine resolves the merged configuration's `agents` entry
@@ -5867,24 +5868,35 @@ pub fn run(args: Vec<String>) -> std::process::ExitCode {
         // A bare `miao` is how people start the product: `miao tui` is the
         // explicit spelling, but typing the program name alone must not print
         // usage and exit. `--help` is the way to ask for the text.
-        None => match launch(std::iter::empty()) {
-            Ok(mut launch) => {
-                prepare_tui_engine(&mut launch);
-                match miao_tui::run(launch) {
-                    Ok(()) => std::process::ExitCode::SUCCESS,
-                    Err(error) => {
-                        eprintln!("miao: {error}");
-                        std::process::ExitCode::from(1)
-                    }
-                }
-            }
-            Err(message) => {
-                eprintln!("miao: {message}\n{USAGE}");
-                std::process::ExitCode::from(2)
-            }
-        },
+        None => start_tui(std::iter::empty()),
+        // A leading option is a TUI flag, not a subcommand name: the TUI's
+        // exit hint prints `miao -s ses_x`, and `miao --continue` is the same
+        // kind of resume, so both have to start the product rather than read
+        // as an unknown command.
+        Some(other) if other.starts_with('-') => {
+            start_tui(std::iter::once(other.to_string()).chain(args))
+        }
         Some(other) => {
             eprintln!("miao: unknown command {other}\n{USAGE}");
+            std::process::ExitCode::from(2)
+        }
+    }
+}
+
+fn start_tui(args: impl Iterator<Item = String>) -> std::process::ExitCode {
+    match launch(args) {
+        Ok(mut launch) => {
+            prepare_tui_engine(&mut launch);
+            match miao_tui::run(launch) {
+                Ok(()) => std::process::ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("miao: {error}");
+                    std::process::ExitCode::from(1)
+                }
+            }
+        }
+        Err(message) => {
+            eprintln!("miao: {message}\n{USAGE}");
             std::process::ExitCode::from(2)
         }
     }
@@ -6705,6 +6717,24 @@ mod tests {
         )
         .expect("--fork with --continue parses");
         assert!(continued.fork && continued.continue_last);
+    }
+
+    #[test]
+    fn the_exit_hint_spelling_resumes_the_session() {
+        // The epilogue prints `miao -s ses_x`, so the short spelling has to
+        // reach Launch.session the same way `--session` does; a leading option
+        // is passed through as a TUI flag rather than read as a subcommand.
+        let resumed = launch(
+            ["-s", "ses_x", "--db", "/tmp/x.db"]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect("-s parses");
+        assert_eq!(resumed.session.as_deref(), Some("ses_x"));
+        assert!(!resumed.continue_last);
+        let error = launch(["-s"].into_iter().map(str::to_string))
+            .expect_err("-s without an identifier is refused");
+        assert!(error.contains("--session"), "{error}");
     }
 
     #[test]
