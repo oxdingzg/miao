@@ -4758,6 +4758,55 @@ mod tests {
         assert!(banner_row.contains('█'), "{banner_row:?}");
     }
 
+    /// The landing prompt is not a one-row field: a draft with newlines in it
+    /// grows the band and shows every line, which is what makes `shift+enter`
+    /// (or a pasted multi-line prompt) usable before a Session exists.
+    #[test]
+    fn the_landing_band_shows_every_line_of_its_draft() {
+        let theme = home_theme();
+        let mut home = Home::new(theme.clone());
+        let mut composer = crate::editor::Composer::new(Path::new("."));
+        composer
+            .editor
+            .set_text("first line\nsecond line\nthird line");
+        // Two rules and one row per draft line.
+        assert_eq!(composer_height(&composer, 75, 30), 2 + 3);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).expect("terminal");
+        terminal
+            .draw(|frame| home.render(frame, frame.area(), &mut composer))
+            .expect("draw");
+        let buffer = terminal.backend().buffer().clone();
+        let row = |y: u16| {
+            (0..120)
+                .map(|x| buffer[(x, y)].symbol().to_string())
+                .collect::<String>()
+        };
+        let rule = "─".repeat(75);
+        let rules = (0..30)
+            .filter(|y| row(*y).contains(&rule))
+            .collect::<Vec<_>>();
+        assert_eq!(rules.len(), 2, "one rule above the draft and one below");
+        let (top, bottom) = (rules[0], rules[1]);
+        // Two rules plus three draft rows: a five-row band, so the rules sit
+        // four rows apart.
+        assert_eq!(
+            bottom - top,
+            2 + 3 - 1,
+            "three draft rows between the rules"
+        );
+        for (offset, line) in ["first line", "second line", "third line"]
+            .iter()
+            .enumerate()
+        {
+            let painted = row(top + 1 + offset as u16);
+            assert!(
+                painted.contains(line),
+                "line {offset} of the draft is missing: {painted:?}"
+            );
+        }
+    }
+
     /// A queued prompt names itself above the input: the title only carried a
     /// count, which read as a lost message.
     #[test]
