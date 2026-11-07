@@ -583,6 +583,54 @@ impl Editor {
         (line, self.column_cells(self.cursor))
     }
 
+    /// The byte offset the cell at display `row`/`cell` names, wrapping the
+    /// draft with `width` the way [`Self::display_lines`] does. A click inside a
+    /// wide glyph names that glyph, and a cell past the end of a row names the
+    /// row's end, so a pointer never lands mid-character.
+    pub fn offset_at(&self, row: usize, cell: usize, width: usize) -> usize {
+        let rows = self.display_lines(width.max(1));
+        let Some((index, start, _)) = rows.get(row) else {
+            return self.buffer.len();
+        };
+        let target = start + cell;
+        let line_start = self.line_start(*index);
+        let line = self.buffer[line_start..]
+            .split('\n')
+            .next()
+            .unwrap_or_default();
+        let mut cells = 0;
+        for (offset, ch) in line.char_indices() {
+            let width = match ch {
+                '\t' => TAB_CELLS,
+                ch => cell_width(ch).max(1),
+            };
+            if cells + width > target {
+                return line_start + offset;
+            }
+            cells += width;
+        }
+        line_start + line.len()
+    }
+
+    /// Start a pointer selection: `anchor` is where the drag began and `cursor`
+    /// is the moving end, the pair the `shift` motions also keep.
+    pub fn select_from(&mut self, anchor: usize, cursor: usize) {
+        self.anchor = Some(anchor);
+        self.cursor = cursor;
+        self.group = None;
+        self.goal = None;
+    }
+
+    /// Move the moving end of the selection, keeping where it started. A drag
+    /// that began without an anchor anchors at the cursor instead of inventing
+    /// a start somewhere else in the draft.
+    pub fn select_to(&mut self, cursor: usize) {
+        self.anchor.get_or_insert(self.cursor);
+        self.cursor = cursor;
+        self.group = None;
+        self.goal = None;
+    }
+
     /// The visible lines, with tabs expanded for rendering.
     pub fn lines(&self) -> impl Iterator<Item = String> + '_ {
         self.buffer.split('\n').map(|line| {
