@@ -38,6 +38,7 @@ struct LocalView: View {
                     } else {
                         transcript
                     }
+                    if let approval = agent.approval { approvalCard(approval) }
                     composer
                 }
                 .accessibilityHidden(sidebarVisible)
@@ -123,6 +124,11 @@ struct LocalView: View {
                                 Text("最大").tag(2)
                             }
                             .pickerStyle(.segmented)
+                            Toggle("自动允许本机工具", isOn: Binding(
+                                get: { agent.autoAllowTools },
+                                set: { agent.autoAllowTools = $0 }
+                            ))
+                            .accessibilityIdentifier("localAutoAllow")
                             Picker("主题色", selection: $accent) {
                                 Text("默认").tag(0)
                                 Text("绿").tag(1)
@@ -371,6 +377,30 @@ struct LocalView: View {
             draft = recognized
             return true
         }
+    }
+
+    /// A tool the app has not been allowed to run yet: name it, show what it
+    /// would touch, and let the owner decide.
+    private func approvalCard(_ approval: LocalApproval) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("需要你确认：\(approval.tool)", systemImage: "hand.raised")
+                .font(.footnote.weight(.semibold))
+            Text(approval.detail)
+                .font(.system(.caption, design: .monospaced))
+                .lineLimit(3).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Button("允许一次") { tap(); agent.resolve(true) }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("localApprove")
+                Button("拒绝", role: .destructive) { agent.resolve(false) }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("localDeny")
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial)
+        .accessibilityIdentifier("localApproval")
     }
 
     private func tap() {
