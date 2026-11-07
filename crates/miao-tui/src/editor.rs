@@ -326,6 +326,19 @@ impl Editor {
         self.goal = None;
     }
 
+    /// Remove `start..end` as one editing step, leaving the cursor at `start`.
+    pub fn remove_span(&mut self, start: usize, end: usize) -> bool {
+        if start >= end {
+            return false;
+        }
+        self.record(EditKind::Delete);
+        self.anchor = None;
+        self.buffer.replace_range(start..end, "");
+        self.cursor = start;
+        self.goal = None;
+        true
+    }
+
     pub fn backspace(&mut self) -> bool {
         if self.selection().is_some() {
             self.record(EditKind::Delete);
@@ -657,6 +670,103 @@ impl Editor {
             .map_or(rest.len(), |(offset, _)| offset);
         index + skipped + end
     }
+
+    /// Every marker in the draft, as `(start, end, kind, text)` with the byte
+    /// range of the bracket run. Text the operator typed that merely looks
+    /// bracketed is not a marker: only the shapes the composer writes are.
+    fn markers(&self) -> Vec<(usize, usize, Placeholder, String)> {
+        let mut markers = Vec::new();
+        let mut index = 0;
+        while let Some(open) = self.buffer[index..].find('[') {
+            let start = index + open;
+            let Some(close) = self.buffer[start..].find(']') else {
+                break;
+            };
+            let end = start + close + 1;
+            let inner = &self.buffer[start + 1..end - 1];
+            // A bracket run that wraps a line is prose, not a marker.
+            let kind = (!inner.contains('\n'))
+                .then(|| placeholder_kind(inner))
+                .flatten();
+            if let Some(kind) = kind {
+                markers.push((start, end, kind, inner.to_string()));
+            }
+            index = end;
+        }
+        markers
+    }
+
+    /// The marker an edit before the cursor would land on, with the space the
+    /// composer wrote after it, as `(start, end, kind, text)`. `backspace` at
+    /// the edge of `[Image 1] ` takes the whole marker, not one character of
+    /// the word it spells.
+    pub fn placeholder_before(&self) -> Option<(usize, usize, Placeholder, String)> {
+        self.markers()
+            .into_iter()
+            .find_map(|(start, end, kind, text)| {
+                let end = if self.buffer[end..].starts_with(' ') {
+                    end + 1
+                } else {
+                    end
+                };
+                (end == self.cursor).then_some((start, end, kind, text))
+            })
+    }
+
+    /// The marker `delete` would land on, with its trailing space.
+    pub fn placeholder_after(&self) -> Option<(usize, usize, Placeholder, String)> {
+        self.markers()
+            .into_iter()
+            .find_map(|(start, end, kind, text)| {
+                let end = if self.buffer[end..].starts_with(' ') {
+                    end + 1
+                } else {
+                    end
+                };
+                (start == self.cursor).then_some((start, end, kind, text))
+            })
+    }
+
+    /// How many markers of `kind` sit before `at`; for a paste, only the ones
+    /// that read exactly as `text`. The composer fills its attachment and paste
+    /// lists in the order it inserted the markers, so the count is the index of
+    /// the payload this marker stands for.
+    pub fn placeholder_rank(&self, at: usize, kind: Placeholder, text: &str) -> usize {
+        self.markers()
+            .into_iter()
+            .filter(|(start, _, other, marker)| {
+                *start < at && *other == kind && (kind != Placeholder::Paste || marker == text)
+            })
+            .count()
+    }
+}
+
+/// A marker the composer writes into the buffer for content it carries beside
+/// the text. An image or a file travels as bytes, a long paste as its full
+/// text; the operator reads each marker as one thing, so an edit at its edge
+/// takes all of it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Placeholder {
+    /// The bytes wait in the composer's attachment list.
+    Attachment,
+    /// The full text waits in the composer's paste list.
+    Paste,
+}
+
+fn placeholder_kind(inner: &str) -> Option<Placeholder> {
+    fn numbered(text: &str) -> bool {
+        !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+    }
+    if let Some(number) = inner.strip_prefix("Image ") {
+        return numbered(number).then_some(Placeholder::Attachment);
+    }
+    if inner == "File" || inner.starts_with("File ") {
+        return Some(Placeholder::Attachment);
+    }
+    let count = inner
+        .strip_prefix("Pasted ~")
+        .and_then(|rest| rest.strip_suffix(" lines"))?;
+    numbered(count).then_some(Placeholder::Paste)
 }
 
 fn cell_width(c: char) -> usize {
@@ -967,12 +1077,14 @@ impl Composer {
             Some(keybinds::Action::InputBackspace) => {
                 if self.mode == Mode::Shell && self.editor.is_empty() {
                     self.mode = Mode::Normal;
-                } else {
+                } else if !self.delete_placeholder(false) {
                     self.editor.backspace();
                 }
             }
             Some(keybinds::Action::InputDelete) => {
-                self.editor.delete_forward();
+                if !self.delete_placeholder(true) {
+                    self.editor.delete_forward();
+                }
             }
             Some(keybinds::Action::InputMoveLeft) => {
                 self.editor.move_left();
@@ -1199,6 +1311,51 @@ impl Composer {
         self.attachments.push(json!({ "mime": mime, "data": data }));
         self.refresh_completion();
         images + 1
+    }
+
+    /// Take the marker the cursor touches as one unit, and the payload it
+    /// stands for with it. Erasing a marker one character at a time left the
+    /// bytes attached with nothing on screen saying so, and the operator had to
+    /// spell out `] ` before the picture was actually gone.
+    fn delete_placeholder(&mut self, forward: bool) -> bool {
+        if self.editor.selecting() {
+            return false;
+        }
+        let edge = if forward {
+            self.editor.placeholder_after()
+        } else {
+            self.editor.placeholder_before()
+        };
+        let Some((start, end, kind, marker)) = edge else {
+            return false;
+        };
+        let rank = self.editor.placeholder_rank(start, kind, &marker);
+        match kind {
+            Placeholder::Attachment => {
+                if rank < self.attachments.len() {
+                    self.attachments.remove(rank);
+                }
+            }
+            Placeholder::Paste => {
+                // The paste list holds the marker as the draft shows it; the
+                // scan hands back the label inside the brackets.
+                let index = self
+                    .pastes
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (placeholder, _))| {
+                        placeholder.trim_start_matches('[').trim_end_matches(']') == marker
+                    })
+                    .map(|(index, _)| index)
+                    .nth(rank);
+                if let Some(index) = index {
+                    self.pastes.remove(index);
+                }
+            }
+        }
+        self.editor.remove_span(start, end);
+        self.refresh_completion();
+        true
     }
 
     /// Discard text and its pending attachments together: an attachment whose
@@ -1937,6 +2094,80 @@ mod tests {
         composer.clear();
         assert!(composer.editor.is_empty());
         assert!(composer.attachments.is_empty());
+    }
+
+    /// An image marker reads as one thing, so `backspace` takes the marker and
+    /// the bytes with it instead of spelling `] ` out one cell at a time.
+    #[test]
+    fn backspace_takes_an_image_marker_as_one_unit() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-marker-{}", std::process::id()));
+        let mut composer = composer(&dir);
+        composer.attach_image("image/png", "cG5n");
+        composer.attach_image("image/png", "cG5n");
+        let keymap = Keymap::default();
+        composer.handle_edit_key(
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+            &keymap,
+        );
+        assert_eq!(composer.editor.text(), "[Image 1] ");
+        assert_eq!(
+            composer.attachments.len(),
+            1,
+            "the second image went with its marker"
+        );
+        composer.handle_edit_key(
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+            &keymap,
+        );
+        assert_eq!(composer.editor.text(), "");
+        assert!(composer.attachments.is_empty());
+    }
+
+    /// `delete` in front of a marker takes it the same way.
+    #[test]
+    fn delete_takes_the_marker_in_front_of_the_cursor() {
+        let dir =
+            std::env::temp_dir().join(format!("miao-tui-marker-forward-{}", std::process::id()));
+        let mut composer = composer(&dir);
+        composer.attach_image("image/png", "cG5n");
+        composer.editor.move_line_start();
+        composer.handle_edit_key(
+            KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE),
+            &Keymap::default(),
+        );
+        assert_eq!(composer.editor.text(), "");
+        assert!(composer.attachments.is_empty());
+    }
+
+    #[test]
+    fn backspace_takes_a_paste_marker_and_drops_its_text() {
+        let dir =
+            std::env::temp_dir().join(format!("miao-tui-paste-marker-{}", std::process::id()));
+        let mut composer = composer(&dir);
+        composer.paste("x\ny\nz");
+        composer.handle_edit_key(
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+            &Keymap::default(),
+        );
+        assert_eq!(composer.editor.text(), "");
+        assert!(
+            composer.pastes.is_empty(),
+            "the pasted block goes with its marker"
+        );
+    }
+
+    /// Bracketed prose the operator typed is still ordinary text: only the
+    /// markers the composer writes read as one unit.
+    #[test]
+    fn typed_brackets_still_delete_one_character_at_a_time() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-brackets-{}", std::process::id()));
+        let mut composer = composer(&dir);
+        composer.editor.insert_str("[note]");
+        composer.handle_edit_key(
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+            &Keymap::default(),
+        );
+        assert_eq!(composer.editor.text(), "[note");
     }
 
     #[test]
