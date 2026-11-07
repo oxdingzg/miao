@@ -666,7 +666,10 @@ impl Tools {
         // make its side effects look uncommitted or safe to repeat. Both
         // spellings are stripped to plain first: on Windows `canonicalize`
         // hands back a verbatim path that never equals the prepared one.
-        let canonical = tokio::fs::canonicalize(path).await.ok().map(canonical_plain);
+        let canonical = tokio::fs::canonicalize(path)
+            .await
+            .ok()
+            .map(canonical_plain);
         if canonical.as_deref() != Some(path) {
             return;
         }
@@ -2626,10 +2629,7 @@ mod write_containment_tests {
         let tools = Tools::new(directory.path()).await.unwrap();
         tools.set_gates(writing_tools());
         let outside = tempfile::tempdir().unwrap();
-        let escape = format!(
-            "{}",
-            outside.path().join("escape.txt").display()
-        );
+        let escape = format!("{}", outside.path().join("escape.txt").display());
         let error = match tools
             .prepare(
                 "write_file",
@@ -2640,7 +2640,10 @@ mod write_containment_tests {
             Err(error) => error,
             Ok(_) => panic!("a write outside the workspace must be refused"),
         };
-        assert!(matches!(error, ToolError::OutsideWorkspace | ToolError::InvalidArgs(_)));
+        assert!(matches!(
+            error,
+            ToolError::OutsideWorkspace | ToolError::InvalidArgs(_)
+        ));
     }
 }
 
