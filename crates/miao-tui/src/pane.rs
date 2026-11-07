@@ -10,7 +10,7 @@ use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
 
 use crate::dialogs::{Dialog, ListDialog, ListKind, PaletteDialog};
-use crate::editor::{CompletionKind, Composer, Mode};
+use crate::editor::{CompletionKind, Composer, Editor, Mode};
 use crate::session::{
     ApprovalView, Entry, Part, QuestionView, Reasoning, SessionSummary, Transcript,
 };
@@ -85,6 +85,12 @@ pub struct Shell {
     /// Whether the operator hid the right column. The strip carries the chord
     /// while it is gone, so hiding it never strands the way back.
     sidebar_hidden: bool,
+    /// Where the draft was painted last frame. A pointer inside these cells
+    /// selects the composer's text instead of falling through to the transcript.
+    composer_text: Option<ComposerText>,
+    /// A drag that began on the draft owns the selection until the button comes
+    /// up, which is when its text is copied.
+    composer_drag: bool,
 }
 
 impl Shell {
@@ -112,6 +118,8 @@ impl Shell {
             toggle_chord: None,
             sidebar_chord: None,
             sidebar_hidden: false,
+            composer_text: None,
+            composer_drag: false,
         }
     }
 
@@ -310,16 +318,43 @@ impl Shell {
         self.transcript.expanded
     }
 
-    /// Mouse selection lives on the transcript; the shell forwards the drag.
+    /// A press inside the draft starts a text selection on it; anywhere else it
+    /// belongs to the transcript's own rows, so one gesture means one source.
     pub fn begin_selection(&mut self, position: Position) -> bool {
+        if let Some(text) = self
+            .composer_text
+            .filter(|text| text.input.contains(position))
+        {
+            let offset = text.offset(&self.composer.editor, position);
+            self.composer.editor.select_from(offset, offset);
+            self.composer_drag = true;
+            return true;
+        }
+        self.composer_drag = false;
         self.transcript.begin_selection(position)
     }
 
+    /// Extend the drag on the surface the press named, so a drag that leaves
+    /// the draft still covers the last line it crossed.
     pub fn update_selection(&mut self, position: Position) {
-        self.transcript.update_selection(position)
+        if self.composer_drag {
+            if let Some(text) = self.composer_text {
+                let offset = text.offset(&self.composer.editor, position);
+                self.composer.editor.select_to(offset);
+            }
+            return;
+        }
+        self.transcript.update_selection(position);
     }
 
+    /// Consume the selection, whichever surface owns it.
     pub fn take_selection(&mut self) -> Option<String> {
+        if self.composer_drag {
+            self.composer_drag = false;
+            let text = self.composer.editor.selected_text().map(str::to_string);
+            self.composer.editor.clear_selection();
+            return text;
+        }
         self.transcript.take_selection()
     }
 
@@ -357,6 +392,14 @@ impl Shell {
     /// Whether the transcript is showing its newest rows.
     pub fn following(&self) -> bool {
         self.transcript.follow
+    }
+
+    /// The first cell of the draft as last painted, so a test can aim a drag at
+    /// it instead of guessing where the box landed.
+    #[cfg(test)]
+    pub fn draft_cell(&self) -> Option<Position> {
+        self.composer_text
+            .map(|text| Position::new(text.input.x, text.input.y))
     }
 
     pub fn set_usage(&mut self, usage: Option<&crate::status::UsageSummary>) {
@@ -455,7 +498,8 @@ impl Shell {
         // The input spans the whole window width, covering the sidebar's bottom
         // band the way the layout draws it: the sidebar's content ends high, and
         // a prose-width input left that band looking cut off.
-        render_composer(frame, composer_area, &self.composer, &self.transcript.theme);
+        self.composer_text =
+            render_composer(frame, composer_area, &self.composer, &self.transcript.theme);
         match &self.leader_hint {
             Some(menu) => frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
@@ -1293,6 +1337,12 @@ pub struct Home {
     /// after a stretch of no input, the way the product's logo does, so a home
     /// screen left open stops repainting instead of running forever.
     last_input: Instant,
+    /// Where the landing prompt painted its draft last frame, so a pointer
+    /// inside it selects text the way the Session composer does.
+    composer_text: Option<ComposerText>,
+    /// A drag that began on the draft owns the selection until the button comes
+    /// up, which is when its text is copied.
+    composer_drag: bool,
     theme: Theme,
 }
 
@@ -1303,6 +1353,8 @@ impl Home {
             warning: None,
             prompt_width: crate::config::PromptWidth::default(),
             last_input: Instant::now(),
+            composer_text: None,
+            composer_drag: false,
             theme,
         }
     }
@@ -1310,6 +1362,39 @@ impl Home {
     /// Any keystroke, paste or click restarts the idle light.
     pub fn wake(&mut self) {
         self.last_input = Instant::now();
+    }
+
+    /// A press inside the landing prompt selects the draft's text. The composer
+    /// belongs to the shell, so it is passed in rather than held here.
+    pub fn begin_selection(&mut self, composer: &mut Composer, position: Position) -> bool {
+        let Some(text) = self
+            .composer_text
+            .filter(|text| text.input.contains(position))
+        else {
+            return false;
+        };
+        let offset = text.offset(&composer.editor, position);
+        composer.editor.select_from(offset, offset);
+        self.composer_drag = true;
+        true
+    }
+
+    pub fn update_selection(&mut self, composer: &mut Composer, position: Position) {
+        if let (true, Some(text)) = (self.composer_drag, self.composer_text) {
+            let offset = text.offset(&composer.editor, position);
+            composer.editor.select_to(offset);
+        }
+    }
+
+    /// Consume the drag's selection, which is what the release copies.
+    pub fn take_selection(&mut self, composer: &mut Composer) -> Option<String> {
+        if !self.composer_drag {
+            return None;
+        }
+        self.composer_drag = false;
+        let text = composer.editor.selected_text().map(str::to_string);
+        composer.editor.clear_selection();
+        text
     }
 
     /// Whether the banner still paints its sweep: on a colour terminal, and
@@ -1329,6 +1414,14 @@ impl Home {
 
     pub fn notice(&self) -> Option<&str> {
         self.notice.as_deref()
+    }
+
+    /// The first cell of the draft as last painted, so a test can aim a drag at
+    /// the landing prompt instead of guessing where it landed.
+    #[cfg(test)]
+    pub fn draft_cell(&self) -> Option<Position> {
+        self.composer_text
+            .map(|text| Position::new(text.input.x, text.input.y))
     }
 
     pub fn set_warning(&mut self, warning: Option<String>) {
@@ -1444,7 +1537,7 @@ impl Home {
             // an empty row under a one-line prompt.
             height: prompt_h,
         };
-        render_home_composer(frame, prompt_area, composer, &self.theme);
+        self.composer_text = render_home_composer(frame, prompt_area, composer, &self.theme);
         for (offset, (notice, ink)) in notices.iter().enumerate() {
             frame.render_widget(
                 Paragraph::new(Span::styled(notice.clone(), Style::new().fg(*ink))),
@@ -2110,10 +2203,15 @@ fn render_queued(frame: &mut Frame, area: Rect, prompts: &[String], theme: &Them
 /// title is where a run's phase, queue depth and notice live. The landing
 /// screen has no run, so it gets the open band the product shows there instead
 /// of a box titled with nothing.
-pub fn render_home_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
+fn render_home_composer(
+    frame: &mut Frame,
+    area: Rect,
+    composer: &Composer,
+    theme: &Theme,
+) -> Option<ComposerText> {
     let palette = theme.palette;
     if area.width < 5 || area.height < 2 {
-        return;
+        return None;
     }
     let shell = composer.mode() == Mode::Shell;
     let rule = Style::new().fg(match shell {
@@ -2140,9 +2238,9 @@ pub fn render_home_composer(frame: &mut Frame, area: Rect, composer: &Composer, 
     };
     frame.render_widget(Block::new().style(Style::new().bg(palette.element)), body);
     if body.width < 5 {
-        return;
+        return None;
     }
-    render_composer_body(
+    Some(render_composer_body(
         frame,
         Rect {
             x: body.x + 2,
@@ -2152,10 +2250,45 @@ pub fn render_home_composer(frame: &mut Frame, area: Rect, composer: &Composer, 
         composer,
         theme,
         shell,
-    );
+    ))
 }
 
-fn render_composer(frame: &mut Frame, area: Rect, composer: &Composer, theme: &Theme) {
+/// Where the draft was painted and how far a wrapped draft scrolled, recorded
+/// by the frame that painted it. The renderer and the pointer share these
+/// cells, so a drag selects the characters it covered instead of guessing at
+/// the wrap.
+#[derive(Clone, Copy)]
+struct ComposerText {
+    input: Rect,
+    row_offset: usize,
+}
+
+impl ComposerText {
+    /// The byte offset under `position`, clamped into the painted cells so a
+    /// drag that leaves the box still selects the last line it crossed.
+    fn offset(&self, editor: &Editor, position: Position) -> usize {
+        let row = position
+            .y
+            .clamp(self.input.y, self.input.bottom().saturating_sub(1))
+            .saturating_sub(self.input.y);
+        let cell = position
+            .x
+            .clamp(self.input.x, self.input.right().saturating_sub(1))
+            .saturating_sub(self.input.x);
+        editor.offset_at(
+            self.row_offset + row as usize,
+            cell as usize,
+            self.input.width as usize,
+        )
+    }
+}
+
+fn render_composer(
+    frame: &mut Frame,
+    area: Rect,
+    composer: &Composer,
+    theme: &Theme,
+) -> Option<ComposerText> {
     render_composer_in(frame, area, composer, theme, composer_column(area.width))
 }
 
@@ -2165,7 +2298,7 @@ fn render_composer_in(
     composer: &Composer,
     theme: &Theme,
     column: u16,
-) {
+) -> Option<ComposerText> {
     let palette = theme.palette;
     let column = column.min(area.width);
     let area = Rect {
@@ -2246,14 +2379,14 @@ fn render_composer_in(
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if inner.width == 0 || inner.height == 0 {
-        return;
+        return None;
     }
     let padded = Rect {
         x: inner.x + 1,
         width: inner.width.saturating_sub(2),
         ..inner
     };
-    render_composer_body(frame, padded, composer, theme, shell);
+    Some(render_composer_body(frame, padded, composer, theme, shell))
 }
 
 /// The draft, its selection, the caret and the completion list, painted inside
@@ -2265,7 +2398,7 @@ fn render_composer_body(
     composer: &Composer,
     theme: &Theme,
     shell: bool,
-) {
+) -> ComposerText {
     let palette = theme.palette;
     let accent = if shell {
         palette.warning
@@ -2438,6 +2571,10 @@ fn render_composer_body(
         })
         .collect::<Vec<_>>();
     frame.render_widget(Paragraph::new(items), completion_area);
+    ComposerText {
+        input: input_area,
+        row_offset,
+    }
 }
 
 /// Skip `offset` display cells and take at most `width` cells of a line.
@@ -4146,7 +4283,9 @@ mod tests {
             let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 8))
                 .expect("terminal");
             terminal
-                .draw(|frame| render_composer(frame, frame.area(), &composer, &theme))
+                .draw(|frame| {
+                    let _ = render_composer(frame, frame.area(), &composer, &theme);
+                })
                 .expect("draw");
             let text = terminal
                 .backend()
@@ -4379,12 +4518,12 @@ mod tests {
         };
         terminal
             .draw(|frame| {
-                super::render_composer(
+                let _ = super::render_composer(
                     frame,
                     ratatui::layout::Rect::new(0, 0, 80, 6),
                     &composer,
                     &theme,
-                )
+                );
             })
             .expect("draw");
         let text = painted(&mut terminal);
@@ -4396,12 +4535,12 @@ mod tests {
         composer.editor.insert_str("hello");
         terminal
             .draw(|frame| {
-                super::render_composer(
+                let _ = super::render_composer(
                     frame,
                     ratatui::layout::Rect::new(0, 0, 80, 6),
                     &composer,
                     &theme,
-                )
+                );
             })
             .expect("draw");
         let text = painted(&mut terminal);
@@ -4419,12 +4558,12 @@ mod tests {
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 6)).expect("terminal");
         terminal
             .draw(|frame| {
-                super::render_composer(
+                let _ = super::render_composer(
                     frame,
                     ratatui::layout::Rect::new(0, 0, 80, 6),
                     &composer,
                     &theme,
-                )
+                );
             })
             .expect("draw");
         let painted = terminal
@@ -4440,12 +4579,12 @@ mod tests {
         composer.editor.insert_str("hello");
         terminal
             .draw(|frame| {
-                super::render_composer(
+                let _ = super::render_composer(
                     frame,
                     ratatui::layout::Rect::new(0, 0, 80, 6),
                     &composer,
                     &theme,
-                )
+                );
             })
             .expect("draw");
         let painted = terminal
@@ -4982,7 +5121,9 @@ mod tests {
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 3)).expect("terminal");
         terminal
-            .draw(|frame| render_composer(frame, frame.area(), &composer, &theme))
+            .draw(|frame| {
+                let _ = render_composer(frame, frame.area(), &composer, &theme);
+            })
             .expect("draw");
         let warning = theme.palette.warning;
         let painted = (0..40).any(|x| terminal.backend().buffer()[(x, 0)].fg == warning);
@@ -5176,7 +5317,9 @@ mod tests {
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
                 .expect("terminal");
         terminal
-            .draw(|frame| render_composer(frame, frame.area(), composer, theme))
+            .draw(|frame| {
+                let _ = render_composer(frame, frame.area(), composer, theme);
+            })
             .expect("draw");
         terminal
             .backend()
@@ -5196,7 +5339,9 @@ mod tests {
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
                 .expect("terminal");
         terminal
-            .draw(|frame| render_composer(frame, frame.area(), composer, theme))
+            .draw(|frame| {
+                let _ = render_composer(frame, frame.area(), composer, theme);
+            })
             .expect("draw");
         (0..width)
             .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
@@ -5945,7 +6090,9 @@ mod tests {
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 8)).expect("terminal");
         terminal
-            .draw(|frame| render_composer(frame, frame.area(), &composer, &theme))
+            .draw(|frame| {
+                let _ = render_composer(frame, frame.area(), &composer, &theme);
+            })
             .expect("draw");
         let visible = terminal
             .backend()
@@ -5957,6 +6104,51 @@ mod tests {
             .collect::<String>();
         assert!(visible.contains("status"), "{visible}");
         assert!(visible.contains("Sessionstatusandusage"), "{visible}");
+    }
+
+    /// The composer already knew how to select with the keyboard; the pointer
+    /// had nowhere to land, so a draft could not be copied at all.
+    #[test]
+    fn a_drag_over_the_session_draft_copies_what_it_covered() {
+        let mut shell = Shell::new(Path::new("."), home_theme());
+        shell.composer.editor.set_text("hello world");
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 12)).expect("terminal");
+        terminal.draw(|frame| shell.render(frame)).expect("draw");
+        let draft = shell.composer_text.expect("the composer painted its draft");
+        assert!(
+            shell.begin_selection(Position::new(draft.input.x, draft.input.y)),
+            "a press on the draft belongs to the composer"
+        );
+        shell.update_selection(Position::new(draft.input.x + 4, draft.input.y));
+        assert_eq!(
+            shell.take_selection().as_deref(),
+            Some("hell"),
+            "the drag covered the first four cells"
+        );
+    }
+
+    /// The landing prompt is the same composer, so the same drag works there.
+    #[test]
+    fn a_drag_over_the_landing_draft_copies_what_it_covered() {
+        let mut home = Home::new(home_theme());
+        let mut composer = Composer::new(Path::new("."));
+        composer.editor.set_text("draft text");
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 16)).expect("terminal");
+        terminal
+            .draw(|frame| home.render(frame, frame.area(), &mut composer))
+            .expect("draw");
+        let draft = home.composer_text.expect("the prompt painted its draft");
+        assert!(home.begin_selection(
+            &mut composer,
+            Position::new(draft.input.x + 6, draft.input.y)
+        ));
+        home.update_selection(
+            &mut composer,
+            Position::new(draft.input.x + 10, draft.input.y),
+        );
+        assert_eq!(home.take_selection(&mut composer).as_deref(), Some("text"));
     }
 
     fn home_theme() -> Theme {

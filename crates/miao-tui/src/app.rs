@@ -1317,20 +1317,40 @@ impl App {
         // A drag over the transcript copies what it covered, like the
         // TypeScript UI: cells, not logical lines, because the transcript is
         // wrapped.
-        if self.dialog.is_none() && self.screen == Screen::Session {
+        // Both screens take a drag: the transcript's rows on a Session, and the
+        // draft itself in whichever composer is on screen.
+        if self.dialog.is_none() {
             let position = ratatui::layout::Position::new(mouse.column, mouse.row);
             match mouse.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
                     self.leader = false;
-                    self.shell.begin_selection(position);
+                    match self.screen {
+                        Screen::Session => {
+                            self.shell.begin_selection(position);
+                        }
+                        Screen::Home => {
+                            self.home
+                                .begin_selection(&mut self.shell.composer, position);
+                        }
+                    }
                     return;
                 }
                 MouseEventKind::Drag(MouseButton::Left) => {
-                    self.shell.update_selection(position);
+                    match self.screen {
+                        Screen::Session => self.shell.update_selection(position),
+                        Screen::Home => {
+                            self.home
+                                .update_selection(&mut self.shell.composer, position);
+                        }
+                    }
                     return;
                 }
                 MouseEventKind::Up(MouseButton::Left) => {
-                    if let Some(text) = self.shell.take_selection() {
+                    let text = match self.screen {
+                        Screen::Session => self.shell.take_selection(),
+                        Screen::Home => self.home.take_selection(&mut self.shell.composer),
+                    };
+                    if let Some(text) = text {
                         crate::platform::clipboard::copy(&text);
                         self.notice(&format!("Copied {} characters", text.chars().count()));
                     }
@@ -4733,6 +4753,52 @@ mod tests {
             app.shell.composer.editor.text(),
             "a draft in progress",
             "and the draft is untouched"
+        );
+    }
+
+    /// The landing prompt is the input box that took no selection at all: a drag
+    /// there copies the covered cells the way the transcript does.
+    #[test]
+    fn a_drag_on_the_landing_draft_copies_it() {
+        let mut app = app();
+        app.shell.composer.editor.set_text("landing draft");
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 30)).expect("terminal");
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+        let start = app
+            .home
+            .draft_cell()
+            .expect("the landing prompt painted its draft");
+        for (kind, column) in [
+            (MouseEventKind::Down(MouseButton::Left), start.x),
+            (MouseEventKind::Drag(MouseButton::Left), start.x + 7),
+        ] {
+            app.handle(AppEvent::Mouse(MouseEvent::new(
+                kind,
+                column,
+                start.y,
+                KeyModifiers::NONE,
+            )));
+        }
+        assert!(
+            app.shell.composer.editor.selecting(),
+            "the press starts a selection on the draft"
+        );
+        assert_eq!(
+            app.shell.composer.editor.selected_text(),
+            Some("landing"),
+            "the drag covers the first seven cells"
+        );
+        app.handle(AppEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Up(MouseButton::Left),
+            start.x + 7,
+            start.y,
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(
+            app.home.notice(),
+            Some("Copied 7 characters"),
+            "the drag copies what it covered and reports it"
         );
     }
 
