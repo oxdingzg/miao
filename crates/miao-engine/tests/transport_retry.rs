@@ -310,3 +310,113 @@ async fn a_transport_failure_keeps_the_underlying_cause() {
         "the URL's query reached the message: {message}"
     );
 }
+
+/// The first call announces the retry the real client layer would announce —
+/// the same progress frame the runtime journals as the durable retry fact —
+/// and then holds the pause open until the run is cancelled, exactly as the
+/// pause inside `provider::stream` does.
+struct Throttled {
+    calls: AtomicUsize,
+}
+#[async_trait]
+impl Provider for Throttled {
+    async fn stream(
+        &self,
+        _: ModelRequest,
+        progress: mpsc::Sender<Value>,
+        cancel: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            let _ = progress
+                .send(json!({
+                    "kind": "provider.retry",
+                    "attempt": 2,
+                    "reason": "provider HTTP 429 rate limited",
+                    "status": 429,
+                    "cause": "vendor_rate_limit",
+                    "source": "provider",
+                    "delay_ms": 60_000,
+                }))
+                .await;
+            cancel.cancelled().await;
+            return Err(ProviderError::Interrupted);
+        }
+        Ok(Reply {
+            content: json!([{"type": "text", "text": "recovered"}]),
+            usage: json!({}),
+            needs_tools: false,
+        })
+    }
+}
+
+/// A turn pausing before its next attempt answers an interrupt at once: the
+/// interrupt lands while the retry pause is held, the run finishes
+/// interrupted, and the provider never sees the attempt the pause was
+/// counting down to.
+#[tokio::test]
+async fn an_interrupt_lands_in_a_retry_pause_without_waiting_for_the_next_attempt() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let provider = Arc::new(Throttled {
+        calls: AtomicUsize::new(0),
+    });
+    let runtime = Runtime::new(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "go".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    // The durable retry fact is journalled when the pause begins, so waiting
+    // for it puts the interrupt inside the pause instead of racing the run's
+    // start.
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let events = store.events("s", 0, 1000).await.unwrap();
+            if events.iter().any(|event| event.kind == "provider.retry") {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the run reaches its retry pause");
+    runtime.cancel("s").await.unwrap();
+    let finished = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let events = store.events("s", 0, 1000).await.unwrap();
+            if let Some(event) = events.iter().find(|event| event.kind == "run.finished") {
+                break event.clone();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the interrupt settles the paused run inside the pause");
+    assert_eq!(
+        finished.data["reason"],
+        "interrupted",
+        "{}",
+        serde_json::to_string(&finished.data).unwrap()
+    );
+    assert_eq!(
+        provider.calls.load(Ordering::SeqCst),
+        1,
+        "the paused retry never ran"
+    );
+    runtime.shutdown().await;
+}
