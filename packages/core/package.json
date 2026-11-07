@@ -91,7 +91,6 @@
     "@lydell/node-pty": "catalog:",
     "@miao/codemode": "workspace:*",
     "@miao/effect-drizzle-sqlite": "workspace:*",
-    "@miao/effect-sqlite-node": "workspace:*",
     "@miao/llm": "workspace:*",
     "@miao/native": "workspace:*",
     "@miao/plugin": "workspace:*",
