@@ -527,6 +527,35 @@
     ],
     "type": "object"
   },
+  "worktree_create": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  },
+  "worktree_list": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  },
+  "worktree_remove": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  },
   "write_file": {
     "additionalProperties": false,
     "properties": {
