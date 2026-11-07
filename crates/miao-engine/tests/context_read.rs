@@ -532,3 +532,41 @@ async fn parallel_reads_activate_each_directory_and_strip_internal_metadata_from
     }
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn nested_instruction_repeating_loaded_content_is_recorded_not_repeated() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("deep")).unwrap();
+    // A worktree or nested directory often carries the same AGENTS.md the root
+    // already contributed; loading it twice only spends the context budget.
+    std::fs::write(dir.path().join("AGENTS.md"), "SHARED_RULE").unwrap();
+    std::fs::write(dir.path().join("deep/AGENTS.md"), "SHARED_RULE").unwrap();
+    std::fs::write(dir.path().join("deep/file.txt"), "fixture").unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let (runtime, mut receive) = start(
+        &store,
+        Tools::new(dir.path()).await.unwrap(),
+        &["deep/file.txt"],
+        Config::default(),
+    )
+    .await;
+    prompt(&runtime, "s", "one").await;
+    assert_eq!(
+        request(&mut receive).await.matches("SHARED_RULE").count(),
+        1
+    );
+    let system = request(&mut receive).await;
+    assert_eq!(system.matches("SHARED_RULE").count(), 1);
+    idle(&store, "s", 1).await;
+    let context = store.context("s", None).await.unwrap().unwrap();
+    let sources = context["sources"].as_array().unwrap();
+    assert!(sources.iter().any(|source| {
+        source["path"] == "deep/AGENTS.md"
+            && source["reason"] == "duplicate_content"
+            && source["duplicate_of"] == "AGENTS.md"
+    }));
+    assert!(!sources
+        .iter()
+        .any(|source| source["path"] == "deep/AGENTS.md" && source["status"] == "loaded"));
+    runtime.shutdown().await;
+}

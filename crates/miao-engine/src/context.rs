@@ -668,6 +668,11 @@ pub(crate) async fn assemble_for_agent(
                     sources.push(json!({"label":source.label,"path":source.path,"status":"skipped","reason":"invalid_file"}));
                     continue;
                 };
+                let sha256=data["sha256"].as_str().map(str::to_owned);
+                if let Some(original)=sha256.as_deref().and_then(|sha|loaded_label(&sources,sha)){
+                    sources.push(json!({"label":source.label,"path":source.path,"resource":resource,"status":"skipped","reason":"duplicate_content","duplicate_of":original}));
+                    continue;
+                }
                 let block=format!("\n\n<project-instructions source=\"{}\">\n{}\n</project-instructions>",source.label,text);
                 // Budget-aware assembly: an instructions block that would blow
                 // the context budget is skipped (recorded for the client) so a
@@ -796,6 +801,16 @@ pub(crate) fn progress_reminder(history: &[Message]) -> Option<&'static str> {
     )
 }
 
+/// The label that already installed this content, if any. Instruction files
+/// repeat across worktrees and nested directories, and the same bytes in the
+/// prompt twice only spend budget and invite conflicting readings.
+fn loaded_label(sources: &[serde_json::Value], sha256: &str) -> Option<String> {
+    sources
+        .iter()
+        .find(|source| source["status"] == "loaded" && source["sha256"] == sha256)
+        .and_then(|source| source["label"].as_str().map(str::to_owned))
+}
+
 async fn append_read_sources(
     tools: &Tools,
     policy: &Policy,
@@ -857,9 +872,20 @@ async fn append_read_sources(
                         .await
                     {
                         Ok(data) => {
-                            entry["status"] = json!("loaded");
-                            entry["sha256"] = data["sha256"].clone();
-                            data["text"].as_str().map(str::to_owned)
+                            let sha256 = data["sha256"].as_str().map(str::to_owned);
+                            match sha256.as_deref().and_then(|sha| loaded_label(sources, sha)) {
+                                Some(original) => {
+                                    entry["reason"] = json!("duplicate_content");
+                                    entry["duplicate_of"] = json!(original);
+                                    entry["sha256"] = data["sha256"].clone();
+                                    None
+                                }
+                                None => {
+                                    entry["status"] = json!("loaded");
+                                    entry["sha256"] = data["sha256"].clone();
+                                    data["text"].as_str().map(str::to_owned)
+                                }
+                            }
                         }
                         Err(ToolError::Interrupted) => return Err(ToolError::Interrupted),
                         Err(ToolError::TooLarge(_)) => {
