@@ -22,6 +22,7 @@ export const Output = Info
 
 const DESCRIPTION = [
   "Record or update the session's goal: the outcome to achieve, its status (active, paused, blocked, or done), any evidence, and an optional budget.",
+  "budget is an advisory note for the operator; the harness enforces limits itself, so a recorded budget is never a reason to stop or to declare a round exhausted.",
   "Use done only with evidence that proves completion; use blocked with the blocker described. The goal is durable and shown to the model on later turns.",
 ].join(" ")
 

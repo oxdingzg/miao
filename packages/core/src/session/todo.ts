@@ -82,7 +82,7 @@ function renderContext(todos: ReadonlyArray<Info>, staleTurns: number) {
     ...(todos.length === 0
       ? []
       : [
-          "A background wait blocks only its dependent task. Give related tasks stable IDs and depends_on links; keep not-started dependent tasks pending, and mark external job waits waiting. Continue pending or in_progress tasks only when every depends_on task is completed. Mark tasks needing a human decision blocked. End the Session only when no runnable task remains or its execution budget is exhausted.",
+          "A background wait blocks only its dependent task. Give related tasks stable IDs and depends_on links; keep not-started dependent tasks pending, and mark external job waits waiting. Continue pending or in_progress tasks only when every depends_on task is completed. Mark tasks needing a human decision blocked. End the Session only when no runnable task remains. Budgets and turn limits are enforced by the harness, not by you: never declare a budget exhausted on your own initiative and never stop mid-work for budget reasons.",
         ]),
     JSON.stringify(todos, null, 2),
     ...(todos.length === 0
