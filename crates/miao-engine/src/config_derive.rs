@@ -260,7 +260,8 @@ pub fn policy(documents: &[Document], miao_sandbox: Option<&str>) -> permission:
 
 /// The native sandbox switch (product `SandboxPolicy.nativeEnabled`): an
 /// explicit `MIAO_SANDBOX` wins in both directions, the merged `sandbox.mode`
-/// decides otherwise, and with neither the engine keeps confining commands.
+/// decides otherwise, and with neither the engine keeps confining commands —
+/// except on Windows, where confinement needs an explicit opt-in.
 pub fn sandbox_enabled(documents: &[Document], miao_sandbox: Option<&str>) -> bool {
     if let Some(decision) = env_switch(miao_sandbox) {
         return decision;
@@ -270,14 +271,22 @@ pub fn sandbox_enabled(documents: &[Document], miao_sandbox: Option<&str>) -> bo
         .map(|document| document.value.clone())
         .collect::<Vec<_>>();
     let merged = config_scope::merge_values(&values);
-    !matches!(
-        merged
-            .get("sandbox")
-            .and_then(Value::as_object)
-            .and_then(|sandbox| sandbox.get("mode"))
-            .and_then(Value::as_str),
-        Some("off")
-    )
+    let mode = merged
+        .get("sandbox")
+        .and_then(Value::as_object)
+        .and_then(|sandbox| sandbox.get("mode"))
+        .and_then(Value::as_str);
+    // The Windows AppContainer cannot open \Device\Null, and every MSYS
+    // program opens it: git-bash dies during runtime init and `git status`
+    // reports "/dev/null: Permission denied". The device DACL is machine-wide
+    // and cannot carry a container ACE without admin rights, so no
+    // per-invocation grant fixes it. Confine there only when the operator
+    // asks for it.
+    if cfg!(windows) {
+        matches!(mode, Some("workspace-write"))
+    } else {
+        !matches!(mode, Some("off"))
+    }
 }
 
 /// Extra directories `sandbox.writable_roots` grants the confined command.
@@ -1391,7 +1400,10 @@ mod tests {
         assert!(!sandbox_enabled(&off_by_default, Some("0")));
         // An empty value means unset, like the product's environment read.
         assert!(sandbox_enabled(&off_by_default, Some("")));
-        assert!(sandbox_enabled(&documents(&[]), None));
+        // With no explicit choice the engine confines, except on Windows,
+        // where the AppContainer breaks MSYS shells and confinement needs
+        // the explicit opt-in above.
+        assert_eq!(sandbox_enabled(&documents(&[]), None), !cfg!(windows));
     }
 
     #[test]
