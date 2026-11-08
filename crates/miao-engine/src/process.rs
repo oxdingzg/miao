@@ -152,8 +152,38 @@ impl BashInput {
 
     /// Translate to the argv the sandboxed runner executes.
     pub fn argv(&self) -> Vec<String> {
-        vec!["bash".into(), "-c".into(), self.command.clone()]
+        vec![bash_executable(), "-c".into(), self.command.clone()]
     }
+}
+
+#[cfg(not(windows))]
+fn bash_executable() -> String {
+    "bash".into()
+}
+
+/// The Git Bash to run the shell tool with, or bare `bash` when Git for
+/// Windows is not installed. CreateProcessW resolves bare `bash` against the
+/// PATH, where `C:\Windows\System32\bash.exe` — the WSL launcher, which fails
+/// on machines without a distribution and sees a different filesystem view on
+/// machines with one — precedes the entries a plain Git install adds, so the
+/// engine names Git Bash directly instead.
+#[cfg(windows)]
+fn bash_executable() -> String {
+    let bases = ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"]
+        .iter()
+        .filter_map(|key| std::env::var_os(key).map(std::path::PathBuf::from))
+        .collect::<Vec<_>>();
+    bash_in(&bases)
+}
+
+#[cfg(windows)]
+fn bash_in(bases: &[std::path::PathBuf]) -> String {
+    bases
+        .iter()
+        .map(|base| base.join("Git").join("bin").join("bash.exe"))
+        .find(|path| path.is_file())
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "bash".into())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -883,6 +913,37 @@ pub(crate) async fn spawn(
         _lifeline: lifeline,
     };
     Ok((group, master, temp))
+}
+
+#[cfg(all(test, windows))]
+mod windows_bash_tests {
+    use super::bash_in;
+
+    #[test]
+    fn git_bash_under_a_candidate_base_wins_over_the_path_search() {
+        let base = std::env::temp_dir().join(format!("miao-bash-{}", std::process::id()));
+        std::fs::create_dir_all(base.join("Git").join("bin")).unwrap();
+        std::fs::write(base.join("Git").join("bin").join("bash.exe"), b"").unwrap();
+        let found = bash_in(&[base.clone()]);
+        assert_eq!(
+            found,
+            base.join("Git")
+                .join("bin")
+                .join("bash.exe")
+                .to_string_lossy()
+        );
+        std::fs::remove_dir_all(base).ok();
+    }
+
+    #[test]
+    fn without_git_bash_the_bare_name_stays() {
+        // A base without a Git installation must not invent a path: bare
+        // `bash` keeps today's PATH resolution as the fallback.
+        let empty = std::env::temp_dir().join(format!("miao-bash-empty-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        assert_eq!(bash_in(&[empty.clone()]), "bash");
+        std::fs::remove_dir_all(empty).ok();
+    }
 }
 
 #[cfg(test)]
