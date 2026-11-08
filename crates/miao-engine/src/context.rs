@@ -801,6 +801,39 @@ pub(crate) fn progress_reminder(history: &[Message]) -> Option<&'static str> {
     )
 }
 
+/// Context-pressure ladder over a known window: 0 below attention, 1 advisory
+/// at 60%, 2 actionable at 80%, 3 compaction-imminent at 88%. The compaction
+/// trigger itself plans against window * ratio (0.9 for a derived window), so
+/// level 3 fires in the turns just before that boundary instead of after it.
+pub(crate) fn pressure_level(window: u64, counted: u64) -> u8 {
+    let ratio = counted as f64 / window.max(1) as f64;
+    if ratio >= 0.88 {
+        3
+    } else if ratio >= 0.8 {
+        2
+    } else if ratio >= 0.6 {
+        1
+    } else {
+        0
+    }
+}
+
+/// The reminder body for a reached level: window and occupancy first, then the
+/// action for that level. The figures are re-measured every turn, so the note
+/// voids context numbers from earlier reminders instead of arming the model
+/// with a stale count it will defend.
+pub(crate) fn pressure_note(window: u64, counted: u64, level: u8) -> String {
+    let percent = counted.saturating_mul(100) / window.max(1);
+    let action = match level {
+        3 => "Automatic compaction will run at the next turn boundary: the conversation will be replaced by a summary and a restore-budget note will let you re-read what it omits. Wrap up the current step now, and make sure any state the next step needs is written to files.",
+        2 => "Automatic compaction triggers at a turn boundary once usage passes about 90% of the window. Finish the current operation cleanly, keep durable state in files rather than in conversation, and prefer targeted reads over broad exploration.",
+        _ => "Keep reads targeted and tool outputs concise so the approach of automatic compaction stays gradual.",
+    };
+    format!(
+        "<system-reminder>\nContext usage: about {counted} of {window} tokens ({percent}%). {action}\nThese figures are re-measured every turn; context numbers from earlier reminders are obsolete.\n</system-reminder>"
+    )
+}
+
 /// The label that already installed this content, if any. Instruction files
 /// repeat across worktrees and nested directories, and the same bytes in the
 /// prompt twice only spend budget and invite conflicting readings.
@@ -962,6 +995,34 @@ async fn append_read_sources(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pressure_level_ladder() {
+        assert_eq!(pressure_level(1_000, 0), 0);
+        assert_eq!(pressure_level(1_000, 599), 0);
+        assert_eq!(pressure_level(1_000, 600), 1);
+        assert_eq!(pressure_level(1_000, 799), 1);
+        assert_eq!(pressure_level(1_000, 800), 2);
+        assert_eq!(pressure_level(1_000, 879), 2);
+        assert_eq!(pressure_level(1_000, 880), 3);
+        assert_eq!(pressure_level(1_000, 2_000), 3);
+        // A degenerate window stays defined instead of panicking on divide.
+        assert_eq!(pressure_level(0, 5), 3);
+    }
+
+    #[test]
+    fn pressure_note_leads_with_the_window_and_voids_stale_figures() {
+        let note = pressure_note(1_048_576, 630_000, 1);
+        assert!(note.starts_with(
+            "<system-reminder>\nContext usage: about 630000 of 1048576 tokens (60%). "
+        ));
+        assert!(note.contains("re-measured every turn"));
+        assert!(note.contains("obsolete"));
+        let high = pressure_note(1_048_576, 900_000, 2);
+        assert!(high.contains("90% of the window"));
+        let imminent = pressure_note(1_048_576, 950_000, 3);
+        assert!(imminent.contains("restore-budget"));
+    }
 
     #[test]
     fn source_budget_reserves_the_tail_and_the_task_list_protocol() {
