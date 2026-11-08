@@ -554,6 +554,18 @@ impl Runtime {
             );
             inner.crons.lock().await.insert(cron_id, background);
         }
+        // A restart inherits the inbox. Input that was admitted before this
+        // process owned the Session was never promoted, and no drain is left to
+        // promote it, so the operator's queued message would sit there looking
+        // sent while nothing runs. Draining it now starts the turn they asked
+        // for; it never resumes the interrupted provider call.
+        for session in runtime.inner.store.sessions_with_pending_input().await? {
+            if runtime.inner.store.location(&session).await?.as_deref()
+                == Some(runtime.inner.tools.location())
+            {
+                runtime.wake(&session, false).await?;
+            }
+        }
         // Timer ownership heartbeat: while this runtime is alive it owns the
         // armed timers; the ticker lets a supervisor distinguish live engines
         // from dead ones before adopting their sessions.

@@ -779,6 +779,22 @@ impl Store {
         .await
     }
 
+    /// Sessions holding input that was admitted but never promoted.
+    ///
+    /// A restart inherits these rows: the drain that would have promoted them
+    /// died, and nothing else re-reads a Session's inbox. Without this list the
+    /// operator's queued message waits for an unrelated event.
+    pub async fn sessions_with_pending_input(&self) -> Result<Vec<String>, Error> {
+        self.call(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT DISTINCT session_id FROM engine_input WHERE state='pending' ORDER BY session_id",
+            )?;
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            Ok(rows.collect::<Result<Vec<String>, _>>()?)
+        })
+        .await
+    }
+
     /// Drop one durably admitted input before promotion.
     ///
     /// The row is retained as `cancelled` evidence instead of being deleted, so
