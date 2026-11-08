@@ -1441,6 +1441,7 @@ mod tests {
                 "rules": [],
                 "approval_timeout_ms": 60_000,
                 "max_provider_turns": null,
+                "continuation_min_interval_ms": 30_000,
                 "auto": false,
             })
         );
