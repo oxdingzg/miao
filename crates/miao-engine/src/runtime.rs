@@ -2318,6 +2318,21 @@ impl Runtime {
         cancel_background(&self.inner, session, id).await
     }
 
+    /// Background jobs this runtime currently owns for a Session.
+    ///
+    /// `stop_all_jobs` walks the same in-memory set, so a host that has to wait
+    /// for a spawned job to become stoppable can read this instead of polling
+    /// the durable rows: a job's row is committed before the owning task
+    /// registers it here, and this read takes the same lock the registration
+    /// does.
+    pub async fn owned_jobs(&self, session: &str) -> Vec<String> {
+        let jobs = self.inner.jobs.lock().await;
+        jobs.iter()
+            .filter(|(_, job)| job.session == session)
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
     /// Stop every background job this Session owns.
     ///
     /// `cancel_job` takes one id at a time; an operator who wants everything to
@@ -2325,15 +2340,8 @@ impl Runtime {
     /// cancelled, so the caller can report how many and which, rather than a
     /// bare `true` that hides whether anything was running.
     pub async fn stop_all_jobs(&self, session: &str) -> Result<Vec<String>, Error> {
-        let running: Vec<String> = {
-            let jobs = self.inner.jobs.lock().await;
-            jobs.iter()
-                .filter(|(_, job)| job.session == session)
-                .map(|(id, _)| id.clone())
-                .collect()
-        };
         let mut stopped = Vec::new();
-        for id in running {
+        for id in self.owned_jobs(session).await {
             if cancel_background(&self.inner, session, &id).await? {
                 stopped.push(id);
             }

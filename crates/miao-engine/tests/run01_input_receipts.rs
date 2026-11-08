@@ -149,7 +149,10 @@ async fn queued_inputs_promote_one_per_idle_boundary_in_admission_order() {
     // Order restored after a reconnect: a fresh handle on the same storage
     // reads the same receipts, and the promoted message seqs follow the
     // admission order a<b<c.
-    drop(store);
+    // Dropping a Store only starts asynchronous teardown; reopening the same
+    // path while the worker still holds it answers `Busy`, so the test has to
+    // release it before it connects again.
+    store.close().await.unwrap();
     let store = Store::open(_dir.path().join("engine.db")).await.unwrap();
     let a = store.input_status("s", "steer-a").await.unwrap();
     let b = store.input_status("s", "queue-b").await.unwrap();
