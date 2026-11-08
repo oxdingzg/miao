@@ -4630,12 +4630,15 @@ command: None,
             let loop_allowed = goal["status"].is_null() || goal["status"] == "active";
             if loop_allowed && !crate::state::runnable_state(&state)?.is_empty() {
                 let signature = serde_json::to_string(&state["todos"]["value"]["todos"])?;
+                // Tool calls are real work *for the turn that dispatched
+                // them*: a model that ran bash, read a file, or called any tool
+                // between two text-only replies is not stalled, and that turn
+                // resets the count. The flag is cleared here because a run
+                // dispatches tools over its whole life: keeping it set once any
+                // tool had ever run retired the guard for the remainder of the
+                // run, so a Session that idled on an unfinished todo list was
+                // continued indefinitely instead of being paused.
                 goal_stalls = if goal_signature.as_ref() == Some(&signature) {
-                    // Tool calls are real work: a model that ran bash, read a
-                    // file, or dispatched any tool between text-only replies is
-                    // not stalled. Resetting here lets a model that alternates
-                    // "run tests → report status → run tests" keep going
-                    // without tripping the no-progress guard.
                     if *tool_dispatched {
                         0
                     } else {
@@ -4644,6 +4647,7 @@ command: None,
                 } else {
                     0
                 };
+                *tool_dispatched = false;
                 goal_stalled_since = match goal_stalls {
                     0 => None,
                     _ => goal_stalled_since.or_else(|| Some(std::time::Instant::now())),

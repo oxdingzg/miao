@@ -508,3 +508,64 @@ async fn stalled_todos_pause_the_loop_without_any_goal() {
         .any(|event| event.kind == "loop.stopped" && event.data["reason"] == "no-progress"));
     runtime.shutdown().await;
 }
+
+/// One run dispatches tools over its whole life, so the no-progress guard has
+/// to read tool dispatch per turn. Reading it per run let a single `bash` call
+/// retire the guard for the remainder of that run: a real Session accumulated
+/// 1975 continuations inside one run and paused for no-progress only once in
+/// 3524 continuations, instead of stopping after two idling replies.
+#[tokio::test]
+async fn one_tool_call_does_not_retire_the_no_progress_guard_for_the_rest_of_the_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    setup(&store, "active", true, true, &workspace).await;
+    let provider = Arc::new(Sequence {
+        calls: AtomicUsize::new(0),
+        // A process tool: only a non-read dispatch marks the turn as work.
+        steps: vec![(
+            true,
+            json!([{"type":"tool_use","id":"audit-run","name":"bash","input":{"command":"true"}}]),
+        )],
+    });
+    // The leash keeps the retired-guard failure fast: it spends the whole
+    // allowance and closes as "budget" instead of parking as "no-progress".
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        provider.clone(),
+        Tools::new(&workspace)
+            .await
+            .unwrap()
+            .with_process_runner(env!("CARGO_BIN_EXE_miao-engine").into()),
+        Policy::new(Config {
+            mode: Mode::Workspace,
+            allow_process: true,
+            rules: vec![Rule {
+                tool: "*".into(),
+                path: "**".into(),
+                decision: Decision::Allow,
+            }],
+            max_provider_turns: Some(12),
+            ..Config::default()
+        })
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime.resume("s").await.unwrap();
+    finished(&store).await;
+    let events = store.events("s", 0, 5000).await.unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.kind == "loop.stopped" && event.data["reason"] == "no-progress"),
+        "an idle Session must pause as no-progress, not spend its allowance"
+    );
+    assert!(!events
+        .iter()
+        .any(|event| event.kind == "loop.stopped" && event.data["reason"] == "budget"));
+    // The tool turn, two idling replies, and the reply that answers the pause.
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 4);
+    runtime.shutdown().await;
+}
