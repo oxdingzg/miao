@@ -83,10 +83,6 @@ pub enum Request {
         session_id: String,
         text: String,
         attachments: Vec<Value>,
-        /// A live turn is running, so the input waits for the turn to finish
-        /// instead of joining it. Matches what Claude Code does with text typed
-        /// while the agent works.
-        queued: bool,
     },
     /// Admit a rendered template command: the engine captures the reference,
     /// prepares its placeholders after promotion, and records the command.
@@ -312,12 +308,11 @@ impl Handle {
         let _ = self.tx.send(Request::Refresh);
     }
 
-    pub fn prompt(&self, session_id: &str, text: &str, attachments: Vec<Value>, queued: bool) {
+    pub fn prompt(&self, session_id: &str, text: &str, attachments: Vec<Value>) {
         let _ = self.tx.send(Request::Prompt {
             session_id: session_id.to_string(),
             text: text.to_string(),
             attachments,
-            queued,
         });
     }
 
@@ -989,15 +984,17 @@ async fn run(
                     session_id,
                     text,
                     attachments,
-                    queued,
                 } => {
                     let input = json!({
                         "session_id": session_id.clone(),
                         "input_id": new_id("in"),
                         "prompt": text,
-                        // Idle: start a turn now. Running: wait for this turn to
-                        // finish, so a later instruction cannot derail it.
-                        "delivery": if queued { "queue" } else { "steer" },
+                        // Steer, never queue: a message typed while the agent
+                        // works is handed over as soon as the tool calls in
+                        // flight finish, within the same turn. `queue` would
+                        // hold it until the Session is completely idle, which a
+                        // goal loop can postpone for many turns.
+                        "delivery": "steer",
                     });
                     match client.admit(input, true, attachments.clone()).await {
                         Ok(_) => {

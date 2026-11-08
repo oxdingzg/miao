@@ -1840,3 +1840,64 @@ fn streamed_deltas_paint_without_a_keypress() {
     let _ = wait_exit(&mut harness.child, Duration::from_secs(5));
     harness.shutdown();
 }
+
+#[test]
+fn a_prompt_typed_during_a_turn_steers_into_it_instead_of_queueing() {
+    // Like Claude Code, a message typed while the agent works is handed to the
+    // model as soon as the tool calls in flight finish, inside the same turn.
+    // Admitting it as `queue` would hold it until the whole Session went idle,
+    // which a goal loop can postpone for many turns; the operator reads that as
+    // a turn that stopped moving and has to interrupt it by hand.
+    let mut harness = Harness::spawn_configured(
+        "steer-busy",
+        false,
+        true,
+        false,
+        false,
+        false,
+        &[("MIAO_TUI_FAKE_STREAM", "1")],
+        false,
+        Some("ses_a"),
+    );
+    assert!(
+        wait_for_screen(&harness, "hello from the fixture", Duration::from_secs(10)),
+        "the Session did not open:\n{}",
+        harness.screen()
+    );
+    // The strip offers the interrupt hint only while a run is in flight, so it
+    // is the state that used to switch the delivery class.
+    assert!(
+        wait_for_screen(&harness, "esc interrupt", Duration::from_secs(10)),
+        "the fixture never reported a running turn:\n{}",
+        harness.screen()
+    );
+    harness.write(b"second thought");
+    harness.write(b"\r");
+    let log = harness.dir.join("admit.log");
+    let start = Instant::now();
+    let mut recorded = String::new();
+    while start.elapsed() < Duration::from_secs(10) {
+        recorded = std::fs::read_to_string(&log).unwrap_or_default();
+        if recorded.contains("second thought") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        recorded.contains("second thought"),
+        "the prompt was never admitted: {recorded}\n{}",
+        harness.screen()
+    );
+    assert!(
+        recorded.contains("\"delivery\":\"steer\""),
+        "a prompt typed during a turn must steer into it: {recorded}"
+    );
+    assert!(
+        !recorded.contains("\"delivery\":\"queue\""),
+        "a prompt typed during a turn must not wait for Session idle: {recorded}"
+    );
+    harness.write(b"\x03");
+    harness.write(b"\x03");
+    let _ = wait_exit(&mut harness.child, Duration::from_secs(5));
+    harness.shutdown();
+}
