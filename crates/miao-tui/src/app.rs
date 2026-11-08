@@ -495,6 +495,12 @@ pub struct App {
     mtty_state: crate::mtty_state::Reporter,
     /// Approval and question ids already announced.
     notified: Vec<String>,
+    /// The Session whose unpromoted input this client already asked the engine
+    /// to send. The engine promotes queued input at a boundary a client asks
+    /// for, so a Session opened after a restart holds its queued message until
+    /// someone asks; asking once per open is enough, and an empty queue clears
+    /// the record so the next queued message asks again.
+    wake_asked: Option<String>,
     /// The Zed selection already sent with an earlier prompt.
     zed_selection_key: Option<String>,
     clipboard_busy: bool,
@@ -629,6 +635,7 @@ impl App {
             terminal_title_allowed: true,
             mtty_state: crate::mtty_state::Reporter::from_env(),
             notified: Vec::new(),
+            wake_asked: None,
             zed_selection_key: None,
             clipboard_busy: false,
             startup,
@@ -741,6 +748,10 @@ impl App {
 
     pub fn attach_engine(&mut self, engine: engine::Handle) {
         self.engine = Some(engine);
+        // A fresh engine has started no drain, so any Session it reports with
+        // waiting input needs its own ask, even one this client already asked
+        // about before the engine was replaced.
+        self.wake_asked = None;
     }
 
     pub fn set_settings(&mut self, settings: engine::Settings) {
@@ -1075,6 +1086,24 @@ impl App {
                     }
                 }
                 self.state = *state;
+                // The engine promotes queued input only at a boundary a client
+                // asks for, so a Session opened after a restart holds a message
+                // the operator already sent with nothing left to promote it:
+                // the composer shows it queued and no turn ever runs. Ask once
+                // per open, and only while nothing is running; an empty queue
+                // clears the record so the next queued message asks again.
+                let id = self.session.as_ref().map(|session| session.id.clone());
+                match (self.state.active_run.is_none(), self.state.pending) {
+                    (true, pending) if pending > 0 => {
+                        if id.is_some() && self.wake_asked != id {
+                            if let (Some(handle), Some(id)) = (self.engine.clone(), id.clone()) {
+                                handle.wake(&id);
+                            }
+                            self.wake_asked = id;
+                        }
+                    }
+                    _ => self.wake_asked = None,
+                }
                 self.stream_ended = None;
                 self.refresh_suggestion();
                 // A run that is already over settles the calls it left
@@ -4573,6 +4602,42 @@ mod tests {
         });
         assert_eq!(app.screen, Screen::Session);
         app
+    }
+
+    /// A Session opened with a message still unpromoted and no turn running is
+    /// the shape a restart leaves behind: the engine only promotes queued input
+    /// at a boundary a client asks for, so the client asks once. A repeat
+    /// projection is a refresh, not a new queue, and must not ask again.
+    #[test]
+    fn a_session_opened_with_queued_input_asks_the_engine_once() {
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        let opened = || AppEvent::SessionOpened {
+            summary: Some(summary("ses_queue", 1)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState {
+                pending: 1,
+                ..SessionState::default()
+            }),
+        };
+        app.handle(opened());
+        assert!(
+            std::iter::from_fn(|| requests.try_recv().ok()).any(
+                |request| matches!(request, engine::Request::Wake { session_id } if session_id == "ses_queue")
+            ),
+            "opening a Session with queued input asks the engine to send it"
+        );
+        app.handle(opened());
+        // Opening a Session asks for more than this: the change panel, the
+        // saved permissions and the usage all fetch their own answers, so the
+        // question is whether a second wake went out, not whether the channel
+        // stayed empty.
+        assert!(
+            !std::iter::from_fn(|| requests.try_recv().ok())
+                .any(|request| matches!(request, engine::Request::Wake { .. })),
+            "a refresh of the same queue does not ask again"
+        );
     }
 
     fn key(code: KeyCode, modifiers: KeyModifiers) -> AppEvent {

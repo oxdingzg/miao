@@ -77,6 +77,12 @@ pub enum Request {
     },
     Open(String),
     Refresh,
+    /// Ask the engine to promote input it still holds unpromoted. The engine
+    /// promotes queued input at a boundary a client asks for, so a Session
+    /// opened after a restart would otherwise keep its queued message forever.
+    Wake {
+        session_id: String,
+    },
     /// Admit one prompt with its inline media attachments into a Session and
     /// wake it.
     Prompt {
@@ -306,6 +312,13 @@ impl Handle {
 
     pub fn refresh(&self) {
         let _ = self.tx.send(Request::Refresh);
+    }
+
+    /// Ask for the input this Session still holds unpromoted to be sent.
+    pub fn wake(&self, session_id: &str) {
+        let _ = self.tx.send(Request::Wake {
+            session_id: session_id.to_string(),
+        });
     }
 
     pub fn prompt(&self, session_id: &str, text: &str, attachments: Vec<Value>) {
@@ -1081,6 +1094,11 @@ async fn run(
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("interrupt failed: {error}")))
                         }
+                    }
+                }
+                Request::Wake { session_id } => {
+                    if let Err(error) = client.request("wake", json!({ "session_id": session_id })).await {
+                        bus.send(AppEvent::ActionFailed(format!("wake failed: {error}")));
                     }
                 }
                 Request::Approve {
