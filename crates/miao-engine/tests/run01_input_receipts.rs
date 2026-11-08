@@ -96,10 +96,7 @@ async fn an_exact_retry_of_a_durable_identity_duplicates_nothing() {
         .await
         .unwrap()
         .into_iter()
-        .filter(|event| {
-            event.kind == "input.promoted"
-                && event.data["input_id"] == "in-1"
-        })
+        .filter(|event| event.kind == "input.promoted" && event.data["input_id"] == "in-1")
         .count();
     assert_eq!(promoted_events, 1, "one promotion for one admission");
     let receipt = store.input_status("s", "in-1").await.unwrap();
