@@ -435,6 +435,10 @@ fn latest_version(feed: Option<&str>) -> Result<String, String> {
     let base = feed
         .unwrap_or("https://github.com/oxdingzg/miao")
         .trim_end_matches('/');
+    // curl.exe on Windows resolves `/dev/null` against the current drive
+    // (`D:\dev\null` from `D:\`), and every write of the redirect body fails
+    // with curl 23. The null device is spelled `NUL` there.
+    let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
     let output = std::process::Command::new("curl")
         .args([
             // A single transient TLS reset through a local proxy used to fail the
@@ -447,7 +451,7 @@ fn latest_version(feed: Option<&str>) -> Result<String, String> {
             "2",
             "-fsSL",
             "-o",
-            "/dev/null",
+            null,
             "-w",
             "%{url_effective}",
             &format!("{base}/releases/latest"),
