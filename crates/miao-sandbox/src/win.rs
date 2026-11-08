@@ -61,6 +61,16 @@ pub enum WinError {
     Start(String),
 }
 
+impl std::fmt::Display for WinError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WinError::Unavailable(message) | WinError::Start(message) => {
+                write!(formatter, "{message}")
+            }
+        }
+    }
+}
+
 pub(crate) fn command_line(command: &[String]) -> String {
     let is_cmd = command
         .first()
@@ -312,8 +322,8 @@ impl Drop for AclGrant {
             }
             Ok(())
         })();
-        if result.is_err() {
-            eprintln!("miao-run: failed to revoke invocation ACL");
+        if let Err(error) = result {
+            eprintln!("miao-run: failed to revoke invocation ACL: {error}");
         }
         unsafe {
             if !self.old_sd.is_null() {
