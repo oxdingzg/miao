@@ -42,10 +42,20 @@ jobs:
           fetch-depth: 0
       - name: Validate workflow syntax
         run: |
-          curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$RUNNER_TEMP/actionlint.tar.gz"
-          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
-          "$RUNNER_TEMP/actionlint" -shellcheck=''
+          # The release-assets CDN intermittently 504s from runner egress; retry, then fall back
+          # to the Go module proxy, which runs on separate infrastructure. The pinned sha256 still
+          # guards the tarball path, and the Go sumdb guards the fallback path.
+          ACTIONLINT="$RUNNER_TEMP/actionlint"
+          if curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            -o "$RUNNER_TEMP/actionlint.tar.gz"; then
+            echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+            tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          else
+            go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+            ACTIONLINT="$(go env GOPATH)/bin/actionlint"
+          fi
+          "$ACTIONLINT" -shellcheck=''
       - name: Verify classification and fail-closed gate policy
         run: |
           python3 .github/scripts/test_ci_gate.py
