@@ -20,7 +20,7 @@ export const Info = Schema.Struct({
   evidence: Schema.optional(Schema.String).annotate({
     description: "Concrete evidence the goal is met (for done), or the blocker (for blocked)",
   }),
-  budget: Schema.optional(Schema.String).annotate({ description: "Optional budget or limit for the goal" }),
+  budget: Schema.optional(Schema.String).annotate({ description: "Advisory budget note for the operator; not machine-enforced and never a stop condition" }),
 }).annotate({ identifier: "Session.Goal" })
 export type Info = typeof Info.Type
 
