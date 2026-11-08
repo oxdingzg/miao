@@ -81,38 +81,27 @@ impl Palette {
         }
     }
 
-    /// The block behind one changed diff row.
-    ///
-    /// A diff reads by shape before it reads by text, so the row itself carries
-    /// the change: the hue is mixed into the canvas at a low ratio, which keeps
-    /// the code's own contrast while the block still reads at a glance. Both
-    /// halves come from the palette, so a light canvas, a custom theme and a
-    /// monochrome terminal all stay consistent without a second set of tokens.
-    pub fn diff_tint(self, added: bool) -> Color {
-        let hue = match added {
-            true => self.success,
-            false => self.error,
-        };
-        match (self.background, hue) {
-            // A canvas that is not a colour has nothing to mix into: NO_COLOR
-            // and a dumb terminal keep meaning in the glyphs alone.
-            (Color::Rgb(r, g, b), Color::Rgb(hr, hg, hb)) => Color::Rgb(
-                mix(r, hr, DIFF_TINT_DEN),
-                mix(g, hg, DIFF_TINT_DEN),
-                mix(b, hb, DIFF_TINT_DEN),
-            ),
-            _ => self.background,
+    /// The block and text colours of one changed diff row, named after the
+    /// product's own diff variables (`--surface-diff-add-base`,
+    /// `--text-diff-add-base`, …): the row reads as the product's green or red
+    /// block, on a light canvas as on a dark one. `syntax()` blurs the tokens
+    /// the same way, and a monochrome terminal keeps meaning in the glyphs
+    /// alone.
+    pub fn diff(self, added: bool) -> (Color, Color) {
+        if self.background == Color::Reset {
+            return (Color::Reset, Color::Reset);
+        }
+        let light = matches!(
+            self.background,
+            Color::Rgb(r, g, b) if (r as u32 * 299 + g as u32 * 587 + b as u32 * 114) / 1000 > 140
+        );
+        match (light, added) {
+            (true, true) => (rgb("e3fae1"), rgb("3a8437")),
+            (true, false) => (rgb("feefeb"), rgb("ed4831")),
+            (false, true) => (rgb("1a2919"), rgb("9bcd97")),
+            (false, false) => (rgb("42120b"), rgb("fc533a")),
         }
     }
-}
-
-/// One part in four of the change's hue over the canvas: enough for the row to
-/// read as a block, far enough from the text colour to keep code legible.
-const DIFF_TINT_DEN: u32 = 4;
-
-fn mix(base: u8, hue: u8, denominator: u32) -> u8 {
-    let weight = denominator - 1;
-    (((base as u32 * weight) + hue as u32) / denominator) as u8
 }
 
 /// Token colours for code, named after the product's syntax variables.
