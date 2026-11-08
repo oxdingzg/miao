@@ -18,6 +18,9 @@ struct Submitter {
     next: Arc<Notify>,
     count: usize,
     pending: bool,
+    /// How long each started job lives, in seconds. A test that stops or
+    /// shuts down running work needs jobs that outlive its own assertions.
+    seconds: u64,
 }
 #[async_trait]
 impl Provider for Submitter {
@@ -28,7 +31,7 @@ impl Provider for Submitter {
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
         if request.messages.len() == 1 {
-            let calls=(0..self.count).map(|index|json!({"type":"tool_use","id":format!("call_{index}"),"name":"start_job","input":{"argv":["/bin/sh","-c",format!("sleep 1; printf done > finished_{index}; printf result")],"timeout_ms":10000}})).collect::<Vec<_>>();
+            let calls=(0..self.count).map(|index|json!({"type":"tool_use","id":format!("call_{index}"),"name":"start_job","input":{"argv":["/bin/sh","-c",format!("sleep {sleep}; printf done > finished_{index}; printf result", sleep = self.seconds)],"timeout_ms":10000}})).collect::<Vec<_>>();
             return Ok(Reply {
                 content: Value::Array(calls),
                 usage: json!({}),
@@ -65,6 +68,7 @@ async fn setup(
     parent: &std::path::Path,
     count: usize,
     pending: bool,
+    seconds: u64,
 ) -> (Runtime, Store, Arc<Notify>) {
     let root = parent.join("workspace");
     std::fs::create_dir(&root).unwrap();
@@ -77,6 +81,7 @@ async fn setup(
             next: next.clone(),
             count,
             pending,
+            seconds,
         }),
         Tools::new(root)
             .await
@@ -120,8 +125,8 @@ async fn terminal(store: &Store, id: &str) -> Value {
 #[tokio::test]
 async fn admitted_job_survives_turn_cancel_and_instruction_reads_do_not_wait_for_it() {
     let dir = tempfile::tempdir().unwrap();
-    let (runtime, store, next) = setup(dir.path(), 1, true).await;
-    tokio::time::timeout(std::time::Duration::from_secs(3), next.notified())
+    let (runtime, store, next) = setup(dir.path(), 1, true, 1).await;
+    tokio::time::timeout(std::time::Duration::from_secs(15), next.notified())
         .await
         .unwrap();
     let jobs = store.jobs("s").await.unwrap();
@@ -140,8 +145,8 @@ async fn admitted_job_survives_turn_cancel_and_instruction_reads_do_not_wait_for
 #[tokio::test]
 async fn job_ownership_and_explicit_cancel_are_separate_from_turn_control() {
     let dir = tempfile::tempdir().unwrap();
-    let (runtime, store, next) = setup(dir.path(), 1, false).await;
-    tokio::time::timeout(std::time::Duration::from_secs(3), next.notified())
+    let (runtime, store, next) = setup(dir.path(), 1, false, 1).await;
+    tokio::time::timeout(std::time::Duration::from_secs(15), next.notified())
         .await
         .unwrap();
     let jobs = store.jobs("s").await.unwrap();
@@ -160,18 +165,36 @@ async fn job_ownership_and_explicit_cancel_are_separate_from_turn_control() {
 #[tokio::test]
 async fn stop_all_jobs_cancels_every_job_the_session_owns() {
     let dir = tempfile::tempdir().unwrap();
-    let (runtime, store, next) = setup(dir.path(), 3, false).await;
-    tokio::time::timeout(std::time::Duration::from_secs(3), next.notified())
+    let (runtime, store, next) = setup(dir.path(), 3, false, 8).await;
+    tokio::time::timeout(std::time::Duration::from_secs(15), next.notified())
         .await
         .unwrap();
-    let ids: Vec<String> = store
-        .jobs("s")
-        .await
-        .unwrap()
-        .iter()
-        .map(|job| job["job_id"].as_str().unwrap().to_string())
-        .collect();
-    assert_eq!(ids.len(), 3, "{ids:?}");
+    let ids: Vec<String> = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let jobs = store.jobs("s").await.unwrap();
+            if jobs.len() >= 3 {
+                return jobs;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("every admitted job is durable")
+    .iter()
+    .map(|job| job["job_id"].as_str().unwrap().to_string())
+    .collect();
+
+    // A job's durable row is committed before the task that owns it registers
+    // with the runtime, so the rows alone can show three ids while only two are
+    // stoppable yet. `owned_jobs` reads the same set `stop_all_jobs` walks,
+    // which makes this wait exact instead of a guess.
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        while runtime.owned_jobs("s").await.len() < ids.len() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("every admitted job registers with the runtime");
 
     let stopped = runtime.stop_all_jobs("s").await.unwrap();
     assert_eq!(stopped.len(), 3, "stopped {stopped:?} of {ids:?}");
@@ -188,8 +211,8 @@ async fn stop_all_jobs_cancels_every_job_the_session_owns() {
 #[tokio::test]
 async fn stop_all_jobs_leaves_another_sessions_jobs_running() {
     let dir = tempfile::tempdir().unwrap();
-    let (runtime, store, next) = setup(dir.path(), 1, false).await;
-    tokio::time::timeout(std::time::Duration::from_secs(3), next.notified())
+    let (runtime, store, next) = setup(dir.path(), 1, false, 1).await;
+    tokio::time::timeout(std::time::Duration::from_secs(15), next.notified())
         .await
         .unwrap();
     let id = store.jobs("s").await.unwrap()[0]["job_id"]
@@ -208,11 +231,21 @@ async fn stop_all_jobs_leaves_another_sessions_jobs_running() {
 #[tokio::test]
 async fn runtime_shutdown_joins_running_and_queued_jobs() {
     let dir = tempfile::tempdir().unwrap();
-    let (runtime, store, next) = setup(dir.path(), 3, false).await;
-    tokio::time::timeout(std::time::Duration::from_secs(3), next.notified())
+    let (runtime, store, next) = setup(dir.path(), 3, false, 8).await;
+    tokio::time::timeout(std::time::Duration::from_secs(15), next.notified())
         .await
         .unwrap();
-    let jobs = store.jobs("s").await.unwrap();
+    let jobs = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let jobs = store.jobs("s").await.unwrap();
+            if jobs.len() >= 3 {
+                return jobs;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("every admitted job is durable");
     assert_eq!(jobs.len(), 3);
     runtime.shutdown().await;
     for job in jobs {
@@ -293,7 +326,7 @@ async fn crash_reconciliation_preserves_unknown_running_state_without_replay() {
 #[tokio::test]
 async fn job_completion_after_idle_admits_once_and_wakes_the_existing_owner() {
     let dir = tempfile::tempdir().unwrap();
-    let (runtime, store, next) = setup(dir.path(), 1, false).await;
+    let (runtime, store, next) = setup(dir.path(), 1, false, 1).await;
     tokio::time::timeout(std::time::Duration::from_secs(10), next.notified())
         .await
         .unwrap();
@@ -449,8 +482,8 @@ impl Provider for Observer {
 #[tokio::test]
 async fn the_job_list_names_the_owner_and_the_command() {
     let dir = tempfile::tempdir().unwrap();
-    let (runtime, store, next) = setup(dir.path(), 1, false).await;
-    tokio::time::timeout(std::time::Duration::from_secs(3), next.notified())
+    let (runtime, store, next) = setup(dir.path(), 1, false, 1).await;
+    tokio::time::timeout(std::time::Duration::from_secs(15), next.notified())
         .await
         .unwrap();
     let jobs = store.jobs("s").await.unwrap();
