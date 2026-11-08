@@ -907,7 +907,7 @@ impl Store {
                         .optional()?;
                     // The projected user message occupies the promotion's seq,
                     // so this is the message a transcript can scroll to.
-                    receipt["promoted"] = match promoted {
+                    receipt["promoted"] = match &promoted {
                         Some((seq, recorded_at_ms, checkpoint)) => json!({
                             "seq": seq,
                             "recorded_at_ms": recorded_at_ms,
@@ -915,6 +915,34 @@ impl Store {
                         }),
                         None => Value::Null,
                     };
+                                 // The receipt reports the latest run started after this
+                    // promotion: start-run commits the promotion and the run row
+                    // in one transaction, and a continuation or retry opens a
+                    // newer run that supersedes the older one's picture. The
+                    // run state IS the finish reason ("failed" included), which
+                    // is how a receipt tells a turn in flight from one that
+                    // failed.
+                    if let Some((seq, _, _)) = &promoted {
+                        let consuming: Option<(String, String)> = conn
+                            .query_row(
+                                "SELECT json_extract(e.data,'$.run_id'),r.state
+                                 FROM engine_event e
+                                 JOIN engine_run r ON r.session_id=e.session_id
+                                   AND r.id=json_extract(e.data,'$.run_id')
+                                 WHERE e.session_id=?1 AND e.kind='run.started'
+                                   AND e.seq>?2
+                                 ORDER BY e.seq DESC LIMIT 1",
+                                params![&session, *seq],
+                                |row| Ok((row.get(0)?, row.get(1)?)),
+                            )
+                            .optional()?;
+                        if let Some((run_id, run_state)) = consuming {
+                            receipt["run"] = match run_state.as_str() {
+                                "running" => json!({"run_id":run_id,"state":"executing"}),
+                                other => json!({"run_id":run_id,"state":other}),
+                            };
+                        }
+                    }
                 }
                 "cancelled" => {
                     let cancelled: Option<(u64, Option<u64>)> = conn
