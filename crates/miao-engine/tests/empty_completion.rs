@@ -47,7 +47,7 @@ impl Provider for Script {
 
 fn policy() -> Policy {
     Policy::new(Config {
-            continuation_min_interval_ms: 0,
+        continuation_min_interval_ms: 0,
         mode: Mode::Workspace,
         rules: vec![Rule {
             tool: "*".into(),

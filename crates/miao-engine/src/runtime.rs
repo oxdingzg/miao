@@ -4709,17 +4709,9 @@ command: None,
                     // completion notifications wake the drain on their own;
                     // injecting the continuation prompt now would only burn
                     // turns re-reading an unchanged todo list.
-                    let background_active = inner
-                        .store
-                        .jobs(session)
-                        .await?
-                        .iter()
-                        .any(|job| {
-                            matches!(
-                                job["state"].as_str(),
-                                Some("queued") | Some("running")
-                            )
-                        });
+                    let background_active = inner.store.jobs(session).await?.iter().any(|job| {
+                        matches!(job["state"].as_str(), Some("queued") | Some("running"))
+                    });
                     if background_active {
                         continue;
                     }
