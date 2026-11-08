@@ -11,7 +11,7 @@
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
-use crate::theme::Palette;
+use crate::theme::{Palette, Syntax};
 
 /// Languages that share a comment syntax and a keyword set. `None` — an info
 /// string outside the table below — renders the block in one color.
@@ -152,6 +152,7 @@ fn uses_slash_comments(family: Family) -> bool {
 pub struct Highlighter {
     family: Option<Family>,
     block_comment: bool,
+    syntax: Syntax,
     palette: Palette,
 }
 
@@ -160,6 +161,7 @@ impl Highlighter {
         Self {
             family: family(info),
             block_comment: false,
+            syntax: palette.syntax(),
             palette,
         }
     }
@@ -265,21 +267,23 @@ impl Highlighter {
     }
 
     fn comment(&self) -> Style {
+        // The product paints comments in the same weak colour as keywords, so
+        // the italic is what keeps a comment readable as prose next to code.
         Style::new()
-            .fg(self.palette.text_muted)
+            .fg(self.syntax.comment)
             .add_modifier(Modifier::ITALIC)
     }
 
     fn string(&self) -> Style {
-        Style::new().fg(self.palette.success)
+        Style::new().fg(self.syntax.string)
     }
 
     fn number(&self) -> Style {
-        Style::new().fg(self.palette.warning)
+        Style::new().fg(self.syntax.number)
     }
 
     fn keyword(&self) -> Style {
-        Style::new().fg(self.palette.secondary)
+        Style::new().fg(self.syntax.keyword)
     }
 
     fn push(&self, spans: &mut Vec<Span<'static>>, text: &str, style: Style) {
@@ -388,15 +392,44 @@ mod tests {
             .collect()
     }
 
+    /// Spans in one colour, split by the italic that marks a comment: the
+    /// product gives comments and keywords the same weak colour, so only the
+    /// modifier tells them apart.
+    fn colored_comment(spans: &[Span<'_>], color: Color) -> Vec<String> {
+        spans
+            .iter()
+            .filter(|span| {
+                span.style.fg == Some(color) && span.style.add_modifier.contains(Modifier::ITALIC)
+            })
+            .map(|span| span.content.to_string())
+            .collect()
+    }
+
+    fn colored_code(spans: &[Span<'_>], color: Color) -> Vec<String> {
+        spans
+            .iter()
+            .filter(|span| {
+                span.style.fg == Some(color) && !span.style.add_modifier.contains(Modifier::ITALIC)
+            })
+            .map(|span| span.content.to_string())
+            .collect()
+    }
+
     #[test]
     fn a_rust_line_colors_its_keywords_numbers_and_comment() {
         let mut highlighter = Highlighter::new("rust", palette());
         let line = "let x = 42; // note";
         let spans = highlighter.line(line);
         assert_eq!(text(&spans), line);
-        assert_eq!(colored(&spans, palette().secondary), vec!["let"]);
-        assert_eq!(colored(&spans, palette().warning), vec!["42"]);
-        assert_eq!(colored(&spans, palette().text_muted), vec!["// note"]);
+        assert_eq!(
+            colored_code(&spans, palette().syntax().keyword),
+            vec!["let"]
+        );
+        assert_eq!(colored(&spans, palette().syntax().number), vec!["42"]);
+        assert_eq!(
+            colored_comment(&spans, palette().syntax().comment),
+            vec!["// note"]
+        );
     }
 
     #[test]
@@ -404,11 +437,17 @@ mod tests {
         let mut highlighter = Highlighter::new("rust", palette());
         let spans = highlighter.line("/* open");
         assert_eq!(text(&spans), "/* open");
-        assert_eq!(colored(&spans, palette().text_muted), vec!["/*", " open"]);
+        assert_eq!(
+            colored_comment(&spans, palette().syntax().comment),
+            vec!["/*", " open"]
+        );
         let spans = highlighter.line("close */ fn main");
         assert_eq!(text(&spans), "close */ fn main");
-        assert_eq!(colored(&spans, palette().text_muted), vec!["close */"]);
-        assert_eq!(colored(&spans, palette().secondary), vec!["fn"]);
+        assert_eq!(
+            colored_comment(&spans, palette().syntax().comment),
+            vec!["close */"]
+        );
+        assert_eq!(colored_code(&spans, palette().syntax().keyword), vec!["fn"]);
     }
 
     #[test]
@@ -417,7 +456,10 @@ mod tests {
         let line = r#"const path = "a\"b" + 'c'"#;
         let spans = highlighter.line(line);
         assert_eq!(text(&spans), line);
-        assert_eq!(colored(&spans, palette().success), vec![r#""a\"b""#, "'c'"]);
+        assert_eq!(
+            colored(&spans, palette().syntax().string),
+            vec![r#""a\"b""#, "'c'"]
+        );
     }
 
     #[test]
@@ -426,16 +468,19 @@ mod tests {
         let line = "fn borrow<'a>(c: char) -> &'a str { let q = '\\''; }";
         let spans = highlighter.line(line);
         assert_eq!(text(&spans), line);
-        assert_eq!(colored(&spans, palette().success), vec!["'\\''"]);
+        assert_eq!(colored(&spans, palette().syntax().string), vec!["'\\''"]);
     }
 
     #[test]
     fn an_unterminated_double_quote_stops_at_the_end_of_its_line() {
         let mut highlighter = Highlighter::new("rust", palette());
         let spans = highlighter.line(r#"let s = "open"#);
-        assert_eq!(colored(&spans, palette().success), vec![r#""open"#]);
+        assert_eq!(colored(&spans, palette().syntax().string), vec![r#""open"#]);
         let spans = highlighter.line("let t = 1;");
-        assert!(colored(&spans, palette().success).is_empty(), "{spans:?}");
+        assert!(
+            colored(&spans, palette().syntax().string).is_empty(),
+            "{spans:?}"
+        );
     }
 
     #[test]
@@ -444,9 +489,12 @@ mod tests {
         let line = r#"{"ok": true, "n": 3}"#;
         let spans = highlighter.line(line);
         assert_eq!(text(&spans), line);
-        assert_eq!(colored(&spans, palette().secondary), vec!["true"]);
+        assert_eq!(
+            colored_code(&spans, palette().syntax().keyword),
+            vec!["true"]
+        );
         assert!(
-            colored(&spans, palette().text_muted).is_empty(),
+            colored_comment(&spans, palette().syntax().comment).is_empty(),
             "{spans:?}"
         );
     }
@@ -467,7 +515,10 @@ mod tests {
         let line = "if [ -f x ]; then echo hi # done";
         let spans = highlighter.line(line);
         assert_eq!(text(&spans), line);
-        assert_eq!(colored(&spans, palette().text_muted), vec!["# done"]);
-        assert!(colored(&spans, palette().secondary).contains(&"if".to_string()));
+        assert_eq!(
+            colored_comment(&spans, palette().syntax().comment),
+            vec!["# done"]
+        );
+        assert!(colored_code(&spans, palette().syntax().keyword).contains(&"if".to_string()));
     }
 }

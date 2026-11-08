@@ -41,6 +41,54 @@ impl Palette {
             border_active: Color::Reset,
         }
     }
+
+    /// How a fenced code block or a diff body colours its tokens.
+    ///
+    /// The names and hues follow the product's `--syntax-*` variables
+    /// (`packages/ui/src/styles/theme.css`), so code reads the same in the TUI
+    /// as in the rest of miao: comments and keywords keep the muted body colour
+    /// instead of a hue of their own, while strings and numbers take the fixed
+    /// teal and cyan the product uses, swapped for darker twins when the
+    /// background is light.
+    pub fn syntax(self) -> Syntax {
+        // The monochrome palette has no colours left to hand out, so a code
+        // block must not reintroduce them through the syntax hues.
+        if self.background == Color::Reset {
+            return Syntax {
+                comment: Color::Reset,
+                string: Color::Reset,
+                number: Color::Reset,
+                keyword: Color::Reset,
+            };
+        }
+        let light = matches!(
+            self.background,
+            Color::Rgb(r, g, b) if (r as u32 * 299 + g as u32 * 587 + b as u32 * 114) / 1000 > 140
+        );
+        match light {
+            true => Syntax {
+                comment: self.text_muted,
+                string: rgb("006656"),
+                number: rgb("007b80"),
+                keyword: self.text_muted,
+            },
+            false => Syntax {
+                comment: self.text_muted,
+                string: rgb("00ceb9"),
+                number: rgb("93e9f6"),
+                keyword: self.text_muted,
+            },
+        }
+    }
+}
+
+/// Token colours for code, named after the product's syntax variables.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Syntax {
+    pub comment: Color,
+    pub string: Color,
+    pub number: Color,
+    pub keyword: Color,
 }
 
 /// Whether the environment asks for no colour. `NO_COLOR` follows
@@ -1514,5 +1562,47 @@ mod tests {
         assert_eq!(loaded.theme.name, DEFAULT_THEME);
         assert!(loaded.warnings.iter().any(|w| w.contains("unknown theme")));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_code_block_paints_with_the_products_syntax_hues() {
+        // The same variables the web UI paints code with
+        // (`packages/ui/src/styles/theme.css`), so a block keeps its colours
+        // when the operator moves between the TUI and the rest of miao.
+        let palette = builtin(DEFAULT_THEME).expect("builtin theme");
+        let syntax = palette.syntax();
+        assert_eq!(
+            syntax.string,
+            rgb("00ceb9"),
+            "the product's --syntax-string"
+        );
+        assert_eq!(
+            syntax.number,
+            rgb("93e9f6"),
+            "the product's --syntax-constant"
+        );
+        assert_eq!(syntax.comment, palette.text_muted);
+        assert_eq!(syntax.keyword, palette.text_muted);
+    }
+
+    #[test]
+    fn a_light_background_gets_the_dark_twins_of_the_syntax_hues() {
+        let light = Palette {
+            background: rgb("ffffff"),
+            ..builtin(DEFAULT_THEME).expect("builtin theme")
+        };
+        assert_eq!(light.syntax().string, rgb("006656"));
+        assert_eq!(light.syntax().number, rgb("007b80"));
+    }
+
+    #[test]
+    fn the_monochrome_palette_hands_out_no_syntax_colour() {
+        let syntax = builtin(DEFAULT_THEME)
+            .expect("builtin theme")
+            .monochrome()
+            .syntax();
+        for colour in [syntax.comment, syntax.string, syntax.number, syntax.keyword] {
+            assert_eq!(colour, Color::Reset);
+        }
     }
 }
