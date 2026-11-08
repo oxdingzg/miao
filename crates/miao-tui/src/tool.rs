@@ -1085,9 +1085,18 @@ fn paint_diff(
                     Some(number) => format!("  {number:>width$}  "),
                     None => format!("  {:width$}  ", ""),
                 };
-                let block_style = match marker {
-                    '+' | '-' => Style::new().bg(palette.diff_tint(*marker == '+')),
-                    _ => Style::new(),
+                // A changed row is the product's diff block: the row's own
+                // green or red behind flat text in the matching hue, the way
+                // the product paints a diff. Unchanged rows keep the scanner.
+                let (block_style, flat) = match marker {
+                    '+' | '-' => {
+                        let (background, text) = palette.diff(*marker == '+');
+                        (
+                            Style::new().bg(background),
+                            Some(Style::new().fg(text).patch(Style::new().bg(background))),
+                        )
+                    }
+                    _ => (Style::new(), None),
                 };
                 let mut spans = vec![
                     Span::styled(
@@ -1096,18 +1105,21 @@ fn paint_diff(
                     ),
                     Span::styled(
                         marker.to_string(),
-                        Style::new()
-                            .fg(diff_color(*marker, theme))
-                            .patch(block_style),
+                        flat.unwrap_or_else(|| Style::new().fg(diff_color(*marker, theme))),
                     ),
                 ];
                 let start = width + 4 + marker.len_utf8() + text.width();
-                spans.extend(
-                    highlighter
-                        .line(text)
-                        .into_iter()
-                        .map(|span| span.patch_style(block_style)),
-                );
+                match flat {
+                    // The product's diff line is one flat colour: the scanner
+                    // would put a teal string inside a green row.
+                    Some(style) => spans.push(Span::styled(text.clone(), style)),
+                    None => spans.extend(
+                        highlighter
+                            .line(text)
+                            .into_iter()
+                            .map(|span| span.patch_style(block_style)),
+                    ),
+                }
                 if *marker != ' ' && start < block {
                     spans.push(Span::styled(" ".repeat(block - start), block_style));
                 }
@@ -1552,20 +1564,39 @@ mod tests {
         let added = find("kept better and longer");
         let removed = find("gone");
         let context = find(" kept");
+        let (added_bg, added_text) = palette.diff(true);
+        let (removed_bg, removed_text) = palette.diff(false);
         assert!(
             added
                 .spans
                 .iter()
-                .all(|span| span.style.bg == Some(palette.diff_tint(true))),
+                .all(|span| span.style.bg == Some(added_bg)),
             "every cell of an added row carries the added tint: {:?}",
+            added
+        );
+        assert!(
+            added
+                .spans
+                .iter()
+                .any(|span| span.content.as_ref() == "kept better and longer"
+                    && span.style.fg == Some(added_text)),
+            "a changed row is the product's flat diff text, not the scanner's: {:?}",
             added
         );
         assert!(
             removed
                 .spans
                 .iter()
-                .all(|span| span.style.bg == Some(palette.diff_tint(false))),
+                .all(|span| span.style.bg == Some(removed_bg)),
             "every cell of a removed row carries the removed tint: {:?}",
+            removed
+        );
+        assert!(
+            removed
+                .spans
+                .iter()
+                .any(|span| span.content.as_ref() == "gone" && span.style.fg == Some(removed_text)),
+            "a changed row is the product's flat diff text, not the scanner's: {:?}",
             removed
         );
         assert!(
@@ -2053,7 +2084,7 @@ mod tests {
         let files = vec![DisplayFile {
             path: "src/lib.rs".into(),
             action: "update".into(),
-            patch: "@@ -1 +1 @@\n-let old = 1;\n+let new = 1;\n".into(),
+            patch: "@@ -1,3 +1,3 @@\n let header = 0;\n-let old = 1;\n+let new = 1;\n".into(),
             additions: 1,
             deletions: 1,
         }];
@@ -2065,10 +2096,28 @@ mod tests {
         );
         let theme = theme();
         let rendered_lines = lines(&part, Some(&files), &theme, false, None);
+        // A changed row is the product's diff block in one flat hue, so the
+        // scanner does not put a teal string inside a green row. An unchanged
+        // row is still code, and keeps the file's own colours.
+        let changed = rendered_lines
+            .iter()
+            .find(|line| row_text(line) == "  2  -let old = 1;")
+            .expect("removed row");
+        let (background, text) = theme.palette.diff(false);
+        assert!(
+            changed
+                .spans
+                .iter()
+                .any(|span| span.content.as_ref() == "let old = 1;"
+                    && span.style.fg == Some(text)
+                    && span.style.bg == Some(background)),
+            "a changed row is flat in the product's removed hue: {:?}",
+            changed
+        );
         let row = rendered_lines
             .iter()
-            .find(|line| row_text(line) == "  1  -let old = 1;")
-            .expect("removed row");
+            .find(|line| row_text(line) == "  1   let header = 0;")
+            .expect("context row");
         let keyword = row
             .spans
             .iter()
