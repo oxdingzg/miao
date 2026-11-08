@@ -4279,6 +4279,25 @@ impl App {
             Some(context) => format!("{context}\n\n{text}"),
             None => text,
         };
+        // The landing strip promises the remembered model, and the engine only
+        // knows its own default: a brand-new Session carries no pin, so without
+        // this the first prompt ran the engine's default route while the strip
+        // named the operator's last pick. Pin the remembered choice when the
+        // Session has no model yet and the catalog still serves it; the engine
+        // worker answers requests in order, so the pin lands before the prompt
+        // is admitted.
+        let unpinned = self
+            .session
+            .as_ref()
+            .is_some_and(|session| session.model.is_none());
+        let binding = unpinned
+            .then_some(self.remembered_model.as_deref())
+            .flatten()
+            .and_then(|model| ModelInfo::resolve(&self.models, model))
+            .map(ModelInfo::binding);
+        if let Some(binding) = binding {
+            engine.select_model(&session_id, binding);
+        }
         engine.prompt(&session_id, &text, attachments);
         // The prompt left the composer, so its draft is gone too: keeping it
         // would restore text the Session already sent if the operator switched
@@ -4713,6 +4732,88 @@ mod tests {
             credential_id: None,
             preview: None,
         }
+    }
+
+    /// The landing strip names the remembered model as the one the next prompt
+    /// would run on. A brand-new Session carries no model pin, so the engine
+    /// would otherwise run its own default route and the two names disagreed:
+    /// the strip said zhipuai glm while the turn answered on deepseek. The
+    /// first prompt therefore pins the remembered choice first, and a Session
+    /// that already carries a pin keeps it.
+    #[test]
+    fn the_first_prompt_pins_the_remembered_model_on_an_unpinned_session() {
+        let mut app = app();
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_new", 1)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState::default()),
+        });
+        app.models = vec![ModelInfo {
+            protocol: "openai-chat".into(),
+            model: "glm-5.3-flash".into(),
+            route_id: Some("zhipuai-coding-plan/glm-5.3-flash".into()),
+            variant: None,
+            provider: Some("zhipuai-coding-plan".into()),
+            account: None,
+            credential_id: None,
+        }];
+        app.remembered_model = Some("zhipuai-coding-plan/glm-5.3-flash".into());
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.submit("look at the open issues".into(), Vec::new());
+        let mut pin_at = None;
+        let mut prompt_at = None;
+        for (index, request) in std::iter::from_fn(|| requests.try_recv().ok()).enumerate() {
+            match request {
+                engine::Request::SelectModel { .. } if pin_at.is_none() => pin_at = Some(index),
+                engine::Request::Prompt { .. } if prompt_at.is_none() => prompt_at = Some(index),
+                _ => {}
+            }
+        }
+        let pin_at = pin_at.expect("the first prompt pins the remembered model");
+        let prompt_at = prompt_at.expect("the prompt is admitted");
+        assert!(
+            pin_at < prompt_at,
+            "the pin lands before the prompt is admitted: pin={pin_at} prompt={prompt_at}"
+        );
+    }
+
+    /// A Session that already carries a model pin keeps it: the operator chose
+    /// that model for the Session, and the remembered default must not
+    /// override it just because another prompt was sent.
+    #[test]
+    fn a_pinned_session_keeps_its_model_on_submit() {
+        let mut pinned = summary("ses_pinned", 1);
+        pinned.model = Some(crate::session::ModelPin {
+            protocol: "openai-chat".into(),
+            model: "deepseek-v4-1-flash-261017".into(),
+            route_id: None,
+            variant: None,
+        });
+        let mut app = app();
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(pinned),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState::default()),
+        });
+        app.models = vec![ModelInfo {
+            protocol: "openai-chat".into(),
+            model: "glm-5.3-flash".into(),
+            route_id: Some("zhipuai-coding-plan/glm-5.3-flash".into()),
+            variant: None,
+            provider: Some("zhipuai-coding-plan".into()),
+            account: None,
+            credential_id: None,
+        }];
+        app.remembered_model = Some("zhipuai-coding-plan/glm-5.3-flash".into());
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.submit("look at the open issues".into(), Vec::new());
+        assert!(
+            !std::iter::from_fn(|| requests.try_recv().ok())
+                .any(|request| matches!(request, engine::Request::SelectModel { .. })),
+            "a pinned Session is not re-pinned from the remembered default"
+        );
     }
 
     fn wheel(kind: MouseEventKind) -> AppEvent {
