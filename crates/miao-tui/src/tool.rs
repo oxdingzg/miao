@@ -10,6 +10,7 @@
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use serde_json::Value;
+use unicode_width::UnicodeWidthStr;
 
 use crate::highlight::Highlighter;
 use crate::session::{DisplayFile, ToolPart};
@@ -1056,6 +1057,19 @@ fn paint_diff(
     // The scanner carries block-comment state across lines, so the file's own
     // language decides the spans; an extension outside the table stays plain.
     let mut highlighter = Highlighter::new(extension(path), palette);
+    // A changed row is a block, not a streak of coloured text: every cell of it
+    // carries the change's tint, and the block ends on one column so its right
+    // edge is straight whatever the code says.
+    let block = rows
+        .iter()
+        .filter_map(|row| match row {
+            DiffRow::Line { marker, text, .. } if *marker != ' ' => {
+                Some(width + 4 + marker.len_utf8() + text.width())
+            }
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0);
     for row in rows {
         match row {
             DiffRow::Hunk => out.push(Line::from(Span::styled(
@@ -1071,14 +1085,32 @@ fn paint_diff(
                     Some(number) => format!("  {number:>width$}  "),
                     None => format!("  {:width$}  ", ""),
                 };
+                let block_style = match marker {
+                    '+' | '-' => Style::new().bg(palette.diff_tint(*marker == '+')),
+                    _ => Style::new(),
+                };
                 let mut spans = vec![
-                    Span::styled(gutter, Style::new().fg(palette.text_muted)),
+                    Span::styled(
+                        gutter,
+                        Style::new().fg(palette.text_muted).patch(block_style),
+                    ),
                     Span::styled(
                         marker.to_string(),
-                        Style::new().fg(diff_color(*marker, theme)),
+                        Style::new()
+                            .fg(diff_color(*marker, theme))
+                            .patch(block_style),
                     ),
                 ];
-                spans.extend(highlighter.line(text));
+                let start = width + 4 + marker.len_utf8() + text.width();
+                spans.extend(
+                    highlighter
+                        .line(text)
+                        .into_iter()
+                        .map(|span| span.patch_style(block_style)),
+                );
+                if *marker != ' ' && start < block {
+                    spans.push(Span::styled(" ".repeat(block - start), block_style));
+                }
                 out.push(Line::from(spans));
             }
         }
@@ -1496,6 +1528,88 @@ mod tests {
         lines.iter().map(row_text).collect()
     }
 
+    /// A diff reads by shape before it reads by text: the whole changed row
+    /// carries the change's tint, not only the `+`/`-` glyph, and every changed
+    /// row ends on the same column so the block's edge is straight. An unchanged
+    /// row stays on the canvas, where the tint would claim a change that is not
+    /// there.
+    #[test]
+    fn a_changed_diff_row_is_a_tinted_block() {
+        let theme = theme();
+        let palette = theme.palette;
+        let call = tool(
+            "apply_patch",
+            json!({"patch": "*** Begin Patch\n*** Update File: src/a.rs\n@@ -1,2 +1,2 @@\n kept\n-gone\n+kept better and longer\n*** End Patch"}),
+            None,
+            false,
+        );
+        let rows = lines(&call, None, &theme, false, None);
+        let find = |needle: &str| {
+            rows.iter()
+                .find(|row| row_text(row).contains(needle))
+                .unwrap_or_else(|| panic!("no row holds {needle}: {:?}", rendered(&rows)))
+        };
+        let added = find("kept better and longer");
+        let removed = find("gone");
+        let context = find(" kept");
+        assert!(
+            added
+                .spans
+                .iter()
+                .all(|span| span.style.bg == Some(palette.diff_tint(true))),
+            "every cell of an added row carries the added tint: {:?}",
+            added
+        );
+        assert!(
+            removed
+                .spans
+                .iter()
+                .all(|span| span.style.bg == Some(palette.diff_tint(false))),
+            "every cell of a removed row carries the removed tint: {:?}",
+            removed
+        );
+        assert!(
+            context.spans.iter().all(|span| span.style.bg.is_none()),
+            "an unchanged row stays on the canvas: {:?}",
+            context
+        );
+        // The shorter removed row is padded out to the block the added row sets.
+        let cells = |row: &Line<'_>| {
+            row.spans
+                .iter()
+                .map(|span| span.content.width())
+                .sum::<usize>()
+        };
+        assert_eq!(
+            cells(removed),
+            cells(added),
+            "both changed rows end on the block's column: {:?}",
+            rendered(&rows)
+        );
+    }
+
+    /// A colourless theme has no canvas to mix into, so the block drops away and
+    /// the glyphs and words keep carrying the change on their own.
+    #[test]
+    fn a_colourless_theme_paints_no_diff_block() {
+        let theme = theme().monochrome();
+        let call = tool(
+            "apply_patch",
+            json!({"patch": "*** Begin Patch\n*** Update File: src/a.rs\n@@ -1,1 +1,1 @@\n-gone\n+kept\n*** End Patch"}),
+            None,
+            false,
+        );
+        let rows = lines(&call, None, &theme, false, None);
+        assert!(
+            rows.iter().flat_map(|row| row.spans.iter()).all(|span| span
+                .style
+                .bg
+                .is_none_or(|bg| bg == ratatui::style::Color::Reset)),
+            "no cell claims a block colour: {:?}",
+            rendered(&rows)
+        );
+    }
+
     fn row_text(line: &Line<'_>) -> String {
         line.spans
             .iter()
@@ -1882,9 +1996,14 @@ mod tests {
         );
         let rendered = rendered(&lines(&part, None, &theme(), false, None));
         assert_eq!(rendered[0], "✓ write  notes.md");
-        assert!(rendered.contains(&"    +first".to_string()), "{rendered:?}");
+        // A changed row is padded to the block's width, so the tint ends on one
+        // column; the padding carries no text.
         assert!(
-            rendered.contains(&"    +second".to_string()),
+            rendered.iter().any(|row| row.trim_end() == "    +first"),
+            "{rendered:?}"
+        );
+        assert!(
+            rendered.iter().any(|row| row.trim_end() == "    +second"),
             "{rendered:?}"
         );
     }
@@ -1910,11 +2029,15 @@ mod tests {
         );
         let rendered = rendered(&lines(&part, Some(&files), &theme(), false, None));
         assert!(
-            rendered.contains(&"   2  -let old = 1;".to_string()),
+            rendered
+                .iter()
+                .any(|row| row.trim_end() == "   2  -let old = 1;"),
             "{rendered:?}"
         );
         assert!(
-            rendered.contains(&"  40  -let tail = 1;".to_string()),
+            rendered
+                .iter()
+                .any(|row| row.trim_end() == "  40  -let tail = 1;"),
             "{rendered:?}"
         );
         assert!(
