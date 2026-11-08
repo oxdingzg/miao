@@ -2852,6 +2852,8 @@ async fn execute(
     let mut internal_inputs = HashSet::new();
     let mut goal_iterations = 0;
     let mut goal_stalls = 0;
+    let mut goal_polls = 0u32;
+    let mut goal_last: Option<std::time::Instant> = None;
     let mut goal_signature = None;
     // When the todo list first stopped changing, so a pause can say how long the
     // loop actually waited instead of only that it gave up.
@@ -4638,13 +4640,22 @@ command: None,
                 // tool had ever run retired the guard for the remainder of the
                 // run, so a Session that idled on an unfinished todo list was
                 // continued indefinitely instead of being paused.
+                // Tool calls are real work, and a long task can run many
+                // turns without touching the todo list, so an unchanged
+                // signature never stops the loop by itself: text-only
+                // repetition counts toward the immediate no-progress stop,
+                // while tool-backed repetition only feeds the backoff in the
+                // injection below. Only a changed signature is progress and
+                // clears both counters.
                 goal_stalls = if goal_signature.as_ref() == Some(&signature) {
                     if *tool_dispatched {
-                        0
+                        goal_polls += 1;
+                        goal_stalls
                     } else {
                         goal_stalls + 1
                     }
                 } else {
+                    goal_polls = 0;
                     0
                 };
                 *tool_dispatched = false;
@@ -4694,6 +4705,32 @@ command: None,
                         .inject(session, &format!("loop-paused-{run}"), &pause, "engine")
                         .await?;
                 } else {
+                    // While the Session owns running background work, the
+                    // completion notifications wake the drain on their own;
+                    // injecting the continuation prompt now would only burn
+                    // turns re-reading an unchanged todo list.
+                    let background_active = inner.store.jobs(session).await?.iter().any(|job| {
+                        matches!(job["state"].as_str(), Some("queued") | Some("running"))
+                    });
+                    if background_active {
+                        continue;
+                    }
+                    // Pace the loop in wall-clock time: the model answers in
+                    // seconds, so an unpaced drain re-prompts itself many
+                    // times a minute while it is really only waiting. Polling
+                    // (unchanged list, tools moving) backs off exponentially;
+                    // skipped injections lose nothing because background
+                    // completion notifications arrive as promoted inputs
+                    // either way.
+                    let base = inner.policy().continuation_min_interval_ms();
+                    let floor = (base << goal_polls.min(5)) as u128;
+                    let waited = goal_last
+                        .map(|t| t.elapsed().as_millis())
+                        .unwrap_or(u128::MAX);
+                    if waited < floor {
+                        continue;
+                    }
+                    goal_last = Some(std::time::Instant::now());
                     goal_iterations += 1;
                     let input_id = format!("goal:{run}:{goal_iterations}");
                     let admission = inner.store.admit(Input {

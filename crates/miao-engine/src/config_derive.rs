@@ -254,6 +254,7 @@ pub fn policy(documents: &[Document], miao_sandbox: Option<&str>) -> permission:
         // Matches the engine's default; the product policy never sets it.
         approval_timeout_ms: 60_000,
         max_provider_turns: None,
+        continuation_min_interval_ms: 30_000,
     }
 }
 
@@ -1440,6 +1441,7 @@ mod tests {
                 "rules": [],
                 "approval_timeout_ms": 60_000,
                 "max_provider_turns": null,
+                "continuation_min_interval_ms": 30_000,
                 "auto": false,
             })
         );

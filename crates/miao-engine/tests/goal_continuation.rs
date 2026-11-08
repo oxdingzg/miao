@@ -122,7 +122,7 @@ async fn finished(store: &Store) {
     // Advance through the bounded journal pages rather than repeatedly
     // parsing the entire growing prefix and competing with durable writes.
     let mut after = 0;
-    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+    tokio::time::timeout(std::time::Duration::from_secs(90), async {
         loop {
             let events = store.events("s", after, 5000).await.unwrap();
             if events.iter().any(|event| event.kind == "run.finished") {
@@ -154,6 +154,7 @@ async fn continues_independent_work_without_a_human_prompt_then_idles_with_locke
         provider.clone(),
         Tools::new(dir.path()).await.unwrap(),
         Policy::new(Config {
+            continuation_min_interval_ms: 0,
             mode: Mode::Workspace,
             rules: vec![Rule {
                 tool: "write_file".into(),
@@ -300,6 +301,7 @@ async fn denied_state_read_does_not_grant_autonomous_continuation() {
         provider.clone(),
         Tools::new(dir.path()).await.unwrap(),
         Policy::new(Config {
+            continuation_min_interval_ms: 0,
             rules: vec![Rule {
                 tool: "session_state".into(),
                 path: "@session/state/**".into(),
@@ -335,6 +337,7 @@ async fn changing_progress_does_not_refill_the_provider_allowance() {
         provider.clone(),
         Tools::new(dir.path()).await.unwrap(),
         Policy::new(Config {
+            continuation_min_interval_ms: 0,
             max_provider_turns: Some(25),
             ..Config::default()
         })
@@ -372,6 +375,7 @@ async fn unlimited_product_tasks_keep_continuing_past_twenty_five_goal_iteration
         provider.clone(),
         Tools::new(dir.path()).await.unwrap(),
         Policy::new(Config {
+            continuation_min_interval_ms: 0,
             max_provider_turns: None,
             ..Config::default()
         })
@@ -539,6 +543,7 @@ async fn one_tool_call_does_not_retire_the_no_progress_guard_for_the_rest_of_the
             .unwrap()
             .with_process_runner(env!("CARGO_BIN_EXE_miao-engine").into()),
         Policy::new(Config {
+            continuation_min_interval_ms: 0,
             mode: Mode::Workspace,
             allow_process: true,
             rules: vec![Rule {

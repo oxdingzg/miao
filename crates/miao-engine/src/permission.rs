@@ -88,9 +88,19 @@ pub struct Config {
     /// stall guard closes it. An explicit count is an operator leash: the
     /// final turn is forced text-only and the drain pauses with a summary.
     pub max_provider_turns: Option<u32>,
+    #[serde(default = "continuation_interval")]
+    /// Wall-clock floor between two todo-driven continuation injections in
+    /// one run. The model answers in seconds, so an unpaced loop re-prompts
+    /// itself several times a minute while it is really only waiting;
+    /// background completion notifications wake the session regardless, so
+    /// the skipped injections lose nothing but noise.
+    pub continuation_min_interval_ms: u64,
 }
 fn provider_turns() -> Option<u32> {
     None
+}
+fn continuation_interval() -> u64 {
+    30_000
 }
 fn approval_timeout() -> u64 {
     60_000
@@ -133,6 +143,7 @@ impl Default for Config {
             rules: vec![],
             approval_timeout_ms: approval_timeout(),
             max_provider_turns: provider_turns(),
+            continuation_min_interval_ms: continuation_interval(),
         }
     }
 }
@@ -223,6 +234,10 @@ impl Policy {
 
     pub fn max_provider_turns(&self) -> Option<u32> {
         self.config.max_provider_turns
+    }
+
+    pub fn continuation_min_interval_ms(&self) -> u64 {
+        self.config.continuation_min_interval_ms
     }
 
     pub fn new(config: Config) -> Result<Self, Error> {
