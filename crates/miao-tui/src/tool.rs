@@ -1951,7 +1951,7 @@ mod tests {
             .iter()
             .find(|span| span.content.as_ref() == "let")
             .expect("the keyword is its own span");
-        assert_eq!(keyword.style.fg, Some(theme.palette.secondary));
+        assert_eq!(keyword.style.fg, Some(theme.palette.syntax().keyword));
     }
 
     #[test]
