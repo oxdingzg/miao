@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "0.3.56",
+  "version": "0.3.57",
   "name": "@miao/core",
   "type": "module",
   "license": "MIT",
