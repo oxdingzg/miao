@@ -112,6 +112,7 @@ pub fn routes(
                 },
                 "primary": primary,
             });
+            gateway_session_header(id, &mut entry);
             if let Some(endpoint) = endpoint {
                 entry["endpoint"] = json!(endpoint);
             }
@@ -153,6 +154,17 @@ pub fn routes(
         entries[0]["primary"] = json!(true);
     }
     Ok(Some(entries))
+}
+
+/// OpenCode's gateway routes a turn by conversation and refuses one that does
+/// not name it (400 MissingSessionID), so every `opencode-go` route carries
+/// the Session's opaque digest. The engine substitutes `$session` at send
+/// time, keeping sibling Sessions distinct and matching the header the
+/// product's own TypeScript and CLI routes send.
+fn gateway_session_header(provider: &str, entry: &mut Value) {
+    if provider == "opencode-go" {
+        entry["auth"] = json!({ "headers": { "x-opencode-session": "$session" } });
+    }
 }
 
 /// Every unexpired credential per integration, the default label first: the
@@ -346,6 +358,7 @@ fn snapshot_key_routes(
                     "integration": account.integration,
                 },
             });
+            gateway_session_header(id, &mut entry);
             let limit = model.get("limit").and_then(Value::as_object);
             let mut bounded = serde_json::Map::new();
             for field in ["context", "output"] {
@@ -949,5 +962,136 @@ mod tests {
         assert!("ftp://host.example/v1"
             .join_pair("chat/completions")
             .is_none());
+    }
+
+    /// OpenCode's gateway refuses a turn that does not name its conversation
+    /// (400 MissingSessionID), so a derived `opencode-go` route has to carry
+    /// the Session-bound header, and only that provider's routes do.
+    #[test]
+    fn an_opencode_go_route_carries_the_session_header() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("miao.json"),
+            serde_json::to_string(&json!({
+                "model": "opencode-go/deepseek",
+                "providers": {
+                    "opencode-go": {
+                        "models": {
+                            "deepseek": {
+                                "api": {
+                                    "type": "aisdk",
+                                    "package": "@ai-sdk/openai-compatible",
+                                    "url": "https://opencode.ai/inference/go/openai/v1",
+                                },
+                            }
+                        }
+                    },
+                    "vendor": {
+                        "models": {
+                            "other": {
+                                "api": {
+                                    "type": "aisdk",
+                                    "package": "@ai-sdk/openai-compatible",
+                                    "url": "https://vendor.test/v1",
+                                },
+                            }
+                        }
+                    },
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let database = directory.path().join("credentials.db");
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .execute(
+                "CREATE TABLE credential (id text primary key, integration_id text, label text, value text)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO credential VALUES ('cred_go', 'opencode-go', 'default', '{\"kind\":\"key\"}')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO credential VALUES ('cred_vendor', 'vendor', 'default', '{\"kind\":\"key\"}')",
+                [],
+            )
+            .unwrap();
+        let entries = routes(
+            &[Source::Dir(directory.path().to_path_buf())],
+            Some(&database),
+        )
+        .unwrap()
+        .unwrap();
+        let gateway = entries
+            .iter()
+            .find(|entry| entry["id"] == "opencode-go/deepseek")
+            .expect("a gateway route");
+        assert_eq!(
+            gateway["auth"]["headers"]["x-opencode-session"],
+            "$session",
+            "{}",
+            serde_json::to_string(&gateway).unwrap()
+        );
+        let vendor = entries
+            .iter()
+            .find(|entry| entry["id"] == "vendor/other")
+            .expect("a configured route");
+        assert!(
+            vendor.get("auth").is_none(),
+            "{}",
+            serde_json::to_string(&vendor).unwrap()
+        );
+    }
+
+    /// The catalog half of the derivation routes a provider the configuration
+    /// never names, and the gateway among them needs the same Session header.
+    #[test]
+    fn a_snapshot_gateway_route_names_the_session_too() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("credentials.db");
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .execute(
+                "CREATE TABLE credential (id text primary key, integration_id text, label text, value text)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO credential VALUES ('cred_go', 'opencode-go', 'default', '{\"type\":\"key\",\"key\":\"sk-test\"}')",
+                [],
+            )
+            .unwrap();
+        let snapshot = json!({
+            "opencode-go": {
+                "name": "OpenCode Go",
+                "npm": "@ai-sdk/openai-compatible",
+                "api": "https://opencode.ai/inference/go/openai/v1",
+                "models": {
+                    "deepseek": {
+                        "modalities": { "input": ["text"], "output": ["text"] },
+                    },
+                },
+            },
+        });
+        let entries = snapshot_key_routes(&snapshot, &serde_json::Map::new(), Some(&database));
+        assert_eq!(
+            entries.len(),
+            1,
+            "{}",
+            serde_json::to_string(&entries).unwrap()
+        );
+        assert_eq!(
+            entries[0]["auth"]["headers"]["x-opencode-session"],
+            "$session",
+            "{}",
+            serde_json::to_string(&entries[0]).unwrap()
+        );
     }
 }
