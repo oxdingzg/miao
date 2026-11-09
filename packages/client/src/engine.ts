@@ -85,10 +85,18 @@ export class EngineHttpClient {
     if (this.failure) throw this.failure
     if (this.closed) throw new EngineError("engine_closed", "the engine attachment is closed")
     const id = this.next++
+    // A command with no input is one variant, not one variant plus `{}`: the
+    // engine decodes `method`/`params` into that enum and rejects an empty
+    // object, so a caller passing `params ?? {}` must still produce an
+    // argument-less request.
+    const envelope =
+      params === undefined || (record(params) && Object.keys(params).length === 0)
+        ? { id, method }
+        : { id, method, params }
     const response = await fetch(new URL("/rpc", this.url), {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ id, method, params }),
+      body: JSON.stringify(envelope),
       signal: AbortSignal.any([this.stop.signal, AbortSignal.timeout(this.options.timeoutMs ?? 60_000)]),
     })
     this.validate(response)

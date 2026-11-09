@@ -38,6 +38,31 @@ describe("engine HTTP attachment", () => {
     }
   })
 
+  test("omits empty params so an argument-less command stays argument-less", async () => {
+    // Verified against a real engine: `{"id":1,"method":"sessions","params":{}}`
+    // is rejected as an untyped request, while an absent or null `params` is the
+    // argument-less variant. A caller doing `params ?? {}` must not break it.
+    const bodies: string[] = []
+    const fake = engine(async (request) => {
+      const text = await request.text()
+      bodies.push(text)
+      const body = JSON.parse(text) as { id: number }
+      return Response.json({ id: body.id, result: null }, { headers })
+    })
+    const client = new EngineHttpClient({ url: fake.url, token })
+    try {
+      await client.request("sessions")
+      await client.request("sessions", {})
+      await client.request("snapshot", { session_id: "ses_1" })
+    } finally {
+      await client.close()
+      fake.stop()
+    }
+    expect(bodies[0]).toBe('{"id":1,"method":"sessions"}')
+    expect(bodies[1]).toBe('{"id":2,"method":"sessions"}')
+    expect(bodies[2]).toBe('{"id":3,"method":"snapshot","params":{"session_id":"ses_1"}}')
+  })
+
   test("rejects a reply carrying another protocol revision", async () => {
     const fake = engine(async (request) => {
       const body = (await request.json()) as { id: number }
