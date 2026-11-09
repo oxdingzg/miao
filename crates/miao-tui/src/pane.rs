@@ -3052,7 +3052,10 @@ impl Pane for SidebarPane {
                     Style::new().fg(palette.text_muted),
                 ))),
                 Some(usage) => {
-                    if let Some(lineage) = usage.lineage.first() {
+                    // Every model that served a turn gets its own row: a
+                    // session that switched models must not keep painting only
+                    // the first one.
+                    for lineage in &usage.lineage {
                         lines.push(Line::from(Span::styled(
                             lineage.clone(),
                             Style::new().fg(palette.text),
