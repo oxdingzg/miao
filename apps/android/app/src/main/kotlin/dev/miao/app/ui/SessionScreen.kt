@@ -1,7 +1,9 @@
 package dev.miao.app.ui
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -40,6 +42,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,7 +62,12 @@ fun SessionScreen(remote: RemoteSession, onBack: () -> Unit) {
     val listState = rememberLazyListState()
     var showRename by rememberSaveable { mutableStateOf(false) }
     var showDiff by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
     var speech by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        speech = granted
+    }
 
     DisposableEffect(remote) {
         remote.appear()
@@ -81,6 +91,7 @@ fun SessionScreen(remote: RemoteSession, onBack: () -> Unit) {
                 },
                 navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
                 actions = {
+                    TextButton(onClick = { showSettings = true }) { Text("设置") }
                     TextButton(onClick = { showRename = true }) { Text("重命名") }
                     TextButton(onClick = { showDiff = true }) { Text("变更") }
                 },
@@ -90,7 +101,15 @@ fun SessionScreen(remote: RemoteSession, onBack: () -> Unit) {
             Composer(
                 remote = remote,
                 speechActive = speech,
-                onSpeech = { speech = !speech },
+                onSpeech = {
+                    if (speech) {
+                        speech = false
+                        return@Composer
+                    }
+                    val granted = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                        PackageManager.PERMISSION_GRANTED
+                    if (granted) speech = true else permission.launch(Manifest.permission.RECORD_AUDIO)
+                },
                 onSend = { _, _ -> },
             )
         },
@@ -121,6 +140,8 @@ fun SessionScreen(remote: RemoteSession, onBack: () -> Unit) {
             dismissButton = { TextButton(onClick = { showRename = false }) { Text("取消") } },
         )
     }
+
+    if (showSettings) SessionSettingsDialog(remote, remote.clientAccess(), onDismiss = { showSettings = false })
 
     if (showDiff) {
         LaunchedEffect(Unit) { remote.loadDiff() }

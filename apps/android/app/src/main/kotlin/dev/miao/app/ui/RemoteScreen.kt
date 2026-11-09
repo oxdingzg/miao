@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -364,7 +365,7 @@ private fun HostCard(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (summary.pinned) {
                                 AssistChip(onClick = {}, label = { Text("置顶") })
-                                Spacer(Modifier.height(0.dp))
+                                Spacer(Modifier.width(6.dp))
                             }
                             Text(summary.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }

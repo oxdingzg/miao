@@ -201,6 +201,8 @@ class RemoteSession(val summary: SessionSummary, private val client: HostClient)
         }
     }
 
+    fun clientAccess(): dev.miao.app.HostClient = client
+
     fun pendingApprovals(): List<JsonValue> =
         (pending["permissions"]?.array ?: emptyList()) + (pending["questions"]?.array ?: emptyList())
 }
