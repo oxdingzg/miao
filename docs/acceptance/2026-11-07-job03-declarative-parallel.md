@@ -11,7 +11,7 @@ when the host is idle.
 
 | command | observed |
 | --- | --- |
-| `cargo test --test read_batch` | OBSERVED-C1 |
+| `cargo test --test read_batch` | ok. 13 passed; 0 failed (CI run 42640414446, engine shard 4) |
 
 Pinned by tests in that suite:
 
@@ -47,7 +47,7 @@ Pinned by tests in that suite:
 
 | command | observed |
 | --- | --- |
-| `cargo test --test read_batch` | OBSERVED-C2 |
+| `cargo test --test read_batch` | ok. 13 passed; 0 failed (same run: writes settle in request order, no batch event) |
 
 ## Criterion 3 — report true concurrency overlap, wall-clock gains, and total costs, without treating RwLock as parallel execution
 
@@ -65,7 +65,7 @@ admitted.
 
 | command | observed |
 | --- | --- |
-| `cargo test --test read_batch` | OBSERVED-C3 |
+| `cargo test --test read_batch` | ok — `batched_reads_report_observed_peak_concurrency_above_one` passes with the entry yield (same run) |
 
 **Recorded open, not hidden:** a real wall-clock overlap benchmark and total-cost
 accounting for a parallel turn are not measured here. They hang on the ablation and
@@ -82,14 +82,14 @@ everything, and a new suite passing does not prove the old ones still do):
 
 | command | observed |
 | --- | --- |
-| `CARGO_INCREMENTAL=0 cargo test --no-run --tests` | OBSERVED-COMPILE |
-| `cargo test --test read_batch` | OBSERVED-READBATCH |
-| `CARGO_INCREMENTAL=0 cargo test --tests` | OBSERVED-FULL |
+| `CARGO_INCREMENTAL=0 cargo test --no-run --tests` | ok on all four engine shards (CI run 42640414446) |
+| `cargo test --test read_batch` | ok. 13 passed; 0 failed |
+| `CARGO_INCREMENTAL=0 cargo test --tests` | ok — the integration set is green across shards 1-4; shard 4 alone ran 57 suites ok (blackbox needed one rerun: the npm mirror 5xx'd during its install, unrelated to this tree) |
 
 ## Criterion 4 — link the implementation PR, the acceptance records, and applicable versions
 
-- Implementation: `52d0fdb929` + `a8dca49d0a` land through the pull request created
-  from this branch (PR-TBD).
+- Implementation: #2764, squash commit `85a0ff19b6` on `main` (the branch tip was
+  `4dc873f5f4` after two rebases; the yield fix is its last commit).
 - Acceptance record: this file, run on tree `a8dca49d0a`.
 - Versions: applies from the release that first ships the merged tree; stamped per the
   repository convention when that release cuts.

@@ -27,19 +27,19 @@ Pinned by `tests/redraw_clear.rs`:
 
 | command | observed |
 | --- | --- |
-| `cargo test --test redraw_clear` | OBSERVED-C1 |
+| `cargo test --test redraw_clear` | ok — `a_requested_redraw_clears_the_screen_and_repaints_every_row` and
+  `a_requested_redraw_wipes_the_backend_screen_before_the_next_frame` both pass (CI run 42628060816) |
 
 ## Full-suite result
 
 | command | observed |
 | --- | --- |
-| `CARGO_INCREMENTAL=0 cargo test --no-run --tests` | OBSERVED-COMPILE |
-| `CARGO_INCREMENTAL=0 cargo test --tests` | OBSERVED-FULL |
+| `CARGO_INCREMENTAL=0 cargo test --no-run --tests` | ok (CI run 42628060816) |
+| `CARGO_INCREMENTAL=0 cargo test --tests` | ok — the tui lib suite ran 573 passed; 0 failed |
 
 ## Criterion 4 — link the implementation PR, the acceptance record, and applicable versions
 
-- Implementation: `3dbf1529ae` + `7136a00620` land through the pull request created
-  from this branch (PR-TBD).
+- Implementation: #2766 (squash-merged after one README-table rebase).
 - Acceptance record: this file, run on tree `7136a00620`.
 - Versions: applies from the release that first ships the merged tree; stamped per
   the repository convention when that release cuts.

@@ -16,7 +16,7 @@ the toggle, names the media instead of painting bytes, keeps the markdown struct
 
 | command | observed |
 | --- | --- |
-| `cargo test --lib a_narrow_transcript` | OBSERVED-C1 |
+| `cargo test --lib a_narrow_transcript` | ok — `pane::tests::a_narrow_transcript_keeps_markdown_media_and_folded_output_readable` (CI run 42635672617) |
 
 ## Criterion 2 — collapse large output with expansion, and an understandable fallback for unknown content
 
@@ -28,7 +28,7 @@ criterion 1.
 
 | command | observed |
 | --- | --- |
-| `cargo test --lib unknown_content_passes_through` | OBSERVED-C2 |
+| `cargo test --lib unknown_content_passes_through` | ok — `markdown::tests::unknown_content_passes_through_without_loss` (same run) |
 
 ## Criterion 3 — preserve results on narrow screens and without image support
 
@@ -38,7 +38,7 @@ bytes are never painted into the frame.
 
 | command | observed |
 | --- | --- |
-| `cargo test --lib an_image_read_names` | OBSERVED-C3 |
+| `cargo test --lib an_image_read_names` | ok — `tool::tests::an_image_read_names_the_media_and_never_paints_its_bytes` (same run) |
 
 ## Full-suite result
 
@@ -47,13 +47,13 @@ not only the new tests:
 
 | command | observed |
 | --- | --- |
-| `CARGO_INCREMENTAL=0 cargo test --no-run --tests` | OBSERVED-COMPILE |
-| `CARGO_INCREMENTAL=0 cargo test --tests` | OBSERVED-FULL |
+| `CARGO_INCREMENTAL=0 cargo test --no-run --tests` | ok (CI run 42635672617) |
+| `CARGO_INCREMENTAL=0 cargo test --tests` | ok — 21 suites ok on the tui job |
 
 ## Criterion 4 — link the implementation PR, the acceptance record, and applicable versions
 
-- Implementation: `6e82464349` lands through the pull request created from this
-  branch (PR-TBD).
+- Implementation: #2765 (the branch tip was `41b4bf13bc` after one rebase; the
+  record row and this file were its docs commit).
 - Acceptance record: this file, run on tree `6e82464349`.
 - Versions: applies from the release that first ships the merged tree; stamped per
   the repository convention when that release cuts.
