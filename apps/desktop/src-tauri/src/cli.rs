@@ -83,7 +83,7 @@ impl CommandChild {
 }
 
 pub async fn get_config(app: &AppHandle) -> Option<Config> {
-    let (events, _) = spawn_command(app, "debug config", &[]).ok()?;
+    let (events, _) = spawn_command(app, &["debug".to_string(), "config".to_string()], &[]).ok()?;
 
     events
         .fold(String::new(), async |mut config_str, event| {
@@ -99,6 +99,22 @@ pub async fn get_config(app: &AppHandle) -> Option<Config> {
         .map(|v| serde_json::from_str::<Config>(&v))
         .await
         .ok()
+}
+
+/// Quote one argv word for the shell-mediated launches. Paths under
+/// Application Support and AppData contain spaces, so an unquoted join would
+/// hand the engine half a path.
+fn quote_args(args: &[String]) -> String {
+    args.iter()
+        .map(|arg| {
+            if arg.is_empty() || arg.contains([' ', '\t', '"', '\'', '$', '`', '\\']) {
+                format!("\"{}\"", arg.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$").replace('`', "\\`"))
+            } else {
+                arg.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn get_cli_install_path() -> Option<std::path::PathBuf> {
@@ -365,7 +381,7 @@ fn merge_shell_env(
 
 pub fn spawn_command(
     app: &tauri::AppHandle,
-    args: &str,
+    args: &[String],
     extra_env: &[(&str, String)],
 ) -> Result<(impl Stream<Item = CommandEvent> + 'static, CommandChild), std::io::Error> {
     let state_dir = app
@@ -424,7 +440,7 @@ pub fn spawn_command(
                     .map(|(key, value)| format!("{}={}", key, shell_escape(value))),
             );
 
-            script.push(format!("{} exec \"$BIN\" {}", env_prefix.join(" "), args));
+            script.push(format!("{} exec \"$BIN\" {}", env_prefix.join(" "), quote_args(args)));
 
             let mut cmd = Command::new("wsl");
             cmd.args(["-e", "bash", "-lc", &script.join("\n")]);
@@ -432,7 +448,7 @@ pub fn spawn_command(
         } else {
             let sidecar = get_sidecar_path(app);
             let mut cmd = Command::new(sidecar);
-            cmd.args(args.split_whitespace());
+            cmd.args(args);
 
             for (key, value) in envs {
                 cmd.env(key, value);
@@ -446,9 +462,9 @@ pub fn spawn_command(
         let envs = merge_shell_env(load_shell_env(&shell), envs);
 
         let line = if shell.ends_with("/nu") {
-            format!("^\"{}\" {}", sidecar.display(), args)
+            format!("^\"{}\" {}", sidecar.display(), quote_args(args))
         } else {
-            format!("\"{}\" {}", sidecar.display(), args)
+            format!("\"{}\" {}", sidecar.display(), quote_args(args))
         };
 
         let mut cmd = Command::new(shell);
@@ -564,12 +580,31 @@ pub fn serve(
     // from MIAO_SERVER_PASSWORD; it has no basic-auth username.
     let envs = [("MIAO_SERVER_PASSWORD", password.to_string())];
 
-    let (events, child) = spawn_command(
-        app,
-        format!("serve --port {port}").as_str(),
-        &envs,
-    )
-    .expect("Failed to spawn miao");
+    // The engine refuses a database that sits inside its workspace, and the
+    // shell starts it with the home directory as cwd. Name both explicitly under
+    // the app's own data directory: the layout is stable across launches and can
+    // never land inside a project the user opened.
+    let data = app
+        .path()
+        .app_local_data_dir()
+        .expect("Failed to resolve app local data dir");
+    let workspace = data.join("workspace");
+    let database = data.join("engine").join("miao.db");
+    for directory in [&workspace, &data.join("engine")] {
+        std::fs::create_dir_all(directory).expect("Failed to create the engine data directory");
+    }
+
+    let args = vec![
+        "serve".to_string(),
+        "--port".to_string(),
+        port.to_string(),
+        "--workspace".to_string(),
+        workspace.display().to_string(),
+        "--db".to_string(),
+        database.display().to_string(),
+    ];
+
+    let (events, child) = spawn_command(app, &args, &envs).expect("Failed to spawn miao");
 
     let mut exit_tx = Some(exit_tx);
     tokio::spawn(
