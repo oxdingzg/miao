@@ -96,6 +96,7 @@ impl Default for Config {
         Self {
             attention: AttentionConfig::default(),
             mouse: true,
+            focus_reporting: true,
             scroll_speed: 3.0,
             scroll_acceleration: false,
             leader_timeout_ms: 2000,
@@ -230,6 +231,15 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
     }
     if let Some(cursor) = field("cursor") {
         merge_cursor(cursor, path, config, warnings);
+    }
+    if let Some(focus) = field("focus_reporting") {
+        match focus.as_bool() {
+            Some(focus) => config.focus_reporting = focus,
+            None => warnings.push(format!(
+                "tui config {}: focus_reporting must be a boolean, ignoring",
+                path.display()
+            )),
+        }
     }
     if let Some(speed) = field("scroll_speed") {
         match speed.as_f64() {
@@ -674,6 +684,22 @@ mod tests {
             config.cursor.map(|cursor| cursor.shape()),
             Some(CursorShape::Block)
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// UX-02: focus behaviour belongs to the same `tui.json` the other
+    /// terminal settings read, so one file describes the whole terminal.
+    #[test]
+    fn focus_reporting_comes_from_the_same_files() {
+        assert!(Config::default().focus_reporting);
+        let dir = temp_dir("focus");
+        let (config, warnings) = merge_at(r#"{"focus_reporting": false}"#, &dir);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(!config.focus_reporting);
+
+        let (config, warnings) = merge_at(r#"{"focus_reporting": "nope"}"#, &dir);
+        assert!(config.focus_reporting, "a bad value keeps the default");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
