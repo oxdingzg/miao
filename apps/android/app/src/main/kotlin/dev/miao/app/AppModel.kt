@@ -135,7 +135,9 @@ class AppModel(private val context: Context) {
             if (clients[record.id] != null) continue
             val client = HostClient(record, identity, File(directory, "checkpoints"), accountFor(record.host.hubURL), scope)
             clients[record.id] = client
-            if (record.accountID != null) client.scene(sceneID, phase)
+            // A freshly paired host has no account identity until the directory
+            // refresh adopts it, so every host gets the scene notification.
+            client.scene(sceneID, phase)
         }
     }
 
@@ -544,7 +546,7 @@ class AppModel(private val context: Context) {
     fun scenePhase(phase: ClientScenePhase) {
         this.phase = phase
         for (client in clientsSnapshot()) {
-            if (client.record.accountID != null) scope.launch { client.scene(sceneID, phase) }
+            scope.launch { client.scene(sceneID, phase) }
         }
     }
 
