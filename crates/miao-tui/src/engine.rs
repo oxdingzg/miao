@@ -157,6 +157,10 @@ pub enum Request {
         session_id: String,
         job_id: String,
     },
+    /// Every background job of the open Session at once.
+    StopAllJobs {
+        session_id: String,
+    },
     /// One job's detail, for the preview of the selected row.
     JobDetail {
         session_id: String,
@@ -488,6 +492,14 @@ impl Handle {
         let _ = self.tx.send(Request::CancelJob {
             session_id: session_id.into(),
             job_id: job_id.into(),
+        });
+    }
+
+    /// Stop every background job of the open Session, then ask for the list
+    /// again so the dialog shows the state the engine actually reached.
+    pub fn stop_all_jobs(&self, session_id: &str) {
+        let _ = self.tx.send(Request::StopAllJobs {
+            session_id: session_id.into(),
         });
     }
 
@@ -1375,6 +1387,17 @@ async fn run(
                         }
                     }
                 }
+                Request::StopAllJobs { session_id } => {
+                    let result = client
+                        .request("stop_all_jobs", json!({ "session_id": session_id }))
+                        .await;
+                    match result {
+                        Ok(_) => refresh_jobs(client, &bus, &session_id).await,
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("stop failed: {error}")))
+                        }
+                    }
+                }
                 Request::Devices => {
                     let result = client.request("devices", json!({})).await;
                     match result {
@@ -1896,6 +1919,17 @@ fn parse_job_rows(value: &Value) -> Vec<JobRow> {
     jobs.iter()
         .filter_map(|row| {
             let id = row.get("job_id")?.as_str()?.to_string();
+            let command = row
+                .get("command")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            // The tail of what the job has produced: the list answers "what is
+            // it saying" without a round trip per row, and the preview still
+            // fills the full result in for the selected one.
+            let output = row
+                .get("output")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             Some(JobRow {
                 owner: owner_short(row.get("session_id").and_then(Value::as_str)),
                 state: row
@@ -1903,11 +1937,11 @@ fn parse_job_rows(value: &Value) -> Vec<JobRow> {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string(),
-                detail: row
-                    .get("command")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string(),
+                detail: if output.is_empty() {
+                    command.to_string()
+                } else {
+                    format!("{command} · {output}")
+                },
                 id,
                 subagent: false,
             })
@@ -1916,8 +1950,7 @@ fn parse_job_rows(value: &Value) -> Vec<JobRow> {
 }
 
 /// The Session's subagent runs, taken from the same answer's `subagents`
-/// list; the real engine does not serve it yet, so the dialog simply shows no
-/// subagent rows there.
+/// list, which the engine composes from the Session's delegated children.
 fn parse_subagent_rows(value: &Value) -> Vec<JobRow> {
     value
         .get("subagents")

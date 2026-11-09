@@ -656,6 +656,9 @@ pub enum ConfirmKind {
     /// Forget every stored credential for one integration. The routes that
     /// named them go with them, which is why it is worth a confirmation.
     RemoveCredential(String),
+    /// Stop every background job of the open Session at once. Every running
+    /// job dies together, which is why it is worth a confirmation.
+    StopAllJobs,
 }
 
 pub struct ConfirmDialog {
@@ -676,6 +679,7 @@ impl ConfirmDialog {
             ConfirmKind::RemoveWorktree(_) => "remove",
             ConfirmKind::Revert { .. } => "revert",
             ConfirmKind::RemoveCredential(_) => "delete",
+            ConfirmKind::StopAllJobs => "stop",
         }
     }
 }
@@ -1159,7 +1163,7 @@ impl Dialog {
             "jobs",
             rows,
             ListKind::Jobs,
-            "x stop · esc close",
+            "x stop · X stop all · esc close",
         ))
     }
 
@@ -1362,6 +1366,17 @@ impl Dialog {
             ),
             confirmed: false,
             kind: ConfirmKind::RemoveWorktree(name.to_string()),
+        })
+    }
+
+    /// The global stop of the jobs dialog: one answer for every background
+    /// job the Session owns.
+    pub fn confirm_stop_all_jobs() -> Self {
+        Dialog::Confirm(ConfirmDialog {
+            title: "stop all jobs",
+            message: "Stop every background job this Session owns?".to_string(),
+            confirmed: false,
+            kind: ConfirmKind::StopAllJobs,
         })
     }
 
@@ -1799,6 +1814,8 @@ pub enum Action {
     DeviceChosen(usize, u8),
     /// Stop the background job the row names.
     CancelJob(String),
+    /// Stop every background job of the Session, after confirmation.
+    StopAllJobs,
     /// Ask for the name of a worktree to add.
     WorktreeNew,
     /// Remove the worktree the row names, after confirmation.
@@ -1937,6 +1954,9 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
                 return Action::CancelJob(id);
             }
         }
+        // The global stop names no row, so it takes no selection; the action
+        // opens the confirmation and only an answer stops anything.
+        KeyCode::Char('X') if list.kind == ListKind::Jobs => return Action::StopAllJobs,
         KeyCode::Char('x') if list.kind == ListKind::Schedule => {
             if let Some(id) = list.current_id() {
                 return Action::CancelSchedule(id);
@@ -2154,6 +2174,7 @@ fn handle_confirm_key(confirm: &mut ConfirmDialog, key: KeyEvent) -> Action {
                 ConfirmKind::RemoveCredential(integration) => {
                     ConfirmKind::RemoveCredential(integration.clone())
                 }
+                ConfirmKind::StopAllJobs => ConfirmKind::StopAllJobs,
             };
             return Action::Confirmed(kind);
         }
@@ -3028,6 +3049,36 @@ mod tests {
             ),
             "x on a subagent row stops nothing"
         );
+    }
+
+    #[test]
+    fn X_names_the_global_stop_and_the_confirmation_gates_it() {
+        // `X` does not name a row: it opens the confirmation, whatever the
+        // cursor is on.
+        let mut dialog = Dialog::jobs(&[JobRow {
+            id: "job_1".into(),
+            owner: "ses_a".into(),
+            state: "running".into(),
+            detail: "bun test".into(),
+            subagent: false,
+        }]);
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('X'))),
+            Action::StopAllJobs
+        ));
+
+        // The confirmation starts on the safe choice, so a bare Enter closes
+        // it without stopping anything; `y` arms it and Enter fires it.
+        let mut confirm = Dialog::confirm_stop_all_jobs();
+        assert!(matches!(
+            confirm.handle_key(key(KeyCode::Enter)),
+            Action::Close
+        ));
+        confirm.handle_key(key(KeyCode::Char('y')));
+        assert!(matches!(
+            confirm.handle_key(key(KeyCode::Enter)),
+            Action::Confirmed(ConfirmKind::StopAllJobs)
+        ));
     }
 
     #[test]

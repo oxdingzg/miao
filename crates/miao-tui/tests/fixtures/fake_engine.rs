@@ -85,6 +85,7 @@ fn main() {
     // The jobs dialog's scripted answer; the value names the phase, so a
     // restart can answer the new real state a reopened list must show.
     let jobs_phase = std::env::var("MIAO_TUI_FAKE_JOBS").ok();
+    let mut jobs_stopped = false;
     let mut approval_pending = std::env::var_os("MIAO_TUI_FAKE_APPROVAL").is_some();
     let streaming = std::env::var_os("MIAO_TUI_FAKE_STREAM").is_some();
     let stream_updates = Arc::new(AtomicU64::new(0));
@@ -477,16 +478,23 @@ fn main() {
             // value names the phase: "after" answers the state a restart
             // produced, which a reopened dialog has to catch up to.
             "jobs" if jobs_phase.is_some() => {
-                let after = jobs_phase.as_deref() == Some("after");
-                let (build, deploy, survey) = if after {
-                    ("finished", "running", "finished")
+                // `stop_all_jobs` moves the same process to the stopped phase:
+                // the list must show the state the engine reached, not the one
+                // it held when the dialog opened.
+                let phase = if jobs_stopped {
+                    "stopped"
                 } else {
-                    ("running", "finished", "running")
+                    jobs_phase.as_deref().unwrap_or_default()
+                };
+                let (build, deploy, survey) = match phase {
+                    "after" => ("finished", "running", "finished"),
+                    "stopped" => ("cancelled", "finished", "running"),
+                    _ => ("running", "finished", "running"),
                 };
                 send(&mut out, json!({"id":id,"result":{
                     "jobs":[
-                        {"job_id":"job_build","session_id":"ses_a","state":build,"command":"bun test","output":null},
-                        {"job_id":"job_deploy","session_id":"ses_c","state":deploy,"command":"bun run deploy","output":{"exit_code":0}}
+                        {"job_id":"job_build","session_id":"ses_a","state":build,"command":"bun test","output":if build == "running" {""} else {"build log tail"}},
+                        {"job_id":"job_deploy","session_id":"ses_c","state":deploy,"command":"bun run deploy","output":"deploy ok"}
                     ],
                     "subagents":[
                         {"id":"sub_survey","session_id":"ses_a","status":survey,"description":"survey the flaky tests"}
@@ -494,9 +502,21 @@ fn main() {
                 }}));
             }
             "job" if jobs_phase.is_some() => {
-                let after = jobs_phase.as_deref() == Some("after");
-                let state = if after { "finished" } else { "running" };
+                let phase = if jobs_stopped {
+                    "stopped"
+                } else {
+                    jobs_phase.as_deref().unwrap_or_default()
+                };
+                let state = match phase {
+                    "after" => "finished",
+                    "stopped" => "cancelled",
+                    _ => "running",
+                };
                 send(&mut out, json!({"id":id,"result":{"state":state,"result":null}}));
+            }
+            "stop_all_jobs" if jobs_phase.is_some() => {
+                jobs_stopped = true;
+                send(&mut out, json!({"id":id,"result":{"stopped":["job_build"]}}));
             }
             "select_model" if sessions => {
                 log_action(&frame["params"], "select_model");

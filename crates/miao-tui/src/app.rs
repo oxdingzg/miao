@@ -1987,6 +1987,10 @@ impl App {
                     engine.cancel_job(&session_id, &job_id);
                 }
             }
+            // The global stop is gated here: naming the Session is not
+            // stopping it, so the confirmation dialog comes first and the
+            // engine call happens only in `Confirmed` below.
+            DialogAction::StopAllJobs => self.open_dialog(Dialog::confirm_stop_all_jobs()),
             DialogAction::DeviceChosen(index, action) => self.device_action(
                 index,
                 match action {
@@ -2107,6 +2111,12 @@ impl App {
                         };
                         engine.revert(&session_id, boundary_seq, files);
                         self.notice(&format!("reverted to #{boundary_seq}"));
+                    }
+                    ConfirmKind::StopAllJobs => {
+                        let Some(session_id) = self.session_id() else {
+                            return;
+                        };
+                        engine.stop_all_jobs(&session_id);
                     }
                 }
             }
@@ -9473,6 +9483,23 @@ mod tests {
         assert!(matches!(
             requests.try_recv(),
             Ok(engine::Request::Jobs { session_id }) if session_id == "ses_a"
+        ));
+    }
+
+    #[test]
+    fn the_global_stop_fires_only_from_the_confirmation() {
+        // Naming the stop opens the gate; answering the confirmation is what
+        // asks the engine to stop the Session's jobs.
+        let (mut app, mut requests) = revert_session_app();
+        app.dialog_action(DialogAction::StopAllJobs);
+        let Some(Dialog::Confirm(confirm)) = app.dialog.as_ref() else {
+            panic!("the global stop did not ask first");
+        };
+        assert_eq!(confirm.kind, ConfirmKind::StopAllJobs);
+        app.dialog_action(DialogAction::Confirmed(ConfirmKind::StopAllJobs));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::StopAllJobs { session_id }) if session_id == "ses_a"
         ));
     }
 

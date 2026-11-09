@@ -203,3 +203,58 @@ fn a_reopened_jobs_dialog_shows_the_state_after_the_restart() {
     );
     harness.shutdown();
 }
+
+/// `X` stops every job only once the operator confirms: the dialog asks, a
+/// bare dismiss stops nothing, and the reopened list shows the state the
+/// engine reached — including the tail the stopped job produced. Subagent
+/// rows are read-only, so a global stop of jobs leaves them alone.
+#[test]
+fn stopping_every_job_asks_first_and_shows_the_true_state_after() {
+    let mut harness = Harness::spawn("before");
+    assert!(
+        harness.wait_for("hello from the fixture", Duration::from_secs(30)),
+        "the session did not open:\n{}",
+        harness.screen()
+    );
+    harness.write(b"\x18j");
+    assert!(
+        harness.wait_for("job_build · ses_a · running", Duration::from_secs(30)),
+        "the list never opened:\n{}",
+        harness.screen()
+    );
+
+    // The confirmation must name what stops, and naming it is not stopping
+    // it: the list still shows the job running while the question is up.
+    harness.write(b"X");
+    assert!(
+        harness.wait_for("Stop every background job", Duration::from_secs(30)),
+        "the global stop never asked:\n{}",
+        harness.screen()
+    );
+    assert!(
+        harness.wait_for("job_build · ses_a · running", Duration::from_secs(30)),
+        "the list changed before the operator confirmed:\n{}",
+        harness.screen()
+    );
+
+    // `y` arms the confirmation and Enter fires it; the engine answers which
+    // ids stopped and the refreshed list shows the true state.
+    harness.write(b"y");
+    harness.write(b"\r");
+    assert!(
+        harness.wait_for("job_build · ses_a · cancelled", Duration::from_secs(30)),
+        "the stopped job never showed its real state:\n{}",
+        harness.screen()
+    );
+    assert!(
+        harness.wait_for("bun test · build log tail", Duration::from_secs(30)),
+        "the stopped job's recent output never rendered:\n{}",
+        harness.screen()
+    );
+    assert!(
+        harness.wait_for("◇ sub_survey · ses_a · running", Duration::from_secs(30)),
+        "the global stop touched the read-only subagent rows:\n{}",
+        harness.screen()
+    );
+    harness.shutdown();
+}
