@@ -351,7 +351,7 @@ async fn task_dependencies_survive_restart_and_unlock_only_completed_prerequisit
     // The write surface has no `verified` field, so the durable rows are the
     // model input with the receipt default filled in.
     let mut expected = tasks.clone();
-    for row in expected.iter_mut() {
+    for row in expected.as_array_mut().unwrap() {
         row["verified"] = json!(false);
     }
     assert_eq!(state["todos"]["value"]["todos"], expected);
