@@ -7253,6 +7253,65 @@ mod tests {
         );
     }
 
+    /// PERF-05: a flooding engine must not swallow the keyboard. Provider
+    /// frames keep folding into the streaming draft around a keystroke, the
+    /// composer still takes the key typed mid-flood, and Esc still asks the
+    /// engine to cancel the run: input outranks the rendering backlog.
+    #[test]
+    fn keys_still_execute_while_an_engine_backpressure_flood_pours_in() {
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_flood", 0)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState {
+                active_run: Some("run-1".into()),
+                ..SessionState::default()
+            }),
+        });
+        // The egress is behind, then the frames pour in — the shape a stall
+        // leaves queued ahead of the render loop.
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "backpressure",
+            "session_id": "ses_flood",
+            "queued": 300,
+            "cleared": false,
+        })));
+        let delta = |seq: usize| {
+            AppEvent::Provider(serde_json::json!({
+                "kind": "provider.delta",
+                "session_id": "ses_flood",
+                "run_id": "run-1",
+                "data": {"kind": "delta", "delta": {"kind": "text.delta", "text": format!("w{seq} ")}, "raw": {}},
+            }))
+        };
+        for seq in 0..256 {
+            app.handle(delta(seq));
+        }
+        // The keystroke lands mid-flood; the backlog keeps pouring around it.
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::NONE));
+        for seq in 256..512 {
+            app.handle(delta(seq));
+        }
+        // The key was consumed, not dropped behind the flood.
+        assert_eq!(app.shell.composer.editor.text(), "x");
+        // The flood itself reached the draft whole, on both sides of the key.
+        let streamed = app
+            .draft
+            .as_ref()
+            .map(|draft| draft.text())
+            .unwrap_or_default();
+        assert!(streamed.starts_with("w0 "), "{streamed:?}");
+        assert!(streamed.ends_with("w511 "), "{streamed:?}");
+        // Cancellation is not queued behind the rendering batch either.
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(
+            matches!(requests.try_recv(), Ok(engine::Request::Cancel { .. })),
+            "Esc during a backlog still cancels the run"
+        );
+    }
+
     #[test]
     fn a_projection_for_another_run_drops_the_live_phase() {
         let mut app = running_app("run-1");
