@@ -37,12 +37,13 @@ cross-session pending inbox.
 The phone-only mode runs an OpenAI-compatible chat loop on the device itself:
 providers and preset endpoints, streaming replies, a bounded tool loop over the
 app's own workspace (`list_files`, `read_file`, `write_file`, `fetch_url`),
-per-write and per-network confirmation, session history and rewind. An optional
-MCP server reachable over HTTP contributes more tools. It needs no computer,
-account or relay.
+per-write and per-network confirmation, session history and rewind, and image
+attachments from the system photo picker (downscaled to 1024 px before they are
+stored). An optional MCP server reachable over HTTP contributes more tools. It
+needs no computer, account or relay.
 
-Not yet ported from iOS: image input in the local mode, tablet multi-window
-scene sharing, and FCM background notifications.
+Not yet ported from iOS: tablet multi-window scene sharing and FCM background
+notifications.
 The relay currently delivers APNs alerts only, so Android registration awaits a
 server-side delivery provider; the client-side registration and
 device-encrypted context lookup are already implemented and interop-tested.

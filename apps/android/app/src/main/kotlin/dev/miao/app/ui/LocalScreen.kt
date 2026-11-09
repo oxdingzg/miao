@@ -1,5 +1,9 @@
 package dev.miao.app.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -36,15 +41,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.miao.app.local.LocalAgent
+import dev.miao.app.local.LocalImages
 import dev.miao.app.local.LocalMessage
 import dev.miao.app.local.LocalPresets
 import dev.miao.app.local.LocalProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,6 +67,23 @@ fun LocalScreen(agent: LocalAgent) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var draft by rememberSaveable { mutableStateOf("") }
     val messages = agent.messages
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var attached by remember { mutableStateOf<List<String>>(emptyList()) }
+    var attaching by remember { mutableStateOf(false) }
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(LocalImages.MAX_IMAGES),
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        attaching = true
+        scope.launch {
+            val encoded = withContext(Dispatchers.IO) {
+                uris.take(LocalImages.MAX_IMAGES).mapNotNull { uri -> LocalImages.encode(context, uri) }
+            }
+            attached = (attached + encoded).take(LocalImages.MAX_IMAGES)
+            attaching = false
+        }
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -85,6 +114,26 @@ fun LocalScreen(agent: LocalAgent) {
             Surface(tonalElevation = 2.dp) {
                 Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     agent.error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+                    if (attached.isNotEmpty() || attaching) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (attaching) Text("正在处理图片…", fontSize = 11.sp)
+                            attached.forEachIndexed { index, image ->
+                                Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                                    LocalImages.decode(image)?.let { bitmap ->
+                                        Image(
+                                            bitmap = bitmap.asImageBitmap(),
+                                            contentDescription = "附件",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.size(56.dp),
+                                        )
+                                    }
+                                    TextButton(onClick = { attached = attached.filterIndexed { i, _ -> i != index } }) {
+                                        Text("移除", fontSize = 10.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
                     OutlinedTextField(
                         value = draft,
                         onValueChange = { draft = it },
@@ -94,13 +143,21 @@ fun LocalScreen(agent: LocalAgent) {
                         enabled = agent.ready,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                            enabled = agent.ready && !agent.busy && attached.size < LocalImages.MAX_IMAGES,
+                        ) { Text("图片") }
                         Button(
                             onClick = {
                                 val text = draft
+                                val images = attached
                                 draft = ""
-                                agent.send(text)
+                                attached = emptyList()
+                                agent.send(text, images)
                             },
-                            enabled = agent.ready && !agent.busy && draft.isNotBlank(),
+                            enabled = agent.ready && !agent.busy && (draft.isNotBlank() || attached.isNotEmpty()),
                         ) { Text("发送") }
                         OutlinedButton(
                             onClick = { agent.retryLast() },
@@ -211,7 +268,19 @@ private fun LocalIntro(agent: LocalAgent) {
 private fun LocalBubble(message: LocalMessage) {
     when (message.role) {
         LocalMessage.Role.User -> Card(modifier = Modifier.fillMaxWidth()) {
-            Text(message.text, fontSize = 14.sp, modifier = Modifier.padding(10.dp))
+            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                message.images.forEach { image ->
+                    LocalImages.decode(image)?.let { bitmap ->
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "附件",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp),
+                        )
+                    }
+                }
+                Text(message.text, fontSize = 14.sp)
+            }
         }
         LocalMessage.Role.Assistant -> Card(modifier = Modifier.fillMaxWidth()) {
             Text(message.text, fontSize = 14.sp, modifier = Modifier.padding(10.dp))

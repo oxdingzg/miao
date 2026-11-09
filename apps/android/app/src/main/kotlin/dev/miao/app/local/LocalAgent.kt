@@ -154,11 +154,20 @@ class LocalAgent(context: Context, private val scope: CoroutineScope) {
         persist()
     }
 
-    fun send(text: String) {
+    fun send(text: String, images: List<String> = emptyList()) {
         val prompt = text.trim()
-        if (prompt.isEmpty() || busy || !ready) return
+        if ((prompt.isEmpty() && images.isEmpty()) || busy || !ready) return
         error = null
-        updateMessages { it.add(LocalMessage(role = LocalMessage.Role.User, text = prompt)) }
+        val attached = images.take(LocalImages.MAX_IMAGES)
+        updateMessages {
+            it.add(
+                LocalMessage(
+                    role = LocalMessage.Role.User,
+                    text = prompt.ifEmpty { "（图片）" },
+                    images = attached,
+                ),
+            )
+        }
         persist()
         startTurn()
     }
