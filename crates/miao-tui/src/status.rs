@@ -43,6 +43,10 @@ pub struct HourlyUsage {
     /// Retention removed events inside the window, so the strip is a lower
     /// bound rather than the whole story.
     pub truncated: bool,
+    /// The cached share of the day's prompt tokens, as the engine computed it
+    /// from prompt totals that already include the cache axes. `None` means the
+    /// engine published no figure, which is not the same as a cold cache.
+    pub cache_hit_ratio: Option<f64>,
 }
 
 impl HourlyUsage {
@@ -73,6 +77,9 @@ impl HourlyUsage {
             cost_usd: number(totals.and_then(|totals| totals.get("cost_micros"))) as f64
                 / 1_000_000.0,
             cost_turns: number(totals.and_then(|totals| totals.get("cost_turns"))),
+            cache_hit_ratio: totals
+                .and_then(|totals| totals.get("cache_hit_ratio"))
+                .and_then(Value::as_f64),
             peak: value
                 .get("peak")
                 .map(|peak| (number(peak.get("start_ms")), number(peak.get("tokens")))),
@@ -85,9 +92,11 @@ impl HourlyUsage {
 
     /// The share of billed input that came from cache. The one number a
     /// reader can act on: it is what makes the same work cheap or expensive.
+    /// The engine owns the arithmetic — `input` already counts the cache axes,
+    /// so a second formula here is how the strip came to report a 97% hit as
+    /// 49% and nag every Session to compact.
     pub fn cache_hit(&self) -> Option<f64> {
-        let billed = self.input + self.cache_read;
-        (billed > 0).then(|| self.cache_read as f64 / billed as f64)
+        self.cache_hit_ratio
     }
 }
 
@@ -252,6 +261,28 @@ fn u64_at(value: &Value, path: &[&str]) -> Option<u64> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The strip formats the engine's figure and never derives its own: the
+    /// prompt total already counts the cache axes, so dividing by `input` plus
+    /// the cache read read a fully cached day as 50% and nagged every Session.
+    #[test]
+    fn the_hourly_hit_share_is_the_engine_figure_not_a_local_guess() {
+        let usage = HourlyUsage::from_value(&json!({
+            "totals": {
+                "input": 284_900_000,
+                "output": 269_900,
+                "cache_read": 276_500_000,
+                "cache_hit_ratio": 0.97
+            }
+        }));
+        assert_eq!(usage.cache_hit(), Some(0.97));
+        // An engine that published no figure leaves the strip unknown: a cold
+        // cache and an unreported one must not render the same.
+        assert_eq!(
+            HourlyUsage::from_value(&json!({"totals": {}})).cache_hit(),
+            None
+        );
+    }
 
     #[test]
     fn a_report_projects_the_fields_the_dialog_shows() {

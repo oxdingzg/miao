@@ -129,8 +129,12 @@ impl Totals {
             .enumerate()
             .map(|(index, (_, key))| ((*key).into(), json!(self.coverage[index])))
             .collect();
+        let measured = self.observations > 0
+            && self.invalid == 0
+            && self.coverage[0] == self.observations
+            && self.coverage[2] == self.observations;
         json!({"observations":self.observations,"knownUsageObservations":self.known,"missingUsageObservations":self.observations-self.known,"tokens":tokens,"coverage":coverage,"invalidBreakdowns":self.invalid,
-            "hitRatio":if self.observations>0 && self.invalid==0 && self.coverage[0]==self.observations && self.coverage[2]==self.observations && self.tokens[0]>0 {Some(self.tokens[2] as f64/self.tokens[0] as f64)} else {None}})
+            "hitRatio": if measured { hit_ratio(self.tokens[0], self.tokens[2]) } else { None }})
     }
 }
 
@@ -323,6 +327,17 @@ pub fn gemini(raw: &Value) -> Value {
     finish(usage, "gemini", raw, total)
 }
 
+/// The cached share of one request's prompt tokens.
+///
+/// Every normalizer here reports `inputTokens` as the whole prompt, cache reads
+/// and writes included — that is why `nonCachedInputTokens` is the remainder
+/// instead of the whole. The prompt is therefore the denominator, and adding a
+/// cache axis back would cap a fully cached turn at 50%, which reads as an
+/// unhealthy cache on every busy Session.
+pub fn hit_ratio(input_tokens: u64, cache_read: u64) -> Option<f64> {
+    (input_tokens > 0).then(|| cache_read.min(input_tokens) as f64 / input_tokens as f64)
+}
+
 /// The billed cache axes of a normalized usage object, for per-turn lineage
 /// events and the session usage report. Absent axes stay absent: a provider
 /// that reports no cache breakdown must never read as a zero-cache hit.
@@ -342,11 +357,8 @@ pub fn cache_lineage(usage: &Value) -> Value {
         out.insert("nonCached".into(), json!(value));
     }
     if let Some(read) = read {
-        if let Some(input) = pick("inputTokens") {
-            if input > 0 {
-                let ratio = (read as f64 / input as f64 * 1000.0).round() / 1000.0;
-                out.insert("hitRatio".into(), json!(ratio));
-            }
+        if let Some(ratio) = pick("inputTokens").and_then(|input| hit_ratio(input, read)) {
+            out.insert("hitRatio".into(), json!((ratio * 1000.0).round() / 1000.0));
         }
     }
     Value::Object(out)
