@@ -72,6 +72,14 @@ pub fn lines(
         "websearch" => inline(&mut out, tool, "WebSearch", &text(&input, "query"), theme),
         "skill" => inline(&mut out, tool, "Skill", &text(&input, "name"), theme),
         "task" => task(&mut out, tool, &input, raw, theme, fold),
+        "task_list" => tasks(&mut out, tool, result.as_ref(), theme, fold),
+        "task_result" => task_report(&mut out, tool, result.as_ref(), raw, theme, fold),
+        "session_state" | "goal" => session_state(&mut out, tool, result.as_ref(), theme, fold),
+        "schedule" => schedules(&mut out, tool, result.as_ref(), theme, fold),
+        "job_list" | "job_wait" | "job_cancel" => {
+            jobs(&mut out, tool, result.as_ref(), theme, fold)
+        }
+        "worktree_list" => worktree_rows(&mut out, tool, result.as_ref(), theme, fold),
         "send_message" => receipt(&mut out, tool, &input, raw, theme),
         "list_sessions" => sessions(&mut out, tool, result.as_ref(), theme, fold),
         "read_session_context" => out.push(header(
@@ -1086,17 +1094,12 @@ fn paint_diff(
                     None => format!("  {:width$}  ", ""),
                 };
                 // A changed row is the product's diff block: the row's own
-                // green or red behind flat text in the matching hue, the way
-                // the product paints a diff. Unchanged rows keep the scanner.
-                let (block_style, flat) = match marker {
-                    '+' | '-' => {
-                        let (background, text) = palette.diff(*marker == '+');
-                        (
-                            Style::new().bg(background),
-                            Some(Style::new().fg(text).patch(Style::new().bg(background))),
-                        )
-                    }
-                    _ => (Style::new(), None),
+                // green or red behind the code, whose scanner colours stay —
+                // keywords keep their hue inside the block, the way a fenced
+                // snippet does. Unchanged rows keep the scanner too.
+                let block_style = match marker {
+                    '+' | '-' => Style::new().bg(palette.diff_block(*marker == '+')),
+                    _ => Style::new(),
                 };
                 let mut spans = vec![
                     Span::styled(
@@ -1105,21 +1108,18 @@ fn paint_diff(
                     ),
                     Span::styled(
                         marker.to_string(),
-                        flat.unwrap_or_else(|| Style::new().fg(diff_color(*marker, theme))),
+                        Style::new()
+                            .fg(diff_color(*marker, theme))
+                            .patch(block_style),
                     ),
                 ];
                 let start = width + 4 + marker.len_utf8() + text.width();
-                match flat {
-                    // The product's diff line is one flat colour: the scanner
-                    // would put a teal string inside a green row.
-                    Some(style) => spans.push(Span::styled(text.clone(), style)),
-                    None => spans.extend(
-                        highlighter
-                            .line(text)
-                            .into_iter()
-                            .map(|span| span.patch_style(block_style)),
-                    ),
-                }
+                spans.extend(
+                    highlighter
+                        .line(text)
+                        .into_iter()
+                        .map(|span| span.patch_style(block_style)),
+                );
                 if *marker != ' ' && start < block {
                     spans.push(Span::styled(" ".repeat(block - start), block_style));
                 }
@@ -1459,6 +1459,289 @@ fn strip_ansi(text: &str) -> String {
     out
 }
 
+/// One readable row per background subagent: the operator tracks progress by
+/// description and state, never by the child's full report, which the model
+/// already received and which used to paint as a wall of JSON.
+fn tasks(
+    out: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    result: Option<&Value>,
+    theme: &Theme,
+    fold: Fold<'_>,
+) {
+    let palette = theme.palette;
+    let rows = result
+        .and_then(|value| value.get("tasks"))
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let running = rows
+        .iter()
+        .filter(|task| task["status"] == "running")
+        .count();
+    let summary = if rows.is_empty() {
+        "no background tasks".to_string()
+    } else {
+        format!("{} tasks · {} running", rows.len(), running)
+    };
+    out.push(header(tool, "tasks", &summary, theme));
+    let body = rows.iter().map(task_line).collect::<Vec<_>>().join("\n");
+    if !body.is_empty() {
+        preview(
+            out,
+            &body,
+            palette.text_muted,
+            fold.limit(TOOL_PREVIEW_LINES),
+            fold.toggle,
+        );
+    }
+}
+
+fn task_line(task: &Value) -> String {
+    let status = task["status"].as_str().unwrap_or("unknown");
+    let glyph = match status {
+        "running" => "•",
+        "completed" => "✓",
+        "cancelled" | "failed" => "×",
+        _ => " ",
+    };
+    let description = task["description"].as_str().unwrap_or("subagent");
+    format!("  [{glyph}] {description} · {status}")
+}
+
+/// A child's report: the row names the task and its state, and the body is the
+/// report text — the part an operator actually reads.
+fn task_report(
+    out: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    result: Option<&Value>,
+    raw: Option<&str>,
+    theme: &Theme,
+    fold: Fold<'_>,
+) {
+    let palette = theme.palette;
+    let task = result.and_then(|value| value.get("task"));
+    let description = task
+        .and_then(|task| task["description"].as_str())
+        .unwrap_or("subagent");
+    let status = task
+        .and_then(|task| task["status"].as_str())
+        .unwrap_or("unknown");
+    out.push(header(
+        tool,
+        "task",
+        &format!("{description} · {status}"),
+        theme,
+    ));
+    let limit = fold.limit(TOOL_PREVIEW_LINES);
+    if tool.failed {
+        preview(
+            out,
+            raw.unwrap_or_default(),
+            palette.error,
+            limit,
+            fold.toggle,
+        );
+        return;
+    }
+    let body = result
+        .and_then(|value| value["text"].as_str())
+        .unwrap_or_default();
+    if body.is_empty() {
+        if status == "running" {
+            out.push(result_line("still running", palette.text_muted));
+        }
+        return;
+    }
+    preview(out, body, palette.text, limit, fold.toggle);
+}
+
+/// The durable Session state: the checklist and the goal, in the shapes the
+/// projection carries (`todos`/`goal` each holding the last mutation's value).
+fn session_state(
+    out: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    result: Option<&Value>,
+    theme: &Theme,
+    fold: Fold<'_>,
+) {
+    let palette = theme.palette;
+    let todos = result
+        .and_then(|value| value.get("todos"))
+        .and_then(|value| value.get("value"))
+        .and_then(|value| value.get("todos"))
+        .and_then(Value::as_array);
+    let goal = result
+        .and_then(|value| value.get("goal"))
+        .and_then(|value| value.get("value"));
+    let summary = match (todos, goal) {
+        (None, None) => "no durable state".to_string(),
+        (Some(todos), _) => format!("{} todos", todos.len()),
+        (_, Some(_)) => "goal active".to_string(),
+    };
+    out.push(header(tool, "session state", &summary, theme));
+    let mut body = String::new();
+    if let Some(goal) = goal {
+        let objective = goal["objective"].as_str().unwrap_or_default();
+        let status = goal["status"].as_str().unwrap_or_default();
+        if !objective.is_empty() {
+            body.push_str(&format!("  ◆ {objective} · {status}\n"));
+        }
+    }
+    if let Some(todos) = todos {
+        for todo in todos {
+            let status = todo["status"].as_str().unwrap_or("pending");
+            let glyph = match status {
+                "completed" => "✓",
+                "in_progress" => "•",
+                "cancelled" => "×",
+                "waiting" => "…",
+                "blocked" => "!",
+                _ => " ",
+            };
+            let content = todo["content"].as_str().unwrap_or_default();
+            body.push_str(&format!("  [{glyph}] {content}\n"));
+        }
+    }
+    if !body.is_empty() {
+        preview(
+            out,
+            body.trim_end(),
+            palette.text_muted,
+            fold.limit(TOOL_PREVIEW_LINES),
+            fold.toggle,
+        );
+    }
+}
+
+/// Scheduled wakes and crons: one row per timer with its pattern and fire
+/// counters, instead of the ledger event serialized whole. A bare
+/// `schedule_wakeup` answer still names the timer it armed.
+fn schedules(
+    out: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    result: Option<&Value>,
+    theme: &Theme,
+    fold: Fold<'_>,
+) {
+    let palette = theme.palette;
+    let crons = result
+        .and_then(|value| value.get("crons"))
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let timer = result
+        .and_then(|value| value.get("timer_id"))
+        .and_then(Value::as_str);
+    let summary = if crons.is_empty() {
+        timer
+            .map(|id| {
+                let tail = id.len().saturating_sub(12);
+                format!("wake {}", &id[tail..])
+            })
+            .unwrap_or_else(|| "no schedules".to_string())
+    } else {
+        format!("{} schedules", crons.len())
+    };
+    out.push(header(tool, "schedules", &summary, theme));
+    let mut body = String::new();
+    for cron in crons {
+        let pattern = cron["pattern"].as_str().unwrap_or("once");
+        let fired = cron["fired_count"].as_u64().unwrap_or(0);
+        let skipped = cron["skipped_count"].as_u64().unwrap_or(0);
+        let state = cron["state"].as_str().unwrap_or("active");
+        body.push_str(&format!(
+            "  · {pattern} · {state} · fired {fired} · skipped {skipped}\n"
+        ));
+    }
+    if !body.is_empty() {
+        preview(
+            out,
+            body.trim_end(),
+            palette.text_muted,
+            fold.limit(TOOL_PREVIEW_LINES),
+            fold.toggle,
+        );
+    }
+}
+
+/// Background jobs: one row per job with its state and the command it runs.
+fn jobs(
+    out: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    result: Option<&Value>,
+    theme: &Theme,
+    fold: Fold<'_>,
+) {
+    let palette = theme.palette;
+    let listed = result
+        .and_then(|value| value.get("jobs"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let single = result.and_then(|value| value.get("job"));
+    let summary = if listed.is_empty() {
+        single
+            .and_then(|job| job["state"].as_str())
+            .map(|state| format!("job {state}"))
+            .unwrap_or_else(|| "no jobs".to_string())
+    } else {
+        format!("{} jobs", listed.len())
+    };
+    out.push(header(tool, "jobs", &summary, theme));
+    let mut body = String::new();
+    for job in listed.iter().chain(single) {
+        let state = job["state"].as_str().unwrap_or("unknown");
+        let command = job["command"].as_str().unwrap_or_default();
+        body.push_str(&format!("  · {command} · {state}\n"));
+    }
+    if !body.is_empty() {
+        preview(
+            out,
+            body.trim_end(),
+            palette.text_muted,
+            fold.limit(TOOL_PREVIEW_LINES),
+            fold.toggle,
+        );
+    }
+}
+
+/// Worktrees: one row per tree with its branch and path.
+fn worktree_rows(
+    out: &mut Vec<Line<'static>>,
+    tool: &ToolPart,
+    result: Option<&Value>,
+    theme: &Theme,
+    fold: Fold<'_>,
+) {
+    let palette = theme.palette;
+    let trees = result
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    out.push(header(
+        tool,
+        "worktrees",
+        &format!("{} trees", trees.len()),
+        theme,
+    ));
+    let mut body = String::new();
+    for tree in trees {
+        let branch = tree["branch"].as_str().unwrap_or("(detached)");
+        let path = tree["path"].as_str().unwrap_or_default();
+        body.push_str(&format!("  · {branch} · {path}\n"));
+    }
+    if !body.is_empty() {
+        preview(
+            out,
+            body.trim_end(),
+            palette.text_muted,
+            fold.limit(TOOL_PREVIEW_LINES),
+            fold.toggle,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1564,23 +1847,14 @@ mod tests {
         let added = find("kept better and longer");
         let removed = find("gone");
         let context = find(" kept");
-        let (added_bg, added_text) = palette.diff(true);
-        let (removed_bg, removed_text) = palette.diff(false);
+        let added_bg = palette.diff_block(true);
+        let removed_bg = palette.diff_block(false);
         assert!(
             added
                 .spans
                 .iter()
                 .all(|span| span.style.bg == Some(added_bg)),
-            "every cell of an added row carries the added tint: {:?}",
-            added
-        );
-        assert!(
-            added
-                .spans
-                .iter()
-                .any(|span| span.content.as_ref() == "kept better and longer"
-                    && span.style.fg == Some(added_text)),
-            "a changed row is the product's flat diff text, not the scanner's: {:?}",
+            "every cell of an added row carries the added block: {:?}",
             added
         );
         assert!(
@@ -1588,15 +1862,7 @@ mod tests {
                 .spans
                 .iter()
                 .all(|span| span.style.bg == Some(removed_bg)),
-            "every cell of a removed row carries the removed tint: {:?}",
-            removed
-        );
-        assert!(
-            removed
-                .spans
-                .iter()
-                .any(|span| span.content.as_ref() == "gone" && span.style.fg == Some(removed_text)),
-            "a changed row is the product's flat diff text, not the scanner's: {:?}",
+            "every cell of a removed row carries the removed block: {:?}",
             removed
         );
         assert!(
@@ -2096,24 +2362,19 @@ mod tests {
         );
         let theme = theme();
         let rendered_lines = lines(&part, Some(&files), &theme, false, None);
-        // A changed row is the product's diff block in one flat hue, so the
-        // scanner does not put a teal string inside a green row. An unchanged
-        // row is still code, and keeps the file's own colours.
+        // A changed row keeps the file's own scanner colours — keywords stay
+        // keyword-coloured — while every cell carries the product's diff block.
         let changed = rendered_lines
             .iter()
             .find(|line| row_text(line) == "  2  -let old = 1;")
             .expect("removed row");
-        let (background, text) = theme.palette.diff(false);
-        assert!(
-            changed
-                .spans
-                .iter()
-                .any(|span| span.content.as_ref() == "let old = 1;"
-                    && span.style.fg == Some(text)
-                    && span.style.bg == Some(background)),
-            "a changed row is flat in the product's removed hue: {:?}",
-            changed
-        );
+        let keyword = changed
+            .spans
+            .iter()
+            .find(|span| span.content.as_ref() == "let")
+            .expect("the keyword is its own span");
+        assert_eq!(keyword.style.fg, Some(theme.palette.syntax().keyword));
+        assert_eq!(keyword.style.bg, Some(theme.palette.diff_block(false)));
         let row = rendered_lines
             .iter()
             .find(|line| row_text(line) == "  1   let header = 0;")
@@ -2240,5 +2501,70 @@ mod tests {
         let rendered = rendered(&lines(&part, None, &theme(), false, None));
         assert_eq!(rendered[0], "✓ mcp_server_tool  hello");
         assert!(rendered.contains(&"  │ {\"result\":\"world\"}".to_string()));
+    }
+    /// A task list reads as one row per child — description and state — never
+    /// as the serialized ledger: a completed child's report alone ran for
+    /// pages, and the operator reads none of it.
+    #[test]
+    fn a_task_list_reads_as_rows_not_json() {
+        let part = tool(
+            "task_list",
+            json!({}),
+            Some(json!({"tasks": [
+                {"id": "ses_1/sub-a", "session_id": "ses_1/sub-a", "description": "close #1974", "status": "completed", "text": "a very long report"},
+                {"id": "ses_1/sub-b", "session_id": "ses_1/sub-b", "description": "close #1953", "status": "running", "text": null}
+            ]})),
+            false,
+        );
+        let rendered = rendered(&lines(&part, None, &theme(), true, None));
+        assert!(
+            rendered
+                .iter()
+                .any(|row| row.contains("[✓] close #1974 · completed")),
+            "{rendered:?}"
+        );
+        assert!(
+            rendered
+                .iter()
+                .any(|row| row.contains("[•] close #1953 · running")),
+            "{rendered:?}"
+        );
+        assert!(
+            !rendered.iter().any(|row| row.contains("very long report")),
+            "the child's report stays out of the list: {rendered:?}"
+        );
+        assert!(
+            !rendered.iter().any(|row| row.contains("\"tasks\"")),
+            "no raw JSON reaches the row: {rendered:?}"
+        );
+    }
+
+    /// A child's report is the body of a `task_result` row, under a header
+    /// naming the task — not the envelope with the task serialized beside it.
+    #[test]
+    fn a_task_result_names_the_task_and_shows_the_report() {
+        let part = tool(
+            "task_result",
+            json!({"id": "ses_1/sub-a"}),
+            Some(
+                json!({"task": {"id": "ses_1/sub-a", "description": "close #1974", "status": "completed"}, "text": "PR #2726 opened"}),
+            ),
+            false,
+        );
+        let rendered = rendered(&lines(&part, None, &theme(), false, None));
+        assert!(
+            rendered
+                .iter()
+                .any(|row| row.contains("close #1974 · completed")),
+            "{rendered:?}"
+        );
+        assert!(
+            rendered.iter().any(|row| row.contains("PR #2726 opened")),
+            "{rendered:?}"
+        );
+        assert!(
+            !rendered.iter().any(|row| row.contains("\"text\"")),
+            "no envelope JSON reaches the row: {rendered:?}"
+        );
     }
 }

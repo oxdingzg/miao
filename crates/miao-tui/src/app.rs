@@ -2156,6 +2156,19 @@ impl App {
                     return;
                 };
                 if let Some(engine) = self.engine.as_ref() {
+                    // The sidebar reads the Session summary's pin, and the
+                    // engine's answering projection lags the pick: paint the
+                    // new pin now, or the column keeps naming the model the
+                    // Session just stopped using.
+                    if let Some(summary) = self.session.as_mut() {
+                        summary.model = Some(crate::session::ModelPin {
+                            protocol: binding["protocol"].as_str().unwrap_or_default().to_string(),
+                            model: binding["model"].as_str().unwrap_or_default().to_string(),
+                            route_id: binding["route_id"].as_str().map(str::to_string),
+                            variant: binding["variant"].as_str().map(str::to_string),
+                        });
+                        self.shell.set_session(self.session.as_ref());
+                    }
                     engine.select_model(&session_id, binding);
                 }
             }
