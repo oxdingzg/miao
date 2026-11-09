@@ -69,6 +69,7 @@ newer record is the one to read.
 | `2026-11-07-cost04-turn-timings.md` | `18b3a92cc3` | COST-04 (all three criteria, re-run on a current tree; the `turn_timings` filter the issue cites matches no test since the phase-ledger rename) |
 | `2026-11-07-inp05-visible-context.md` | `1ba5bce210` | INP-05 (the composer-visible, removable Zed context the 2026-11-01 record rejected: deletion stays deleted, a changed selection replaces instead of stacking, a probe failure leaves the draft alone; live-Zed acceptance and the target version stay open) |
 | `2026-11-07-tool01-lsp-result-budget.md` | `e4e9996cf6` | TOOL-01 (the LSP call-hierarchy bounds — item limit, call-count limit, 64 KiB result budget — and the wire's per-response cap, completing criterion 1; criterion 2 stays partial and the retrieval measurement stays open) |
+| `2026-11-07-tool02-rename-large-unicode.md` | `1580c08bfe` | TOOL-02 (renames, large files and edit Unicode, closing the criteria `2026-11-05-tool02-versioned-edits.md` left open) |
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
 carries the table of filters that were re-run to keep the earlier records honest.
