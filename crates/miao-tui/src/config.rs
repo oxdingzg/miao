@@ -38,6 +38,12 @@ pub struct Config {
     /// Capture mouse input for wheel scrolling. Defaults to on, like the
     /// TypeScript host.
     pub mouse: bool,
+    /// Ask the terminal to report focus changes. Defaults to on. Turning it
+    /// off keeps the focus escapes out of terminals that turn them into
+    /// garbage input behind multiplexers or SSH hops; notifications gated on
+    /// focus then stay silent (focus is never known), while sounds keep
+    /// playing.
+    pub focus_reporting: bool,
     /// Rows one wheel notch moves the transcript. The TypeScript host calls this
     /// `scroll_speed` and defaults it to 3.
     pub scroll_speed: f64,
