@@ -9565,7 +9565,9 @@ mod tests {
             detail: "running · no result yet".into(),
         });
         let list = app.dialog.as_ref().and_then(Dialog::list).expect("jobs");
-        assert_eq!(list.rows[0].detail, "");
+        // The answer lands on the row it names; the other row keeps what it
+        // already carried before any answer landed.
+        assert_eq!(list.rows[0].detail, "bun test");
         assert_eq!(list.rows[1].detail, "running · no result yet");
     }
 
