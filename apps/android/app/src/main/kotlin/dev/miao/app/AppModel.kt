@@ -86,6 +86,8 @@ class AppModel(private val context: Context) {
 
     fun hostClient(id: UUID): HostClient? = clients[id]
 
+    private fun clientsSnapshot(): List<HostClient> = clients.values.toList()
+
     fun load() {
         if (loadTask != null) return
         loadTask = scope.launch {
@@ -117,7 +119,7 @@ class AppModel(private val context: Context) {
         val signedInAccount = if (accountSignedIn) accountIdentityID else null
         val visible = snapshot.first.filter { it.accountID == signedInAccount && it.accountID != null } +
             snapshot.first.filter { it.accountID == null }
-        for ((id, client) in clients) {
+        for ((id, client) in clients.toMap()) {
             if (visible.none {
                     it == client.record ||
                         (it.accountID != null && it.accountID == client.record.accountID && it.host == client.record.host)
@@ -233,7 +235,7 @@ class AppModel(private val context: Context) {
                 discoveredHosts = emptyList()
                 clearEnrollment()
                 pairTask?.cancel()
-                clients.values.forEach { it.close() }
+                clientsSnapshot().forEach { it.close() }
                 clients.clear()
                 account?.signOut()
                 account?.close()
@@ -272,7 +274,7 @@ class AppModel(private val context: Context) {
             try {
                 clearEnrollment()
                 pairTask?.cancel()
-                clients.values.forEach { it.close() }
+                clientsSnapshot().forEach { it.close() }
                 clients.clear()
                 try {
                     account?.signOut()
@@ -312,7 +314,7 @@ class AppModel(private val context: Context) {
                     accountIdentityID = null
                     accountSignedIn = false
                     discoveredHosts = emptyList()
-                    clients.values.forEach { it.close() }
+                    clientsSnapshot().forEach { it.close() }
                     clients.clear()
                 }
             } finally {
@@ -541,7 +543,7 @@ class AppModel(private val context: Context) {
 
     fun scenePhase(phase: ClientScenePhase) {
         this.phase = phase
-        for (client in clients.values) {
+        for (client in clientsSnapshot()) {
             if (client.record.accountID != null) scope.launch { client.scene(sceneID, phase) }
         }
     }

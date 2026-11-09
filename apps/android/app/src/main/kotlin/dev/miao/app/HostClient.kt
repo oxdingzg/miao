@@ -169,10 +169,21 @@ class HostClient(
             return admitted.connection
         }
         if (currentRecord.expired || closed) throw AuthorizationBlockedException()
+        val currentAccount = account
         val opened = HubConnection.open(
             host = currentRecord.host,
             identity = identity.loadOrCreate(),
-            authorize = null,
+            // A paired host has no accountID of its own, but the relay socket still
+            // requires the signed-in account's bearer credential.
+            authorize = currentAccount?.let { acct ->
+                suspend {
+                    acct.relayAuthorization(
+                        currentRecord.host.hubURL,
+                        currentRecord.host.target.hostID,
+                        currentRecord.host.target.runtimeID,
+                    )
+                }
+            },
             reconcile = { synchronize(it) },
         )
         if (closed) {
