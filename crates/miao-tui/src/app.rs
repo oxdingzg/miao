@@ -7511,7 +7511,7 @@ mod tests {
         app.handle(frame(serde_json::json!({"kind": "tool.start", "name": "run_command"})));
         app.handle(frame(serde_json::json!({"kind": "tool.input.delta", "delta": "{\"arg"})));
         app.handle(frame(serde_json::json!({"kind": "tool.input.delta", "delta": "v\":[\"echo"})));
-        app.handle(frame(serde_json::json!({"kind": "tool.input.delta", "delta": "\","hi\"]}"})));
+        app.handle(frame(serde_json::json!({"kind": "tool.input.delta", "delta": "\",\"hi\"]}"})));
         let painted = drafted(&mut app);
         assert!(
             painted.contains("run_command"),
