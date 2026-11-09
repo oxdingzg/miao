@@ -40,12 +40,37 @@ pub struct Todo {
     #[serde(default)]
     pub verified: bool,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Todos {
-    pub todos: Vec<Todo>,
+    pub todos: Vec<TodoInput>,
     #[serde(default)]
     pub expected_revision: Option<u64>,
+}
+/// The model's write surface for one checklist row: verification is a
+/// receipt, not a claim, so this face carries no `verified` field at all.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TodoInput {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub depends_on: Option<Vec<String>>,
+    pub content: String,
+    pub status: TodoStatus,
+    pub priority: Priority,
+}
+impl From<TodoInput> for Todo {
+    fn from(input: TodoInput) -> Self {
+        Todo {
+            id: input.id,
+            depends_on: input.depends_on,
+            content: input.content,
+            status: input.status,
+            priority: input.priority,
+            verified: false,
+        }
+    }
 }
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -106,7 +131,7 @@ pub struct Plan {
 }
 
 // Task numbers/order are not prerequisites. Validate the declared graph before admission.
-fn valid_dependencies(todos: &[Todo]) -> bool {
+fn valid_dependencies(todos: &[TodoInput]) -> bool {
     let mut by_id = HashMap::new();
     for (index, todo) in todos.iter().enumerate() {
         if let Some(id) = &todo.id {
@@ -226,7 +251,7 @@ impl Mutation {
                 Self {
                     kind: "todos",
                     expected: todos.expected_revision,
-                    value: json!({"todos":todos.todos}),
+                    value: json!({"todos":todos.todos.into_iter().map(Todo::from).collect::<Vec<_>>()}),
                 }
             }
             "goal" => {
