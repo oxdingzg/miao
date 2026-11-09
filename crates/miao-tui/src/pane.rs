@@ -2925,10 +2925,15 @@ fn hourly_lines(
             muted,
         ));
     }
+    // The histogram and the numbers are two different reads: a blank row
+    // between them lets the eye take the shape first, then the figures.
+    lines.push(Line::default());
     lines.push(Line::from(money));
     // An unhealthy cache state carries its own next step: billed input that
     // the cache barely recognised is the one shape compaction actually
-    // fixes, so name the command instead of printing a bare percentage.
+    // fixes, so name the command instead of printing a bare percentage. It
+    // sits in its own group below the figures.
+    lines.push(Line::default());
     if usage.cache_hit().is_some_and(|hit| hit < 0.5) && usage.input + usage.cache_read >= 50_000 {
         lines.push(Line::from(vec![
             Span::styled("low cache hit: ", Style::new().fg(palette.warning)),
