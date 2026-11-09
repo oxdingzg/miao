@@ -66,6 +66,7 @@ newer record is the one to read.
 | `2026-11-05-cfg02-unknown-keys.md` | `82d4e77eae` | CFG-02 (unknown keys warned about with their source and closest known key; the managed scope stays open) |
 | `2026-11-07-val02-task-accounting.md` | `97b4dea0ce` | VAL-02 (per-completed-task cost, submit-to-verified-completion wall clock, human-intervention accounting; a real-model intervention round stays open) |
 | `2026-11-07-wsp01-workspace-surfaces.md` | `c922187e2a` | WSP-01 (project discovery and naming, worktree list/create/move/remove, the workspace list and the CLI adapter; the workspace-create success path and Windows placement stay open) |
+| `2026-11-07-cost04-turn-timings.md` | `18b3a92cc3` | COST-04 (all three criteria, re-run on a current tree; the `turn_timings` filter the issue cites matches no test since the phase-ledger rename) |
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
 carries the table of filters that were re-run to keep the earlier records honest.
