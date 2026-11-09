@@ -34,6 +34,17 @@ export function authFromToken(token: string | null) {
   }
 }
 
+/** One place decides how a connection authenticates: a loopback engine presents
+ *  a bearer token, the HTTP API presents basic credentials, and an open local
+ *  server presents nothing. */
+export function authorizationHeader(server: ServerConnection.HttpBase) {
+  if (server.token) return { Authorization: `Bearer ${server.token}` }
+  if (server.password)
+    return {
+      Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}`,
+    }
+}
+
 export function createApiForServer(input: {
   server: ServerConnection.HttpBase
   fetch?: typeof globalThis.fetch
@@ -41,14 +52,7 @@ export function createApiForServer(input: {
   return OpenCode.make({
     baseUrl: input.server.url,
     fetch: input.fetch,
-    headers: input.server.password
-      ? {
-          Authorization: `Basic ${authTokenFromCredentials({
-            username: input.server.username,
-            password: input.server.password,
-          })}`,
-        }
-      : undefined,
+    headers: authorizationHeader(input.server),
   })
 }
 
