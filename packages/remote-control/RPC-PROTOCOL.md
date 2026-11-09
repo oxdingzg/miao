@@ -91,6 +91,12 @@ Neither a successful socket write nor a Hub acknowledgment is an operation
 receipt. A lost response remains uncertain until `operation.get` or a method's
 documented exact-retry mechanism establishes its authoritative outcome.
 
+`session.events` takes `after`, `limit` (1–100) and `waitMs` (0–25000). When
+the page after `after` is empty and `waitMs` is positive, the Agent holds the
+request until the next live event or the wait elapses, whichever comes first,
+so a device can hold one long poll instead of re-reading every second. Clients
+must keep their own request timeout above the `waitMs` they send.
+
 ## Live text projection
 
 `session.events` may include `live: {epoch, revision, messageID, parts}` beside

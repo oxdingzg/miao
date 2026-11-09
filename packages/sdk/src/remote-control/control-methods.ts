@@ -477,7 +477,7 @@ export function make(options: {
         Schema.Struct({
           after: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
           limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }))),
-          waitMs: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1000 }))),
+          waitMs: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 25_000 }))),
         }),
         { onExcessProperty: "error" },
       )(request.payload)

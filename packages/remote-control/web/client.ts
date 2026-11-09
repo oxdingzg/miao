@@ -808,7 +808,7 @@ async function openSession(sessionID: string, label: string) {
     showPending(decisions, partition)
     const page = await connection.request("session.events", {
       sessionID,
-      payload: { after: cursor, limit: 100, waitMs: 1000 },
+      payload: { after: cursor, limit: 100, waitMs: 10_000 },
     })
     if (current !== generation) return
     if (

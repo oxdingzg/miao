@@ -413,7 +413,7 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
       type: "result",
       data: { status: "completed" },
     })
-    expect(await call("session.events", { after: 0, waitMs: 1001 })).toMatchObject({
+    expect(await call("session.events", { after: 0, waitMs: 25_001 })).toMatchObject({
       type: "error",
       code: "invalid_request",
     })
