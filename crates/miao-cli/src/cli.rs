@@ -3864,11 +3864,7 @@ fn stats(rest: &[String]) -> Result<(), String> {
             non_cached += data["cache"]["nonCached"].as_u64().unwrap_or(0);
         }
     }
-    let hit = if cache_read + non_cached > 0 {
-        cache_read as f64 / (cache_read + non_cached) as f64
-    } else {
-        0.0
-    };
+    let hit = miao_engine::usage::hit_ratio(input, cache_read).unwrap_or(0.0);
     // TTFT comes from the engine's own timing side table, which the TUI panel
     // also reads: one source, so a panel and this command cannot disagree.
     let mut ttfts: Vec<i64> = Vec::new();

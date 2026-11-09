@@ -2934,7 +2934,7 @@ fn hourly_lines(
     // fixes, so name the command instead of printing a bare percentage. It
     // sits in its own group below the figures.
     lines.push(Line::default());
-    if usage.cache_hit().is_some_and(|hit| hit < 0.5) && usage.input + usage.cache_read >= 50_000 {
+    if usage.cache_hit().is_some_and(|hit| hit < 0.5) && usage.input >= 50_000 {
         lines.push(Line::from(vec![
             Span::styled("low cache hit: ", Style::new().fg(palette.warning)),
             Span::styled("/compact", Style::new().fg(palette.secondary)),
@@ -6482,15 +6482,16 @@ mod tests {
             .collect::<Vec<_>>();
         let usage = crate::status::HourlyUsage {
             buckets,
-            input: 120_000,
+            input: 300_000,
             output: 9_000,
-            cache_read: 300_000,
+            cache_read: 120_000,
             turns: 24,
-            tokens: 429_000,
+            tokens: 309_000,
             cost_usd: 0.024,
             cost_turns: 24,
             peak: Some((1_760_000_000_000 + 12 * 3_600_000, 40_000)),
             truncated: false,
+            cache_hit_ratio: Some(0.4),
         };
         let mut sidebar = SidebarPane {
             hover_rows: Vec::new(),
@@ -6654,6 +6655,7 @@ mod tests {
             cost_turns: 24,
             peak: Some((1_760_000_000_000 + 15 * 3_600_000, 100_000)),
             truncated: false,
+            cache_hit_ratio: Some(0.0),
         };
         let theme = home_theme();
         let strip = hourly_lines(Some(&usage), 40, &theme.palette);
@@ -6681,10 +6683,12 @@ mod tests {
     #[test]
     fn an_unhealthy_cache_hit_carries_its_recommendation_and_a_healthy_one_does_not() {
         let theme = home_theme();
+        // `input` is the whole prompt, cache reads included: the engine reports
+        // the ratio, and a cached turn can never read more than it sent.
         let build = |input: u64, cache_read: u64| {
             let bucket = |index: u64| crate::status::HourlyBucket {
                 start_ms: 1_760_000_000_000 + index * 3_600_000,
-                tokens: (input + cache_read) / 6,
+                tokens: (input + 1_000) / 6,
                 turns: 1,
                 cost_usd: 0.001,
             };
@@ -6694,11 +6698,12 @@ mod tests {
                 output: 1_000,
                 cache_read,
                 turns: 6,
-                tokens: input + cache_read,
+                tokens: input + 1_000,
                 cost_usd: 0.01,
                 cost_turns: 6,
                 peak: None,
                 truncated: false,
+                cache_hit_ratio: Some(cache_read as f64 / input as f64),
             }
         };
         let unhealthy = hourly_lines(Some(&build(120_000, 10_000)), 40, &theme.palette);
@@ -6711,7 +6716,7 @@ mod tests {
             joined.contains("/compact"),
             "a low hit with heavy billed input names the fix: {joined:?}"
         );
-        let healthy = hourly_lines(Some(&build(20_000, 120_000)), 40, &theme.palette);
+        let healthy = hourly_lines(Some(&build(120_000, 110_000)), 40, &theme.palette);
         let joined = healthy
             .iter()
             .flat_map(|line| line.spans.iter())

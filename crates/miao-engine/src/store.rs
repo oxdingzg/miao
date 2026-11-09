@@ -4770,9 +4770,11 @@ impl Store {
                     "recommendations":cache_recommendations,
                     "hitRatio": if turns + partial_turns > 0 && invalid_cache_rows == 0
                         && coverage["input"].as_u64() == Some(turns + partial_turns)
-                        && coverage["cacheRead"].as_u64() == Some(turns + partial_turns)
-                        && tokens["input"].as_u64().unwrap_or(0) > 0 {
-                        Some(tokens["cacheRead"].as_f64().unwrap_or(0.0) / tokens["input"].as_f64().unwrap_or(1.0))
+                        && coverage["cacheRead"].as_u64() == Some(turns + partial_turns) {
+                        crate::usage::hit_ratio(
+                            tokens["input"].as_u64().unwrap_or(0),
+                            tokens["cacheRead"].as_u64().unwrap_or(0),
+                        )
                     } else { None },
                 },
                 "subagents": {
@@ -4925,10 +4927,9 @@ impl Store {
                 let counts = buckets.get(&start).copied().unwrap_or([0; 5]);
                 let cost = cost_micros.get(&start).copied().unwrap_or(0);
                 let cost_tally = cost_turns.get(&start).copied().unwrap_or(0);
-                let tokens = counts[0]
-                    .saturating_add(counts[1])
-                    .saturating_add(counts[2])
-                    .saturating_add(counts[3]);
+                // `input` already counts the cache axes, so the volume this
+                // hour carried is prompt plus completion, not four sums.
+                let tokens = counts[0].saturating_add(counts[1]);
                 for (total, value) in totals.iter_mut().zip(counts.iter()) {
                     *total = total.saturating_add(*value);
                 }
@@ -4958,7 +4959,8 @@ impl Store {
                     "cache_read": totals[2],
                     "cache_write": totals[3],
                     "turns": totals[4],
-                    "tokens": totals[0]+totals[1]+totals[2]+totals[3],
+                    "tokens": totals[0]+totals[1],
+                    "cache_hit_ratio": crate::usage::hit_ratio(totals[0], totals[2]),
                     "cost_micros": total_cost_micros,
                     "cost_turns": total_cost_turns,
                 },
@@ -5842,7 +5844,9 @@ mod usage_hourly_tests {
             .record(
                 "s",
                 "usage",
-                json!({"usage":{"inputTokens":100,"outputTokens":50}}),
+                // `inputTokens` is the whole prompt, so the cache read sits
+                // inside the 100 rather than beside it.
+                json!({"usage":{"inputTokens":100,"outputTokens":50,"cacheReadInputTokens":40,"nonCachedInputTokens":60}}),
             )
             .await
             .expect("usage");
@@ -5877,8 +5881,17 @@ mod usage_hourly_tests {
         assert_eq!(buckets.len(), 24, "one bucket per hour, current hour last");
         assert_eq!(report["totals"]["turns"], 2, "the 26h row is outside");
         assert_eq!(report["totals"]["input"], 110);
+        assert_eq!(report["totals"]["cache_read"], 40);
+        assert_eq!(
+            report["totals"]["cache_hit_ratio"].as_f64().expect("ratio"),
+            40.0 / 110.0,
+            "the day's hit share divides the cached reads by the prompt they came from"
+        );
         assert_eq!(report["totals"]["cost_turns"], 1);
         assert_eq!(buckets.last().expect("last")["turns"], 2);
+        // Prompt plus completion: counting the cache read again would bill the
+        // same 40 tokens twice and inflate every cached hour.
+        assert_eq!(report["totals"]["tokens"], 165);
         assert_eq!(report["peak"]["tokens"], 165);
         assert_eq!(report["truncated"], false);
     }
