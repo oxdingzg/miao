@@ -74,6 +74,7 @@ newer record is the one to read.
 | `2026-11-07-media01-materialization.md` | `7157d9cb01` | MEDIA-01 (capability-dependent materialization into the confined workspace with recovery, consistent capability refusal with the tool-read fallback, rejection of unsupported/oversized/mislabelled/count-over media before durable state, cancellation durability, >1 MiB stdio admission frames and in-place oversized refusal; URI resolution stays above the engine boundary and the ffmpeg-gated video workflow stays run-on-demand) |
 | `2026-11-07-tui03-stream-render.md` | `e170b105ee` | TUI-03 (incremental text/reasoning/tool pins, single-replace state settling, opaque vs transparent reasoning; a live provider wire and a real-client run stay open) |
 | `2026-11-07-his03-shell-disclaimer.md` | `613907dd68` | HIS-03 (the shell/external-side-effect disclaimer the 2026-11-05 record left unaccepted, now pinned on the TUI revert confirmation for history-only and file plans alike; a live-client run and the release stamp stay open) |
+| `2026-11-07-tool07-mcp-search.md` | `23d725d997` | TOOL-07 (real REST/MCP backend selection with fail-closed host config, per-backend payload/turn cost bounds in each format's own vocabulary; the real-credential retrieval-quality and latency run stays open) |
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
 carries the table of filters that were re-run to keep the earlier records honest.
