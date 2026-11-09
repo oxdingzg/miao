@@ -372,7 +372,10 @@ impl Staged {
         let mut staged = self;
         staged.live = false;
         if created {
-            handle
+            // The staged temp lives in its staging directory, which for a
+            // rename is the source's parent — not the destination's.
+            staged
+                .dir
                 .hard_link(&staged.name, handle, name)
                 .map_err(|error| {
                     if error.kind() == std::io::ErrorKind::AlreadyExists {
