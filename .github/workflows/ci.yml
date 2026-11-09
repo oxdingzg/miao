@@ -36,6 +36,7 @@ jobs:
       storybook: ${{ steps.paths.outputs.storybook }}
       install: ${{ steps.paths.outputs.install }}
       nix: ${{ steps.paths.outputs.nix }}
+      android: ${{ steps.paths.outputs.android }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -104,6 +105,10 @@ jobs:
     needs: policy
     if: needs.policy.outputs.storybook == 'true'
     uses: ./.github/workflows/storybook.yml
+  android:
+    needs: policy
+    if: needs.policy.outputs.android == 'true'
+    uses: ./.github/workflows/android.yml
   install:
     needs: policy
     if: needs.policy.outputs.install == 'true'
@@ -115,7 +120,7 @@ jobs:
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [policy, unit, typecheck, engine, tui, cli, native, blackbox, e2e, remote, storybook, install, nix]
+    needs: [policy, unit, typecheck, engine, tui, cli, native, blackbox, e2e, remote, storybook, android, install, nix]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:

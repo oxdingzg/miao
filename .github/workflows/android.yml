@@ -1,0 +1,73 @@
+name: android
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    # The image's Android SDK drifts; catch breakage before a pull request does.
+    - cron: "23 5 * * *"
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-android-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      # The runner image ships the JDK and the Android SDK the app module needs.
+      # Gradle 8.9 rejects the image's default JDK; use the JDK 17 the image installs.
+      - name: Select JDK 17
+        run: |
+          test -n "$JAVA_HOME_17_X64"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "PATH=$JAVA_HOME_17_X64/bin:$PATH" >> "$GITHUB_ENV"
+      - name: Report the toolchain
+        run: |
+          java -version
+          test -n "$ANDROID_HOME"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-core-${{ hashFiles('apps/android/**/*.gradle.kts', 'apps/android/gradle/libs.versions.toml', 'apps/android/gradle/wrapper/gradle-wrapper.properties') }}
+      - name: Protocol core tests
+        working-directory: apps/android
+        run: ./gradlew :core:test --console=plain
+      - uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --ignore-scripts --frozen-lockfile
+      - name: Build the interop probe
+        working-directory: apps/android
+        run: ./gradlew :core:installDist --console=plain
+      - name: WebCrypto and Kotlin interoperability
+        env:
+          MIAO_KOTLIN_PROBE_COMMAND: '["apps/android/core/build/install/core/bin/core"]'
+        run: bun apps/android/scripts/check-interop.ts
+
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      # Gradle 8.9 rejects the image's default JDK; use the JDK 17 the image installs.
+      - name: Select JDK 17
+        run: |
+          test -n "$JAVA_HOME_17_X64"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "PATH=$JAVA_HOME_17_X64/bin:$PATH" >> "$GITHUB_ENV"
+      - name: Report the toolchain
+        run: |
+          java -version
+          test -n "$ANDROID_HOME"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-app-${{ hashFiles('apps/android/**/*.gradle.kts', 'apps/android/gradle/libs.versions.toml', 'apps/android/gradle/wrapper/gradle-wrapper.properties') }}
+      - name: Compose app build
+        working-directory: apps/android
+        run: ./gradlew :app:assembleDebug --console=plain
