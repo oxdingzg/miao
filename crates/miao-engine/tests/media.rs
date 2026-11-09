@@ -1,8 +1,9 @@
 mod common;
+use async_trait::async_trait;
 use miao_engine::{
     openai_chat::OpenAIChat,
-    protocol::{Attachment, Delivery, Error, Input},
-    provider::{Anthropic, Provider},
+    protocol::{Attachment, Delivery, Error, Input, ModelRequest},
+    provider::{Anthropic, Provider, ProviderError, Reply},
     runtime::Runtime,
     store::Store,
     tools::Tools,
@@ -52,6 +53,44 @@ fn input() -> Input {
         prompt: "what is this".into(),
         delivery: Delivery::Steer,
     }
+}
+
+fn pdf_attachment(name: &str, payload: &str) -> Attachment {
+    use base64::Engine;
+    let mut bytes = b"%PDF-1.4\n".to_vec();
+    bytes.extend_from_slice(payload.as_bytes());
+    Attachment {
+        mime: "application/pdf".into(),
+        data: base64::engine::general_purpose::STANDARD.encode(bytes),
+        metadata: Some(json!({"name": name}).as_object().cloned().unwrap()),
+    }
+}
+
+async fn wait_runs(store: &Store, session: &str, expected: usize) {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            let finished = store
+                .events(session, 0, 1000)
+                .await
+                .unwrap()
+                .iter()
+                .filter(|event| event.kind == "run.finished")
+                .count();
+            if finished >= expected {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("runs did not finish");
+}
+
+fn workspace_copies(workspace: &std::path::Path) -> Vec<std::path::PathBuf> {
+    std::fs::read_dir(workspace.join(".miao").join("attachments"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect()
 }
 
 #[tokio::test]
@@ -248,6 +287,453 @@ async fn image_only_input_keeps_metadata_in_promotion_history_and_retry_identity
     )
     .unwrap();
     assert!(matches!(oversized.validate(), Err(Error::Invalid(_))));
+}
+
+#[tokio::test]
+async fn capable_models_get_pdf_bytes_materialized_into_the_workspace_and_recover_them() {
+    use base64::Engine;
+    let (url, mut requests, server) = common::endpoint(vec![
+        (200, anthropic_text("one")),
+        (200, anthropic_text("two")),
+    ])
+    .await;
+    let provider: Arc<dyn Provider> =
+        Arc::new(Anthropic::new(url, "fixture".into(), "fixture-model".into()).unwrap());
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::new(
+        store.clone(),
+        provider,
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    let attachment = pdf_attachment("spec.pdf", "media acceptance fixture");
+    runtime
+        .admit_with(input(), vec![attachment.clone()], true)
+        .await
+        .unwrap();
+    wait_runs(&store, "s", 1).await;
+
+    let copies = workspace_copies(dir.path());
+    assert_eq!(copies.len(), 1, "{copies:?}");
+    assert!(copies[0].starts_with(dir.path()));
+    assert!(copies[0]
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .ends_with("-spec.pdf"));
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&attachment.data)
+        .unwrap();
+    assert_eq!(std::fs::read(&copies[0]).unwrap(), bytes);
+
+    // The capable provider still receives the inline document part.
+    let request = requests.recv().await.unwrap();
+    let blocks = request["messages"][0]["content"].as_array().unwrap();
+    let document = blocks
+        .iter()
+        .find(|block| block["type"] == "document")
+        .unwrap();
+    assert_eq!(document["source"]["media_type"], "application/pdf");
+    assert_eq!(document["source"]["data"], attachment.data);
+
+    let history = store.history("s").await.unwrap();
+    assert_eq!(history[0].content[1]["mime"], "application/pdf");
+    assert_eq!(history[0].content[1]["data"], attachment.data);
+    assert_eq!(history[0].content[1]["metadata"]["name"], "spec.pdf");
+    if let Some(path) = history[0].content[1]["metadata"]["path"].as_str() {
+        assert!(std::path::Path::new(path).starts_with(dir.path()));
+    }
+
+    // Losing the workspace copy loses nothing durable: the next turn rebuilds it.
+    std::fs::remove_dir_all(dir.path().join(".miao").join("attachments")).unwrap();
+    runtime
+        .admit_with(
+            Input {
+                input_id: "two".into(),
+                ..input()
+            },
+            vec![attachment.clone()],
+            true,
+        )
+        .await
+        .unwrap();
+    wait_runs(&store, "s", 2).await;
+    let copies = workspace_copies(dir.path());
+    assert_eq!(copies.len(), 1, "{copies:?}");
+    assert_eq!(std::fs::read(&copies[0]).unwrap(), bytes);
+    let request = requests.recv().await.unwrap();
+    assert!(request.to_string().contains(&attachment.data));
+    runtime.shutdown().await;
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn capability_mismatch_refuses_media_consistently_and_keeps_bytes_recoverable() {
+    use base64::Engine;
+    let (url, mut requests, server) =
+        common::endpoint(vec![(200, anthropic_text("declined"))]).await;
+    let limited: Arc<dyn Provider> = Anthropic::new(url, "fixture".into(), "fixture-model".into())
+        .unwrap()
+        .with_input_modalities(vec!["text".into()])
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let store_path = dir.path().join("engine.db");
+    let store = Store::open(&store_path).await.unwrap();
+    let runtime = Runtime::new(
+        store.clone(),
+        limited,
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    let image: Attachment = serde_json::from_value(
+        json!({"mime":"image/png","data":PNG,"metadata":{"name":"diagram.png"}}),
+    )
+    .unwrap();
+    let pdf = pdf_attachment("spec.pdf", "recovery fixture");
+    runtime
+        .admit_with(input(), vec![image.clone(), pdf.clone()], true)
+        .await
+        .unwrap();
+    wait_runs(&store, "s", 1).await;
+
+    let wire = requests.recv().await.unwrap().to_string();
+    assert!(
+        wire.contains(
+            "[image attachment omitted: model does not support image input: diagram.png]"
+        ),
+        "{wire}"
+    );
+    assert!(
+        wire.contains("cannot receive application/pdf directly"),
+        "{wire}"
+    );
+    assert!(wire.contains("read the file with tools"), "{wire}");
+    assert!(!wire.contains(&pdf.data), "{wire}");
+    assert!(!wire.contains(PNG), "{wire}");
+
+    // The refusal tells the model to read the file with tools, so the bytes
+    // still reach the confined workspace even on refusal.
+    let copies = workspace_copies(dir.path());
+    assert_eq!(copies.len(), 1, "{copies:?}");
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&pdf.data)
+        .unwrap();
+    assert_eq!(std::fs::read(&copies[0]).unwrap(), bytes);
+
+    let history = store.history("s").await.unwrap();
+    assert_eq!(history[0].content[1]["data"], PNG);
+    assert_eq!(history[0].content[2]["mime"], "application/pdf");
+    assert_eq!(history[0].content[2]["data"], pdf.data);
+    runtime.shutdown().await;
+    server.await.unwrap();
+    // The retired Runtime still owns a Store connection until it drops, and
+    // reopening the same SQLite path BUSYs while it lives; drop both handles
+    // before the recovery phase.
+    drop(runtime);
+    drop(store);
+
+    // A capable runtime over the same durable session sends both media again.
+    let (url, mut requests, server) =
+        common::endpoint(vec![(200, anthropic_text("recovered"))]).await;
+    let capable: Arc<dyn Provider> =
+        Arc::new(Anthropic::new(url, "fixture".into(), "fixture-model".into()).unwrap());
+    let reopened = Store::open(&store_path).await.unwrap();
+    let runtime = Runtime::new(
+        reopened.clone(),
+        capable,
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit_with(
+            Input {
+                input_id: "two".into(),
+                ..input()
+            },
+            vec![image.clone(), pdf.clone()],
+            true,
+        )
+        .await
+        .unwrap();
+    wait_runs(&reopened, "s", 2).await;
+    let blocks = requests.recv().await.unwrap()["messages"][0]["content"]
+        .as_array()
+        .unwrap()
+        .to_vec();
+    let image_block = blocks
+        .iter()
+        .find(|block| block["type"] == "image")
+        .unwrap();
+    assert_eq!(image_block["source"]["data"], PNG);
+    let document = blocks
+        .iter()
+        .find(|block| block["type"] == "document")
+        .unwrap();
+    assert_eq!(document["source"]["data"], pdf.data);
+    runtime.shutdown().await;
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn unsupported_media_is_rejected_before_any_durable_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let zip: Attachment =
+        serde_json::from_value(json!({"mime":"application/zip","data":"QQ=="})).unwrap();
+    assert!(matches!(
+        store.admit_with(input(), vec![zip]).await,
+        Err(Error::Invalid(message)) if message == "unsupported attachment media type"
+    ));
+    let mislabelled: Attachment =
+        serde_json::from_value(json!({"mime":"application/pdf","data":PNG})).unwrap();
+    assert!(matches!(
+        store.admit_with(input(), vec![mislabelled]).await,
+        Err(Error::Invalid(message)) if message == "PDF attachment has no PDF header"
+    ));
+    let oversized: Attachment =
+        serde_json::from_value(json!({"mime":"image/png","data":"A".repeat(8 * 1024 * 1024 + 1)}))
+            .unwrap();
+    assert!(matches!(
+        store.admit_with(input(), vec![oversized]).await,
+        Err(Error::Invalid(message)) if message == "attachment data must be 1..8 MiB"
+    ));
+    let binary_text: Attachment =
+        serde_json::from_value(json!({"mime":"text/plain","data":"//4="})).unwrap();
+    assert!(matches!(
+        store.admit_with(input(), vec![binary_text]).await,
+        Err(Error::Invalid(message)) if message == "text attachment must be UTF-8"
+    ));
+    let image: Attachment = serde_json::from_value(json!({"mime":"image/png","data":PNG})).unwrap();
+    assert!(matches!(
+        store.admit_with(input(), vec![image.clone(); 9]).await,
+        Err(Error::Invalid(message)) if message == "attachment count limit"
+    ));
+
+    assert!(store.events("s", 0, 100).await.unwrap().is_empty());
+    assert!(store.history("s").await.unwrap().is_empty());
+
+    // The same durable identity still admits once the media is valid.
+    let admission = store.admit_with(input(), vec![image]).await.unwrap();
+    assert!(!admission.duplicate);
+    assert_eq!(store.events("s", 0, 100).await.unwrap().len(), 1);
+}
+
+struct Waiting;
+
+#[async_trait]
+impl Provider for Waiting {
+    async fn stream(
+        &self,
+        _: ModelRequest,
+        _: tokio::sync::mpsc::Sender<Value>,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        cancel.cancelled().await;
+        Ok(Reply {
+            content: json!([]),
+            usage: json!({}),
+            needs_tools: false,
+        })
+    }
+}
+
+#[tokio::test]
+async fn cancelling_a_media_turn_leaves_durable_attachments_and_the_workspace_copy_intact() {
+    use base64::Engine;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::new(
+        store.clone(),
+        Arc::new(Waiting),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    let attachment = pdf_attachment("spec.pdf", "cancel fixture");
+    runtime
+        .admit_with(input(), vec![attachment.clone()], true)
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            // materialize_files runs while the provider request is built, just
+            // before stream; waiting for the copy makes the cancel land
+            // mid-turn by construction instead of racing the drain.
+            let materialized = std::fs::read_dir(dir.path().join(".miao").join("attachments"))
+                .map(|mut entries| entries.next().is_some())
+                .unwrap_or(false);
+            if materialized {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(runtime.cancel("s").await.unwrap());
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while store.active_run("s").await.unwrap().is_some() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    let copies = workspace_copies(dir.path());
+    assert_eq!(copies.len(), 1, "{copies:?}");
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&attachment.data)
+        .unwrap();
+    assert_eq!(std::fs::read(&copies[0]).unwrap(), bytes);
+
+    let history = store.history("s").await.unwrap();
+    assert_eq!(history[0].content[1]["mime"], "application/pdf");
+    assert_eq!(history[0].content[1]["data"], attachment.data);
+
+    // The cancelled identity still reconciles an exact retry.
+    let retry = store
+        .admit_with(input(), vec![attachment.clone()])
+        .await
+        .unwrap();
+    assert!(retry.duplicate);
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn large_admission_frames_survive_stdio_and_oversized_frames_are_refused_in_place() {
+    use base64::Engine;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+
+    let dir = tempfile::tempdir().unwrap();
+    let payload = format!("%PDF-1.4\n{}", "m".repeat(900 * 1024));
+    let data = base64::engine::general_purpose::STANDARD.encode(payload.as_bytes());
+    assert!(data.len() > 1024 * 1024);
+    let mut process = tokio::process::Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+            "--endpoint",
+            "http://127.0.0.1:1",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = process.stdin.take().unwrap();
+    let mut stdout = tokio::io::BufReader::new(process.stdout.take().unwrap());
+
+    let admit = json!({
+        "id":1,
+        "method":"admit",
+        "params":{
+            "input":{"session_id":"s","input_id":"one","prompt":"carry"},
+            "resume":true,
+            "attachments":[
+                {"mime":"application/pdf","data":data,"metadata":{"name":"big.pdf"}}
+            ],
+        },
+    });
+    stdin
+        .write_all(format!("{admit}\n").as_bytes())
+        .await
+        .unwrap();
+    stdin.flush().await.unwrap();
+    let mut line = String::new();
+    stdout.read_line(&mut line).await.unwrap();
+    let reply: Value = serde_json::from_str(line.trim()).unwrap();
+    assert_eq!(reply["id"], 1);
+    assert!(reply.get("error").is_none(), "{reply}");
+
+    // A legal frame beyond 1 MiB is preserved end-to-end, bytes intact.
+    let promoted = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            stdin
+                .write_all(
+                    b"{\"id\":2,\"method\":\"events\",\"params\":{\"session_id\":\"s\",\"after\":0}}\n",
+                )
+                .await
+                .unwrap();
+            stdin.flush().await.unwrap();
+            let mut line = String::new();
+            stdout.read_line(&mut line).await.unwrap();
+            let reply: Value = serde_json::from_str(line.trim()).unwrap();
+            if reply["result"]
+                .as_array()
+                .is_some_and(|events| {
+                    events
+                        .iter()
+                        .any(|event| event["kind"] == "input.promoted")
+                })
+            {
+                return reply;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let event = promoted["result"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["kind"] == "input.promoted")
+        .unwrap();
+    assert_eq!(event["data"]["attachments"][0]["mime"], "application/pdf");
+    assert_eq!(
+        event["data"]["attachments"][0]["data"].as_str(),
+        Some(data.as_str())
+    );
+
+    // An oversized frame is refused with the id read from its head.
+    let oversized = format!(
+        "{{\"id\":\"big\",\"method\":\"admit\",\"params\":{{\"pad\":\"{}\"}}}}\n",
+        "a".repeat(16 * 1024 * 1024 + 1024)
+    );
+    stdin.write_all(oversized.as_bytes()).await.unwrap();
+    stdin.flush().await.unwrap();
+    let mut line = String::new();
+    stdout.read_line(&mut line).await.unwrap();
+    let reply: Value = serde_json::from_str(line.trim()).unwrap();
+    assert_eq!(reply["id"], "big");
+    assert_eq!(reply["error"]["code"], "request_too_large");
+
+    // The engine keeps serving after refusing the frame.
+    stdin
+        .write_all(
+            b"{\"id\":3,\"method\":\"events\",\"params\":{\"session_id\":\"s\",\"after\":0}}\n",
+        )
+        .await
+        .unwrap();
+    stdin.flush().await.unwrap();
+    let mut line = String::new();
+    stdout.read_line(&mut line).await.unwrap();
+    let reply: Value = serde_json::from_str(line.trim()).unwrap();
+    assert_eq!(reply["id"], 3);
+    assert!(reply.get("result").is_some(), "{reply}");
+
+    stdin
+        .write_all(b"{\"id\":4,\"method\":\"shutdown\"}\n")
+        .await
+        .unwrap();
+    stdin.flush().await.unwrap();
+    drop(stdin);
+    let output = process.wait_with_output().await.unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn tool_reply(protocol: &str, name: &str, input: Value) -> String {
