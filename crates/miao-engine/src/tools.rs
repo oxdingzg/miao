@@ -1322,6 +1322,10 @@ impl Tools {
                 crate::cron::Input::parse(input.clone())?;
                 ".".into()
             }
+            "cron_edit" if self.cron_enabled() => {
+                crate::cron::Change::parse(input.clone())?;
+                ".".into()
+            }
             "cron_delete" if self.cron_enabled() => {
                 crate::cron::Selector::parse(input.clone())?;
                 ".".into()
@@ -1508,6 +1512,11 @@ impl Tools {
                 "@session/cron/{}",
                 crate::cron::Selector::parse(input.clone())?.id
             )
+        } else if name == "cron_edit" {
+            format!(
+                "@session/cron/{}",
+                crate::cron::Change::parse(input.clone())?.id
+            )
         } else if name == "schedule_wakeup" {
             "@session/wakeup".into()
         } else if name == "cancel_wakeup" {
@@ -1558,7 +1567,7 @@ impl Tools {
         } else {
             parts.join("/")
         };
-        let access = if name == "cron_create" {
+        let access = if name == "cron_create" || name == "cron_edit" {
             Access::Cron
         } else if name == "schedule_wakeup" {
             Access::Schedule
@@ -2192,6 +2201,7 @@ impl Tools {
         if self.cron_enabled() {
             definitions.extend([
                 ToolDefinition{name:"cron_create".into(),description:"Schedule prompts for this Session using a numeric standard 5-field local-time cron expression. Process lifetime only, max seven days. Default recurring=true and delivery=queue. Missed ticks are not replayed; pending inputs coalesce.".into(),input_schema:json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":8192},"cron":{"type":"string","maxLength":256},"recurring":{"type":"boolean","default":true},"delivery":{"type":"string","enum":["queue","steer"],"default":"queue"}},"required":["prompt","cron"],"additionalProperties":false})},
+                ToolDefinition{name:"cron_edit".into(),description:"Edit one of this Session's cron schedules in place: absent fields keep their value, the id and its fired/skipped history stay stable, and the next occurrence is recomputed from the edited pattern. Resolved schedules cannot be edited.".into(),input_schema:json!({"type":"object","properties":{"id":{"type":"string"},"prompt":{"type":"string","minLength":1,"maxLength":8192},"cron":{"type":"string","maxLength":256},"recurring":{"type":"boolean"},"delivery":{"type":"string","enum":["queue","steer"]}},"required":["id"],"additionalProperties":false})},
                 ToolDefinition{name:"cron_list".into(),description:"List this Session's recent cron schedules, next occurrence, fired/skipped counts and terminal state.".into(),input_schema:json!({"type":"object","properties":{},"additionalProperties":false})},
                 ToolDefinition{name:"cron_delete".into(),description:"Cancel future occurrences of this Session's cron schedule. Already admitted prompts remain durable.".into(),input_schema:json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false})},
             ]);

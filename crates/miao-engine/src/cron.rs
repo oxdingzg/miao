@@ -69,6 +69,51 @@ impl Selector {
         Ok(selector)
     }
 }
+/// A partial edit of an existing schedule: fields left absent keep their
+/// scheduled value, and the id stays stable so the fired/skipped history
+/// keeps its owner. The merged result is validated as a whole `Input`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Change {
+    pub id: String,
+    pub prompt: Option<String>,
+    pub cron: Option<String>,
+    pub recurring: Option<bool>,
+    pub delivery: Option<Delivery>,
+}
+impl Change {
+    pub fn parse(value: Value) -> Result<Self, ToolError> {
+        let change: Self = serde_json::from_value(value).map_err(|_| ToolError::InvalidInput)?;
+        let changed = [
+            change.prompt.is_some(),
+            change.cron.is_some(),
+            change.recurring.is_some(),
+            change.delivery.is_some(),
+        ]
+        .iter()
+        .filter(|present| **present)
+        .count();
+        if change.id.is_empty()
+            || change.id.len() > 64
+            || !change
+                .id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            || changed == 0
+            || change
+                .prompt
+                .as_ref()
+                .is_some_and(|prompt| prompt.trim().is_empty() || prompt.len() > 8192)
+            || change
+                .cron
+                .as_ref()
+                .is_some_and(|cron| cron.is_empty() || cron.len() > 256)
+        {
+            return Err(ToolError::InvalidInput);
+        }
+        Ok(change)
+    }
+}
 /// Calendar search is off the Tokio worker; the returned occurrence is still
 /// bounded by the process-owned seven-day lifetime before admission is possible.
 pub(crate) async fn next(
@@ -83,6 +128,12 @@ pub(crate) async fn next(
     })
     .await
     .map_err(|_| Error::Invalid("cron calendar worker failed".into()))?
+}
+/// The process's IANA zone name, recorded on schedules so a row can display
+/// the zone its occurrences were computed in. `chrono::Local` already does
+/// the math in this zone; the label is display-only.
+pub(crate) fn timezone_label() -> String {
+    iana_time_zone::get_timezone().unwrap_or_else(|_| "system_local".into())
 }
 impl Store {
     pub(crate) async fn create_cron(
@@ -123,6 +174,34 @@ impl Store {
             append(&tx,&session,"cron.scheduled",data.clone())?;tx.commit()?;Ok(data)
         }).await
     }
+    /// An edit appends one `cron.updated` overlay and re-anchors the next
+    /// occurrence in the same transaction. The id, its request key, and the
+    /// fired/skipped history keep pointing at the same schedule; only the
+    /// definition every reader overlays moves.
+    pub(crate) async fn edit_cron(
+        &self,
+        session: &str,
+        id: &str,
+        input: Input,
+        window: std::ops::Range<u64>,
+    ) -> Result<(), Error> {
+        if window.start >= window.end || window.end.saturating_sub(now_ms()) > LIFETIME_MS {
+            return Err(Error::Invalid(
+                "cron has no occurrence within its lifetime".into(),
+            ));
+        }
+        let (session, id) = (session.to_owned(), id.to_owned());
+        let input = serde_json::to_value(input)?;
+        self.call(move|conn|{
+            let tx=crate::store::write_tx(conn)?;
+            if resolution(&tx,&session,&id)?.is_some(){return Err(Error::Conflict);}
+            let exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND kind='cron.scheduled' AND json_extract(data,'$.cron_id')=?2)",params![session,id],|row|row.get(0))?;
+            if !exists{return Err(Error::Invalid("cron not found in this Session".into()));}
+            append(&tx,&session,"cron.updated",json!({"cron_id":id,"input":input,"first_occurrence_ms":window.start,"expires_at_ms":window.end,"timezone":timezone_label()}))?;
+            append(&tx,&session,"cron.next",json!({"cron_id":id,"next_occurrence_ms":window.start,"advanced_after_ms":now_ms()}))?;
+            tx.commit()?;Ok(())
+        }).await
+    }
     /// Every occurrence has a stable input ID. Pending occurrences coalesce;
     /// skipped ticks remain auditable and do not accumulate an unbounded inbox.
     pub(crate) async fn fire_cron(
@@ -136,8 +215,14 @@ impl Store {
             let tx=crate::store::write_tx(conn)?;
             if resolution(&tx,&session,&id)?.is_some(){return Ok(None);}
             let original:Option<String>=tx.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='cron.scheduled' AND json_extract(data,'$.cron_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,id],|row|row.get(0)).optional()?;
-            let original:Value=serde_json::from_str(&original.ok_or_else(||Error::Invalid("cron not found in this Session".into()))?)?;
-            if occurrence<original["first_occurrence_ms"].as_u64().unwrap_or(u64::MAX)||occurrence>=original["expires_at_ms"].as_u64().unwrap_or(0){return Err(Error::Invalid("cron occurrence is outside lifetime".into()));}
+            let mut original:Value=serde_json::from_str(&original.ok_or_else(||Error::Invalid("cron not found in this Session".into()))?)?;
+            overlay(&tx,&session,&id,&mut original)?;
+            if occurrence<original["first_occurrence_ms"].as_u64().unwrap_or(u64::MAX)||occurrence>=original["expires_at_ms"].as_u64().unwrap_or(0){
+                // A loop racing an edit arms the old occurrence against the
+                // edited window; skipping instead of failing keeps the
+                // schedule alive for the swap that follows.
+                return Ok(None);
+            }
             let seen:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND kind IN ('cron.fired','cron.skipped') AND json_extract(data,'$.cron_id')=?2 AND json_extract(data,'$.occurrence_ms')=?3)",params![session,id,occurrence],|row|row.get(0))?;
             if seen{return Ok(None);}
             let pending:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_input WHERE session_id=?1 AND state='pending' AND id GLOB ?2)",params![session,format!("cron/{id}/*")],|row|row.get(0))?;
@@ -173,7 +258,7 @@ impl Store {
         let session = session.to_owned();
         self.call(move|conn|{
             let mut stmt=conn.prepare("SELECT data FROM engine_event WHERE session_id=?1 AND kind='cron.scheduled' ORDER BY seq DESC LIMIT 100")?;let rows=stmt.query_map([&session],|row|row.get::<_,String>(0))?;
-            rows.map(|row|{let mut data:Value=serde_json::from_str(&row?)?;let id=data["cron_id"].as_str().ok_or_else(||Error::Invalid("cron id missing".into()))?;
+            rows.map(|row|{let mut data:Value=serde_json::from_str(&row?)?;let id=data["cron_id"].as_str().ok_or_else(||Error::Invalid("cron id missing".into()))?.to_owned();overlay(conn,&session,&id,&mut data)?;
                 let next:Option<String>=conn.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='cron.next' AND json_extract(data,'$.cron_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,id],|row|row.get(0)).optional()?;
                 let counts:(u64,u64)=conn.query_row("SELECT COALESCE(sum(kind='cron.fired'),0),COALESCE(sum(kind='cron.skipped'),0) FROM engine_event WHERE session_id=?1 AND kind IN ('cron.fired','cron.skipped') AND json_extract(data,'$.cron_id')=?2",params![session,id],|row|Ok((row.get(0)?,row.get(1)?)))?;
                 let resolved=resolution(conn,&session,id)?;data["fired_count"]=json!(counts.0);data["skipped_count"]=json!(counts.1);data["next_occurrence_ms"]=next.map(|value|serde_json::from_str::<Value>(&value)).transpose()?.map(|value|value["next_occurrence_ms"].clone()).unwrap_or_else(||data["first_occurrence_ms"].clone());
@@ -192,8 +277,9 @@ impl Store {
             if crons.len()>64{return Err(Error::Invalid("cron recovery budget exceeded".into()));}
             let mut rearm=Vec::new();
             for (session,data) in crons{
-                let data:Value=serde_json::from_str(&data)?;
+                let mut data:Value=serde_json::from_str(&data)?;
                 let id=data["cron_id"].as_str().ok_or_else(||Error::Invalid("cron id missing".into()))?.to_owned();
+                overlay(&tx,&session,&id,&mut data)?;
                 let adopted:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND kind='cron.adopted' AND json_extract(data,'$.cron_id')=?2)",params![&session,&id],|row|row.get(0))?;
                 if !adopted{append(&tx,&session,"cron.adopted",json!({"cron_id":id,"recovered":true}))?;}
                 rearm.push((
@@ -212,6 +298,25 @@ impl Store {
         self.adopt_crons().await.map(|_| ())
     }
 }
+/// Every reader of a schedule definition — a fired occurrence, a list row, a
+/// snapshot row, a restart re-arm — overlays the latest `cron.updated` first,
+/// so one edit moves the definition for all of them at once.
+fn overlay(conn: &Connection, session: &str, id: &str, data: &mut Value) -> Result<(), Error> {
+    let updated: Option<String> = conn
+        .query_row(
+            "SELECT data FROM engine_event WHERE session_id=?1 AND kind='cron.updated' AND json_extract(data,'$.cron_id')=?2 ORDER BY seq DESC LIMIT 1",
+            params![session, id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(updated) = updated {
+        let updated: Value = serde_json::from_str(&updated)?;
+        for field in ["input", "first_occurrence_ms", "expires_at_ms", "timezone"] {
+            data[field] = updated[field].clone();
+        }
+    }
+    Ok(())
+}
 fn resolution(conn: &Connection, session: &str, id: &str) -> Result<Option<Value>, Error> {
     let data:Option<String>=conn.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='cron.resolved' AND json_extract(data,'$.cron_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,id],|row|row.get(0)).optional()?;
     data.map(|data| serde_json::from_str(&data).map_err(Error::from))
@@ -221,7 +326,15 @@ pub(crate) fn pending(conn: &Connection, session: &str) -> Result<Vec<Value>, Er
     let mut stmt=conn.prepare("SELECT q.data FROM engine_event q WHERE q.session_id=?1 AND q.kind='cron.scheduled' AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind='cron.resolved' AND json_extract(r.data,'$.cron_id')=json_extract(q.data,'$.cron_id')) ORDER BY q.seq DESC LIMIT 65")?;
     let rows = stmt.query_map([session], |row| row.get::<_, String>(0))?;
     let pending = rows
-        .map(|row| serde_json::from_str(&row?).map_err(Error::from))
+        .map(|row| {
+            let mut data: Value = serde_json::from_str(&row?)?;
+            let id = data["cron_id"]
+                .as_str()
+                .ok_or_else(|| Error::Invalid("cron id missing".into()))?
+                .to_owned();
+            overlay(conn, session, &id, &mut data)?;
+            Ok(data)
+        })
         .collect::<Result<Vec<Value>, Error>>()?;
     if pending.len() > 64 {
         return Err(Error::Invalid("pending cron budget exceeded".into()));

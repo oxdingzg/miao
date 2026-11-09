@@ -153,6 +153,9 @@ struct Actor {
 struct Background {
     session: String,
     cancel: CancellationToken,
+    /// Exits the loop without resolving: an edit swaps the armed task through
+    /// this token so the schedule's definition changes, not its existence.
+    rearm: CancellationToken,
     join: JoinHandle<()>,
 }
 
@@ -2356,6 +2359,10 @@ impl Runtime {
         cancel_cron(&self.inner, session, id).await
     }
 
+    pub async fn edit_cron(&self, session: &str, change: crate::cron::Change) -> Result<Value, Error> {
+        edit_cron(&self.inner, session, change).await
+    }
+
     pub async fn cancel_wakeup(&self, session: &str, id: &str) -> Result<bool, Error> {
         cancel_wakeup(&self.inner, session, id).await
     }
@@ -4115,6 +4122,11 @@ command: None,
                                         json!({"accepted":cancel_cron(inner,session,&selector.id).await?}),
                                     )
                                 }
+                                "cron_edit" => {
+                                    let change = crate::cron::Change::parse(prepared.input().clone())
+                                        .map_err(|_| Error::Invalid("invalid cron change".into()))?;
+                                    Ok(edit_cron(inner, session, change).await.map_err(external))
+                                }
                                 "schedule_wakeup" => {
                                     start_wakeup(inner, session, run, id, &prepared).await?
                                 }
@@ -5336,7 +5348,9 @@ fn spawn_cron_task(
     let anchor_ms = anchor.timestamp_millis() as u64;
     let clock = tokio::time::Instant::now();
     let cancel = inner.stop.child_token();
+    let rearm = cancel.child_token();
     let token = cancel.clone();
+    let rearm_token = rearm.clone();
     let owner = inner.clone();
     let background_source = source.clone();
     let source = source.clone();
@@ -5345,7 +5359,7 @@ fn spawn_cron_task(
             loop {
                 let deadline=clock+std::time::Duration::from_millis(next.saturating_sub(anchor_ms));
                 let end=clock+std::time::Duration::from_millis(expires.saturating_sub(anchor_ms));
-                tokio::select!{biased;_=token.cancelled()=>{owner.store.close_cron(&source,&cron_id,"cancelled").await?;return Ok::<_,Error>(());},_=tokio::time::sleep_until(end)=>{owner.store.close_cron(&source,&cron_id,"expired").await?;return Ok(());},_=tokio::time::sleep_until(deadline)=>{}}
+                tokio::select!{biased;_=token.cancelled()=>{owner.store.close_cron(&source,&cron_id,"cancelled").await?;return Ok::<_,Error>(());},_=rearm_token.cancelled()=>{return Ok(());},_=tokio::time::sleep_until(end)=>{owner.store.close_cron(&source,&cron_id,"expired").await?;return Ok(());},_=tokio::time::sleep_until(deadline)=>{}}
                 if token.is_cancelled(){owner.store.close_cron(&source,&cron_id,"cancelled").await?;return Ok(());}
                 let logical_now=anchor_ms.saturating_add(clock.elapsed().as_millis().min(u64::MAX as u128) as u64);
                 if logical_now>=expires{owner.store.close_cron(&source,&cron_id,"expired").await?;return Ok(());}
@@ -5374,8 +5388,85 @@ fn spawn_cron_task(
     Background {
         session: background_source,
         cancel,
+        rearm,
         join,
     }
+}
+
+/// Edit one schedule in place: the id, its request key, and its fired/skipped
+/// history survive; only the definition moves. The armed loop is swapped
+/// through the rearm token, so the old loop exits without resolving the
+/// schedule it no longer defines.
+async fn edit_cron(
+    inner: &Arc<Inner>,
+    session: &str,
+    change: crate::cron::Change,
+) -> Result<Value, Error> {
+    let rows = inner.store.crons(session).await?;
+    let Some(listed) = rows
+        .into_iter()
+        .find(|row| row["cron_id"].as_str() == Some(change.id.as_str()))
+    else {
+        return Err(Error::Invalid("cron not found in this Session".into()));
+    };
+    if listed["state"].as_str() != Some("scheduled") {
+        return Err(Error::Invalid("only a scheduled cron can be edited".into()));
+    }
+    let mut input = listed["input"].clone();
+    if let Some(prompt) = &change.prompt {
+        input["prompt"] = json!(prompt);
+    }
+    if let Some(pattern) = &change.cron {
+        input["cron"] = json!(pattern);
+    }
+    if let Some(recurring) = change.recurring {
+        input["recurring"] = json!(recurring);
+    }
+    if let Some(delivery) = &change.delivery {
+        input["delivery"] = json!(delivery);
+    }
+    let input = crate::cron::Input::parse(input)
+        .map_err(|_| Error::Invalid("edited cron input is invalid".into()))?;
+    let anchor = chrono::Local::now();
+    let anchor_ms = anchor.timestamp_millis() as u64;
+    let first = crate::cron::next(input.cron.clone(), anchor)
+        .await?
+        .timestamp_millis() as u64;
+    let expires = anchor_ms.saturating_add(crate::cron::LIFETIME_MS);
+    if first >= expires {
+        return Err(Error::Invalid(
+            "cron has no occurrence within seven-day lifetime".into(),
+        ));
+    }
+    let pattern = input.cron.clone();
+    let recurring = input.recurring;
+    let id = change.id.clone();
+    inner
+        .store
+        .edit_cron(session, &change.id, input, first..expires)
+        .await?;
+    let previous = inner.crons.lock().await.remove(&change.id);
+    if let Some(previous) = previous {
+        previous.rearm.cancel();
+        let _ = previous.join.await;
+    }
+    let background = spawn_cron_task(
+        inner,
+        session.to_owned(),
+        id.clone(),
+        pattern,
+        recurring,
+        first,
+        expires,
+    );
+    inner.crons.lock().await.insert(id, background);
+    Ok(inner
+        .store
+        .crons(session)
+        .await?
+        .into_iter()
+        .find(|row| row["cron_id"].as_str() == Some(change.id.as_str()))
+        .unwrap_or(listed))
 }
 /// Stop every in-process task a Session owns, before its rows are deleted.
 async fn stop_session(inner: &Arc<Inner>, session: &str) {
@@ -6003,6 +6094,7 @@ fn arm_wakeup(inner: &Arc<Inner>, source: String, timer_id: String, due_at_ms: u
     let delay = due_at_ms.saturating_sub(now_ms());
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(delay);
     let cancel = inner.stop.child_token();
+    let rearm = cancel.child_token();
     let token = cancel.clone();
     let owner = inner.clone();
     let timer_id = timer_id.clone();
@@ -6031,6 +6123,7 @@ fn arm_wakeup(inner: &Arc<Inner>, source: String, timer_id: String, due_at_ms: u
     Background {
         session: background_source,
         cancel,
+        rearm,
         join,
     }
 }
@@ -7125,6 +7218,7 @@ async fn start_monitor(
         Background {
             session: job_owner,
             cancel: job_token,
+            rearm: CancellationToken::new(),
             join,
         },
     );
@@ -7406,6 +7500,7 @@ async fn start_background(
         Background {
             session: owner,
             cancel: token,
+            rearm: CancellationToken::new(),
             join,
         },
     );
