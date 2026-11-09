@@ -15,7 +15,7 @@ use crate::dialogs::{
 };
 use crate::editor::{Action, Mode};
 use crate::engine;
-use crate::event::{AppEvent, Bus};
+use crate::event::{AppEvent, Bus, JobRow};
 use crate::keybinds::{self, Keymap};
 use crate::pane::{render_dialog, Home, Panel, PanelKind, Shell, StatusHint};
 use crate::platform::attention::{self, Attention};
@@ -2448,9 +2448,10 @@ impl App {
         else {
             return;
         };
-        if list.detail_of(&job_id).is_some() {
+        if list.preview_asked(&job_id) {
             return;
         }
+        list.mark_preview_asked(&job_id);
         engine.job_detail(&session_id, &job_id);
     }
 
@@ -9481,8 +9482,20 @@ mod tests {
         // for its detail as soon as the dialog has rows.
         let (mut app, mut requests) = revert_session_app();
         app.handle(AppEvent::Jobs(vec![
-            ("job_1".into(), "running".into()),
-            ("job_2".into(), "finished".into()),
+            JobRow {
+                id: "job_1".into(),
+                owner: "ses_a".into(),
+                state: "running".into(),
+                detail: "bun test".into(),
+                subagent: false,
+            },
+            JobRow {
+                id: "job_2".into(),
+                owner: "ses_a".into(),
+                state: "finished".into(),
+                detail: "bun run deploy".into(),
+                subagent: false,
+            },
         ]));
         assert!(matches!(
             requests.try_recv(),
@@ -9495,8 +9508,20 @@ mod tests {
     fn a_job_detail_answer_lands_on_its_own_row() {
         let (mut app, _requests) = revert_session_app();
         app.handle(AppEvent::Jobs(vec![
-            ("job_1".into(), "finished".into()),
-            ("job_2".into(), "running".into()),
+            JobRow {
+                id: "job_1".into(),
+                owner: "ses_a".into(),
+                state: "finished".into(),
+                detail: "bun test".into(),
+                subagent: false,
+            },
+            JobRow {
+                id: "job_2".into(),
+                owner: "ses_a".into(),
+                state: "running".into(),
+                detail: "bun run deploy".into(),
+                subagent: false,
+            },
         ]));
         app.handle(AppEvent::JobDetail {
             job_id: "job_2".into(),
@@ -9511,8 +9536,20 @@ mod tests {
     fn moving_between_jobs_previews_each_row_once() {
         let (mut app, mut requests) = revert_session_app();
         app.handle(AppEvent::Jobs(vec![
-            ("job_1".into(), "finished".into()),
-            ("job_2".into(), "running".into()),
+            JobRow {
+                id: "job_1".into(),
+                owner: "ses_a".into(),
+                state: "finished".into(),
+                detail: "bun test".into(),
+                subagent: false,
+            },
+            JobRow {
+                id: "job_2".into(),
+                owner: "ses_a".into(),
+                state: "running".into(),
+                detail: "bun run deploy".into(),
+                subagent: false,
+            },
         ]));
         assert!(matches!(
             requests.try_recv(),

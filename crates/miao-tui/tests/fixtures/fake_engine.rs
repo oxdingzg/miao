@@ -82,6 +82,9 @@ fn main() {
     let cjk = std::env::var_os("MIAO_TUI_FAKE_CJK").is_some();
     // The approval scenario keeps one request outstanding until the client
     // resolves it, so the panel has something to show on the first snapshot.
+    // The jobs dialog's scripted answer; the value names the phase, so a
+    // restart can answer the new real state a reopened list must show.
+    let jobs_phase = std::env::var("MIAO_TUI_FAKE_JOBS").ok();
     let mut approval_pending = std::env::var_os("MIAO_TUI_FAKE_APPROVAL").is_some();
     let streaming = std::env::var_os("MIAO_TUI_FAKE_STREAM").is_some();
     let stream_updates = Arc::new(AtomicU64::new(0));
@@ -468,6 +471,32 @@ fn main() {
             "select_account" if sessions => {
                 log_action(&frame["params"], "select_account");
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            // Two jobs owned by different Sessions and one subagent run, so
+            // the jobs dialog has owners and a subagent row to show. The env
+            // value names the phase: "after" answers the state a restart
+            // produced, which a reopened dialog has to catch up to.
+            "jobs" if jobs_phase.is_some() => {
+                let after = jobs_phase.as_deref() == Some("after");
+                let (build, deploy, survey) = if after {
+                    ("finished", "running", "finished")
+                } else {
+                    ("running", "finished", "running")
+                };
+                send(&mut out, json!({"id":id,"result":{
+                    "jobs":[
+                        {"job_id":"job_build","session_id":"ses_a","state":build,"command":"bun test","output":null},
+                        {"job_id":"job_deploy","session_id":"ses_c","state":deploy,"command":"bun run deploy","output":{"exit_code":0}}
+                    ],
+                    "subagents":[
+                        {"id":"sub_survey","session_id":"ses_a","status":survey,"description":"survey the flaky tests"}
+                    ]
+                }}));
+            }
+            "job" if jobs_phase.is_some() => {
+                let after = jobs_phase.as_deref() == Some("after");
+                let state = if after { "finished" } else { "running" };
+                send(&mut out, json!({"id":id,"result":{"state":state,"result":null}}));
             }
             "select_model" if sessions => {
                 log_action(&frame["params"], "select_model");

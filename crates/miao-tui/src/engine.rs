@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use crate::dialogs::{AccountInfo, ModelInfo};
-use crate::event::{AppEvent, Bus};
+use crate::event::{AppEvent, Bus, JobRow};
 
 /// How much of a job's result the preview row shows before it is clipped. The
 /// renderer clips to the row width anyway; this keeps the event small.
@@ -1876,23 +1876,81 @@ async fn refresh_jobs(client: &EngineClient, bus: &Bus, session_id: &str) {
         .await
     {
         Ok(value) => {
-            let rows = value
-                .as_array()
-                .map(|rows| {
-                    rows.iter()
-                        .filter_map(|row| {
-                            let id = row.get("job_id")?.as_str()?;
-                            let state =
-                                row.get("state").and_then(Value::as_str).unwrap_or_default();
-                            Some((id.to_string(), state.to_string()))
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
+            let mut rows = parse_job_rows(&value);
+            rows.extend(parse_subagent_rows(&value));
             bus.send(AppEvent::Jobs(rows));
         }
         Err(error) => bus.send(AppEvent::ActionFailed(format!("jobs failed: {error}"))),
     }
+}
+
+/// The engine answers a bare array of job rows. A stand-in that serves the
+/// whole dialog from one call may instead wrap the array beside a `subagents`
+/// side list; both shapes parse, and a missing field is no rows.
+fn parse_job_rows(value: &Value) -> Vec<JobRow> {
+    let empty = Vec::new();
+    let jobs = match value.as_array() {
+        Some(jobs) => jobs,
+        None => value.get("jobs").and_then(Value::as_array).unwrap_or(&empty),
+    };
+    jobs.iter()
+        .filter_map(|row| {
+            let id = row.get("job_id")?.as_str()?.to_string();
+            Some(JobRow {
+                owner: owner_short(row.get("session_id").and_then(Value::as_str)),
+                state: row
+                    .get("state")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                detail: row
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                id,
+                subagent: false,
+            })
+        })
+        .collect()
+}
+
+/// The Session's subagent runs, taken from the same answer's `subagents`
+/// list; the real engine does not serve it yet, so the dialog simply shows no
+/// subagent rows there.
+fn parse_subagent_rows(value: &Value) -> Vec<JobRow> {
+    value
+        .get("subagents")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    let id = row.get("id")?.as_str()?.to_string();
+                    Some(JobRow {
+                        owner: owner_short(row.get("session_id").and_then(Value::as_str)),
+                        state: row
+                            .get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        detail: row
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        id,
+                        subagent: true,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The owner column shows the head of the owning Session's id, not its whole
+/// length.
+fn owner_short(session_id: Option<&str>) -> String {
+    session_id.unwrap_or_default().chars().take(8).collect()
 }
 
 /// The single line a jobs row shows for its selected job: the state it reached
