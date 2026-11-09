@@ -75,6 +75,8 @@ newer record is the one to read.
 | `2026-11-07-tui03-stream-render.md` | `e170b105ee` | TUI-03 (incremental text/reasoning/tool pins, single-replace state settling, opaque vs transparent reasoning; a live provider wire and a real-client run stay open) |
 | `2026-11-07-his03-shell-disclaimer.md` | `613907dd68` | HIS-03 (the shell/external-side-effect disclaimer the 2026-11-05 record left unaccepted, now pinned on the TUI revert confirmation for history-only and file plans alike; a live-client run and the release stamp stay open) |
 | `2026-11-07-tool07-mcp-search.md` | `23d725d997` | TOOL-07 (real REST/MCP backend selection with fail-closed host config, per-backend payload/turn cost bounds in each format's own vocabulary; the real-credential retrieval-quality and latency run stays open) |
+| `2026-11-07-cost04-turn-timings.md` | `18b3a92cc3` | COST-04 (all three criteria, re-run on a current tree; the `turn_timings` filter the issue cites matches no test since the phase-ledger rename) || `2026-11-07-job04-backpressure-signal.md` | `c1b981f229` | JOB-04 (the backpressure edge, its depth counting without a sender `len()`, the status line's `Engine backlog · N queued` rank, and the retry-budget tests; the wider cancellation matrix and real-terminal checks stay open) |
+
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
 carries the table of filters that were re-run to keep the earlier records honest.
