@@ -331,15 +331,13 @@ async fn task_dependencies_survive_restart_and_unlock_only_completed_prerequisit
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("engine.db");
     let store = setup(&path).await;
-    // The durable row records verified:false explicitly; the write surface
-    // cannot set it (TodoInput has no such field), so the expectation carries it.
     let tasks = json!([
-        {"id":"4","content":"CI","status":"waiting","priority":"high","verified":false},
-        {"id":"5","content":"Release","status":"pending","priority":"high","depends_on":["4"],"verified":false},
-        {"id":"6","content":"Verify","status":"pending","priority":"high","depends_on":["5"],"verified":false},
-        {"id":"7","content":"Audit","status":"pending","priority":"medium","verified":false},
-        {"id":"8","content":"Baseline","status":"pending","priority":"medium","verified":false},
-        {"id":"9","content":"Docs","status":"pending","priority":"low","verified":false}
+        {"id":"4","content":"CI","status":"waiting","priority":"high"},
+        {"id":"5","content":"Release","status":"pending","priority":"high","depends_on":["4"]},
+        {"id":"6","content":"Verify","status":"pending","priority":"high","depends_on":["5"]},
+        {"id":"7","content":"Audit","status":"pending","priority":"medium"},
+        {"id":"8","content":"Baseline","status":"pending","priority":"medium"},
+        {"id":"9","content":"Docs","status":"pending","priority":"low"}
     ]);
     store
         .update_state(
@@ -350,7 +348,13 @@ async fn task_dependencies_survive_restart_and_unlock_only_completed_prerequisit
         .await
         .unwrap();
     let state = store.state("s").await.unwrap();
-    assert_eq!(state["todos"]["value"]["todos"], tasks);
+    // The write surface has no `verified` field, so the durable rows are the
+    // model input with the receipt default filled in.
+    let mut expected = tasks.clone();
+    for row in expected.iter_mut() {
+        row["verified"] = json!(false);
+    }
+    assert_eq!(state["todos"]["value"]["todos"], expected);
     assert_eq!(
         miao_engine::state::runnable_state(&state).unwrap(),
         ["7", "8", "9"]
