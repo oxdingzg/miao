@@ -218,7 +218,19 @@ impl EngineClient {
             // report is one rising and one falling edge instead of per frame.
             let mut notice_lagged = false;
             loop {
+                // PERF-05: the lanes poll in a fixed order, control first. A
+                // cancel or an approval answer is one inbound frame; with the
+                // default fair polling a flood of provider deltas makes every
+                // loop iteration a random pick among ready lanes, so the
+                // operator's Esc waits on the scheduler's coin behind an
+                // unbounded number of rendering frames. Durable events — an
+                // approval prompt among them — come next so a decision the
+                // operator must make still surfaces while the flood pours;
+                // config reports are rare and must not starve behind it; the
+                // notice backlog drains last, because it is exactly the
+                // rendering work the lanes above it outrank.
                 tokio::select! {
+                    biased;
                     frame = inbound.recv() => {
                         let Some(frame) = frame else { break };
                         wire_note("out", frame.get("method").and_then(Value::as_str).unwrap_or("?"));
@@ -250,6 +262,16 @@ impl EngineClient {
                             }
                         }
                     }
+                    report = config_events.recv() => match report {
+                        Ok(report) => {
+                            let frame = json!({ "method": "config", "params": report });
+                            if let Ok(line) = serde_json::to_string(&frame) {
+                                reap.dispatch(&line);
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    },
                     notice = notice_rx.recv() => match notice {
                         Some(notice) => {
                             let taken = backlog
@@ -290,16 +312,6 @@ impl EngineClient {
                             }
                         }
                         None => break,
-                    },
-                    report = config_events.recv() => match report {
-                        Ok(report) => {
-                            let frame = json!({ "method": "config", "params": report });
-                            if let Ok(line) = serde_json::to_string(&frame) {
-                                reap.dispatch(&line);
-                            }
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     },
                 }
             }
