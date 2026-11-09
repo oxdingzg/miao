@@ -16,7 +16,7 @@ and AES-256-GCM frames match the TypeScript implementation byte for byte, which
 | Module | Purpose |
 | --- | --- |
 | `core` | Protocol core: canonical JSON, P-256 crypto, secure channel, RPC and chunk assembly, WebSocket transport, pairing, Hub account, rosters and enrollment, push context, checkpoint store, session timeline and the connection coordinator. |
-| `app` | Compose UI: relay account, pairing, computer and session lists, session view, approvals and questions, providers, speech input, QR scanning. |
+| `app` | Compose UI: the phone-only local assistant, relay account, pairing, computer and session lists, session view, approvals and questions, providers, speech input, QR scanning. |
 
 `core` has no Android dependency and its tests run on any JDK 17. Identity and
 relay credentials live app-private, wrapped by a non-exportable AndroidKeyStore
@@ -34,8 +34,14 @@ question replies, interrupt of the observed execution, file-change view,
 `provider.list`-backed provider settings and default model selection, plus a
 cross-session pending inbox.
 
-Not yet ported from iOS: the phone-only local assistant mode (no computer
-involved), tablet multi-window scene sharing, and FCM background notifications.
+The phone-only mode runs an OpenAI-compatible chat loop on the device itself:
+providers and preset endpoints, streaming replies, a bounded tool loop over the
+app's own workspace (`list_files`, `read_file`, `write_file`, `fetch_url`),
+per-write and per-network confirmation, session history and rewind. It needs no
+computer, account or relay.
+
+Not yet ported from iOS: MCP over HTTP and image input in the local mode, tablet
+multi-window scene sharing, and FCM background notifications.
 The relay currently delivers APNs alerts only, so Android registration awaits a
 server-side delivery provider; the client-side registration and
 device-encrypted context lookup are already implemented and interop-tested.
