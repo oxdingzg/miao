@@ -382,6 +382,8 @@ pub fn ledger_nudge(turns_since_write: u64) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::{json, Value};
+
     #[test]
     fn a_ledger_untouched_for_several_turns_gets_a_nudge() {
         assert_eq!(super::ledger_nudge(0), None);
