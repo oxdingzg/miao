@@ -17,7 +17,9 @@ permissions:
 jobs:
   version:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The gate waits for the release commit's own CI, which is usually still
+    # queued right after the merge that created it.
+    timeout-minutes: 60
     outputs:
       version: ${{ steps.version.outputs.version }}
       release: ${{ steps.version.outputs.release }}
