@@ -187,12 +187,16 @@ fn admit_peer(
         .optional()?;
     if let Some((stored_sender, stored_reply)) = existing {
         // A retry reconciles the linkage too: the same id answering a
-        // different receipt is a conflict, not a silent rewrite.
-        if stored_sender.is_some() && stored_sender.as_deref() != Some(sender) {
-            return Err(Error::Conflict);
-        }
-        if stored_reply.is_some() && stored_reply.as_deref() != reply_to {
-            return Err(Error::Conflict);
+        // different receipt is a conflict, not a silent rewrite. A legacy row
+        // (no sender column yet) stays lenient, because stamping it is the
+        // upgrade path rather than a rewrite of attributed mail.
+        if stored_sender.is_some() {
+            if stored_sender.as_deref() != Some(sender) {
+                return Err(Error::Conflict);
+            }
+            if stored_reply.as_deref() != reply_to {
+                return Err(Error::Conflict);
+            }
         }
     }
     // Stamp the columns on the fresh row, or upgrade a legacy row whose
