@@ -2810,7 +2810,10 @@ fn hourly_lines(
 ) -> Vec<Line<'static>> {
     const GLYPHS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
     let muted = Style::new().fg(palette.text_muted);
-    let mut lines = vec![Line::from(Span::styled("▾ Last 24h", muted))];
+    // The window spans the workspace ledger rather than this Session: say so,
+    // or every Session's sidebar reads the same figures and the block looks
+    // like a stub instead of a total.
+    let mut lines = vec![Line::from(Span::styled("▾ Last 24h · workspace", muted))];
     let Some(usage) = usage else {
         lines.push(Line::from(Span::styled("no usage recorded", muted)));
         return lines;
@@ -6521,6 +6524,11 @@ mod tests {
             .iter()
             .position(|row| row.contains("Last 24h"))
             .expect("hourly header");
+        assert!(
+            rows[header].contains("workspace"),
+            "the strip says what it totals: {:?}",
+            rows[header]
+        );
         let strip = &rows[header + 1];
         let cells = strip
             .chars()
