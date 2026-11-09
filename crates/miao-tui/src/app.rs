@@ -7304,10 +7304,13 @@ mod tests {
             .unwrap_or_default();
         assert!(streamed.starts_with("w0 "), "{streamed:?}");
         assert!(streamed.ends_with("w511 "), "{streamed:?}");
-        // Cancellation is not queued behind the rendering batch either.
+        // Cancellation is not queued behind the rendering batch either. The
+        // recording may hold whatever else this Session's setup asked for, so
+        // the cancel is named across the whole recording, not at its head.
         app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
         assert!(
-            matches!(requests.try_recv(), Ok(engine::Request::Cancel { .. })),
+            std::iter::from_fn(|| requests.try_recv().ok())
+                .any(|request| matches!(request, engine::Request::Cancel { .. })),
             "Esc during a backlog still cancels the run"
         );
     }
