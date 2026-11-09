@@ -389,4 +389,31 @@ mod tests {
         assert!(written.contains("return table[key]"));
         assert!(written.contains("handler3999"));
     }
+
+    #[test]
+    fn multi_byte_text_survives_an_edit_byte_for_byte() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = "标题 中文 line\n组合字符: e\u{301}clair café\n";
+        let suffix = "尾行 tail 👨‍👩‍👧‍👦 naïve\n";
+        let body = format!("{prefix}anchor 中文\n{suffix}");
+        std::fs::write(dir.path().join("note.md"), &body).unwrap();
+        let root = Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        let mutation = Mutation::parse(
+            "edit_file",
+            json!({
+                "path":"note.md",
+                "old_string":"anchor",
+                "new_string":"锚点 🇨🇳",
+                "expected_sha256": digest(body.as_bytes()),
+            }),
+        )
+        .unwrap();
+        let applied = apply(&root, Path::new("note.md"), mutation, None).unwrap();
+        assert_eq!(applied["applied"], json!(true), "tool result: {applied}");
+        let written = std::fs::read(dir.path().join("note.md")).unwrap();
+        let expected = body.replace("anchor", "锚点 🇨🇳");
+        assert_eq!(written, expected.as_bytes());
+        assert!(written.starts_with(prefix.as_bytes()));
+        assert!(written.ends_with(suffix.as_bytes()));
+    }
 }

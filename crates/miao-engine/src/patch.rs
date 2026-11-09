@@ -52,6 +52,7 @@ enum Line {
 pub struct Operation {
     pub action: Action,
     pub path: String,
+    pub move_to: Option<String>,
     content: String,
     hunks: Vec<Vec<(Line, String)>>,
 }
@@ -104,13 +105,20 @@ pub fn parse(input: &Input) -> Result<Vec<Operation>, ToolError> {
         } else if line == "*** End Patch" {
             closed = true;
             break;
+        } else if line.starts_with("*** Move to:") {
+            return Err(ToolError::InvalidArgs(format!(
+                "`*** Move to:` must be declared directly under its `*** Update File:` header; got {line:?}"
+            )));
         } else {
             return Err(ToolError::InvalidArgs(format!(
                 "expected `*** Add File: <path>`, `*** Update File: <path>`, `*** Delete File: <path>` or `*** End Patch`; got {line:?}"
             )));
         };
         valid_path(path)?;
-        if operations.iter().any(|op| op.path == path) {
+        if operations
+            .iter()
+            .any(|op| op.path == path || op.move_to.as_deref() == Some(path))
+        {
             return Err(ToolError::InvalidArgs(format!(
                 "{path:?} appears in more than one section; one section per file"
             )));
@@ -118,9 +126,39 @@ pub fn parse(input: &Input) -> Result<Vec<Operation>, ToolError> {
         let mut operation = Operation {
             action,
             path: path.to_owned(),
+            move_to: None,
             content: String::new(),
             hunks: Vec::new(),
         };
+        // `*** Move to:` is declared directly under its Update header,
+        // mirroring the reference parser; anywhere else it falls through to
+        // the unknown-directive rejection below.
+        if let Some(target) = lines
+            .peek()
+            .and_then(|line| line.strip_prefix("*** Move to: "))
+        {
+            if action != Action::Update {
+                return Err(ToolError::InvalidArgs(format!(
+                    "`*** Move to:` is only valid under an `*** Update File:` header; got {line:?}"
+                )));
+            }
+            valid_path(target)?;
+            if target == path {
+                return Err(ToolError::InvalidArgs(format!(
+                    "a rename target must differ from its source; {path:?} moves to itself"
+                )));
+            }
+            if operations
+                .iter()
+                .any(|op| op.path == target || op.move_to.as_deref() == Some(target))
+            {
+                return Err(ToolError::InvalidArgs(format!(
+                    "{target:?} appears in more than one section; one section per file"
+                )));
+            }
+            operation.move_to = Some(target.to_owned());
+            lines.next();
+        }
         match action {
             Action::Add => {
                 let mut content = String::new();
@@ -175,11 +213,15 @@ pub fn parse(input: &Input) -> Result<Vec<Operation>, ToolError> {
                     lines.next();
                 }
                 if hunk.is_empty() {
-                    return Err(ToolError::InvalidArgs(format!(
-                        "Update File {path:?} has no ` `, `-` or `+` lines under its `@@` marker"
-                    )));
+                    // A rename may skip hunks entirely; a plain update may not.
+                    if operation.move_to.is_none() {
+                        return Err(ToolError::InvalidArgs(format!(
+                            "Update File {path:?} has no ` `, `-` or `+` lines under its `@@` marker"
+                        )));
+                    }
+                } else {
+                    operation.hunks.push(hunk);
                 }
-                operation.hunks.push(hunk);
             }
             Action::Delete => {}
         }
@@ -330,7 +372,10 @@ impl Staged {
         let mut staged = self;
         staged.live = false;
         if created {
-            handle
+            // The staged temp lives in its staging directory, which for a
+            // rename is the source's parent — not the destination's.
+            staged
+                .dir
                 .hard_link(&staged.name, handle, name)
                 .map_err(|error| {
                     if error.kind() == std::io::ErrorKind::AlreadyExists {
@@ -392,18 +437,24 @@ pub fn apply(root: &Dir, operations: &[Operation]) -> Result<Value, ToolError> {
             }
             Action::Update => {
                 let original = original.clone().ok_or(ToolError::StaleFile)?;
-                let (text, bom, crlf) = normalize(&original)?;
-                let text = apply_hunks(&text, &operation.hunks)?;
-                let bytes = restore(text, bom, crlf);
-                if bytes.len() > MAX_FILE {
-                    return Err(ToolError::InvalidFile);
+                // A pure rename rewrites nothing: the original bytes are
+                // published under the new path unchanged.
+                if operation.move_to.is_some() && operation.hunks.is_empty() {
+                    (None, Some(original))
+                } else {
+                    let (text, bom, crlf) = normalize(&original)?;
+                    let text = apply_hunks(&text, &operation.hunks)?;
+                    let bytes = restore(text, bom, crlf);
+                    if bytes.len() > MAX_FILE {
+                        return Err(ToolError::InvalidFile);
+                    }
+                    let (handle, name) = split(root, &operation.path)?;
+                    let permissions = handle.metadata(&name).ok().map(|meta| meta.permissions());
+                    (
+                        Some(Staged::create(&handle, &bytes, permissions)?),
+                        Some(bytes),
+                    )
                 }
-                let (handle, name) = split(root, &operation.path)?;
-                let permissions = handle.metadata(&name).ok().map(|meta| meta.permissions());
-                (
-                    Some(Staged::create(&handle, &bytes, permissions)?),
-                    Some(bytes),
-                )
             }
             Action::Delete => {
                 if original.is_none() {
@@ -422,7 +473,13 @@ pub fn apply(root: &Dir, operations: &[Operation]) -> Result<Value, ToolError> {
             continue;
         }
         let created = operation.action == Action::Add;
-        let published_now = if let Some(staged) = staged.take() {
+        let destination = operation
+            .move_to
+            .clone()
+            .unwrap_or_else(|| operation.path.clone());
+        let published_now = if operation.move_to.is_some() {
+            publish_move(root, &operation.path, &destination, staged.take())
+        } else if let Some(staged) = staged.take() {
             let (handle, name) = split(root, &operation.path)?;
             staged.publish(&handle, &name, created)
         } else {
@@ -436,18 +493,32 @@ pub fn apply(root: &Dir, operations: &[Operation]) -> Result<Value, ToolError> {
             rollback(root, &published);
             return Err(error);
         }
+        // A rename removes its source only after the destination exists;
+        // if that removal fails the fresh destination goes too, keeping
+        // the patch whole.
+        if operation.move_to.is_some() {
+            let (handle, name) = split(root, &operation.path)?;
+            if let Err(error) = handle.remove_file(&name) {
+                if let Ok((handle, name)) = split(root, &destination) {
+                    let _ = handle.remove_file(&name);
+                }
+                rollback(root, &published);
+                return Err(error.into());
+            }
+            published.push((destination.clone(), None));
+        }
         published.push((operation.path.clone(), original.clone()));
         let bytes = final_bytes.clone().unwrap_or_default();
         if let Some(entry) = changed(
             original.as_deref(),
             Some(&bytes),
-            &operation.path,
+            &destination,
             operation.action.name(),
         ) {
             display.push(entry);
         }
         files.push(json!({
-            "path": operation.path,
+            "path": destination,
             "action": operation.action.name(),
             "sha256": crate::permission::digest(&bytes),
             "bytes": bytes.len(),
@@ -505,6 +576,34 @@ fn publish_new(root: &Dir, path: &str, bytes: &[u8]) -> Result<(), ToolError> {
     }
     let (handle, name) = split(root, path)?;
     Staged::create(&handle, bytes, None)?.publish(&handle, &name, true)
+}
+
+/// A rename publishes its destination with the no-clobber hard link used
+/// for Add — an existing target fails the patch — and the caller removes
+/// the source afterwards.
+fn publish_move(
+    root: &Dir,
+    source: &str,
+    target: &str,
+    staged: Option<Staged>,
+) -> Result<(), ToolError> {
+    if let Some(parent) = Path::new(target)
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        root.create_dir_all(parent)?;
+    }
+    let (handle, name) = split(root, target)?;
+    match staged {
+        Some(staged) => staged.publish(&handle, &name, true),
+        None => root.hard_link(source, &handle, &name).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                ToolError::StaleFile
+            } else {
+                ToolError::Io(error)
+            }
+        }),
+    }
 }
 
 fn rollback(root: &Dir, published: &[(String, Option<Vec<u8>>)]) {
