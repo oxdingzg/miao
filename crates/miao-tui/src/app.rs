@@ -2138,11 +2138,10 @@ impl App {
                     "mode:light" => self.set_mode_lock(Some("light")),
                     "mode:unlock" => self.set_mode_lock(None),
                     _ => {
-                        let name = row
-                            .id
-                            .parse::<usize>()
-                            .ok()
-                            .and_then(|index| self.themes.names().get(index).map(str::to_string));
+                        let name =
+                            row.id.parse::<usize>().ok().and_then(|index| {
+                                self.themes.names().get(index).map(str::to_string)
+                            });
                         if let Some(name) = name {
                             self.apply_theme(&name);
                         }
@@ -9452,7 +9451,7 @@ mod tests {
         std::fs::write(config_dir.join("tui.json"), r#"{"theme": "paired"}"#).unwrap();
         std::fs::write(
             config_dir.join("themes").join("paired.json"),
-            r#"{"theme": {"primary": {"dark": "#ff0000", "light": "#00ff00"}, "secondary": "#111111", "accent": "#00ff00", "error": "#ff0000", "warning": "#ffaa00", "success": "#00ff00", "text": "#eeeeee", "textMuted": "#808080", "background": "#101010", "backgroundPanel": "#181818", "backgroundElement": "#202020", "border": 8, "borderActive": "#ffffff"}}"#,
+            r##"{"theme": {"primary": {"dark": "#ff0000", "light": "#00ff00"}, "secondary": "#111111", "accent": "#00ff00", "error": "#ff0000", "warning": "#ffaa00", "success": "#00ff00", "text": "#eeeeee", "textMuted": "#808080", "background": "#101010", "backgroundPanel": "#181818", "backgroundElement": "#202020", "border": 8, "borderActive": "#ffffff"}}"##,
         )
         .unwrap();
         let state = dir.join("state");
@@ -9474,10 +9473,7 @@ mod tests {
             app.shell.theme().palette.primary,
             ratatui::style::Color::Rgb(0, 255, 0)
         );
-        assert_eq!(
-            app.shell.composer.notice.as_deref(),
-            Some("theme pinned to light")
-        );
+        assert_eq!(app.home.notice(), Some("theme pinned to light"));
         assert_eq!(
             app.themes.palette("paired").map(|palette| palette.primary),
             Some(ratatui::style::Color::Rgb(0, 255, 0))

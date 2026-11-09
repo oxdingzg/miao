@@ -1000,11 +1000,7 @@ fn custom_themes(
 /// `defs` for shared references, `{dark, light}` pairs, and ANSI color codes.
 /// A pair resolves to the half the requested mode names; a pair missing that
 /// half warns and resolves to the other one.
-fn parse_theme(
-    text: &str,
-    mode: ThemeMode,
-    warnings: &mut Vec<String>,
-) -> Result<Palette, String> {
+fn parse_theme(text: &str, mode: ThemeMode, warnings: &mut Vec<String>) -> Result<Palette, String> {
     let value: serde_json::Value = serde_json::from_str(text).map_err(|err| err.to_string())?;
     let theme = value
         .get("theme")
@@ -1773,7 +1769,10 @@ mod tests {
             loaded.warnings
         );
         assert_eq!(
-            loaded.catalog.palette("paired").map(|palette| palette.primary),
+            loaded
+                .catalog
+                .palette("paired")
+                .map(|palette| palette.primary),
             Some(Color::Rgb(255, 0, 0)),
             "the custom theme came from the global dir of the same chain"
         );

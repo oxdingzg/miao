@@ -1016,12 +1016,7 @@ impl Dialog {
             label: name.to_string(),
             detail: String::new(),
         }));
-        let mut list = ListDialog::new(
-            "theme",
-            rows,
-            ListKind::Plain,
-            "enter apply · esc close",
-        );
+        let mut list = ListDialog::new("theme", rows, ListKind::Plain, "enter apply · esc close");
         list.selected = names
             .iter()
             .position(|name| *name == current)
