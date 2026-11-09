@@ -134,11 +134,15 @@ fun LocalScreen(agent: LocalAgent) {
         ProvidersDialog(agent, onDismiss = { showProviders = false })
     }
     if (showSettings) {
+        var mcpField by remember(agent.mcpURL) { mutableStateOf(agent.mcpURL ?: "") }
         AlertDialog(
             onDismissRequest = { showSettings = false },
             title = { Text("本机设置") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
                     Text("工作区：${agent.workspace.path}", fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                     Row {
                         androidx.compose.material3.Checkbox(
@@ -147,6 +151,30 @@ fun LocalScreen(agent: LocalAgent) {
                         )
                         Text("自动允许写入与联网（不再逐次确认）", fontSize = 12.sp)
                     }
+                    OutlinedTextField(
+                        value = mcpField,
+                        onValueChange = { mcpField = it },
+                        label = { Text("MCP 服务地址（可选，HTTP）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { agent.setMcp(mcpField) }) { Text("保存并连接") }
+                        OutlinedButton(
+                            onClick = { agent.setMcp("") },
+                            enabled = agent.mcpURL != null,
+                        ) { Text("断开") }
+                    }
+                    Text(
+                        when {
+                            agent.mcpURL == null -> "未连接 MCP 服务"
+                            agent.mcpError != null -> agent.mcpError ?: ""
+                            agent.mcpTools.isEmpty() -> "正在连接…"
+                            else -> "已连接 ${agent.mcpTools.size} 个 MCP 工具"
+                        },
+                        fontSize = 11.sp,
+                        color = if (agent.mcpError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             },
             confirmButton = {
