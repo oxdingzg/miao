@@ -9,7 +9,7 @@ Rust engine 的目标是让 miao 更好用。这里检验用户可观察的结�
 | 产品结果 | `tests/accuracy.rs` | 实际读到原文、补丁修改正确、无关文字保留；拒绝写入不改变文件；replay 与完整 ledger 相同 |
 | Golden / 工具契约 | `tests/accuracy/*.json` | 正常与拒绝场景的生命周期顺序；只读和 workspace 模式实际暴露的工具 input schema |
 | 独立队列模型 | `tests/accuracy.rs` | 12 个固定种子，每个 128 步；混合 steer/queue、重复提交、冲突提交与不同 idle 边界，检查投递顺序、幂等、无丢失/重复及 projection |
-| 共享语义差分 | `tests/differential.rs` | 42 个 patch 案例；TS `parse` + **纯 TS `deriveTs`** 生成 reference，Rust 执行后比较真实文件集合与内容；另有 6 个拒绝/无部分副作用场景 |
+| 共享语义差分 | `tests/differential.rs` | 44 个 patch 案例；TS `parse` + **纯 TS `deriveTs`** 生成 reference，Rust 执行后比较真实文件集合与内容；另有 6 个拒绝/无部分副作用场景 |
 
 Golden 去掉 UUID、时间戳和 checkpoint 等非稳定字段，仅保留本轮选择的生命周期及工具身份。它不是整个协议的兼容性承诺；工具 schema 锁定目前覆盖只读和 workspace 文件工具，新增 capability 模式应补相应快照。
 
@@ -19,7 +19,7 @@ Golden 去掉 UUID、时间戳和 checkpoint 等非稳定字段，仅保留本�
 
 - 新建文本文件补末尾换行。
 - 更新已有文件保留它原来的末尾换行约定。
-- 当前严格 patch API 不支持 `Move to`，应拒绝且无副作用。这里记录能力边界，不宣称拒绝 move 是产品改进。
+- `Move to` 重命名的发布用 no-clobber hard link：目标已存在则整个补丁失败且回滚；源文件只有在目标落位后才移除，pure rename（无 hunk）逐字节保留原内容。
 
 未注明差异的案例必须与参考相同。遇到新差异先判断错误、能力边界还是改进，再补明确契约，不能为把 CI 改绿就批量重录。
 

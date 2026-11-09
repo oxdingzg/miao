@@ -1412,9 +1412,15 @@ impl Tools {
         };
         let path = if name == "apply_patch" {
             for operation in crate::patch::parse(&Self::patch_input(name, input.clone())?)? {
-                let candidate = self.contained_target(&operation.path).await?;
-                if self.protected.contains(&candidate) {
-                    return Err(ToolError::ProtectedResource);
+                // A rename writes its target path, so both ends of a move
+                // screen against the protected set.
+                for target in
+                    std::iter::once(operation.path.as_str()).chain(operation.move_to.as_deref())
+                {
+                    let candidate = self.contained_target(target).await?;
+                    if self.protected.contains(&candidate) {
+                        return Err(ToolError::ProtectedResource);
+                    }
                 }
             }
             self.root.clone()
@@ -1557,7 +1563,7 @@ impl Tools {
         let targets = if name == "apply_patch" {
             crate::patch::parse(&Self::patch_input(name, input.clone())?)?
                 .into_iter()
-                .map(|operation| operation.path)
+                .flat_map(|operation| std::iter::once(operation.path).chain(operation.move_to))
                 .collect()
         } else {
             Vec::new()

@@ -45,9 +45,19 @@ const cases: Case[] = [
   },
   {
     name: "move_file",
-    contract: { reject: true, reason: "The engine advertises strict Add/Update/Delete sections, not Move to; unsupported directives must fail before mutation." },
     files: { "a.txt": "content\n" },
-    patch: "*** Begin Patch\n*** Update File: a.txt\n*** Move to: c.txt\n@@\n-content\n+content\n*** End Patch",
+    patch: "*** Begin Patch\n*** Update File: a.txt\n*** Move to: c.txt\n@@\n-content\n+moved\n*** End Patch",
+  },
+  {
+    name: "pure_rename_no_hunks",
+    files: { "a.txt": "keep\n" },
+    patch: "*** Begin Patch\n*** Update File: a.txt\n*** Move to: b.txt\n*** End Patch",
+  },
+  {
+    name: "move_to_same_file_rejected",
+    contract: { reject: true, reason: "A rename target equal to its own source is refused before mutation instead of silently degenerating to an update." },
+    files: { "a.txt": "x\n" },
+    patch: "*** Begin Patch\n*** Update File: a.txt\n*** Move to: a.txt\n*** End Patch",
   },
   {
     name: "bom_preserved",
