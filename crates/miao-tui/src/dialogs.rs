@@ -2791,6 +2791,29 @@ mod tests {
     }
 
     #[test]
+    fn the_revert_confirmation_names_the_side_effects_it_leaves_alone() {
+        // HIS-03: the undo prompt is where the operator learns shell side
+        // effects are outside what a revert undoes, on a history-only
+        // boundary just like on a file plan.
+        let plan = crate::session::RevertPlan::from_value(&serde_json::json!({
+            "available": false,
+            "reason": "no-file-snapshot"
+        }));
+        let revert = Dialog::confirm_revert(4, &plan);
+        let Dialog::Confirm(confirm) = &revert else {
+            panic!("a revert asks first");
+        };
+        assert!(
+            confirm
+                .message
+                .contains("Shell commands and other side effects cannot be undone."),
+            "{}",
+            confirm.message
+        );
+        assert!(!confirm.confirmed);
+    }
+
+    #[test]
     fn a_jobs_row_names_the_job_and_x_stops_it() {
         // A Session with no jobs says so, and `x` on a row names that job so the
         // caller stops the one the operator is looking at.
