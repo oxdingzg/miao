@@ -339,7 +339,7 @@ mod tests {
         let fanout = Fanout::default();
         let producers = 4;
         let batch = 1_000;
-        let mut stalled = vec![fanout.subscribe(), fanout.subscribe()];
+        let mut stalled = [fanout.subscribe(), fanout.subscribe()];
         // A reader that keeps up, on its own thread, so the send side races
         // a real consumer rather than an idle queue.
         let keeping_up = {
