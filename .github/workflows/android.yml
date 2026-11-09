@@ -17,6 +17,12 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       # The runner image ships the JDK and the Android SDK the app module needs.
+      # Gradle 8.9 rejects the image's default JDK; use the JDK 17 the image installs.
+      - name: Select JDK 17
+        run: |
+          test -n "$JAVA_HOME_17_X64"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "PATH=$JAVA_HOME_17_X64/bin:$PATH" >> "$GITHUB_ENV"
       - name: Report the toolchain
         run: |
           java -version
@@ -46,6 +52,12 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      # Gradle 8.9 rejects the image's default JDK; use the JDK 17 the image installs.
+      - name: Select JDK 17
+        run: |
+          test -n "$JAVA_HOME_17_X64"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "PATH=$JAVA_HOME_17_X64/bin:$PATH" >> "$GITHUB_ENV"
       - name: Report the toolchain
         run: |
           java -version
