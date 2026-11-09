@@ -94,3 +94,34 @@ workspace 通过根 `package.json` 的 `workspaces.packages` 显式登记 `apps/
 - 上游已弃用该壳，桌面相关修复（安全公告、平台回归）不会再从上游流入。
 - 过渡期 `packages/desktop`（Electron）与 `apps/desktop`（Tauri）并存，两份壳的桌面能力要按清单对齐后再删除前者。
 - 若 P1 选择方案 2（Rust 实现 `/api/*`），会把已计划退休的 HttpApi 固化进发布二进制，与 V2-only 路线冲突。
+
+## 9. P1 实施约束（已对真实引擎实测）
+
+在 `miao serve`（由本仓库 `crates/miao-cli` 构建）上，经 SSH loopback 隧道直接驱动
+`@miao/client/engine` 得到的事实：
+
+- **线协议**：`POST /rpc`，请求体 `{id, method, params?}`；方法名就是 `Command` 枚举变体
+  `snake_case` 名（`crates/miao-engine/src/protocol.rs:240-241`），如 `sessions`、`history`、
+  `snapshot`、`model_catalog`、`initialize`、`admit`。
+- **无参命令不能带 `params: {}`**：会被回 `400 invalid_request`（"expected an id and a typed
+  method/params request"）。必须省略 `params` 或传 `null`；`request(method, params ?? {})` 这种
+  写法会让所有无参命令失败。`@miao/client/engine` 已把空对象归一化为省略。
+- **鉴权**：`Authorization: Bearer <token>`；token 由宿主经 `MIAO_SERVER_PASSWORD` 传入。
+  `/api/health` 是唯一无需 token 的就绪端点。
+- **协议版本**：响应头 `miao-engine-protocol: engine-http-0`，不匹配必须拒绝而不是降级。
+- 已验证可往返：`sessions`（列表）、`model_catalog`、`initialize`（建空会话）、`snapshot`；
+  新建会话会出现在下一次 `sessions` 结果中。
+- `serve` 需要模型与凭据来源（缺省会报 "API key or explicit credential source is required"），
+  因此壳只负责传端口与 token，模型/凭据仍由产品配置与凭据 broker 提供。
+
+未决问题（P1 必须逐条回答，不能假定）：
+
+1. **事件到视图模型**：TUI 用 Rust 侧 `crates/miao-tui/src/session.rs` 做投影；app 侧对应的是
+   `packages/app/src/utils/session-message.ts`。接入前要确认引擎事件（`kind` + `data`）能完整
+   覆盖 app 现有视图字段，缺口要么补投影，要么补事件。
+2. **配置与目录**：app 现在大量依赖 `/api/config`、`/api/agent`、`/api/provider` 等读取；
+   引擎侧对应命令的覆盖范围需要逐项核对，未被覆盖的能力要么迁移要么明确不支持。
+3. **终端**：app 用 `/api/pty/<id>/connect` WebSocket（`packages/app/src/utils/terminal-websocket-url.ts`）；
+   引擎侧是会话终端命令，需要新的桥接方案，不能假定 WebSocket 路径继续可用。
+4. **双通道过渡**：web 版仍走 `@miao/client` 的 `/api/*`，桌面与 web 不能各有一套 reducer；
+   过渡期以能力探测分流，且分流点必须收敛在一处（`PlatformProvider` 或 server 连接层）。
