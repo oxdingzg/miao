@@ -376,6 +376,10 @@ async fn edit_retargets_the_armed_pattern_and_keeps_identity() {
     assert_eq!(data["input"]["prompt"], json!("cron-fire"));
     let listed = store.crons("s").await.unwrap().remove(0);
     assert_eq!(listed["input"]["cron"], json!(edited));
+    assert_eq!(listed["cron"], json!(edited));
+    assert_eq!(listed["pattern"], json!(edited));
+    assert_eq!(listed["session_id"], json!("s"));
+    assert!(listed["timezone"].is_string());
     assert_eq!(listed["first_occurrence_ms"], data["first_occurrence_ms"]);
     assert_eq!(listed["next_occurrence_ms"], data["first_occurrence_ms"]);
     assert_eq!(listed["state"], "scheduled");

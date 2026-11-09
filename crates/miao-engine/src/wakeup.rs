@@ -124,7 +124,7 @@ impl Store {
             let original:Value=serde_json::from_str(&original.ok_or_else(||Error::Invalid("wakeup requires its dispatched intent".into()))?)?;
             let normalized=Input::parse(original["input"].clone()).map_err(|_|Error::Invalid("invalid wakeup intent".into()))?;
             if serde_json::to_value(normalized)?!=input{return Err(Error::Conflict);}
-            let data=json!({"timer_id":uuid::Uuid::new_v4().to_string(),"request_key":key,"location":location,"input":input,"due_at_ms":now_ms().saturating_add(input["delaySeconds"].as_u64().unwrap_or(0)*1000),"state":"scheduled"});
+            let data=json!({"timer_id":uuid::Uuid::new_v4().to_string(),"request_key":key,"location":location,"input":input,"due_at_ms":now_ms().saturating_add(input["delaySeconds"].as_u64().unwrap_or(0)*1000),"timezone":crate::cron::timezone_label(),"state":"scheduled"});
             append(&tx,&session,"wakeup.scheduled",data.clone())?;tx.commit()?;Ok(data)
         }).await
     }
@@ -192,7 +192,7 @@ impl Store {
         self.call(move|conn|{
             let mut stmt=conn.prepare("SELECT data FROM engine_event WHERE session_id=?1 AND kind='wakeup.scheduled' ORDER BY seq DESC LIMIT 100")?;
             let rows=stmt.query_map([&session],|row|row.get::<_,String>(0))?;
-            rows.map(|row|{let mut data:Value=serde_json::from_str(&row?)?;let id=data["timer_id"].as_str().ok_or_else(||Error::Invalid("timer id missing".into()))?.to_owned();overlay(conn,&session,&id,&mut data)?;if let Some(resolved)=resolution(conn,&session,&id)?{data["state"]=resolved["state"].clone();data["result"]=resolved;}Ok(data)}).collect()
+            rows.map(|row|{let mut data:Value=serde_json::from_str(&row?)?;let id=data["timer_id"].as_str().ok_or_else(||Error::Invalid("timer id missing".into()))?.to_owned();overlay(conn,&session,&id,&mut data)?;data["session_id"]=json!(session);if let Some(resolved)=resolution(conn,&session,&id)?{data["state"]=resolved["state"].clone();data["result"]=resolved;}Ok(data)}).collect()
         }).await
     }
     /// Restart adoption: unresolved timers switch ownership to this process

@@ -170,7 +170,7 @@ impl Store {
             let original:Option<String>=tx.query_row("SELECT t.input FROM engine_tool t JOIN engine_run r ON r.id=t.run_id WHERE t.id=?1 AND t.name='cron_create' AND t.state='dispatched' AND r.session_id=?2 AND r.state='running'",params![key,session],|row|row.get(0)).optional()?;
             let original:Value=serde_json::from_str(&original.ok_or_else(||Error::Invalid("cron requires its dispatched intent".into()))?)?;
             if serde_json::to_value(Input::parse(original["input"].clone()).map_err(|_|Error::Invalid("invalid cron intent".into()))?)?!=input{return Err(Error::Conflict);}
-            let data=json!({"cron_id":uuid::Uuid::new_v4().to_string(),"request_key":key,"location":location,"input":input,"first_occurrence_ms":window.start,"expires_at_ms":window.end,"timezone":"system_local","state":"scheduled"});
+            let data=json!({"cron_id":uuid::Uuid::new_v4().to_string(),"request_key":key,"location":location,"input":input,"first_occurrence_ms":window.start,"expires_at_ms":window.end,"timezone":timezone_label(),"state":"scheduled"});
             append(&tx,&session,"cron.scheduled",data.clone())?;tx.commit()?;Ok(data)
         }).await
     }
@@ -259,6 +259,10 @@ impl Store {
         self.call(move|conn|{
             let mut stmt=conn.prepare("SELECT data FROM engine_event WHERE session_id=?1 AND kind='cron.scheduled' ORDER BY seq DESC LIMIT 100")?;let rows=stmt.query_map([&session],|row|row.get::<_,String>(0))?;
             rows.map(|row|{let mut data:Value=serde_json::from_str(&row?)?;let id=data["cron_id"].as_str().ok_or_else(||Error::Invalid("cron id missing".into()))?.to_owned();overlay(conn,&session,&id,&mut data)?;
+                // Display fields a row projects for its owner: the expression
+                // (both spellings a client reads), the owning Session, and
+                // the zone the occurrences were computed in.
+                data["cron"]=data["input"]["cron"].clone();data["pattern"]=data["input"]["cron"].clone();data["session_id"]=json!(session);
                 let next:Option<String>=conn.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='cron.next' AND json_extract(data,'$.cron_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,id],|row|row.get(0)).optional()?;
                 let counts:(u64,u64)=conn.query_row("SELECT COALESCE(sum(kind='cron.fired'),0),COALESCE(sum(kind='cron.skipped'),0) FROM engine_event WHERE session_id=?1 AND kind IN ('cron.fired','cron.skipped') AND json_extract(data,'$.cron_id')=?2",params![session,id],|row|Ok((row.get(0)?,row.get(1)?)))?;
                 let resolved=resolution(conn,&session,id)?;data["fired_count"]=json!(counts.0);data["skipped_count"]=json!(counts.1);data["next_occurrence_ms"]=next.map(|value|serde_json::from_str::<Value>(&value)).transpose()?.map(|value|value["next_occurrence_ms"].clone()).unwrap_or_else(||data["first_occurrence_ms"].clone());

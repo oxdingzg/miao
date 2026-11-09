@@ -299,6 +299,8 @@ async fn edit_moves_the_due_time_and_keeps_identity() {
     assert_eq!(data["input"]["prompt"], json!("fire-me"));
     let listed = store.wakeups("s").await.unwrap().remove(0);
     assert_eq!(listed["due_at_ms"], data["due_at_ms"]);
+    assert_eq!(listed["session_id"], json!("s"));
+    assert!(listed["timezone"].is_string());
     assert!(
         listed["due_at_ms"].as_u64().unwrap()
             >= original["due_at_ms"].as_u64().unwrap() + 3_500_000
