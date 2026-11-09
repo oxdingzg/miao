@@ -1438,10 +1438,6 @@ impl Tools {
                     std::iter::once(operation.path.as_str()).chain(operation.move_to.as_deref())
                 {
                     let candidate = self.contained_target(target).await?;
-                    eprintln!(
-                        "DBG protected={:?} candidate={:?} move_to={:?}",
-                        self.protected, candidate, operation.move_to
-                    );
                     if self.protected.contains(&candidate) {
                         return Err(ToolError::ProtectedResource);
                     }
