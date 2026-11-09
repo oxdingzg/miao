@@ -170,653 +170,51 @@ pub struct Loaded {
     pub mode: ThemeMode,
 }
 
-const BUILTIN_THEMES: &[(&str, Palette)] = &[
-    // aura
-    (
-        "aura",
-        Palette {
-            primary: rgb("a277ff"),
-            secondary: rgb("f694ff"),
-            accent: rgb("a277ff"),
-            error: rgb("ff6767"),
-            warning: rgb("ffca85"),
-            success: rgb("61ffca"),
-            text: rgb("edecee"),
-            text_muted: rgb("6d6d6d"),
-            background: rgb("0f0f0f"),
-            surface: rgb("15141b"),
-            element: rgb("15141b"),
-            border: rgb("2d2d2d"),
-            border_active: rgb("6d6d6d"),
-        },
-    ),
-    // ayu
-    (
-        "ayu",
-        Palette {
-            primary: rgb("59C2FF"),
-            secondary: rgb("D2A6FF"),
-            accent: rgb("E6B450"),
-            error: rgb("D95757"),
-            warning: rgb("E6B673"),
-            success: rgb("7FD962"),
-            text: rgb("BFBDB6"),
-            text_muted: rgb("565B66"),
-            background: rgb("0B0E14"),
-            surface: rgb("0F131A"),
-            element: rgb("0D1017"),
-            border: rgb("6C7380"),
-            border_active: rgb("6C7380"),
-        },
-    ),
-    // catppuccin
-    (
-        "catppuccin",
-        Palette {
-            primary: rgb("89b4fa"),
-            secondary: rgb("cba6f7"),
-            accent: rgb("f5c2e7"),
-            error: rgb("f38ba8"),
-            warning: rgb("f9e2af"),
-            success: rgb("a6e3a1"),
-            text: rgb("cdd6f4"),
-            text_muted: rgb("9399b2"),
-            background: rgb("1e1e2e"),
-            surface: rgb("181825"),
-            element: rgb("11111b"),
-            border: rgb("313244"),
-            border_active: rgb("45475a"),
-        },
-    ),
-    // catppuccin-frappe
+/// The TypeScript theme assets every binary carries, in menu order: a name
+/// plus the verbatim `assets/*.json` text. Both halves of every `{dark,
+/// light}` pair travel with the file, so a pinned mode recolours built-in
+/// themes the same way it recolours custom ones.
+const BUILTIN_ASSETS: &[(&str, &str)] = &[
+    ("aura", include_str!("assets/aura.json")),
+    ("ayu", include_str!("assets/ayu.json")),
+    ("catppuccin", include_str!("assets/catppuccin.json")),
     (
         "catppuccin-frappe",
-        Palette {
-            primary: rgb("8da4e2"),
-            secondary: rgb("ca9ee6"),
-            accent: rgb("f4b8e4"),
-            error: rgb("e78284"),
-            warning: rgb("e5c890"),
-            success: rgb("a6d189"),
-            text: rgb("c6d0f5"),
-            text_muted: rgb("949cb8"),
-            background: rgb("303446"),
-            surface: rgb("292c3c"),
-            element: rgb("232634"),
-            border: rgb("414559"),
-            border_active: rgb("51576d"),
-        },
+        include_str!("assets/catppuccin-frappe.json"),
     ),
-    // catppuccin-macchiato
     (
         "catppuccin-macchiato",
-        Palette {
-            primary: rgb("8aadf4"),
-            secondary: rgb("c6a0f6"),
-            accent: rgb("f5bde6"),
-            error: rgb("ed8796"),
-            warning: rgb("eed49f"),
-            success: rgb("a6da95"),
-            text: rgb("cad3f5"),
-            text_muted: rgb("939ab7"),
-            background: rgb("24273a"),
-            surface: rgb("1e2030"),
-            element: rgb("181926"),
-            border: rgb("363a4f"),
-            border_active: rgb("494d64"),
-        },
+        include_str!("assets/catppuccin-macchiato.json"),
     ),
-    // cobalt2
-    (
-        "cobalt2",
-        Palette {
-            primary: rgb("0088ff"),
-            secondary: rgb("9a5feb"),
-            accent: rgb("2affdf"),
-            error: rgb("ff0088"),
-            warning: rgb("ffc600"),
-            success: rgb("9eff80"),
-            text: rgb("ffffff"),
-            text_muted: rgb("adb7c9"),
-            background: rgb("193549"),
-            surface: rgb("122738"),
-            element: rgb("1f4662"),
-            border: rgb("1f4662"),
-            border_active: rgb("0088ff"),
-        },
-    ),
-    // cursor
-    (
-        "cursor",
-        Palette {
-            primary: rgb("88c0d0"),
-            secondary: rgb("81a1c1"),
-            accent: rgb("88c0d0"),
-            error: rgb("e34671"),
-            warning: rgb("f1b467"),
-            success: rgb("3fa266"),
-            text: rgb("e4e4e4"),
-            text_muted: rgb("e4e4e4"),
-            background: rgb("181818"),
-            surface: rgb("141414"),
-            element: rgb("262626"),
-            border: rgb("e4e4e4"),
-            border_active: rgb("88c0d0"),
-        },
-    ),
-    // dracula
-    (
-        "dracula",
-        Palette {
-            primary: rgb("bd93f9"),
-            secondary: rgb("ff79c6"),
-            accent: rgb("8be9fd"),
-            error: rgb("ff5555"),
-            warning: rgb("f1fa8c"),
-            success: rgb("50fa7b"),
-            text: rgb("f8f8f2"),
-            text_muted: rgb("6272a4"),
-            background: rgb("282a36"),
-            surface: rgb("21222c"),
-            element: rgb("44475a"),
-            border: rgb("44475a"),
-            border_active: rgb("bd93f9"),
-        },
-    ),
-    // everforest
-    (
-        "everforest",
-        Palette {
-            primary: rgb("a7c080"),
-            secondary: rgb("7fbbb3"),
-            accent: rgb("d699b6"),
-            error: rgb("e67e80"),
-            warning: rgb("e69875"),
-            success: rgb("a7c080"),
-            text: rgb("d3c6aa"),
-            text_muted: rgb("7a8478"),
-            background: rgb("2d353b"),
-            surface: rgb("333c43"),
-            element: rgb("343f44"),
-            border: rgb("859289"),
-            border_active: rgb("9da9a0"),
-        },
-    ),
-    // flexoki
-    (
-        "flexoki",
-        Palette {
-            primary: rgb("DA702C"),
-            secondary: rgb("4385BE"),
-            accent: rgb("8B7EC8"),
-            error: rgb("D14D41"),
-            warning: rgb("DA702C"),
-            success: rgb("879A39"),
-            text: rgb("CECDC3"),
-            text_muted: rgb("6F6E69"),
-            background: rgb("100F0F"),
-            surface: rgb("1C1B1A"),
-            element: rgb("282726"),
-            border: rgb("575653"),
-            border_active: rgb("6F6E69"),
-        },
-    ),
-    // github
-    (
-        "github",
-        Palette {
-            primary: rgb("58a6ff"),
-            secondary: rgb("bc8cff"),
-            accent: rgb("39c5cf"),
-            error: rgb("f85149"),
-            warning: rgb("e3b341"),
-            success: rgb("3fb950"),
-            text: rgb("c9d1d9"),
-            text_muted: rgb("8b949e"),
-            background: rgb("0d1117"),
-            surface: rgb("010409"),
-            element: rgb("161b22"),
-            border: rgb("30363d"),
-            border_active: rgb("58a6ff"),
-        },
-    ),
-    // gruvbox
-    (
-        "gruvbox",
-        Palette {
-            primary: rgb("83a598"),
-            secondary: rgb("d3869b"),
-            accent: rgb("8ec07c"),
-            error: rgb("fb4934"),
-            warning: rgb("fe8019"),
-            success: rgb("b8bb26"),
-            text: rgb("ebdbb2"),
-            text_muted: rgb("928374"),
-            background: rgb("282828"),
-            surface: rgb("3c3836"),
-            element: rgb("504945"),
-            border: rgb("665c54"),
-            border_active: rgb("ebdbb2"),
-        },
-    ),
-    // kanagawa
-    (
-        "kanagawa",
-        Palette {
-            primary: rgb("7E9CD8"),
-            secondary: rgb("957FB8"),
-            accent: rgb("D27E99"),
-            error: rgb("E82424"),
-            warning: rgb("D7A657"),
-            success: rgb("98BB6C"),
-            text: rgb("DCD7BA"),
-            text_muted: rgb("727169"),
-            background: rgb("1F1F28"),
-            surface: rgb("2A2A37"),
-            element: rgb("363646"),
-            border: rgb("54546D"),
-            border_active: rgb("C38D9D"),
-        },
-    ),
-    // material
-    (
-        "material",
-        Palette {
-            primary: rgb("82aaff"),
-            secondary: rgb("c792ea"),
-            accent: rgb("89ddff"),
-            error: rgb("f07178"),
-            warning: rgb("ffcb6b"),
-            success: rgb("c3e88d"),
-            text: rgb("eeffff"),
-            text_muted: rgb("546e7a"),
-            background: rgb("263238"),
-            surface: rgb("1e272c"),
-            element: rgb("37474f"),
-            border: rgb("37474f"),
-            border_active: rgb("82aaff"),
-        },
-    ),
-    // matrix
-    (
-        "matrix",
-        Palette {
-            primary: rgb("2eff6a"),
-            secondary: rgb("00efff"),
-            accent: rgb("c770ff"),
-            error: rgb("ff4b4b"),
-            warning: rgb("e6ff57"),
-            success: rgb("62ff94"),
-            text: rgb("62ff94"),
-            text_muted: rgb("8ca391"),
-            background: rgb("0a0e0a"),
-            surface: rgb("0e130d"),
-            element: rgb("141c12"),
-            border: rgb("1e2a1b"),
-            border_active: rgb("2eff6a"),
-        },
-    ),
-    // mercury
-    (
-        "mercury",
-        Palette {
-            primary: rgb("8da4f5"),
-            secondary: rgb("a7b6f8"),
-            accent: rgb("8da4f5"),
-            error: rgb("fc92b4"),
-            warning: rgb("fc9b6f"),
-            success: rgb("77c599"),
-            text: rgb("dddde5"),
-            text_muted: rgb("9d9da8"),
-            background: rgb("171721"),
-            surface: rgb("10101a"),
-            element: rgb("272735"),
-            border: rgb("b4b7c8"),
-            border_active: rgb("8da4f5"),
-        },
-    ),
-    // monokai
-    (
-        "monokai",
-        Palette {
-            primary: rgb("66d9ef"),
-            secondary: rgb("ae81ff"),
-            accent: rgb("a6e22e"),
-            error: rgb("f92672"),
-            warning: rgb("e6db74"),
-            success: rgb("a6e22e"),
-            text: rgb("f8f8f2"),
-            text_muted: rgb("75715e"),
-            background: rgb("272822"),
-            surface: rgb("1e1f1c"),
-            element: rgb("3e3d32"),
-            border: rgb("3e3d32"),
-            border_active: rgb("66d9ef"),
-        },
-    ),
-    // nightowl
-    (
-        "nightowl",
-        Palette {
-            primary: rgb("82AAFF"),
-            secondary: rgb("7fdbca"),
-            accent: rgb("c792ea"),
-            error: rgb("EF5350"),
-            warning: rgb("ecc48d"),
-            success: rgb("c5e478"),
-            text: rgb("d6deeb"),
-            text_muted: rgb("5f7e97"),
-            background: rgb("011627"),
-            surface: rgb("0b253a"),
-            element: rgb("0b253a"),
-            border: rgb("5f7e97"),
-            border_active: rgb("82AAFF"),
-        },
-    ),
-    // nord
-    (
-        "nord",
-        Palette {
-            primary: rgb("88C0D0"),
-            secondary: rgb("81A1C1"),
-            accent: rgb("8FBCBB"),
-            error: rgb("BF616A"),
-            warning: rgb("D08770"),
-            success: rgb("A3BE8C"),
-            text: rgb("ECEFF4"),
-            text_muted: rgb("8B95A7"),
-            background: rgb("2E3440"),
-            surface: rgb("3B4252"),
-            element: rgb("434C5E"),
-            border: rgb("434C5E"),
-            border_active: rgb("4C566A"),
-        },
-    ),
-    // one-dark
-    (
-        "one-dark",
-        Palette {
-            primary: rgb("61afef"),
-            secondary: rgb("c678dd"),
-            accent: rgb("56b6c2"),
-            error: rgb("e06c75"),
-            warning: rgb("e5c07b"),
-            success: rgb("98c379"),
-            text: rgb("abb2bf"),
-            text_muted: rgb("5c6370"),
-            background: rgb("282c34"),
-            surface: rgb("21252b"),
-            element: rgb("353b45"),
-            border: rgb("393f4a"),
-            border_active: rgb("61afef"),
-        },
-    ),
-    // osaka-jade
-    (
-        "osaka-jade",
-        Palette {
-            primary: rgb("2DD5B7"),
-            secondary: rgb("D2689C"),
-            accent: rgb("549e6a"),
-            error: rgb("FF5345"),
-            warning: rgb("E5C736"),
-            success: rgb("549e6a"),
-            text: rgb("C1C497"),
-            text_muted: rgb("53685B"),
-            background: rgb("111c18"),
-            surface: rgb("1a2520"),
-            element: rgb("23372B"),
-            border: rgb("3d4a44"),
-            border_active: rgb("2DD5B7"),
-        },
-    ),
-    // miao
-    (
-        "miao",
-        Palette {
-            primary: rgb("d77757"),
-            secondary: rgb("b1b9f9"),
-            accent: rgb("65d9ef"),
-            error: rgb("ff6b80"),
-            warning: rgb("ffc107"),
-            success: rgb("4eba65"),
-            text: rgb("f1f6ff"),
-            text_muted: rgb("b9b9b6"),
-            background: rgb("2e3440"),
-            surface: rgb("343b49"),
-            element: rgb("3b4252"),
-            border: rgb("5d687d"),
-            border_active: rgb("9aa6ba"),
-        },
-    ),
-    // opencode
-    (
-        "opencode",
-        Palette {
-            primary: rgb("fab283"),
-            secondary: rgb("5c9cf5"),
-            accent: rgb("9d7cd8"),
-            error: rgb("e06c75"),
-            warning: rgb("f5a742"),
-            success: rgb("7fd88f"),
-            text: rgb("eeeeee"),
-            text_muted: rgb("808080"),
-            background: rgb("0a0a0a"),
-            surface: rgb("141414"),
-            element: rgb("1e1e1e"),
-            border: rgb("484848"),
-            border_active: rgb("606060"),
-        },
-    ),
-    // orng
-    (
-        "orng",
-        Palette {
-            primary: rgb("EC5B2B"),
-            secondary: rgb("EE7948"),
-            accent: rgb("FFF7F1"),
-            error: rgb("e06c75"),
-            warning: rgb("EC5B2B"),
-            success: rgb("6ba1e6"),
-            text: rgb("eeeeee"),
-            text_muted: rgb("808080"),
-            background: rgb("0a0a0a"),
-            surface: rgb("141414"),
-            element: rgb("1e1e1e"),
-            border: rgb("EC5B2B"),
-            border_active: rgb("EE7948"),
-        },
-    ),
-    // lucent-orng
-    (
-        "lucent-orng",
-        Palette {
-            primary: rgb("EC5B2B"),
-            secondary: rgb("EE7948"),
-            accent: rgb("FFF7F1"),
-            error: rgb("e06c75"),
-            warning: rgb("EC5B2B"),
-            success: rgb("6ba1e6"),
-            text: rgb("eeeeee"),
-            text_muted: rgb("808080"),
-            background: Color::Reset,
-            surface: Color::Reset,
-            element: Color::Reset,
-            border: rgb("EC5B2B"),
-            border_active: rgb("EE7948"),
-        },
-    ),
-    // palenight
-    (
-        "palenight",
-        Palette {
-            primary: rgb("82aaff"),
-            secondary: rgb("c792ea"),
-            accent: rgb("89ddff"),
-            error: rgb("f07178"),
-            warning: rgb("ffcb6b"),
-            success: rgb("c3e88d"),
-            text: rgb("a6accd"),
-            text_muted: rgb("676e95"),
-            background: rgb("292d3e"),
-            surface: rgb("1e2132"),
-            element: rgb("32364a"),
-            border: rgb("32364a"),
-            border_active: rgb("82aaff"),
-        },
-    ),
-    // rosepine
-    (
-        "rosepine",
-        Palette {
-            primary: rgb("9ccfd8"),
-            secondary: rgb("c4a7e7"),
-            accent: rgb("ebbcba"),
-            error: rgb("eb6f92"),
-            warning: rgb("f6c177"),
-            success: rgb("31748f"),
-            text: rgb("e0def4"),
-            text_muted: rgb("6e6a86"),
-            background: rgb("191724"),
-            surface: rgb("1f1d2e"),
-            element: rgb("26233a"),
-            border: rgb("403d52"),
-            border_active: rgb("9ccfd8"),
-        },
-    ),
-    // solarized
-    (
-        "solarized",
-        Palette {
-            primary: rgb("268bd2"),
-            secondary: rgb("6c71c4"),
-            accent: rgb("2aa198"),
-            error: rgb("dc322f"),
-            warning: rgb("b58900"),
-            success: rgb("859900"),
-            text: rgb("839496"),
-            text_muted: rgb("586e75"),
-            background: rgb("002b36"),
-            surface: rgb("073642"),
-            element: rgb("073642"),
-            border: rgb("073642"),
-            border_active: rgb("586e75"),
-        },
-    ),
-    // synthwave84
-    (
-        "synthwave84",
-        Palette {
-            primary: rgb("36f9f6"),
-            secondary: rgb("ff7edb"),
-            accent: rgb("b084eb"),
-            error: rgb("fe4450"),
-            warning: rgb("fede5d"),
-            success: rgb("72f1b8"),
-            text: rgb("ffffff"),
-            text_muted: rgb("848bbd"),
-            background: rgb("262335"),
-            surface: rgb("1e1a29"),
-            element: rgb("2a2139"),
-            border: rgb("495495"),
-            border_active: rgb("36f9f6"),
-        },
-    ),
-    // tokyonight
-    (
-        "tokyonight",
-        Palette {
-            primary: rgb("82aaff"),
-            secondary: rgb("c099ff"),
-            accent: rgb("ff966c"),
-            error: rgb("ff757f"),
-            warning: rgb("ff966c"),
-            success: rgb("c3e88d"),
-            text: rgb("c8d3f5"),
-            text_muted: rgb("828bb8"),
-            background: rgb("1a1b26"),
-            surface: rgb("1e2030"),
-            element: rgb("222436"),
-            border: rgb("737aa2"),
-            border_active: rgb("9099b2"),
-        },
-    ),
-    // vesper
-    (
-        "vesper",
-        Palette {
-            primary: rgb("FFC799"),
-            secondary: rgb("99FFE4"),
-            accent: rgb("FFC799"),
-            error: rgb("FF8080"),
-            warning: rgb("FFC799"),
-            success: rgb("99FFE4"),
-            text: rgb("FFFFFF"),
-            text_muted: rgb("A0A0A0"),
-            background: rgb("101010"),
-            surface: rgb("101010"),
-            element: rgb("101010"),
-            border: rgb("282828"),
-            border_active: rgb("FFC799"),
-        },
-    ),
-    // vercel
-    (
-        "vercel",
-        Palette {
-            primary: rgb("0070F3"),
-            secondary: rgb("52A8FF"),
-            accent: rgb("8E4EC6"),
-            error: rgb("E5484D"),
-            warning: rgb("FFB224"),
-            success: rgb("46A758"),
-            text: rgb("EDEDED"),
-            text_muted: rgb("878787"),
-            background: rgb("000000"),
-            surface: rgb("1A1A1A"),
-            element: rgb("292929"),
-            border: rgb("1F1F1F"),
-            border_active: rgb("454545"),
-        },
-    ),
-    // zenburn
-    (
-        "zenburn",
-        Palette {
-            primary: rgb("8cd0d3"),
-            secondary: rgb("dc8cc3"),
-            accent: rgb("93e0e3"),
-            error: rgb("cc9393"),
-            warning: rgb("f0dfaf"),
-            success: rgb("7f9f7f"),
-            text: rgb("dcdccc"),
-            text_muted: rgb("9f9f9f"),
-            background: rgb("3f3f3f"),
-            surface: rgb("4f4f4f"),
-            element: rgb("5f5f5f"),
-            border: rgb("5f5f5f"),
-            border_active: rgb("8cd0d3"),
-        },
-    ),
-    // carbonfox
-    (
-        "carbonfox",
-        Palette {
-            primary: rgb("33b1ff"),
-            secondary: rgb("78a9ff"),
-            accent: rgb("ff7eb6"),
-            error: rgb("ee5396"),
-            warning: rgb("f1c21b"),
-            success: rgb("25be6a"),
-            text: rgb("f2f4f8"),
-            text_muted: rgb("7d848f"),
-            background: rgb("161616"),
-            surface: rgb("1a1a1a"),
-            element: rgb("1e1e1e"),
-            border: rgb("303030"),
-            border_active: rgb("33b1ff"),
-        },
-    ),
+    ("cobalt2", include_str!("assets/cobalt2.json")),
+    ("cursor", include_str!("assets/cursor.json")),
+    ("dracula", include_str!("assets/dracula.json")),
+    ("everforest", include_str!("assets/everforest.json")),
+    ("flexoki", include_str!("assets/flexoki.json")),
+    ("github", include_str!("assets/github.json")),
+    ("gruvbox", include_str!("assets/gruvbox.json")),
+    ("kanagawa", include_str!("assets/kanagawa.json")),
+    ("material", include_str!("assets/material.json")),
+    ("matrix", include_str!("assets/matrix.json")),
+    ("mercury", include_str!("assets/mercury.json")),
+    ("monokai", include_str!("assets/monokai.json")),
+    ("nightowl", include_str!("assets/nightowl.json")),
+    ("nord", include_str!("assets/nord.json")),
+    ("one-dark", include_str!("assets/one-dark.json")),
+    ("osaka-jade", include_str!("assets/osaka-jade.json")),
+    ("miao", include_str!("assets/miao.json")),
+    ("opencode", include_str!("assets/opencode.json")),
+    ("orng", include_str!("assets/orng.json")),
+    ("lucent-orng", include_str!("assets/lucent-orng.json")),
+    ("palenight", include_str!("assets/palenight.json")),
+    ("rosepine", include_str!("assets/rosepine.json")),
+    ("solarized", include_str!("assets/solarized.json")),
+    ("synthwave84", include_str!("assets/synthwave84.json")),
+    ("tokyonight", include_str!("assets/tokyonight.json")),
+    ("vesper", include_str!("assets/vesper.json")),
+    ("vercel", include_str!("assets/vercel.json")),
+    ("zenburn", include_str!("assets/zenburn.json")),
+    ("carbonfox", include_str!("assets/carbonfox.json")),
 ];
 
 pub const DEFAULT_THEME: &str = "miao";
@@ -831,10 +229,17 @@ pub struct Catalog {
 }
 
 impl Catalog {
-    pub fn from_custom(custom: impl IntoIterator<Item = (String, Palette)>) -> Self {
-        let mut entries: Vec<(String, Palette)> = BUILTIN_THEMES
+    /// The built-ins resolved under `mode`, overlaid with the custom themes.
+    fn from_assets(
+        mode: ThemeMode,
+        custom: impl IntoIterator<Item = (String, Palette)>,
+        warnings: &mut Vec<String>,
+    ) -> Self {
+        let mut entries: Vec<(String, Palette)> = BUILTIN_ASSETS
             .iter()
-            .map(|(name, palette)| (name.to_string(), *palette))
+            .filter_map(|(name, _)| {
+                builtin_palette(name, mode, warnings).map(|palette| (name.to_string(), palette))
+            })
             .collect();
         for (name, palette) in custom {
             match entries.iter_mut().find(|(existing, _)| *existing == name) {
@@ -845,8 +250,9 @@ impl Catalog {
         Self { entries }
     }
 
+    /// The catalog of built-ins alone, resolved dark: what a fixture wants.
     pub fn builtin() -> Self {
-        Self::from_custom(std::iter::empty())
+        Self::from_assets(ThemeMode::Dark, std::iter::empty(), &mut Vec::new())
     }
 
     /// Theme names in menu order.
@@ -862,11 +268,27 @@ impl Catalog {
     }
 }
 
-pub fn builtin(name: &str) -> Option<Palette> {
-    BUILTIN_THEMES
-        .iter()
-        .find(|(key, _)| *key == name)
-        .map(|(_, palette)| *palette)
+/// Parse one built-in asset under `mode`. The assets ship complete, so a
+/// warning here means the embedded file drifted from the schema.
+fn builtin_palette(name: &str, mode: ThemeMode, warnings: &mut Vec<String>) -> Option<Palette> {
+    let text = BUILTIN_ASSETS.iter().find(|(key, _)| *key == name)?.1;
+    let mut parsed_warnings = Vec::new();
+    let palette = match parse_theme(text, mode, &mut parsed_warnings) {
+        Ok(palette) => Some(palette),
+        Err(reason) => {
+            warnings.push(format!("built-in theme {name}: {reason}"));
+            None
+        }
+    };
+    for warning in parsed_warnings {
+        warnings.push(format!("built-in theme {name}: {warning}"));
+    }
+    palette
+}
+
+/// A built-in palette resolved under `mode`.
+pub fn builtin(name: &str, mode: ThemeMode) -> Option<Palette> {
+    builtin_palette(name, mode, &mut Vec::new())
 }
 
 pub fn load(workspace: &Path) -> Loaded {
@@ -893,7 +315,11 @@ pub(crate) fn load_at(workspace: &Path, global: Option<&Path>) -> Loaded {
             Err(err) => warnings.push(format!("failed to read {}: {err}", path.display())),
         }
     }
-    let catalog = Catalog::from_custom(custom_themes(workspace, global, mode, &mut warnings));
+    let catalog = Catalog::from_assets(
+        mode,
+        custom_themes(workspace, global, mode, &mut warnings),
+        &mut warnings,
+    );
     if name.is_empty() {
         // A saved choice only fills in when no config file named a theme.
         name = crate::state::preferences().theme.unwrap_or_default();
@@ -908,7 +334,7 @@ pub(crate) fn load_at(workspace: &Path, global: Option<&Path>) -> Loaded {
                 "unknown theme \"{name}\", falling back to {DEFAULT_THEME}"
             ));
             name = DEFAULT_THEME.to_string();
-            builtin(DEFAULT_THEME).expect("default theme is built in")
+            builtin(DEFAULT_THEME, mode).expect("default theme is built in")
         }
     };
     Loaded {
@@ -1324,7 +750,7 @@ mod tests {
     fn the_monochrome_palette_drops_every_colour_and_keeps_the_name() {
         let theme = Theme {
             name: "custom".into(),
-            palette: builtin(DEFAULT_THEME).expect("theme"),
+            palette: builtin(DEFAULT_THEME, ThemeMode::Dark).expect("theme"),
         };
         let plain = theme.monochrome();
         assert_eq!(plain.name, "custom");
@@ -1478,10 +904,69 @@ mod tests {
 
     #[test]
     fn built_in_palettes_resolve() {
-        for (name, _) in BUILTIN_THEMES {
-            assert!(builtin(name).is_some());
+        for (name, _) in BUILTIN_ASSETS {
+            assert!(builtin(name, ThemeMode::Dark).is_some());
         }
-        assert!(builtin("nope").is_none());
+        assert!(builtin("nope", ThemeMode::Dark).is_none());
+    }
+
+    #[test]
+    fn every_builtin_resolves_under_both_modes_without_warnings() {
+        for (name, _) in BUILTIN_ASSETS {
+            for mode in [ThemeMode::Dark, ThemeMode::Light] {
+                let mut warnings = Vec::new();
+                assert!(
+                    builtin_palette(name, mode, &mut warnings).is_some(),
+                    "built-in theme {name} does not resolve under {mode:?}"
+                );
+                assert!(
+                    warnings.is_empty(),
+                    "built-in theme {name} warned under {mode:?}: {warnings:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn pinning_light_recolours_the_built_in_catalog() {
+        let dark = Catalog::from_assets(ThemeMode::Dark, std::iter::empty(), &mut Vec::new());
+        let mut light_warnings = Vec::new();
+        let light = Catalog::from_assets(ThemeMode::Light, std::iter::empty(), &mut light_warnings);
+        assert!(light_warnings.is_empty(), "{light_warnings:?}");
+        assert_eq!(dark.names(), light.names(), "both modes ship the same menu");
+        let dark_default = dark.palette(DEFAULT_THEME).expect("default is built in");
+        let light_default = light.palette(DEFAULT_THEME).expect("default is built in");
+        assert_ne!(
+            dark_default.background, light_default.background,
+            "pinning light recolours the default theme"
+        );
+    }
+
+    #[test]
+    fn a_pinned_light_mode_recolours_the_default_theme_on_reload() {
+        let _env = crate::state::env_lock();
+        let state = workspace("pin-state");
+        let dir = workspace("pin-ws");
+        std::env::set_var("MIAO_TUI_STATE_DIR", &state);
+
+        assert_eq!(load_at(&dir, None).mode, ThemeMode::Dark);
+        let unpinned = load_at(&dir, None).theme.palette.background;
+
+        crate::state::save_mode_lock(Some("light"));
+        let loaded = load_at(&dir, None);
+        assert_eq!(loaded.mode, ThemeMode::Light);
+        assert_ne!(
+            loaded.theme.palette.background, unpinned,
+            "a pinned light mode recolours the default theme on reload"
+        );
+
+        crate::state::save_mode_lock(None);
+        assert_eq!(load_at(&dir, None).mode, ThemeMode::Dark);
+        assert_eq!(crate::state::preferences().theme_mode_lock, None);
+
+        std::env::remove_var("MIAO_TUI_STATE_DIR");
+        let _ = std::fs::remove_dir_all(&state);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn workspace(name: &str) -> PathBuf {
@@ -1551,7 +1036,10 @@ mod tests {
         let nord = loaded.catalog.palette("nord").expect("nord");
         assert_eq!(nord.primary, Color::Rgb(255, 0, 0));
         assert_eq!(nord.secondary, Color::Rgb(0xee, 0xee, 0xee));
-        assert_ne!(nord.secondary, builtin("nord").unwrap().secondary);
+        assert_ne!(
+            nord.secondary,
+            builtin("nord", ThemeMode::Dark).unwrap().secondary
+        );
         assert_eq!(
             loaded
                 .catalog
@@ -1631,7 +1119,7 @@ mod tests {
         // The same variables the web UI paints code with
         // (`packages/ui/src/styles/theme.css`), so a block keeps its colours
         // when the operator moves between the TUI and the rest of miao.
-        let palette = builtin(DEFAULT_THEME).expect("builtin theme");
+        let palette = builtin(DEFAULT_THEME, ThemeMode::Dark).expect("builtin theme");
         let syntax = palette.syntax();
         assert_eq!(
             syntax.string,
@@ -1651,7 +1139,7 @@ mod tests {
     fn a_light_background_gets_the_dark_twins_of_the_syntax_hues() {
         let light = Palette {
             background: rgb("ffffff"),
-            ..builtin(DEFAULT_THEME).expect("builtin theme")
+            ..builtin(DEFAULT_THEME, ThemeMode::Dark).expect("builtin theme")
         };
         assert_eq!(light.syntax().string, rgb("006656"));
         assert_eq!(light.syntax().number, rgb("007b80"));
@@ -1659,7 +1147,7 @@ mod tests {
 
     #[test]
     fn the_monochrome_palette_hands_out_no_syntax_colour() {
-        let syntax = builtin(DEFAULT_THEME)
+        let syntax = builtin(DEFAULT_THEME, ThemeMode::Dark)
             .expect("builtin theme")
             .monochrome()
             .syntax();

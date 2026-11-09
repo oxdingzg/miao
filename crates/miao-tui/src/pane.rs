@@ -4187,7 +4187,11 @@ mod tests {
     fn animations_off_keep_the_landing_screen_still() {
         let theme = crate::theme::Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut home = Home::new(theme);
         assert!(
@@ -4445,7 +4449,9 @@ mod tests {
         // AGT-04: a displayed plan is not an implemented one, and a checklist is
         // not a Goal. Both are painted, and the Goal comes first with its own
         // header so the operator cannot read the todo list as the objective.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -4543,7 +4549,11 @@ mod tests {
         // do, not a clipped fragment of it.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let approval = crate::session::ApprovalView {
             request_id: "run-1/call_1".into(),
@@ -4602,7 +4612,11 @@ mod tests {
         // columns, not just at the wide default.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut composer = Composer::new(Path::new("."));
         composer.paste("fix the parser at forty columns");
@@ -4633,9 +4647,10 @@ mod tests {
         // UX-03: with every colour dropped, the glyph is what still says what
         // happened. A monochrome theme must not turn a checklist into one
         // undifferentiated column of text.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME)
-            .expect("theme")
-            .monochrome();
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme")
+                .monochrome();
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -4695,7 +4710,9 @@ mod tests {
 
     #[test]
     fn an_alerting_status_is_painted_in_the_warning_color() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -4730,7 +4747,11 @@ mod tests {
         // of the row, ahead of the model.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let status = StatusStrip {
             model: Some("fake/model".into()),
@@ -4771,7 +4792,9 @@ mod tests {
     /// border, the filter row and the hint.
     #[test]
     fn the_models_dialog_paints_its_rows() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -4929,7 +4952,9 @@ mod tests {
     /// prompt marker claimed the operator typed words they never wrote.
     #[test]
     fn injected_context_renders_as_a_note_not_a_prompt() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -4989,7 +5014,11 @@ mod tests {
     fn a_wrapped_code_block_keeps_its_box_edges() {
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let document = "```\nuname -a 输出是 Darwin host.local 25.5.0 Darwin Kernel Version 25.5.0 RELEASE_ARM64_T8112 arm64\n```";
         let rows = prose_lines(document, &theme);
@@ -5042,7 +5071,11 @@ mod tests {
         };
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let lines = crate::tool::lines(&tool, None, &theme, false, None);
         assert!(lines.len() > 1, "the fixture has a header and a body row");
@@ -5146,7 +5179,9 @@ mod tests {
 
     #[test]
     fn a_streamed_draft_is_parsed_on_demand_not_per_delta() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -5178,7 +5213,9 @@ mod tests {
 
     #[test]
     fn the_draft_shows_the_answer_before_it_is_committed() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -5214,7 +5251,9 @@ mod tests {
         // The TS transcript shows thinking as one header line while it streams
         // and keeps that line once the answer starts; the reasoning text itself
         // never tiles the screen.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -5266,7 +5305,9 @@ mod tests {
         // text, and nothing framing it. The panel it used to be drew a rule
         // above and below plus a background band, so a one-line question took
         // five rows of screen and read as a box something had been put into.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5313,7 +5354,9 @@ mod tests {
     /// read `✓ Miao · deepseek-v4-1-flash-261017` down the whole pane.
     #[test]
     fn the_step_footer_names_the_identity_only_when_it_changes() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5348,7 +5391,9 @@ mod tests {
     fn consecutive_inline_tools_butt_together_like_the_typescript_rows() {
         // Two single-row tools read as one list; prose reopens the gap the way
         // the TS sibling margin does.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5411,7 +5456,9 @@ mod tests {
         // The box's title is where the run's state lives: what the run is
         // doing, what is waiting, and anything the operator must know. An idle
         // Session says only the box's own name.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5437,7 +5484,9 @@ mod tests {
         // The tone is the only signal that separates a model still thinking
         // from one that has gone quiet; a monochrome title left the operator to
         // read the words every frame.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5462,7 +5511,9 @@ mod tests {
     /// rather than only its tail.
     #[test]
     fn a_long_draft_wraps_inside_the_box() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5602,7 +5653,9 @@ mod tests {
     /// count, which read as a lost message.
     #[test]
     fn a_queued_prompt_is_named_above_the_input() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5679,7 +5732,9 @@ mod tests {
 
     #[test]
     fn the_status_strip_carries_the_queued_count_like_the_typescript_hints() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5713,7 +5768,9 @@ mod tests {
 
     #[test]
     fn the_status_strip_pins_the_running_build_at_its_right_edge() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5747,7 +5804,9 @@ mod tests {
 
     #[test]
     fn a_running_tool_rides_the_tail_as_one_spinner_row() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -5817,7 +5876,9 @@ mod tests {
         // The TS default ("hide") drops reasoning that produced prose; a step
         // with no text keeps one duration header so a model that narrates
         // between tools still reads as having thought.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5884,7 +5945,9 @@ mod tests {
 
     #[test]
     fn a_failed_turn_renders_its_message_as_an_error_line() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5902,7 +5965,9 @@ mod tests {
 
     #[test]
     fn the_last_response_is_the_newest_assistant_text() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -5950,7 +6015,11 @@ mod tests {
         // body or the sidebar is doing beside it.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut shell = Shell::new(Path::new("."), theme);
         shell.status.model = Some("fake/model".into());
@@ -6025,7 +6094,11 @@ mod tests {
         // prose-width input.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut shell = Shell::new(Path::new("."), theme);
         let mut terminal =
@@ -6055,7 +6128,11 @@ mod tests {
     fn the_input_starts_on_the_transcripts_column() {
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut shell = Shell::new(Path::new("."), theme);
         shell.set_transcript(&Transcript {
@@ -6100,7 +6177,11 @@ mod tests {
         // 200-column lines: the same rule the session list follows.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut shell = Shell::new(Path::new("."), theme);
         shell.set_transcript(&Transcript {
@@ -6144,7 +6225,9 @@ mod tests {
         // the `● ` bullet: every wrapped row — first and continuation alike —
         // keeps the text inside the same width, and continuations start at the
         // bullet column, never at column zero.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -6179,7 +6262,9 @@ mod tests {
         // The TS prompt panel paints `❯ ` once, before the first row; wrapped
         // and multi-line continuations start at the marker column with the
         // panel edge and background intact.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -6222,7 +6307,9 @@ mod tests {
     fn the_thought_header_clips_instead_of_folding() {
         // TS ReasoningHeader is `wrapMode="none"`: a long summary is cut at the
         // row, never folded into a second line.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -6264,7 +6351,9 @@ mod tests {
     fn the_phase_row_right_aligns_the_elapsed_time_like_the_typescript_row() {
         // The elapsed time rides the phase it measures, inside the composer's
         // title: one fact on one line, in the box the operator is typing into.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -6400,7 +6489,11 @@ mod tests {
     fn a_command_completion_row_says_what_the_command_does() {
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut composer = Composer::new(Path::new("."));
         composer.completion = crate::editor::Completion {
@@ -6508,7 +6601,11 @@ mod tests {
     fn home_theme() -> Theme {
         Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         }
     }
 
@@ -7090,7 +7187,9 @@ mod draft_gap_tests {
     /// the first line of the answer sat on adjacent rows.
     #[test]
     fn the_thinking_header_is_separated_from_the_answer() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: "t".into(),
             palette,
@@ -7119,7 +7218,9 @@ mod draft_gap_tests {
     /// between two things, not above the only one.
     #[test]
     fn an_answer_without_thinking_starts_on_the_first_row() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: "t".into(),
             palette,
@@ -7143,7 +7244,9 @@ mod layout_alignment_tests {
     /// what the operator sees as "the left column does not line up".
     #[test]
     fn the_transcript_the_composer_and_the_sidebar_share_their_edges() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             std::path::Path::new("."),
             Theme {
@@ -7220,7 +7323,9 @@ mod draft_tool_tests {
     /// between them.
     #[test]
     fn a_streamed_tool_call_paints_a_tool_row() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -7267,7 +7372,9 @@ mod interleave_tests {
     /// when the turn committed.
     #[test]
     fn a_streamed_turn_keeps_its_arrival_order() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -7309,7 +7416,9 @@ mod final_layout_check {
     /// through the layout.
     #[test]
     fn no_cell_falls_back_to_the_terminal_default() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: "t".into(),
             palette,

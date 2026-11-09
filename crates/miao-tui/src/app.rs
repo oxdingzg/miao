@@ -4762,7 +4762,8 @@ mod tests {
     }
 
     fn app_with(startup: Startup) -> App {
-        let palette = theme::builtin(DEFAULT_THEME).expect("default theme is built in");
+        let palette = theme::builtin(DEFAULT_THEME, theme::ThemeMode::Dark)
+            .expect("default theme is built in");
         App::new(
             PathBuf::from("."),
             Theme {
@@ -4779,7 +4780,8 @@ mod tests {
     /// An app whose keymap was overridden, so a test can prove the help view
     /// follows live bindings instead of a written-down copy.
     fn app_with_overrides(overrides: &BTreeMap<String, Option<Vec<String>>>) -> App {
-        let palette = theme::builtin(DEFAULT_THEME).expect("default theme is built in");
+        let palette = theme::builtin(DEFAULT_THEME, theme::ThemeMode::Dark)
+            .expect("default theme is built in");
         App::new(
             PathBuf::from("."),
             Theme {
