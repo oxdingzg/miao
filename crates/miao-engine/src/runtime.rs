@@ -17,7 +17,10 @@ use futures_util::StreamExt;
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, RwLock as StdRwLock},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, RwLock as StdRwLock,
+    },
 };
 use tokio::io::AsyncBufReadExt;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex, Semaphore};
@@ -7556,9 +7559,19 @@ async fn execute_read_batch(
         .iter()
         .map(|(id, tool)| (id.clone(), tool.name().to_owned()))
         .collect();
+    // The started event declares a bound; this gauge is the settlement receipt
+    // that the declared reads actually overlapped — admission alone does not
+    // prove it, and a serialized execution would report 1.
+    let admitted = prepared.len();
+    let in_flight = Arc::new(AtomicUsize::new(0));
+    let peak = Arc::new(AtomicUsize::new(0));
     let mut pending = futures_util::stream::iter(prepared.into_iter().map(|(id, tool)| {
         let cancel = cancel.child_token();
+        let in_flight = in_flight.clone();
+        let peak = peak.clone();
         async move {
+            let now = in_flight.fetch_add(1, Ordering::Relaxed) + 1;
+            peak.fetch_max(now, Ordering::Relaxed);
             let ask = crate::worker::AskBridge {
                 store: &inner.store,
                 location: inner.tools.location(),
@@ -7570,6 +7583,7 @@ async fn execute_read_batch(
                 .tools
                 .execute_prepared(tool, policy, cancel, Some(&ask))
                 .await;
+            in_flight.fetch_sub(1, Ordering::Relaxed);
             (id, result)
         }
     }))
@@ -7582,6 +7596,14 @@ async fn execute_read_batch(
         };
         results.insert(id, outcome);
     }
+    inner
+        .store
+        .record(
+            session,
+            "tool.parallel.finished",
+            json!({"run_id":run,"admitted":admitted,"concurrency":4,"peak_in_flight":peak.load(Ordering::Relaxed)}),
+        )
+        .await?;
     // Settle every admitted read before the runner can return on cancellation
     // or a repeat limit; projected receipts preserve the provider's call order.
     for (id, name) in order {
