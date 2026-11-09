@@ -27,6 +27,16 @@ describe("public import boundaries", () => {
     expect(within(network, protocol).length).toBeGreaterThan(0)
     expect(within(network, core)).toEqual([])
     expect(within(network, server)).toEqual([])
+
+    // The engine attachment is what a window uses against a loopback control
+    // plane it does not own, so it must stay free of the generated API client.
+    const engine = await bundleInputs("@miao/client/engine", "browser")
+
+    expect(within(engine, effect)).toEqual([])
+    expect(within(engine, schema)).toEqual([])
+    expect(within(engine, protocol)).toEqual([])
+    expect(within(engine, core)).toEqual([])
+    expect(within(engine, server)).toEqual([])
   })
 })
 
