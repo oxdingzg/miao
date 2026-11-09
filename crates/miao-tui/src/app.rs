@@ -7493,6 +7493,101 @@ mod tests {
         assert!(app.shell.draft().is_empty());
     }
 
+    /// The streamed tool call is the one thing a run shows before its result
+    /// commits: the name paints as soon as the engine opens the call, and the
+    /// argument fragments — a JSON string the engine may split at any byte
+    /// boundary — must rejoin into the arguments the row renders.
+    #[test]
+    fn tool_frames_paint_the_call_and_its_arguments() {
+        let mut app = running_app("run-1");
+        let frame = |delta: serde_json::Value| {
+            AppEvent::Provider(serde_json::json!({
+                "kind": "provider.delta",
+                "session_id": "ses_1",
+                "run_id": "run-1",
+                "data": {"kind": "delta", "delta": delta},
+            }))
+        };
+        app.handle(frame(serde_json::json!({"kind": "tool.start", "name": "run_command"})));
+        app.handle(frame(serde_json::json!({"kind": "tool.input.delta", "delta": "{\"arg"})));
+        app.handle(frame(serde_json::json!({"kind": "tool.input.delta", "delta": "v\":[\"echo"})));
+        app.handle(frame(serde_json::json!({"kind": "tool.input.delta", "delta": "\","hi\"]}"})));
+        let painted = drafted(&mut app);
+        assert!(
+            painted.contains("run_command"),
+            "the draft names the tool the engine opened: {painted:?}"
+        );
+        assert!(
+            painted.contains("echo hi"),
+            "the split argument fragments rejoin into the rendered command: {painted:?}"
+        );
+    }
+
+    /// The committed projection replaces the stream once, and only once: the
+    /// answer the turn committed renders a single time, and the reasoning that
+    /// rode the draft retires with it — prose hides thinking entirely.
+    #[test]
+    fn a_committed_turn_shows_the_answer_once_and_retires_the_stream() {
+        let mut app = running_app("run-1");
+        app.handle(delta_frame("run-1", "reasoning.delta", "weighing"));
+        app.handle(delta_frame("run-1", "text.delta", "Hello"));
+        assert!(app.draft.as_ref().is_some_and(|draft| draft.text() == "Hello"));
+        let committed = Transcript::from_snapshot(&serde_json::json!({
+            "messages": [{"role": "assistant", "content": [
+                {"type": "reasoning", "text": "weighing"},
+                {"type": "text", "text": "Hello"},
+            ]}],
+        }));
+        app.handle(opened(committed, None));
+        assert!(app.draft.is_none());
+        assert!(app.shell.draft().is_empty(), "the streaming draft is gone");
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 30)).expect("terminal");
+        terminal.draw(|frame| app.shell.render(frame)).expect("draw");
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert_eq!(
+            text.matches("Hello").count(),
+            1,
+            "the committed answer renders exactly once: {text}"
+        );
+        assert!(
+            !text.contains("Thinking"),
+            "the draft's thinking header retires with the stream: {text}"
+        );
+        assert!(
+            !text.contains("weighing"),
+            "committed prose hides reasoning entirely: {text}"
+        );
+    }
+
+    /// A run that is over leaves nothing executing: the projection that
+    /// settles it must retire the running tool, not keep naming work that
+    /// finished.
+    #[test]
+    fn a_finished_run_retires_the_running_tool() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "tool.planned",
+            "run_id": "run-1",
+            "name": "bash",
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Running bash · Esc interrupt")
+        );
+        app.handle(opened(Transcript::default(), None));
+        assert!(app.tool_running.is_none(), "no tool is still running");
+        assert_eq!(strip_hints(&app), vec!["idle"]);
+        assert_eq!(app.shell.title.status(), Some("Idle"));
+    }
+
     #[test]
     fn help_lists_the_bindings_the_keymap_actually_uses() {
         let mut overrides = BTreeMap::new();

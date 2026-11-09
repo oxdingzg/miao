@@ -1186,6 +1186,53 @@ mod tests {
         assert!(!tool.failed);
     }
 
+    /// Providers that never stream thinking text still commit the block:
+    /// Bedrock's opaque reasoning arrives with an empty `text`, while a
+    /// transparent block carries the timestamps the duration header reads.
+    /// Both must survive the projection as reasoning parts.
+    #[test]
+    fn an_opaque_reasoning_block_keeps_its_header_facts() {
+        let snapshot = json!({
+            "session_id": "ses_a",
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": [
+                        { "type": "reasoning", "text": "" },
+                        {
+                            "type": "reasoning",
+                            "text": "weighing it",
+                            "time": { "created": 111, "completed": 222 }
+                        },
+                        { "type": "text", "text": "the answer" }
+                    ]
+                }
+            ]
+        });
+        let transcript = Transcript::from_snapshot(&snapshot);
+        let Entry::Assistant { parts, .. } = &transcript.entries[0] else {
+            panic!("expected assistant entry");
+        };
+        assert_eq!(
+            parts[0],
+            Part::Reasoning(Reasoning {
+                text: String::new(),
+                created_ms: None,
+                completed_ms: None,
+            }),
+            "an empty `text` is still a reasoning block"
+        );
+        assert_eq!(
+            parts[1],
+            Part::Reasoning(Reasoning {
+                text: "weighing it".into(),
+                created_ms: Some(111),
+                completed_ms: Some(222),
+            })
+        );
+        assert_eq!(parts[2], Part::Text("the answer".into()));
+    }
+
     #[test]
     fn a_failed_tool_result_is_marked() {
         let snapshot = json!({
