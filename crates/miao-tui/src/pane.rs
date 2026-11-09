@@ -3122,6 +3122,15 @@ impl Pane for SidebarPane {
                 "▾ Context",
                 Style::new().fg(palette.text_muted),
             )));
+            // The 24-hour strip is the first read of this section, not a block
+            // of its own at the far end of the column: it drew the same spend
+            // twice and sat a scroll away from the numbers it explains.
+            lines.extend(hourly_lines(
+                self.usage_hourly.as_ref(),
+                text_width,
+                &palette,
+            ));
+            lines.push(Line::default());
             match &self.usage {
                 None => lines.push(Line::from(Span::styled(
                     "no usage yet",
@@ -3374,15 +3383,6 @@ impl Pane for SidebarPane {
                 )));
             }
         }
-        // Last 24h: the fleet-wide reference read, demoted to the bottom of
-        // the column — the session's own numbers above are what the
-        // operator acts on first.
-        lines.push(Line::default());
-        lines.extend(hourly_lines(
-            self.usage_hourly.as_ref(),
-            text_width,
-            &palette,
-        ));
         // No wrapping: a long title or todo would otherwise split into several
         // rows, pushing the rest of the column off the screen and reading as one
         // character per line for CJK.
@@ -7124,18 +7124,14 @@ mod tests {
             .iter()
             .position(|row| row.contains("Todo"))
             .expect("todo header");
-        // The Last 24h reference block now sits below the checklist; the count
-        // stops at its header so only the todo's own rows are counted. The
-        // column's left border survives trimming, so a padding row still reads
-        // as "│    "; only a row with content counts.
-        let last24 = rows[header + 1..]
+        // The checklist is bounded by the column itself now that the 24-hour
+        // strip opens the Context section above it: everything between its
+        // header and the first blank row is the todo's own rows. The column's
+        // left border survives trimming, so a padding row still reads as
+        // "│    "; only a row with content counts.
+        let below = rows[header + 1..]
             .iter()
-            .position(|row| row.contains("Last 24h"))
-            .map(|offset| header + 1 + offset)
-            .expect("last 24h header");
-        let below = rows[header + 1..last24]
-            .iter()
-            .filter(|row| {
+            .take_while(|row| {
                 !row.trim_matches(|c: char| c == '│' || c.is_whitespace())
                     .is_empty()
             })
