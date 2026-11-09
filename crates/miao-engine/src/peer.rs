@@ -17,7 +17,7 @@ use crate::{
     store::{admit_input, append, write_tx, Store},
 };
 use rusqlite::{params, OptionalExtension};
-use serde_json::{json, Value};
+use serde_json::json;
 
 /// Why a send was refused, recorded durably beside the sender's ledger so the
 /// stop reason outlives the turn that produced it. The strings are the product

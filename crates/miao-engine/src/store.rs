@@ -874,7 +874,7 @@ impl Store {
             if !exists {
                 return Err(Error::Invalid("Session does not exist".into()));
             }
-            let row: Option<(String, String, u64, Option<u64>, Option<String>, Option<String>)> = conn
+            let row = conn
                 .query_row(
                     "SELECT i.delivery,i.state,i.admitted_seq,e.recorded_at_ms,i.sender,i.reply_to
                      FROM engine_input i
@@ -883,12 +883,12 @@ impl Store {
                     params![session, input_id],
                     |row| {
                         Ok((
-                            row.get(0)?,
-                            row.get(1)?,
-                            row.get(2)?,
-                            row.get(3)?,
-                            row.get(4)?,
-                            row.get(5)?,
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, u64>(2)?,
+                            row.get::<_, Option<u64>>(3)?,
+                            row.get::<_, Option<String>>(4)?,
+                            row.get::<_, Option<String>>(5)?,
                         ))
                     },
                 )
