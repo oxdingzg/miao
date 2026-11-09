@@ -3082,6 +3082,22 @@ impl Pane for SidebarPane {
                     // attempts were made hides where the money went.
                     // A subagent bills on its own Session, so a parent screen
                     // that only shows its own tokens understates the cost.
+                    // The per-role and supervision lines below read as one
+                    // labeled group instead of six anonymous rows.
+                    let detailed = usage.subagent_sessions > 0
+                        || usage.hook_calls > 0
+                        || usage.approvals + usage.answers + usage.rejections + usage.cancels > 0
+                        || usage.input_edits > 0
+                        || usage.auxiliary_calls > 0
+                        || usage.tool_input_errors > 0
+                        || usage.replayed_turns > 0
+                        || usage.failed_attempts > 0;
+                    if detailed {
+                        lines.push(Line::from(Span::styled(
+                            "▾ activity",
+                            Style::new().fg(palette.text_muted),
+                        )));
+                    }
                     if usage.subagent_sessions > 0 {
                         // A child's retries are its own billed attempts. When it
                         // took more than its settled turns, say so rather than
