@@ -28,7 +28,7 @@
     },
     "apps/desktop": {
       "name": "@miao/desktop",
-      "version": "0.3.56",
+      "version": "0.3.57",
       "dependencies": {
         "@miao/app": "workspace:*",
         "@miao/ui": "workspace:*",
