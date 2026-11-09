@@ -1805,6 +1805,60 @@ mod retry_tests {
         );
     }
 
+    /// JOB-04 asks the watchdogs to fire *without refilling retry budgets*. A
+    /// header deadline and a stream silence limit both land here as transport
+    /// failures, and the first one arms the window. A later watchdog failure
+    /// must not move the window's end: once it is spent, the turn reports the
+    /// newest failure instead of quietly buying another full window.
+    #[tokio::test]
+    async fn a_deadline_failure_does_not_refill_the_retry_window() {
+        let budget = Budget::with_deadline(Duration::from_millis(50));
+        budget.note_failure("no response headers before the request deadline");
+        let armed = budget.arm();
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        // A silence limit, then a second deadline: neither may reopen the
+        // window the first failure opened.
+        budget.note_failure("provider produced no stream event for 300000ms");
+        assert_eq!(
+            budget.arm(),
+            armed,
+            "a watchdog failure must not move the window's end"
+        );
+        assert!(budget.expired(), "the window stays spent");
+        let message = budget.spent().to_string();
+        assert!(
+            message.contains("last attempt: provider produced no stream event"),
+            "the newest failure is the one an operator can act on: {message}"
+        );
+    }
+
+    /// A stream reconnect is a retry too: the silence limit's own replay path
+    /// draws from the same window through `transport_attempt`, so a spent
+    /// window refuses it rather than granting a fresh budget.
+    #[tokio::test]
+    async fn a_spent_window_refuses_a_stream_reconnect_without_a_new_budget() {
+        let outcome = RETRY_SCOPE
+            .scope(
+                RetryScope {
+                    budget: Budget::with_deadline(Duration::from_millis(30)),
+                    limit: 3,
+                    cap: MAX_REQUEST_ATTEMPTS,
+                    requests: MAX_REQUEST_ATTEMPTS,
+                },
+                async {
+                    // The first attempt opens the window, as any failure does.
+                    let _ = transport_attempt();
+                    tokio::time::sleep(Duration::from_millis(60)).await;
+                    transport_attempt()
+                },
+            )
+            .await;
+        assert!(
+            matches!(outcome, Err(ProviderError::Transport(message)) if message.contains("retry window was spent before another stream attempt")),
+            "a spent window must refuse the reconnect: {outcome:?}"
+        );
+    }
+
     /// A transport failure has no status and no body, so the cause the socket
     /// gave is the only thing an operator can act on — and it must reach the
     /// attempt notice without the request URL, which can carry a credential.

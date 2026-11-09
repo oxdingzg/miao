@@ -526,6 +526,14 @@ pub struct App {
     /// its moving clock until it returns, and only then does the turn report a
     /// total.
     tool_running: Option<ToolRunning>,
+    /// The engine's reported egress backlog for this client, in frames.
+    ///
+    /// A reader that stops keeping up backs up a lossless queue, and the
+    /// engine says so on the same channel instead of dropping anything. The
+    /// report carries no run id — it describes the pipe, not the turn — so
+    /// `provider` reads it before the run-id gate, and the status holds the
+    /// depth until the cleared edge.
+    backpressure: Option<u64>,
     /// When the current run was first seen active, and which run it was.
     ///
     /// A run can be active before any `provider.*` frame arrives — the engine
@@ -651,6 +659,7 @@ impl App {
             themes,
             live: None,
             tool_running: None,
+            backpressure: None,
             run_since: None,
             draft: None,
             committed: 0,
@@ -1316,6 +1325,10 @@ impl App {
                 // no way forward; the failures this TUI can actually explain
                 // carry the next step with them.
                 let message = with_remedy(&message);
+                // A dead engine cannot clear its own backlog report, so the
+                // status must not go on naming a backlog for a pipe that is
+                // gone.
+                self.backpressure = None;
                 self.home.set_notice(Some(message.clone()));
                 self.shell.set_message(&message);
             }
@@ -3585,6 +3598,17 @@ impl App {
     /// Fold one ephemeral provider frame into the live status. The transcript
     /// does not read this: it is replaced by every projection.
     fn provider(&mut self, frame: Value) {
+        // A backlog report names the pipe, not the turn: it carries a session
+        // and no run id, so the run-id gate below would drop it. The status
+        // holds the depth until the cleared edge, whichever run is live.
+        if frame.get("kind").and_then(Value::as_str) == Some("backpressure") {
+            self.backpressure = if frame.get("cleared").and_then(Value::as_bool) == Some(true) {
+                None
+            } else {
+                Some(frame.get("queued").and_then(Value::as_u64).unwrap_or(0))
+            };
+            return;
+        }
         // A snapshot taken before this run started names no active run — the
         // delayed refresh that would set it has not landed yet. The frame's
         // own run id is then the first evidence of the run, and dropping the
@@ -3970,6 +3994,15 @@ impl App {
         // that turns warning-colored once a model wait passes half a minute.
         let (phase, elapsed, alert) = match blocking {
             Some(blocking) => (blocking, None, false),
+            // A backlog report outranks a phaseless "Working": the pipe is the
+            // reason nothing moves, and its depth says how far behind it is.
+            // An operator wait outranks it in turn — the turn may be stalled
+            // in the pipe, but the one thing the operator must act on wins.
+            None if self.backpressure.is_some() => (
+                format!("Engine backlog · {} queued", self.backpressure.unwrap_or(0)),
+                None,
+                false,
+            ),
             None => match (self.state.active_run.as_ref(), live) {
                 (Some(_), Some(live)) => (
                     live.state(now),
@@ -7113,6 +7146,68 @@ mod tests {
         })));
         app.update_status();
         assert_eq!(app.shell.title.status(), Some("Working · Esc interrupt"));
+    }
+
+    /// JOB-04: a stalled reader is told why nothing moves. The backlog report
+    /// carries the depth, and the cleared edge hands the line back to the run.
+    #[test]
+    fn an_engine_backlog_is_named_in_the_status() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "backpressure",
+            "session_id": "ses_1",
+            "queued": 300,
+            "cleared": false,
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Engine backlog · 300 queued · Esc interrupt")
+        );
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "backpressure",
+            "session_id": "ses_1",
+            "queued": 8,
+            "cleared": true,
+        })));
+        app.update_status();
+        assert_eq!(app.shell.title.status(), Some("Working · Esc interrupt"));
+    }
+
+    /// A wait on the operator is the one thing that must stay visible, so it
+    /// outranks an engine the status believes is backlogged.
+    #[test]
+    fn an_operator_blocking_wait_outranks_a_backpressured_engine() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState {
+                active_run: Some("run-1".into()),
+                approvals: vec![crate::session::ApprovalView {
+                    request_id: "req_1".into(),
+                    tool: "bash".into(),
+                    resource: "rm -rf /tmp/x".into(),
+                    input: serde_json::json!({}),
+                    input_hash: "hash".into(),
+                    policy_revision: "rev-1".into(),
+                    matcher: None,
+                    expires_at_ms: None,
+                }],
+                ..SessionState::default()
+            }),
+        });
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "backpressure",
+            "session_id": "ses_1",
+            "queued": 300,
+            "cleared": false,
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("needs approval · bash · Esc interrupt")
+        );
     }
 
     #[test]
