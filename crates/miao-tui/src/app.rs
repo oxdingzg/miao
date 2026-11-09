@@ -5296,6 +5296,15 @@ mod tests {
             state: Box::new(SessionState::default()),
         });
         draw(&mut app);
+        // The pane snapshots its cells only while a selection is live, so a
+        // preparatory press fills the snapshot the word lookup reads.
+        let area = app.shell.transcript_area();
+        assert!(
+            app.shell
+                .begin_selection(ratatui::layout::Position::new(area.x, area.y)),
+            "the transcript painted a pane to press on: {area:?}"
+        );
+        draw(&mut app);
         let cell = app
             .shell
             .transcript_word_cell()
@@ -5333,6 +5342,15 @@ mod tests {
             state: Box::new(SessionState::default()),
         });
         draw(&mut app);
+        // The pane snapshots its cells only while a selection is live, so a
+        // preparatory press fills the snapshot the word lookup reads.
+        let area = app.shell.transcript_area();
+        assert!(
+            app.shell
+                .begin_selection(ratatui::layout::Position::new(area.x, area.y)),
+            "the transcript painted a pane to press on: {area:?}"
+        );
+        draw(&mut app);
         let cell = app
             .shell
             .transcript_word_cell()
@@ -5367,6 +5385,15 @@ mod tests {
             transcript: Box::new(forty_messages()),
             state: Box::new(SessionState::default()),
         });
+        draw(&mut app);
+        // The pane snapshots its cells only while a selection is live, so a
+        // preparatory press fills the snapshot the word lookup reads.
+        let area = app.shell.transcript_area();
+        assert!(
+            app.shell
+                .begin_selection(ratatui::layout::Position::new(area.x, area.y)),
+            "the transcript painted a pane to press on: {area:?}"
+        );
         draw(&mut app);
         let cell = app
             .shell

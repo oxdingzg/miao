@@ -389,6 +389,12 @@ impl Shell {
         self.transcript.first_word_cell()
     }
 
+    /// The painted transcript area, for a test aiming a press at the pane.
+    #[cfg(test)]
+    pub fn transcript_area(&self) -> Rect {
+        self.transcript.area
+    }
+
     pub fn scroll_transcript(&mut self, delta: i32) {
         // Scrolling up detaches from the bottom; new content then lands above
         // the viewport instead of pulling it along. Scrolling back down to the
@@ -6701,10 +6707,11 @@ mod tests {
     #[test]
     fn a_double_click_selects_the_word_under_the_cell() {
         let mut pane = TranscriptPane::new(home_theme());
-        pane.rendered = "run crates/tui next"
+        let row = "run crates/tui next"
             .chars()
-            .map(|character| vec![character.to_string()])
+            .map(|character| character.to_string())
             .collect::<Vec<_>>();
+        pane.rendered = vec![row];
         pane.area = Rect::new(0, 0, 19, 1);
         assert!(pane.select_word_at(Position { x: 5, y: 0 }));
         assert_eq!(pane.take_selection().as_deref(), Some("crates/tui"));
@@ -6715,10 +6722,11 @@ mod tests {
     #[test]
     fn a_double_click_on_a_gap_selects_nothing() {
         let mut pane = TranscriptPane::new(home_theme());
-        pane.rendered = "a b"
+        let row = "a b"
             .chars()
-            .map(|character| vec![character.to_string()])
+            .map(|character| character.to_string())
             .collect::<Vec<_>>();
+        pane.rendered = vec![row];
         pane.area = Rect::new(0, 0, 3, 1);
         assert!(!pane.select_word_at(Position { x: 1, y: 0 }));
         assert_eq!(pane.take_selection(), None);

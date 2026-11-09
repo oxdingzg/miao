@@ -352,6 +352,7 @@ pub(crate) const KNOWN_FIELDS: &[&str] = &[
     "cursor",
     "mouse",
     "animations",
+    "focus_reporting",
 ];
 
 /// Names every top-level field neither loader reads, pointing at the known
