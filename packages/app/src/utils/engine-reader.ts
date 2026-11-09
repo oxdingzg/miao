@@ -1,5 +1,6 @@
 import { EngineHttpClient, type EngineEvent } from "@miao/client/engine"
 import {
+  EngineSessionShapeError,
   catalogToSummaries,
   snapshotToState,
   type EngineCatalogRow,
@@ -13,6 +14,9 @@ import {
  * can provide the same shape without a socket, because the HTTP behaviour itself
  * is covered where the transport lives (`packages/client`).
  */
+/** The engine caps one `events` page at 100; a shorter page ends the tail. */
+const EVENT_PAGE = 100
+
 export type EngineTransport = {
   request(method: string, params?: unknown): Promise<unknown>
   subscribe(session: string, after?: number): Promise<void>
@@ -59,6 +63,28 @@ export function createEngineReader(input: {
         await transport.subscribe(sessionID, after)
       }
       return () => set.delete(handler)
+    },
+    /**
+     * One Session's committed events from `after`, paged to the end.
+     *
+     * The engine answers at most 100 events per call, so a caller that wants the
+     * whole tail asks until a short page arrives instead of assuming one call
+     * returned everything.
+     */
+    async events(sessionID: string, after = 0) {
+      const events: EngineEvent[] = []
+      let cursor = after
+      for (;;) {
+        const page = (await transport.request("events", { session_id: sessionID, after: cursor })) as EngineEvent[]
+        if (!Array.isArray(page)) throw new EngineSessionShapeError("events")
+        for (const event of page) {
+          if (event?.session_id !== sessionID || !Number.isSafeInteger(event.seq) || event.seq <= cursor)
+            throw new EngineSessionShapeError("events")
+          cursor = event.seq
+          events.push(event)
+        }
+        if (page.length < EVENT_PAGE) return events
+      }
     },
     async close() {
       listeners.clear()

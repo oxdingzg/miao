@@ -113,3 +113,80 @@ describe("engine reader", () => {
     }
   })
 })
+
+describe("engine reader events", () => {
+  const page = (from: number, count: number, session = "ses_b") =>
+    Array.from({ length: count }, (_, index) => ({
+      session_id: session,
+      seq: from + index,
+      kind: "message.committed",
+      data: {},
+    }))
+
+  test("asks once and returns a short page as the whole tail", async () => {
+    const calls: Array<{ method: string; params?: unknown }> = []
+    const events = page(4, 3)
+    const reader = createEngineReader({
+      url: "http://127.0.0.1:4096",
+      token: "t",
+      transport: {
+        request: async (method, params) => {
+          calls.push({ method, params })
+          return events
+        },
+        subscribe: async () => {},
+        onEvent: () => {},
+        close: async () => {},
+      },
+    })
+    expect((await reader.events("ses_b", 3)).map((event) => event.seq)).toEqual([4, 5, 6])
+    expect(calls).toEqual([{ method: "events", params: { session_id: "ses_b", after: 3 } }])
+    await reader.close()
+  })
+
+  test("continues from the last seq until a short page arrives", async () => {
+    const calls: Array<{ method: string; params?: unknown }> = []
+    const reader = createEngineReader({
+      url: "http://127.0.0.1:4096",
+      token: "t",
+      transport: {
+        request: async (method, params) => {
+          calls.push({ method, params })
+          const after = (params as { after: number }).after
+          if (after === 0) return page(1, 100)
+          return page(101, 3)
+        },
+        subscribe: async () => {},
+        onEvent: () => {},
+        close: async () => {},
+      },
+    })
+    const events = await reader.events("ses_b")
+    expect(events).toHaveLength(103)
+    expect(events.at(-1)?.seq).toBe(103)
+    expect(calls).toEqual([
+      { method: "events", params: { session_id: "ses_b", after: 0 } },
+      { method: "events", params: { session_id: "ses_b", after: 100 } },
+    ])
+    await reader.close()
+  })
+
+  test("rejects a page that belongs to another Session or repeats a cursor", async () => {
+    const build = (result: unknown) =>
+      createEngineReader({
+        url: "http://127.0.0.1:4096",
+        token: "t",
+        transport: {
+          request: async () => result,
+          subscribe: async () => {},
+          onEvent: () => {},
+          close: async () => {},
+        },
+      })
+    await expect(build(page(1, 1, "ses_other")).events("ses_b")).rejects.toThrow(/session_id|events/)
+    await expect(build([{ session_id: "ses_b", seq: 5, kind: "x", data: {} }]).events("ses_b", 5)).rejects.toThrow(
+      /events/,
+    )
+    await expect(build({ not: "an array" }).events("ses_b")).rejects.toThrow(/events/)
+  })
+})
