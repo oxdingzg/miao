@@ -44,6 +44,26 @@ const LIVE_SILENCE: Duration = Duration::from_secs(15);
 /// sentence, short enough that it does not outlive its own event.
 const NOTICE_LIFETIME: Duration = Duration::from_secs(5);
 
+/// How long the sidebar's usage report waits before it is asked for again.
+///
+/// The report reads the open Session's whole ledger and `engine_event` has no
+/// covering index for that shape, so one answer costs hundreds of milliseconds
+/// even warm. A long run settles many steps without ending, and each of those
+/// settles the panel: asking on every one would spend the engine's time
+/// redrawing a figure that moved by a single turn.
+const USAGE_REFRESH: Duration = Duration::from_secs(5);
+
+/// Whether the sidebar's usage report is worth asking for.
+fn usage_due(force: bool, last_requested: Option<Instant>) -> bool {
+    if force {
+        return true;
+    }
+    match last_requested {
+        Some(at) => at.elapsed() >= USAGE_REFRESH,
+        None => true,
+    }
+}
+
 /// Where the engine last said an active run was. Ephemeral: a client that
 /// attaches mid-turn learns the run from the snapshot and the rest from the next
 /// frame, so nothing here is persisted.
@@ -414,6 +434,9 @@ pub struct App {
     usage: Option<UsageSummary>,
     /// The trailing 24 hours the sidebar paints, workspace-wide.
     usage_hourly: Option<crate::status::HourlyUsage>,
+    /// When the usage report was last asked for, so a run that keeps settling
+    /// steps cannot turn into a stream of ledger scans.
+    usage_requested_at: Option<Instant>,
     stash: Vec<StashEntry>,
     /// Prompts this Session already sent, oldest first. Retrying a failed turn
     /// is the common reason to send one again, and retyping it is what makes
@@ -622,6 +645,7 @@ impl App {
             accounts: Vec::new(),
             usage: None,
             usage_hourly: None,
+            usage_requested_at: None,
             stash: Vec::new(),
             prompt_history: Vec::new(),
             drafts: HashMap::new(),
@@ -1199,24 +1223,22 @@ impl App {
                 // from billed usage, and the status dialog used to be their
                 // only caller: a Session screen read "no usage yet" until
                 // someone opened that dialog. Ask when a different Session
-                // opens and again when its run settles — the ledger only moves
-                // at those two moments.
+                // opens and again when its run settles, and no more often than
+                // `USAGE_REFRESH` in between: a run that keeps settling steps
+                // without ever ending is exactly the case the panel sat on a
+                // figure an hour old.
                 let reopened = previous_id.as_deref()
                     != self.session.as_ref().map(|session| session.id.as_str());
                 if reopened {
                     self.usage = None;
                 }
-                if reopened || (was_running && self.state.active_run.is_none()) {
+                self.request_usage(reopened || (was_running && self.state.active_run.is_none()));
+                // The strip spans the workspace rather than this Session, so
+                // opening one reads it directly; every later growth arrives
+                // with the usage answer.
+                if reopened {
                     if let Some(engine) = self.engine.as_ref() {
-                        if let Some(session) = &self.session {
-                            engine.usage(&session.id);
-                            // The strip spans the workspace rather than this
-                            // Session, so opening one reads it directly; a
-                            // settled run refreshes it from the usage answer.
-                            if reopened {
-                                engine.usage_hourly(24);
-                            }
-                        }
+                        engine.usage_hourly(24);
                     }
                 }
                 self.shell.set_session(self.session.as_ref());
@@ -2559,20 +2581,41 @@ impl App {
     }
 
     fn open_status(&mut self) {
-        let Some(session_id) = self.session_id() else {
+        if self.session_id().is_none() {
             self.notice("open a Session to see status");
             return;
-        };
+        }
         self.usage = None;
         self.shell.set_usage(None);
         self.usage_hourly = None;
         self.shell.set_usage_hourly(None);
+        self.request_usage(true);
         if let Some(engine) = self.engine.as_ref() {
-            engine.usage(&session_id);
             engine.usage_hourly(24);
         }
         let rows = self.status_rows();
         self.open_dialog(Dialog::status(rows));
+    }
+
+    /// Ask the engine for the open Session's billed usage.
+    ///
+    /// `force` marks the edges that must never be skipped — a different Session
+    /// opening, a run settling, and the operator opening the status dialog.
+    /// Everything between them is a redraw of a number that a settled step just
+    /// moved by a turn, so it waits out [`USAGE_REFRESH`] instead of scanning
+    /// the ledger again.
+    fn request_usage(&mut self, force: bool) {
+        if !usage_due(force, self.usage_requested_at) {
+            return;
+        }
+        let Some(engine) = self.engine.clone() else {
+            return;
+        };
+        let Some(session_id) = self.session_id() else {
+            return;
+        };
+        self.usage_requested_at = Some(Instant::now());
+        engine.usage(&session_id);
     }
 
     fn status_rows(&self) -> Vec<Row> {
@@ -8214,6 +8257,19 @@ mod tests {
             matches!(requests.try_recv(), Ok(engine::Request::Usage { session_id }) if session_id == "ses_a"),
             "a settled run is billed work the sidebar must show"
         );
+    }
+
+    /// The panel is repainted from a ledger scan, so the two edges that move
+    /// the figure ask at once and everything between them waits.
+    #[test]
+    fn a_usage_report_waits_between_the_edges_that_move_it() {
+        assert!(usage_due(true, Some(Instant::now())));
+        // A fresh App has nothing to wait for.
+        assert!(usage_due(false, None));
+        // A redraw inside the window does not scan the ledger again.
+        assert!(!usage_due(false, Some(Instant::now())));
+        // A run that keeps settling steps still refreshes once it passes.
+        assert!(usage_due(false, Some(Instant::now() - USAGE_REFRESH)));
     }
 
     #[test]
