@@ -7572,6 +7572,11 @@ async fn execute_read_batch(
         async move {
             let now = in_flight.fetch_add(1, Ordering::Relaxed) + 1;
             peak.fetch_max(now, Ordering::Relaxed);
+            // Instant tools would otherwise settle inside their first poll and
+            // the receipt would report a serialization the executor never
+            // imposed. Yield after entering so the batch's futures interleave
+            // deterministically on the first poll round.
+            tokio::task::yield_now().await;
             let ask = crate::worker::AskBridge {
                 store: &inner.store,
                 location: inner.tools.location(),
