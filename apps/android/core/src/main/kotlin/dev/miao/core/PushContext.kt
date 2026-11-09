@@ -91,10 +91,6 @@ object PushContext {
     )
 }
 
-class HubAccountException(val kind: Kind) : Exception(kind.name) {
-    enum class Kind { MALFORMED, AUTHENTICATION_REQUIRED }
-}
-
 data class HubPushNotice(val binding: PushContextBinding, val context: String, val kind: String) {
     fun resolve(device: P256SigningKey, host: AuthorizedHost): PushContextPayload {
         val grant = host.grant
