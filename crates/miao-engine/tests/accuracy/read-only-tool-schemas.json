@@ -31,7 +31,22 @@
         "type": "boolean"
       },
       "budget": {
-        "type": "string"
+        "additionalProperties": false,
+        "properties": {
+          "iterations": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tokens": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "wallclock_ms": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
       },
       "evidence": {
         "type": "string"
@@ -51,6 +66,15 @@
           "done"
         ],
         "type": "string"
+      },
+      "stop_when": {
+        "items": {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        "maxItems": 16,
+        "type": "array"
       }
     },
     "required": [
@@ -230,6 +254,44 @@
     },
     "required": [
       "name"
+    ],
+    "type": "object"
+  },
+  "planwrite": {
+    "additionalProperties": false,
+    "properties": {
+      "expected_revision": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "status": {
+        "enum": [
+          "pending",
+          "approved",
+          "superseded"
+        ],
+        "type": "string"
+      },
+      "steps": {
+        "items": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "type": "string"
+        },
+        "maxItems": 64,
+        "type": "array"
+      },
+      "summary": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "transcribed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "summary",
+      "status"
     ],
     "type": "object"
   },
