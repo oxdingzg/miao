@@ -242,7 +242,7 @@ async fn the_jobs_command_serves_owners_output_and_children_in_one_answer() {
         .await
         .unwrap();
     // One delegated child of the Session, so the side list has a row to show.
-    store.fork("s", "sub", None).await.unwrap();
+    store.fork("s", "sub", Some(0)).await.unwrap();
 
     let mut host = Host::new(runtime.clone());
     let answer = host
