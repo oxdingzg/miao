@@ -2,16 +2,29 @@ export * as PushProvider from "./push-provider"
 
 import { connect, type ClientHttp2Session } from "node:http2"
 import { importPKCS8, SignJWT } from "jose"
+import { PushProviderFcm } from "./push-provider-fcm"
 
+/**
+ * One provider per Hub: Apple APNs or Firebase Cloud Messaging. `environment`
+ * stays the registration selector either way (Android registrations reuse the
+ * same two values). Required fields are validated per `kind` at create time.
+ */
 export type Options = {
-  teamID: string
-  keyID: string
+  kind?: "apns" | "fcm"
+  teamID?: string
+  keyID?: string
+  topic?: string
+  projectID?: string
+  clientEmail?: string
   privateKey: string
-  topic: string
   environment: "sandbox" | "production"
-  /** Explicit loopback-only HTTP/2 fixture; production always uses Apple's TLS endpoint. */
+  /** Explicit loopback-only fixtures; production always uses the real endpoints. */
   testEndpoint?: string
+  tokenEndpoint?: string
+  messageEndpoint?: string
 }
+export type ApnsOptions = Options & { kind?: "apns"; teamID: string; keyID: string; topic: string }
+export type FcmOptions = Options & { kind: "fcm"; projectID: string; clientEmail: string }
 export type Signal = { token: string; signalID: string; kind: "attention" | "completed" }
 export type Result =
   | { status: "accepted"; id: string }
@@ -20,9 +33,23 @@ export type Result =
 
 /** Sends generic wake-up hints. Session contents, credentials and commands never enter the payload. */
 export async function create(options: Options) {
-  if (!/^[A-Z0-9]{10}$/.test(options.teamID) || !/^[A-Z0-9]{10}$/.test(options.keyID))
+  if (options.kind === "fcm") {
+    if (!options.projectID || !options.clientEmail) throw new Error("FCM push delivery requires projectID and clientEmail")
+    return PushProviderFcm.create({
+      projectID: options.projectID,
+      clientEmail: options.clientEmail,
+      privateKey: options.privateKey,
+      ...(options.tokenEndpoint === undefined ? {} : { tokenEndpoint: options.tokenEndpoint }),
+      ...(options.messageEndpoint === undefined ? {} : { messageEndpoint: options.messageEndpoint }),
+    })
+  }
+  if (!options.teamID || !options.keyID || !options.topic) throw new Error("APNs push delivery requires teamID, keyID and topic")
+  const teamID = options.teamID
+  const keyID = options.keyID
+  const topic = options.topic
+  if (!/^[A-Z0-9]{10}$/.test(teamID) || !/^[A-Z0-9]{10}$/.test(keyID))
     throw new Error("Invalid APNs signing identifiers")
-  if (!/^[A-Za-z0-9][A-Za-z0-9.-]{2,254}$/.test(options.topic)) throw new Error("Invalid APNs topic")
+  if (!/^[A-Za-z0-9][A-Za-z0-9.-]{2,254}$/.test(topic)) throw new Error("Invalid APNs topic")
   if (options.environment !== "sandbox" && options.environment !== "production")
     throw new Error("Invalid APNs environment")
   const endpoint = options.testEndpoint
@@ -42,8 +69,8 @@ export async function create(options: Options) {
     const now = Math.floor(Date.now() / 1000)
     if (!state.token || now - state.token.created >= 50 * 60 || now < state.token.created) {
       const value = new SignJWT({})
-        .setProtectedHeader({ alg: "ES256", kid: options.keyID })
-        .setIssuer(options.teamID)
+        .setProtectedHeader({ alg: "ES256", kid: keyID })
+        .setIssuer(teamID)
         .setIssuedAt(now)
         .sign(key)
       state.token = { value, created: now }
@@ -99,7 +126,7 @@ export async function create(options: Options) {
             ":method": "POST",
             ":path": `/3/device/${signal.token.toLowerCase()}`,
             authorization: `bearer ${bearer}`,
-            "apns-topic": options.topic,
+            "apns-topic": topic,
             "apns-push-type": "alert",
             "apns-priority": "10",
             "apns-expiration": "0",
