@@ -61,6 +61,53 @@ async fn a_large_file_is_readable_through_a_window_but_not_wholesale() {
 }
 
 #[tokio::test]
+async fn a_window_read_stays_inside_the_32768_byte_bound_and_the_ranged_cap_holds() {
+    let dir = tempfile::tempdir().unwrap();
+    let body = (0..20)
+        .map(|index| format!("line-{index:02}-{}", "x".repeat(3990)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(dir.path().join("wide.txt"), &body).unwrap();
+    let tools = Tools::new(dir.path()).await.unwrap();
+
+    let whole = tools
+        .execute(
+            "read_file",
+            json!({"path":"wide.txt"}),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+    assert!(whole.to_string().contains("79979 bytes"), "{whole}");
+    assert!(
+        whole.to_string().contains("32768-byte whole-file bound"),
+        "{whole}"
+    );
+
+    let window = read(&tools, json!({"path":"wide.txt","offset":1,"limit":20})).await;
+    let text = window["text"].as_str().unwrap();
+    assert!(text.len() <= 32768, "{}", text.len());
+    assert!(text.contains("line-07-"), "{}", text.len());
+    assert!(!text.contains("line-08-"), "{}", text.len());
+    assert_eq!(window["lines"], json!(8));
+    assert_eq!(window["total_lines"], json!(20));
+    assert_eq!(window["truncated"], json!(true));
+
+    std::fs::File::create(dir.path().join("huge.txt"))
+        .unwrap()
+        .set_len(1024 * 1024 + 1)
+        .unwrap();
+    assert!(tools
+        .execute(
+            "read_file",
+            json!({"path":"huge.txt","offset":1,"limit":10}),
+            CancellationToken::new()
+        )
+        .await
+        .is_err());
+}
+
+#[tokio::test]
 async fn zero_offset_or_limit_is_rejected() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("data.txt"), "one\n").unwrap();
