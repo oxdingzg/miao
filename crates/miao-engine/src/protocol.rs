@@ -151,6 +151,39 @@ pub struct Admission {
     pub pending: bool,
 }
 
+/// Whether a cross-Session send asked its recipient to drain now. The
+/// vocabulary is the spec's (`specs/v2/session-messaging.md`): a wake is
+/// advisory, so `requested` never means execution started.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeerWake {
+    Requested,
+    NotRequested,
+}
+
+/// The accountable answer to one cross-Session send: where the mail landed,
+/// whether the recipient was asked to act, and which earlier message this one
+/// answers. A reply names `receipt` as its `in_reply_to`, and the recipient's
+/// inbox row carries the same sender and linkage as durable columns, so the
+/// thread is queryable data rather than prompt text to re-parse and a reply
+/// loop is bounded by a counted query (AGT-05).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeerReceipt {
+    /// The resolved recipient, not the alias the sender typed.
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+    /// The durable id the mail carries in the recipient's inbox.
+    pub receipt: String,
+    pub duplicate: bool,
+    pub wake: PeerWake,
+    /// The stated coordination reason, when the sender gave one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// The receipt this message answers, when it is a reply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("input id conflicts with an existing admission")]

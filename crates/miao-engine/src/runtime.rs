@@ -6,7 +6,9 @@ use crate::{
     approval::{now_ms, Approval, Response},
     context_trigger::{self, ContextLimits},
     permission::{input_digest, Config, Decision, Mode, Policy},
-    protocol::{Admission, Attachment, Delivery, Error, Input, ModelRequest},
+    protocol::{
+        Admission, Attachment, Delivery, Error, Input, ModelRequest, PeerReceipt, PeerWake,
+    },
     provider::{Provider, ProviderError},
     store::{RuntimeLease, SessionLease, Store},
     tool_replay::ToolReplay,
@@ -5622,9 +5624,23 @@ async fn send_peer_message(
         .map_err(external)?;
     let queued = pending["inputs"].as_array().map(Vec::len).unwrap_or(0);
     if queued >= MAX_INBOUND_QUEUE {
-        return Err(ToolError::External(format!(
+        let detail = format!(
             "{target} already has {queued} messages waiting; let it catch up instead of queueing more"
-        )));
+        );
+        // The refusal is durable: the stop reason survives the turn, so the
+        // sender's ledger shows why the mail never landed.
+        inner
+            .store
+            .record_peer_refusal(
+                session,
+                &target,
+                None,
+                crate::peer::STOP_INBOUND_FULL,
+                &detail,
+            )
+            .await
+            .map_err(external)?;
+        return Err(ToolError::External(detail));
     }
     // A reply names the message it answers, so the recipient can tell a
     // follow-up from a fresh request. The id is the receipt a previous
@@ -5637,7 +5653,9 @@ async fn send_peer_message(
         .map(str::trim)
         .filter(|id| !id.is_empty());
     if let Some(receipt) = in_reply_to {
-        if !peer_message_receipt_exists(inner, session, &target, receipt)
+        if !inner
+            .store
+            .peer_receipt_exists(session, &target, receipt)
             .await
             .map_err(external)?
         {
@@ -5646,30 +5664,30 @@ async fn send_peer_message(
             )));
         }
         // A loop is two Sessions answering each other forever. The cheapest
-        // honest bound is per message: one request is answered once. A second
-        // reply to the same receipt is refused with the reason, so the pair
-        // stops instead of ping-ponging until a token budget runs out — and the
-        // operator sees why rather than watching the cost climb.
-        let already: usize = {
-            use rusqlite::params;
-            let target = target.clone();
-            let receipt = receipt.to_string();
+        // honest bound is per message: one request is answered once. The
+        // budget is a counted query over durable inbox rows, so it survives a
+        // restart, and the refusal is recorded as the loop's stop reason.
+        let already = inner
+            .store
+            .peer_reply_count(&target, receipt)
+            .await
+            .map_err(external)?;
+        if already >= MAX_REPLIES_PER_MESSAGE as u64 {
+            let detail = format!(
+                "{receipt} already has {already} reply; a second one is how two Sessions loop. Send a new message without in_reply_to if the thread has moved on"
+            );
             inner
                 .store
-                .call(move |conn| {
-                    Ok(conn.query_row(
-                        "SELECT count(*) FROM engine_input WHERE session_id=?1 AND prompt LIKE ?2",
-                        params![target, format!("%(reply to {receipt})%")],
-                        |row| row.get::<_, u64>(0),
-                    )?)
-                })
+                .record_peer_refusal(
+                    session,
+                    &target,
+                    Some(receipt),
+                    crate::peer::STOP_REPLY_BUDGET,
+                    &detail,
+                )
                 .await
-                .map_err(external)? as usize
-        };
-        if already >= MAX_REPLIES_PER_MESSAGE {
-            return Err(ToolError::External(format!(
-                "{receipt} already has {already} reply; a second one is how two Sessions loop.                  Send a new message without in_reply_to if the thread has moved on"
-            )));
+                .map_err(external)?;
+            return Err(ToolError::External(detail));
         }
     }
     let working = match wake {
@@ -5689,14 +5707,18 @@ async fn send_peer_message(
     };
     let admission = inner
         .store
-        .admit(Input {
-            agent_references: Default::default(),
-            command: None,
-            session_id: target.clone(),
-            input_id: format!("msg_{}", uuid::Uuid::new_v4()),
-            prompt,
-            delivery,
-        })
+        .admit_peer_message(
+            session,
+            in_reply_to,
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: target.clone(),
+                input_id: format!("msg_{}", uuid::Uuid::new_v4()),
+                prompt,
+                delivery,
+            },
+        )
         .await
         .map_err(external)?;
     if requested {
@@ -5706,14 +5728,19 @@ async fn send_peer_message(
     }
     // `receipt` is the id a reply has to name. Without it the sender cannot
     // answer a specific message, which is what `in_reply_to` requires.
-    Ok(json!({
-        "sessionID": target,
-        "receipt": admission.input_id,
-        "duplicate": admission.duplicate,
-        "wake": if requested { "requested" } else { "not_requested" },
-        "reason": (!reason.is_empty()).then_some(reason),
-        "reply_to": in_reply_to,
-    }))
+    let receipt = PeerReceipt {
+        session_id: target,
+        receipt: admission.input_id,
+        duplicate: admission.duplicate,
+        wake: if requested {
+            PeerWake::Requested
+        } else {
+            PeerWake::NotRequested
+        },
+        reason: (!reason.is_empty()).then_some(reason),
+        reply_to: in_reply_to.map(str::to_owned),
+    };
+    serde_json::to_value(receipt).map_err(|_| ToolError::InvalidInput)
 }
 
 /// Whether this Session may act on that peer, judged per target.
@@ -5721,45 +5748,10 @@ async fn send_peer_message(
 /// The peer is the resource, so a rule can allow one neighbour and deny another.
 /// Only an explicit rule stops the call: the tool itself already passed its own
 /// permission gate, and treating the policy's default as a denial here would
-/// make coordination impossible without a rule nobody knew to write.
-/// Whether `receipt` names a message this Session actually sent to `target`.
-///
-/// The receipt is the id `send_message` returned, and it lives in the
-/// *recipient's* inbox. Checking it there is what makes a reply reference real:
-/// the alternative — trusting whatever string the model produced — would let a
-/// fabricated id read as a thread in the recipient's prompt.
-async fn peer_message_receipt_exists(
-    inner: &Arc<Inner>,
-    sender: &str,
-    target: &str,
-    receipt: &str,
-) -> Result<bool, Error> {
-    let prompt: Option<String> = {
-        use rusqlite::{params, OptionalExtension};
-        let session = target.to_owned();
-        let input_id = receipt.to_owned();
-        inner
-            .store
-            .call(move |conn| {
-                Ok(conn
-                    .query_row(
-                        "SELECT prompt FROM engine_input WHERE session_id=?1 AND id=?2",
-                        params![session, input_id],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .optional()?)
-            })
-            .await?
-    };
-    // The durable prompt is the record of who sent it, and it is the same text
-    // the recipient's model reads, so the check cannot disagree with what the
-    // thread looks like.
-    Ok(prompt.is_some_and(|prompt| {
-        prompt.starts_with(&format!("Message from Session {sender}"))
-            || prompt.starts_with(&format!("Message from Session {sender} (reply to "))
-    }))
-}
-
+/// make coordination impossible without a rule nobody knew to write. Whether a
+/// reply's `receipt` names real mail is answered by the store's
+/// `peer_receipt_exists`, which checks the durable sender column (and the
+/// prompt attribution of mail admitted before the column existed).
 fn peer_allowed(inner: &Arc<Inner>, tool: &str, target: &str) -> Result<(), String> {
     // Only an explicit rule stops the call: the tool itself already passed its
     // own permission gate, and the policy's default for a name it has never
@@ -7750,6 +7742,44 @@ mod peer_tests {
         assert_eq!(wake_requested("if_active", true, ""), Ok(true));
         assert_eq!(wake_requested("if_active", false, ""), Ok(false));
         assert_eq!(wake_requested("", true, ""), Ok(true));
+    }
+
+    /// The receipt is the product surface a reply must name, so its wire shape
+    /// is pinned: the resolved recipient travels as `sessionID`, the wake uses
+    /// the spec's vocabulary, and absent linkage is omitted rather than null.
+    #[test]
+    fn a_peer_receipt_serializes_to_the_documented_wire_shape() {
+        use crate::protocol::{PeerReceipt, PeerWake};
+        let receipt = PeerReceipt {
+            session_id: "b".into(),
+            receipt: "msg_1".into(),
+            duplicate: false,
+            wake: PeerWake::Requested,
+            reason: Some("the operator asked".into()),
+            reply_to: None,
+        };
+        let value = serde_json::to_value(&receipt).unwrap();
+        assert_eq!(value["sessionID"], "b");
+        assert_eq!(value["receipt"], "msg_1");
+        assert_eq!(value["wake"], "requested");
+        assert_eq!(value["reason"], "the operator asked");
+        assert!(value.get("reply_to").is_none(), "{value}");
+        assert_eq!(value["duplicate"], false);
+        let round: PeerReceipt = serde_json::from_value(value).unwrap();
+        assert_eq!(round, receipt);
+        let quiet = PeerReceipt {
+            wake: PeerWake::NotRequested,
+            reason: None,
+            ..receipt
+        };
+        assert_eq!(
+            serde_json::to_value(&quiet).unwrap()["wake"],
+            "not_requested"
+        );
+        assert!(
+            !serde_json::to_string(&quiet).unwrap().contains("reason"),
+            "an unstated reason is omitted, not null"
+        );
     }
 
     /// A peer read returns what the peer said, not its tool schemas or its
