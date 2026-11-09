@@ -1464,9 +1464,7 @@ impl App {
                         cell == position && at.elapsed() <= Self::DOUBLE_CLICK_WINDOW
                     });
                     self.last_click = Some((position, Instant::now()));
-                    if repeat
-                        && self.screen == Screen::Session
-                        && self.shell.select_word(position)
+                    if repeat && self.screen == Screen::Session && self.shell.select_word(position)
                     {
                         return;
                     }
