@@ -8,8 +8,13 @@ use miao_engine::{
     tools::Tools,
 };
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
+
+fn sha(text: &str) -> String {
+    format!("{:x}", Sha256::digest(text.as_bytes()))
+}
 
 struct Batch(Value);
 #[async_trait]
@@ -569,4 +574,168 @@ async fn partitions_a_mixed_turn_into_a_read_prefix_and_a_serial_tail() {
         serde_json::from_str::<Value>(result["content"].as_str().unwrap()).unwrap()["text"],
         "written"
     );
+}
+
+#[tokio::test]
+async fn batched_reads_report_observed_peak_concurrency_above_one() {
+    // The started event only declares a bound. The finished event must show
+    // reads genuinely in flight together — the offline stand-in for a
+    // wall-clock overlap measurement, so RwLock-style admission never passes.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a"), "alpha").unwrap();
+    std::fs::write(dir.path().join("b"), "beta").unwrap();
+    let store = execute(
+        dir.path(),
+        json!([
+            call("one", "read_file", json!({"path":"a"})),
+            call("two", "read_file", json!({"path":"b"})),
+            call("three", "list_files", json!({"path":"."})),
+            call("four", "glob", json!({"pattern":"*"})),
+        ]),
+        false,
+    )
+    .await;
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let started = events
+        .iter()
+        .find(|event| event.kind == "tool.parallel.started")
+        .unwrap();
+    let finished = events
+        .iter()
+        .find(|event| event.kind == "tool.parallel.finished")
+        .unwrap();
+    assert!(started.seq < finished.seq);
+    assert_eq!(finished.data["admitted"], 4);
+    assert_eq!(finished.data["concurrency"], 4);
+    assert!(
+        finished.data["peak_in_flight"].as_u64().unwrap() >= 2,
+        "batch admitted four reads but never observed two in flight: {}",
+        finished.data["peak_in_flight"]
+    );
+}
+
+#[tokio::test]
+async fn overlapping_write_targets_settle_in_request_order_deterministically() {
+    // Two writes to the same path conflict. Neither may race: the turn has no
+    // batch, both writes settle in request order, and the last write wins.
+    let dir = tempfile::tempdir().unwrap();
+    let store = execute(
+        dir.path(),
+        json!([
+            call(
+                "one",
+                "write_file",
+                json!({"path":"a","text":"first","expected_sha256":null})
+            ),
+            call(
+                "two",
+                "write_file",
+                json!({"path":"a","text":"second","expected_sha256":sha("first")})
+            ),
+            call("three", "read_file", json!({"path":"a"})),
+        ]),
+        false,
+    )
+    .await;
+    let events = store.events("s", 0, 1000).await.unwrap();
+    assert!(!events.iter().any(
+        |event| event.kind == "tool.parallel.started" || event.kind == "tool.parallel.finished"
+    ));
+    let completed: Vec<String> = events
+        .iter()
+        .filter(|event| event.kind == "tool.completed")
+        .map(|event| {
+            event.data["call_id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect();
+    let settled = |id: &str| {
+        completed
+            .iter()
+            .position(|call| call.ends_with(&format!("/{id}")))
+            .unwrap_or_else(|| panic!("{id} never settled"))
+    };
+    assert!(settled("one") < settled("two") && settled("two") < settled("three"));
+    let history = store.history("s").await.unwrap();
+    let results: Vec<&Value> = history
+        .iter()
+        .flat_map(|message| message.content.as_array().unwrap())
+        .filter(|block| block["type"] == "tool_result")
+        .collect();
+    assert_eq!(
+        results
+            .iter()
+            .map(|result| result["tool_use_id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["one", "two", "three"]
+    );
+    assert!(results
+        .iter()
+        .take(2)
+        .all(|result| result["is_error"] == false));
+    assert_eq!(
+        serde_json::from_str::<Value>(results[2]["content"].as_str().unwrap()).unwrap()["text"],
+        "second"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a")).unwrap(),
+        "second"
+    );
+}
+
+#[tokio::test]
+async fn an_undeclared_call_ends_the_declared_read_prefix() {
+    // Membership is the declaration, so the batch stops at the first call it
+    // cannot admit; the unknown call settles serially behind the reads.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a"), "alpha").unwrap();
+    std::fs::write(dir.path().join("b"), "beta").unwrap();
+    let store = execute(
+        dir.path(),
+        json!([
+            call("one", "read_file", json!({"path":"a"})),
+            call("two", "read_file", json!({"path":"b"})),
+            call("three", "totally_unknown", json!({})),
+        ]),
+        false,
+    )
+    .await;
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let batch = events
+        .iter()
+        .find(|event| event.kind == "tool.parallel.started")
+        .unwrap();
+    assert_eq!(batch.data["call_ids"], json!(["one", "two"]));
+    assert_eq!(batch.data["concurrency"], 4);
+    let finished = events
+        .iter()
+        .find(|event| event.kind == "tool.parallel.finished")
+        .unwrap();
+    assert_eq!(finished.data["admitted"], 2);
+    let unknown = events
+        .iter()
+        .find(|event| {
+            event.kind == "tool.completed"
+                && event.data["call_id"]
+                    .as_str()
+                    .is_some_and(|call| call.ends_with("/three"))
+        })
+        .unwrap();
+    assert_eq!(unknown.data["is_error"], true);
+    let history = store.history("s").await.unwrap();
+    let results: Vec<&Value> = history
+        .iter()
+        .flat_map(|message| message.content.as_array().unwrap())
+        .filter(|block| block["type"] == "tool_result")
+        .collect();
+    assert_eq!(
+        results
+            .iter()
+            .map(|result| result["tool_use_id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["one", "two", "three"]
+    );
+    assert!(results[2]["is_error"] == true);
 }
