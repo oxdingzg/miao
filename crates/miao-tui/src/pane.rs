@@ -840,9 +840,13 @@ impl Pane for TranscriptPane {
             if line.style.bg.is_some() {
                 let used = line.width();
                 if used < width {
+                    // A band pads in its own ink: a diff row's tint must stay
+                    // the row's green or red all the way to the edge, not fade
+                    // into the panel surface mid-block.
+                    let ink = line.style.bg.unwrap_or(palette.surface);
                     line.spans.push(Span::styled(
                         " ".repeat(width - used),
-                        Style::new().bg(palette.surface),
+                        Style::new().bg(ink),
                     ));
                 }
             }
