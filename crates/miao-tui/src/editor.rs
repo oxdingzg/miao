@@ -811,13 +811,16 @@ fn placeholder_kind(inner: &str) -> Option<Placeholder> {
     if inner == "File" || inner.starts_with("File ") {
         return Some(Placeholder::Attachment);
     }
-    let rest = inner
-        .strip_prefix("Pasted ~")
-        .and_then(|rest| rest.strip_suffix(" lines"))?;
     // ` #N` distinguishes a second paste of the same size; what the operator
-    // reads is still the line count before it.
-    let count = rest.split_once(" #").map_or(rest, |(count, _)| count);
-    numbered(count).then_some(Placeholder::Paste)
+    // reads is still the line count before it. The suffix sits after "lines",
+    // so it comes off before the count is read.
+    let rest = inner.strip_prefix("Pasted ~")?;
+    let rest = match rest.rsplit_once(" #") {
+        Some((count, sequence)) if numbered(sequence) => count,
+        Some(_) => return None,
+        None => rest,
+    };
+    numbered(rest.strip_suffix(" lines")?).then_some(Placeholder::Paste)
 }
 
 fn cell_width(c: char) -> usize {
