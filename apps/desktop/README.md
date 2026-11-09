@@ -27,6 +27,15 @@ bun run --cwd apps/desktop build   # renderer bundle into dist/
 bun run --cwd apps/desktop tauri build
 ```
 
+## What the window shows today
+
+The window renders a read-only engine surface: the engine's Sessions, one
+Session's header and its committed events. It is not the shared app UI yet — the
+shared renderer speaks the HTTP API (`/api/*`), while the shipped `miao` binary
+exposes the engine control plane (`/rpc`, `/events`). `SessionSurface` is a thin
+read model over `createEngineReader`, and `AppInterface` returns once the engine
+answers what the app reads.
+
 ## Layout
 
 - `src/` — the renderer entry. It boots `@miao/app` with the sidecar connection the
