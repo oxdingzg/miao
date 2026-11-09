@@ -28,3 +28,11 @@ export {
 } from "./wsl/types"
 export { ServerConnection } from "./context/server"
 export { createDraftStore, type DraftStore } from "./utils/draft-store"
+export {
+  createEngineReader,
+  type EngineReader,
+  type EngineSessionState,
+  type EngineSessionSummary,
+  type EngineTransport as EngineReaderTransport,
+} from "./utils/engine-reader"
+export { appendEvents, summarizeEvent, type TranscriptRow } from "./utils/engine-transcript"

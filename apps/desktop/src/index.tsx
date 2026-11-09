@@ -1,13 +1,5 @@
-import {
-  AppBaseProviders,
-  AppInterface,
-  normalizeLocale,
-  PlatformProvider,
-  ServerConnection,
-  type Platform,
-} from "@miao/app"
+import { PlatformProvider, type Platform } from "@miao/app"
 import "@miao/app/index.css"
-import { MemoryRouter, createMemoryHistory, type BaseRouterProps } from "@solidjs/router"
 import { Channel, invoke } from "@tauri-apps/api/core"
 import { open } from "@tauri-apps/plugin-dialog"
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification"
@@ -15,6 +7,7 @@ import { openUrl } from "@tauri-apps/plugin-opener"
 import { relaunch } from "@tauri-apps/plugin-process"
 import { createResource, Show } from "solid-js"
 import { render } from "solid-js/web"
+import { SessionSurface } from "./session-surface"
 
 // The shell hands the renderer one sidecar and nothing else: the loopback URL
 // plus the credentials it generated for this launch. Every other capability the
@@ -33,8 +26,6 @@ const platform: Platform = {
     open({ directory: true, multiple: options?.multiple ?? false, title: options?.title }),
 }
 
-const router = (props: BaseRouterProps) => <MemoryRouter history={createMemoryHistory()} {...props} />
-
 function awaitInitialization() {
   return invoke<ServerReadyData>("await_initialization", { events: new Channel() })
 }
@@ -44,25 +35,11 @@ function Desktop() {
 
   return (
     <Show when={ready.latest} fallback={<div class="h-dvh bg-v2-background-bg-deep" />}>
-      {(data) => {
-        const server: ServerConnection.Sidecar = {
-          type: "sidecar",
-          variant: "base",
-          displayName: "local",
-          http: {
-            url: data().url,
-            username: data().username ?? undefined,
-            password: data().password ?? undefined,
-          },
-        }
-        return (
-          <PlatformProvider value={platform}>
-            <AppBaseProviders locale={normalizeLocale(navigator.language)}>
-              <AppInterface defaultServer={ServerConnection.key(server)} servers={[server]} router={router} />
-            </AppBaseProviders>
-          </PlatformProvider>
-        )
-      }}
+      {(data) => (
+        <PlatformProvider value={platform}>
+          <SessionSurface url={data().url} token={data().password ?? ""} />
+        </PlatformProvider>
+      )}
     </Show>
   )
 }
