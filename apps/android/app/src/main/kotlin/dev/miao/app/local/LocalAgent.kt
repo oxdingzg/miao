@@ -7,6 +7,8 @@ import androidx.compose.runtime.setValue
 import dev.miao.core.CanonicalJson
 import dev.miao.core.JsonParseException
 import dev.miao.core.JsonValue
+import dev.miao.core.McpClient
+import dev.miao.core.McpException
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -46,6 +48,12 @@ class LocalAgent(context: Context, private val scope: CoroutineScope) {
     var approval by mutableStateOf<LocalApproval?>(null)
         private set
     var autoAllowTools by mutableStateOf(false)
+    var mcpURL by mutableStateOf<String?>(null)
+        private set
+    var mcpTools by mutableStateOf<List<McpClient.Tool>>(emptyList())
+        private set
+    var mcpError by mutableStateOf<String?>(null)
+        private set
 
     val workspace: File = File(context.filesDir, "LocalAgent/workspace")
     private val configFile = File(context.filesDir, "LocalAgent/config.json")
@@ -53,6 +61,7 @@ class LocalAgent(context: Context, private val scope: CoroutineScope) {
     private var task: Job? = null
     private var decision: CompletableDeferred<Boolean>? = null
     private var call: Call? = null
+    private var mcp: McpClient? = null
 
     init {
         workspace.mkdirs()
@@ -86,6 +95,31 @@ class LocalAgent(context: Context, private val scope: CoroutineScope) {
         providers = providers.filterNot { it.id == id }
         if (selectedID == id) selectedID = providers.firstOrNull()?.id
         storeConfig()
+    }
+
+    fun setMcp(raw: String) {
+        val trimmed = raw.trim()
+        mcpURL = trimmed.ifEmpty { null }
+        mcp = null
+        mcpTools = emptyList()
+        mcpError = null
+        storeConfig()
+        scope.launch { refreshMcp() }
+    }
+
+    suspend fun refreshMcp() {
+        val raw = mcpURL ?: return
+        mcpError = null
+        try {
+            val client = McpClient(raw)
+            client.connect()
+            mcpTools = client.tools()
+            mcp = client
+        } catch (failure: Throwable) {
+            mcpTools = emptyList()
+            mcp = null
+            mcpError = if (failure is McpException) failure.text else "MCP 连接失败"
+        }
     }
 
     fun newSession() {
@@ -348,7 +382,16 @@ class LocalAgent(context: Context, private val scope: CoroutineScope) {
         tool("read_file", "Read a UTF-8 text file from the workspace", listOf("path")),
         tool("write_file", "Write a UTF-8 text file in the workspace", listOf("path", "content")),
         tool("fetch_url", "Fetch an HTTP(S) URL and return its text", listOf("url")),
-    )
+    ) + mcpTools.map { definition ->
+        JsonValue.obj(
+            "type" to JsonValue.of("function"),
+            "function" to JsonValue.obj(
+                "name" to JsonValue.of(definition.name),
+                "description" to JsonValue.of(definition.description),
+                "parameters" to definition.inputSchema,
+            ),
+        )
+    }
 
     private fun tool(name: String, description: String, parameters: List<String>): JsonValue = JsonValue.obj(
         "type" to JsonValue.of("function"),
@@ -385,12 +428,16 @@ class LocalAgent(context: Context, private val scope: CoroutineScope) {
             if (!allowed(call)) {
                 "用户拒绝了这次操作。"
             } else {
-                when (call.name) {
-                    "list_files" -> list(arguments["path"]?.string ?: ".")
-                    "read_file" -> read(arguments["path"]?.string ?: "")
-                    "write_file" -> write(arguments["path"]?.string ?: "", arguments["content"]?.string ?: "")
-                    "fetch_url" -> fetch(arguments["url"]?.string ?: "")
-                    else -> "未知工具：${call.name}"
+                if (mcpTools.any { it.name == call.name }) {
+                    callMcp(call)
+                } else {
+                    when (call.name) {
+                        "list_files" -> list(arguments["path"]?.string ?: ".")
+                        "read_file" -> read(arguments["path"]?.string ?: "")
+                        "write_file" -> write(arguments["path"]?.string ?: "", arguments["content"]?.string ?: "")
+                        "fetch_url" -> fetch(arguments["url"]?.string ?: "")
+                        else -> "未知工具：${call.name}"
+                    }
                 }
             }
         } catch (failure: Throwable) {
@@ -436,6 +483,17 @@ class LocalAgent(context: Context, private val scope: CoroutineScope) {
         return "已写入 ${file.name}（${content.toByteArray().size} 字节）"
     }
 
+    private suspend fun callMcp(call: ToolCall): String {
+        val client = mcp ?: return "MCP 未连接"
+        val arguments = try {
+            CanonicalJson.parse(call.arguments)
+        } catch (_: JsonParseException) {
+            JsonValue.obj()
+        }
+        val result = client.callTool(call.name, arguments)
+        return if (result.isError) "失败：${result.content}" else result.content
+    }
+
     private fun fetch(value: String): String = java.net.URI(value).let { uri ->
         val scheme = uri.scheme?.lowercase()
         if (scheme != "https" && scheme != "http") throw LocalAgentException("接口地址无效")
@@ -477,6 +535,7 @@ class LocalAgent(context: Context, private val scope: CoroutineScope) {
         if (config != null) {
             providers = (config["providers"]?.array ?: emptyList()).map { LocalProvider.fromJson(it) }
             selectedID = config["selected"]?.string
+            mcpURL = config["mcp"]?.string
         }
         if (selectedID == null) selectedID = providers.firstOrNull()?.id
         val history = readJson(sessionsFile)
@@ -485,6 +544,7 @@ class LocalAgent(context: Context, private val scope: CoroutineScope) {
         }
         currentID = sessions.firstOrNull()?.id
         if (sessions.isEmpty()) newSession()
+        if (mcpURL != null) scope.launch { refreshMcp() }
     }
 
     private fun readJson(file: File): JsonValue? {
@@ -501,6 +561,7 @@ class LocalAgent(context: Context, private val scope: CoroutineScope) {
             JsonValue.obj(
                 "providers" to JsonValue.Arr(providers.map { it.toJson() }),
                 "selected" to (selectedID?.let { JsonValue.of(it) } ?: JsonValue.Null),
+                "mcp" to (mcpURL?.let { JsonValue.of(it) } ?: JsonValue.Null),
             ),
         )
         writeAtomic(configFile, bytes)
