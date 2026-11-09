@@ -328,4 +328,187 @@ mod tests {
         );
         assert_eq!(backpressure_edge(false, 0), None);
     }
+
+    /// PERF-05: the extreme face of a stall — several turns batching at
+    /// once while readers already lag. The scheduler picks the interleaving,
+    /// but no interleaving may reorder a producer's frames or drop one:
+    /// every reader, stalled or keeping up, replays every producer's batch
+    /// whole, and the stall costs exactly one report per stalled reader.
+    #[test]
+    fn concurrent_batches_survive_a_backpressured_reader_intact() {
+        let fanout = Fanout::default();
+        let producers = 4;
+        let batch = 1_000;
+        let mut stalled = [fanout.subscribe(), fanout.subscribe()];
+        // A reader that keeps up, on its own thread, so the send side races
+        // a real consumer rather than an idle queue.
+        let keeping_up = {
+            let mut reader = fanout.subscribe();
+            std::thread::spawn(move || {
+                let mut seen = vec![Vec::new(); producers];
+                while seen.iter().map(Vec::len).sum::<usize>() < producers * batch {
+                    match reader.try_recv() {
+                        Ok(frame) if frame["kind"] == "backpressure" => {}
+                        Ok(frame) => {
+                            seen[frame["producer"].as_u64().expect("producer tag") as usize]
+                                .push(frame["seq"].as_u64().expect("seq tag"));
+                        }
+                        Err(_) => std::thread::yield_now(),
+                    }
+                }
+                seen
+            })
+        };
+        std::thread::scope(|scope| {
+            for producer in 0..producers as u64 {
+                let fanout = &fanout;
+                scope.spawn(move || {
+                    for seq in 0..batch as u64 {
+                        fanout.send(json!({
+                            "kind": "provider.delta",
+                            "session_id": "ses_stress",
+                            "producer": producer,
+                            "seq": seq,
+                            // A real delta is not tiny; keep the payload honest.
+                            "text": "x".repeat(1024),
+                        }));
+                    }
+                });
+            }
+        });
+        let kept = keeping_up
+            .join()
+            .expect("the keeping-up reader must not panic");
+        assert_batches_complete("keeping up", &kept, batch);
+        for (index, reader) in stalled.iter_mut().enumerate() {
+            let mut seen = vec![Vec::new(); producers];
+            let mut signals = 0;
+            while let Ok(frame) = reader.try_recv() {
+                if frame["kind"] == "backpressure" {
+                    signals += 1;
+                    assert_eq!(frame["queued"], json!(BACKPRESSURE_QUEUED_FRAMES));
+                    continue;
+                }
+                seen[frame["producer"].as_u64().expect("producer tag") as usize]
+                    .push(frame["seq"].as_u64().expect("seq tag"));
+            }
+            assert_eq!(signals, 1, "stalled reader {index}: one stall, one report");
+            assert_batches_complete(&format!("stalled reader {index}"), &seen, batch);
+        }
+    }
+
+    /// PERF-05: one turn's deltas — normalized here from the provider's own
+    /// framing, as a real turn does — reach the reader in emission order
+    /// with their text intact, and the backlog report rides along without
+    /// displacing or rewriting a fragment.
+    #[test]
+    fn a_sessions_deltas_arrive_in_emission_order_with_their_text_intact() {
+        let chunks: Vec<String> = (0..600).map(|seq| format!("w{seq} ")).collect();
+        let fanout = Fanout::default();
+        let mut reader = fanout.subscribe();
+        for (seq, chunk) in chunks.iter().enumerate() {
+            // A real turn publishes the engine's delta envelope, with the
+            // normalized fragment one level down.
+            for delta in crate::delta::normalize(&json!({
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": chunk},
+            })) {
+                fanout.send(json!({
+                    "kind": "provider.delta",
+                    "session_id": "ses_order",
+                    "seq": seq,
+                    "data": {"kind": "delta", "delta": delta, "raw": {}},
+                }));
+            }
+        }
+        let mut text = String::new();
+        let mut seqs = Vec::new();
+        let mut signals = 0;
+        while let Ok(frame) = reader.try_recv() {
+            if frame["kind"] == "backpressure" {
+                signals += 1;
+                continue;
+            }
+            seqs.push(frame["seq"].as_u64().expect("seq tag"));
+            text.push_str(frame["data"]["delta"]["text"].as_str().expect("text"));
+        }
+        assert_eq!(signals, 1, "one stall across the batch, one report");
+        assert_eq!(text, chunks.concat(), "semantics survive the backlog");
+        assert!(
+            seqs.windows(2).all(|pair| pair[0] < pair[1]),
+            "deltas keep emission order"
+        );
+    }
+
+    /// PERF-05: several Sessions streaming at once must not cost any of
+    /// them its stream. This fan-out has exactly one way to end a
+    /// Session's egress — a failed send, which prunes the reader — so
+    /// after a concurrent storm every reader is still attached and every
+    /// Session's frames are all there, in order.
+    #[test]
+    fn sessions_streaming_concurrently_are_not_cut_short() {
+        let fanout = Fanout::default();
+        let sessions = 8;
+        let per_session = 400;
+        let mut readers: Vec<_> = (0..2).map(|_| fanout.subscribe()).collect();
+        std::thread::scope(|scope| {
+            for session in 0..sessions as u64 {
+                let fanout = &fanout;
+                scope.spawn(move || {
+                    for seq in 0..per_session as u64 {
+                        fanout.send(json!({
+                            "kind": "provider.delta",
+                            "session_id": format!("ses_{session}"),
+                            "seq": seq,
+                        }));
+                    }
+                });
+            }
+        });
+        assert_eq!(
+            fanout.receiver_count(),
+            2,
+            "a storm must not prune a live reader: pruning is how a Session's egress ends early"
+        );
+        for (index, reader) in readers.iter_mut().enumerate() {
+            let mut seen = vec![Vec::new(); sessions];
+            let mut signals = 0;
+            while let Ok(frame) = reader.try_recv() {
+                if frame["kind"] == "backpressure" {
+                    signals += 1;
+                    continue;
+                }
+                let session = frame["session_id"]
+                    .as_str()
+                    .expect("session tag")
+                    .trim_start_matches("ses_")
+                    .parse::<usize>()
+                    .expect("session number");
+                seen[session].push(frame["seq"].as_u64().expect("seq tag"));
+            }
+            assert_eq!(
+                signals, 1,
+                "reader {index}: one stall across the storm, one report"
+            );
+            assert_batches_complete(&format!("reader {index}"), &seen, per_session);
+        }
+    }
+
+    /// Every producer's batch arrived whole and in emission order.
+    fn assert_batches_complete(label: &str, seen: &[Vec<u64>], expected_len: usize) {
+        for (producer, seqs) in seen.iter().enumerate() {
+            assert_eq!(
+                seqs.len(),
+                expected_len,
+                "{label}: producer {producer} lost frames"
+            );
+            for (seq, got) in seqs.iter().enumerate() {
+                assert_eq!(
+                    *got, seq as u64,
+                    "{label}: producer {producer} reordered after frame {seq}"
+                );
+            }
+        }
+    }
 }
