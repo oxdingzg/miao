@@ -2359,7 +2359,11 @@ impl Runtime {
         cancel_cron(&self.inner, session, id).await
     }
 
-    pub async fn edit_cron(&self, session: &str, change: crate::cron::Change) -> Result<Value, Error> {
+    pub async fn edit_cron(
+        &self,
+        session: &str,
+        change: crate::cron::Change,
+    ) -> Result<Value, Error> {
         edit_cron(&self.inner, session, change).await
     }
 
@@ -2367,7 +2371,11 @@ impl Runtime {
         cancel_wakeup(&self.inner, session, id).await
     }
 
-    pub async fn edit_wakeup(&self, session: &str, change: crate::wakeup::Change) -> Result<Value, Error> {
+    pub async fn edit_wakeup(
+        &self,
+        session: &str,
+        change: crate::wakeup::Change,
+    ) -> Result<Value, Error> {
         edit_wakeup(&self.inner, session, change).await
     }
 
@@ -4129,7 +4137,7 @@ command: None,
                                 "cron_edit" => {
                                     let change = crate::cron::Change::parse(prepared.input().clone())
                                         .map_err(|_| Error::Invalid("invalid cron change".into()))?;
-                                    Ok(edit_cron(inner, session, change).await.map_err(external))
+                                    edit_cron(inner, session, change).await.map_err(external)
                                 }
                                 "schedule_wakeup" => {
                                     start_wakeup(inner, session, run, id, &prepared).await?
@@ -4147,7 +4155,7 @@ command: None,
                                 "wakeup_edit" => {
                                     let change = crate::wakeup::Change::parse(prepared.input().clone())
                                         .map_err(|_| Error::Invalid("invalid wakeup change".into()))?;
-                                    Ok(edit_wakeup(inner, session, change).await.map_err(external))
+                                    edit_wakeup(inner, session, change).await.map_err(external)
                                 }
                                 "question" => match ask_question(
                                     inner,
@@ -6113,7 +6121,9 @@ async fn edit_wakeup(
         return Err(Error::Invalid("wakeup not found in this Session".into()));
     };
     if listed["state"].as_str() != Some("scheduled") {
-        return Err(Error::Invalid("only a scheduled wakeup can be edited".into()));
+        return Err(Error::Invalid(
+            "only a scheduled wakeup can be edited".into(),
+        ));
     }
     let mut input = listed["input"].clone();
     if let Some(prompt) = &change.prompt {

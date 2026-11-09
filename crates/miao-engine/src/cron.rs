@@ -265,7 +265,7 @@ impl Store {
                 data["cron"]=data["input"]["cron"].clone();data["pattern"]=data["input"]["cron"].clone();data["session_id"]=json!(session);
                 let next:Option<String>=conn.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='cron.next' AND json_extract(data,'$.cron_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,id],|row|row.get(0)).optional()?;
                 let counts:(u64,u64)=conn.query_row("SELECT COALESCE(sum(kind='cron.fired'),0),COALESCE(sum(kind='cron.skipped'),0) FROM engine_event WHERE session_id=?1 AND kind IN ('cron.fired','cron.skipped') AND json_extract(data,'$.cron_id')=?2",params![session,id],|row|Ok((row.get(0)?,row.get(1)?)))?;
-                let resolved=resolution(conn,&session,id)?;data["fired_count"]=json!(counts.0);data["skipped_count"]=json!(counts.1);data["next_occurrence_ms"]=next.map(|value|serde_json::from_str::<Value>(&value)).transpose()?.map(|value|value["next_occurrence_ms"].clone()).unwrap_or_else(||data["first_occurrence_ms"].clone());
+                let resolved=resolution(conn,&session,&id)?;data["fired_count"]=json!(counts.0);data["skipped_count"]=json!(counts.1);data["next_occurrence_ms"]=next.map(|value|serde_json::from_str::<Value>(&value)).transpose()?.map(|value|value["next_occurrence_ms"].clone()).unwrap_or_else(||data["first_occurrence_ms"].clone());
                 if let Some(resolved)=resolved{data["state"]=resolved["state"].clone();data["next_occurrence_ms"]=Value::Null;}Ok(data)
             }).collect()
         }).await
