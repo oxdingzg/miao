@@ -81,25 +81,23 @@ impl Palette {
         }
     }
 
-    /// The block and text colours of one changed diff row, named after the
-    /// product's own diff variables (`--surface-diff-add-base`,
-    /// `--text-diff-add-base`, …): the row reads as the product's green or red
-    /// block, on a light canvas as on a dark one. `syntax()` blurs the tokens
-    /// the same way, and a monochrome terminal keeps meaning in the glyphs
-    /// alone.
-    pub fn diff(self, added: bool) -> (Color, Color) {
+    /// The block behind one changed diff row, named after the product's own
+    /// diff variables (`--surface-diff-add-base`, `--surface-diff-delete-base`):
+    /// the row reads as the product's green or red block, on a light canvas as
+    /// on a dark one. A monochrome terminal keeps meaning in the glyphs alone.
+    pub fn diff_block(self, added: bool) -> Color {
         if self.background == Color::Reset {
-            return (Color::Reset, Color::Reset);
+            return Color::Reset;
         }
         let light = matches!(
             self.background,
             Color::Rgb(r, g, b) if (r as u32 * 299 + g as u32 * 587 + b as u32 * 114) / 1000 > 140
         );
         match (light, added) {
-            (true, true) => (rgb("e3fae1"), rgb("3a8437")),
-            (true, false) => (rgb("feefeb"), rgb("ed4831")),
-            (false, true) => (rgb("1a2919"), rgb("9bcd97")),
-            (false, false) => (rgb("42120b"), rgb("fc533a")),
+            (true, true) => rgb("e3fae1"),
+            (true, false) => rgb("feefeb"),
+            (false, true) => rgb("1a2919"),
+            (false, false) => rgb("42120b"),
         }
     }
 }
