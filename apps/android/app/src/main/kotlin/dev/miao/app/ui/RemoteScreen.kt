@@ -25,6 +25,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -35,6 +37,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -42,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -49,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import dev.miao.app.AppModel
+import dev.miao.app.local.LocalAgent
 import dev.miao.app.HostClient
 import dev.miao.app.InboxEntry
 import dev.miao.app.SessionSummary
@@ -61,6 +66,10 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun MiaoRoot(model: AppModel) {
+    val context = LocalContext.current
+    val compositionScope = rememberCoroutineScope()
+    val agent = remember { LocalAgent(context, compositionScope) }
+    var tab by rememberSaveable { mutableIntStateOf(1) }
     var showAccount by rememberSaveable { mutableStateOf(false) }
     var showPairing by rememberSaveable { mutableStateOf(false) }
     var pairingLink by rememberSaveable { mutableStateOf("") }
@@ -81,13 +90,35 @@ fun MiaoRoot(model: AppModel) {
         return
     }
 
-    RemoteScreen(
-        model = model,
-        onOpenAccount = { showAccount = true },
-        onPair = { showPairing = true },
-        onProviders = { providersHost = it },
-        onOpenSession = { client, summary -> openSession = client to summary },
-    )
+    Column(Modifier.fillMaxSize()) {
+        androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+            if (tab == 0) {
+                LocalScreen(agent)
+            } else {
+                RemoteScreen(
+                    model = model,
+                    onOpenAccount = { showAccount = true },
+                    onPair = { showPairing = true },
+                    onProviders = { providersHost = it },
+                    onOpenSession = { client, summary -> openSession = client to summary },
+                )
+            }
+        }
+        NavigationBar {
+            NavigationBarItem(
+                selected = tab == 0,
+                onClick = { tab = 0 },
+                icon = {},
+                label = { Text("本机") },
+            )
+            NavigationBarItem(
+                selected = tab == 1,
+                onClick = { tab = 1 },
+                icon = {},
+                label = { Text("电脑") },
+            )
+        }
+    }
 
     if (showAccount) AccountDialog(model, onDismiss = { showAccount = false })
     if (showPairing) {

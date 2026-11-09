@@ -56,4 +56,5 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.zxing.embedded)
+    implementation(libs.okhttp)
 }
