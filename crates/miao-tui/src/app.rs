@@ -7508,10 +7508,18 @@ mod tests {
                 "data": {"kind": "delta", "delta": delta},
             }))
         };
-        app.handle(frame(serde_json::json!({"kind": "tool.start", "name": "run_command"})));
-        app.handle(frame(serde_json::json!({"kind": "tool.input.delta", "delta": "{\"arg"})));
-        app.handle(frame(serde_json::json!({"kind": "tool.input.delta", "delta": "v\":[\"echo"})));
-        app.handle(frame(serde_json::json!({"kind": "tool.input.delta", "delta": "\",\"hi\"]}"})));
+        app.handle(frame(
+            serde_json::json!({"kind": "tool.start", "name": "run_command"}),
+        ));
+        app.handle(frame(
+            serde_json::json!({"kind": "tool.input.delta", "delta": "{\"arg"}),
+        ));
+        app.handle(frame(
+            serde_json::json!({"kind": "tool.input.delta", "delta": "v\":[\"echo"}),
+        ));
+        app.handle(frame(
+            serde_json::json!({"kind": "tool.input.delta", "delta": "\",\"hi\"]}"}),
+        ));
         let painted = drafted(&mut app);
         assert!(
             painted.contains("bash"),
@@ -7531,7 +7539,10 @@ mod tests {
         let mut app = running_app("run-1");
         app.handle(delta_frame("run-1", "reasoning.delta", "weighing"));
         app.handle(delta_frame("run-1", "text.delta", "Hello"));
-        assert!(app.draft.as_ref().is_some_and(|draft| draft.text() == "Hello"));
+        assert!(app
+            .draft
+            .as_ref()
+            .is_some_and(|draft| draft.text() == "Hello"));
         let committed = Transcript::from_snapshot(&serde_json::json!({
             "messages": [{"role": "assistant", "content": [
                 {"type": "reasoning", "text": "weighing"},
@@ -7543,7 +7554,9 @@ mod tests {
         assert!(app.shell.draft().is_empty(), "the streaming draft is gone");
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 30)).expect("terminal");
-        terminal.draw(|frame| app.shell.render(frame)).expect("draw");
+        terminal
+            .draw(|frame| app.shell.render(frame))
+            .expect("draw");
         let text: String = terminal
             .backend()
             .buffer()
