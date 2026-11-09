@@ -1147,7 +1147,27 @@ impl Tools {
         // candidates are canonicalized and stripped too, so a verbatim copy
         // here would never match and the protection would silently lapse on
         // Windows.
-        let plain = canonical_plain(path.to_owned());
+        //
+        // A protected file usually does not exist yet, and a raw spelling then
+        // disagrees with the checked candidate wherever the platform hides a
+        // symlink in the prefix (macOS /var → /private/var): the guard would
+        // silently lapse again. Anchor on the nearest existing parent and
+        // re-attach the tail, the same walk `contained_target` performs.
+        let mut existing = path.to_path_buf();
+        let mut tail = Vec::new();
+        while !existing.exists() {
+            match existing.parent() {
+                Some(parent) if parent != existing => {
+                    tail.push(existing.file_name().unwrap_or_default().to_owned());
+                    existing = parent.to_path_buf();
+                }
+                _ => break,
+            }
+        }
+        let mut plain = canonical_plain(std::fs::canonicalize(&existing).unwrap_or(existing));
+        for component in tail.iter().rev() {
+            plain = plain.join(component);
+        }
         self.protected.push(plain.clone());
         self.protected.push(plain.with_extension("engine-lock"));
         for suffix in ["-wal", "-shm"] {
@@ -1418,6 +1438,10 @@ impl Tools {
                     std::iter::once(operation.path.as_str()).chain(operation.move_to.as_deref())
                 {
                     let candidate = self.contained_target(target).await?;
+                    eprintln!(
+                        "DBG protected={:?} candidate={:?} move_to={:?}",
+                        self.protected, candidate, operation.move_to
+                    );
                     if self.protected.contains(&candidate) {
                         return Err(ToolError::ProtectedResource);
                     }
