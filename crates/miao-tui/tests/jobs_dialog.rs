@@ -69,7 +69,9 @@ impl Harness {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
-                        seen.lock().expect("output lock").extend_from_slice(&buf[..n]);
+                        seen.lock()
+                            .expect("output lock")
+                            .extend_from_slice(&buf[..n]);
                         if !replied_cpr
                             && seen
                                 .lock()

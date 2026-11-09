@@ -491,15 +491,18 @@ fn main() {
                     "stopped" => ("cancelled", "finished", "running"),
                     _ => ("running", "finished", "running"),
                 };
-                send(&mut out, json!({"id":id,"result":{
-                    "jobs":[
-                        {"job_id":"job_build","session_id":"ses_a","state":build,"command":"bun test","output":if build == "running" {""} else {"build log tail"}},
-                        {"job_id":"job_deploy","session_id":"ses_c","state":deploy,"command":"bun run deploy","output":"deploy ok"}
-                    ],
-                    "subagents":[
-                        {"id":"sub_survey","session_id":"ses_a","status":survey,"description":"survey the flaky tests"}
-                    ]
-                }}));
+                send(
+                    &mut out,
+                    json!({"id":id,"result":{
+                        "jobs":[
+                            {"job_id":"job_build","session_id":"ses_a","state":build,"command":"bun test","output":if build == "running" {""} else {"build log tail"}},
+                            {"job_id":"job_deploy","session_id":"ses_c","state":deploy,"command":"bun run deploy","output":"deploy ok"}
+                        ],
+                        "subagents":[
+                            {"id":"sub_survey","session_id":"ses_a","status":survey,"description":"survey the flaky tests"}
+                        ]
+                    }}),
+                );
             }
             "job" if jobs_phase.is_some() => {
                 let phase = if jobs_stopped {
@@ -512,11 +515,17 @@ fn main() {
                     "stopped" => "cancelled",
                     _ => "running",
                 };
-                send(&mut out, json!({"id":id,"result":{"state":state,"result":null}}));
+                send(
+                    &mut out,
+                    json!({"id":id,"result":{"state":state,"result":null}}),
+                );
             }
             "stop_all_jobs" if jobs_phase.is_some() => {
                 jobs_stopped = true;
-                send(&mut out, json!({"id":id,"result":{"stopped":["job_build"]}}));
+                send(
+                    &mut out,
+                    json!({"id":id,"result":{"stopped":["job_build"]}}),
+                );
             }
             "select_model" if sessions => {
                 log_action(&frame["params"], "select_model");

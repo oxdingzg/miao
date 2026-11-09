@@ -15,7 +15,7 @@ use crate::dialogs::{
 };
 use crate::editor::{Action, Mode};
 use crate::engine;
-use crate::event::{AppEvent, Bus, JobRow};
+use crate::event::{AppEvent, Bus};
 use crate::keybinds::{self, Keymap};
 use crate::pane::{render_dialog, Home, Panel, PanelKind, Shell, StatusHint};
 use crate::platform::attention::{self, Attention};
@@ -2450,18 +2450,27 @@ impl App {
     /// row shows what the job produced once the engine answers. Asked once per
     /// row, because the detail stays on the row until the list is rebuilt.
     fn preview_selected_job(&mut self) {
-        let Some(Dialog::Jobs(list)) = self.dialog.as_ref() else {
+        let Some(Dialog::Jobs(list)) = self.dialog.as_mut() else {
             return;
         };
-        let (Some(job_id), Some(session_id), Some(engine)) =
-            (list.selected_id(), self.session_id(), self.engine.as_ref())
-        else {
+        let Some(job_id) = list.selected_id() else {
             return;
         };
+        let job_id = job_id.clone();
         if list.preview_asked(&job_id) {
             return;
         }
-        list.mark_preview_asked(&job_id);
+        // The asked-marker needs the dialog mutably, so it lands before the
+        // shared borrows of the Session and the engine start.
+        if let Some(Dialog::Jobs(list)) = self.dialog.as_mut() {
+            list.mark_preview_asked(&job_id);
+        }
+        let Some(session_id) = self.session_id() else {
+            return;
+        };
+        let Some(engine) = self.engine.as_ref() else {
+            return;
+        };
         engine.job_detail(&session_id, &job_id);
     }
 
@@ -4796,6 +4805,7 @@ mod tests {
     use super::*;
     use crate::session::{Entry, RevertPlan, Transcript};
     use crate::theme::{self, DEFAULT_THEME};
+    use crate::event::JobRow;
     use std::collections::BTreeMap;
 
     fn app() -> App {

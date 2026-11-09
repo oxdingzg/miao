@@ -3036,8 +3036,7 @@ mod tests {
         let rows = dialog.list().expect("list");
         assert_eq!(rows.rows[0].label, "job_1 · ses_a · running");
         assert_eq!(
-            rows.rows[1].label,
-            "◇ sub_survey · ses_a · running",
+            rows.rows[1].label, "◇ sub_survey · ses_a · running",
             "a subagent row marks itself and names its owner"
         );
         assert_eq!(rows.rows[2].label, "job_2 · ses_c · finished");

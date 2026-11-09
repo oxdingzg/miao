@@ -1914,7 +1914,10 @@ fn parse_job_rows(value: &Value) -> Vec<JobRow> {
     let empty = Vec::new();
     let jobs = match value.as_array() {
         Some(jobs) => jobs,
-        None => value.get("jobs").and_then(Value::as_array).unwrap_or(&empty),
+        None => value
+            .get("jobs")
+            .and_then(Value::as_array)
+            .unwrap_or(&empty),
     };
     jobs.iter()
         .filter_map(|row| {
