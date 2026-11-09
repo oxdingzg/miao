@@ -3290,11 +3290,13 @@ impl Pane for SidebarPane {
             }
             if let Some((files, added, removed)) = self.changes {
                 let noun = if files == 1 { "file" } else { "files" };
+                lines.push(Line::default());
                 lines.push(Line::from(Span::styled(
                     format!("▾ Changes {files} {noun}  +{added} −{removed}"),
                     Style::new().fg(palette.text_muted),
                 )));
             }
+            lines.push(Line::default());
             if let Some(goal) = &self.goal {
                 // The status word is the one thing here that can need the
                 // operator, so it keeps colour only when it does.
@@ -3321,8 +3323,10 @@ impl Pane for SidebarPane {
                         Style::new().fg(palette.text_muted),
                     )));
                 }
-                lines.push(Line::default());
             }
+            // Every ▾ section opens after one blank row; the Goal block no
+            // longer carries its own trailing one.
+            lines.push(Line::default());
             let done = self
                 .todos
                 .iter()
@@ -7151,6 +7155,57 @@ mod tests {
             "the title is truncated: {:?}",
             rows[title]
         );
+    }
+    /// Every ▾ section opens after one blank row, wherever it sits in the
+    /// column: a section header glued to the rows above reads as part of them.
+    #[test]
+    fn every_section_header_opens_after_a_blank_row() {
+        let mut sidebar = SidebarPane {
+            hover_rows: Vec::new(),
+            changes: Some((2, 10, 4)),
+            mode: Some("build".into()),
+            theme: home_theme(),
+            session: Some(home_row("ses_u", "usage", None)),
+            usage: None,
+            usage_hourly: None,
+            goal: Some(crate::session::GoalView {
+                status: "active".into(),
+                objective: "ship the release".into(),
+                budget: None,
+                evidence: None,
+            }),
+            todos: vec![crate::session::TodoView {
+                content: "write tests".into(),
+                status: "in_progress".into(),
+            }],
+            chord: None,
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 40)).expect("terminal");
+        terminal
+            .draw(|frame| sidebar.render(frame, frame.area()))
+            .expect("draw");
+        let rows = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(60)
+            .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let blank = |row: &String| {
+            row.trim_matches(|c: char| c == '│' || c.is_whitespace())
+                .is_empty()
+        };
+        for header in ["▾ Context", "▾ Mode", "▾ Changes", "▾ Goal", "▾ Todo"] {
+            let at = rows
+                .iter()
+                .position(|row| row.contains(header))
+                .unwrap_or_else(|| panic!("{header} header missing: {rows:?}"));
+            assert!(
+                at > 0 && blank(&rows[at - 1]),
+                "{header} must open after a blank row: {rows:?}"
+            );
+        }
     }
 
     fn home_row(id: &str, title: &str, preview: Option<&str>) -> SessionSummary {
