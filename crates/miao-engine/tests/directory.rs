@@ -38,6 +38,7 @@ async fn directory_catalog_and_execution_have_bounded_workspace_scope() {
             "session_state",
             "todowrite",
             "goal",
+            "planwrite",
             "question"
         ]
     );
