@@ -2367,6 +2367,10 @@ impl Runtime {
         cancel_wakeup(&self.inner, session, id).await
     }
 
+    pub async fn edit_wakeup(&self, session: &str, change: crate::wakeup::Change) -> Result<Value, Error> {
+        edit_wakeup(&self.inner, session, change).await
+    }
+
     pub async fn shutdown(&self) {
         self.inner.stop.cancel();
         if let Some(heartbeat) = self.inner.heartbeat.lock().await.take() {
@@ -4139,6 +4143,11 @@ command: None,
                                     Ok(
                                         json!({"accepted":cancel_wakeup(inner,session,&selector.timer_id).await?}),
                                     )
+                                }
+                                "wakeup_edit" => {
+                                    let change = crate::wakeup::Change::parse(prepared.input().clone())
+                                        .map_err(|_| Error::Invalid("invalid wakeup change".into()))?;
+                                    Ok(edit_wakeup(inner, session, change).await.map_err(external))
                                 }
                                 "question" => match ask_question(
                                     inner,
@@ -6088,6 +6097,58 @@ async fn cancel_wakeup(inner: &Inner, session: &str, id: &str) -> Result<bool, E
     Ok(accepted)
 }
 
+/// Edit one wakeup in place: the id and its history survive, and the due
+/// time is recomputed from the edited delay. The armed timer swaps through
+/// the rearm token, so the old timer exits without resolving.
+async fn edit_wakeup(
+    inner: &Arc<Inner>,
+    session: &str,
+    change: crate::wakeup::Change,
+) -> Result<Value, Error> {
+    let rows = inner.store.wakeups(session).await?;
+    let Some(listed) = rows
+        .into_iter()
+        .find(|row| row["timer_id"].as_str() == Some(change.timer_id.as_str()))
+    else {
+        return Err(Error::Invalid("wakeup not found in this Session".into()));
+    };
+    if listed["state"].as_str() != Some("scheduled") {
+        return Err(Error::Invalid("only a scheduled wakeup can be edited".into()));
+    }
+    let mut input = listed["input"].clone();
+    if let Some(prompt) = &change.prompt {
+        input["prompt"] = json!(prompt);
+    }
+    if let Some(delay) = change.delay_seconds {
+        input["delaySeconds"] = json!(delay);
+    }
+    if let Some(delivery) = &change.delivery {
+        input["delivery"] = json!(delivery);
+    }
+    let input = crate::wakeup::Input::parse(input)
+        .map_err(|_| Error::Invalid("edited wakeup input is invalid".into()))?;
+    let due = now_ms().saturating_add(input.delay_seconds * 1000);
+    let id = change.timer_id.clone();
+    inner
+        .store
+        .edit_wakeup(session, &change.timer_id, input, due)
+        .await?;
+    let previous = inner.timers.lock().await.remove(&change.timer_id);
+    if let Some(previous) = previous {
+        previous.rearm.cancel();
+        let _ = previous.join.await;
+    }
+    let background = arm_wakeup(inner, session.to_owned(), id.clone(), due);
+    inner.timers.lock().await.insert(id, background);
+    Ok(inner
+        .store
+        .wakeups(session)
+        .await?
+        .into_iter()
+        .find(|row| row["timer_id"].as_str() == Some(change.timer_id.as_str()))
+        .unwrap_or(listed))
+}
+
 /// (Re-)arm a durable wakeup from its stored due time. Shared by the
 /// schedule tool path and process restart adoption.
 fn arm_wakeup(inner: &Arc<Inner>, source: String, timer_id: String, due_at_ms: u64) -> Background {
@@ -6096,12 +6157,13 @@ fn arm_wakeup(inner: &Arc<Inner>, source: String, timer_id: String, due_at_ms: u
     let cancel = inner.stop.child_token();
     let rearm = cancel.child_token();
     let token = cancel.clone();
+    let rearm_token = rearm.clone();
     let owner = inner.clone();
     let timer_id = timer_id.clone();
     let background_source = source.clone();
     let join = tokio::spawn(async move {
         let result=async {
-            tokio::select!{biased;_=token.cancelled()=>{owner.store.close_wakeup(&source,&timer_id,"cancelled").await?;return Ok::<_,Error>(());},_=tokio::time::sleep_until(deadline)=>{}}
+            tokio::select!{biased;_=token.cancelled()=>{owner.store.close_wakeup(&source,&timer_id,"cancelled").await?;return Ok::<_,Error>(());},_=rearm_token.cancelled()=>{return Ok(());},_=tokio::time::sleep_until(deadline)=>{}}
             if token.is_cancelled(){owner.store.close_wakeup(&source,&timer_id,"cancelled").await?;return Ok(());}
             if let Some(admitted)=owner.store.fire_wakeup(&source,&timer_id).await? {
                 notify_admission(&owner,&source,&admitted,"wakeup.wake_failed",json!({"timer_id":timer_id,"input_id":admitted.input_id})).await?;

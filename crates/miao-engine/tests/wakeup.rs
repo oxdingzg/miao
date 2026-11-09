@@ -287,3 +287,79 @@ async fn a_finished_timer_handle_does_not_keep_the_runtime_alive() {
     .expect("a completed timer handle still counted as live work");
     runtime.shutdown().await;
 }
+#[tokio::test]
+async fn edit_moves_the_due_time_and_keeps_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, provider) = setup(dir.path(), false, 1).await;
+    let original = store.wakeups("s").await.unwrap().remove(0);
+    let id = original["timer_id"].as_str().unwrap().to_owned();
+    let change = wakeup::Change::parse(json!({"timer_id": id, "delaySeconds": 3600})).unwrap();
+    let data = runtime.edit_wakeup("s", change).await.unwrap();
+    assert_eq!(data["timer_id"].as_str(), Some(id.as_str()));
+    assert_eq!(data["input"]["prompt"], json!("fire-me"));
+    let listed = store.wakeups("s").await.unwrap().remove(0);
+    assert_eq!(listed["due_at_ms"], data["due_at_ms"]);
+    assert!(
+        listed["due_at_ms"].as_u64().unwrap()
+            >= original["due_at_ms"].as_u64().unwrap() + 3_500_000
+    );
+    assert_eq!(listed["state"], "scheduled");
+    tokio::time::pause();
+    tokio::time::advance(std::time::Duration::from_secs(3610)).await;
+    tokio::time::resume();
+    tokio::time::timeout(std::time::Duration::from_secs(3), provider.fired.notified())
+        .await
+        .unwrap();
+    runtime.shutdown().await;
+    let events = store.events("s", 0, 100).await.unwrap();
+    let fired = events
+        .iter()
+        .filter(|event| event.kind == "wakeup.resolved" && event.data["state"] == "fired")
+        .count();
+    assert_eq!(fired, 1);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "input.admitted"
+                && event.data["input_id"] == format!("wakeup/{id}"))
+            .count(),
+        1
+    );
+    assert!(events.iter().any(|event| event.kind == "wakeup.updated"));
+}
+#[tokio::test]
+async fn edit_refuses_fieldless_resolved_and_invalid_changes() {
+    for (input, ok) in [
+        (json!({"timer_id": "ok-1", "prompt": "next"}), true),
+        (json!({"timer_id": "ok-1"}), false),
+        (json!({"timer_id": "a b", "prompt": "x"}), false),
+        (json!({"timer_id": "ok-1", "unknown": 1}), false),
+        (json!({"timer_id": "ok-1", "prompt": ""}), false),
+        (json!({"timer_id": "ok-1", "delaySeconds": 59}), false),
+        (json!({"timer_id": "ok-1", "delaySeconds": 3601}), false),
+    ] {
+        assert_eq!(wakeup::Change::parse(input).is_ok(), ok);
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, _provider) = setup(dir.path(), false, 1).await;
+    let id = store.wakeups("s").await.unwrap().remove(0)["timer_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(runtime
+        .edit_wakeup(
+            "s",
+            wakeup::Change::parse(json!({"timer_id": "missing", "prompt": "x"})).unwrap()
+        )
+        .await
+        .is_err());
+    assert!(runtime.cancel_wakeup("s", &id).await.unwrap());
+    assert!(runtime
+        .edit_wakeup(
+            "s",
+            wakeup::Change::parse(json!({"timer_id": id, "prompt": "late"})).unwrap()
+        )
+        .await
+        .is_err());
+    runtime.shutdown().await;
+}

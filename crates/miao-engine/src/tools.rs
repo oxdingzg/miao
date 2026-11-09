@@ -1340,6 +1340,10 @@ impl Tools {
                 crate::wakeup::Input::parse(input.clone())?;
                 ".".into()
             }
+            "wakeup_edit" if self.wakeup_enabled() => {
+                crate::wakeup::Change::parse(input.clone())?;
+                ".".into()
+            }
             "cancel_wakeup" if self.wakeup_enabled() => {
                 crate::wakeup::Selector::parse(input.clone())?;
                 ".".into()
@@ -1524,6 +1528,11 @@ impl Tools {
                 "@session/wakeup/{}",
                 crate::wakeup::Selector::parse(input.clone())?.timer_id
             )
+        } else if name == "wakeup_edit" {
+            format!(
+                "@session/wakeup/{}",
+                crate::wakeup::Change::parse(input.clone())?.timer_id
+            )
         } else if name == "question" {
             "@session/question".into()
         } else if name == "session_state"
@@ -1569,7 +1578,7 @@ impl Tools {
         };
         let access = if name == "cron_create" || name == "cron_edit" {
             Access::Cron
-        } else if name == "schedule_wakeup" {
+        } else if name == "schedule_wakeup" || name == "wakeup_edit" {
             Access::Schedule
         } else if matches!(
             name,
@@ -2195,6 +2204,7 @@ impl Tools {
         if self.wakeup_enabled() {
             definitions.extend([
                 ToolDefinition{name:"schedule_wakeup".into(),description:"Schedule one prompt for this Session in 60..3600 seconds. Default delivery=queue. Survives turn cancel, but timers stop on process shutdown/restart. Durable admission is atomic at fire; no automatic timer replay.".into(),input_schema:json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":8192},"delaySeconds":{"type":"integer","minimum":60,"maximum":3600},"delivery":{"type":"string","enum":["queue","steer"],"default":"queue"}},"required":["prompt","delaySeconds"],"additionalProperties":false})},
+                ToolDefinition{name:"wakeup_edit".into(),description:"Edit one of this Session's pending wakeups in place: absent fields keep their value, the timer id stays stable, and the due time is recomputed from the edited delay. A fired timer has already admitted its prompt and cannot be edited.".into(),input_schema:json!({"type":"object","properties":{"timer_id":{"type":"string"},"prompt":{"type":"string","minLength":1,"maxLength":8192},"delaySeconds":{"type":"integer","minimum":60,"maximum":3600},"delivery":{"type":"string","enum":["queue","steer"]}},"required":["timer_id"],"additionalProperties":false})},
                 ToolDefinition{name:"cancel_wakeup".into(),description:"Cancel this Session's pending wakeup. A fired timer has already admitted its prompt and cannot be cancelled by this operation.".into(),input_schema:json!({"type":"object","properties":{"timer_id":{"type":"string"}},"required":["timer_id"],"additionalProperties":false})},
             ]);
         }
