@@ -153,17 +153,15 @@ async fn check_health(url: &str, password: Option<&str>) -> bool {
     let Ok(client) = builder.build() else {
         return false;
     };
-    let Ok(health_url) = url.join("/global/health") else {
+    // `/api/health` is the engine's one unauthenticated endpoint, so the check
+    // asks for readiness rather than presenting the bearer token.
+    let Ok(health_url) = url.join("/api/health") else {
         return false;
     };
 
-    let mut req = client.get(health_url);
+    let _ = password;
 
-    if let Some(password) = password {
-        req = req.basic_auth("miao", Some(password));
-    }
-
-    req.send()
+    client.get(health_url).send()
         .await
         .map(|r| r.status().is_success())
         .unwrap_or(false)

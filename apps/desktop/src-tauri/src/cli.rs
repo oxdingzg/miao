@@ -552,7 +552,7 @@ fn signal_from_status(status: std::process::ExitStatus) -> Option<i32> {
 
 pub fn serve(
     app: &AppHandle,
-    hostname: &str,
+    _hostname: &str,
     port: u32,
     password: &str,
 ) -> (CommandChild, oneshot::Receiver<TerminatedPayload>) {
@@ -560,14 +560,13 @@ pub fn serve(
 
     tracing::info!(port, "Spawning sidecar");
 
-    let envs = [
-        ("MIAO_SERVER_USERNAME", "miao".to_string()),
-        ("MIAO_SERVER_PASSWORD", password.to_string()),
-    ];
+    // The engine's loopback control plane authenticates with a bearer token read
+    // from MIAO_SERVER_PASSWORD; it has no basic-auth username.
+    let envs = [("MIAO_SERVER_PASSWORD", password.to_string())];
 
     let (events, child) = spawn_command(
         app,
-        format!("--print-logs --log-level WARN serve --hostname {hostname} --port {port}").as_str(),
+        format!("serve --port {port}").as_str(),
         &envs,
     )
     .expect("Failed to spawn miao");
