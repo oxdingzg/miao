@@ -4722,8 +4722,32 @@ command: None,
                     _ => goal_stalled_since.or_else(|| Some(std::time::Instant::now())),
                 };
                 goal_signature = Some(signature);
+                // A text-only reply while background jobs are still pending is
+                // a yield, not a stall: the model subscribed to those jobs and
+                // has nothing to do until they finish. Finishing a job admits
+                // an input that wakes this loop, so stopping the drain here
+                // parks the session without handing it back to the operator.
+                let waiting_jobs: Vec<String> = inner
+                    .store
+                    .jobs(session)
+                    .await?
+                    .into_iter()
+                    .filter(|job| {
+                        !matches!(
+                            job["state"].as_str(),
+                            Some("completed")
+                                | Some("failed")
+                                | Some("cancelled")
+                                | Some("interrupted")
+                                | Some("unknown")
+                        )
+                    })
+                    .filter_map(|job| job["id"].as_str().map(str::to_owned))
+                    .collect();
                 let reason = if allowance == Some(0) {
                     Some("budget")
+                } else if !waiting_jobs.is_empty() {
+                    Some("waiting")
                 } else if goal_stalls >= 2 {
                     Some("no-progress")
                 } else {
@@ -4754,6 +4778,14 @@ command: None,
                             allowance.unwrap_or(0),
                             goal_iterations
                         ),
+                        "waiting" => {
+                            let ids = waiting_jobs.join(", ");
+                            format!(
+                                "Task paused: {} background job(s) still pending ({}). The session resumes automatically as each one finishes — no action needed.",
+                                waiting_jobs.len(),
+                                ids
+                            )
+                        }
                         _ => format!(
                             "Task paused: the todo list stayed unchanged for {goal_stalls} continuation turns over {waited}s, so the loop stopped waiting for it to move: another continuation would repeat the same work. Nothing is running now and it will not resume on its own. Add or update a todo, then send a message with the next step."
                         ),
