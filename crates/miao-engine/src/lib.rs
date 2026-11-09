@@ -45,6 +45,7 @@ pub mod openai_chat;
 pub mod openai_responses;
 pub mod patch;
 pub mod pdf;
+pub mod peer;
 pub mod permission;
 pub mod permission_changefeed;
 pub mod permission_context;

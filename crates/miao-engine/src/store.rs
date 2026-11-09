@@ -470,6 +470,14 @@ impl Store {
                 if !has_attachments {
                     conn.execute("ALTER TABLE engine_input ADD COLUMN attachments TEXT", [])?;
                 }
+                let has_peer_sender:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_input') WHERE name='sender')",[],|r|r.get(0))?;
+                if !has_peer_sender {
+                    conn.execute("ALTER TABLE engine_input ADD COLUMN sender TEXT", [])?;
+                }
+                let has_peer_reply:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_input') WHERE name='reply_to')",[],|r|r.get(0))?;
+                if !has_peer_reply {
+                    conn.execute("ALTER TABLE engine_input ADD COLUMN reply_to TEXT", [])?;
+                }
                 let has_reverted:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_message') WHERE name='reverted')",[],|r|r.get(0))?;
                 if !has_reverted {
                     conn.execute(
@@ -740,7 +748,7 @@ impl Store {
         let limit = limit.clamp(1, 1000);
         self.call(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT i.id,i.prompt,i.delivery,i.admitted_seq,e.recorded_at_ms,i.attachments
+                "SELECT i.id,i.prompt,i.delivery,i.admitted_seq,e.recorded_at_ms,i.attachments,i.sender,i.reply_to
                  FROM engine_input i
                  LEFT JOIN engine_event e ON e.session_id=i.session_id AND e.seq=i.admitted_seq
                  WHERE i.session_id=?1 AND i.state='pending' AND (?2 IS NULL OR i.admitted_seq > ?2)
@@ -754,12 +762,14 @@ impl Store {
                     row.get::<_, u64>(3)?,
                     row.get::<_, Option<u64>>(4)?.unwrap_or_default(),
                     row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<String>>(7)?,
                 ))
             })?;
             let mut inputs = Vec::new();
             for row in rows {
-                let (id, prompt, delivery, admitted_seq, recorded_at_ms, attachments) = row?;
-                inputs.push(json!({
+                let (id, prompt, delivery, admitted_seq, recorded_at_ms, attachments, sender, reply_to) = row?;
+                let mut input = json!({
                     "id": id,
                     "session_id": session,
                     "prompt": prompt,
@@ -770,7 +780,16 @@ impl Store {
                         .map(|value| serde_json::from_str::<Value>(&value))
                         .transpose()?
                         .unwrap_or_else(|| json!([])),
-                }));
+                });
+                // Peer attribution and reply linkage travel with the mail so
+                // an inbox reader sees the thread, not only the text.
+                if let Some(sender) = sender {
+                    input["sender"] = json!(sender);
+                }
+                if let Some(reply_to) = reply_to {
+                    input["reply_to"] = json!(reply_to);
+                }
+                inputs.push(input);
             }
             let has_more = inputs.len() > limit;
             inputs.truncate(limit);
@@ -855,17 +874,26 @@ impl Store {
             if !exists {
                 return Err(Error::Invalid("Session does not exist".into()));
             }
-            let row: Option<(String, String, u64, Option<u64>)> = conn
+            let row = conn
                 .query_row(
-                    "SELECT i.delivery,i.state,i.admitted_seq,e.recorded_at_ms
+                    "SELECT i.delivery,i.state,i.admitted_seq,e.recorded_at_ms,i.sender,i.reply_to
                      FROM engine_input i
                      LEFT JOIN engine_event e ON e.session_id=i.session_id AND e.seq=i.admitted_seq
                      WHERE i.session_id=?1 AND i.id=?2",
                     params![session, input_id],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, u64>(2)?,
+                            row.get::<_, Option<u64>>(3)?,
+                            row.get::<_, Option<String>>(4)?,
+                            row.get::<_, Option<String>>(5)?,
+                        ))
+                    },
                 )
                 .optional()?;
-            let Some((delivery, state, admitted_seq, admitted_at_ms)) = row else {
+            let Some((delivery, state, admitted_seq, admitted_at_ms, sender, reply_to)) = row else {
                 // Another Session's admission is not this caller's receipt.
                 return Ok(json!({
                     "session_id": session,
@@ -881,6 +909,12 @@ impl Store {
                 "admitted_seq": admitted_seq,
                 "admitted_at_ms": admitted_at_ms,
             });
+            if let Some(sender) = sender {
+                receipt["sender"] = json!(sender);
+            }
+            if let Some(reply_to) = reply_to {
+                receipt["reply_to"] = json!(reply_to);
+            }
             match state.as_str() {
                 "pending" => {
                     // Promotions run steer-first, then at most one queued item
