@@ -2567,4 +2567,29 @@ mod tests {
             "no envelope JSON reaches the row: {rendered:?}"
         );
     }
+
+    /// A terminal without image support is the common case, so an image
+    /// result names the media instead of painting its bytes: one placeholder
+    /// row, and the record's payload stays out even when the row is expanded.
+    #[test]
+    fn an_image_read_names_the_media_and_never_paints_its_bytes() {
+        let payload = "iVBORw0KGgoAAAANSUhEUg==".repeat(8);
+        let part = tool(
+            "read_image",
+            json!({"filePath": "assets/logo.png"}),
+            Some(json!({"text": payload})),
+            false,
+        );
+        let rendered = rendered(&lines(&part, None, &theme(), true, None));
+        assert_eq!(rendered[0], "✓ read  assets/logo.png");
+        assert!(
+            rendered.contains(&"  ⎿ Read image".to_string()),
+            "{rendered:?}"
+        );
+        assert!(
+            !rendered.iter().any(|line| line.contains("iVBOR")),
+            "the image bytes stay out of the row: {rendered:?}"
+        );
+        assert_eq!(rendered.len(), 2, "nothing further to expand: {rendered:?}");
+    }
 }
