@@ -1854,7 +1854,7 @@ mod retry_tests {
             )
             .await;
         assert!(
-            matches!(outcome, Err(ProviderError::Transport(message)) if message.contains("retry window was spent before another stream attempt")),
+            matches!(outcome, Err(ProviderError::Transport(ref message)) if message.contains("retry window was spent before another stream attempt")),
             "a spent window must refuse the reconnect: {outcome:?}"
         );
     }

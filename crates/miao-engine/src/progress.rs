@@ -24,11 +24,38 @@
 //! prunes it here on the next send.
 
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 /// One reader's queue. Dropping it is how a reader leaves.
-pub type Subscriber = mpsc::UnboundedReceiver<Value>;
+///
+/// A raw unbounded channel reports its depth only from the receiving side, so
+/// the subscriber carries the counter its `Fanout` peer increments on send
+/// and decrements here, on receipt: that shared count is the queue depth the
+/// backpressure signal is computed from.
+pub struct Subscriber {
+    inner: mpsc::UnboundedReceiver<Value>,
+    depth: Arc<AtomicUsize>,
+}
+
+impl Subscriber {
+    /// Receive one frame, waiting until one arrives or the reader leaves.
+    pub async fn recv(&mut self) -> Option<Value> {
+        let frame = self.inner.recv().await;
+        if frame.is_some() {
+            self.depth.fetch_sub(1, Ordering::Relaxed);
+        }
+        frame
+    }
+
+    /// Receive one frame if one is queued right now.
+    pub fn try_recv(&mut self) -> Result<Value, mpsc::error::TryRecvError> {
+        let frame = self.inner.try_recv()?;
+        self.depth.fetch_sub(1, Ordering::Relaxed);
+        Ok(frame)
+    }
+}
 
 /// Queue depth at which one subscriber is reported backpressured. The queue
 /// is lossless by design, so nothing errors and nothing drops: the depth
@@ -46,6 +73,7 @@ pub const BACKPRESSURE_CLEARED_FRAMES: usize = 32;
 struct Peer {
     queue: mpsc::UnboundedSender<Value>,
     lagged: bool,
+    depth: Arc<AtomicUsize>,
 }
 
 /// The rising and falling edge of one subscriber's backlog: `Some(true)` when
@@ -96,9 +124,15 @@ impl Fanout {
             .subscribers
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        subscribers.retain(|peer| peer.queue.send(frame.clone()).is_ok());
+        subscribers.retain(|peer| match peer.queue.send(frame.clone()) {
+            Ok(()) => {
+                peer.depth.fetch_add(1, Ordering::Relaxed);
+                true
+            }
+            Err(_) => false,
+        });
         for peer in subscribers.iter_mut() {
-            let queued = peer.queue.len();
+            let queued = peer.depth.load(Ordering::Relaxed);
             if let Some(lagged) = backpressure_edge(peer.lagged, queued) {
                 peer.lagged = lagged;
                 let _ = peer.queue.send(backpressure_frame(&frame, queued, !lagged));
@@ -110,6 +144,7 @@ impl Fanout {
     /// a reader that needs state that predates it re-projects from the store.
     pub fn subscribe(&self) -> Subscriber {
         let (sender, receiver) = mpsc::unbounded_channel();
+        let depth = Arc::new(AtomicUsize::new(0));
         let mut subscribers = self
             .subscribers
             .lock()
@@ -118,8 +153,12 @@ impl Fanout {
         subscribers.push(Peer {
             queue: sender,
             lagged: false,
+            depth: Arc::clone(&depth),
         });
-        receiver
+        Subscriber {
+            inner: receiver,
+            depth,
+        }
     }
 
     /// How many readers are attached, so a producer can skip work nobody reads.
