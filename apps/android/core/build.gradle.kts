@@ -1,5 +1,10 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    application
+}
+
+application {
+    mainClass.set("dev.miao.core.probe.InteropProbeKt")
 }
 
 java {
