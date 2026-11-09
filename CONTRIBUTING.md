@@ -152,7 +152,7 @@ cargo build --manifest-path crates/miao-cli/Cargo.toml
 bun run --cwd apps/desktop tauri dev
 ```
 
-`apps/desktop/scripts/prepare-sidecar.ts` (run by `predev`) copies that binary into
+`apps/desktop/scripts/prepare-sidecar.ts` (run by `bun run tauri`) copies that binary into
 `apps/desktop/src-tauri/sidecars/`. To package the app:
 
 ```bash

@@ -1,7 +1,7 @@
 {
   "name": "@miao/desktop",
   "private": true,
-  "version": "0.3.55",
+  "version": "0.3.56",
   "type": "module",
   "license": "MIT",
   "homepage": "https://mtty.dev/miao",
@@ -14,9 +14,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "predev": "bun ./scripts/prepare-sidecar.ts",
-    "prebuild": "bun ./scripts/prepare-sidecar.ts"
+    "tauri": "bun ./scripts/prepare-sidecar.ts && tauri"
   },
   "dependencies": {
     "@miao/app": "workspace:*",

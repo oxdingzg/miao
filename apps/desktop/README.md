@@ -40,5 +40,8 @@ bun run --cwd apps/desktop tauri build
 ## Sidecar
 
 The shell expects the `miao` binary next to it, named `miao-cli` (Tauri
-`externalBin`), and runs it as a resident loopback server. A missing binary fails
-the health check and surfaces in the shell's error path rather than a blank window.
+`externalBin`), and runs it as a resident loopback server. `bun run tauri` runs
+`scripts/prepare-sidecar.ts` first, which copies `crates/miao-cli`'s build into
+`src-tauri/sidecars/`; `bun run build` stays renderer-only so the bundle can be
+built without a Rust build. A missing binary fails the health check and surfaces
+in the shell's error path rather than a blank window.
